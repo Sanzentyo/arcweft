@@ -3,7 +3,7 @@
 use super::{Counts, DOMAIN, Error, Footprint, RuntimeEvaluatedEffectSourceLimits, charge, limit};
 use crate::effect::{
     RuntimeAssertionProfile, RuntimeDropPolicyExpr, RuntimeEffectExpr as Effect,
-    RuntimeEffectFieldExpr,
+    RuntimeEffectFieldExpr, RuntimeRegistryReadKind,
 };
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::task::semantic::TaskSemanticMeter;
@@ -139,6 +139,20 @@ impl Writer<'_> {
         Ok(())
     }
 
+    fn drop_policy(
+        &mut self,
+        policy: &RuntimeDropPolicyExpr,
+        counts: &mut Counts,
+        resources: &ValueResourceAdmission,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<(), Error> {
+        self.byte(policy.kind().wire_tag())?;
+        if let RuntimeDropPolicyExpr::Stop { fade } = policy {
+            self.expression(fade, counts, resources, meter)?;
+        }
+        Ok(())
+    }
+
     fn registry_key(
         &mut self,
         key: &arcweft_id::LifetimeRegistryKey,
@@ -231,18 +245,18 @@ fn emit(
         Effect::Drop { target, policy } => {
             writer.byte(8)?;
             writer.expression(target, counts, resources, meter)?;
-            writer.byte(match policy {
-                RuntimeDropPolicyExpr::Default => 0,
-                RuntimeDropPolicyExpr::Cancel => 1,
-                RuntimeDropPolicyExpr::Stop { .. } => 2,
-                RuntimeDropPolicyExpr::Finish => 3,
-                RuntimeDropPolicyExpr::Release => 4,
-                RuntimeDropPolicyExpr::Detach => 5,
-            })?;
-            if let RuntimeDropPolicyExpr::Stop { fade } = policy {
-                writer.expression(fade, counts, resources, meter)?;
-            }
+            writer.drop_policy(policy, counts, resources, meter)?;
         }
+        Effect::RegistryDrop { target, policy } => {
+            writer.byte(13)?;
+            writer.registry_key(target.key(), counts)?;
+            writer.byte(u8::from(
+                target.presence() == RuntimeRegistryReadKind::Optional,
+            ))?;
+            writer.raw(target.item_type().as_bytes())?;
+            writer.drop_policy(policy, counts, resources, meter)?;
+        }
+
         Effect::Assert {
             guard,
             condition,

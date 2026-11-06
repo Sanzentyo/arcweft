@@ -5,7 +5,10 @@ use super::super::expression::{
 };
 use super::super::pattern::tests::{meter, resources};
 use super::*;
-use crate::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeEffectExpr};
+use crate::effect::{
+    RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeEffectExpr, RuntimeRegistryDropTarget,
+    RuntimeRegistryReadKind,
+};
 use crate::pattern::RuntimeCheckedType;
 use crate::plan::*;
 use crate::value::RuntimeValue;
@@ -29,15 +32,22 @@ fn unit() -> RuntimeExprSeed {
     value(RuntimeCheckedType::Unit, RuntimeValue::Unit)
 }
 fn fixture() -> RuntimePlan {
-    fixture_with_registry_key(arcweft_id::LifetimeRegistryKey::new(
+    let key = arcweft_id::LifetimeRegistryKey::new(
         arcweft_id::LifetimeScopeKind::Flow,
         ["flags", "既読"]
             .into_iter()
             .map(|name| arcweft_id::DeclarationName::try_new(name).unwrap())
             .collect(),
-    ))
+    );
+    fixture_with_registry_effects(key.clone(), Some(key))
 }
 fn fixture_with_registry_key(key: arcweft_id::LifetimeRegistryKey) -> RuntimePlan {
+    fixture_with_registry_effects(key, None)
+}
+fn fixture_with_registry_effects(
+    write_key: arcweft_id::LifetimeRegistryKey,
+    drop_key: Option<arcweft_id::LifetimeRegistryKey>,
+) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
@@ -110,7 +120,7 @@ fn fixture_with_registry_key(key: arcweft_id::LifetimeRegistryKey) -> RuntimePla
             value: boolean(),
         },
         Effect::RegistryWrite {
-            key,
+            key: write_key,
             value: boolean(),
         },
         Effect::EmitEvent {
@@ -125,6 +135,29 @@ fn fixture_with_registry_key(key: arcweft_id::LifetimeRegistryKey) -> RuntimePla
             message: string("ensure"),
         },
     ];
+    if let Some(key) = drop_key {
+        effects.push(Effect::RegistryDrop {
+            target: RuntimeRegistryDropTarget::new(
+                key.clone(),
+                RuntimeRegistryReadKind::Required,
+                RuntimeCheckedType::Bool.semantic_identity_digest(),
+            ),
+            policy: RuntimeDropPolicySeed::Default,
+        });
+        effects.push(Effect::RegistryDrop {
+            target: RuntimeRegistryDropTarget::new(
+                key,
+                RuntimeRegistryReadKind::Optional,
+                RuntimeCheckedType::Bool.semantic_identity_digest(),
+            ),
+            policy: RuntimeDropPolicySeed::Stop {
+                fade: value(
+                    RuntimeCheckedType::Duration,
+                    RuntimeValue::Duration(crate::time::LogicalDuration::from_nanos(11)),
+                ),
+            },
+        });
+    }
     for policy in [
         RuntimeDropPolicySeed::Default,
         RuntimeDropPolicySeed::Cancel,
@@ -245,7 +278,7 @@ fn replay(
                     let mut bytes = encode(effect, plan);
                     if bad_condition && matches!(effect, RuntimeEffectExpr::Ensure { .. }) {
                         let row = cursor::Cursor::new(&bytes).row().unwrap();
-                        let end = DOMAIN.len() + 2 + 4 + row.first.len();
+                        let end = DOMAIN.len() + 2 + 4 + row.first.unwrap().len();
                         let replacement = row.second.unwrap().to_vec();
                         let frame = (replacement.len() as u32)
                             .to_le_bytes()
@@ -291,7 +324,7 @@ fn finish(
 fn evaluated_effect_sources_restore_all_kinds_six_drop_policies_assertion_profiles_fields_and_semantics()
  {
     let plan = fixture();
-    assert_eq!(effects(&plan).count(), 18);
+    assert_eq!(effects(&plan).count(), 20);
     let (mut source, functions) = source(&plan, meter());
     replay(&plan, &mut source, &functions, false).unwrap();
     let restored = finish(source).unwrap();
@@ -590,7 +623,8 @@ fn evaluated_effect_sources_reject_every_truncation_bad_tags_utf8_policy_guard_p
                 );
             }
             cursor::Kind::Drop(_) => {
-                let at = row.first.as_ptr() as usize - bytes.as_ptr() as usize + row.first.len();
+                let target = row.first.unwrap();
+                let at = target.as_ptr() as usize - bytes.as_ptr() as usize + target.len();
                 let mut bad = bytes.clone();
                 bad[at] = 6;
                 assert!(

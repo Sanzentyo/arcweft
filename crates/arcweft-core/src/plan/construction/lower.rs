@@ -5186,6 +5186,23 @@ impl RuntimePlanBodyConstruction<'_> {
                     payload: self.lower_expression(payload)?,
                 })
             }
+            RuntimeEvaluatedEffectSeed::RegistryDrop { target, policy } => {
+                if !matches!(
+                    target.key().scope(),
+                    arcweft_id::LifetimeScopeKind::Flow | arcweft_id::LifetimeScopeKind::Line
+                ) {
+                    return Err(RuntimePlanBuildError::InvalidRegistryDrop);
+                }
+                self.resolve_seed_type("registry drop item", *target.item_type())?;
+                if let crate::effect::RuntimeDropPolicyExpr::Stop { fade } = &policy {
+                    let ty = self.resolve_seed_type("registry drop fade", fade.ty())?;
+                    self.require_projection("registry drop fade", ty, |projection| {
+                        matches!(projection, RuntimePlanTypeProjection::Duration)
+                    })?;
+                }
+                RuntimeEvaluatedEffectSeed::RegistryDrop { target, policy }
+                    .try_map_expressions(|expression| self.lower_expression(expression))
+            }
             RuntimeEvaluatedEffectSeed::Wait(duration) => {
                 let ty = self.resolve_seed_type("wait Duration operand", duration.ty())?;
                 self.require_projection("wait Duration operand", ty, |projection| {

@@ -1283,7 +1283,11 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedExpressionResolution::Value(value) => {
-                if is_semantic_value {
+                if is_semantic_value
+                    || expression.execution_plan().is_some_and(
+                        arcweft_lang_sema::final_analysis::CheckedExpressionExecutionPlan::is_registry_drop_address,
+                    )
+                {
                     continue;
                 }
                 let projected = if let Some(value) = runtime_callable_values.get(&owner) {
@@ -1454,6 +1458,11 @@ fn project_runtime_semantic_fact_inventories(
                 }
             }
             CheckedExpressionResolution::Pipe(_) => {
+                if expression.evaluated_effect().is_some_and(|effect| {
+                    matches!(effect.operation(), CheckedEvaluatedEffectOperation::RegistryDrop { target, .. } if target.uses_pipe_address())
+                }) {
+                    continue;
+                }
                 let pipe_view = execution_projection.pipe(owner)?;
                 input.push_pipe(
                     owner,
@@ -8493,7 +8502,9 @@ fn runtime_executable_semantic_facts<'abi>(
                         "instance evaluated effect has no checked expression operation",
                     )
                 })?;
-                let pipe = if matches!(hir.kind(), HirExprKind::Pipe(_)) {
+                let pipe = if matches!(hir.kind(), HirExprKind::Pipe(_))
+                    && !matches!(effect.operation(), CheckedEvaluatedEffectOperation::RegistryDrop { target, .. } if target.uses_pipe_address())
+                {
                     let pipe = execution.pipe(owner)?;
                     Some(RuntimePipeFact::new(
                         pipe.binding_identity(),

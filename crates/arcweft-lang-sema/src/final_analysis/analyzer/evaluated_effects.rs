@@ -26,9 +26,10 @@ use crate::{
         CheckedDropFadeOperand, CheckedDropInvocation, CheckedDropPolicySource, CheckedEffectField,
         CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
         CheckedExecutableCapture, CheckedExplicitDropPolicy, CheckedExpression,
-        CheckedExpressionResolution, CheckedValueResolution, PreparedContentApplication,
-        PreparedContentEmission, PreparedDialogueApplication, PreparedDialogueEffectSite,
-        PreparedEvaluatedEffect, PreparedExpressionFact, PreparedStatementPayload,
+        CheckedExpressionResolution, CheckedRegistryDrop, CheckedValueResolution,
+        PreparedContentApplication, PreparedContentEmission, PreparedDialogueApplication,
+        PreparedDialogueEffectSite, PreparedEvaluatedEffect, PreparedExpressionFact,
+        PreparedStatementPayload,
     },
     semantic_coordinate::{
         SemanticCoordinateIndex, StableCheckedContentFragmentCoordinate,
@@ -1841,7 +1842,7 @@ impl Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             },
             CallableEvaluatedEffect::Drop(operation) => {
-                self.seal_drop_operation(application, operation, schema, &mut operands)?
+                self.seal_drop_operation(root, application, operation, schema, &mut operands)?
             }
         };
         operands.finish()?;
@@ -1912,6 +1913,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn seal_drop_operation(
         &self,
+        root: ExprId,
         application: &CheckedCallApplication,
         operation: DropCallableId,
         schema: CallableSignatureSchemaDigest,
@@ -1983,7 +1985,83 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
         };
+        if let Some(target) = self.checked_registry_drop_target(root, &target, operation)? {
+            return Ok(CheckedEvaluatedEffectOperation::RegistryDrop { target, invocation });
+        }
         Ok(CheckedEvaluatedEffectOperation::Drop { target, invocation })
+    }
+
+    fn checked_registry_drop_target(
+        &self,
+        root: ExprId,
+        argument: &CheckedEvaluatedEffectOperand,
+        operation: DropCallableId,
+    ) -> Result<Option<CheckedRegistryDrop>, FinalSemanticAnalysisError> {
+        use arcweft_core::effect::RuntimeRegistryReadKind;
+
+        let CheckedCallArgumentSlotSource::Expression(argument_owner) = argument.source().raw()
+        else {
+            return Ok(None);
+        };
+        let expression = |owner| match self.facts.expressions().get(&owner) {
+            Some(PreparedExpressionFact::Complete(checked)) => Ok(checked),
+            _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+        };
+        let argument_expression = expression(argument_owner)?;
+        let address = match argument_expression.resolution() {
+            CheckedExpressionResolution::PipeLeft(placeholder) => {
+                let CheckedExpressionResolution::Pipe(pipe) = expression(root)?.resolution() else {
+                    return Ok(None);
+                };
+                if placeholder.binding_identity() != pipe.binding_identity() {
+                    return Ok(None);
+                }
+                let left = expression(pipe.lookup_left())?;
+                if !matches!(
+                    left.resolution(),
+                    CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(_))
+                ) {
+                    return Ok(None);
+                }
+                let [occurrence] = pipe.occurrences() else {
+                    return Err(FinalSemanticAnalysisError::RegistryDropTarget {
+                        owner: argument_owner,
+                    });
+                };
+                if occurrence.lookup_expression() != argument_owner {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                left
+            }
+            _ => argument_expression,
+        };
+        let CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)) =
+            address.resolution()
+        else {
+            return Ok(None);
+        };
+        let item = match (read.kind(), operation, address.source_value_type()) {
+            (
+                RuntimeRegistryReadKind::Required,
+                DropCallableId::Drop | DropCallableId::DropWithPolicy,
+                Some(item),
+            ) => item,
+            (
+                RuntimeRegistryReadKind::Optional,
+                DropCallableId::DropOptional,
+                Some(TypeKind::Option(item)),
+            ) => item,
+            _ => {
+                return Err(FinalSemanticAnalysisError::RegistryDropTarget {
+                    owner: argument_owner,
+                });
+            }
+        };
+        Ok(Some(CheckedRegistryDrop::new(
+            read,
+            argument.source().clone(),
+            item.clone(),
+        )))
     }
 
     fn checked_continuation_prefix<'facts>(

@@ -476,6 +476,8 @@ pub enum FinalSemanticAnalysisError {
         owner: ExprId,
         scope: arcweft_id::LifetimeScopeKind,
     },
+    #[error("lifetime registry drop at {owner:?} requires one address with matching presence mode")]
+    RegistryDropTarget { owner: ExprId },
     #[error("checked expression {owner:?} has no accepted eager execution region")]
     ExpressionExecutionUnavailable { owner: ExprId },
     #[error("expression input {site:?} has no checked local-access authority")]

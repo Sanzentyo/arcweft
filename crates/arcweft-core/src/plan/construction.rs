@@ -187,6 +187,8 @@ pub enum RuntimePlanBuildError {
         "registry read requires a reached Flow or Line scope, with an Option result for optional access"
     )]
     InvalidRegistryRead,
+    #[error("registry drop requires a reached Flow or Line scope")]
+    InvalidRegistryDrop,
     #[error("guard Copy obligations are attached to an expression outside a pattern guard")]
     GuardCopyRequirementOutsideGuard,
     #[error("guard Copy local {local} is not bound by the selected pattern")]
@@ -2083,13 +2085,10 @@ impl RuntimePlanBuilder {
         for ops in bodies {
             super::try_visit_ops_events(ops, &mut |event| {
                 if let super::RuntimeFlowTreeEvent::EnterOperation {
-                    op:
-                        FlowOp::EvaluatedEffect(crate::effect::RuntimeEffectExpr::RegistryWrite {
-                            key,
-                            ..
-                        }),
+                    op: FlowOp::EvaluatedEffect(effect),
                     ..
                 } = event
+                    && let Some(key) = effect.registry_mutation_key()
                 {
                     let effect = arcweft_id::EffectId::state_write(key);
                     if !seed.effects.covers_effect(&effect) {

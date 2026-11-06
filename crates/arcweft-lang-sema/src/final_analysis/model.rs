@@ -2337,6 +2337,9 @@ pub enum CheckedEvaluatedEffectRole {
     DropPolicy {
         application: CheckedCallApplicationDigest,
     },
+    RegistryDropAddress {
+        application: CheckedCallApplicationDigest,
+    },
 }
 
 /// Closed execution plan for an available expression. Tooling-only call
@@ -2485,6 +2488,12 @@ impl CheckedExpressionExecutionPlan {
                     | CheckedEvaluatedEffectRole::DialogueEffectSite { .. }
             )
         })
+    }
+
+    pub fn is_registry_drop_address(&self) -> bool {
+        self.evaluated_effect_roles()
+            .iter()
+            .any(|role| matches!(role, CheckedEvaluatedEffectRole::RegistryDropAddress { .. }))
     }
 
     pub fn executes_as_runtime_call(&self) -> bool {
@@ -3054,7 +3063,9 @@ pub use place::CheckedPlace;
 #[path = "model/registry.rs"]
 mod registry;
 pub(in crate::final_analysis) use registry::RegistryLexicalActivation;
-pub use registry::{CheckedRegistryAddress, CheckedRegistryRead, CheckedRegistryWrite};
+pub use registry::{
+    CheckedRegistryAddress, CheckedRegistryDrop, CheckedRegistryRead, CheckedRegistryWrite,
+};
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{

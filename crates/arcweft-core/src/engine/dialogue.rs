@@ -1125,11 +1125,12 @@ impl Engine {
                 super::FlowFiberStatus::Running
             ) && matches!(
                 frame.execution.original_operation_remainder(&self.plan).and_then(|ops| ops.first()),
-                Some(FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, .. }))
-                    if matches!(key.scope(), arcweft_id::LifetimeScopeKind::Line | arcweft_id::LifetimeScopeKind::Flow)
+                Some(FlowOp::EvaluatedEffect(effect))
+                    if effect.registry_mutation_key().is_some_and(|key| matches!(
+                        key.scope(), arcweft_id::LifetimeScopeKind::Line | arcweft_id::LifetimeScopeKind::Flow))
             );
             if next_is_registry_write {
-                return self.execute_queued_activation_registry_write(
+                return self.execute_queued_activation_registry_mutation(
                     slot,
                     input,
                     events,
@@ -1234,13 +1235,14 @@ impl Engine {
             .activation_ops()
             .get(frame.activation_pc)
             .ok_or(LineRuntimeError::ResultNotCommitted)?;
-        if let FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, value }) = operation
+        if let FlowOp::EvaluatedEffect(effect) = operation
+            && let Some(key) = effect.registry_mutation_key()
         {
-            return self.execute_activation_registry_write(
+            return self.execute_activation_registry_mutation(
                 slot,
                 group.effects(),
                 key,
-                value,
+                effect,
                 pure_backend,
             );
         }
@@ -3010,16 +3012,18 @@ impl Engine {
         Ok(DialoguePublicationOutcome::Published(proof))
     }
 
-    fn execute_activation_registry_write(
+    fn execute_activation_registry_mutation(
         &mut self,
         slot: &mut DialogueActivationExecutionSlot,
         effects: &crate::plan::RuntimeEffectSet,
         key: &arcweft_id::LifetimeRegistryKey,
-        value: &crate::value::RuntimeExpr,
+        effect: &RuntimeEffectExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<DialogueActivationStep, DialogueExecutionError> {
-        use super::registry::{NativeDialogueRegistryTarget, NativeDialogueRegistryWrite};
-        use crate::effect::{RuntimePreparedRegistryWrite, RuntimeRegistryStateUpdate};
+        use super::registry::{
+            NativeDialogueRegistryMutation, NativeDialogueRegistryTarget,
+            NativePreparedRegistryMutation,
+        };
         use arcweft_id::LifetimeScopeKind;
 
         let failure = |message| DialogueExecutionError::ActivationEffectFailed { message };
@@ -3035,12 +3039,7 @@ impl Engine {
         if !transaction.frame().execution.program.same_program(&owner) {
             return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into());
         }
-        let ty = self
-            .plan
-            .type_table()
-            .get(value.ty())
-            .ok_or(RuntimeEffectMaterializeError::RegistryContextRequired)?
-            .semantic_identity();
+
         let id = *transaction.activation();
         let binding = transaction.frame().execution.env.source_function_context();
         let before = self.activation_local_handle_owners(&id, transaction.frame())?;
@@ -3063,26 +3062,31 @@ impl Engine {
             _ => return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into()),
         };
         let (destination, source) = target.origin(id);
-        let position = rows
-            .prepare_write(destination, key, ty, source, &mut admission)
-            .map_err(|error| failure(error.to_string()))?;
-        let prepared =
-            RuntimeRegistryStateUpdate::prepare(key, ty, binding.instantiation(), &mut admission)
-                .map_err(|error| failure(error.to_string()))?;
+        let prepared = NativePreparedRegistryMutation::prepare(
+            &self.plan,
+            effect,
+            rows,
+            destination,
+            source,
+            &binding,
+            &mut admission,
+        )
+        .map_err(|error| failure(error.to_string()))?;
         let result = (|| {
-            let evaluated = self.evaluate_dialogue_expr(slot, value, pure_backend)?;
-            let update = prepared
-                .capture(&evaluated)
+            let evaluated = prepared
+                .input()
+                .map(|input| self.evaluate_dialogue_expr(slot, input, pure_backend))
+                .transpose()?;
+            let mutation = prepared
+                .finish(evaluated)
                 .map_err(|error| failure(error.to_string()))?;
+
             let transaction = slot.transaction_mut();
             self.reconcile_activation_instruction(transaction, &before, None)?;
             advance_activation_pc(transaction.frame_mut())?;
-            self.commit_dialogue_registry_write(
+            self.commit_dialogue_registry_mutation(
                 transaction,
-                NativeDialogueRegistryWrite {
-                    target,
-                    write: RuntimePreparedRegistryWrite::new(position, source, update),
-                },
+                NativeDialogueRegistryMutation { target, mutation },
             )
             .map_err(|error| failure(error.to_string()))?;
             Ok(DialogueActivationStep::Continue)
@@ -3098,7 +3102,7 @@ impl Engine {
         }
     }
 
-    fn execute_queued_activation_registry_write(
+    fn execute_queued_activation_registry_mutation(
         &mut self,
         slot: &mut DialogueActivationExecutionSlot,
         input: &mut super::RuntimeStepInput,
@@ -3134,7 +3138,7 @@ impl Engine {
             let write = pending.ok_or(LineRuntimeError::InvalidActivationOperation)?;
             let transaction = slot.transaction_mut();
             self.reconcile_activation_instruction(transaction, &before, None)?;
-            self.commit_dialogue_registry_write(transaction, write)
+            self.commit_dialogue_registry_mutation(transaction, write)
                 .map_err(|error| failure(error.to_string()))?;
             Ok(DialogueActivationStep::Execution(staged))
         })();

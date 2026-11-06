@@ -99,6 +99,66 @@ fn registry_update_replays_typed_data_under_both_original_executables() {
 }
 
 #[test]
+fn registry_drop_checks_item_type_and_rejects_a_replaced_row() {
+    let [plan, _] = owners();
+    let owner = RuntimeRegistryOwner::NativeFlow;
+    let source = RuntimeRegistryWriteSource::Native;
+    let target = key("flow", &["flags", "target"]);
+    let sibling = key("flow", &["flags", "sibling"]);
+    let missing = key("flow", &["flags", "missing"]);
+    let mut rows = RuntimeScopeRegistry::default();
+
+    let put = |rows: &mut RuntimeScopeRegistry, key: &LifetimeRegistryKey, value: bool| {
+        let position = rows
+            .prepare_write(owner, key, semantic(1), source, &mut admission(&plan))
+            .unwrap();
+        let value = RuntimeRegistryStateUpdate::try_copy(
+            key,
+            semantic(1),
+            None,
+            &RuntimeValue::Bool(value),
+            &mut admission(&plan),
+        )
+        .unwrap();
+        rows.commit(position, source, value);
+    };
+    put(&mut rows, &target, true);
+    put(&mut rows, &sibling, true);
+    let prepare = |rows: &RuntimeScopeRegistry, key, kind, ty| {
+        rows.prepare_drop(owner, key, kind, ty, None, &mut admission(&plan))
+    };
+    let required = RuntimeRegistryReadKind::Required;
+    let optional = RuntimeRegistryReadKind::Optional;
+    assert!(prepare(&rows, &target, required, semantic(2)).is_err());
+    assert!(prepare(&rows, &missing, required, semantic(1)).is_err());
+    prepare(&rows, &missing, optional, semantic(1))
+        .unwrap()
+        .commit(&mut rows)
+        .unwrap();
+
+    let stale = prepare(&rows, &target, required, semantic(1)).unwrap();
+    put(&mut rows, &target, false);
+    assert!(stale.commit(&mut rows).is_err());
+    let read = |rows: &RuntimeScopeRegistry, key| {
+        rows.read(
+            owner,
+            key,
+            required,
+            semantic(1),
+            None,
+            &mut admission(&plan),
+        )
+    };
+    assert_eq!(read(&rows, &target).unwrap(), RuntimeValue::Bool(false));
+    prepare(&rows, &target, required, semantic(1))
+        .unwrap()
+        .commit(&mut rows)
+        .unwrap();
+    assert!(read(&rows, &target).is_err());
+    assert_eq!(read(&rows, &sibling).unwrap(), RuntimeValue::Bool(true));
+}
+
+#[test]
 fn registry_update_rejects_other_programs_and_retains_the_first_failure() {
     for (owner, foreign) in owners().into_iter().zip(owners()) {
         let packet = RuntimeRegistryStateUpdate::try_copy(

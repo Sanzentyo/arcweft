@@ -1637,6 +1637,32 @@ impl AwbcInventory {
                 resources: Vec::new(),
             }));
         }
+        if let RuntimeEffectExpr::RegistryDrop { target, policy } = effect {
+            let Some(item_type) = self.semantic_type(*target.item_type()) else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    "effect.registry_drop_item_type",
+                    "registry drop item type was not admitted from its runtime plan",
+                ));
+                return None;
+            };
+            let params = effect
+                .argument_exprs()
+                .into_iter()
+                .map(|arg| self.plan_type(arg.ty()))
+                .collect::<Option<Vec<_>>>()?;
+            let effect_set = self.intern_effect_set(declared_effects);
+            let signature = self.intern_signature(params, None, effect_set);
+            let capability = Some(self.intern_string(arcweft_id::EffectId::STATE_WRITE_LABEL));
+            return Some(self.intern_effect_plan(AwbcEffectPlan {
+                signature,
+                capability,
+                payload: arcweft_core::awbc::schema::AwbcEffectPayload::RegistryDrop {
+                    target: target.with_item_type(item_type),
+                    policy: policy.kind(),
+                },
+                resources: Vec::new(),
+            }));
+        }
         if let RuntimeEffectExpr::RegistryWrite { key, value } = effect {
             let Some(value_type) = self.plan_type(value.ty()) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(

@@ -1039,6 +1039,14 @@ impl Wire for AwbcEffectPlan {
                 writer.write_registry_key(key)?;
                 value_type.write_wire(writer)?;
             }
+            AwbcEffectPayload::RegistryDrop { target, policy } => {
+                writer.write_registry_key(target.key())?;
+                writer.write_u8(u8::from(
+                    target.presence() == crate::effect::RuntimeRegistryReadKind::Optional,
+                ));
+                target.item_type().write_wire(writer)?;
+                writer.write_u8(policy.wire_tag());
+            }
             AwbcEffectPayload::EmitAction { payload_type } => payload_type.write_wire(writer)?,
             _ => writer.write_table(self.static_args())?,
         }
@@ -1072,6 +1080,31 @@ impl Wire for AwbcEffectPlan {
                 key: reader.read_registry_key()?,
                 value_type: AwbcTypeId::read_wire(reader)?,
             },
+            AwbcEffectKind::RegistryDrop => {
+                use crate::effect::{
+                    RuntimeDropPolicyKind, RuntimeRegistryDropTarget, RuntimeRegistryReadKind,
+                };
+                let key = reader.read_registry_key()?;
+                let presence = if bool::read_wire(reader)? {
+                    RuntimeRegistryReadKind::Optional
+                } else {
+                    RuntimeRegistryReadKind::Required
+                };
+                let item_type = AwbcTypeId::read_wire(reader)?;
+                let offset = reader.offset();
+                let tag = reader.read_u8()?;
+                let policy = RuntimeDropPolicyKind::from_wire_tag(tag).ok_or(
+                    AwbcCodecError::UnknownTag {
+                        kind: "registry drop policy",
+                        tag,
+                        offset,
+                    },
+                )?;
+                AwbcEffectPayload::RegistryDrop {
+                    target: RuntimeRegistryDropTarget::new(key, presence, item_type),
+                    policy,
+                }
+            }
             AwbcEffectKind::EmitAction => AwbcEffectPayload::EmitAction {
                 payload_type: AwbcTypeId::read_wire(reader)?,
             },

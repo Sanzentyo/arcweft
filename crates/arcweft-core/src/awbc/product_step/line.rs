@@ -1526,7 +1526,7 @@ impl super::AwbcProductStepExecutor {
         } else {
             None
         };
-        let mut pending_registry_write = None;
+        let mut pending_registry_mutation = None;
         let mut received_handles = None;
         let (frame, line) = transaction.parts_mut();
         let phase = std::mem::replace(&mut frame.phase, ProductDialoguePhase::Transitioning);
@@ -1576,7 +1576,7 @@ impl super::AwbcProductStepExecutor {
                         owner,
                         rows,
                         admission,
-                        pending: &mut pending_registry_write,
+                        pending: &mut pending_registry_mutation,
                     })
                 } else {
                     None
@@ -1613,11 +1613,11 @@ impl super::AwbcProductStepExecutor {
                 }
             };
 
-            if let Some((owner, write)) = pending_registry_write.as_ref() {
+            if let Some((owner, write)) = pending_registry_mutation.as_ref() {
                 if !step.completed_single_effect_instruction() {
                     return Err(LineRuntimeError::InvalidActivationOperation.into());
                 }
-                self.reserve_reached_registry_write(activation, *owner, line, write)?;
+                self.reserve_reached_registry_mutation(activation, *owner, line, write)?;
             }
 
             let mut owned_observation = None;
@@ -2126,9 +2126,9 @@ impl super::AwbcProductStepExecutor {
                 },
             }
         })();
-        if let Some((owner, write)) = pending_registry_write {
+        if let Some((owner, write)) = pending_registry_mutation {
             if result.is_ok() {
-                self.commit_reached_registry_write(activation, owner, line, write);
+                self.commit_reached_registry_mutation(activation, owner, line, write);
             } else if let Some(checkpoint) = effect_checkpoint {
                 checkpoint
                     .restore(

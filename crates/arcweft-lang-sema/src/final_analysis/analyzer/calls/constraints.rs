@@ -3429,6 +3429,32 @@ impl PreparedCallApplicationTransaction {
         self.data.application.result_schema()
     }
 
+    pub(super) fn registry_drop_argument(&self) -> Option<ExprId> {
+        use crate::callable::{CallableEvaluatedEffect, CallableEvaluatedEffectOperandRole};
+
+        let effect = self.candidate().schema().evaluated_effect()?;
+        if !matches!(effect, CallableEvaluatedEffect::Drop(_)) {
+            return None;
+        }
+        self.data
+            .inputs
+            .mapping()
+            .arguments()
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .find_map(|slot| {
+                if effect.operand_role(slot.coordinate()?)
+                    != Some(CallableEvaluatedEffectOperandRole::Target)
+                {
+                    return None;
+                }
+                match slot.source() {
+                    CheckedCallArgumentSlotSource::Expression(owner) => Some(owner),
+                    _ => None,
+                }
+            })
+    }
+
     /// Project one authored scalar argument from the selected mapper/lower
     /// transaction. This is the sole pre-publication authority for semantic
     /// actions such as Dialogue patch clear/supply; callers never read a

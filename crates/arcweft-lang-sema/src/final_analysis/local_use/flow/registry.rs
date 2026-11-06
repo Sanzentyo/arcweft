@@ -100,6 +100,18 @@ impl RegistryFact {
             _ => false,
         }
     }
+
+    pub(super) fn admits_drop(&self, kind: RuntimeRegistryReadKind, expected: &TypeKind) -> bool {
+        // Optional removal checks the reached item's type before committing.
+        // A possible absence requires no proof of a prior registration.
+        matches!(
+            (self, kind),
+            (
+                Self::Unknown | Self::DeferredWrite,
+                RuntimeRegistryReadKind::Optional
+            )
+        ) || self.admits(kind, expected)
+    }
 }
 
 /// A fresh scope provides a shared absence default. Only deviations from the
@@ -158,6 +170,12 @@ impl RegistryFacts {
         }
     }
 
+    pub(super) fn remove(&mut self, address: &RegistryAddress) {
+        if *self.fact(address) != RegistryFact::DeferredWrite {
+            self.set(address, RegistryFact::Absent);
+        }
+    }
+
     pub(super) fn invalidate_writes(
         &mut self,
         site: RegistrySite,
@@ -203,25 +221,28 @@ impl RegistryFacts {
 }
 
 /// Possible mutations by the children of one selected line activation.
-/// A typed replacement can change absence to possible presence. It cannot
-/// establish definite presence or remove an already registered value.
+/// The fact for a changed key joins all sibling write and removal outcomes.
 #[derive(Default)]
 pub(super) struct RegistryInterference {
-    typed: BTreeMap<RegistryAddress, Option<Arc<TypeKind>>>,
+    typed: BTreeMap<RegistryAddress, RegistryFact>,
     opaque: BTreeMap<RegistryOwner, BTreeSet<EffectId>>,
     open: BTreeSet<RegistryOwner>,
 }
 
 impl RegistryInterference {
     pub(super) fn write(&mut self, address: &RegistryAddress, ty: &Arc<TypeKind>) {
+        self.record(address, RegistryFact::Present(Arc::clone(ty)));
+    }
+
+    pub(super) fn remove(&mut self, address: &RegistryAddress) {
+        self.record(address, RegistryFact::Absent);
+    }
+
+    fn record(&mut self, address: &RegistryAddress, fact: RegistryFact) {
         self.typed
             .entry(address.clone())
-            .and_modify(|previous| {
-                if previous.as_ref() != Some(ty) {
-                    *previous = None;
-                }
-            })
-            .or_insert_with(|| Some(Arc::clone(ty)));
+            .and_modify(|previous| *previous = previous.join(&fact))
+            .or_insert(fact);
     }
 
     pub(super) fn opaque_writes(&mut self, site: RegistrySite, effects: Option<&[EffectId]>) {
@@ -256,8 +277,7 @@ impl RegistryInterference {
         }
         match self.typed.get(address) {
             None => fact,
-            Some(Some(ty)) => fact.join(&RegistryFact::Present(Arc::clone(ty))),
-            Some(None) => RegistryFact::Unknown,
+            Some(possible) => fact.join(possible),
         }
     }
 

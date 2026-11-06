@@ -2,8 +2,12 @@
 
 use super::registry_key::RegistryKeySource;
 use super::{Counts, DOMAIN, Error};
-use crate::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile};
+use crate::effect::{
+    RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeDropPolicyKind,
+    RuntimeRegistryReadKind,
+};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::task::semantic::TaskSemanticMeter;
 
 pub(super) enum Kind<'a> {
@@ -12,13 +16,19 @@ pub(super) enum Kind<'a> {
     Signal,
     Metric,
     Registry(RegistryKeySource<'a>),
+    RegistryDrop {
+        key: RegistryKeySource<'a>,
+        presence: RuntimeRegistryReadKind,
+        item_type: RuntimeSemanticTypeId,
+        policy: RuntimeDropPolicyKind,
+    },
     Event,
     Action,
     Panic,
     Fail,
     Bail,
     Ensure,
-    Drop(u8),
+    Drop(RuntimeDropPolicyKind),
     Assert {
         guard: RuntimeAssertionGuardId,
         profile: RuntimeAssertionProfile,
@@ -27,7 +37,7 @@ pub(super) enum Kind<'a> {
 }
 pub(super) struct Row<'a> {
     pub kind: Kind<'a>,
-    pub first: &'a [u8],
+    pub first: Option<&'a [u8]>,
     pub second: Option<&'a [u8]>,
     pub fields: &'a [u8],
     pub field_count: usize,
@@ -42,10 +52,12 @@ impl Row<'_> {
         match &self.kind {
             Kind::Log(level) => counts.storage(level.len())?,
             Kind::Assert { message, .. } => counts.storage(message.len())?,
-            Kind::Registry(key) => key.preflight(counts)?,
+            Kind::Registry(key) | Kind::RegistryDrop { key, .. } => key.preflight(counts)?,
             _ => {}
         }
-        counts.preflight_expression(self.first, resources, meter)?;
+        if let Some(first) = self.first {
+            counts.preflight_expression(first, resources, meter)?;
+        }
         if let Some(second) = self.second {
             counts.preflight_expression(second, resources, meter)?;
         }
@@ -102,6 +114,15 @@ impl<'a> Cursor<'a> {
         }
         Ok((&self.bytes[start..self.offset], count))
     }
+    fn drop_policy(&mut self) -> Result<(RuntimeDropPolicyKind, Option<&'a [u8]>), Error> {
+        let policy = RuntimeDropPolicyKind::from_wire_tag(self.byte()?)
+            .ok_or_else(|| self.invalid("drop policy"))?;
+        let fade = (policy == RuntimeDropPolicyKind::Stop)
+            .then(|| self.frame())
+            .transpose()?;
+        Ok((policy, fade))
+    }
+
     pub fn row(&mut self) -> Result<Row<'a>, Error> {
         if self.raw(DOMAIN.len())? != DOMAIN {
             return Err(self.invalid("domain"));
@@ -117,37 +138,35 @@ impl<'a> Cursor<'a> {
                 let level = self.text()?;
                 let first = self.frame()?;
                 (fields, field_count) = self.fields()?;
-                (Kind::Log(level), first)
+                (Kind::Log(level), Some(first))
             }
             tag @ (1 | 2) => {
                 let first = self.frame()?;
                 second = Some(self.frame()?);
-                (if tag == 1 { Kind::Signal } else { Kind::Metric }, first)
+                (
+                    if tag == 1 { Kind::Signal } else { Kind::Metric },
+                    Some(first),
+                )
             }
             3 => {
                 let first = self.frame()?;
                 (fields, field_count) = self.fields()?;
-                (Kind::Event, first)
+                (Kind::Event, Some(first))
             }
-            12 => (Kind::Action, self.frame()?),
-            4 => (Kind::Panic, self.frame()?),
-            5 => (Kind::Fail, self.frame()?),
-            6 => (Kind::Bail, self.frame()?),
+            12 => (Kind::Action, Some(self.frame()?)),
+            4 => (Kind::Panic, Some(self.frame()?)),
+            5 => (Kind::Fail, Some(self.frame()?)),
+            6 => (Kind::Bail, Some(self.frame()?)),
             7 => {
                 let first = self.frame()?;
                 second = Some(self.frame()?);
-                (Kind::Ensure, first)
+                (Kind::Ensure, Some(first))
             }
             8 => {
                 let first = self.frame()?;
-                let policy = self.byte()?;
-                if policy > 5 {
-                    return Err(self.invalid("drop policy"));
-                }
-                if policy == 2 {
-                    second = Some(self.frame()?);
-                }
-                (Kind::Drop(policy), first)
+                let policy;
+                (policy, second) = self.drop_policy()?;
+                (Kind::Drop(policy), Some(first))
             }
             9 => {
                 let guard = RuntimeAssertionGuardId::try_from_bytes(
@@ -165,14 +184,37 @@ impl<'a> Cursor<'a> {
                         profile,
                         message,
                     },
-                    self.frame()?,
+                    Some(self.frame()?),
                 )
             }
             10 => (
                 Kind::Registry(RegistryKeySource::new(self.frame()?)),
-                self.frame()?,
+                Some(self.frame()?),
             ),
-            11 => (Kind::Wait, self.frame()?),
+            11 => (Kind::Wait, Some(self.frame()?)),
+            13 => {
+                let key = RegistryKeySource::new(self.frame()?);
+                let presence = match self.byte()? {
+                    0 => RuntimeRegistryReadKind::Required,
+                    1 => RuntimeRegistryReadKind::Optional,
+                    _ => return Err(self.invalid("registry drop presence")),
+                };
+                let item_type = RuntimeSemanticTypeId::from_bytes(
+                    self.raw(32)?
+                        .try_into()
+                        .expect("source semantic type width"),
+                );
+                let (policy, fade) = self.drop_policy()?;
+                (
+                    Kind::RegistryDrop {
+                        key,
+                        presence,
+                        item_type,
+                        policy,
+                    },
+                    fade,
+                )
+            }
             _ => return Err(self.invalid("effect tag")),
         };
         Ok(Row {

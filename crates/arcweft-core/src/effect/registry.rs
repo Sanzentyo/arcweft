@@ -20,13 +20,57 @@ mod scope;
 pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 pub(crate) use scope::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
 
-pub(crate) use scope::RuntimePreparedRegistryWrite;
+pub(crate) use scope::{
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
+};
 
-/// The checked presence requirement for a lifetime-registry value read.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+/// The checked presence requirement for an operation on a reached registry row.
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
 pub enum RuntimeRegistryReadKind {
     Required,
     Optional,
+}
+
+/// Static coordinates of one destructive registry operation. The execution
+/// owner still grants the reached activation and validates the original item.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeRegistryDropTarget<Type> {
+    key: LifetimeRegistryKey,
+    presence: RuntimeRegistryReadKind,
+    item_type: Type,
+}
+
+impl<Type> RuntimeRegistryDropTarget<Type> {
+    pub fn new(
+        key: LifetimeRegistryKey,
+        presence: RuntimeRegistryReadKind,
+        item_type: Type,
+    ) -> Self {
+        Self {
+            key,
+            presence,
+            item_type,
+        }
+    }
+
+    pub fn key(&self) -> &LifetimeRegistryKey {
+        &self.key
+    }
+
+    pub const fn presence(&self) -> RuntimeRegistryReadKind {
+        self.presence
+    }
+
+    pub const fn item_type(&self) -> &Type {
+        &self.item_type
+    }
+
+    pub fn with_item_type<Target>(&self, item_type: Target) -> RuntimeRegistryDropTarget<Target> {
+        RuntimeRegistryDropTarget::new(self.key.clone(), self.presence, item_type)
+    }
 }
 
 /// Replayable update data admitted by the exact executable that produced it.

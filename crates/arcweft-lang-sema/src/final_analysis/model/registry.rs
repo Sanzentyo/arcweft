@@ -1,5 +1,6 @@
 //! Checked source operands for the lifetime registry.
 
+use arcweft_core::effect::{RuntimeRegistryDropTarget, RuntimeRegistryReadKind};
 use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
 use std::sync::Arc;
 
@@ -51,7 +52,7 @@ impl<'a> RegistryLexicalActivation<'a> {
                 (
                     HirSemanticPathStep::StatementBody(role),
                     HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. }),
-                ) if *role != HirStatementBodyRole::CancelRule => {}
+                ) if *role != HirStatementBodyRole::CancelRule || line.is_some() => {}
                 (
                     _,
                     HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. })
@@ -78,7 +79,7 @@ impl<'a> RegistryLexicalActivation<'a> {
 pub struct CheckedRegistryRead {
     owner: ExprId,
     key: Arc<LifetimeRegistryKey>,
-    kind: arcweft_core::effect::RuntimeRegistryReadKind,
+    kind: RuntimeRegistryReadKind,
 }
 
 impl CheckedRegistryRead {
@@ -107,9 +108,9 @@ impl CheckedRegistryRead {
             });
         };
         let kind = if path.optional() {
-            arcweft_core::effect::RuntimeRegistryReadKind::Optional
+            RuntimeRegistryReadKind::Optional
         } else {
-            arcweft_core::effect::RuntimeRegistryReadKind::Required
+            RuntimeRegistryReadKind::Required
         };
         Ok((
             Self {
@@ -130,18 +131,56 @@ impl CheckedRegistryRead {
         Arc::clone(&self.key)
     }
 
-    pub const fn kind(&self) -> arcweft_core::effect::RuntimeRegistryReadKind {
+    pub const fn kind(&self) -> RuntimeRegistryReadKind {
         self.kind
     }
 
     pub fn matches_path(&self, owner: ExprId, path: &HirLifetimeRegistryPath) -> bool {
         self.owner == owner
             && self.key == *path.key()
-            && path.optional()
-                == matches!(
-                    self.kind,
-                    arcweft_core::effect::RuntimeRegistryReadKind::Optional
-                )
+            && path.optional() == matches!(self.kind, RuntimeRegistryReadKind::Optional)
+    }
+}
+
+/// The checked address and original item type of a destructive registry operand.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedRegistryDrop {
+    address: ExprId,
+    argument: crate::callable::CheckedCallExecutionSource,
+    target: RuntimeRegistryDropTarget<TypeKind>,
+}
+
+impl CheckedRegistryDrop {
+    pub(in crate::final_analysis) fn new(
+        read: &CheckedRegistryRead,
+        argument: crate::callable::CheckedCallExecutionSource,
+        item: TypeKind,
+    ) -> Self {
+        Self {
+            address: read.owner,
+            argument,
+            target: RuntimeRegistryDropTarget::new(read.key().clone(), read.kind(), item),
+        }
+    }
+
+    pub const fn address(&self) -> ExprId {
+        self.address
+    }
+
+    pub const fn argument(&self) -> &crate::callable::CheckedCallExecutionSource {
+        &self.argument
+    }
+
+    pub fn uses_pipe_address(&self) -> bool {
+        self.address != self.argument.owner()
+    }
+
+    pub const fn target(&self) -> &RuntimeRegistryDropTarget<TypeKind> {
+        &self.target
+    }
+
+    pub fn effect(&self) -> EffectId {
+        EffectId::state_write(self.target.key())
     }
 }
 

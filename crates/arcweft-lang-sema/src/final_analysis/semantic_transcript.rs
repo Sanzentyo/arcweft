@@ -1705,16 +1705,55 @@ fn write_effect_operation(
         CheckedEvaluatedEffectOperation::Drop { target, invocation } => {
             transcript_update!(hasher, &[8]);
             write_effect_operand(hasher, target)?;
-            match invocation {
-                super::CheckedDropInvocation::Drop => transcript_update!(hasher, &[0]),
-                super::CheckedDropInvocation::DropOptional => transcript_update!(hasher, &[1]),
-                super::CheckedDropInvocation::DropWithPolicy { source, policy } => {
-                    transcript_update!(hasher, &[2]);
-                    write_effect_operand(hasher, source.operand())?;
-                    write_drop_policy(hasher, policy)?;
-                }
-            }
+            write_drop_invocation(hasher, invocation)?;
         }
+        CheckedEvaluatedEffectOperation::RegistryDrop { target, invocation } => {
+            transcript_update!(hasher, &[10]);
+            transcript_update!(hasher, &target.argument().coordinate().canonical_bytes()?);
+            let target = target.target();
+            write_registry_key(hasher, target.key(), target.presence())?;
+            transcript_update!(
+                hasher,
+                target.item_type().semantic_identity_digest()?.as_bytes()
+            );
+            write_drop_invocation(hasher, invocation)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_drop_invocation(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    invocation: &super::CheckedDropInvocation,
+) -> Result<(), SemanticTranscriptError> {
+    match invocation {
+        super::CheckedDropInvocation::Drop => transcript_update!(hasher, &[0]),
+        super::CheckedDropInvocation::DropOptional => transcript_update!(hasher, &[1]),
+        super::CheckedDropInvocation::DropWithPolicy { source, policy } => {
+            transcript_update!(hasher, &[2]);
+            write_effect_operand(hasher, source.operand())?;
+            write_drop_policy(hasher, policy)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_registry_key(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    key: &arcweft_id::LifetimeRegistryKey,
+    kind: arcweft_core::effect::RuntimeRegistryReadKind,
+) -> Result<(), SemanticTranscriptError> {
+    let presence = match kind {
+        arcweft_core::effect::RuntimeRegistryReadKind::Required => 0,
+        arcweft_core::effect::RuntimeRegistryReadKind::Optional => 1,
+    };
+    transcript_update!(hasher, &[presence, key.scope().semantic_tag()]);
+    if let arcweft_id::LifetimeScopeKind::Named(name) = key.scope() {
+        write_bytes(hasher, name.as_str().as_bytes())?;
+    }
+    write_len(hasher, key.segments().len())?;
+    for segment in key.segments() {
+        write_bytes(hasher, segment.as_str().as_bytes())?;
     }
     Ok(())
 }
@@ -3042,19 +3081,7 @@ fn write_value_resolution(
             transcript_update!(hasher, &coordinates.binding(*local)?.canonical_bytes()?);
         }
         CheckedValueResolution::RegistryRead(read) => {
-            let key = read.key();
-            let presence = match read.kind() {
-                arcweft_core::effect::RuntimeRegistryReadKind::Required => 0,
-                arcweft_core::effect::RuntimeRegistryReadKind::Optional => 1,
-            };
-            transcript_update!(hasher, &[presence, key.scope().semantic_tag()]);
-            if let arcweft_id::LifetimeScopeKind::Named(name) = key.scope() {
-                write_bytes(hasher, name.as_str().as_bytes())?;
-            }
-            write_len(hasher, key.segments().len())?;
-            for segment in key.segments() {
-                write_bytes(hasher, segment.as_str().as_bytes())?;
-            }
+            write_registry_key(hasher, read.key(), read.kind())?;
         }
         CheckedValueResolution::LineContext => {}
         CheckedValueResolution::CharacterField {

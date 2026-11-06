@@ -101,10 +101,10 @@ impl AwbcProgram {
                     "Action delivery requires its original program and execution context",
                 ));
             }
-            AwbcEffectKind::RegistryWrite => {
+            AwbcEffectKind::RegistryWrite | AwbcEffectKind::RegistryDrop => {
                 return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
                     RuntimeDiagnosticCategory::Internal,
-                    "registry writes require their original program and execution context",
+                    "registry mutations require their original program and execution context",
                 ));
             }
             AwbcEffectKind::Wait => {

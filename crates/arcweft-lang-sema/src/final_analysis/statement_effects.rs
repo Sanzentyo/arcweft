@@ -1942,10 +1942,16 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
+                let mut direct = application.core().effects().constant_effects()?;
+                if let super::CheckedEvaluatedEffectOperation::RegistryDrop { target, .. } =
+                    checked_effect.operation()
+                {
+                    direct.insert(target.effect());
+                }
                 Ok(CompletedStatementEffectFold::evaluated_effect(
                     child_effects,
                     effect.application_digest(),
-                    application.core().effects().constant_effects()?,
+                    direct,
                 ))
             }
             CheckedStatementPayload::Structural

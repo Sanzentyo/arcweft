@@ -3084,6 +3084,49 @@ entry cli @entry.main {{ goto @flow.main }}
 }
 
 #[test]
+fn source_registry_drop_removes_only_the_reached_key() {
+    for drop in [
+        "drop('flow.flags.seen)",
+        "drop_optional('flow.flags.seen?)",
+        "'flow.flags.seen |> drop(^)",
+        "'flow.flags.seen? |> drop_optional(^)",
+        "drop(.Stop(fade = 120ms))('flow.flags.seen)",
+    ] {
+        let compiled = compile_source(&format!(
+            r#"
+flow main() -> Unit effects {{ state.write('flow), log.write }} {{
+    'flow.flags.seen <- true
+    'flow.flags.sibling <- "still present"
+    {drop}
+    let seen: Option<bool> = 'flow.flags.seen?
+    if let .None = seen {{ log.info('flow.flags.sibling) }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#,
+        ))
+        .unwrap_or_else(|error| panic!("{drop} failed to compile: {error:?}"));
+        assert_simple_flow_logs_native_and_awbc(&compiled, &["still present"]);
+    }
+}
+
+#[test]
+fn source_optional_registry_drop_admits_an_absent_key() {
+    let compiled = compile_source(
+        r#"
+flow main() -> Unit effects { state.write('flow), log.write } {
+    if false { 'flow.flags.seen <- true }
+    drop_optional('flow.flags.seen?)
+    let observed: Option<bool> = 'flow.flags.seen?
+    if let .None = observed { log.info("absent") }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("the optional drop admits an absent row with a known item type");
+    assert_simple_flow_logs_native_and_awbc(&compiled, &["absent"]);
+}
+
+#[test]
 fn source_inferred_optional_registry_read_admits_absence_and_registration() {
     for (register, pattern, expected) in [
         (true, ".Some(true)", "present"),
@@ -3249,6 +3292,80 @@ entry cli @entry.main { goto @flow.main }
     logs.retain(|message| message != "sibling-writer");
     assert_eq!(before, logs.len() + 1);
     assert_eq!(logs, expected);
+}
+
+#[test]
+fn source_registry_drop_during_line_cancellation_survives_awbc_restore() {
+    use arcweft_core::{
+        effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
+        task::RuntimeProgramOwner,
+    };
+
+    let source = r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('flow), state.write('line), log.write } {
+    'flow.saved <- true
+    let result = alice()[本文。[p]] with {
+        init { 'line.saved <- true }
+        cancel on input(.SkipLine) {
+            drop_optional('line.saved?)
+            let line_saved: Option<bool> = 'line.saved?
+            if let .None = line_saved { log.info("line removed") }
+            drop_optional('flow.saved?)
+            out "cancelled"
+        }
+        out "completed"
+    }
+    log.info(result)
+    let flow_saved: Option<bool> = 'flow.saved?
+    if let .None = flow_saved { log.info("flow removed") }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let (compiled, awbc) = compile_nested_awbc(source);
+    let runtime = compiled.runtime_plan();
+    let [flow] = runtime.plan.flows() else {
+        panic!("one executable Flow");
+    };
+    let mut plan = runtime.plan.clone();
+    plan.bind_artifact(
+        RuntimeArtifactFingerprint::try_from_bytes(*blake3::hash(source.as_bytes()).as_bytes())
+            .unwrap(),
+    )
+    .unwrap();
+    let mut native = Engine::for_flow(plan, &flow.id).unwrap();
+    let native_schema = bind_test_character_dialogue_schema(
+        &compiled,
+        RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut native_backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+    );
+    let native_logs = execute_dialogue_result_with_action(
+        |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+        true,
+        "Native registry drop on cancellation",
+        1,
+    );
+
+    let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut awbc_backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+    );
+    let mut awbc = Some(awbc);
+    let awbc_logs = execute_dialogue_result_with_action(
+        |input, options| {
+            let mut current = awbc.take().unwrap();
+            let result = current.step_with_pure_backend(input, options, &mut awbc_backend);
+            awbc = Some(roundtrip_nested_awbc(current).0);
+            result
+        },
+        true,
+        "decoded AWBC registry drop on cancellation",
+        1,
+    );
+    assert_eq!(native_logs, ["line removed", "cancelled", "flow removed"]);
+    assert_eq!(awbc_logs, native_logs);
 }
 
 const NESTED_LINE_REGISTRY_SOURCE: &str = r#"

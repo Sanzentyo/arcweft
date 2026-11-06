@@ -5538,6 +5538,7 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
         (AwbcEffectKind::Continue, true),
         (AwbcEffectKind::RegistryWrite, false),
         (AwbcEffectKind::EmitAction, false),
+        (AwbcEffectKind::RegistryDrop, false),
     ];
 
     assert_eq!(cases.map(|(kind, _)| kind).as_slice(), AwbcEffectKind::ALL);
@@ -7719,7 +7720,10 @@ fn await_many_product_program_with_thread(
 
 fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffectPlanId {
     let static_arg_count = match kind {
-        AwbcEffectKind::Audio | AwbcEffectKind::RegistryWrite | AwbcEffectKind::EmitAction => 0,
+        AwbcEffectKind::Audio
+        | AwbcEffectKind::RegistryWrite
+        | AwbcEffectKind::RegistryDrop
+        | AwbcEffectKind::EmitAction => 0,
         AwbcEffectKind::Call
         | AwbcEffectKind::SignalWrite
         | AwbcEffectKind::MetricWrite
@@ -7770,6 +7774,17 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
                 Box::new([]),
             ),
             value_type: AwbcTypeId(0),
+        },
+        AwbcEffectKind::RegistryDrop => crate::awbc::schema::AwbcEffectPayload::RegistryDrop {
+            target: crate::effect::RuntimeRegistryDropTarget::new(
+                arcweft_id::LifetimeRegistryKey::new(
+                    arcweft_id::LifetimeScopeKind::Flow,
+                    Box::new([]),
+                ),
+                crate::effect::RuntimeRegistryReadKind::Required,
+                AwbcTypeId(0),
+            ),
+            policy: crate::effect::RuntimeDropPolicyKind::Default,
         },
         AwbcEffectKind::EmitAction => crate::awbc::schema::AwbcEffectPayload::EmitAction {
             payload_type: AwbcTypeId(0),

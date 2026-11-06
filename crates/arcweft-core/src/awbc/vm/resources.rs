@@ -4,7 +4,8 @@ use super::{
     AwbcProgram, AwbcRegisterId, FiberState, FiberStateError, VmError, VmExecutionContext,
 };
 use crate::effect::{
-    RuntimePreparedRegistryWrite, RuntimeRegistryOwner, RuntimeRegistryReadKind,
+    RuntimeDropPolicyKind, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
+    RuntimeRegistryDropTarget, RuntimeRegistryOwner, RuntimeRegistryReadKind,
     RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource, RuntimeScopeRegistry,
 };
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
@@ -25,7 +26,7 @@ pub(crate) struct VmDialogueRegistryAccess<'a> {
     pub(crate) owner: RuntimeRegistryOwner,
     pub(crate) rows: &'a RuntimeScopeRegistry,
     pub(crate) admission: &'a mut RuntimeRetainedValueAdmission,
-    pub(crate) pending: &'a mut Option<(RuntimeRegistryOwner, RuntimePreparedRegistryWrite)>,
+    pub(crate) pending: &'a mut Option<(RuntimeRegistryOwner, RuntimePreparedRegistryMutation)>,
 }
 
 impl VmDialogueRegistryAccess<'_> {
@@ -79,7 +80,9 @@ impl VmDialogueRegistryAccess<'_> {
         drop(transfer.commit(fiber.active_frame_mut()?));
         *self.pending = Some((
             self.owner,
-            RuntimePreparedRegistryWrite::new(position, source, update),
+            RuntimePreparedRegistryMutation::Write(RuntimePreparedRegistryWrite::new(
+                position, source, update,
+            )),
         ));
         Ok(())
     }
@@ -238,6 +241,103 @@ impl VmExecutionResources<'_> {
         fiber.frames[destination]
             .flow_registry
             .commit(position, write_source, update);
+        Ok(())
+    }
+
+    pub(super) fn registry_drop(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+        target: &RuntimeRegistryDropTarget<crate::awbc::schema::AwbcTypeId>,
+        policy: RuntimeDropPolicyKind,
+        args: &[AwbcRegisterId],
+    ) -> Result<(), VmError> {
+        use arcweft_id::LifetimeScopeKind;
+        let missing = crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired;
+        let admitted = self
+            .context
+            .ok_or(missing.clone())?
+            .admitted_program(program)
+            .map_err(|_| missing.clone())?;
+        let destination = match target.key().scope() {
+            LifetimeScopeKind::Flow => fiber.reached_flow_frame_index(program),
+            LifetimeScopeKind::Line => None,
+            _ => return Err(missing.into()),
+        };
+        let ty = program
+            .runtime_types
+            .get(target.item_type().index())
+            .ok_or(FiberStateError::InvalidFrame)?
+            .semantic_identity();
+        let frame = fiber.active_frame()?;
+        match (policy, args) {
+            (RuntimeDropPolicyKind::Stop, [fade]) => {
+                if !matches!(
+                    frame.register(*fade)?,
+                    crate::value::RuntimeValue::Duration(_)
+                ) {
+                    return Err(FiberStateError::InvalidFrame.into());
+                }
+            }
+            (RuntimeDropPolicyKind::Stop, _) | (_, [_, ..]) => {
+                return Err(FiberStateError::InvalidFrame.into());
+            }
+            (_, []) => {}
+        }
+        let transfer = frame.prepare_register_values(program, args)?;
+        let binding = frame.type_instantiation.as_deref();
+        if let Some(index) = destination {
+            let mut admission = admitted
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+            fiber
+                .admit_retained(&mut admission)
+                .map_err(FiberStateError::Snapshot)?;
+            let reached = &fiber.frames[index];
+            let removal = reached
+                .flow_registry
+                .prepare_drop(
+                    RuntimeRegistryOwner::AwbcFlow {
+                        fiber: fiber.instance,
+                        frame: reached.instance,
+                    },
+                    target.key(),
+                    target.presence(),
+                    ty,
+                    binding,
+                    &mut admission,
+                )
+                .map_err(FiberStateError::Snapshot)?;
+            removal
+                .commit(&mut fiber.frames[index].flow_registry)
+                .map_err(FiberStateError::Snapshot)?;
+        } else {
+            let reached = self.dialogue_registry.as_mut().ok_or(missing)?;
+            if reached.pending.is_some() {
+                return Err(FiberStateError::InvalidFrame.into());
+            }
+            let removal = reached
+                .rows
+                .prepare_drop(
+                    reached.owner,
+                    target.key(),
+                    target.presence(),
+                    ty,
+                    binding,
+                    reached.admission,
+                )
+                .map_err(FiberStateError::Snapshot)?;
+            *reached.pending = Some((
+                reached.owner,
+                RuntimePreparedRegistryMutation::Drop(removal),
+            ));
+        }
+        drop(
+            transfer.commit(
+                fiber
+                    .active_frame_mut()
+                    .expect("the validated frame is still active"),
+            ),
+        );
         Ok(())
     }
 

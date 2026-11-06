@@ -1956,17 +1956,6 @@ fn verify_effect_payload_shape(
                 &format!("effect plan {effect_index}"),
             )?;
             let signature = &program.signatures[effect.signature.index()];
-            if effect
-                .capability
-                .and_then(|id| program.strings.get(id.index()))
-                .is_none_or(|name| name != EffectId::STATE_WRITE_LABEL)
-            {
-                return Err(malformed_effect_payload(
-                    effect_index,
-                    effect.kind(),
-                    "registry write requires its state.write host capability",
-                ));
-            }
             if signature.params.as_slice() != [*value_type] || signature.result.is_some() {
                 return Err(malformed_effect_payload(
                     effect_index,
@@ -1974,27 +1963,46 @@ fn verify_effect_payload_shape(
                     "registry write requires exactly its original value type and no result",
                 ));
             }
-            let required = EffectId::state_write(key);
-            let declared = &program.effect_sets[signature.effects.index()];
-            let mut covered = false;
-            for effect in &declared.effects {
-                let actual = EffectId::parse(program.strings[effect.index()].as_str()).map_err(
-                    |source| AwbcVerifyError::InvalidEffectIdentity {
-                        effect: effect.0,
-                        source,
-                    },
-                )?;
-                covered |= actual.covers(&required);
-            }
-            if !covered {
+            verify_registry_effect_authority(program, effect_index, effect, key)
+        }
+        AwbcEffectKind::RegistryDrop => {
+            use crate::effect::RuntimeDropPolicyKind;
+            let AwbcEffectPayload::RegistryDrop { target, policy } = &effect.payload else {
+                unreachable!("effect kind is derived from its payload");
+            };
+            check_index(
+                program.runtime_types.len(),
+                target.item_type().0,
+                "runtime_types",
+                &format!("effect plan {effect_index}"),
+            )?;
+            if !matches!(
+                target.key().scope(),
+                arcweft_id::LifetimeScopeKind::Flow | arcweft_id::LifetimeScopeKind::Line
+            ) {
                 return Err(malformed_effect_payload(
                     effect_index,
                     effect.kind(),
-                    "registry key is not covered by the original declared effect row",
+                    "registry drop requires a reached Flow or Line scope",
                 ));
             }
-            Ok(())
+            let signature = &program.signatures[effect.signature.index()];
+            let valid_params = if *policy == RuntimeDropPolicyKind::Stop {
+                matches!(signature.params.as_slice(), [fade]
+                    if matches!(program.runtime_types.get(fade.index()).map(AwbcRuntimeType::shape), Some(AwbcRuntimeTypeShape::Duration)))
+            } else {
+                signature.params.is_empty()
+            };
+            if !valid_params || signature.result.is_some() {
+                return Err(malformed_effect_payload(
+                    effect_index,
+                    effect.kind(),
+                    "registry drop accepts only its Stop Duration operand and no result",
+                ));
+            }
+            verify_registry_effect_authority(program, effect_index, effect, target.key())
         }
+
         AwbcEffectKind::Call => {
             require_effect_static_minimum(effect_index, effect.kind(), static_count, 1)?;
             require_effect_parameter_count(effect_index, effect.kind(), parameter_count, &[0])
@@ -2159,6 +2167,47 @@ fn require_effect_parameter_count(
         kind,
         format!("expected evaluated argument count in {allowed:?}, found {actual}"),
     ))
+}
+
+fn verify_registry_effect_authority(
+    program: &AwbcProgram,
+    effect_index: usize,
+    effect: &AwbcEffectPlan,
+    key: &arcweft_id::LifetimeRegistryKey,
+) -> Result<(), AwbcVerifyError> {
+    if effect
+        .capability
+        .and_then(|id| program.strings.get(id.index()))
+        .is_none_or(|name| name != EffectId::STATE_WRITE_LABEL)
+    {
+        return Err(malformed_effect_payload(
+            effect_index,
+            effect.kind(),
+            "registry mutation requires its state.write capability",
+        ));
+    }
+    let signature = &program.signatures[effect.signature.index()];
+    let required = EffectId::state_write(key);
+    let declared = &program.effect_sets[signature.effects.index()];
+    let mut covered = false;
+    for effect in &declared.effects {
+        let actual =
+            EffectId::parse(program.strings[effect.index()].as_str()).map_err(|source| {
+                AwbcVerifyError::InvalidEffectIdentity {
+                    effect: effect.0,
+                    source,
+                }
+            })?;
+        covered |= actual.covers(&required);
+    }
+    if !covered {
+        return Err(malformed_effect_payload(
+            effect_index,
+            effect.kind(),
+            "registry key is not covered by the original declared effect row",
+        ));
+    }
+    Ok(())
 }
 
 fn malformed_effect_payload(

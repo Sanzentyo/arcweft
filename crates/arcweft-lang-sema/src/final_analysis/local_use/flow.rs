@@ -143,6 +143,13 @@ pub(super) enum Event {
         kind: RuntimeRegistryReadKind,
         concurrency: RegistryConcurrency,
     },
+    RegistryDrop {
+        owner: ExprId,
+        address: RegistryAddress,
+        ty: Arc<TypeKind>,
+        kind: RuntimeRegistryReadKind,
+        concurrency: RegistryConcurrency,
+    },
     ForgetRegistryWrites(RegistrySite, Box<[EffectId]>),
     DeferredRegistryWrites(RegistrySite, Box<[EffectId]>),
     ScheduledRegistryWrites(RegistrySite, Option<Box<[EffectId]>>),
@@ -270,6 +277,11 @@ impl Initialization {
                     self.registry.register(address, ty);
                 }
             }
+            Event::RegistryDrop { address, .. } => {
+                if registry_keys.contains_key(address) {
+                    self.registry.remove(address);
+                }
+            }
             Event::ForgetRegistryWrites(site, effects)
             | Event::DeferredRegistryWrites(site, effects) => {
                 self.registry.invalidate_writes(
@@ -382,6 +394,7 @@ impl OwnershipFlow {
         for node in scheduled_events {
             match &node.event {
                 Event::RegistryWrite { address, ty } => interference.write(address, ty),
+                Event::RegistryDrop { address, .. } => interference.remove(address),
                 Event::ForgetRegistryWrites(site, effects)
                 | Event::DeferredRegistryWrites(site, effects) => {
                     interference.opaque_writes(*site, Some(effects));
@@ -445,12 +458,11 @@ impl OwnershipFlow {
     pub(super) fn registry_reads(&self) -> BTreeSet<ExprId> {
         self.nodes
             .iter()
-            .filter_map(|node| {
-                if let Event::RegistryRead { owner, .. } = node.event {
+            .filter_map(|node| match node.event {
+                Event::RegistryRead { owner, .. } | Event::RegistryDrop { owner, .. } => {
                     Some(owner)
-                } else {
-                    None
                 }
+                _ => None,
             })
             .collect()
     }
@@ -493,16 +505,18 @@ impl OwnershipFlow {
         rows: &BTreeMap<CheckedLocalUseSite, CheckedLocalAccess>,
         synthetic: &BTreeMap<ExprId, CheckedSyntheticUse>,
     ) -> Result<OwnershipFlowSolution, CheckedLocalUseError> {
-        let registry_keys = self
-            .nodes
-            .iter()
-            .filter_map(|node| {
-                let Event::RegistryRead { address, .. } = &node.event else {
-                    return None;
-                };
-                Some((address.clone(), EffectId::state_write(address.key())))
-            })
-            .collect::<BTreeMap<_, _>>();
+        let registry_keys =
+            self.nodes
+                .iter()
+                .filter_map(|node| {
+                    let address = match &node.event {
+                        Event::RegistryRead { address, .. }
+                        | Event::RegistryDrop { address, .. } => address,
+                        _ => return None,
+                    };
+                    Some((address.clone(), EffectId::state_write(address.key())))
+                })
+                .collect::<BTreeMap<_, _>>();
         let mut incoming = vec![None; self.nodes.len()];
         let mut queue = VecDeque::new();
         for (index, node) in self.nodes.iter().enumerate() {
@@ -556,6 +570,13 @@ impl OwnershipFlow {
                     ty,
                     kind,
                     concurrency,
+                }
+                | Event::RegistryDrop {
+                    owner,
+                    address,
+                    ty,
+                    kind,
+                    concurrency,
                 } => {
                     let fact = self.registry_fact_at_read(
                         address,
@@ -563,7 +584,12 @@ impl OwnershipFlow {
                         *concurrency,
                         state.registry.fact(address).clone(),
                     )?;
-                    if !fact.admits(*kind, ty) {
+                    let admitted = if matches!(node.event, Event::RegistryDrop { .. }) {
+                        fact.admits_drop(*kind, ty)
+                    } else {
+                        fact.admits(*kind, ty)
+                    };
+                    if !admitted {
                         violations.push(Violation::RegistryRead {
                             owner: *owner,
                             key: Arc::clone(address.key()),

@@ -3307,6 +3307,7 @@ awbc_u8_enum! {
         Continue = 18,
         RegistryWrite = 19,
         EmitAction = 20,
+        RegistryDrop = 21,
     }
 }
 

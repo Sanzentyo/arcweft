@@ -271,6 +271,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
             | RuntimeEffectExpr::Ensure { .. }
             | RuntimeEffectExpr::Drop { .. }
             | RuntimeEffectExpr::RegistryWrite { .. }
+            | RuntimeEffectExpr::RegistryDrop { .. }
             | RuntimeEffectExpr::EmitAction { .. }
             | RuntimeEffectExpr::Assert { .. } => false,
         },

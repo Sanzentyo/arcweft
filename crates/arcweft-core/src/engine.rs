@@ -4425,14 +4425,14 @@ impl Engine {
         assert!(self.parked_main.is_none(), "child selection cannot nest");
         self.parked_main = Some(std::mem::replace(&mut self.fiber, child));
         let mut drop_policy = None;
-        let mut line_registry_write = None;
+        let mut line_registry_mutation = None;
         self.step_active_child_fiber(
             input,
             events,
             output,
             pure_backend,
             &mut drop_policy,
-            &mut line_registry_write,
+            &mut line_registry_mutation,
         );
         self.finish_active_child_if_exhausted(output, pure_backend);
         let main = self
@@ -4488,8 +4488,8 @@ impl Engine {
                     .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?,
                 &drops,
             )?;
-            if let Some(write) = line_registry_write {
-                self.commit_dialogue_registry_write(&mut transaction, write)
+            if let Some(write) = line_registry_mutation {
+                self.commit_dialogue_registry_mutation(&mut transaction, write)
                     .map_err(
                         |error| dialogue::DialogueExecutionError::ActivationEffectFailed {
                             message: error.to_string(),
@@ -4881,7 +4881,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
-        line_registry_write: &mut Option<registry::NativeDialogueRegistryWrite>,
+        line_registry_mutation: &mut Option<registry::NativeDialogueRegistryMutation>,
     ) {
         if self.fiber.owner.requests_scope_close() {
             self.close_active_child_fiber(output, pure_backend);
@@ -4899,7 +4899,7 @@ impl Engine {
         }
         if !self.fiber.frame.pending_ops.is_empty() || self.has_active_project_call() {
             let line_registry = matches!(self.fiber.owner, FlowFiberOwner::LineTask(_)).then_some(
-                registry::NativeLineRegistryExecution::Child(line_registry_write),
+                registry::NativeLineRegistryExecution::Child(line_registry_mutation),
             );
             self.step_flow_with_line_registry(output, pure_backend, drop_policy, line_registry);
         }

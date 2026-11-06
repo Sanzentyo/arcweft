@@ -130,6 +130,49 @@ fn registry_effect_rejects_missing_capability_wrong_signature_and_unknown_value_
     }
 }
 
+#[test]
+fn registry_drop_preserves_item_type_presence_and_policy_across_wire() {
+    use crate::effect::{RuntimeDropPolicyKind, RuntimeRegistryDropTarget};
+
+    let mut program = registry_program(
+        LifetimeScopeKind::Flow,
+        &["flags", "seen"],
+        "state.write('flow.flags)",
+    );
+    let AwbcEffectPayload::RegistryWrite { key, .. } = &program.effect_plans[0].payload else {
+        unreachable!()
+    };
+    let item_type = AwbcTypeId(u32::try_from(program.runtime_types.len() - 1).unwrap());
+    let fade_type = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program.effect_plans[0].payload = AwbcEffectPayload::RegistryDrop {
+        target: RuntimeRegistryDropTarget::new(
+            key.clone(),
+            RuntimeRegistryReadKind::Optional,
+            item_type,
+        ),
+        policy: RuntimeDropPolicyKind::Stop,
+    };
+    program
+        .runtime_types
+        .push(runtime_type(2, AwbcRuntimeTypeShape::Duration));
+    program.signatures[1].params = vec![fade_type];
+    let check = |program: &AwbcProgram| {
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+    };
+    check(&program).unwrap();
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(decoded.effect_plans, program.effect_plans);
+    check(&decoded).unwrap();
+    assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+
+    program.signatures[1].params = vec![item_type];
+    assert!(matches!(
+        check(&program),
+        Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
+    ));
+}
+
 fn registry_read_program(kind: RuntimeRegistryReadKind, write: bool) -> AwbcProgram {
     let mut program = registry_program(LifetimeScopeKind::Flow, &["進行"], "state.write('flow)");
     program.runtime_types = vec![AwbcRuntimeType::new(

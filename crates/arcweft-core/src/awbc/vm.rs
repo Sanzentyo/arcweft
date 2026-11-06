@@ -640,12 +640,11 @@ pub(crate) fn dialogue_registry_instruction(
     let key = match super::fiber::instruction_at_site(program, fiber.cursor).ok()? {
         AwbcInstruction::ReadRegistry { key, .. } => key,
         AwbcInstruction::EmitEffect { effect, .. } => {
-            let super::schema::AwbcEffectPayload::RegistryWrite { key, .. } =
-                &program.effect_plans.get(effect.index())?.payload
-            else {
-                return None;
-            };
-            key
+            match &program.effect_plans.get(effect.index())?.payload {
+                super::schema::AwbcEffectPayload::RegistryWrite { key, .. } => key,
+                super::schema::AwbcEffectPayload::RegistryDrop { target, .. } => target.key(),
+                _ => return None,
+            }
         }
         _ => return None,
     };
@@ -2639,6 +2638,14 @@ fn execute_instruction(
                     .map(|plan| &plan.payload)
             {
                 execution.registry_write(program, fiber, *effect, key, *value_type, args)?;
+                return Ok(InstructionControl::Continue);
+            }
+            if let Some(super::schema::AwbcEffectPayload::RegistryDrop { target, policy }) = program
+                .effect_plans
+                .get(effect.index())
+                .map(|plan| &plan.payload)
+            {
+                execution.registry_drop(program, fiber, target, *policy, args)?;
                 return Ok(InstructionControl::Continue);
             }
             if let Some(super::schema::AwbcEffectPayload::EmitAction { payload_type }) = program

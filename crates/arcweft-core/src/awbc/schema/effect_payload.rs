@@ -1,6 +1,7 @@
 //! One effect payload determines its wire identity and complete static data.
 
 use super::{AwbcAudioCommandId, AwbcConstantId, AwbcEffectKind, AwbcTypeId};
+use crate::effect::{RuntimeDropPolicyKind, RuntimeRegistryDropTarget};
 use arcweft_id::LifetimeRegistryKey;
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +33,10 @@ pub enum AwbcEffectPayload {
     },
     EmitAction {
         payload_type: AwbcTypeId,
+    },
+    RegistryDrop {
+        target: RuntimeRegistryDropTarget<AwbcTypeId>,
+        policy: RuntimeDropPolicyKind,
     },
 }
 
@@ -112,7 +117,10 @@ impl TryFrom<(AwbcEffectKind, Vec<AwbcConstantId>)> for AwbcEffectPayload {
             AwbcEffectKind::Select => Self::Select(args),
             AwbcEffectKind::Break => Self::Break(args),
             AwbcEffectKind::Continue => Self::Continue(args),
-            AwbcEffectKind::Audio | AwbcEffectKind::RegistryWrite | AwbcEffectKind::EmitAction => {
+            AwbcEffectKind::Audio
+            | AwbcEffectKind::RegistryWrite
+            | AwbcEffectKind::RegistryDrop
+            | AwbcEffectKind::EmitAction => {
                 return Err(AwbcEffectPayloadError { kind });
             }
         })
@@ -126,7 +134,7 @@ impl AwbcEffectPayload {
         &self,
     ) -> Result<(), crate::effect::RuntimeEffectMaterializeError> {
         match self {
-            Self::RegistryWrite { .. } => {
+            Self::RegistryWrite { .. } | Self::RegistryDrop { .. } => {
                 Err(crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired)
             }
             Self::EmitAction { .. } => {
@@ -177,6 +185,7 @@ impl AwbcEffectPayload {
             Self::Break(_) => AwbcEffectKind::Break,
             Self::Continue(_) => AwbcEffectKind::Continue,
             Self::RegistryWrite { .. } => AwbcEffectKind::RegistryWrite,
+            Self::RegistryDrop { .. } => AwbcEffectKind::RegistryDrop,
             Self::EmitAction { .. } => AwbcEffectKind::EmitAction,
         }
     }
@@ -205,6 +214,7 @@ impl AwbcEffectPayload {
             Self::Wait(AwbcWaitDuration::Input)
             | Self::Audio(_)
             | Self::RegistryWrite { .. }
+            | Self::RegistryDrop { .. }
             | Self::EmitAction { .. } => &[],
         }
     }

@@ -11,10 +11,16 @@ mod registry;
 pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
-pub(crate) use registry::RuntimePreparedRegistryWrite;
+pub(crate) use registry::{
+    PreparedRegistryValue, RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError,
+};
+pub(crate) use registry::{
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
+};
+pub use registry::{
+    RuntimeRegistryDropTarget, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
+};
 pub(crate) use registry::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
-pub use registry::{RuntimeRegistryReadKind, RuntimeRegistryStateUpdate};
-pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LineEffectRequest {
@@ -83,6 +89,10 @@ pub enum RuntimeEffectExpr<Expression = RuntimeExpr> {
         key: arcweft_id::LifetimeRegistryKey,
         value: Expression,
     },
+    RegistryDrop {
+        target: RuntimeRegistryDropTarget<crate::pattern::RuntimeSemanticTypeId>,
+        policy: RuntimeDropPolicyExpr<Expression>,
+    },
     EmitEvent {
         event: Expression,
         fields: Vec<RuntimeEffectFieldExpr<Expression>>,
@@ -125,7 +135,7 @@ pub enum RuntimeEffectMaterializeError {
     AssertionConditionNotBool,
     #[error("runtime wait target must evaluate to Duration")]
     WaitTargetNotDuration,
-    #[error("registry writes require their original program and owning execution context")]
+    #[error("registry mutations require their original program and owning execution context")]
     RegistryContextRequired,
     #[error("the original function does not authorize registry effect `{effect}`")]
     RegistryWriteNotAuthorized { effect: arcweft_id::EffectId },
@@ -166,7 +176,7 @@ impl RuntimeDropPolicy {
 }
 
 /// Payload-independent identity used for typed drop-policy projections.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RuntimeDropPolicyKind {
     Default,
     Cancel,
@@ -177,6 +187,29 @@ pub enum RuntimeDropPolicyKind {
 }
 
 impl RuntimeDropPolicyKind {
+    pub(crate) const fn wire_tag(self) -> u8 {
+        match self {
+            Self::Default => 0,
+            Self::Cancel => 1,
+            Self::Stop => 2,
+            Self::Finish => 3,
+            Self::Release => 4,
+            Self::Detach => 5,
+        }
+    }
+
+    pub(crate) const fn from_wire_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::Default,
+            1 => Self::Cancel,
+            2 => Self::Stop,
+            3 => Self::Finish,
+            4 => Self::Release,
+            5 => Self::Detach,
+            _ => return None,
+        })
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::Default => "default",
@@ -202,6 +235,20 @@ pub enum RuntimeDropPolicyExpr<Expression = RuntimeExpr> {
 }
 
 impl<Expression> RuntimeDropPolicyExpr<Expression> {
+    fn try_map_expression<Target, Error>(
+        self,
+        map: &mut impl FnMut(Expression) -> Result<Target, Error>,
+    ) -> Result<RuntimeDropPolicyExpr<Target>, Error> {
+        Ok(match self {
+            Self::Default => RuntimeDropPolicyExpr::Default,
+            Self::Cancel => RuntimeDropPolicyExpr::Cancel,
+            Self::Stop { fade } => RuntimeDropPolicyExpr::Stop { fade: map(fade)? },
+            Self::Finish => RuntimeDropPolicyExpr::Finish,
+            Self::Release => RuntimeDropPolicyExpr::Release,
+            Self::Detach => RuntimeDropPolicyExpr::Detach,
+        })
+    }
+
     #[must_use]
     pub const fn kind(&self) -> RuntimeDropPolicyKind {
         match self {
@@ -220,6 +267,14 @@ impl<Expression> RuntimeDropPolicyExpr<Expression> {
 }
 
 impl<Expression> RuntimeEffectExpr<Expression> {
+    pub fn registry_mutation_key(&self) -> Option<&arcweft_id::LifetimeRegistryKey> {
+        match self {
+            Self::RegistryWrite { key, .. } => Some(key),
+            Self::RegistryDrop { target, .. } => Some(target.key()),
+            _ => None,
+        }
+    }
+
     /// Returns value expressions in the stable ABI order consumed by
     /// `materialize` and AWBC `EmitEffect.args`.
     pub fn argument_exprs(&self) -> Vec<&Expression> {
@@ -267,6 +322,11 @@ impl<Expression> RuntimeEffectExpr<Expression> {
                     visit(fade);
                 }
             }
+            Self::RegistryDrop { policy, .. } => {
+                if let RuntimeDropPolicyExpr::Stop { fade } = policy {
+                    visit(fade);
+                }
+            }
             Self::Assert { condition, .. } => visit(condition),
         }
     }
@@ -303,6 +363,10 @@ impl<Expression> RuntimeEffectExpr<Expression> {
                 }
                 expressions
             }
+            Self::RegistryDrop { policy, .. } => match policy {
+                RuntimeDropPolicyExpr::Stop { fade } => vec![fade],
+                _ => Vec::new(),
+            },
             Self::Assert { condition, .. } => vec![condition],
         }
     }
@@ -358,17 +422,13 @@ impl<Expression> RuntimeEffectExpr<Expression> {
             },
             Self::Drop { target, policy } => RuntimeEffectExpr::Drop {
                 target: map(target)?,
-                policy: match policy {
-                    RuntimeDropPolicyExpr::Default => RuntimeDropPolicyExpr::Default,
-                    RuntimeDropPolicyExpr::Cancel => RuntimeDropPolicyExpr::Cancel,
-                    RuntimeDropPolicyExpr::Stop { fade } => {
-                        RuntimeDropPolicyExpr::Stop { fade: map(fade)? }
-                    }
-                    RuntimeDropPolicyExpr::Finish => RuntimeDropPolicyExpr::Finish,
-                    RuntimeDropPolicyExpr::Release => RuntimeDropPolicyExpr::Release,
-                    RuntimeDropPolicyExpr::Detach => RuntimeDropPolicyExpr::Detach,
-                },
+                policy: policy.try_map_expression(&mut map)?,
             },
+            Self::RegistryDrop { target, policy } => RuntimeEffectExpr::RegistryDrop {
+                target,
+                policy: policy.try_map_expression(&mut map)?,
+            },
+
             Self::Assert {
                 guard,
                 condition,
@@ -406,6 +466,7 @@ impl RuntimeEffectExpr {
             Self::Wait(_)
             | Self::Drop { .. }
             | Self::RegistryWrite { .. }
+            | Self::RegistryDrop { .. }
             | Self::EmitAction { .. } => return None,
             Self::Log { level, fields, .. } => LineEffectRequest::Log(RuntimeLog {
                 level: level.clone(),
@@ -501,7 +562,7 @@ impl RuntimeEffectExpr {
                 message: labels[1].clone(),
             },
             Self::Drop { .. } => return Ok(None),
-            Self::RegistryWrite { .. } => {
+            Self::RegistryWrite { .. } | Self::RegistryDrop { .. } => {
                 return Err(RuntimeEffectMaterializeError::RegistryContextRequired);
             }
             Self::EmitAction { .. } => {
@@ -525,7 +586,7 @@ impl RuntimeEffectExpr {
     /// any operand. A static key does not grant an active registry scope.
     pub(crate) fn require_context_free(&self) -> Result<(), RuntimeEffectMaterializeError> {
         match self {
-            Self::RegistryWrite { .. } => {
+            Self::RegistryWrite { .. } | Self::RegistryDrop { .. } => {
                 Err(RuntimeEffectMaterializeError::RegistryContextRequired)
             }
             Self::EmitAction { .. } => Err(RuntimeEffectMaterializeError::ActionContextRequired),
@@ -809,6 +870,7 @@ impl RuntimeEffectExpr {
             Self::Assert { .. } => 9,
             Self::RegistryWrite { .. } => 10,
             Self::EmitAction { .. } => 12,
+            Self::RegistryDrop { .. } => 13,
         });
         match self {
             Self::Log { level, fields, .. } => {
@@ -829,14 +891,17 @@ impl RuntimeEffectExpr {
             Self::RegistryWrite { key, .. } => {
                 encoder.lifetime_registry_key(key);
             }
-            Self::Drop { policy, .. } => encoder.tag(match policy {
-                RuntimeDropPolicyExpr::Default => 0,
-                RuntimeDropPolicyExpr::Cancel => 1,
-                RuntimeDropPolicyExpr::Stop { .. } => 2,
-                RuntimeDropPolicyExpr::Finish => 3,
-                RuntimeDropPolicyExpr::Release => 4,
-                RuntimeDropPolicyExpr::Detach => 5,
-            }),
+            Self::Drop { policy, .. } => encoder.tag(policy.kind().wire_tag()),
+            Self::RegistryDrop { target, policy } => {
+                encoder.lifetime_registry_key(target.key());
+                encoder.tag(match target.presence() {
+                    RuntimeRegistryReadKind::Required => 0,
+                    RuntimeRegistryReadKind::Optional => 1,
+                });
+                encoder.digest(target.item_type().as_bytes());
+                encoder.tag(policy.kind().wire_tag());
+            }
+
             Self::Assert {
                 guard,
                 message,

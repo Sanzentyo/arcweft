@@ -73,27 +73,17 @@ pub(super) fn runtime_evaluated_effect_under(
         CheckedEvaluatedEffectOperation::Drop { target, invocation } => {
             RuntimeEvaluatedEffect::Drop {
                 target: operand(target)?,
-                policy: match invocation {
-                    CheckedDropInvocation::Drop | CheckedDropInvocation::DropOptional => {
-                        RuntimeDropPolicyFact::Default
-                    }
-                    CheckedDropInvocation::DropWithPolicy { policy, .. } => match policy {
-                        CheckedExplicitDropPolicy::Cancel => RuntimeDropPolicyFact::Cancel,
-                        CheckedExplicitDropPolicy::Stop { fade } => RuntimeDropPolicyFact::Stop {
-                            fade: match fade {
-                                CheckedDropFade::Constant(value) => {
-                                    RuntimeDropFadeFact::Constant(*value)
-                                }
-                                CheckedDropFade::Operand(value) => {
-                                    RuntimeDropFadeFact::Operand(operand(value.operand())?)
-                                }
-                            },
-                        },
-                        CheckedExplicitDropPolicy::Finish => RuntimeDropPolicyFact::Finish,
-                        CheckedExplicitDropPolicy::Release => RuntimeDropPolicyFact::Release,
-                        CheckedExplicitDropPolicy::Detach => RuntimeDropPolicyFact::Detach,
-                    },
-                },
+                policy: runtime_drop_policy(invocation, &operand)?,
+            }
+        }
+        CheckedEvaluatedEffectOperation::RegistryDrop { target, invocation } => {
+            let checked = target.target();
+            let item = runtime_type_under(checked.item_type(), instance, symbols, world, analysis)?;
+            RuntimeEvaluatedEffect::RegistryDrop {
+                address: target.address(),
+                argument: target.argument().owner(),
+                target: checked.with_item_type(item),
+                policy: runtime_drop_policy(invocation, &operand)?,
             }
         }
     };
@@ -103,6 +93,33 @@ pub(super) fn runtime_evaluated_effect_under(
         runtime_type_under(effect.result(), instance, symbols, world, analysis)?,
         operation,
     ))
+}
+
+fn runtime_drop_policy(
+    invocation: &CheckedDropInvocation,
+    operand: &impl Fn(
+        &CheckedEvaluatedEffectOperand,
+    ) -> Result<RuntimeEvaluatedEffectOperandFact, RuntimeSemanticProjectionError>,
+) -> Result<RuntimeDropPolicyFact, RuntimeSemanticProjectionError> {
+    Ok(match invocation {
+        CheckedDropInvocation::Drop | CheckedDropInvocation::DropOptional => {
+            RuntimeDropPolicyFact::Default
+        }
+        CheckedDropInvocation::DropWithPolicy { policy, .. } => match policy {
+            CheckedExplicitDropPolicy::Cancel => RuntimeDropPolicyFact::Cancel,
+            CheckedExplicitDropPolicy::Stop { fade } => RuntimeDropPolicyFact::Stop {
+                fade: match fade {
+                    CheckedDropFade::Constant(value) => RuntimeDropFadeFact::Constant(*value),
+                    CheckedDropFade::Operand(value) => {
+                        RuntimeDropFadeFact::Operand(operand(value.operand())?)
+                    }
+                },
+            },
+            CheckedExplicitDropPolicy::Finish => RuntimeDropPolicyFact::Finish,
+            CheckedExplicitDropPolicy::Release => RuntimeDropPolicyFact::Release,
+            CheckedExplicitDropPolicy::Detach => RuntimeDropPolicyFact::Detach,
+        },
+    })
 }
 
 fn runtime_evaluated_effect_operand(

@@ -1078,7 +1078,7 @@ impl Engine {
                 }
             }
             FlowOp::EvaluatedEffect(effect) => {
-                if let crate::effect::RuntimeEffectExpr::RegistryWrite { key, .. } = effect {
+                if let Some(key) = effect.registry_mutation_key() {
                     use super::registry::NativeLineRegistryExecution;
                     let written = match line_registry {
                         Some(NativeLineRegistryExecution::Child(pending))
@@ -1086,7 +1086,7 @@ impl Engine {
                                 || (key.scope() == &arcweft_id::LifetimeScopeKind::Flow
                                     && self.fiber.frame.env.flow_registry().is_none()) =>
                         {
-                            self.stage_child_line_registry_write(&source_site, pure_backend)
+                            self.stage_child_line_registry_mutation(&source_site, pure_backend)
                                 .map(|write| *pending = Some(write))
                         }
                         Some(NativeLineRegistryExecution::Activation(execution))
@@ -1096,13 +1096,13 @@ impl Engine {
                                     | arcweft_id::LifetimeScopeKind::Flow
                             ) =>
                         {
-                            self.stage_borrowed_line_registry_write(
+                            self.stage_borrowed_line_registry_mutation(
                                 &source_site,
                                 execution,
                                 pure_backend,
                             )
                         }
-                        _ => self.execute_registry_write(&source_site, pure_backend),
+                        _ => self.execute_registry_mutation(&source_site, pure_backend),
                     };
                     if let Err(error) = written {
                         self.fail_eval(error, output);

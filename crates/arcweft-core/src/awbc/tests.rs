@@ -7651,6 +7651,7 @@ fn typed_effect_payload_rejects_contextless_audio_registry_and_action_arguments(
         AwbcEffectKind::Audio,
         AwbcEffectKind::RegistryWrite,
         AwbcEffectKind::EmitAction,
+        AwbcEffectKind::RegistryDrop,
     ] {
         assert_eq!(
             crate::awbc::schema::AwbcEffectPayload::try_from((kind, Vec::new())),

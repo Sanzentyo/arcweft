@@ -2313,6 +2313,12 @@ impl<'a> LocalUseChecker<'a> {
                     .analysis
                     .expression(owner)
                     .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                if checked
+                    .execution_plan()
+                    .is_some_and(super::CheckedExpressionExecutionPlan::is_registry_drop_address)
+                {
+                    return Ok(std::ops::ControlFlow::Continue(()));
+                }
                 if let Some(read) = registry_read_requiring_proof(checked) {
                     let address = self
                         .registry_site
@@ -2982,6 +2988,29 @@ impl<'a> LocalUseChecker<'a> {
         owner: ExprId,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
+        if let Some(super::CheckedEvaluatedEffectOperation::RegistryDrop { target, .. }) = self
+            .analysis
+            .expression(owner)
+            .and_then(super::CheckedExpression::evaluated_effect)
+            .map(super::CheckedEvaluatedEffect::operation)
+        {
+            let registry = target.target();
+            let address = self
+                .registry_site
+                .address(Arc::new(registry.key().clone()))
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            let ty = Arc::new(self.closed_type(registry.item_type())?);
+            self.flow.append(
+                state,
+                Event::RegistryDrop {
+                    owner: target.address(),
+                    address,
+                    ty,
+                    kind: registry.presence(),
+                    concurrency: self.registry_concurrency,
+                },
+            );
+        }
         if self.registry_proofs
             && let Some(application) = self
                 .analysis

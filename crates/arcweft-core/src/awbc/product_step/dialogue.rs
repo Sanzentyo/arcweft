@@ -212,30 +212,29 @@ pub(super) fn reached_registry<'a>(
 }
 
 impl AwbcProductStepExecutor {
-    pub(super) fn reserve_reached_registry_write(
+    pub(super) fn reserve_reached_registry_mutation(
         &mut self,
         activation: DialogueActivationId,
         owner: RuntimeRegistryOwner,
         line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
-        write: &crate::effect::RuntimePreparedRegistryWrite,
+        write: &crate::effect::RuntimePreparedRegistryMutation,
     ) -> Result<(), ProductStepError> {
         self.edit_reached_registry(activation, owner, line, false, |rows| {
             write.reserve(rows).map_err(FiberStateError::Snapshot)
         })
     }
 
-    pub(super) fn commit_reached_registry_write(
+    pub(super) fn commit_reached_registry_mutation(
         &mut self,
         activation: DialogueActivationId,
         owner: RuntimeRegistryOwner,
         line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
-        write: crate::effect::RuntimePreparedRegistryWrite,
+        write: crate::effect::RuntimePreparedRegistryMutation,
     ) {
         self.edit_reached_registry(activation, owner, line, true, |rows| {
-            write.commit(rows);
-            Ok(())
+            write.commit(rows).map_err(FiberStateError::Snapshot)
         })
-        .expect("prepared write retains its reached registry");
+        .expect("prepared mutation retains its reached registry");
     }
 
     fn edit_reached_registry(

@@ -837,7 +837,7 @@ impl FinalAnalysisExecutionProjection<'_> {
             let plan = self.plan(owner)?;
             let semantic_value =
                 semantic_values.contains_key(&HirValueTypeOwner::Expression(owner));
-            let family = if semantic_value {
+            let family = if semantic_value || plan.is_registry_drop_address() {
                 CheckedExecutableRuntimeExpressionFactFamily::Consumed
             } else if expression.evaluated_effect().is_some() {
                 if !plan.is_evaluated_effect_carrier() {

@@ -3,6 +3,7 @@
 use super::super::{RuntimePlanSourceConstruction, expression::RuntimeExpressionSourceHandles};
 use super::cursor::{Cursor, Kind};
 use super::{Counts, Error, PreparedRuntimeEvaluatedEffectSource, charge};
+use crate::effect::{RuntimeDropPolicyKind, RuntimeRegistryDropTarget};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::plan::{
     RuntimeDropPolicySeed as Policy, RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed as Effect,
@@ -27,7 +28,13 @@ impl PreparedRuntimeEvaluatedEffectSource<'_> {
             let mut counts = Counts::new(self.limits)?;
             row.preflight(&mut counts, resources, &mut source.meter)?;
             debug_assert_eq!(counts.footprint, self.footprint);
-            let first = self.expression(row.first, source, handles, resources)?;
+            let first = row
+                .first
+                .map(|bytes| self.expression(bytes, source, handles, resources))
+                .transpose()?;
+            let operand = |value: Option<RuntimeExprSeed>| {
+                value.expect("the checked effect has one first operand")
+            };
             let second = if let Some(bytes) = row.second {
                 Some(self.expression(bytes, source, handles, resources)?)
             } else {
@@ -43,57 +50,59 @@ impl PreparedRuntimeEvaluatedEffectSource<'_> {
             }
             cursor.finish()?;
             Ok(match row.kind {
-                Kind::Wait => Effect::Wait(first),
+                Kind::Wait => Effect::Wait(operand(first)),
                 Kind::Log(level) => Effect::Log {
                     level: level.to_owned(),
-                    message: first,
+                    message: operand(first),
                     fields,
                 },
                 Kind::Signal => Effect::SignalWrite {
-                    target: first,
+                    target: operand(first),
                     value: second.expect("checked second expression"),
                 },
                 Kind::Metric => Effect::MetricWrite {
-                    target: first,
+                    target: operand(first),
                     value: second.expect("checked second expression"),
                 },
                 Kind::Registry(key) => Effect::RegistryWrite {
                     key: key.materialize()?,
-                    value: first,
+                    value: operand(first),
                 },
                 Kind::Event => Effect::EmitEvent {
-                    event: first,
+                    event: operand(first),
                     fields,
                 },
-                Kind::Action => Effect::EmitAction { payload: first },
-                Kind::Panic => Effect::Panic(first),
-                Kind::Fail => Effect::Fail(first),
-                Kind::Bail => Effect::Bail(first),
+                Kind::Action => Effect::EmitAction {
+                    payload: operand(first),
+                },
+                Kind::Panic => Effect::Panic(operand(first)),
+                Kind::Fail => Effect::Fail(operand(first)),
+                Kind::Bail => Effect::Bail(operand(first)),
                 Kind::Ensure => Effect::Ensure {
-                    condition: first,
+                    condition: operand(first),
                     message: second.expect("checked second expression"),
                 },
                 Kind::Drop(policy) => Effect::Drop {
-                    target: first,
-                    policy: match policy {
-                        0 => Policy::Default,
-                        1 => Policy::Cancel,
-                        2 => Policy::Stop {
-                            fade: second.expect("checked fade"),
-                        },
-                        3 => Policy::Finish,
-                        4 => Policy::Release,
-                        5 => Policy::Detach,
-                        _ => unreachable!("checked policy tag"),
-                    },
+                    target: operand(first),
+                    policy: drop_policy(policy, second),
                 },
+                Kind::RegistryDrop {
+                    key,
+                    presence,
+                    item_type,
+                    policy,
+                } => Effect::RegistryDrop {
+                    target: RuntimeRegistryDropTarget::new(key.materialize()?, presence, item_type),
+                    policy: drop_policy(policy, first),
+                },
+
                 Kind::Assert {
                     guard,
                     profile,
                     message,
                 } => Effect::Assert {
                     guard,
-                    condition: first,
+                    condition: operand(first),
                     message: message.to_owned(),
                     profile,
                 },
@@ -116,5 +125,18 @@ impl PreparedRuntimeEvaluatedEffectSource<'_> {
             &mut source.meter,
         )?;
         Ok(child.materialize(source, handles, resources)?)
+    }
+}
+
+fn drop_policy(kind: RuntimeDropPolicyKind, fade: Option<RuntimeExprSeed>) -> Policy {
+    match kind {
+        RuntimeDropPolicyKind::Default => Policy::Default,
+        RuntimeDropPolicyKind::Cancel => Policy::Cancel,
+        RuntimeDropPolicyKind::Stop => Policy::Stop {
+            fade: fade.expect("the checked policy owns a fade"),
+        },
+        RuntimeDropPolicyKind::Finish => Policy::Finish,
+        RuntimeDropPolicyKind::Release => Policy::Release,
+        RuntimeDropPolicyKind::Detach => Policy::Detach,
     }
 }

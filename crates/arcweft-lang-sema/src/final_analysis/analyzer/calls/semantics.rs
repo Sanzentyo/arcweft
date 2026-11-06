@@ -8,8 +8,12 @@ use super::super::{
     PhysicalArgumentEvaluationKind, PreparedResolvedCallable, ProjectNominalDeclaration,
     ProjectNominalType, SpreadArgumentPolicy, TypeKind, TypeParameterSubstitutions,
 };
-use super::PreparedCandidateOutcome;
+use super::{PreparedCallApplicationTransaction, PreparedCandidateOutcome};
 use crate::callable::ResolvedCallable;
+use arcweft_lang_hir::{
+    expr::{HirExprKind, HirPlaceholderKind},
+    identity::ExprId,
+};
 use std::borrow::Cow;
 
 pub(super) fn physical_evaluation_kind(
@@ -86,11 +90,43 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
     }
 
+    pub(super) fn source_call_execution_effects(
+        &self,
+        owner: ExprId,
+        transaction: &PreparedCallApplicationTransaction,
+    ) -> Result<EffectSet, FinalSemanticAnalysisError> {
+        let mut effects = self
+            .source_call_intrinsic_effects(transaction.candidate(), transaction.current_group())?;
+        if let Some(argument) = transaction.registry_drop_argument() {
+            let module = self.module(owner.module())?;
+            let resolve = |expression| {
+                module
+                    .resolve_expr(expression)
+                    .map(|expression| expression.kind())
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)
+            };
+            let mut source = resolve(argument)?;
+            if matches!(
+                source,
+                HirExprKind::Placeholder(HirPlaceholderKind::PipeLeft)
+            ) && let Some(pipe) = self.pipe_stack.last().filter(|pipe| pipe.right == owner)
+            {
+                source = resolve(pipe.left)?;
+            }
+            if let HirExprKind::LifetimePath(path) = source
+                && let Some(path) = path.as_resolved()
+            {
+                effects.insert(crate::effects::EffectId::state_write(path.key()));
+            }
+        }
+        Ok(effects)
+    }
+
     /// The contribution available before body inference. An inferred project
     /// callee is already retained as a typed edge in the prepared call graph;
     /// its body row is added by callable closure and final call sealing.
     /// An unknown fixed/detached row has no such deferred authority.
-    pub(super) fn source_call_intrinsic_effects(
+    fn source_call_intrinsic_effects(
         &self,
         candidate: &PreparedResolvedCallable,
         current_group: CallableGroupIndex,

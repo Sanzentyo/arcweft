@@ -9668,9 +9668,9 @@ impl RuntimePlanSemanticFacts {
                 RuntimeSemanticFactFamily::EvaluatedEffect,
                 |kind| matches!(kind, HirExprKind::Call(_) | HirExprKind::Pipe(_)),
             )?;
-            if matches!(resolve_expr(&modules, *expression)?, HirExprKind::Pipe(_))
-                && !pipes.contains_key(expression)
-            {
+            let needs_pipe = matches!(resolve_expr(&modules, *expression)?, HirExprKind::Pipe(_))
+                && !effect.effect().uses_pipe_address();
+            if needs_pipe != pipes.contains_key(expression) {
                 return Err(RuntimeSemanticFactsError::InvalidPipeFact {
                     expression: *expression,
                 });
@@ -14543,8 +14543,10 @@ fn validate_project_function_semantic_catalog(
             RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { operation, pipe } => {
                 let valid_site = match (hir, pipe) {
                     (HirExprKind::Call(_), None) => true,
+                    (HirExprKind::Pipe(_), None) => operation.effect().uses_pipe_address(),
                     (HirExprKind::Pipe(hir), Some(pipe)) => {
-                        hir.left() == pipe.left()
+                        !operation.effect().uses_pipe_address()
+                            && hir.left() == pipe.left()
                             && hir.right() == pipe.right()
                             && !pipe.placeholders().is_empty()
                     }
@@ -15035,8 +15037,7 @@ fn validate_dialogue_effect_operation(
                     modules,
                     expression_types,
                     calls,
-                    effect.application_site(),
-                    effect.effect(),
+                    effect,
                 )
         }
         RuntimeDialogueEffectOperationFact::OrdinaryCall {

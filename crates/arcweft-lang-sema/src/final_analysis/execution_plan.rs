@@ -331,11 +331,18 @@ fn add_effect_execution_roles(
         };
     }
 
-    if let super::CheckedEvaluatedEffectOperation::Drop {
-        invocation: super::CheckedDropInvocation::DropWithPolicy { source, .. },
-        ..
-    } = effect.operation()
-    {
+    let invocation = match effect.operation() {
+        super::CheckedEvaluatedEffectOperation::Drop { invocation, .. } => Some(invocation),
+        super::CheckedEvaluatedEffectOperation::RegistryDrop { target, invocation } => {
+            roles
+                .entry(target.address())
+                .or_default()
+                .insert(super::CheckedEvaluatedEffectRole::RegistryDropAddress { application });
+            Some(invocation)
+        }
+        _ => None,
+    };
+    if let Some(super::CheckedDropInvocation::DropWithPolicy { source, .. }) = invocation {
         if let crate::callable::CheckedCallArgumentSlotSource::Expression(owner) =
             source.operand().source().raw()
         {

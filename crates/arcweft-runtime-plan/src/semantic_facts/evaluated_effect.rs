@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use arcweft_core::time::LogicalDuration;
-use arcweft_lang_hir::expr::HirExprKind;
+use arcweft_core::{
+    effect::{RuntimeRegistryDropTarget, RuntimeRegistryReadKind},
+    time::LogicalDuration,
+};
+use arcweft_lang_hir::expr::{HirExprKind, HirPlaceholderKind};
 use arcweft_lang_hir::identity::{ExprId, HirModuleId};
 use arcweft_lang_hir::module::HirModule;
 
@@ -130,6 +133,12 @@ pub enum RuntimeEvaluatedEffect {
         target: RuntimeEvaluatedEffectOperandFact,
         policy: RuntimeDropPolicyFact,
     },
+    RegistryDrop {
+        address: ExprId,
+        argument: ExprId,
+        target: RuntimeRegistryDropTarget<RuntimeNormalizedType>,
+        policy: RuntimeDropPolicyFact,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,6 +185,10 @@ impl RuntimeEvaluatedEffectFact {
 }
 
 impl RuntimeEvaluatedEffect {
+    pub(super) fn uses_pipe_address(&self) -> bool {
+        matches!(self, Self::RegistryDrop { address, argument, .. } if address != argument)
+    }
+
     pub(super) fn visit_operand_types<'a>(
         &'a self,
         visit: &mut impl FnMut(&'a RuntimeNormalizedType),
@@ -205,13 +218,29 @@ impl RuntimeEvaluatedEffect {
             }
             Self::Drop { target, policy } => {
                 visit(target.ty());
-                if let RuntimeDropPolicyFact::Stop {
-                    fade: RuntimeDropFadeFact::Operand(fade),
-                } = policy
-                {
-                    visit(fade.ty());
-                }
+                policy.visit_operand_types(visit);
             }
+            Self::RegistryDrop { target, policy, .. } => {
+                visit(target.item_type());
+                policy.visit_operand_types(visit);
+            }
+        }
+    }
+}
+
+impl RuntimeDropPolicyFact {
+    fn dynamic_fade(&self) -> Option<&RuntimeEvaluatedEffectOperandFact> {
+        match self {
+            Self::Stop {
+                fade: RuntimeDropFadeFact::Operand(fade),
+            } => Some(fade),
+            _ => None,
+        }
+    }
+
+    fn visit_operand_types<'a>(&'a self, visit: &mut impl FnMut(&'a RuntimeNormalizedType)) {
+        if let Some(fade) = self.dynamic_fade() {
+            visit(fade.ty());
         }
     }
 }
@@ -235,15 +264,9 @@ pub(super) fn validate_evaluated_effect(
     {
         return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { expression });
     }
-    validate_evaluated_effect_operation(
-        modules,
-        expression_types,
-        calls,
-        fact.application_site(),
-        fact.effect(),
-    )
-    .then_some(())
-    .ok_or(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { expression })
+    validate_evaluated_effect_operation(modules, expression_types, calls, fact)
+        .then_some(())
+        .ok_or(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { expression })
 }
 
 pub(super) fn validate_evaluated_effect_site(
@@ -269,11 +292,14 @@ pub(super) fn validate_evaluated_effect_operation(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     expression_types: &super::RuntimeExpressionTypeView<'_>,
     calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
-    application: ExprId,
-    effect: &RuntimeEvaluatedEffect,
+    fact: &RuntimeEvaluatedEffectFact,
 ) -> bool {
-    if !matches!(resolve_expr(modules, application), Ok(HirExprKind::Call(_)))
-        || calls.contains_key(&application)
+    let application = fact.application_site();
+    let effect = fact.effect();
+    let Ok(HirExprKind::Call(call)) = resolve_expr(modules, application) else {
+        return false;
+    };
+    if calls.contains_key(&application)
         || !validate_effect_operands(modules, expression_types, effect)
     {
         return false;
@@ -281,6 +307,28 @@ pub(super) fn validate_evaluated_effect_operation(
     match effect {
         RuntimeEvaluatedEffect::Log { fields, .. }
         | RuntimeEvaluatedEffect::EmitEvent { fields, .. } => effect_fields_are_valid(fields),
+        RuntimeEvaluatedEffect::RegistryDrop {
+            address,
+            argument,
+            target,
+            ..
+        } => {
+            let uses_argument = call
+                .arguments()
+                .iter()
+                .any(|value| value.value() == *argument);
+            let same_address = address == argument;
+            let pipe_address = matches!(
+                resolve_expr(modules, fact.site_root()),
+                Ok(HirExprKind::Pipe(pipe)) if pipe.left() == *address && pipe.right() == application
+            ) && matches!(
+                resolve_expr(modules, *argument),
+                Ok(HirExprKind::Placeholder(HirPlaceholderKind::PipeLeft))
+            );
+            uses_argument
+                && (same_address || pipe_address)
+                && validate_registry_drop_target(modules, *address, target)
+        }
         _ => true,
     }
 }
@@ -292,6 +340,9 @@ fn validate_effect_operands(
 ) -> bool {
     let valid = |operand: &RuntimeEvaluatedEffectOperandFact| {
         validate_evaluated_effect_operand(modules, expression_types, operand)
+    };
+    let fade_valid = |fade: &RuntimeEvaluatedEffectOperandFact| {
+        valid(fade) && matches!(fade.ty().shape(), RuntimeTypeShape::Duration)
     };
     match effect {
         RuntimeEvaluatedEffect::Log {
@@ -313,22 +364,28 @@ fn validate_effect_operands(
                 && valid(message)
         }
         RuntimeEvaluatedEffect::Drop { target, policy } => {
-            let fade_valid = match policy {
-                RuntimeDropPolicyFact::Stop {
-                    fade: RuntimeDropFadeFact::Operand(fade),
-                } => valid(fade) && matches!(fade.ty().shape(), RuntimeTypeShape::Duration),
-                RuntimeDropPolicyFact::Default
-                | RuntimeDropPolicyFact::Cancel
-                | RuntimeDropPolicyFact::Stop {
-                    fade: RuntimeDropFadeFact::Constant(_),
-                }
-                | RuntimeDropPolicyFact::Finish
-                | RuntimeDropPolicyFact::Release
-                | RuntimeDropPolicyFact::Detach => true,
-            };
-            valid(target) && fade_valid
+            valid(target) && policy.dynamic_fade().is_none_or(fade_valid)
+        }
+        RuntimeEvaluatedEffect::RegistryDrop { policy, .. } => {
+            policy.dynamic_fade().is_none_or(fade_valid)
         }
     }
+}
+
+fn validate_registry_drop_target(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    address: ExprId,
+    target: &RuntimeRegistryDropTarget<RuntimeNormalizedType>,
+) -> bool {
+    let Ok(HirExprKind::LifetimePath(path)) = resolve_expr(modules, address) else {
+        return false;
+    };
+    let Some(path) = path.as_resolved() else {
+        return false;
+    };
+    path.key().as_ref() == target.key()
+        && path.optional() == (target.presence() == RuntimeRegistryReadKind::Optional)
+        && validate_normalized_type(modules, target.item_type()).is_ok()
 }
 
 fn validate_evaluated_effect_operand(

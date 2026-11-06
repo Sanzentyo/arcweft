@@ -211,7 +211,7 @@ pub use model::{
     CheckedRecordExpressionSource, CheckedRecordPattern, CheckedRecordPatternField,
     CheckedRecordPatternOwner, CheckedRecordPatternRest, CheckedRecordPatternSource,
     CheckedRecordPatternSourceRef, CheckedRecordValueSource, CheckedRegistryAddress,
-    CheckedRegistryRead, CheckedRegistryWrite, CheckedRuntimeCallDisposition,
+    CheckedRegistryDrop, CheckedRegistryRead, CheckedRegistryWrite, CheckedRuntimeCallDisposition,
     CheckedRuntimeValueDisposition, CheckedScopeIdentity, CheckedSelectBranchHead,
     CheckedSelectResolution, CheckedSelectStatement, CheckedSelectStatementView, CheckedStageLook,
     CheckedStatement, CheckedStatementPayload, CheckedStructuralExecutionReason,

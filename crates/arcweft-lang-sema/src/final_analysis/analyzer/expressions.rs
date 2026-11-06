@@ -5253,6 +5253,14 @@ impl Analyzer<'_, '_, '_> {
                 let (read, location, activation) =
                     super::super::CheckedRegistryRead::from_path(&self.topology, owner, path)
                         .map_err(AnalyzerExpressionError::fatal)?;
+                if !path.optional()
+                    && let Some(expected) = expected
+                    && let Some(item) =
+                        self.infer_registry_item(module, location, activation, read.key())?
+                    && !expected.accepts(item)
+                {
+                    return Err(AnalyzerExpressionError::rejected(owner).into());
+                }
                 let (ty, selection) = match expected {
                     Some(ty) => (ty.clone(), CheckedTypeSelection::Expected),
                     None => {

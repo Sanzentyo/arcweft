@@ -4,8 +4,10 @@ use super::audio::RuntimeEffectExecutionError;
 use super::code_cursor::NativeSourceOperation;
 use super::{Engine, FlowFiberId};
 use crate::effect::{
-    RuntimeEffectExpr, RuntimeEffectMaterializeError, RuntimeRegistryOwner,
-    RuntimeRegistryReadKind, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
+    PreparedRegistryValue, RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectMaterializeError,
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
+    RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
+    RuntimeRegistryWriteSource, RuntimeScopeRegistry,
 };
 use crate::plan::FlowOp;
 use crate::pure::RuntimeCallBackend;
@@ -52,26 +54,124 @@ impl NativeDialogueRegistryTarget {
     }
 }
 
-pub(super) struct NativeDialogueRegistryWrite {
+pub(super) struct NativeDialogueRegistryMutation {
     pub(super) target: NativeDialogueRegistryTarget,
-    pub(super) write: crate::effect::RuntimePreparedRegistryWrite,
+    pub(super) mutation: RuntimePreparedRegistryMutation,
 }
 
 pub(super) enum NativeLineRegistryExecution<'a> {
-    Child(&'a mut Option<NativeDialogueRegistryWrite>),
+    Child(&'a mut Option<NativeDialogueRegistryMutation>),
     Activation(NativeActivationRegistryExecution<'a>),
 }
 
 pub(super) struct NativeActivationRegistryExecution<'a> {
     pub(super) admission: &'a mut RuntimeRetainedValueAdmission,
-    pub(super) pending: &'a mut Option<NativeDialogueRegistryWrite>,
+    pub(super) pending: &'a mut Option<NativeDialogueRegistryMutation>,
 }
 
 struct NativeLineRegistryOperands<'plan> {
     key: &'plan arcweft_id::LifetimeRegistryKey,
-    value: &'plan crate::value::RuntimeExpr,
-    ty: crate::pattern::RuntimeSemanticTypeId,
+    effect: &'plan RuntimeEffectExpr,
     binding: RuntimeScopeFunctionContext,
+}
+
+/// The original reached row and exact source operand are admitted together
+/// before the owning Engine evaluates a mutation input.
+pub(super) enum NativePreparedRegistryMutation<'source, 'budget> {
+    Write {
+        position: Result<usize, usize>,
+        origin: RuntimeRegistryWriteSource,
+        prepared: PreparedRegistryValue<'source, 'budget>,
+        input: &'source crate::value::RuntimeExpr,
+    },
+    Drop {
+        prepared: RuntimePreparedRegistryDrop,
+        fade: Option<&'source crate::value::RuntimeExpr>,
+    },
+}
+
+impl<'source, 'budget> NativePreparedRegistryMutation<'source, 'budget> {
+    pub(super) fn prepare(
+        plan: &crate::plan::RuntimePlan,
+        effect: &'source RuntimeEffectExpr,
+        rows: &RuntimeScopeRegistry,
+        owner: RuntimeRegistryOwner,
+        origin: RuntimeRegistryWriteSource,
+        binding: &'source RuntimeScopeFunctionContext,
+        admission: &'budget mut RuntimeRetainedValueAdmission,
+    ) -> Result<Self, RuntimeEffectExecutionError> {
+        let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
+        match effect {
+            RuntimeEffectExpr::RegistryWrite { key, value } => {
+                let ty = plan
+                    .type_table()
+                    .get(value.ty())
+                    .ok_or(missing)?
+                    .semantic_identity();
+                let position = rows.prepare_write(owner, key, ty, origin, admission)?;
+                let prepared = RuntimeRegistryStateUpdate::prepare(
+                    key,
+                    ty,
+                    binding.instantiation(),
+                    admission,
+                )?;
+                Ok(Self::Write {
+                    position,
+                    origin,
+                    prepared,
+                    input: value,
+                })
+            }
+            RuntimeEffectExpr::RegistryDrop { target, policy } => {
+                let prepared = rows.prepare_drop(
+                    owner,
+                    target.key(),
+                    target.presence(),
+                    *target.item_type(),
+                    binding.instantiation(),
+                    admission,
+                )?;
+                let fade = match policy {
+                    RuntimeDropPolicyExpr::Stop { fade } => Some(fade),
+                    _ => None,
+                };
+                Ok(Self::Drop { prepared, fade })
+            }
+            _ => Err(missing.into()),
+        }
+    }
+
+    pub(super) fn input(&self) -> Option<&'source crate::value::RuntimeExpr> {
+        match self {
+            Self::Write { input, .. } => Some(input),
+            Self::Drop { fade, .. } => *fade,
+        }
+    }
+
+    pub(super) fn finish(
+        self,
+        value: Option<RuntimeValue>,
+    ) -> Result<RuntimePreparedRegistryMutation, RuntimeEffectExecutionError> {
+        match self {
+            Self::Write {
+                position,
+                origin,
+                prepared,
+                ..
+            } => {
+                let update = prepared.capture(&value.expect("the write has one input"))?;
+                Ok(RuntimePreparedRegistryMutation::Write(
+                    RuntimePreparedRegistryWrite::new(position, origin, update),
+                ))
+            }
+            Self::Drop { prepared, fade } => {
+                if fade.is_some() && !matches!(value, Some(RuntimeValue::Duration(_))) {
+                    return Err(crate::line_task::LineRuntimeError::InvalidDropPolicy.into());
+                }
+                Ok(RuntimePreparedRegistryMutation::Drop(prepared))
+            }
+        }
+    }
 }
 
 impl Engine {
@@ -237,25 +337,23 @@ impl Engine {
         }
     }
 
-    pub(super) fn commit_dialogue_registry_write(
+    pub(super) fn commit_dialogue_registry_mutation(
         &mut self,
         transaction: &mut super::dialogue::DialogueActivationTransaction,
-        pending: NativeDialogueRegistryWrite,
+        pending: NativeDialogueRegistryMutation,
     ) -> Result<(), RuntimeEffectExecutionError> {
         let rows = self.dialogue_registry_rows_mut(transaction, pending.target)?;
-        pending.write.reserve(rows)?;
-        pending.write.commit(rows);
+        pending.mutation.reserve(rows)?;
+        pending.mutation.commit(rows)?;
         Ok(())
     }
 
-    pub(super) fn stage_borrowed_line_registry_write(
+    pub(super) fn stage_borrowed_line_registry_mutation(
         &mut self,
         source: &NativeSourceOperation,
         execution: NativeActivationRegistryExecution<'_>,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEffectExecutionError> {
-        use crate::effect::RuntimePreparedRegistryWrite;
-
         let plan = self.plan.clone();
         let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
         let transaction = self
@@ -281,35 +379,32 @@ impl Engine {
             _ => return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into()),
         };
         let (owner, origin) = target.origin(activation);
-        let position = rows.prepare_write(
+        let prepared = NativePreparedRegistryMutation::prepare(
+            &plan,
+            operands.effect,
+            rows,
             owner,
-            operands.key,
-            operands.ty,
             origin,
+            &operands.binding,
             execution.admission,
         )?;
-        let prepared = RuntimeRegistryStateUpdate::prepare(
-            operands.key,
-            operands.ty,
-            operands.binding.instantiation(),
-            execution.admission,
-        )?;
-        let value = self.evaluate_expr_with_backend(operands.value, backend)?;
-        let update = prepared.capture(&value)?;
-        *execution.pending = Some(NativeDialogueRegistryWrite {
+        let value = prepared
+            .input()
+            .map(|input| self.evaluate_expr_with_backend(input, backend))
+            .transpose()?;
+        *execution.pending = Some(NativeDialogueRegistryMutation {
             target,
-            write: RuntimePreparedRegistryWrite::new(position, origin, update),
+            mutation: prepared.finish(value)?,
         });
+
         Ok(())
     }
 
-    pub(super) fn stage_child_line_registry_write(
+    pub(super) fn stage_child_line_registry_mutation(
         &mut self,
         source: &NativeSourceOperation,
         backend: &mut impl RuntimeCallBackend,
-    ) -> Result<NativeDialogueRegistryWrite, RuntimeEffectExecutionError> {
-        use crate::effect::RuntimePreparedRegistryWrite;
-
+    ) -> Result<NativeDialogueRegistryMutation, RuntimeEffectExecutionError> {
         let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
         let super::FlowFiberOwner::LineTask(child) = &self.fiber.owner else {
             return Err(missing.into());
@@ -347,28 +442,25 @@ impl Engine {
             )
             .map_err(|message| RuntimeEffectExecutionError::Checkpoint { message })?;
         let (destination, source) = target.origin(activation);
-        let position = rows.prepare_write(
+        let prepared = NativePreparedRegistryMutation::prepare(
+            &plan,
+            operands.effect,
+            rows,
             destination,
-            operands.key,
-            operands.ty,
             source,
+            &operands.binding,
             &mut admission,
         )?;
-        let prepared = RuntimeRegistryStateUpdate::prepare(
-            operands.key,
-            operands.ty,
-            operands.binding.instantiation(),
-            &mut admission,
-        )?;
-        let evaluated = self.evaluate_expr_with_backend(operands.value, backend);
+        let evaluated = prepared
+            .input()
+            .map(|input| self.evaluate_expr_with_backend(input, backend))
+            .transpose();
         match evaluated
             .map_err(RuntimeEffectExecutionError::from)
-            .and_then(|value| prepared.capture(&value).map_err(Into::into))
+            .and_then(|value| prepared.finish(value))
         {
-            Ok(update) => Ok(NativeDialogueRegistryWrite {
-                target,
-                write: RuntimePreparedRegistryWrite::new(position, source, update),
-            }),
+            Ok(mutation) => Ok(NativeDialogueRegistryMutation { target, mutation }),
+
             Err(cause) => {
                 *self = Self::from_rollback_image(image, &owner).map_err(|message| {
                     RuntimeEffectExecutionError::Rollback {
@@ -394,11 +486,10 @@ impl Engine {
         if !self.fiber.frame.program.same_program(&owner) {
             return Err(missing.into());
         }
-        let Some(FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, value })) =
-            source.operation(plan)
-        else {
+        let Some(FlowOp::EvaluatedEffect(effect)) = source.operation(plan) else {
             return Err(missing.into());
         };
+        let key = effect.registry_mutation_key().ok_or(missing.clone())?;
         let binding = self.fiber.frame.env.source_function_context();
         let effects = match source.owner() {
             RuntimeCodeOwner::LineTask { group: source, .. } if source == group => plan
@@ -425,20 +516,14 @@ impl Engine {
             }
             .into());
         }
-        let ty = plan
-            .type_table()
-            .get(value.ty())
-            .ok_or(missing.clone())?
-            .semantic_identity();
         Ok(NativeLineRegistryOperands {
             key,
-            value,
-            ty,
+            effect,
             binding,
         })
     }
 
-    pub(super) fn execute_registry_write(
+    pub(super) fn execute_registry_mutation(
         &mut self,
         source: &NativeSourceOperation,
         backend: &mut impl RuntimeCallBackend,
@@ -449,11 +534,10 @@ impl Engine {
         if !self.fiber.frame.program.same_program(&owner) {
             return Err(missing.into());
         }
-        let Some(FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, value })) =
-            source.operation(&plan)
-        else {
+        let Some(FlowOp::EvaluatedEffect(effect)) = source.operation(&plan) else {
             return Err(missing.into());
         };
+        let key = effect.registry_mutation_key().ok_or(missing.clone())?;
         if key.scope() != &LifetimeScopeKind::Flow {
             return Err(missing.into());
         }
@@ -463,11 +547,6 @@ impl Engine {
             .env
             .flow_registry()
             .ok_or(missing.clone())?;
-        let ty = plan
-            .type_table()
-            .get(value.ty())
-            .ok_or(missing.clone())?
-            .semantic_identity();
         let binding = self.fiber.frame.env.source_function_context();
         let RuntimeScopeFunctionContext::Function { site, .. } = &binding else {
             return Err(missing.into());
@@ -481,15 +560,16 @@ impl Engine {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         self.admit_live_retained_values(&mut admission)?;
-        let position = registry.prepare_write(
+        let prepared = NativePreparedRegistryMutation::prepare(
+            &plan,
+            effect,
+            registry,
             RuntimeRegistryOwner::NativeFlow,
-            key,
-            ty,
             RuntimeRegistryWriteSource::Native,
+            &binding,
             &mut admission,
         )?;
-        let prepared =
-            RuntimeRegistryStateUpdate::prepare(key, ty, binding.instantiation(), &mut admission)?;
+
         let required = EffectId::state_write(key);
         if !declaration
             .invocation_effects()
@@ -504,17 +584,15 @@ impl Engine {
         let image = self
             .inert_rollback_image()
             .map_err(|message| RuntimeEffectExecutionError::Checkpoint { message })?;
-        self.fiber
-            .frame
-            .env
-            .flow_registry_mut()
-            .ok_or(missing.clone())?
-            .reserve_write(position)?;
         let result = (|| {
-            let value = self.evaluate_expr_with_backend(value, backend)?;
-            let update = prepared.capture(&value)?;
+            let value = prepared
+                .input()
+                .map(|input| self.evaluate_expr_with_backend(input, backend))
+                .transpose()?;
+            let mutation = prepared.finish(value)?;
             let registry = self.fiber.frame.env.flow_registry_mut().ok_or(missing)?;
-            registry.commit(position, RuntimeRegistryWriteSource::Native, update);
+            mutation.reserve(registry)?;
+            mutation.commit(registry)?;
             Ok::<_, RuntimeEffectExecutionError>(())
         })();
         if let Err(cause) = result {

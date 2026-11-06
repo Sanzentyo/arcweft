@@ -3307,7 +3307,7 @@ impl AwbcProductStepExecutor {
         } else {
             None
         };
-        let mut pending_registry_write = None;
+        let mut pending_registry_mutation = None;
         let pending_host_call_before = front.pending_host_call.clone();
         let mut resume_journal = DeferredChildResumeJournal::capture(self);
         let mut staged_resume_output = RuntimeStepOutput::default();
@@ -3455,7 +3455,7 @@ impl AwbcProductStepExecutor {
                             owner,
                             rows,
                             admission,
-                            pending: &mut pending_registry_write,
+                            pending: &mut pending_registry_mutation,
                         })
                     } else {
                         None
@@ -3474,7 +3474,7 @@ impl AwbcProductStepExecutor {
                         },
                         &mut host,
                     )?;
-                    if pending_registry_write.is_some()
+                    if pending_registry_mutation.is_some()
                         && !step.completed_single_effect_instruction()
                     {
                         return Err(crate::awbc::fiber::FiberStateError::InvalidFrame.into());
@@ -3494,7 +3494,7 @@ impl AwbcProductStepExecutor {
             Ok(vm_output) => vm_output,
             Err(error) => {
                 let error = ProductStepError::Vm(error);
-                if pending_registry_write.is_some() || error.is_execution_refusal() {
+                if pending_registry_mutation.is_some() || error.is_execution_refusal() {
                     if self.rollback_selected_child_step(
                         child,
                         checkpoint,
@@ -3879,8 +3879,8 @@ impl AwbcProductStepExecutor {
         };
         let admitted_step = (|| {
             let line = transaction.line_mut();
-            if let Some((owner, write)) = &pending_registry_write {
-                self.reserve_reached_registry_write(*tag.activation_id(), *owner, line, write)?;
+            if let Some((owner, write)) = &pending_registry_mutation {
+                self.reserve_reached_registry_mutation(*tag.activation_id(), *owner, line, write)?;
             }
             line.reconcile_child_scope_step(&tag, before_handles, &after_handles, &drop_policy)?;
             Ok::<_, ProductStepError>(())
@@ -3931,8 +3931,8 @@ impl AwbcProductStepExecutor {
                 &mut child.fiber,
             );
             resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
-            if let Some((owner, write)) = pending_registry_write {
-                self.commit_reached_registry_write(
+            if let Some((owner, write)) = pending_registry_mutation {
+                self.commit_reached_registry_mutation(
                     *tag.activation_id(),
                     owner,
                     transaction.line_mut(),

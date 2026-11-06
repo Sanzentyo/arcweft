@@ -3124,12 +3124,13 @@ impl Analyzer<'_, '_, '_> {
                 })
             })?;
 
-        let direct_effects = match self.source_call_intrinsic_effects(&selected, current_group) {
-            Ok(effects) => effects,
-            Err(error) => {
-                return Err(AnalyzerExpressionError::fatal(error).into());
-            }
-        };
+        let direct_effects =
+            match self.source_call_execution_effects(source.owner, &selected_transaction) {
+                Ok(effects) => effects,
+                Err(error) => {
+                    return Err(AnalyzerExpressionError::fatal(error).into());
+                }
+            };
         let callee_expression = match &result {
             CallableResultSchema::Value(value) => {
                 let callable_effects = self
@@ -3479,9 +3480,8 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         let selected_callable = transaction.selected_shared().clone();
-        let current_group = transaction.current_group();
         let direct_effects = self
-            .source_call_intrinsic_effects(&selected_callable, current_group)
+            .source_call_execution_effects(owner, &transaction)
             .map_err(|error| {
                 CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
             })?;

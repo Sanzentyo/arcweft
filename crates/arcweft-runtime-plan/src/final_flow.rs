@@ -7453,11 +7453,16 @@ impl<'a> FinalFlowLowerer<'a> {
             return self.lower_flow_value_with_overrides(selected, continuation, overrides);
         }
         if let Some(effect) = self.evaluated_effect(expression).cloned() {
+            let registry_argument = match effect.effect() {
+                RuntimeEvaluatedEffect::RegistryDrop { argument, .. } => Some(*argument),
+                _ => None,
+            };
             if let HirExprKind::Pipe(pipe) = self
                 .module
                 .resolve_expr(expression)
                 .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
                 .kind()
+                && !matches!(effect.effect(), RuntimeEvaluatedEffect::RegistryDrop { address, .. } if *address == pipe.left())
                 && !overrides.contains_key(&pipe.left())
             {
                 let inherited = overrides.clone();
@@ -7472,7 +7477,8 @@ impl<'a> FinalFlowLowerer<'a> {
                     overrides,
                 );
             }
-            let children = self.evaluated_effect_children(effect.application_site())?;
+            let mut children = self.evaluated_effect_children(effect.application_site())?;
+            children.retain(|child| Some(*child) != registry_argument);
             let prefix_len = self.retained_flow_operand_prefix_len(&children)?;
             for child in children.into_iter().take(prefix_len) {
                 if !overrides.contains_key(&child) && self.expression_literal(child).is_none() {
@@ -9810,6 +9816,28 @@ fn lower_evaluated_effect(
             })
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
     };
+    let lower_policy =
+        |policy: &RuntimeDropPolicyFact| -> Result<RuntimeDropPolicySeed, RuntimePlanLowerError> {
+            Ok(match policy {
+                RuntimeDropPolicyFact::Default => RuntimeDropPolicySeed::Default,
+                RuntimeDropPolicyFact::Cancel => RuntimeDropPolicySeed::Cancel,
+                RuntimeDropPolicyFact::Stop { fade } => RuntimeDropPolicySeed::Stop {
+                    fade: match fade {
+                        RuntimeDropFadeFact::Constant(value) => RuntimeExprSeed::new(
+                            arcweft_core::pattern::RuntimeCheckedType::Duration
+                                .semantic_identity_digest(),
+                            arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::Duration(
+                                *value,
+                            )),
+                        ),
+                        RuntimeDropFadeFact::Operand(operand) => lower(operand)?,
+                    },
+                },
+                RuntimeDropPolicyFact::Finish => RuntimeDropPolicySeed::Finish,
+                RuntimeDropPolicyFact::Release => RuntimeDropPolicySeed::Release,
+                RuntimeDropPolicyFact::Detach => RuntimeDropPolicySeed::Detach,
+            })
+        };
     Ok(match effect {
         RuntimeEvaluatedEffect::Log {
             level,
@@ -9859,26 +9887,14 @@ fn lower_evaluated_effect(
         }
         RuntimeEvaluatedEffect::Drop { target, policy } => RuntimeEvaluatedEffectSeed::Drop {
             target: lower(target)?,
-            policy: match policy {
-                RuntimeDropPolicyFact::Default => RuntimeDropPolicySeed::Default,
-                RuntimeDropPolicyFact::Cancel => RuntimeDropPolicySeed::Cancel,
-                RuntimeDropPolicyFact::Stop { fade } => RuntimeDropPolicySeed::Stop {
-                    fade: match fade {
-                        RuntimeDropFadeFact::Constant(value) => RuntimeExprSeed::new(
-                            arcweft_core::pattern::RuntimeCheckedType::Duration
-                                .semantic_identity_digest(),
-                            arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::Duration(
-                                *value,
-                            )),
-                        ),
-                        RuntimeDropFadeFact::Operand(operand) => lower(operand)?,
-                    },
-                },
-                RuntimeDropPolicyFact::Finish => RuntimeDropPolicySeed::Finish,
-                RuntimeDropPolicyFact::Release => RuntimeDropPolicySeed::Release,
-                RuntimeDropPolicyFact::Detach => RuntimeDropPolicySeed::Detach,
-            },
+            policy: lower_policy(policy)?,
         },
+        RuntimeEvaluatedEffect::RegistryDrop { target, policy, .. } => {
+            RuntimeEvaluatedEffectSeed::RegistryDrop {
+                target: target.with_item_type(target.item_type().identity()),
+                policy: lower_policy(policy)?,
+            }
+        }
     })
 }
 

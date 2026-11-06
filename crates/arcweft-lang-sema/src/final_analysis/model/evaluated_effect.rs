@@ -1,7 +1,10 @@
 use arcweft_core::time::LogicalDuration;
 use arcweft_lang_hir::identity::ExprId;
 
-use super::{CallableEvaluatedEffect, CallableLogLevel, DropCallableId, OpenArgumentId, TypeKind};
+use super::{
+    CallableEvaluatedEffect, CallableLogLevel, CheckedRegistryDrop, DropCallableId, OpenArgumentId,
+    TypeKind,
+};
 
 /// Typed statement-to-expression reference for a checked evaluated effect.
 /// The expression site owns the operation; statements retain only the exact
@@ -176,6 +179,10 @@ pub enum CheckedEvaluatedEffectOperation {
         target: CheckedEvaluatedEffectOperand,
         invocation: CheckedDropInvocation,
     },
+    RegistryDrop {
+        target: CheckedRegistryDrop,
+        invocation: CheckedDropInvocation,
+    },
 }
 
 /// Complete checked meaning of one evaluated-effect call.
@@ -255,7 +262,8 @@ impl CheckedEvaluatedEffect {
             CheckedEvaluatedEffectOperation::Fail { .. } => CallableEvaluatedEffect::Fail,
             CheckedEvaluatedEffectOperation::Bail { .. } => CallableEvaluatedEffect::Bail,
             CheckedEvaluatedEffectOperation::Ensure { .. } => CallableEvaluatedEffect::Ensure,
-            CheckedEvaluatedEffectOperation::Drop { invocation, .. } => {
+            CheckedEvaluatedEffectOperation::Drop { invocation, .. }
+            | CheckedEvaluatedEffectOperation::RegistryDrop { invocation, .. } => {
                 CallableEvaluatedEffect::Drop(match invocation {
                     CheckedDropInvocation::Drop => DropCallableId::Drop,
                     CheckedDropInvocation::DropOptional => DropCallableId::DropOptional,

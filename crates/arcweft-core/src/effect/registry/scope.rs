@@ -151,22 +151,9 @@ impl RuntimeScopeRegistry {
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        admission.status()?;
-        if key.scope() != &owner.scope() {
-            return Err(invalid_registry(
-                "registry address does not select this activation",
-            ));
-        }
-        let row = match self.0.binary_search_by(|entry| entry.row.key.cmp(key)) {
-            Ok(index) => {
-                let entry = &self.0[index];
-                entry
-                    .source
-                    .admit(owner, key, entry.row.expected, admission)?;
-                Some(entry.row.as_ref())
-            }
-            Err(_) => None,
-        };
+        let row = self
+            .admit_reached_entry(owner, key, admission)?
+            .map(|entry| entry.row.as_ref());
         match (kind, row) {
             (RuntimeRegistryReadKind::Required, None) => {
                 Err(invalid_registry("required registry value is absent"))
@@ -187,6 +174,58 @@ impl RuntimeScopeRegistry {
                 }
             }
         }
+    }
+
+    fn admit_reached_entry(
+        &self,
+        owner: RuntimeRegistryOwner,
+        key: &LifetimeRegistryKey,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<Option<&RegistryEntry>, AwbcRuntimeValueSnapshotError> {
+        admission.status()?;
+        if key.scope() != &owner.scope() {
+            return Err(invalid_registry(
+                "registry address does not select this activation",
+            ));
+        }
+        let Ok(index) = self.0.binary_search_by(|entry| entry.row.key.cmp(key)) else {
+            return Ok(None);
+        };
+        let entry = &self.0[index];
+        entry
+            .source
+            .admit(owner, key, entry.row.expected, admission)?;
+        Ok(Some(entry))
+    }
+
+    /// Preflights removal of the exact admitted row. The expected type is
+    /// the item type even when absence is allowed.
+    pub(crate) fn prepare_drop(
+        &self,
+        owner: RuntimeRegistryOwner,
+        key: &LifetimeRegistryKey,
+        kind: RuntimeRegistryReadKind,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<RuntimePreparedRegistryDrop, AwbcRuntimeValueSnapshotError> {
+        let row = match self.admit_reached_entry(owner, key, admission)? {
+            Some(entry) => {
+                admission.validate_typed_snapshot_in_invocation(
+                    &entry.row.value,
+                    expected,
+                    binding,
+                )?;
+                Some(Arc::clone(&entry.row))
+            }
+            None if kind == RuntimeRegistryReadKind::Optional => None,
+            None => return Err(invalid_registry("required registry value is absent")),
+        };
+        admission.validate_metadata(&(key, expected, binding))?;
+        Ok(RuntimePreparedRegistryDrop {
+            key: key.clone(),
+            row,
+        })
     }
 
     pub(crate) fn prepare_write(
@@ -288,6 +327,70 @@ impl RuntimePreparedRegistryWrite {
 
     pub(crate) fn commit(self, rows: &mut RuntimeScopeRegistry) {
         rows.commit(self.position, self.source, self.update);
+    }
+}
+
+/// A registry removal can consume only the row observed during preflight.
+pub(crate) struct RuntimePreparedRegistryDrop {
+    key: LifetimeRegistryKey,
+    row: Option<Arc<RuntimeRegistryValue>>,
+}
+
+impl RuntimePreparedRegistryDrop {
+    fn position(
+        &self,
+        rows: &RuntimeScopeRegistry,
+    ) -> Result<Option<usize>, AwbcRuntimeValueSnapshotError> {
+        let position = rows
+            .0
+            .binary_search_by(|entry| entry.row.key.cmp(&self.key));
+        match (position, &self.row) {
+            (Ok(index), Some(row)) if Arc::ptr_eq(&rows.0[index].row, row) => Ok(Some(index)),
+            (Err(_), None) => Ok(None),
+            _ => Err(invalid_registry("registry row changed before removal")),
+        }
+    }
+
+    pub(crate) fn commit(
+        self,
+        rows: &mut RuntimeScopeRegistry,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if let Some(index) = self.position(rows)? {
+            rows.0.remove(index);
+        }
+        Ok(())
+    }
+}
+
+/// A scoped mutation staged outside its reached registry until the owning
+/// execution has admitted the rest of the instruction's effects.
+pub(crate) enum RuntimePreparedRegistryMutation {
+    Write(RuntimePreparedRegistryWrite),
+    Drop(RuntimePreparedRegistryDrop),
+}
+
+impl RuntimePreparedRegistryMutation {
+    pub(crate) fn reserve(
+        &self,
+        rows: &mut RuntimeScopeRegistry,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        match self {
+            Self::Write(write) => write.reserve(rows),
+            Self::Drop(drop) => drop.position(rows).map(|_| ()),
+        }
+    }
+
+    pub(crate) fn commit(
+        self,
+        rows: &mut RuntimeScopeRegistry,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        match self {
+            Self::Write(write) => {
+                write.commit(rows);
+                Ok(())
+            }
+            Self::Drop(drop) => drop.commit(rows),
+        }
     }
 }
 
