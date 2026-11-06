@@ -18,7 +18,7 @@ use arcweft_dialogue::{
     CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyTypeSchema,
     CharacterDialoguePolicyVariantOwner,
 };
-use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
+use arcweft_id::{EffectId, LifetimeRegistryKey};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{
@@ -70,7 +70,10 @@ pub use access::{
     CheckedDisplacedField, CheckedLocalAccess, CheckedLocalPlaceAccess, CheckedLocalPlaceMode,
     CheckedPlaceDisplacement, CheckedPlaceInitialization,
 };
-use flow::{Availability, Event, NodeId, OwnershipFlow, RegistryScheduleId, Violation};
+use flow::{
+    Availability, Event, NodeId, OwnershipFlow, RegistryConcurrency, RegistryOwner, RegistrySite,
+    Violation,
+};
 
 /// A builder-issued runtime local with no HIR LocalId. The checked semantic
 /// identity prevents two placeholders with the same spelling from aliasing.
@@ -833,13 +836,6 @@ impl CheckedLocalUseError {
     }
 }
 
-#[derive(Clone, Copy)]
-enum RegistryConcurrency {
-    Sequential,
-    Unknown,
-    Scheduled(RegistryScheduleId),
-}
-
 struct LocalUseChecker<'a> {
     analysis: &'a FinalSemanticAnalysis,
     module: &'a HirModule,
@@ -858,6 +854,7 @@ struct LocalUseChecker<'a> {
     instance: Option<CheckedLocalUseInstantiation<'a>>,
     flow: OwnershipFlow,
     registry_proofs: bool,
+    registry_site: RegistrySite,
     registry_concurrency: RegistryConcurrency,
     loops: Vec<OwnershipLoop>,
     carriers: Vec<(ExprId, NodeId)>,
@@ -907,6 +904,7 @@ impl<'a> LocalUseChecker<'a> {
             instance,
             flow: OwnershipFlow::default(),
             registry_proofs,
+            registry_site: RegistrySite::default(),
             registry_concurrency: RegistryConcurrency::Sequential,
             loops: Vec::new(),
             carriers: Vec::new(),
@@ -1050,9 +1048,9 @@ impl<'a> LocalUseChecker<'a> {
         let writes = registry_write_effects(effects);
         if !writes.is_empty() {
             let event = if deferred {
-                Event::DeferredRegistryWrites(writes)
+                Event::DeferredRegistryWrites(self.registry_site, writes)
             } else {
-                Event::ForgetRegistryWrites(writes)
+                Event::ForgetRegistryWrites(self.registry_site, writes)
             };
             self.flow.append(state, event);
         }
@@ -1147,8 +1145,10 @@ impl<'a> LocalUseChecker<'a> {
         let carriers = std::mem::take(&mut self.carriers);
         let outputs = std::mem::take(&mut self.outputs);
         let guards = std::mem::take(&mut self.guard_bindings);
-        let registry_concurrency =
-            std::mem::replace(&mut self.registry_concurrency, RegistryConcurrency::Unknown);
+        let registry_concurrency = std::mem::replace(
+            &mut self.registry_concurrency,
+            RegistryConcurrency::Unknown(self.registry_site),
+        );
         let mut state = self.flow.entry();
         let result = body(self, &mut state);
         self.active_receiver_loans = loans;
@@ -1797,7 +1797,7 @@ impl<'a> LocalUseChecker<'a> {
                 .any(|root| root.role() == HirDeclarationBodyRootRole::FlowBody)
         {
             self.flow
-                .append(&mut state, Event::EnterRegistry(LifetimeScopeKind::Flow));
+                .append(&mut state, Event::EnterRegistry(RegistryOwner::Flow));
         }
         for phase in body.phases() {
             match phase {
@@ -2314,15 +2314,10 @@ impl<'a> LocalUseChecker<'a> {
                     .expression(owner)
                     .ok_or(CheckedLocalUseError::InvalidTopology)?;
                 if let Some(read) = registry_read_requiring_proof(checked) {
-                    match self.registry_concurrency {
-                        RegistryConcurrency::Sequential => {}
-                        RegistryConcurrency::Unknown => {
-                            self.flow.append(state, Event::RegistryBoundary);
-                        }
-                        RegistryConcurrency::Scheduled(schedule) => {
-                            self.flow.append(state, Event::InterleaveRegistry(schedule));
-                        }
-                    }
+                    let address = self
+                        .registry_site
+                        .address(read.shared_key())
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
                     let ty = checked
                         .source_value_type()
                         .ok_or(CheckedLocalUseError::InvalidTopology)?;
@@ -2335,9 +2330,10 @@ impl<'a> LocalUseChecker<'a> {
                         state,
                         Event::RegistryRead {
                             owner,
-                            key: read.shared_key(),
+                            address,
                             ty: Arc::new(self.closed_type(item)?),
                             kind: read.kind(),
+                            concurrency: self.registry_concurrency,
                         },
                     );
                 }
@@ -2937,8 +2933,9 @@ impl<'a> LocalUseChecker<'a> {
             }
         }
 
+        let parent_site = std::mem::replace(&mut self.registry_site, RegistrySite::line(owner));
         self.flow
-            .append(state, Event::EnterRegistry(LifetimeScopeKind::Line));
+            .append(state, Event::EnterRegistry(RegistryOwner::Line(owner)));
         let exit = self.flow.detached();
         self.outputs.push((owner, exit));
         let eager_mark = self.flow.mark_registry_events();
@@ -2947,11 +2944,13 @@ impl<'a> LocalUseChecker<'a> {
         }
         let scheduled_mark = self.flow.mark_registry_events();
         let concurrency = self.registry_concurrency;
-        let schedule = (self.registry_proofs
-            && matches!(concurrency, RegistryConcurrency::Sequential))
-        .then(|| self.flow.reserve_registry_schedule());
-        self.registry_concurrency =
-            schedule.map_or(RegistryConcurrency::Unknown, RegistryConcurrency::Scheduled);
+        let schedule = self
+            .registry_proofs
+            .then(|| self.flow.reserve_registry_schedule(concurrency));
+        self.registry_concurrency = schedule.map_or(
+            RegistryConcurrency::Unknown(self.registry_site),
+            RegistryConcurrency::Scheduled,
+        );
         for statement in scheduled {
             let bypass = state.clone();
             self.statement(statement, state)?;
@@ -2967,7 +2966,14 @@ impl<'a> LocalUseChecker<'a> {
             .ok_or(CheckedLocalUseError::InvalidTopology)?;
         self.flow.connect(state, exit);
         *state = Availability::at(exit);
-        self.flow.append(state, Event::RegistryBoundary);
+        self.flow.append(
+            state,
+            Event::ExitLineRegistry {
+                line: owner,
+                schedule,
+            },
+        );
+        self.registry_site = parent_site;
         Ok(())
     }
 
@@ -2994,13 +3000,17 @@ impl<'a> LocalUseChecker<'a> {
                 };
                 self.flow.append(
                     state,
-                    Event::ScheduledRegistryWrites(effects.as_ref().map(registry_write_effects)),
+                    Event::ScheduledRegistryWrites(
+                        self.registry_site,
+                        effects.as_ref().map(registry_write_effects),
+                    ),
                 );
             }
             if let Some(effects) = core.effects().closed_value() {
                 self.forget_registry_writes(&effects, state, false);
             } else {
-                self.flow.append(state, Event::RegistryBoundary);
+                self.flow
+                    .append(state, Event::RegistryBoundary(self.registry_site));
             }
         }
         if self
@@ -3067,8 +3077,9 @@ impl<'a> LocalUseChecker<'a> {
         let unknown_event_body =
             event_body && !matches!(registry_concurrency, RegistryConcurrency::Scheduled(_));
         if unknown_event_body {
-            self.registry_concurrency = RegistryConcurrency::Unknown;
-            self.flow.append(state, Event::RegistryBoundary);
+            self.registry_concurrency = RegistryConcurrency::Unknown(self.registry_site);
+            self.flow
+                .append(state, Event::RegistryBoundary(self.registry_site));
         }
         match plan {
             HirStmtEvaluationPlan::Binding { input, locals, .. } => {
@@ -3107,18 +3118,21 @@ impl<'a> LocalUseChecker<'a> {
                 if write.address().target() != first || write.value() != second {
                     return Err(CheckedLocalUseError::InvalidTopology);
                 }
-                if self.registry_proofs {
+                if self.registry_proofs
+                    && let Some(address) = self.registry_site.address(write.address().shared_key())
+                {
                     self.flow.append(
                         state,
                         Event::RegistryWrite {
-                            key: write.address().shared_key(),
+                            address,
                             ty: Arc::new(self.closed_type(write.value_type())?),
                         },
                     );
                 }
             }
             HirStmtEvaluationPlan::Include { .. } => {
-                self.flow.append(state, Event::RegistryBoundary);
+                self.flow
+                    .append(state, Event::RegistryBoundary(self.registry_site));
             }
             HirStmtEvaluationPlan::Value {
                 kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Defer,
@@ -3434,7 +3448,8 @@ impl<'a> LocalUseChecker<'a> {
         }
         if unknown_event_body {
             self.registry_concurrency = registry_concurrency;
-            self.flow.append(state, Event::RegistryBoundary);
+            self.flow
+                .append(state, Event::RegistryBoundary(self.registry_site));
         }
         // Dead statements remain checked, but cannot revive either a Never
         // prefix or an unreachable ownership path through a loop exit node.

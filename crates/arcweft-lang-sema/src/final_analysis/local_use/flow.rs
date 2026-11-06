@@ -11,14 +11,15 @@ use crate::final_analysis::completion::NormalContinuation;
 use crate::record_field::CheckedRecordFieldSemanticId;
 use crate::types::TypeKind;
 use arcweft_core::effect::RuntimeRegistryReadKind;
-use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
+use arcweft_id::{EffectId, LifetimeRegistryKey};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
 
 mod registry;
-use registry::{RegistryFacts, RegistryInterference};
+pub(super) use registry::{RegistryAddress, RegistryOwner, RegistrySite};
+use registry::{RegistryFact, RegistryFacts, RegistryInterference};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct MovePath {
@@ -59,6 +60,18 @@ pub(super) struct NodeId(usize);
 
 #[derive(Clone, Copy)]
 pub(super) struct RegistryScheduleId(usize);
+
+#[derive(Clone, Copy)]
+pub(super) enum RegistryConcurrency {
+    Sequential,
+    Unknown(RegistrySite),
+    Scheduled(RegistryScheduleId),
+}
+
+struct RegistrySchedule {
+    parent: RegistryConcurrency,
+    interference: Option<RegistryInterference>,
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct RegistryEventMark(usize);
@@ -120,21 +133,25 @@ pub(super) enum Event {
     Bind(Box<[LocalId]>),
     BindSynthetic(CheckedSyntheticUseOwner),
     RegistryWrite {
-        key: Arc<LifetimeRegistryKey>,
+        address: RegistryAddress,
         ty: Arc<TypeKind>,
     },
     RegistryRead {
         owner: ExprId,
-        key: Arc<LifetimeRegistryKey>,
+        address: RegistryAddress,
         ty: Arc<TypeKind>,
         kind: RuntimeRegistryReadKind,
+        concurrency: RegistryConcurrency,
     },
-    ForgetRegistryWrites(Box<[EffectId]>),
-    DeferredRegistryWrites(Box<[EffectId]>),
-    ScheduledRegistryWrites(Option<Box<[EffectId]>>),
-    InterleaveRegistry(RegistryScheduleId),
-    EnterRegistry(LifetimeScopeKind),
-    RegistryBoundary,
+    ForgetRegistryWrites(RegistrySite, Box<[EffectId]>),
+    DeferredRegistryWrites(RegistrySite, Box<[EffectId]>),
+    ScheduledRegistryWrites(RegistrySite, Option<Box<[EffectId]>>),
+    EnterRegistry(RegistryOwner),
+    ExitLineRegistry {
+        line: ExprId,
+        schedule: Option<RegistryScheduleId>,
+    },
+    RegistryBoundary(RegistrySite),
 }
 
 struct Node {
@@ -146,7 +163,7 @@ struct Node {
 #[derive(Default)]
 pub(super) struct OwnershipFlow {
     nodes: Vec<Node>,
-    registry_schedules: Vec<Option<RegistryInterference>>,
+    registry_schedules: Vec<RegistrySchedule>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -201,8 +218,8 @@ impl Initialization {
         event: &Event,
         rows: &BTreeMap<CheckedLocalUseSite, CheckedLocalAccess>,
         synthetic: &BTreeMap<ExprId, CheckedSyntheticUse>,
-        registry_keys: &BTreeMap<Arc<LifetimeRegistryKey>, EffectId>,
-        registry_schedules: &[Option<RegistryInterference>],
+        registry_keys: &BTreeMap<RegistryAddress, EffectId>,
+        registry_schedules: &[RegistrySchedule],
     ) -> Result<(), CheckedLocalUseError> {
         match event {
             Event::Access(site) => {
@@ -248,28 +265,33 @@ impl Initialization {
             Event::BindSynthetic(owner) => {
                 self.synthetic.remove(owner);
             }
-            Event::RegistryWrite { key, ty } => {
-                if registry_keys.contains_key(key) {
-                    self.registry.register(key, ty);
+            Event::RegistryWrite { address, ty } => {
+                if registry_keys.contains_key(address) {
+                    self.registry.register(address, ty);
                 }
             }
-            Event::ForgetRegistryWrites(effects) | Event::DeferredRegistryWrites(effects) => {
+            Event::ForgetRegistryWrites(site, effects)
+            | Event::DeferredRegistryWrites(site, effects) => {
                 self.registry.invalidate_writes(
-                    |required| effects.iter().any(|effect| effect.covers(required)),
-                    matches!(event, Event::DeferredRegistryWrites(_)),
+                    *site,
+                    effects,
+                    matches!(event, Event::DeferredRegistryWrites(..)),
                     registry_keys,
                 );
             }
-            Event::InterleaveRegistry(schedule) => {
-                let interference = registry_schedules
-                    .get(schedule.0)
-                    .and_then(Option::as_ref)
-                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                interference.apply(&mut self.registry, registry_keys);
+            Event::ExitLineRegistry { line, schedule } => {
+                if let Some(schedule) = schedule {
+                    registry_schedules
+                        .get(schedule.0)
+                        .and_then(|schedule| schedule.interference.as_ref())
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?
+                        .apply_to_flow(&mut self.registry, registry_keys);
+                }
+                self.registry.leave(RegistryOwner::Line(*line));
             }
-            Event::EnterRegistry(scope) => self.registry.enter(scope),
-            Event::RegistryBoundary => self.registry.forget(),
-            Event::Join | Event::RegistryRead { .. } | Event::ScheduledRegistryWrites(_) => {}
+            Event::EnterRegistry(owner) => self.registry.enter(*owner),
+            Event::RegistryBoundary(site) => self.registry.forget(*site),
+            Event::Join | Event::RegistryRead { .. } | Event::ScheduledRegistryWrites(..) => {}
         }
 
         Ok(())
@@ -321,9 +343,15 @@ pub(super) struct OwnershipFlowSolution {
 }
 
 impl OwnershipFlow {
-    pub(super) fn reserve_registry_schedule(&mut self) -> RegistryScheduleId {
+    pub(super) fn reserve_registry_schedule(
+        &mut self,
+        parent: RegistryConcurrency,
+    ) -> RegistryScheduleId {
         let id = RegistryScheduleId(self.registry_schedules.len());
-        self.registry_schedules.push(None);
+        self.registry_schedules.push(RegistrySchedule {
+            parent,
+            interference: None,
+        });
         id
     }
 
@@ -347,30 +375,64 @@ impl OwnershipFlow {
             .get(scheduled.0..)
             .ok_or(CheckedLocalUseError::InvalidTopology)?;
         for node in eager_events {
-            if let Event::ScheduledRegistryWrites(effects) = &node.event {
-                interference.opaque_writes(effects.as_deref());
+            if let Event::ScheduledRegistryWrites(site, effects) = &node.event {
+                interference.opaque_writes(*site, effects.as_deref());
             }
         }
         for node in scheduled_events {
             match &node.event {
-                Event::RegistryWrite { key, ty } => interference.write(key, ty),
-                Event::ForgetRegistryWrites(effects) | Event::DeferredRegistryWrites(effects) => {
-                    interference.opaque_writes(Some(effects));
+                Event::RegistryWrite { address, ty } => interference.write(address, ty),
+                Event::ForgetRegistryWrites(site, effects)
+                | Event::DeferredRegistryWrites(site, effects) => {
+                    interference.opaque_writes(*site, Some(effects));
                 }
-                Event::ScheduledRegistryWrites(effects) => {
-                    interference.opaque_writes(effects.as_deref());
+                Event::ScheduledRegistryWrites(site, effects) => {
+                    interference.opaque_writes(*site, effects.as_deref());
                 }
-                Event::RegistryBoundary => interference.opaque_writes(None),
+                Event::RegistryBoundary(site) => interference.opaque_writes(*site, None),
                 _ => {}
             }
         }
         let slot = self
             .registry_schedules
             .get_mut(id.0)
-            .filter(|slot| slot.is_none())
+            .filter(|slot| slot.interference.is_none())
             .ok_or(CheckedLocalUseError::InvalidTopology)?;
-        *slot = Some(interference);
+        slot.interference = Some(interference);
         Ok(())
+    }
+
+    fn registry_fact_at_read(
+        &self,
+        address: &RegistryAddress,
+        required: &EffectId,
+        mut concurrency: RegistryConcurrency,
+        mut fact: RegistryFact,
+    ) -> Result<RegistryFact, CheckedLocalUseError> {
+        loop {
+            match concurrency {
+                RegistryConcurrency::Sequential => return Ok(fact),
+                RegistryConcurrency::Unknown(site) => {
+                    return Ok(if site.reaches(address) {
+                        RegistryFact::Unknown
+                    } else {
+                        fact
+                    });
+                }
+                RegistryConcurrency::Scheduled(id) => {
+                    let schedule = self
+                        .registry_schedules
+                        .get(id.0)
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    let interference = schedule
+                        .interference
+                        .as_ref()
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    fact = interference.consider(address, required, fact);
+                    concurrency = schedule.parent;
+                }
+            }
+        }
     }
 
     /// Anchor the empty execution path before it can fork.
@@ -435,10 +497,10 @@ impl OwnershipFlow {
             .nodes
             .iter()
             .filter_map(|node| {
-                let Event::RegistryRead { key, .. } = &node.event else {
+                let Event::RegistryRead { address, .. } = &node.event else {
                     return None;
                 };
-                Some((Arc::clone(key), EffectId::state_write(key)))
+                Some((address.clone(), EffectId::state_write(address.key())))
             })
             .collect::<BTreeMap<_, _>>();
         let mut incoming = vec![None; self.nodes.len()];
@@ -490,14 +552,21 @@ impl OwnershipFlow {
             match &node.event {
                 Event::RegistryRead {
                     owner,
-                    key,
+                    address,
                     ty,
                     kind,
+                    concurrency,
                 } => {
-                    if !state.registry.admits(key, *kind, ty) {
+                    let fact = self.registry_fact_at_read(
+                        address,
+                        &registry_keys[address],
+                        *concurrency,
+                        state.registry.fact(address).clone(),
+                    )?;
+                    if !fact.admits(*kind, ty) {
                         violations.push(Violation::RegistryRead {
                             owner: *owner,
-                            key: Arc::clone(key),
+                            key: Arc::clone(address.key()),
                             kind: *kind,
                         });
                     }

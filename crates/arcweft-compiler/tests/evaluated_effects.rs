@@ -10,7 +10,7 @@ use arcweft_compiler::{
     lower::{RuntimeEmissionMode, project_runtime_reachability, project_runtime_semantic_facts},
     project::{
         AcceptedLaunchProfileInput, CompiledProject, ProjectCompilationContext,
-        ProjectCompilationSession, ProjectCompileError, compile_project,
+        ProjectCompilationSession, ProjectCompileError, analyze_project, compile_project,
     },
     source::compile_source,
     types::CompiledSource,
@@ -3133,6 +3133,8 @@ flow main() -> Unit effects { state.write('flow), state.write('line), log.write 
         }
     }
     log.info(result)
+    let persisted: String = 'flow.saved
+    log.info(persisted)
 }
 entry cli @entry.main { goto @flow.main }
 "#,
@@ -3177,6 +3179,7 @@ entry cli @entry.main { goto @flow.main }
         "mark-handler-enter",
         "parent value",
         "line value",
+        "parent value",
     ];
     let marks = [0, 1].map(|ordinal| RuntimeDialogueMarkId::from_zero_based(ordinal).unwrap());
     let (mut logs, completed) = execute_dialogue_result_with_marks(
@@ -3199,6 +3202,97 @@ entry cli @entry.main { goto @flow.main }
     logs.retain(|message| message != "sibling-writer");
     assert_eq!(before, logs.len() + 1);
     assert_eq!(logs, expected);
+}
+
+#[test]
+fn source_analysis_separates_nested_line_registrations_and_keeps_flow_writes() {
+    use arcweft_core::effect::RuntimeRegistryReadKind::Required;
+    use arcweft_lang_sema::{final_analysis::CheckedValueResolution, types::TypeKind};
+
+    let analysis = with_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('flow), state.write('line), log.write } {
+    alice()[Outer[p]] with {
+        init {
+            'line.saved <- "outer"
+            alice()[Inner[p]] with {
+                init {
+                    'line.saved <- true
+                    'flow.shared <- "updated by inner"
+                    let inner: bool = 'line.saved
+                    if inner { log.info("inner") }
+                }
+            }
+            let outer: String = 'line.saved
+            log.info(outer)
+        }
+    }
+    let shared: String = 'flow.shared
+    log.info(shared)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        analyze_project,
+    )
+    .expect("separate Line registries and shared Flow writes prove the required reads");
+    let reads: Vec<_> = analysis
+        .final_analysis()
+        .expressions()
+        .filter_map(|(_, expression)| {
+            let CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)) =
+                expression.resolution()
+            else {
+                return None;
+            };
+            assert_eq!(read.kind(), Required);
+            let [segment] = read.key().segments() else {
+                panic!("one registry key segment");
+            };
+            Some((
+                read.key().scope().as_str(),
+                segment.as_str(),
+                expression.value_type(),
+            ))
+        })
+        .collect();
+    assert_eq!(reads.len(), 3, "{reads:?}");
+    assert!(reads.contains(&("line", "saved", Some(&TypeKind::Bool))));
+    assert!(reads.contains(&("line", "saved", Some(&TypeKind::String))));
+    assert!(reads.contains(&("flow", "shared", Some(&TypeKind::String))));
+}
+
+#[test]
+fn source_nested_line_registration_cannot_prove_a_parent_read() {
+    use arcweft_lang_sema::final_analysis::{CheckedLocalUseError, FinalSemanticAnalysisError};
+
+    let error = with_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('line), log.write } {
+    alice()[Outer[p]] with {
+        init {
+            alice()[Inner[p]] with { init { 'line.saved <- "inner" } }
+            let missing: String = 'line.saved
+            log.info(missing)
+        }
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        analyze_project,
+    )
+    .err()
+    .expect("the parent Line has no registration");
+    assert!(
+        matches!(
+            error.semantic_error(),
+            Some(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
+            ))
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -3652,6 +3746,18 @@ fn dialogue_effect_callback_ops<'plan>(
     reason = "the end-to-end fixture keeps one explicit source-to-runtime publication pipeline"
 )]
 fn compile_attached_dialogue_project(source: &str) -> Result<CompiledProject, ProjectCompileError> {
+    with_attached_dialogue_project(source, compile_project)
+}
+
+fn with_attached_dialogue_project<T>(
+    source: &str,
+    run: impl FnOnce(
+        &mut ProjectCompilationSession,
+        &ProjectSources,
+        &BTreeMap<CanonicalModulePath, ParsedSource>,
+        &ProjectCompilationContext,
+    ) -> T,
+) -> T {
     let source_document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-test://evaluated-effects/source")
@@ -3751,7 +3857,7 @@ source = \"src/main.arcw\"\n",
         parsed,
     )]);
     let mut session = ProjectCompilationSession::try_new().expect("dialogue HIR database");
-    compile_project(&mut session, &project, &parsed_sources, &context)
+    run(&mut session, &project, &parsed_sources, &context)
 }
 
 fn resolve_authored_spacing_frame(

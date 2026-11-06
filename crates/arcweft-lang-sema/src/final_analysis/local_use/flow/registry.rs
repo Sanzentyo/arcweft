@@ -7,11 +7,63 @@ use std::{
 
 use arcweft_core::effect::RuntimeRegistryReadKind;
 use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
+use arcweft_lang_hir::identity::ExprId;
 
 use crate::types::TypeKind;
 
+/// A source activation in the ownership graph. Entering a Line site again
+/// starts fresh facts even when the source site is reached through a loop.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(in crate::final_analysis::local_use) enum RegistryOwner {
+    Flow,
+    Line(ExprId),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(in crate::final_analysis::local_use) struct RegistrySite {
+    line: Option<ExprId>,
+}
+
+impl RegistrySite {
+    pub(in crate::final_analysis::local_use) const fn line(line: ExprId) -> Self {
+        Self { line: Some(line) }
+    }
+
+    fn owners(self) -> impl Iterator<Item = RegistryOwner> {
+        std::iter::once(RegistryOwner::Flow).chain(self.line.map(RegistryOwner::Line))
+    }
+
+    pub(super) fn reaches(self, address: &RegistryAddress) -> bool {
+        self.owners().any(|owner| owner == address.owner)
+    }
+
+    pub(in crate::final_analysis::local_use) fn address(
+        self,
+        key: Arc<LifetimeRegistryKey>,
+    ) -> Option<RegistryAddress> {
+        let owner = match key.scope() {
+            LifetimeScopeKind::Flow => RegistryOwner::Flow,
+            LifetimeScopeKind::Line => RegistryOwner::Line(self.line?),
+            _ => return None,
+        };
+        Some(RegistryAddress { owner, key })
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(in crate::final_analysis::local_use) struct RegistryAddress {
+    owner: RegistryOwner,
+    key: Arc<LifetimeRegistryKey>,
+}
+
+impl RegistryAddress {
+    pub(super) fn key(&self) -> &Arc<LifetimeRegistryKey> {
+        &self.key
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum RegistryFact {
+pub(super) enum RegistryFact {
     Unknown,
     Absent,
     Present(Arc<TypeKind>),
@@ -37,81 +89,87 @@ impl RegistryFact {
             _ => Self::Unknown,
         }
     }
+
+    pub(super) fn admits(&self, kind: RuntimeRegistryReadKind, expected: &TypeKind) -> bool {
+        match (self, kind) {
+            (Self::Present(item), _)
+            | (Self::MaybePresent(item), RuntimeRegistryReadKind::Optional) => {
+                item.as_ref() == expected
+            }
+            (Self::Absent, RuntimeRegistryReadKind::Optional) => true,
+            _ => false,
+        }
+    }
 }
 
 /// A fresh scope provides a shared absence default. Only deviations from the
 /// default occupy rows, so entering a scope never materializes every read key.
 #[derive(Clone, Default, Eq, PartialEq)]
 pub(super) struct RegistryFacts {
-    empty_scopes: BTreeSet<LifetimeScopeKind>,
-    entries: BTreeMap<Arc<LifetimeRegistryKey>, RegistryFact>,
+    empty_scopes: BTreeSet<RegistryOwner>,
+    entries: BTreeMap<RegistryAddress, RegistryFact>,
 }
 
 impl RegistryFacts {
-    fn default_fact(&self, key: &LifetimeRegistryKey) -> &RegistryFact {
-        if self.empty_scopes.contains(key.scope()) {
+    fn default_fact(&self, address: &RegistryAddress) -> &RegistryFact {
+        if self.empty_scopes.contains(&address.owner) {
             &RegistryFact::Absent
         } else {
             &RegistryFact::Unknown
         }
     }
 
-    fn fact(&self, key: &LifetimeRegistryKey) -> &RegistryFact {
+    pub(super) fn fact(&self, address: &RegistryAddress) -> &RegistryFact {
         self.entries
-            .get(key)
-            .unwrap_or_else(|| self.default_fact(key))
+            .get(address)
+            .unwrap_or_else(|| self.default_fact(address))
     }
 
-    fn set(&mut self, key: &Arc<LifetimeRegistryKey>, fact: RegistryFact) {
-        if &fact == self.default_fact(key) {
-            self.entries.remove(key);
+    fn set(&mut self, address: &RegistryAddress, fact: RegistryFact) {
+        if &fact == self.default_fact(address) {
+            self.entries.remove(address);
         } else {
-            self.entries.insert(Arc::clone(key), fact);
+            self.entries.insert(address.clone(), fact);
         }
     }
 
-    pub(super) fn admits(
-        &self,
-        key: &LifetimeRegistryKey,
-        kind: RuntimeRegistryReadKind,
-        expected: &TypeKind,
-    ) -> bool {
-        match (self.fact(key), kind) {
-            (RegistryFact::Present(item), _)
-            | (RegistryFact::MaybePresent(item), RuntimeRegistryReadKind::Optional) => {
-                item.as_ref() == expected
-            }
-            (RegistryFact::Absent, RuntimeRegistryReadKind::Optional) => true,
-            _ => false,
+    pub(super) fn enter(&mut self, owner: RegistryOwner) {
+        self.leave(owner);
+        self.empty_scopes.insert(owner);
+    }
+
+    pub(super) fn leave(&mut self, owner: RegistryOwner) {
+        self.empty_scopes.remove(&owner);
+        self.entries.retain(|address, _| address.owner != owner);
+    }
+
+    pub(super) fn forget(&mut self, site: RegistrySite) {
+        for owner in site.owners() {
+            self.empty_scopes.remove(&owner);
+            self.entries.retain(|address, fact| {
+                address.owner != owner || *fact == RegistryFact::DeferredWrite
+            });
         }
     }
 
-    pub(super) fn enter(&mut self, scope: &LifetimeScopeKind) {
-        self.empty_scopes.insert(scope.clone());
-        self.entries
-            .retain(|key, fact| key.scope() != scope || *fact == RegistryFact::DeferredWrite);
-    }
-
-    pub(super) fn forget(&mut self) {
-        self.empty_scopes.clear();
-        self.entries
-            .retain(|_, fact| *fact == RegistryFact::DeferredWrite);
-    }
-
-    pub(super) fn register(&mut self, key: &Arc<LifetimeRegistryKey>, ty: &Arc<TypeKind>) {
-        if *self.fact(key) != RegistryFact::DeferredWrite {
-            self.set(key, RegistryFact::Present(Arc::clone(ty)));
+    pub(super) fn register(&mut self, address: &RegistryAddress, ty: &Arc<TypeKind>) {
+        if *self.fact(address) != RegistryFact::DeferredWrite {
+            self.set(address, RegistryFact::Present(Arc::clone(ty)));
         }
     }
 
     pub(super) fn invalidate_writes(
         &mut self,
-        covers: impl Fn(&EffectId) -> bool,
+        site: RegistrySite,
+        effects: &[EffectId],
         deferred: bool,
-        keys: &BTreeMap<Arc<LifetimeRegistryKey>, EffectId>,
+        keys: &BTreeMap<RegistryAddress, EffectId>,
     ) {
-        for (key, required) in keys {
-            if *self.fact(key) == RegistryFact::DeferredWrite || !covers(required) {
+        for (address, required) in keys {
+            if !site.owners().any(|owner| owner == address.owner)
+                || *self.fact(address) == RegistryFact::DeferredWrite
+                || !effects.iter().any(|effect| effect.covers(required))
+            {
                 continue;
             }
             let fact = if deferred {
@@ -119,7 +177,7 @@ impl RegistryFacts {
             } else {
                 RegistryFact::Unknown
             };
-            self.set(key, fact);
+            self.set(address, fact);
         }
     }
 
@@ -128,7 +186,7 @@ impl RegistryFacts {
             empty_scopes: self
                 .empty_scopes
                 .intersection(&other.empty_scopes)
-                .cloned()
+                .copied()
                 .collect(),
             entries: BTreeMap::new(),
         };
@@ -149,15 +207,15 @@ impl RegistryFacts {
 /// establish definite presence or remove an already registered value.
 #[derive(Default)]
 pub(super) struct RegistryInterference {
-    typed: BTreeMap<Arc<LifetimeRegistryKey>, Option<Arc<TypeKind>>>,
-    opaque: BTreeSet<EffectId>,
-    open: bool,
+    typed: BTreeMap<RegistryAddress, Option<Arc<TypeKind>>>,
+    opaque: BTreeMap<RegistryOwner, BTreeSet<EffectId>>,
+    open: BTreeSet<RegistryOwner>,
 }
 
 impl RegistryInterference {
-    pub(super) fn write(&mut self, key: &Arc<LifetimeRegistryKey>, ty: &Arc<TypeKind>) {
+    pub(super) fn write(&mut self, address: &RegistryAddress, ty: &Arc<TypeKind>) {
         self.typed
-            .entry(Arc::clone(key))
+            .entry(address.clone())
             .and_modify(|previous| {
                 if previous.as_ref() != Some(ty) {
                     *previous = None;
@@ -166,39 +224,54 @@ impl RegistryInterference {
             .or_insert_with(|| Some(Arc::clone(ty)));
     }
 
-    pub(super) fn opaque_writes(&mut self, effects: Option<&[EffectId]>) {
+    pub(super) fn opaque_writes(&mut self, site: RegistrySite, effects: Option<&[EffectId]>) {
         if let Some(effects) = effects {
-            self.opaque.extend(effects.iter().cloned());
+            for owner in site.owners() {
+                self.opaque
+                    .entry(owner)
+                    .or_default()
+                    .extend(effects.iter().cloned());
+            }
         } else {
-            self.open = true;
+            self.open.extend(site.owners());
         }
     }
 
-    pub(super) fn apply(
+    pub(super) fn consider(
+        &self,
+        address: &RegistryAddress,
+        required: &EffectId,
+        fact: RegistryFact,
+    ) -> RegistryFact {
+        if fact == RegistryFact::DeferredWrite {
+            return fact;
+        }
+        if self.open.contains(&address.owner)
+            || self
+                .opaque
+                .get(&address.owner)
+                .is_some_and(|effects| effects.iter().any(|effect| effect.covers(required)))
+        {
+            return RegistryFact::Unknown;
+        }
+        match self.typed.get(address) {
+            None => fact,
+            Some(Some(ty)) => fact.join(&RegistryFact::Present(Arc::clone(ty))),
+            Some(None) => RegistryFact::Unknown,
+        }
+    }
+
+    pub(super) fn apply_to_flow(
         &self,
         facts: &mut RegistryFacts,
-        keys: &BTreeMap<Arc<LifetimeRegistryKey>, EffectId>,
+        keys: &BTreeMap<RegistryAddress, EffectId>,
     ) {
-        if self.open {
-            facts.forget();
-            return;
-        }
-        for (key, ty) in &self.typed {
-            if keys.contains_key(key) && *facts.fact(key) != RegistryFact::DeferredWrite {
-                let possible = match ty {
-                    Some(ty) => RegistryFact::Present(Arc::clone(ty)),
-                    None => RegistryFact::Unknown,
-                };
-                let joined = facts.fact(key).join(&possible);
-                facts.set(key, joined);
-            }
-        }
-        if !self.opaque.is_empty() {
-            facts.invalidate_writes(
-                |required| self.opaque.iter().any(|effect| effect.covers(required)),
-                false,
-                keys,
-            );
+        for (address, required) in keys
+            .iter()
+            .filter(|(address, _)| address.owner == RegistryOwner::Flow)
+        {
+            let fact = self.consider(address, required, facts.fact(address).clone());
+            facts.set(address, fact);
         }
     }
 }

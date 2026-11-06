@@ -401,6 +401,9 @@ also establish a registration on its own reaching paths. A possible replacement
 by a sibling preserves that registration when it has the same item type. A
 sibling that might run provides only possible presence, which is enough for an
 inferred optional read if all possible registrations have the inferred type.
+The checker uses a separate Line registry for an inner dialogue. An inner
+Line registration supplies no evidence for a read in the enclosing Line.
+The checker attributes Flow writes to the reached Flow across both Lines.
 `focus=.soft` guarantees the default `'line.focus`; explicit keys such as
 `'line.focus.main` become guaranteed after an assignment with `<-`.
 
