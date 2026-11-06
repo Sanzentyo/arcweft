@@ -14944,3 +14944,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 67f7ccf92e4ad1cd6ec68ce367cdd044c39412a0 は AWBC の live 実行、私有ロールバック、公開保存で受け手の照合を共有する。元の Dialogue 命令、結果 binding、fiber の発行順を確認する。子の参照を先に処理する入れ子の検証は通り、途中の親や正しい発行順が欠ける場合は拒否した。
 - Core は最終 2,288 PASS。途中の 2 件は、元実行ルートと重複 fiber の診断を出す前に親子関係を検査したため失敗した。検査順を修正し、初回と後続のコンパイル失敗も保持した。構造監査のブロッキング違反は0。入れ子の AWBC 実行と実セッションの公開保存・復元は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — AWBC nested dialogue execution and restore
+
+- Source debbbf437d4f0e33a0282d7a7f7f35212ff6f0fd で、入れ子の対話を正規 AWBC に生成し、親子を明示進行した。全ステップの公開 JSON 保存・復元を挟んでも子と親の Line 値が分かれ、子の書込みが共有 Flow に残った。公開保存には実行中の対話が二件入った。別入力のゼロ除算は親の継続を実行せずに元の失敗をルートへ伝え、最終保存に実行中の対話を残さなかった。
+- Compiler 85 PASS、Core／RuntimePlan 2,422 PASS・1 skip。構造監査のブロッキング違反は0。保存検証の単一対話制限と Dialogue 停止をホスト呼出しとして扱う判定を修正し、試行中の失敗ログを保持した。子の String 戻り値を束縛する試行は意味解析の共有呼出し解決で停止した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

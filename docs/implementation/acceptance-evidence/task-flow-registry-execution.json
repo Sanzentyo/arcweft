@@ -10289,5 +10289,343 @@
         }
       ]
     }
+  },
+  "awbcNestedDialogueExecution": {
+    "source": "debbbf437d4f0e33a0282d7a7f7f35212ff6f0fd",
+    "base": "4c0378c2bfdb2fa0331d9ef34d6d75b703116220",
+    "published": "debbbf437d4f0e33a0282d7a7f7f35212ff6f0fd",
+    "tree": "0b3ec7b63a15273291a8cee8ffa18457da88471c",
+    "patchSha256": "be5d91ab46531c0677931ec2815c8f87a8b3c46dbf9ad08ee5108523d3e7c954",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "4c0378c2bfdb2fa0331d9ef34d6d75b703116220",
+        "run": "awbc-nested-execution-compiler-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   4.109s] 85 tests run: 85 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 85,
+        "passed": 85,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T11:15:02.0671461Z"
+      },
+      {
+        "version": 1,
+        "base": "4c0378c2bfdb2fa0331d9ef34d6d75b703116220",
+        "run": "awbc-nested-execution-owners-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  61.494s] 2422 tests run: 2422 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2422,
+        "passed": 2422,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T11:18:31.9692216Z"
+      }
+    ],
+    "reverseGraph": {
+      "base": "4c0378c2bfdb2fa0331d9ef34d6d75b703116220",
+      "owners": [
+        "arcweft-core",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "workspaceReversePackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "features": "all",
+      "targets": "all",
+      "treeMetadataDifference": 0,
+      "reusedMetadataBase": "451425c7dc70a94760794e0e62c5918eebd2b41b",
+      "manifestDrift": 0,
+      "cargoTestTargets": 223
+    },
+    "testTargets": {
+      "total": 223,
+      "passing": 4,
+      "notRun": 219,
+      "passingRows": [
+        {
+          "binary": "arcweft-compiler::evaluated_effects",
+          "run": "awbc-nested-execution-compiler-final-20261106",
+          "cases": 66
+        },
+        {
+          "binary": "arcweft-compiler::flow_include",
+          "run": "awbc-nested-execution-compiler-final-20261106",
+          "cases": 19
+        },
+        {
+          "binary": "arcweft-core",
+          "run": "awbc-nested-execution-owners-20261106",
+          "cases": 2288
+        },
+        {
+          "binary": "arcweft-runtime-plan",
+          "run": "awbc-nested-execution-owners-20261106",
+          "cases": 134
+        }
+      ]
+    },
+    "structure": {
+      "version": 1,
+      "source": "debbbf437d4f0e33a0282d7a7f7f35212ff6f0fd",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4133,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T11:20:28.711067Z",
+      "finishedAt": "2026-11-06T11:20:32.4212218Z"
+    },
+    "workspaceChecks": [
+      {
+        "kind": "check",
+        "status": "not_run"
+      },
+      {
+        "kind": "clippy",
+        "status": "not_run"
+      }
+    ],
+    "coverage": "An authored nested dialogue compiled through RuntimePlan into canonical AWBC. Its bytes remained identical after decode and re-encode. The Product executor revealed and advanced the two dialogues, retained distinct Line values and the shared Flow write, and round-tripped the public JSON save after every step. The save held both active dialogues. An independent source divided by zero inside the nested activation. Its parent and root continuations did not execute, the original trap reached the entry fiber, and the final restored save held no active dialogue frames.",
+    "ownership": "Product follows the actual Dialogue suspension chain. A child is issued against its actual receiving fiber. Success binds and resumes that receiver through its prepared publication, and failure closes the child before propagating to the parent. Flow registry effects follow the same ancestry. Save admission groups child work by its exact activation, checks each line reducer and its child custody, and retains the version-one shape.",
+    "attempts": [
+      "The first build caught the missing persistent-fiber ID import and the missing equality for a registry owner.",
+      "A captured activation suspension was treated as a host-only state. The save validator now recognizes pending and active Dialogue suspensions.",
+      "An explicit String result from the inner authored dialogue failed shared callable resolution. The unmodified accepted registry source was used for the final execution test. The attempted source and diagnostics are retained.",
+      "A remaining Product snapshot check assumed at most one active dialogue. The admitted receiver chain now owns that shape, and every active dialogue validates its own child fibers and reducer custody.",
+      "The first failure fixture used an assertion effect, which did not itself trap the executor. The quotient fixture was moved into the failure test after an initial unknown-target error. Runtime division by zero then closed the nested activation and its parent in the same round-trip harness."
+    ],
+    "boundary": "The end-to-end nested fixtures prove Unit completion and trap propagation. The attempted authored non-Unit binding, cross-activation affine handle transfer, and the full reverse runtime run remain unverified. The original 12 tracked and 6 untracked paths were outside the checkpoint.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-nested-execution.raw.zip",
+      "sha256": "471dbed83fab74f4fa3b43f29f5c1fcfe72bcd23cddef568b2f7bb50f9d88d24",
+      "entries": [
+        {
+          "entry": "awbc-nested-execution-20261106.cargo-tree.txt",
+          "bytes": 19607,
+          "sha256": "06c34cda94eb66fa27433e4ed80faa07b4c20c1b067132bd0b91a42bf79668f4"
+        },
+        {
+          "entry": "awbc-nested-execution-20261106.reverse.json",
+          "bytes": 1839,
+          "sha256": "21520f327a48eef7567276128a82423a4fcf5500753d59ae48d66eda30fdc22f"
+        },
+        {
+          "entry": "checkpoint-awbc-nested-execution-20261106.verified.json",
+          "bytes": 2864,
+          "sha256": "cff93baf21d2488808344b5a396c6f509f1c5429a098f87080253f84225dc848"
+        },
+        {
+          "entry": "awbc-nested-execution-structure-20261106.json",
+          "bytes": 380,
+          "sha256": "c1a430a441966ebfbf6465bff6ebef9c7376fe69678b056eacdce08e4b5db21e"
+        },
+        {
+          "entry": "awbc-nested-execution-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "c45ea2fe5f4b76236f724f8d349b8450569ee7dcfdbf1acac2758a32d90023c3"
+        },
+        {
+          "entry": "awbc-nested-typed-result-probe-20261106.arcw",
+          "bytes": 779,
+          "sha256": "0154ba1210791c2e40f28b284a39cb8c0009c838468bc497183810cc59be88d9"
+        },
+        {
+          "entry": "awbc-nested-execution-probe-20261106.log",
+          "bytes": 14138,
+          "sha256": "edff074d4bbd2fbfc4597394b4b8724315ce6556fd12993b904a0fe269a33b14"
+        },
+        {
+          "entry": "awbc-nested-execution-probe-retry-20261106.log",
+          "bytes": 87633,
+          "sha256": "8bfb0d3e2daf326d6c4f80808c208324cc9b5c4a0e3fdc8d6a9e1387fca788b3"
+        },
+        {
+          "entry": "awbc-nested-execution-probe-save-20261106.log",
+          "bytes": 93042,
+          "sha256": "a6ff2e38a13e4c436f96caf728e6c8e577b1ff3fb609a0cc12c238eaea88ebb8"
+        },
+        {
+          "entry": "awbc-nested-execution-probe-registry-20261106.log",
+          "bytes": 86280,
+          "sha256": "f2cf1238028fe80f0c1cbec6cefb237b63f0ddbe56100f8ac28bfbdbecffaeaf"
+        },
+        {
+          "entry": "awbc-nested-execution-probe-failure-20261106.log",
+          "bytes": 86020,
+          "sha256": "04231d4c758b165861c849bd39ea98cc7fe0cb40dba48d689216b962db435b4f"
+        },
+        {
+          "entry": "awbc-nested-execution-probe-trap-20261106.log",
+          "bytes": 88291,
+          "sha256": "b1512bed3a2fd235129a1b91257ef22d3d42e98694fb6d39e346293bd5becd8c"
+        },
+        {
+          "entry": "awbc-nested-execution-probe-trap-corrected-20261106.log",
+          "bytes": 85154,
+          "sha256": "7e0b557a82407d800e7acdca8002b62effc9ee014bea3892e13795771a2c3d45"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.catalog.json",
+          "bytes": 602,
+          "sha256": "4b67870d62a7d794aaa4e8ee1ba7ec5a62b70596b235b01e679dbbfef0dfb1bd"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.catalog.inventory.json",
+          "bytes": 21417,
+          "sha256": "d8c559a04e523cb6408dc92307ebc814bbdb65457c6cdfdadddb2f6948066dae"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.catalog.log",
+          "bytes": 98325,
+          "sha256": "f85907fefc28b2e5b7036781772e4f9d1d46f69c83e4482f195cf7dbb574d268"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.runtime.json",
+          "bytes": 694,
+          "sha256": "9cca83d6a5df91b6634d5adbff09f7aa189124e87fa690b3c7581235284c66a9"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.runtime.log",
+          "bytes": 108997,
+          "sha256": "1f8f29d1704b34f727fa062985b6f4f78f46c33a62237137a6b653fcbdc54305"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.runtime.terminal-audit.json",
+          "bytes": 626,
+          "sha256": "d3ffb97233c5d33dca70b1aec01d1fa417c41bccecf43efb0d32987a54224d7d"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "c4d62f428f7e97329cd29888ff5e7dc2e82baad2c988951277bc39a4f7c0f24f"
+        },
+        {
+          "entry": "awbc-nested-execution-compiler-final-20261106.source-freeze.json",
+          "bytes": 808242,
+          "sha256": "51b68ef936a57543710910497bd5651311c40819b97249f16370cc86796fd15a"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.catalog.json",
+          "bytes": 567,
+          "sha256": "ad6061842e49eddcf8f5911735179810faa6de0b92e177d94c73e93e71aa0f73"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.catalog.inventory.json",
+          "bytes": 617806,
+          "sha256": "1deb169e61c1648c5184bd2c3bfeabafdbc1e402bf81c56eae44ce006ace2bc7"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.catalog.log",
+          "bytes": 514744,
+          "sha256": "46786b2182e1255b8d4a330385978c2ba9b7d39e851f6b0f90ce584d87de9427"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.runtime.json",
+          "bytes": 659,
+          "sha256": "a64806763e11d0fb1280c7e8be7ae69b708574f7bd01bccad11d379f9af82b68"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.runtime.log",
+          "bytes": 839985,
+          "sha256": "eff4d09e0e2e167dc45eb8a45c573ceb6f9c77e2834d5b32c27d366feafa0669"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.runtime.terminal-audit.json",
+          "bytes": 626,
+          "sha256": "a4d12574396d93e1988fbcc906e20a2d3d5ea5c1d6d4d572260f10fbe9fc9501"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.binaries-before.json",
+          "bytes": 447,
+          "sha256": "5105890f404c07a1c825871cf5dad68495c2a1478463e8d7c8361be59bedada2"
+        },
+        {
+          "entry": "awbc-nested-execution-owners-20261106.source-freeze.json",
+          "bytes": 808242,
+          "sha256": "731881f673ec6e3c8bb05134215e9c6039da11d4c62c94c6e2b2490fe82263ef"
+        }
+      ]
+    }
   }
 }
