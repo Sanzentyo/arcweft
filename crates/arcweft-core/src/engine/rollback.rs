@@ -1114,7 +1114,7 @@ impl Engine {
         removal: Option<crate::presentation::resources::PresentationSlotRemovalAdmission<'_>>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         self.admit_live_fiber_values(admission, removal, None)?;
-        if !self.inline_dialogues.is_empty() {
+        if !self.dialogue_activations.inline_stack.is_empty() {
             self.admit_live_dialogue_values(admission)?;
         }
         Ok(())
@@ -1126,7 +1126,7 @@ impl Engine {
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         use crate::line_task::RuntimeDialogueRegistrySnapshotError;
         self.dialogue_activations
-            .admit_live_with_inline_execution(admission, &self.inline_dialogues, &self.fiber.frame)
+            .admit_live_with_inline_execution(admission, self.inline_dialogue_execution())
             .map_err(|error| match error {
                 RuntimeDialogueRegistrySnapshotError::Value(error) => error,
                 error => crate::value::AwbcRuntimeValueSnapshotError::Message {
@@ -1142,10 +1142,7 @@ impl Engine {
         transaction: Option<&super::dialogue::DialogueActivationTransaction>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         use crate::value::AwbcRuntimeValueSnapshotError;
-        let suspended = self
-            .inline_dialogues
-            .first()
-            .map(|transaction| &transaction.frame().execution);
+        let suspended = self.inline_dialogue_execution().suspended_frame();
         self.admit_presentation_state_for_slot_removal(admission, removal)?;
         self.admit_metadata(admission)?;
         self.need_producers.admit_retained(admission)?;
@@ -1170,7 +1167,7 @@ impl Engine {
         self.expected_deferred_children(|activation| {
             transaction
                 .into_iter()
-                .chain(&self.inline_dialogues)
+                .chain(&self.dialogue_activations.inline_stack)
                 .find(|transaction| transaction.activation() == activation)
                 .map(super::dialogue::DialogueActivationTransaction::line)
                 .or_else(|| self.dialogue_activations.active_line(activation))
@@ -1195,6 +1192,11 @@ impl NativeEngineRollbackImage {
         }
         let mut admission =
             crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        self.dialogue_activations.admit_inline_order(
+            self.fiber.persistent_id,
+            limits,
+            &mut admission,
+        )?;
         self.admit_presentation_state(&mut admission)
             .map_err(|error| error.to_string())?;
         self.admit_metadata(&mut admission)

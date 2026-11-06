@@ -2199,6 +2199,7 @@ entry cli @entry.main { goto @flow.main }
                 |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
                 cancelled,
                 "native",
+                1,
             ),
             expected,
         );
@@ -2250,6 +2251,7 @@ entry cli @entry.main { goto @flow.main }
                 },
                 cancelled,
                 "awbc",
+                1,
             ),
             expected,
         );
@@ -2931,6 +2933,7 @@ fn execute_dialogue_result_with_action(
     ) -> arcweft_core::step::RuntimeStepResult,
     cancelled: bool,
     backend: &str,
+    expected_lines: usize,
 ) -> Vec<String> {
     use arcweft_core::{
         engine::{FlowExit, FlowFiberStatus},
@@ -2972,7 +2975,10 @@ fn execute_dialogue_result_with_action(
         for event in result.output.flow_events {
             if let FlowEvent::DialogueLine { activation, .. } = event {
                 seen += 1;
-                pending = Some(activation);
+                assert!(
+                    pending.replace(activation).is_none(),
+                    "{backend}: two lines in one step"
+                );
             }
         }
         last_status = Some(format!("{:?}", result.fiber_status));
@@ -2980,7 +2986,7 @@ fn execute_dialogue_result_with_action(
             FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
             FlowFiberStatus::Done(exit) => {
                 assert_eq!(exit, FlowExit::Done);
-                assert_eq!(seen, 1);
+                assert_eq!(seen, expected_lines);
                 return log_messages(&effects);
             }
             status => panic!("dialogue result execution stopped unexpectedly: {status:?}"),
@@ -3204,13 +3210,7 @@ entry cli @entry.main { goto @flow.main }
     assert_eq!(logs, expected);
 }
 
-#[test]
-fn source_analysis_separates_nested_line_registrations_and_keeps_flow_writes() {
-    use arcweft_core::effect::RuntimeRegistryReadKind::Required;
-    use arcweft_lang_sema::{final_analysis::CheckedValueResolution, types::TypeKind};
-
-    let analysis = with_attached_dialogue_project(
-        r#"
+const NESTED_LINE_REGISTRY_SOURCE: &str = r#"
 pub character alice { display = "Alice" }
 flow main() -> Unit effects { state.write('flow), state.write('line), log.write } {
     alice()[Outer[p]] with {
@@ -3232,10 +3232,15 @@ flow main() -> Unit effects { state.write('flow), state.write('line), log.write 
     log.info(shared)
 }
 entry cli @entry.main { goto @flow.main }
-"#,
-        analyze_project,
-    )
-    .expect("separate Line registries and shared Flow writes prove the required reads");
+"#;
+
+#[test]
+fn source_analysis_separates_nested_line_registrations_and_keeps_flow_writes() {
+    use arcweft_core::effect::RuntimeRegistryReadKind::Required;
+    use arcweft_lang_sema::{final_analysis::CheckedValueResolution, types::TypeKind};
+
+    let analysis = with_attached_dialogue_project(NESTED_LINE_REGISTRY_SOURCE, analyze_project)
+        .expect("separate Line registries and shared Flow writes prove the required reads");
     let reads: Vec<_> = analysis
         .final_analysis()
         .expressions()
@@ -3260,6 +3265,44 @@ entry cli @entry.main { goto @flow.main }
     assert!(reads.contains(&("line", "saved", Some(&TypeKind::Bool))));
     assert!(reads.contains(&("line", "saved", Some(&TypeKind::String))));
     assert!(reads.contains(&("flow", "shared", Some(&TypeKind::String))));
+}
+
+#[test]
+fn native_nested_line_registries_resume_their_parent_line_and_share_the_flow() {
+    use arcweft_core::{
+        effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
+        task::RuntimeProgramOwner,
+    };
+
+    let compiled = compile_attached_dialogue_project(NESTED_LINE_REGISTRY_SOURCE)
+        .expect("RuntimePlan registers both dialogue content handles");
+    let runtime = compiled.runtime_plan();
+    let [flow] = runtime.plan.flows() else {
+        panic!("one executable Flow");
+    };
+    let mut plan = runtime.plan.clone();
+    let fixture_artifact = blake3::hash(NESTED_LINE_REGISTRY_SOURCE.as_bytes());
+    plan.bind_artifact(
+        RuntimeArtifactFingerprint::try_from_bytes(*fixture_artifact.as_bytes()).unwrap(),
+    )
+    .unwrap();
+    let mut native = Engine::for_flow(plan, &flow.id).unwrap();
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    assert_eq!(
+        execute_dialogue_result_with_action(
+            |input, options| native.step_with_pure_backend(input, options, &mut backend),
+            false,
+            "Native nested registry",
+            2,
+        ),
+        ["inner", "outer", "updated by inner"],
+    );
 }
 
 #[test]

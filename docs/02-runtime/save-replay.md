@@ -264,6 +264,10 @@ tokenは元のleaseまたは回収待ちの所有headerに完全一致し、同�
 保持できない。scopeが暗黙のcleanupを所有するleaseは明示Handle値なしでも保持できるが、
 scopeからdetachしたleaseは、保持値のグラフに一意なHandleを必要とする。
 contourと既に観測したHandleはbankの一時停止・再開で移動し、再発行しない。
+入れ子の対話を処理する間、Native の private rollback は停止中の親フレームを
+元の fiber に、各対話の実行フレームをそれぞれの activation に一度ずつ記録する。
+復元では元の program と fiber を照合し、保存した対話の順に実行スロットを組み直す。
+各フレームの保持値とレジストリは、同じ累積資源枠で検査する。
 
 Presentation の資源bankは `Root` または完全な `DialogueActivationId` で識別する。
 bank identityはtokenと動的scope ownerに含まれ、同じprogram・fiber・局所発行番号でも

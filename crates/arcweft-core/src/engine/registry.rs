@@ -20,7 +20,18 @@ use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
 pub(super) enum NativeDialogueRegistryTarget {
     Line,
     ActivationFlow,
-    ParentFlow(FlowFiberId),
+    ParentFlow {
+        fiber: FlowFiberId,
+        frame: NativeParentFlowFrame,
+    },
+}
+
+/// The same frame can be in the execution slot or displaced by an inline
+/// dialogue at different points of a prepared registry write.
+#[derive(Clone, Copy)]
+pub(super) enum NativeParentFlowFrame {
+    Fiber,
+    Inline(DialogueActivationId),
 }
 
 impl NativeDialogueRegistryTarget {
@@ -33,7 +44,7 @@ impl NativeDialogueRegistryTarget {
                 RuntimeRegistryOwner::Dialogue(activation),
                 RuntimeRegistryWriteSource::NativeLine { activation },
             ),
-            Self::ActivationFlow | Self::ParentFlow(_) => (
+            Self::ActivationFlow | Self::ParentFlow { .. } => (
                 RuntimeRegistryOwner::NativeFlow,
                 RuntimeRegistryWriteSource::Native,
             ),
@@ -82,21 +93,20 @@ impl Engine {
             .ok_or(RuntimeEvalError::RegistryReadContextRequired)?
             .semantic_identity();
         let binding = self.fiber.frame.env.function_instantiation();
-        let inline = self.inline_dialogues.last();
+        let inline = self.dialogue_activations.inline_stack.last();
         let activation = inline
             .map(|transaction| *transaction.activation())
             .or_else(|| self.fiber.owner.dialogue_activation().copied());
         let (rows, reached_owner) = match key.scope() {
             LifetimeScopeKind::Flow => {
                 let flow = self.fiber.frame.env.flow_registry().or_else(|| {
-                    if inline.is_some() {
-                        return self.inline_dialogues.iter().rev().find_map(|transaction| {
-                            transaction.frame().execution.env.flow_registry()
-                        });
-                    }
                     let activation = activation?;
-                    let parent = self.dialogue_activations.active_parent(&activation)?;
+                    let parent = match inline {
+                        Some(transaction) => transaction.frame().parent,
+                        None => self.dialogue_activations.active_parent(&activation)?,
+                    };
                     self.dialogue_parent_flow_registry(parent, activation)
+                        .map(|(_, rows)| rows)
                 });
                 (flow, RuntimeRegistryOwner::NativeFlow)
             }
@@ -132,20 +142,71 @@ impl Engine {
         &self,
         parent: FlowFiberId,
         activation: DialogueActivationId,
-    ) -> Option<&crate::effect::RuntimeScopeRegistry> {
+    ) -> Option<(
+        NativeDialogueRegistryTarget,
+        &crate::effect::RuntimeScopeRegistry,
+    )> {
         let owner = RuntimeProgramOwner::Plan(self.plan.clone());
         let fiber = self
             .session_fibers()
             .find(|fiber| fiber.id == parent && fiber.persistent_id == activation.owner_fiber())?;
-        let suspended = self
-            .inline_dialogues
-            .first()
-            .map(|transaction| &transaction.frame().execution);
-        let frame = self.session_frame(fiber, suspended);
-        if !frame.program.same_program(&owner) {
-            return None;
+        let inline = self.inline_dialogue_execution();
+        let candidates = inline
+            .frames()
+            .rev()
+            .filter(|(id, _)| fiber.id == self.fiber.id && *id != activation)
+            .map(|(id, frame)| (NativeParentFlowFrame::Inline(id), frame))
+            .chain(std::iter::once((
+                NativeParentFlowFrame::Fiber,
+                self.session_frame(fiber, inline.suspended_frame()),
+            )));
+        candidates
+            .filter(|(_, frame)| frame.program.same_program(&owner))
+            .find_map(|(owner, frame)| {
+                Some((
+                    NativeDialogueRegistryTarget::ParentFlow {
+                        fiber: parent,
+                        frame: owner,
+                    },
+                    frame.env.flow_registry()?,
+                ))
+            })
+    }
+
+    fn dialogue_parent_flow_frame_mut(
+        &mut self,
+        parent: FlowFiberId,
+        activation: DialogueActivationId,
+        target: NativeParentFlowFrame,
+    ) -> Option<&mut super::NativeFlowExecutionFrame> {
+        let selected =
+            self.fiber.id == parent && self.fiber.persistent_id == activation.owner_fiber();
+        match target {
+            NativeParentFlowFrame::Fiber if selected => {
+                match self.dialogue_activations.inline_stack.first_mut() {
+                    Some(first) => Some(&mut first.frame_mut().execution),
+                    None => Some(&mut self.fiber.frame),
+                }
+            }
+            NativeParentFlowFrame::Fiber => self
+                .parked_main
+                .iter_mut()
+                .chain(&mut self.child_fibers)
+                .find(|fiber| fiber.id == parent && fiber.persistent_id == activation.owner_fiber())
+                .map(|fiber| &mut fiber.frame),
+            NativeParentFlowFrame::Inline(owner) if selected && owner != activation => {
+                let index = self
+                    .dialogue_activations
+                    .inline_stack
+                    .iter()
+                    .position(|row| *row.activation() == owner)?;
+                match self.dialogue_activations.inline_stack.get_mut(index + 1) {
+                    Some(next) => Some(&mut next.frame_mut().execution),
+                    None => Some(&mut self.fiber.frame),
+                }
+            }
+            NativeParentFlowFrame::Inline(_) => None,
         }
-        frame.env.flow_registry()
     }
 
     pub(super) fn dialogue_registry_rows_mut<'a>(
@@ -162,20 +223,15 @@ impl Engine {
                 .env
                 .flow_registry_mut()
                 .ok_or_else(|| missing.into()),
-            NativeDialogueRegistryTarget::ParentFlow(parent) => {
+            NativeDialogueRegistryTarget::ParentFlow { fiber, frame } => {
                 let activation = *transaction.activation();
-                if transaction.frame().parent != parent {
+                if transaction.frame().parent != fiber {
                     return Err(missing.into());
                 }
                 let owner = RuntimeProgramOwner::Plan(self.plan.clone());
-                std::iter::once(&mut self.fiber)
-                    .chain(&mut self.parked_main)
-                    .chain(&mut self.child_fibers)
-                    .find(|fiber| {
-                        fiber.id == parent && fiber.persistent_id == activation.owner_fiber()
-                    })
-                    .filter(|fiber| fiber.frame.program.same_program(&owner))
-                    .and_then(|fiber| fiber.frame.env.flow_registry_mut())
+                self.dialogue_parent_flow_frame_mut(fiber, activation, frame)
+                    .filter(|frame| frame.program.same_program(&owner))
+                    .and_then(|frame| frame.env.flow_registry_mut())
                     .ok_or_else(|| missing.into())
             }
         }
@@ -202,7 +258,11 @@ impl Engine {
 
         let plan = self.plan.clone();
         let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
-        let transaction = self.inline_dialogues.last().ok_or(missing.clone())?;
+        let transaction = self
+            .dialogue_activations
+            .inline_stack
+            .last()
+            .ok_or(missing.clone())?;
         let activation = *transaction.activation();
         let parent = transaction.frame().parent;
         let operands =
@@ -214,11 +274,9 @@ impl Engine {
             ),
             LifetimeScopeKind::Flow => match self.fiber.frame.env.flow_registry() {
                 Some(rows) => (NativeDialogueRegistryTarget::ActivationFlow, rows),
-                None => (
-                    NativeDialogueRegistryTarget::ParentFlow(parent),
-                    self.dialogue_parent_flow_registry(parent, activation)
-                        .ok_or(missing.clone())?,
-                ),
+                None => self
+                    .dialogue_parent_flow_registry(parent, activation)
+                    .ok_or(missing.clone())?,
             },
             _ => return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into()),
         };
@@ -277,11 +335,8 @@ impl Engine {
                     .dialogue_activations
                     .active_parent(&activation)
                     .ok_or(missing.clone())?;
-                (
-                    NativeDialogueRegistryTarget::ParentFlow(parent),
-                    self.dialogue_parent_flow_registry(parent, activation)
-                        .ok_or(missing.clone())?,
-                )
+                self.dialogue_parent_flow_registry(parent, activation)
+                    .ok_or(missing.clone())?
             }
             _ => return Err(missing.into()),
         };

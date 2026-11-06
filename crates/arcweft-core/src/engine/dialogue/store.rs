@@ -273,9 +273,40 @@ pub(crate) struct DialogueActivationStoreRollbackImage {
         NativeEngineDialogueFrameRollbackImage,
         RuntimePlanTypeId,
     >,
+    /// Private rollback restores these active rows to the execution stack.
+    /// The frames themselves appear only once, in their registry rows.
+    inline_order: Box<[DialogueActivationId]>,
 }
 
 impl DialogueActivationStoreRollbackImage {
+    pub(in crate::engine) fn admit_inline_order(
+        &self,
+        fiber: crate::runtime_id::RuntimePersistentFiberId,
+        limits: crate::entry::RuntimeSchemaLimits,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        let order = &self.inline_order;
+        if !order.is_empty() && !limits.permits_depth(order.len()) {
+            return Err("native inline dialogue stack exceeds the retained depth limit".into());
+        }
+        admission
+            .validate_metadata_collection(order.len())
+            .map_err(|error| error.to_string())?;
+        let mut seen = std::collections::BTreeSet::new();
+        for activation in order {
+            admission
+                .validate_metadata(activation)
+                .map_err(|error| error.to_string())?;
+            if activation.owner_fiber() != fiber
+                || self.registry.active_line(activation).is_none()
+                || !seen.insert(*activation)
+            {
+                return Err("native inline dialogue stack differs from its active owners".into());
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::engine) fn admit_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -498,6 +529,7 @@ impl NativeDialogueScopeRollbackImage {
 impl DialogueActivationFrame {
     fn snapshot_admitted(
         &self,
+        execution: &super::super::NativeFlowExecutionFrame,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<NativeDialogueActivationFrameRollbackImage, String> {
         Ok(NativeDialogueActivationFrameRollbackImage {
@@ -519,7 +551,7 @@ impl DialogueActivationFrame {
                 .iter()
                 .map(|binding| NativeDialogueBindingRollbackImage::from_live(binding, owner))
                 .collect::<Result<_, String>>()?,
-            execution: self.execution.snapshot_with_admitted_values(owner)?,
+            execution: execution.snapshot_with_admitted_values(owner)?,
             line_task: self.line_task.clone(),
             elapsed: self.elapsed,
             phase: self.phase,
@@ -755,6 +787,7 @@ pub(crate) enum PendingLineOperation<V = RuntimeValue> {
 #[derive(Debug, Default, PartialEq)]
 pub struct DialogueActivationStore {
     registry: RuntimeDialogueActivationRegistry<EngineDialogueActivationFrame, RuntimePlanTypeId>,
+    pub(in crate::engine) inline_stack: Vec<DialogueActivationTransaction>,
 }
 
 impl DialogueActivationStore {
@@ -784,15 +817,26 @@ impl DialogueActivationStore {
     pub(crate) fn into_published(
         self,
     ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
-        self.registry
-            .into_published()
-            .map_err(|(registry, reason)| (Self { registry }, reason))
+        let Self {
+            registry,
+            inline_stack,
+        } = self;
+        registry.into_published().map_err(|(registry, reason)| {
+            (
+                Self {
+                    registry,
+                    inline_stack,
+                },
+                reason,
+            )
+        })
     }
     pub(crate) fn from_published(
         custody: crate::line_task::RuntimePublishedDialogueRegistry,
     ) -> Self {
         Self {
             registry: custody.into_registry(),
+            inline_stack: Vec::new(),
         }
     }
 
@@ -992,53 +1036,71 @@ impl DialogueActivationStore {
     pub(in crate::engine) fn admit_live_with_inline_execution(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-        stack: &[DialogueActivationTransaction],
-        execution: &super::super::NativeFlowExecutionFrame,
+        inline: super::InlineDialogueExecution<'_>,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
-        // Each transaction holds the frame it suspended. Its own running frame
-        // is held by the next transaction or by the active execution slot.
-        self.admit_contour(admission, stack.iter(), |activation| {
-            let index = stack
-                .iter()
-                .position(|transaction| transaction.activation() == activation)?;
-            Some(
-                stack
-                    .get(index + 1)
-                    .map_or(execution, |next| &next.frame().execution),
-            )
+        self.admit_contour(admission, inline.stack.iter(), |activation| {
+            inline.frame_for(activation)
         })?;
         Ok(())
     }
 
-    pub(crate) fn inert_rollback_image(
+    pub(in crate::engine) fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        inline: Option<super::InlineDialogueExecution<'_>>,
         transaction: Option<&DialogueActivationTransaction>,
     ) -> Result<DialogueActivationStoreRollbackImage, String> {
+        let stack = inline.map_or(&[][..], |inline| inline.stack);
+        let execution_for = |activation: &DialogueActivationId| {
+            inline.and_then(|inline| inline.frame_for(activation))
+        };
+        admission
+            .validate_metadata_collection(stack.len())
+            .map_err(|error| error.to_string())?;
+        for row in stack {
+            admission
+                .validate_metadata(row.activation())
+                .map_err(|error| error.to_string())?;
+        }
+        let transactions = (0..stack.len() + usize::from(transaction.is_some())).map(|index| {
+            stack
+                .get(index)
+                .or(transaction)
+                .expect("existing dialogue transaction")
+        });
         let contour = self
-            .admit_contour(admission, transaction.into_iter(), |_| None)
+            .admit_contour(admission, transactions, execution_for)
             .map_err(|error| error.to_string())?;
         admission
             .finish_presentation_custody()
             .map_err(|error| error.to_string())?;
         let registry = contour
-            .snapshot_admitted(Some(owner), |active| {
+            .snapshot_admitted(Some(owner), |activation, active| {
+                let execution = execution_for(activation).unwrap_or(&active.frame.execution);
                 Ok(NativeEngineDialogueFrameRollbackImage {
-                    frame: active.frame.snapshot_admitted(owner).map_err(|message| {
-                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame { message }
-                    })?,
+                    frame: active
+                        .frame
+                        .snapshot_admitted(execution, owner)
+                        .map_err(|message| {
+                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                message,
+                            }
+                        })?,
                     inbox: active.inbox.clone(),
                 })
             })
             .map_err(|error| error.to_string())?;
-        Ok(DialogueActivationStoreRollbackImage { registry })
+        Ok(DialogueActivationStoreRollbackImage {
+            registry,
+            inline_order: stack.iter().map(|row| *row.activation()).collect(),
+        })
     }
 
     pub(in crate::engine) fn from_admitted_rollback_image(
         image: DialogueActivationStoreRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
-    ) -> Result<Self, String> {
+    ) -> Result<(Self, Box<[DialogueActivationId]>), String> {
         let registry = RuntimeDialogueActivationRegistry::from_admitted_save_snapshot(
             image.registry,
             owner,
@@ -1056,7 +1118,13 @@ impl DialogueActivationStore {
             },
         )
         .map_err(|error| error.to_string())?;
-        Ok(Self { registry })
+        Ok((
+            Self {
+                registry,
+                inline_stack: Vec::new(),
+            },
+            image.inline_order,
+        ))
     }
 }
 
@@ -1100,8 +1168,16 @@ impl DialogueActivationTransaction {
         &self,
         next_fiber_id: u64,
     ) -> Result<(), String> {
+        self.validate_execution_parent(&self.frame().execution, next_fiber_id)
+    }
+
+    pub(super) fn validate_execution_parent(
+        &self,
+        execution: &super::super::NativeFlowExecutionFrame,
+        next_fiber_id: u64,
+    ) -> Result<(), String> {
         let activation = *self.activation();
-        if self.frame().execution.presentation_bank
+        if execution.presentation_bank
             != (crate::runtime_id::RuntimePresentationBankId::Dialogue { activation })
         {
             return Err("dialogue presentation bank differs from its activation".into());
@@ -1678,7 +1754,7 @@ mod tests {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         let error = store
-            .inert_rollback_image(&owner, &mut admission, None)
+            .inert_rollback_image(&owner, &mut admission, None, None)
             .unwrap_err();
         assert_eq!(
             error,

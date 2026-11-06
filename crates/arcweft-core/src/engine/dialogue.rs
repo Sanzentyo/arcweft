@@ -37,7 +37,9 @@ use crate::presentation::{
     RuntimeStageCommandOutcome, RuntimeVoiceCommandOutcome,
 };
 use crate::pure::RuntimeCallBackend;
-use crate::runtime_id::{RuntimeDeferSiteId, RuntimeLineHandleToken, RuntimePlanTypeId};
+use crate::runtime_id::{
+    DialogueActivationId, RuntimeDeferSiteId, RuntimeLineHandleToken, RuntimePlanTypeId,
+};
 use crate::value::RuntimeExprKind;
 use crate::value::ownership::RuntimeOwnedSlotId;
 use thiserror::Error;
@@ -109,13 +111,73 @@ enum DialoguePublicationOutcome {
     Published(crate::line_task::RuntimeDialoguePublishedCommitProof),
 }
 
+/// A borrowed view of the frames displaced while the selected fiber runs
+/// dialogue code. Each transaction holds the frame that it displaced.
+#[derive(Clone, Copy)]
+pub(super) struct InlineDialogueExecution<'a> {
+    stack: &'a [DialogueActivationTransaction],
+    running: &'a super::NativeFlowExecutionFrame,
+}
+
+impl<'a> InlineDialogueExecution<'a> {
+    pub(super) fn suspended_frame(self) -> Option<&'a super::NativeFlowExecutionFrame> {
+        Some(&self.stack.first()?.frame().execution)
+    }
+
+    fn frame_for(
+        self,
+        activation: &DialogueActivationId,
+    ) -> Option<&'a super::NativeFlowExecutionFrame> {
+        let index = self
+            .stack
+            .iter()
+            .position(|row| row.activation() == activation)?;
+        Some(self.frame_at(index))
+    }
+
+    fn frame_at(self, index: usize) -> &'a super::NativeFlowExecutionFrame {
+        self.stack
+            .get(index + 1)
+            .map_or(self.running, |next| &next.frame().execution)
+    }
+
+    pub(super) fn frames(
+        self,
+    ) -> impl DoubleEndedIterator<Item = (DialogueActivationId, &'a super::NativeFlowExecutionFrame)>
+    {
+        self.stack
+            .iter()
+            .enumerate()
+            .map(move |(index, row)| (*row.activation(), self.frame_at(index)))
+    }
+
+    pub(super) fn validate_parent_allocations(
+        self,
+        next_fiber_id: u64,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), String> {
+        if !self.stack.is_empty() && !limits.permits_depth(self.stack.len()) {
+            return Err("native inline dialogue stack exceeds the retained depth limit".into());
+        }
+        for (index, row) in self.stack.iter().enumerate() {
+            row.validate_execution_parent(self.frame_at(index), next_fiber_id)?;
+        }
+        Ok(())
+    }
+}
+
 impl Engine {
-    fn with_inline_dialogue<T>(
-        &mut self,
-        slot: &mut DialogueActivationExecutionSlot,
-        run: impl FnOnce(&mut Self) -> T,
-    ) -> Result<T, LineRuntimeError> {
-        let transaction = slot.transaction();
+    pub(super) fn inline_dialogue_execution(&self) -> InlineDialogueExecution<'_> {
+        InlineDialogueExecution {
+            stack: &self.dialogue_activations.inline_stack,
+            running: &self.fiber.frame,
+        }
+    }
+
+    fn validate_inline_dialogue_entry(
+        &self,
+        transaction: &DialogueActivationTransaction,
+    ) -> Result<(), LineRuntimeError> {
         transaction.line().line_registry()?;
         if self.fiber.id != transaction.frame().parent
             || self.fiber.persistent_id != transaction.activation().owner_fiber()
@@ -128,19 +190,45 @@ impl Engine {
             return Err(LineRuntimeError::InvalidActivationOperation);
         }
         if !crate::entry::RuntimeSchemaLimits::engine_default()
-            .permits_depth(self.inline_dialogues.len() + 1)
+            .permits_depth(self.dialogue_activations.inline_stack.len() + 1)
         {
             return Err(LineRuntimeError::InvalidActivationOperation);
         }
-        let mut transaction = slot.0.take().expect("dialogue step owns its transaction");
+        Ok(())
+    }
+
+    fn enter_inline_dialogue(&mut self, mut transaction: DialogueActivationTransaction) {
         std::mem::swap(
             &mut self.fiber.frame,
             &mut transaction.frame_mut().execution,
         );
-        self.inline_dialogues.push(transaction);
+        self.dialogue_activations.inline_stack.push(transaction);
+    }
+
+    pub(super) fn restore_inline_dialogues(
+        &mut self,
+        order: &[DialogueActivationId],
+    ) -> Result<(), LineRuntimeError> {
+        for activation in order {
+            let transaction = self.dialogue_activations.begin_transaction(activation)?;
+            self.validate_inline_dialogue_entry(&transaction)?;
+            self.enter_inline_dialogue(transaction);
+        }
+        Ok(())
+    }
+
+    fn with_inline_dialogue<T>(
+        &mut self,
+        slot: &mut DialogueActivationExecutionSlot,
+        run: impl FnOnce(&mut Self) -> T,
+    ) -> Result<T, LineRuntimeError> {
+        let transaction = slot.transaction();
+        self.validate_inline_dialogue_entry(transaction)?;
+        self.enter_inline_dialogue(slot.0.take().expect("dialogue step owns its transaction"));
         let result = run(self);
         let mut transaction = self
-            .inline_dialogues
+            .dialogue_activations
+            .inline_stack
             .pop()
             .expect("inline operation retains its transaction");
         std::mem::swap(
@@ -2795,10 +2883,8 @@ impl Engine {
             ),
             LifetimeScopeKind::Flow => {
                 let parent = transaction.frame().parent;
-                let rows = self
-                    .dialogue_parent_flow_registry(parent, id)
-                    .ok_or(RuntimeEffectMaterializeError::RegistryContextRequired)?;
-                (NativeDialogueRegistryTarget::ParentFlow(parent), rows)
+                self.dialogue_parent_flow_registry(parent, id)
+                    .ok_or(RuntimeEffectMaterializeError::RegistryContextRequired)?
             }
             _ => return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into()),
         };
@@ -3602,8 +3688,62 @@ mod tests {
                     false,
                 );
                 let mut nested_slot = super::DialogueActivationExecutionSlot(Some(transaction));
+                let limits = RuntimeSchemaLimits::engine_default();
+                let (image, _) = engine
+                    .inert_rollback_image_with_dialogue(Some(nested_slot.transaction()), limits)
+                    .unwrap();
+                engine.fiber.frame.selected_dialogue_result = None;
+                nested_slot
+                    .transaction_mut()
+                    .frame_mut()
+                    .execution
+                    .selected_dialogue_result = None;
+                let failure = super::DialogueExecutionError::ActivationEffectFailed {
+                    message: "registry operation failed".into(),
+                };
+                assert_eq!(
+                    engine.restore_failed_line_registry_write(
+                        nested_slot.transaction_mut(),
+                        image,
+                        &owner,
+                        failure.clone(),
+                    ),
+                    failure,
+                );
+                assert_eq!(
+                    engine.fiber.frame.selected_dialogue_result,
+                    Some(RuntimeValue::String("e".repeat(1024))),
+                );
                 engine
                     .with_inline_dialogue(&mut nested_slot, |engine| {
+                        let image = engine.inert_rollback_image().unwrap();
+                        assert!(
+                            image
+                                .admit_rollback_values(
+                                    &owner,
+                                    RuntimeSchemaLimits {
+                                        max_encoded_bytes: 3500,
+                                        ..limits
+                                    }
+                                )
+                                .unwrap_err()
+                                .contains("encoded_bytes"),
+                            "all three execution owners use one retained budget",
+                        );
+                        engine.dialogue_activations.inline_stack[0]
+                            .frame_mut()
+                            .execution
+                            .selected_dialogue_result = None;
+                        engine.dialogue_activations.inline_stack[1]
+                            .frame_mut()
+                            .execution
+                            .selected_dialogue_result = None;
+                        engine.fiber.frame.selected_dialogue_result = None;
+                        *engine = Engine::from_rollback_image(image, &owner).unwrap();
+                        assert_eq!(
+                            engine.fiber.frame.selected_dialogue_result,
+                            Some(RuntimeValue::String("n".repeat(1024))),
+                        );
                         for key in [&line_key, &flow_key] {
                             let result = engine.read_registry_value(
                                 key,
@@ -3631,6 +3771,18 @@ mod tests {
                         }
                     })
                     .unwrap();
+                assert_eq!(
+                    nested_slot
+                        .transaction()
+                        .frame()
+                        .execution
+                        .selected_dialogue_result,
+                    Some(RuntimeValue::String("n".repeat(1024))),
+                );
+                assert_eq!(
+                    engine.fiber.frame.selected_dialogue_result,
+                    Some(RuntimeValue::String("e".repeat(1024))),
+                );
                 engine
                     .dialogue_activations
                     .commit_transaction(nested_slot.0.take().unwrap())
@@ -3646,7 +3798,11 @@ mod tests {
                 );
             })
             .unwrap();
-        assert!(engine.inline_dialogues.is_empty());
+        assert!(engine.dialogue_activations.inline_stack.is_empty());
+        assert_eq!(
+            engine.fiber.frame.selected_dialogue_result,
+            Some(RuntimeValue::String("p".repeat(1024))),
+        );
         assert!(
             slot.transaction()
                 .frame()

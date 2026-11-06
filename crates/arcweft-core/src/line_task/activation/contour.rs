@@ -67,7 +67,10 @@ impl<'a, F, T> RuntimeDialogueRetainedContour<'a, F, T> {
     pub(crate) fn snapshot_admitted<S>(
         &self,
         owner: Option<&RuntimeProgramOwner>,
-        snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+        snapshot_frame: impl FnMut(
+            &DialogueActivationId,
+            &F,
+        ) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
     ) -> Result<RuntimeDialogueRegistrySaveSnapshot<S, T>, RuntimeDialogueRegistrySnapshotError>
     where
         T: Clone + super::super::handle::RuntimeDialogueTypeCoordinate,

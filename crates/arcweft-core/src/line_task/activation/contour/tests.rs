@@ -67,7 +67,7 @@ fn complete_contour_borrows_actual_withdrawn_and_active_frames_without_copying()
     let owner = admission.program_owner().unwrap();
     let snapshot_frame = |frame: &RuntimeValue| Ok(frame == &RuntimeValue::Bool(true));
     let withdrawn = contour
-        .snapshot_admitted(Some(owner), snapshot_frame)
+        .snapshot_admitted(Some(owner), |_, frame| snapshot_frame(frame))
         .unwrap();
     registry.restore_transaction(transaction).unwrap();
     assert_eq!(

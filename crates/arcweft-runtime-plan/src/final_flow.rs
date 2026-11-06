@@ -4607,7 +4607,7 @@ fn lower_dialogue_content<'facts>(
         }
     }
     let mut content_handles = BTreeMap::new();
-    let mut assertion_sites = Vec::new();
+    let mut line_definitions = Vec::new();
     for definition in content_definitions {
         let template_id = definition.template.id();
         let seed = arcweft_core::plan::RuntimeDialogueContentPlanSeed {
@@ -4643,31 +4643,37 @@ fn lower_dialogue_content<'facts>(
         };
         match builder.push_dialogue_content_seed(seed) {
             Ok(handle) => {
-                let (group, assertions) = match line_plan::lower_dialogue_line_plan(
-                    context,
-                    definition.scope,
-                    definition.owner,
-                    &handle,
-                    template_id,
-                ) {
-                    Ok(group) => group,
-                    Err(error) => {
-                        errors.push(error);
-                        continue;
-                    }
-                };
-                if let Err(error) = builder
-                    .push_line_task_group_seed(group)
-                    .and_then(|group| builder.attach_line_task_group_seed(&handle, &group))
-                {
-                    errors.push(RuntimePlanLowerError::new(error.to_string()));
-                    continue;
-                }
-                content_handles.insert(template_id, handle);
-                assertion_sites.extend(assertions);
+                content_handles.insert(template_id, handle.clone());
+                line_definitions.push((definition.scope, definition.owner, template_id, handle));
             }
             Err(error) => errors.push(RuntimePlanLowerError::new(error.to_string())),
         }
+    }
+    // Activation and scheduled bodies can themselves open a dialogue. Bind
+    // the complete content handle set before lowering any of those bodies.
+    let context = FinalLoweringContext {
+        dialogue_content: &content_handles,
+        ..*context
+    };
+    let mut assertion_sites = Vec::new();
+    for (scope, owner, template_id, handle) in line_definitions {
+        let (group, assertions) =
+            match line_plan::lower_dialogue_line_plan(&context, scope, owner, &handle, template_id)
+            {
+                Ok(group) => group,
+                Err(error) => {
+                    errors.push(error);
+                    continue;
+                }
+            };
+        if let Err(error) = builder
+            .push_line_task_group_seed(group)
+            .and_then(|group| builder.attach_line_task_group_seed(&handle, &group))
+        {
+            errors.push(RuntimePlanLowerError::new(error.to_string()));
+            continue;
+        }
+        assertion_sites.extend(assertions);
     }
     (
         content_handles,

@@ -144,7 +144,6 @@ pub struct Engine<
     /// The actual main owner remains in the session while a selected child
     /// occupies the execution slot. It participates in admission and rollback.
     parked_main: Option<FlowFiber<F>>,
-    inline_dialogues: Vec<dialogue::DialogueActivationTransaction>,
     child_fibers: VecDeque<FlowFiber<F>>,
     next_fiber_id: u64,
     next_scheduled_scope_sequence: u64,
@@ -218,7 +217,6 @@ impl Clone for NativeEngineRollbackImage {
             root: self.root.clone(),
             fiber: self.fiber.clone(),
             parked_main: self.parked_main.clone(),
-            inline_dialogues: Vec::new(),
             child_fibers: self.child_fibers.clone(),
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
@@ -333,6 +331,7 @@ pub(crate) enum FlowFiberLaunch {
 
 fn validate_program_task_launches<V, P, O, C, A, S>(
     active: &FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>,
+    suspended: Option<&NativeFlowExecutionFrame<V, P, O, C, A, S>>,
     children: &VecDeque<FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>>,
     parked_main: Option<&FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>>,
     mut accepted_program: impl FnMut(&crate::task::ProgramTaskLaunch) -> bool,
@@ -344,7 +343,12 @@ fn validate_program_task_launches<V, P, O, C, A, S>(
         {
             return Err("native child launch differs from its accepted program task".into());
         }
-        match (&child.launch, &child.frame.invocation_result) {
+        let frame = if child.id == active.id {
+            suspended.unwrap_or(&child.frame)
+        } else {
+            &child.frame
+        };
+        match (&child.launch, &frame.invocation_result) {
             (FlowFiberLaunch::Program(launch), Some((NativeInvocationRoot::Task(result), _)))
                 if launch == result => {}
             (FlowFiberLaunch::Program(_), Some(_))
@@ -459,8 +463,16 @@ impl FlowFiber {
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<FlowFiberRollbackImage, String> {
+        self.snapshot_with_admitted_frame(&self.frame, owner)
+    }
+
+    fn snapshot_with_admitted_frame(
+        &self,
+        frame: &NativeFlowExecutionFrame,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<FlowFiberRollbackImage, String> {
         Ok(FlowFiberRollbackImage {
-            frame: self.frame.snapshot_with_admitted_values(owner)?,
+            frame: frame.snapshot_with_admitted_values(owner)?,
             id: self.id,
             parent: self.parent,
             launch: self.launch.clone(),
@@ -2096,11 +2108,11 @@ impl Engine {
         ),
         String,
     > {
-        if !self.inline_dialogues.is_empty() {
-            return Err("cannot checkpoint during an inline dialogue operation".into());
-        }
+        let inline = self.inline_dialogue_execution();
+        let suspended = inline.suspended_frame();
         validate_program_task_launches(
             &self.fiber,
+            suspended,
             &self.child_fibers,
             self.parked_main.as_ref(),
             |launch| {
@@ -2113,6 +2125,7 @@ impl Engine {
         )?;
         self.dialogue_activations
             .validate_parent_allocations(self.next_fiber_id)?;
+        inline.validate_parent_allocations(self.next_fiber_id, limits)?;
         if let Some(transaction) = transaction {
             transaction.validate_parent_allocation(self.next_fiber_id)?;
         }
@@ -2121,9 +2134,12 @@ impl Engine {
             crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
         self.admit_live_fiber_values(&mut admission, None, transaction)
             .map_err(|error| error.to_string())?;
-        let dialogue_activations =
-            self.dialogue_activations
-                .inert_rollback_image(&owner, &mut admission, transaction)?;
+        let dialogue_activations = self.dialogue_activations.inert_rollback_image(
+            &owner,
+            &mut admission,
+            Some(inline),
+            transaction,
+        )?;
         let publication_image =
             |publication: &RuntimeNeedPublication| publication.snapshot_admitted(&owner);
         let image = NativeEngineRollbackImage {
@@ -2168,13 +2184,14 @@ impl Engine {
                 .as_ref()
                 .map(|root| root.snapshot_admitted(&owner))
                 .transpose()?,
-            fiber: self.fiber.snapshot_with_admitted_values(&owner)?,
+            fiber: self
+                .fiber
+                .snapshot_with_admitted_frame(self.session_frame(&self.fiber, suspended), &owner)?,
             parked_main: self
                 .parked_main
                 .as_ref()
                 .map(|fiber| fiber.snapshot_with_admitted_values(&owner))
                 .transpose()?,
-            inline_dialogues: Vec::new(),
             child_fibers: self
                 .child_fibers
                 .iter()
@@ -2202,6 +2219,7 @@ impl Engine {
     ) -> Result<Self, String> {
         validate_program_task_launches(
             &image.fiber,
+            None,
             &image.child_fibers,
             image.parked_main.as_ref(),
             |launch| {
@@ -2217,7 +2235,12 @@ impl Engine {
             .dialogue_activations
             .validate_parent_allocations(image.next_fiber_id)?;
         image.admit_rollback_values(owner, crate::entry::RuntimeSchemaLimits::engine_default())?;
-        let restored = Self {
+        let (dialogue_activations, inline_order) =
+            dialogue::DialogueActivationStore::from_admitted_rollback_image(
+                image.dialogue_activations,
+                owner,
+            )?;
+        let mut restored = Self {
             evaluation_stats: image.evaluation_stats,
             plan: image.plan,
             format_context: image.format_context,
@@ -2267,7 +2290,6 @@ impl Engine {
                 .parked_main
                 .map(|fiber| FlowFiber::from_rollback_image(fiber, owner))
                 .transpose()?,
-            inline_dialogues: Vec::new(),
             child_fibers: image
                 .child_fibers
                 .into_iter()
@@ -2276,10 +2298,7 @@ impl Engine {
             next_fiber_id: image.next_fiber_id,
             next_scheduled_scope_sequence: image.next_scheduled_scope_sequence,
             dialogue_occurrences: image.dialogue_occurrences,
-            dialogue_activations: dialogue::DialogueActivationStore::from_admitted_rollback_image(
-                image.dialogue_activations,
-                owner,
-            )?,
+            dialogue_activations,
             dialogue_effect_callback_activations: image.dialogue_effect_callback_activations,
             run_child_next: image.run_child_next,
             pure_i64_batch_inputs: image.pure_i64_batch_inputs,
@@ -2289,6 +2308,9 @@ impl Engine {
             next_audio_sequence: image.next_audio_sequence,
             next_host_call_sequence: image.next_host_call_sequence,
         };
+        restored
+            .restore_inline_dialogues(&inline_order)
+            .map_err(|error| error.to_string())?;
         Ok(restored)
     }
 
@@ -2437,7 +2459,6 @@ impl Engine {
             child_fibers: VecDeque::new(),
             next_fiber_id: 1,
             parked_main: None,
-            inline_dialogues: Vec::new(),
             next_scheduled_scope_sequence: 1,
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),

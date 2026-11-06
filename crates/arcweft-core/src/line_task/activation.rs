@@ -385,18 +385,21 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     pub(crate) fn snapshot_admitted<S>(
         &self,
         owner: Option<&RuntimeProgramOwner>,
-        snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+        mut snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
     ) -> Result<RuntimeDialogueRegistrySaveSnapshot<S, T>, RuntimeDialogueRegistrySnapshotError>
     where
         T: super::handle::RuntimeDialogueTypeCoordinate,
     {
-        self.snapshot_admitted_with(owner, snapshot_frame, |_| None)
+        self.snapshot_admitted_with(owner, |_, frame| snapshot_frame(frame), |_| None)
     }
 
     fn snapshot_admitted_with<'a, S>(
         &'a self,
         owner: Option<&RuntimeProgramOwner>,
-        mut snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+        mut snapshot_frame: impl FnMut(
+            &DialogueActivationId,
+            &F,
+        ) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
         mut withdrawn: impl FnMut(
             &DialogueActivationId,
         ) -> Option<(&'a F, &'a RuntimeDialogueActivationState<T>)>,
@@ -433,7 +436,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 Ok(RuntimeDialogueRegistrySaveEntry::Active {
                     activation: *activation,
                     revision,
-                    frame: snapshot_frame(frame)?,
+                    frame: snapshot_frame(activation, frame)?,
                     line: AwbcRuntimeDialogueActivationSnapshot::from_admitted_live(line, owner)?,
                 })
             })
