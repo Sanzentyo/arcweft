@@ -133,6 +133,7 @@ fn inventory_plan_with_nodes(activation: Box<[FlowOp]>, nodes: Box<[LineTaskNode
     // validation; it exercises the same owned bodies as finished group rows.
     plan.inventory.line_task_groups.push(LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+        crate::plan::RuntimeEffectSet::empty(),
         Box::new([]),
         Box::new([]),
         activation,

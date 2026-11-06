@@ -71,6 +71,12 @@ pub(in crate::plan) enum RuntimeLineGroupSourceError {
     ExistingGroups { actual: usize },
     #[error("Line Source text is invalid UTF-8: {0}")]
     Utf8(#[from] std::str::Utf8Error),
+    #[error("Line Source effect labels are not strictly ordered")]
+    EffectOrder,
+    #[error("Line Source effect identity is invalid: {0}")]
+    Effect(#[from] arcweft_id::EffectIdError),
+    #[error("Line Source effect set is invalid: {0}")]
+    EffectSet(#[from] crate::plan::RuntimeEffectSetError),
     #[error("Line Source character identity is invalid: {0}")]
     Character(#[from] arcweft_character::id::CharacterIdError),
     #[error("Line Source input identity is invalid: {0}")]

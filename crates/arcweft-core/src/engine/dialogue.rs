@@ -2974,6 +2974,7 @@ mod tests {
             .expect("running packet");
         let group = LineTaskGroup::new(
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+            crate::plan::RuntimeEffectSet::empty(),
             Box::new([]),
             Box::new([]),
             Box::new([]),

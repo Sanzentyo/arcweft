@@ -31,6 +31,7 @@ fn fixture() -> RuntimePlan {
 }
 fn group_seed() -> RuntimeLineTaskGroupSeed {
     RuntimeLineTaskGroupSeed {
+        effects: crate::plan::RuntimeEffectSet::empty(),
         definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([229; 32]),
         activation_ops: vec![],
         result_type: crate::pattern::RuntimeSemanticTypeId::from_bytes([1; 32]),

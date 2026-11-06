@@ -40,6 +40,7 @@ fn mark_group() -> (LineTaskGroup, RuntimeDialogueMarkId, RuntimePlanTypeId) {
     let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
     let group = LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+        crate::plan::RuntimeEffectSet::empty(),
         Box::new([]),
         Box::new([]),
         Box::new([]),
@@ -250,6 +251,7 @@ fn cancellation_selection_restores_only_after_its_joined_handler_completes() {
     let action = InputActionId::new("SkipLine").expect("action");
     let group = LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+        crate::plan::RuntimeEffectSet::empty(),
         Box::new([]),
         Box::new([]),
         Box::new([]),

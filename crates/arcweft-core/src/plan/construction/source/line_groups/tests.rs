@@ -127,6 +127,10 @@ fn scoped_fixture(
     ])]);
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            effects: crate::plan::RuntimeEffectSet::try_from_effects([
+                arcweft_id::EffectId::parse("state.write('flow)").unwrap(),
+            ])
+            .unwrap(),
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xf1; 32]),
             activation_ops,
             result_type: crate::pattern::RuntimeSemanticTypeId::from_bytes([1; 32]),
@@ -264,6 +268,16 @@ fn line_sources_restore_original_preorder_mark_owner_cancellation_and_cleanup_th
     }
 }
 
+fn group_policy_offset(plan: &RuntimePlan) -> usize {
+    let group = &plan.line_task_groups()[0];
+    let effect_bytes = group
+        .effects()
+        .iter()
+        .map(|effect| 4 + effect.as_str().len())
+        .sum::<usize>();
+    DOMAIN.len() + 5 + 32 + 4 + effect_bytes + 4
+}
+
 #[test]
 fn line_sources_admit_cumulative_quota_edges_and_reject_every_truncated_frame() {
     let plan = fixture(
@@ -340,7 +354,7 @@ fn line_sources_admit_cumulative_quota_edges_and_reject_every_truncated_frame() 
             "accepted truncation {end}"
         );
     }
-    let policy = DOMAIN.len() + 5 + 32 + 4;
+    let policy = group_policy_offset(&plan);
     for (offset, replacement) in [
         (0, 0xff),
         (DOMAIN.len(), 2),
@@ -355,6 +369,26 @@ fn line_sources_admit_cumulative_quota_edges_and_reject_every_truncated_frame() 
                 .is_err()
         );
     }
+    let effect_count = DOMAIN.len() + 5 + 32;
+    let first_effect = effect_count + 4;
+    let end = group_policy_offset(&plan) - 4;
+    let mut duplicate = encoded.bytes().to_vec();
+    duplicate[effect_count..first_effect].copy_from_slice(&2u32.to_le_bytes());
+    duplicate.splice(end..end, encoded.bytes()[first_effect..end].iter().copied());
+    assert!(matches!(
+        PreparedRuntimeLineGroupSources::preflight(
+            &duplicate,
+            RuntimeLineGroupSourceLimits {
+                elements: u32::MAX,
+                encoded_bytes: usize::MAX,
+                decoded_bytes: usize::MAX,
+                ..bounds
+            },
+            &resources(),
+            &mut meter(),
+        ),
+        Err(Error::EffectOrder)
+    ));
     let mut trailing = encoded.bytes().to_vec();
     trailing.push(0);
     assert!(matches!(
@@ -485,7 +519,7 @@ fn line_sources_share_actual_detach_policy_rejection_before_flow_values() {
     let encoded = plan
         .encode_line_group_sources(bounds, &resources(), &mut meter())
         .unwrap();
-    let policy = DOMAIN.len() + 5 + 32 + 4;
+    let policy = group_policy_offset(&plan);
     let pattern = [3, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0];
     let offset = encoded
         .bytes()

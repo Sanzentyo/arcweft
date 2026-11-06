@@ -69,6 +69,7 @@ pub enum ScopeExit {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LineTaskGroup {
     definition: crate::plan::RuntimeFunctionDefinitionIdentity,
+    effects: crate::plan::RuntimeEffectSet,
     captures: Box<[RuntimeLocalDeclarationId]>,
     activation_exports: Box<[RuntimeLocalDeclarationId]>,
     activation_ops: Box<[FlowOp]>,
@@ -83,6 +84,7 @@ pub struct LineTaskGroup {
 impl LineTaskGroup {
     pub(crate) fn new(
         definition: crate::plan::RuntimeFunctionDefinitionIdentity,
+        effects: crate::plan::RuntimeEffectSet,
         captures: Box<[RuntimeLocalDeclarationId]>,
         activation_exports: Box<[RuntimeLocalDeclarationId]>,
         activation_ops: Box<[FlowOp]>,
@@ -95,6 +97,7 @@ impl LineTaskGroup {
     ) -> Self {
         Self {
             definition,
+            effects,
             captures,
             activation_exports,
             activation_ops,
@@ -110,6 +113,11 @@ impl LineTaskGroup {
     #[must_use]
     pub const fn definition(&self) -> crate::plan::RuntimeFunctionDefinitionIdentity {
         self.definition
+    }
+
+    #[must_use]
+    pub const fn effects(&self) -> &crate::plan::RuntimeEffectSet {
+        &self.effects
     }
 
     #[must_use]
@@ -2335,6 +2343,7 @@ mod retained_reducer_tests {
         }
         LineTaskGroup::new(
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([72; 32]),
+            crate::plan::RuntimeEffectSet::empty(),
             Box::new([]),
             Box::new([]),
             Box::new([]),

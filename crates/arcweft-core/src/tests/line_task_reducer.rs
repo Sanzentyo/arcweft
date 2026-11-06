@@ -57,6 +57,7 @@ fn cancellation_group(actions: &[&str]) -> LineTaskGroup {
         .into_boxed_slice();
     LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+        crate::plan::RuntimeEffectSet::empty(),
         Box::default(),
         Box::default(),
         Box::default(),
@@ -77,6 +78,7 @@ fn cancellation_group(actions: &[&str]) -> LineTaskGroup {
 fn group(actions: Vec<FlowOp>, cleanup: Vec<FlowOp>) -> LineTaskGroup {
     LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+        crate::plan::RuntimeEffectSet::empty(),
         Box::default(),
         Box::default(),
         Box::default(),
@@ -202,6 +204,7 @@ fn start_keeps_nested_sequence_active_after_parent_completes() {
     let node = |index| RuntimeLineTaskNodeId::from_zero_based(index).expect("node id");
     let group = LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+        crate::plan::RuntimeEffectSet::empty(),
         Box::default(),
         Box::default(),
         Box::default(),
@@ -249,6 +252,7 @@ fn sequence_failure_immediately_cancels_later_siblings() {
     let node = |index| RuntimeLineTaskNodeId::from_zero_based(index).expect("node id");
     let group = LineTaskGroup::new(
         crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+        crate::plan::RuntimeEffectSet::empty(),
         Box::default(),
         Box::default(),
         Box::default(),

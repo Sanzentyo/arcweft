@@ -391,6 +391,7 @@ fn content_line_link_excludes_debug_marks_and_delegates_body_to_the_line_owner()
     let old = &changed.line_task_groups()[0];
     changed.inventory.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
         RuntimeFunctionDefinitionIdentity::from_accepted_identity([85; 32]),
+        old.effects().clone(),
         old.captures().into(),
         old.activation_exports().into(),
         old.activation_ops().into(),

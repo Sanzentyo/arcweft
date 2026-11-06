@@ -863,13 +863,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         AwbcFunctionId,
         Vec<crate::awbc_lower::frame::FrameCaptureSlot>,
     ) {
-        let definition = self
+        let group = &self
             .line_group
             .as_ref()
             .expect("Line function has its accepted group owner")
-            .group
-            .definition()
-            .generated_child(role);
+            .group;
+        let definition = group.definition().generated_child(role);
+        let effects = group.effects().clone();
+        let effect_set = self.inventory.intern_effect_set(&effects);
         let owner = self.inventory.reserve_function_slot(definition);
         let mut frame = FrameBuilder::new();
         for capture in captures {
@@ -878,7 +879,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         }
         let mut body =
             FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
+        let previous_effects = self.active_effect_set.replace(effects);
         self.lower_ops(&mut frame, &mut body, ops, path);
+        self.active_effect_set = previous_effects;
         if body.needs_value_fallthrough() && kind != AwbcFunctionKind::LineCancellationHandler {
             self.terminate_value_fallthrough(&mut frame, &mut body);
         }
@@ -895,9 +898,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .map(|capture| self.local_type(*capture))
             .collect();
         let result = body.returns_value.then(|| self.inventory.dynamic_ty());
-        let signature = self
-            .inventory
-            .intern_signature(params, result, AwbcEffectSetId(0));
+        let signature = self.inventory.intern_signature(params, result, effect_set);
         let public_id = Some(self.inventory.intern_string(path));
         let function = self.inventory.replace_function(
             owner,

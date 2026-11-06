@@ -320,6 +320,7 @@ pub struct RuntimeLineTaskCancelRuleSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeLineTaskGroupSeed {
     pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
+    pub effects: crate::plan::RuntimeEffectSet,
     pub activation_ops: Vec<RuntimeFlowOpSeed>,
     pub result_type: RuntimeSemanticTypeId,
     pub handle_sites: Box<[RuntimeLineHandleSiteSeed]>,

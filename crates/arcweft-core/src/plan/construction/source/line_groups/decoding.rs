@@ -119,6 +119,7 @@ pub(super) fn group(
     handles: &RuntimeFlowSourceHandles<'_>,
     resources: &mut ValueResourceAdmission,
 ) -> Result<RuntimeLineTaskGroupSeed, Error> {
+    let effects = reading::Cursor::new(group.effects).materialize_effects()?;
     let result_type = semantic(source, group.result);
     let handle_sites = group
         .sites
@@ -214,6 +215,7 @@ pub(super) fn group(
     let [completed, cancelled, failed] = group.cleanup;
     Ok(RuntimeLineTaskGroupSeed {
         definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity(group.definition),
+        effects,
         activation_ops,
         result_type,
         handle_sites,

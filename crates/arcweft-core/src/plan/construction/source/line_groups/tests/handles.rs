@@ -189,6 +189,7 @@ pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     }
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            effects: crate::plan::RuntimeEffectSet::empty(),
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xfb; 32]),
             activation_ops,
             result_type: ty(1),
@@ -217,6 +218,7 @@ fn default_source_artifact_accepts_the_full_line_handle_site_limit() {
     let count = u32::try_from(crate::line_task::MAX_LINE_HANDLE_SITES).unwrap();
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            effects: crate::plan::RuntimeEffectSet::empty(),
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xed; 32]),
             activation_ops: vec![RuntimeFlowOpSeed::Noop],
             result_type: ty(1),
@@ -346,7 +348,7 @@ fn line_sources_admit_derived_producer_storage_and_reject_site_metadata_before_v
     let encoded = plan
         .encode_line_group_sources(bounds, &resources(), &mut meter())
         .unwrap();
-    let count_offset = DOMAIN.len() + 5 + 32 + 4 + 3 + 4;
+    let count_offset = super::group_policy_offset(&plan) + 3 + 4;
     let mut over = encoded.bytes().to_vec();
     over[count_offset..count_offset + 4].copy_from_slice(&129u32.to_le_bytes());
     assert!(

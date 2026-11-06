@@ -1532,6 +1532,7 @@ mod tests {
         let mut second = frame(owner.clone(), DialogueRuntimePhase::Ready);
         let group = crate::line_task::LineTaskGroup::new(
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([73; 32]),
+            crate::plan::RuntimeEffectSet::empty(),
             Box::new([]),
             Box::new([]),
             Box::new([]),

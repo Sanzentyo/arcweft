@@ -51,6 +51,7 @@ pub(super) struct Cancel<'a> {
 }
 pub(super) struct Group<'a> {
     pub definition: [u8; 32],
+    pub effects: &'a [u8],
     pub result: u32,
     pub policy: LineCleanupPolicy,
     pub sites: Vec<Site<'a>>,
@@ -232,6 +233,25 @@ impl<'a> Cursor<'a> {
     ) -> Result<Group<'a>, Error> {
         let before = counts.footprint;
         let definition = self.raw(32)?.try_into().expect("Source definition width");
+        let effect_start = self.offset;
+        let effect_count = self.u32()? as usize;
+        counts.elements(effect_count)?;
+        counts.storage(
+            effect_count
+                .checked_mul(2 * size_of::<arcweft_id::EffectId>())
+                .ok_or(Error::Arithmetic)?,
+        )?;
+        let mut previous = None;
+        for _ in 0..effect_count {
+            let label = std::str::from_utf8(self.frame()?)?;
+            counts.storage(label.len().checked_mul(2).ok_or(Error::Arithmetic)?)?;
+            arcweft_id::EffectId::validate_source(label)?;
+            if previous.is_some_and(|previous| previous >= label) {
+                return Err(Error::EffectOrder);
+            }
+            previous = Some(label);
+        }
+        let effects = &self.bytes[effect_start..self.offset];
         let result = self.positive("result type", counts.limits.flow.expression.type_count)?;
         let child_tasks = match self.tag("child cleanup", 3)? {
             0 => ChildTaskCleanup::CancelAndJoin,
@@ -413,6 +433,7 @@ impl<'a> Cursor<'a> {
         super::charge(meter, work)?;
         Ok(Group {
             definition,
+            effects,
             result,
             policy,
             sites,
@@ -422,6 +443,19 @@ impl<'a> Cursor<'a> {
             cleanup,
         })
     }
+    pub(super) fn materialize_effects(mut self) -> Result<crate::plan::RuntimeEffectSet, Error> {
+        let count = self.u32()? as usize;
+        let effects = (0..count)
+            .map(|_| {
+                Ok(arcweft_id::EffectId::parse(std::str::from_utf8(
+                    self.frame()?,
+                )?)?)
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        self.finish()?;
+        Ok(crate::plan::RuntimeEffectSet::try_from_effects(effects)?)
+    }
+
     fn node(
         &mut self,
         counts: &mut Counts,

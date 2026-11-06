@@ -2996,6 +2996,19 @@ fn project_dialogue_application(
     })?;
     fragments.push(fragment);
     fragments.extend(nested_fragments);
+    let checked =
+        analysis
+            .expression(owner)
+            .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: "checked dialogue application has no effect row".to_owned(),
+            })?;
+    let effects =
+        arcweft_core::plan::RuntimeEffectSet::try_from_effects(checked.effects().iter().cloned())
+            .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+            owner: Some(owner),
+            reason: error.to_string(),
+        })?;
     Ok((
         owner,
         RuntimeDialogueApplication::new(
@@ -3004,6 +3017,7 @@ fn project_dialogue_application(
             )?,
             spec,
             runtime_type_under(line_result, instance, symbols, world, analysis)?,
+            effects,
             analysis
                 .statements()
                 .filter_map(|(statement, checked)| match checked.payload() {

@@ -1685,6 +1685,7 @@ pub(super) fn actual_line_plan(
         .unwrap();
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            effects: crate::plan::RuntimeEffectSet::empty(),
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([84; 32]),
             activation_ops: vec![],
             result_type: unit,
@@ -1743,6 +1744,7 @@ fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spell
     }
     reordered.inventory.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
         old.definition(),
+        old.effects().clone(),
         old.captures().into(),
         old.activation_exports().into(),
         old.activation_ops().into(),
@@ -1772,6 +1774,7 @@ fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spell
     );
     changed_policy.inventory.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
         old.definition(),
+        old.effects().clone(),
         old.captures().into(),
         old.activation_exports().into(),
         old.activation_ops().into(),

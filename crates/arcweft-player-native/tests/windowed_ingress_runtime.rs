@@ -264,6 +264,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         .expect("dialogue content admits");
     let line_task_group = builder
         .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
+            effects: arcweft_core::plan::RuntimeEffectSet::empty(),
             definition:
                 arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
                     [71; 32],

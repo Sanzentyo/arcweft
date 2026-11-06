@@ -338,6 +338,8 @@ pub enum RuntimePlanBuildError {
     ForeignDialogueEffectSiteSeed,
     #[error("a construction-only line-task group handle belongs to another runtime-plan builder")]
     ForeignLineTaskGroupSeed,
+    #[error("line-task registry write requires effect `{effect}` in the checked line contract")]
+    LineTaskRegistryEffectMissing { effect: arcweft_id::EffectId },
     #[error("line-task graph has no node at required dense ordinal {ordinal}")]
     InvalidLineTaskNodeOrdinal { ordinal: usize },
     #[error("line-task child seed {actual} is not canonical preorder node {expected}")]
@@ -2063,6 +2065,38 @@ impl RuntimePlanBuilder {
         action_sets.push(cleanup.actions(crate::line_task::ScopeExit::Cancelled));
         action_sets.push(cleanup.actions(crate::line_task::ScopeExit::Failed));
         let used = self.validate_line_task_actions_locals(&action_sets, &activation_scope)?;
+        let bodies = std::iter::once(activation_ops.as_slice())
+            .chain(nodes.iter().filter_map(|node| match node {
+                LineTaskNode::Action(ops) => Some(ops.as_ref()),
+                _ => None,
+            }))
+            .chain(cancel_rules.iter().map(LineCancelRule::action))
+            .chain([
+                cleanup.actions(crate::line_task::ScopeExit::Completed),
+                cleanup.actions(crate::line_task::ScopeExit::Cancelled),
+                cleanup.actions(crate::line_task::ScopeExit::Failed),
+            ]);
+        for ops in bodies {
+            super::try_visit_ops_events(ops, &mut |event| {
+                if let super::RuntimeFlowTreeEvent::EnterOperation {
+                    op:
+                        FlowOp::EvaluatedEffect(crate::effect::RuntimeEffectExpr::RegistryWrite {
+                            key,
+                            ..
+                        }),
+                    ..
+                } = event
+                {
+                    let effect = arcweft_id::EffectId::state_write(key);
+                    if !seed.effects.covers_effect(&effect) {
+                        return Err(RuntimePlanBuildError::LineTaskRegistryEffectMissing {
+                            effect,
+                        });
+                    }
+                }
+                Ok(())
+            })?;
+        }
         let activation_exports = activation_scope
             .difference(&capture_scope)
             .filter(|local| used.contains(local))
@@ -2075,6 +2109,7 @@ impl RuntimePlanBuilder {
         )?;
         self.line_task_groups.push(LineTaskGroup::new(
             seed.definition,
+            seed.effects,
             captures.into_boxed_slice(),
             activation_exports.into_boxed_slice(),
             activation_ops.into_boxed_slice(),

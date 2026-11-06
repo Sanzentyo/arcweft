@@ -147,6 +147,10 @@ fn encode_group(
     canonical_preorder(group, counts)?;
     let mut output = Writer::new(counts.limits.encoded_bytes);
     output.raw(group.definition().as_bytes())?;
+    output.count(group.effects().len())?;
+    for effect in group.effects().iter() {
+        output.text(effect.as_str())?;
+    }
     output.u32(group.result_type().get().get())?;
     let policy = group.cleanup().policy();
     output.byte(match policy.child_tasks {

@@ -45,9 +45,12 @@ impl RuntimeEffectSet {
     /// Whether these declared permissions cover every required execution effect.
     #[must_use]
     pub fn covers(&self, required: &Self) -> bool {
-        required
-            .iter()
-            .all(|effect| self.iter().any(|permission| permission.covers(effect)))
+        required.iter().all(|effect| self.covers_effect(effect))
+    }
+
+    #[must_use]
+    pub fn covers_effect(&self, required: &EffectId) -> bool {
+        self.iter().any(|permission| permission.covers(required))
     }
 
     #[must_use]

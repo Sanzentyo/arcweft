@@ -5343,6 +5343,7 @@ pub struct RuntimeDialogueApplication {
     target: RuntimeDialogueApplicationTarget,
     content: DialogueContentSpec,
     line_result: RuntimeNormalizedType,
+    effects: arcweft_core::plan::RuntimeEffectSet,
     result_outputs: BTreeMap<StmtId, ExprId>,
 }
 
@@ -5351,12 +5352,14 @@ impl RuntimeDialogueApplication {
         target: RuntimeDialogueApplicationTarget,
         content: DialogueContentSpec,
         line_result: RuntimeNormalizedType,
+        effects: arcweft_core::plan::RuntimeEffectSet,
         result_outputs: BTreeMap<StmtId, ExprId>,
     ) -> Self {
         Self {
             target,
             content,
             line_result,
+            effects,
             result_outputs,
         }
     }
@@ -5371,6 +5374,11 @@ impl RuntimeDialogueApplication {
 
     pub const fn line_result(&self) -> &RuntimeNormalizedType {
         &self.line_result
+    }
+
+    /// The checked effect authority shared by the generated line bodies.
+    pub const fn effects(&self) -> &arcweft_core::plan::RuntimeEffectSet {
+        &self.effects
     }
 
     pub fn result_output_application(&self, statement: StmtId) -> Option<ExprId> {

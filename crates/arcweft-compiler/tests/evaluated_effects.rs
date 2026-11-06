@@ -1782,6 +1782,87 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn line_registry_write_effects_follow_the_original_group_into_verified_awbc() {
+    use arcweft_core::awbc::schema::{AwbcEffectPayload, AwbcInstruction};
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> String effects { state.write('line), log.write } {
+    alice(voice=auto):
+        本文。[mark @.change][p]
+    with:
+        init:
+            'line.focus <- true
+        on mark(@.change) {
+            'line.focus <- false
+        }
+        cancel on input(.SkipLine) {
+            'line.focus <- false
+            out "Skipped"
+        }
+        defer on cancelled { 'line.focus <- false; log.info("cancelled") }
+        out "Completed"
+    return "done"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("the authorized line project compiles");
+    let runtime = compiled.runtime_plan();
+    let [group] = runtime.plan.line_task_groups() else {
+        panic!("one original line group")
+    };
+    let permission = arcweft_id::EffectId::parse("state.write('line.focus)").unwrap();
+    assert!(
+        group
+            .effects()
+            .iter()
+            .any(|effect| effect.covers(&permission))
+    );
+
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "line_registry_effects.arcw",
+    )
+    .lower()
+    .expect("registry write payloads and their generated line signatures verify");
+    let bytes = report.program.encode_canonical().expect("encode AWBC");
+    let program = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("decode verified AWBC");
+    let [group] = program.line_task_groups.as_slice() else {
+        panic!("one generated line group")
+    };
+    let activation = &program.functions[group.activation.index()];
+    let activation_effects = program.signatures[activation.signature.index()].effects;
+    assert!(
+        program.effect_sets[activation_effects.index()]
+            .effects
+            .iter()
+            .any(|label| {
+                arcweft_id::EffectId::parse(&program.strings[label.index()])
+                    .is_ok_and(|effect| effect.covers(&permission))
+            })
+    );
+    let writes = program
+        .instructions
+        .iter()
+        .filter(|instruction| match instruction {
+            AwbcInstruction::EmitEffect { effect, .. } => matches!(
+                &program.effect_plans[effect.index()].payload,
+                AwbcEffectPayload::RegistryWrite { key, .. }
+                    if arcweft_id::EffectId::state_write(key) == permission
+            ),
+            _ => false,
+        })
+        .count();
+    assert_eq!(writes, 4);
+}
+
+#[test]
 fn reached_line_defers_keep_capture_order_and_verified_awbc_sites() {
     let compiled = compile_attached_dialogue_project(
         r#"

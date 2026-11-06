@@ -40,6 +40,7 @@ impl LineTaskGroup {
     ) -> Result<usize, RuntimeBodySemanticError> {
         let mut actual = 0;
         for count in [
+            self.effects.len(),
             self.captures.len(),
             self.activation_exports.len(),
             self.handle_sites.len(),
@@ -111,6 +112,11 @@ impl LineTaskGroup {
         task_owner: &RuntimeTaskPlanCoordinateOwner,
     ) -> Result<(), RuntimeBodySemanticError> {
         encoder.digest(self.definition.as_bytes());
+        encoder.count(self.effects.len());
+        for effect in self.effects.iter() {
+            encoder.enter_element();
+            encoder.string(effect.as_str());
+        }
         context.write_type(encoder, self.result_type)?;
         for locals in [&self.captures, &self.activation_exports] {
             encoder.count(locals.len());
