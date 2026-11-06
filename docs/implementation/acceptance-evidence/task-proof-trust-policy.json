@@ -3485,6 +3485,854 @@
           }
         ]
       }
+    },
+    "multimodule": {
+      "version": 1,
+      "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+      "observedHead": "615b1568d563f121c042721c32e42a2442eb952d",
+      "binarySha256": "2ff22b4131a512cfcfdaa4c9b4e1efa14341da397a9678a5b8dd66083825a1c2",
+      "cases": [
+        {
+          "mode": "dev",
+          "arguments": [
+            "verify",
+            "--manifest-path",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-dependencies-multimodule-default-root-20261106/arcw.toml",
+            "--profile",
+            "main",
+            "--mode",
+            "dev",
+            "--json"
+          ],
+          "exit": 0,
+          "stage": null,
+          "proofs": [
+            {
+              "id": "origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed local manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                    "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                    "source_len": 264
+                  },
+                  "start": 43,
+                  "end": 94
+                }
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "indirect",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "support.origin"
+              ]
+            },
+            {
+              "id": "mixed",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin",
+                "support.origin"
+              ]
+            },
+            {
+              "id": "separate",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "support.origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed remote manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/support.arcw",
+                    "revision": "f45cc343c88ac4d47f851c96eebe44dc633478591bb0c33de628d562ddde8ae9",
+                    "source_len": 91
+                  },
+                  "start": 13,
+                  "end": 65
+                }
+              },
+              "trusted_dependencies": null
+            }
+          ],
+          "diagnostics": [
+            {
+              "id": "verify.pending.proof.origin.body",
+              "severity": "warning",
+              "message": "proof `origin` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 43,
+                "end": 114
+              },
+              "obligation": "proof.origin.body",
+              "related_ids": [
+                "origin"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_origin_body() {\n    // TODO: prove proof `origin` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.pending.proof.indirect.body",
+              "severity": "warning",
+              "message": "proof `indirect` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 148,
+                "end": 178
+              },
+              "obligation": "proof.indirect.body",
+              "related_ids": [
+                "indirect"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_indirect_body() {\n    // TODO: prove proof `indirect` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.pending.proof.mixed.body",
+              "severity": "warning",
+              "message": "proof `mixed` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 179,
+                "end": 240
+              },
+              "obligation": "proof.mixed.body",
+              "related_ids": [
+                "mixed"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_mixed_body() {\n    // TODO: prove proof `mixed` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.pending.proof.separate.body",
+              "severity": "warning",
+              "message": "proof `separate` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 241,
+                "end": 262
+              },
+              "obligation": "proof.separate.body",
+              "related_ids": [
+                "separate"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_separate_body() {\n    // TODO: prove proof `separate` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.pending.proof.support.origin.body",
+              "severity": "warning",
+              "message": "proof `support.origin` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/support.arcw",
+                  "revision": "f45cc343c88ac4d47f851c96eebe44dc633478591bb0c33de628d562ddde8ae9",
+                  "source_len": 91
+                },
+                "start": 13,
+                "end": 89
+              },
+              "obligation": "proof.support.origin.body",
+              "related_ids": [
+                "support.origin"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/support.arcw",
+                        "revision": "f45cc343c88ac4d47f851c96eebe44dc633478591bb0c33de628d562ddde8ae9",
+                        "source_len": 91
+                      },
+                      "start": 91,
+                      "end": 91
+                    },
+                    "replacement": "\n\nproof proof_support_origin_body() {\n    // TODO: prove proof `support.origin` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            }
+          ],
+          "stdoutSha256": "92558a8f456a7eafcf61924666ca0302e4e372112b3b426d18faea191c84b5ed",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "mode": "release",
+          "arguments": [
+            "verify",
+            "--manifest-path",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-dependencies-multimodule-default-root-20261106/arcw.toml",
+            "--profile",
+            "main",
+            "--mode",
+            "release",
+            "--json"
+          ],
+          "exit": 1,
+          "stage": null,
+          "proofs": [
+            {
+              "id": "origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed local manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                    "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                    "source_len": 264
+                  },
+                  "start": 43,
+                  "end": 94
+                }
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "indirect",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "support.origin"
+              ]
+            },
+            {
+              "id": "mixed",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin",
+                "support.origin"
+              ]
+            },
+            {
+              "id": "separate",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "support.origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed remote manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/support.arcw",
+                    "revision": "f45cc343c88ac4d47f851c96eebe44dc633478591bb0c33de628d562ddde8ae9",
+                    "source_len": 91
+                  },
+                  "start": 13,
+                  "end": 65
+                }
+              },
+              "trusted_dependencies": null
+            }
+          ],
+          "diagnostics": [
+            {
+              "id": "verify.proof.trust_disallowed",
+              "severity": "error",
+              "message": "policy disallows the trust declaration on proof `origin`",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 43,
+                "end": 94
+              },
+              "obligation": null,
+              "related_ids": [
+                "origin"
+              ],
+              "actions": []
+            },
+            {
+              "id": "verify.pending.proof.origin.body",
+              "severity": "error",
+              "message": "proof `origin` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 43,
+                "end": 114
+              },
+              "obligation": "proof.origin.body",
+              "related_ids": [
+                "origin"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_origin_body() {\n    // TODO: prove proof `origin` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.pending.proof.indirect.body",
+              "severity": "error",
+              "message": "proof `indirect` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 148,
+                "end": 178
+              },
+              "obligation": "proof.indirect.body",
+              "related_ids": [
+                "indirect"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_indirect_body() {\n    // TODO: prove proof `indirect` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.pending.proof.mixed.body",
+              "severity": "error",
+              "message": "proof `mixed` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 179,
+                "end": 240
+              },
+              "obligation": "proof.mixed.body",
+              "related_ids": [
+                "mixed"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_mixed_body() {\n    // TODO: prove proof `mixed` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.pending.proof.separate.body",
+              "severity": "error",
+              "message": "proof `separate` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                  "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                  "source_len": 264
+                },
+                "start": 241,
+                "end": 262
+              },
+              "obligation": "proof.separate.body",
+              "related_ids": [
+                "separate"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/main.arcw",
+                        "revision": "9da888e904e44fcb8024abd56daf876d705f8b1ac9b19acdf116080f1a5e45fa",
+                        "source_len": 264
+                      },
+                      "start": 264,
+                      "end": 264
+                    },
+                    "replacement": "\n\nproof proof_separate_body() {\n    // TODO: prove proof `separate` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "verify.proof.trust_disallowed",
+              "severity": "error",
+              "message": "policy disallows the trust declaration on proof `support.origin`",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/support.arcw",
+                  "revision": "f45cc343c88ac4d47f851c96eebe44dc633478591bb0c33de628d562ddde8ae9",
+                  "source_len": 91
+                },
+                "start": 13,
+                "end": 65
+              },
+              "obligation": null,
+              "related_ids": [
+                "support.origin"
+              ],
+              "actions": []
+            },
+            {
+              "id": "verify.pending.proof.support.origin.body",
+              "severity": "error",
+              "message": "proof `support.origin` awaits typed proof discharge",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/support.arcw",
+                  "revision": "f45cc343c88ac4d47f851c96eebe44dc633478591bb0c33de628d562ddde8ae9",
+                  "source_len": 91
+                },
+                "start": 13,
+                "end": 89
+              },
+              "obligation": "proof.support.origin.body",
+              "related_ids": [
+                "support.origin"
+              ],
+              "actions": [
+                {
+                  "id": "action.generate_proof_stub",
+                  "label": "Generate proof stub",
+                  "kind": "generate_proof_stub",
+                  "source_edit": {
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://org.arcweft.proof-dependencies-multimodule/src/support.arcw",
+                        "revision": "f45cc343c88ac4d47f851c96eebe44dc633478591bb0c33de628d562ddde8ae9",
+                        "source_len": 91
+                      },
+                      "start": 91,
+                      "end": 91
+                    },
+                    "replacement": "\n\nproof proof_support_origin_body() {\n    // TODO: prove proof `support.origin` awaits typed proof discharge\n}\n",
+                    "applicability": "has_placeholders"
+                  },
+                  "command": {
+                    "id": "arcweft.verify.generateProofStub",
+                    "title": "Generate proof stub"
+                  }
+                },
+                {
+                  "id": "action.show_obligation",
+                  "label": "Show proof obligation",
+                  "kind": "show_obligation",
+                  "command": {
+                    "id": "arcweft.verify.showObligation",
+                    "title": "Show proof obligation"
+                  }
+                }
+              ]
+            }
+          ],
+          "stdoutSha256": "e692f272324c37a908da6e0bcaf1dd7cd3367523c21da2ce2a91b783861caf7d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "scope": "The public same-name proof imported under an alias is support.origin. The local declaration is origin. The static transitive dependency through a function retains only the remote declaration. The mixed proof preserves both sorted original identities and deduplicates repeated calls. Release diagnoses each original authored attribute exactly once.",
+      "setup": "CLI profile selection requires --profile when no positional source is supplied. The profile loader rejected a bare mod crate header in this input. The final manifest uses the implicit root module and leaves the support module explicit.",
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-typed-proof-dependencies-multimodule.raw.zip",
+        "bytes": 12306,
+        "sha256": "aecfa319fccaccc36f7fa7ee529c3f2ef98431638688ee2d3d3414df37ebf16f",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "proof-dependencies-multimodule-20261106/arcw.toml",
+            "bytes": 91,
+            "sha256": "fcfb37e4503453231a2d7cf95fa27ae8810bbefee60f142b3efd9828d04eab72"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-20261106/dev.stderr.log",
+            "bytes": 48,
+            "sha256": "e2c9eff177313c1a78f1395cb7cb9bdf0abe35097bedff0da1b88f8153a53504"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-20261106/dev.stdout.json",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-20261106/receipt.json",
+            "bytes": 1795,
+            "sha256": "98b165ab21ee171a25f4abcdcb60e843f7a6aebe1aae7f8491bc41875cef8c90"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-20261106/release.stderr.log",
+            "bytes": 48,
+            "sha256": "e2c9eff177313c1a78f1395cb7cb9bdf0abe35097bedff0da1b88f8153a53504"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-20261106/release.stdout.json",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-20261106/src/main.arcw",
+            "bytes": 274,
+            "sha256": "7ba81bec8f57298befe486a05534afb628b6987facf48b3b6f3c0ec260336831"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-20261106/src/support.arcw",
+            "bytes": 91,
+            "sha256": "30c994654ab48410d9f89e481fa055d0007dc17f98c762a3ea61c5962ff2326f"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/arcw.toml",
+            "bytes": 147,
+            "sha256": "800267d1e8952a485db385d8af88b98ecc8e32eb6223faa6679e620e4697e67e"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/dev.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/dev.stdout.json",
+            "bytes": 16727,
+            "sha256": "92558a8f456a7eafcf61924666ca0302e4e372112b3b426d18faea191c84b5ed"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/receipt.json",
+            "bytes": 26577,
+            "sha256": "f660fb5620ba0d1fa18eab7e75a5371ee7006ec025bd981a72f73877a9498226"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/release.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/release.stdout.json",
+            "bytes": 17872,
+            "sha256": "e692f272324c37a908da6e0bcaf1dd7cd3367523c21da2ce2a91b783861caf7d"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/src/main.arcw",
+            "bytes": 264,
+            "sha256": "081689b9798d5e856be28b40d7e52c45a7b2e9a844b66c158b5cc99848d2d4b1"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-default-root-20261106/src/support.arcw",
+            "bytes": 91,
+            "sha256": "30c994654ab48410d9f89e481fa055d0007dc17f98c762a3ea61c5962ff2326f"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/arcw.toml",
+            "bytes": 147,
+            "sha256": "800267d1e8952a485db385d8af88b98ecc8e32eb6223faa6679e620e4697e67e"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/dev.stderr.log",
+            "bytes": 261,
+            "sha256": "4374d87d1da3bdee1899232fad1c126ace95727f7f59dde17139b42b7cb1de52"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/dev.stdout.json",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/receipt.json",
+            "bytes": 1889,
+            "sha256": "7e8595d4548ccdf4917d3495ff8850a7f53ef435ff0d2fa47545c0f7d925fddd"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/release.stderr.log",
+            "bytes": 261,
+            "sha256": "4374d87d1da3bdee1899232fad1c126ace95727f7f59dde17139b42b7cb1de52"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/release.stdout.json",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/src/main.arcw",
+            "bytes": 274,
+            "sha256": "7ba81bec8f57298befe486a05534afb628b6987facf48b3b6f3c0ec260336831"
+          },
+          {
+            "entry": "proof-dependencies-multimodule-profile-20261106/src/support.arcw",
+            "bytes": 91,
+            "sha256": "30c994654ab48410d9f89e481fa055d0007dc17f98c762a3ea61c5962ff2326f"
+          }
+        ]
+      }
     }
   }
 }

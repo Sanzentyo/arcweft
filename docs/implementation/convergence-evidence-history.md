@@ -14818,3 +14818,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 6b72d7ca42beb3661a7025598cf74a341d61fc21. The authored state.write capability and the flow-registry write passed verify and plan. Both Bytecode VM and AWBC Product failed at the write with the owning-execution-context diagnostic. The paired input without the write returned 7 in both executors. Every step respected the original one-operation budget.
 - The result concerns execution ownership. It keeps the static key, checked write and plan projection on their verified scopes. [Authored pair, actual steps and raw commands](acceptance-evidence/task-lifetime-registry-key-identity.json).
+
+## 2026-11-06 — Trusted proof aliases preserve original declaration identity
+
+- Source 6b72d7ca42beb3661a7025598cf74a341d61fc21 ran a real CLI profile with two source modules and two same-name trusted declarations. The indirect proof reported support.origin and the mixed proof reported origin and support.origin in sorted order. The unrelated proof had no dependency.
+- Dev exited 0. Release exited 1 with one denial on each original attribute. The argument selection and root module setup attempts remain archived with the successful profile inputs. [Profile, original source bytes and exact JSON](acceptance-evidence/task-proof-trust-policy.json).
