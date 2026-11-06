@@ -14929,3 +14929,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source `a44658ff686c45d2debe55e7c1507a09dc2ffa13` で、ライン初期化とスケジュール済みアクションを分け、型付き書込みと不透明な効果を所有権の制御フローから判定する。同型の兄弟書込みは、成立済みの登録を維持する。兄弟が書く可能性だけの場合は推論済みoptionalを受理し、必須読取りを拒否する。Native／正規デコードAWBCで両方のマークを発火し、兄弟の実行と必須読取りを確認した。
 - 初回Compilerは78 PASS／1 FAILで、二つのマークを使う入力がHIRの準備段階で停止した。入力を訂正し、最終はCompiler 80 PASS、Sema／RuntimePlan 1,516 PASS／1 skip、逆依存3パッケージのライブラリ210 PASS。workspace check／Clippy／構造ゲートはexit 0。Cargo test targetは114のうち7対象を実行し、107対象は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Registry ownership across dialogue scopes
+
+- Source 7440c6b5d3131267166c58805099bb7f3c195e54 の意味解析では、同名の Line キーを対話ごとに区別し、入れ子の Line の Bool と親 Line の String、共有する Flow の String を確認した。子だけの登録で親が必須読取りする入力は拒否した。単一の対話が完了した後の Flow 必須読取りは Native と正規デコード済み AWBC で実行した。Compiler 82 PASS、Sema／RuntimePlan 1,516 PASS・1 skip。構造監査のブロッキング違反は0。
+- 同じ入れ子入力の試作は RuntimePlan の内容ハンドル、AWBC のタスクグループ参照の順に停止した。前方参照を解消した試作では正規 AWBC を生成・デコードできたが、Native はインライン対話中のロールバック画像生成、AWBC は Line 実行中の対話停止処理で失敗した。試作の差分と失敗原本を保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

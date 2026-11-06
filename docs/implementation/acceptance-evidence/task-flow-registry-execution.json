@@ -9060,5 +9060,512 @@
         }
       ]
     }
+  },
+  "sourceNestedRegistryAnalysis": {
+    "source": "7440c6b5d3131267166c58805099bb7f3c195e54",
+    "base": "d7f2114f2e3424b12a59b458b158d778a7631591",
+    "published": "7440c6b5d3131267166c58805099bb7f3c195e54",
+    "tree": "a023d6ea7b03689f22db495c0ae7607190910776",
+    "patchSha256": "1d140e300f80d233e9ed6bcfcd1c3fee33377eef93583129e058612846ec2f8a",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "d7f2114f2e3424b12a59b458b158d778a7631591",
+        "run": "source-registry-nested-owners-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  58.499s] 1516 tests run: 1516 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1516,
+        "passed": 1516,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T10:02:59.1885449Z"
+      },
+      {
+        "version": 1,
+        "base": "d7f2114f2e3424b12a59b458b158d778a7631591",
+        "run": "source-registry-nested-compiler-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   4.094s] 82 tests run: 82 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 82,
+        "passed": 82,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T09:58:30.5293784Z"
+      }
+    ],
+    "prototypeTests": [
+      {
+        "version": 1,
+        "base": "d7f2114f2e3424b12a59b458b158d778a7631591",
+        "run": "source-registry-nested-compiler-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   4.263s] 81 tests run: 80 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 81,
+        "passed": 80,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "source_nested_line_registries_keep_their_parent_line_and_share_the_flow"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-06T09:40:41.4422358Z"
+      },
+      {
+        "version": 1,
+        "base": "d7f2114f2e3424b12a59b458b158d778a7631591",
+        "run": "source-registry-nested-compiler-retry-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   4.142s] 82 tests run: 81 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 82,
+        "passed": 81,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "source_nested_line_registries_keep_their_parent_line_and_share_the_flow"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-06T09:43:21.9288779Z"
+      },
+      {
+        "version": 1,
+        "base": "d7f2114f2e3424b12a59b458b158d778a7631591",
+        "run": "source-registry-nested-compiler-ordinal-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   4.267s] 82 tests run: 81 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 82,
+        "passed": 81,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "source_nested_line_registries_keep_their_parent_line_and_share_the_flow"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-06T09:46:54.2770805Z"
+      }
+    ],
+    "prototypeAwbc": {
+      "runId": "11bdebf3-1d5f-4579-a196-a967620b3912",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "-E",
+        "test(=source_nested_line_registries_keep_their_parent_line_and_share_the_flow)",
+        "--no-tests",
+        "fail"
+      ],
+      "executed": 1,
+      "failed": 1,
+      "skipped": 62,
+      "diagnosis": "Line activation suspended with kind Dialogue outside a supported host call."
+    },
+    "reverseGraph": {
+      "base": "d7f2114f2e3424b12a59b458b158d778a7631591",
+      "owners": [
+        "arcweft-lang-sema",
+        "arcweft-compiler"
+      ],
+      "workspaceReversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "features": "all",
+      "targets": "all",
+      "treeMetadataDifference": 0
+    },
+    "testTargets": {
+      "total": 114,
+      "passing": 4,
+      "notRun": 110,
+      "passingRows": [
+        {
+          "binary": "arcweft-lang-sema",
+          "run": "source-registry-nested-owners-final-20261106",
+          "cases": 1382
+        },
+        {
+          "binary": "arcweft-runtime-plan",
+          "run": "source-registry-nested-owners-final-20261106",
+          "cases": 134
+        },
+        {
+          "binary": "arcweft-compiler::evaluated_effects",
+          "run": "source-registry-nested-compiler-final-20261106",
+          "cases": 63
+        },
+        {
+          "binary": "arcweft-compiler::flow_include",
+          "run": "source-registry-nested-compiler-final-20261106",
+          "cases": 19
+        }
+      ]
+    },
+    "quality": [
+      {
+        "name": "source-registry-nested-workspace-check-20261106",
+        "status": "not_run"
+      },
+      {
+        "name": "source-registry-nested-workspace-clippy-20261106",
+        "status": "not_run"
+      },
+      {
+        "source": "7440c6b5d3131267166c58805099bb7f3c195e54",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T10:03:14.0475747Z",
+        "finishedAt": "2026-11-06T10:03:17.8404131Z"
+      }
+    ],
+    "ownershipReview": "The registry address and facts stay in registry.rs. The selected ownership graph owns ordering and schedule joins, and local_use emits those events from the existing topology. Compiler regressions use the existing analyzed-project fixture. The structure gate reported no blocking findings.",
+    "coverage": "Semantic analysis proved required Line reads of Bool and String from the same key under distinct lexical activations, proved a required Flow read following the nested initialization, and rejected a read in the enclosing Line with only an inner registration. The single-line runtime test checked the required Flow read after line completion in both Native and canonical-decoded AWBC.",
+    "prototypeSequence": [
+      "RuntimePlan failed to resolve a builder-issued content handle while lowering the enclosing group before the nested content had been registered.",
+      "Pre-registering content handles enabled RuntimePlan compilation. AWBC lowering then failed to resolve the forward line-task group.",
+      "Resolving AWBC capture schemas from RuntimePlan and assigning the plan ordinal enabled canonical encoding and decoding. Native then stopped at inline dialogue checkpoint admission. The separate AWBC-first run stopped on a Dialogue suspension inside the line activation."
+    ],
+    "boundary": "The source commit covers checked registry facts and the single-line runtime regression. The experimental forward-handle patches in the raw archive are evidence. Full nested activation ownership, save/restore, and both execution backends remain open. The originally held 12 tracked and 6 untracked paths were outside the checkpoint.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-source-nested-registry.raw.zip",
+      "sha256": "7a0a9df833f6c2875e51b98110e9d1cdf0bb04c4f6a1da523551fa14defe7e09",
+      "entries": [
+        {
+          "entry": "source-registry-nested-20261106.cargo-tree.txt",
+          "bytes": 5055,
+          "sha256": "f5401e254adb70e3dbba9fbed1cbc89b1a5058ebe96643f9a2a5617b42fb00de"
+        },
+        {
+          "entry": "source-registry-nested-20261106.reverse.json",
+          "bytes": 17509,
+          "sha256": "aac9fbf79bdaba59f5329ddde91f95f81d029548360468484bfe964dd3a68269"
+        },
+        {
+          "entry": "checkpoint-source-registry-nested-20261106.verified.json",
+          "bytes": 1302,
+          "sha256": "50b006f793fd8d1236341d0bcc48995629a98ede908904deb7df0f3fb8358933"
+        },
+        {
+          "entry": "source-registry-nested-awbc-first-20261106.log",
+          "bytes": 86060,
+          "sha256": "a1d42cecc3b105e1c04b09eafbab1f40e3db0fba64a9110a13f9b891cf5e9c68"
+        },
+        {
+          "entry": "source-registry-nested-compiler-linked-20261106.catalog.log",
+          "bytes": 85261,
+          "sha256": "2512555582679fe9ef19091caa43d792dbf6ff029e411c9b4d006a2de1d74c0a"
+        },
+        {
+          "entry": "source-registry-nested-forward-handles-20261106.patch",
+          "bytes": 8662,
+          "sha256": "5b39c8076eb3a8ee9282c57b1779830bb542626ac4ca3579daf5157e0e1248d6"
+        },
+        {
+          "entry": "source-registry-nested-source-probe-20261106.patch",
+          "bytes": 50115,
+          "sha256": "65115c689516e027f7e0cd501d7f6261a845a8aa4809492d0d82e722a4d4033d"
+        },
+        {
+          "entry": "source-registry-nested-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "18ec37e9ab1af74740ba88565342cd511b024f60442139c38cd7c0528c9a2ad9"
+        },
+        {
+          "entry": "source-registry-nested-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "148a50e090b47ca92ecf1b80eb5f230ce2565f16cbb133c307e0ee93bd083949"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.catalog.json",
+          "bytes": 579,
+          "sha256": "0c684cd61e5b94c989d7df16d19ae9ec5e79051254ab7ae0e49c752fd98c0d6b"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.catalog.inventory.json",
+          "bytes": 398545,
+          "sha256": "7c8bfba55f2b778595f312ce3b934e4968e272b0bf0d0bf604e98ac10eabe8ba"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.catalog.log",
+          "bytes": 348172,
+          "sha256": "3c6dd250a53024ef0d82924a677e67714d9cf79ddeb98572ddbf235a2d90cac8"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.runtime.json",
+          "bytes": 671,
+          "sha256": "481bb7878dc2b769e96a1a575a91907173f621ba831b276ef71b4a0492960be9"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.runtime.log",
+          "bytes": 560382,
+          "sha256": "df03c612147446fc76640f58a9a38790d8ab68f85d9f057328941b6aa1fe23e0"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.runtime.terminal-audit.json",
+          "bytes": 633,
+          "sha256": "1c05e2169887e18da108965e15488bae0c7e46e5fec6cff994e1b09413648a31"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.binaries-before.json",
+          "bytes": 457,
+          "sha256": "0683063f0fe1311e731eb6bb2cdf4bb686aff7e2b8d8045416054d5592de934c"
+        },
+        {
+          "entry": "source-registry-nested-owners-final-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "371b441af1a960672204ac494d7fa888876f718cce178669145d1b9a805b93f3"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.catalog.json",
+          "bytes": 603,
+          "sha256": "b0886d33eea232704eacbd9e174e1a69a038e931e1137ae6edffb2f77a0ac4b4"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.catalog.inventory.json",
+          "bytes": 20658,
+          "sha256": "2266d88b4c428cf2b99faa9fa080ed34bacbfe73a104e52add12569a3eb5ec8d"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.catalog.log",
+          "bytes": 108500,
+          "sha256": "ae494ef4c34d5e83518fb87510cf7480e76ecbb4a91a258501a3120e86b5a2b6"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.runtime.json",
+          "bytes": 695,
+          "sha256": "a8983cbfcb8a275fcb3a0ecfb0d9e48b4b6c2c966c2bf4d481919c9edb1e6005"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.runtime.log",
+          "bytes": 108133,
+          "sha256": "704ef5d8f161e5d0a2ff09b103b86a266327a5f5cd38089d77796bbd0b5b12aa"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.runtime.terminal-audit.json",
+          "bytes": 627,
+          "sha256": "729307024ddbbaa9576cb4596efd020ad65328141780adc1724a1d33159b00f1"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "c95654121be8599456e1afe109c21800b0831e5cec4011b7cdcbfb8a624e4cfb"
+        },
+        {
+          "entry": "source-registry-nested-compiler-final-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "209eb906af421fb39078e45b5922996037086a5f3a42b58d013adb123d885038"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.catalog.json",
+          "bytes": 597,
+          "sha256": "cb642da964abe2dab69caf30ed1cb45bebbd8f61f3a510b85b29e829574e18f6"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.catalog.inventory.json",
+          "bytes": 20418,
+          "sha256": "d6e5d8ae0c409db512e4c01fc4749746ed8fba971543c88eabb1584f951cb787"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.catalog.log",
+          "bytes": 98172,
+          "sha256": "36a3c9439b81b8fd70068f181989a4cc8cc2250a74876ac5880a7cdf5c6615fd"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.runtime.json",
+          "bytes": 691,
+          "sha256": "b06c146af659e0651aa2ec462e8cd53a5286167dbced187d8b39b7b6a12f1e95"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.runtime.log",
+          "bytes": 110609,
+          "sha256": "2c23e2287f845fc5343c708e73e2acc9cb42d1002ae5099022682add33b38396"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 822,
+          "sha256": "fef36813623859448f06005242b717913f7822e8bcddbee49f15f65184e2fc6c"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "46cffc2154eee4e3a393ddb0e362f87174fb45c80c2e24d18cb8745ef2a9de17"
+        },
+        {
+          "entry": "source-registry-nested-compiler-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "0f9d7c6a34bb63c8c7981a65a101d0d7cf894521666a953c6bceb0a8711d5161"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.catalog.json",
+          "bytes": 603,
+          "sha256": "c11746e551690e3b032e5e627bed8dc373a02b8801d72189f969b2729b05dc5f"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.catalog.inventory.json",
+          "bytes": 20656,
+          "sha256": "0698e72756a06eb7c20aca4d2ed502bf3ced8968bb52147616d6490b498bc6fc"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.catalog.log",
+          "bytes": 98058,
+          "sha256": "e801264cc02ac455032fd4b9418d308b2cbeea026c7914e48bab257e551e732a"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.runtime.json",
+          "bytes": 697,
+          "sha256": "a71ff20e1d878f4399a4aa0cc616be7758dcf96aa5498d09c83a7a2c2ed5e18b"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.runtime.log",
+          "bytes": 108998,
+          "sha256": "b19a20c9279365fe05da985d2e8f7da6c4fd547b1a34ca86b17e812301d34805"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.runtime.terminal-audit.json",
+          "bytes": 828,
+          "sha256": "4d64d5ebcc496464a547940232d370b606a080f2ff8e96cb7fd0abebf1113e11"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "9c6f7e7f204ffb68753c5bc33a116ccf0c6ca139a91187cb7e61a4f5927abaee"
+        },
+        {
+          "entry": "source-registry-nested-compiler-retry-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "67a6f13e09431bb2fa38c0e10aa3a38a5f63707d6426cb9ddd2452b7e637c5e6"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.catalog.json",
+          "bytes": 605,
+          "sha256": "d57a17b8fe9e95d5cfb88affbcd299799fbf19de448576902f8830cfbeaefe70"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.catalog.inventory.json",
+          "bytes": 20656,
+          "sha256": "0698e72756a06eb7c20aca4d2ed502bf3ced8968bb52147616d6490b498bc6fc"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.catalog.log",
+          "bytes": 98058,
+          "sha256": "e0decc5d29237c213e9c39284d0be0e4d8b0bcd1de856c0b92f95da0adeea745"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.runtime.json",
+          "bytes": 699,
+          "sha256": "705963ed7672b06ddc959c577051d22185139c540e07ca606321f95601e62984"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.runtime.log",
+          "bytes": 108993,
+          "sha256": "c15954d616035eb7b9c98a06818f84ba2a9182bd35a6246e30e29d113d766363"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.runtime.terminal-audit.json",
+          "bytes": 830,
+          "sha256": "6a7ea3af6374c49850a80f17e7afe31d0cab7d8bf2ac0b69453b07c32f5fba74"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "0210b16c0056ca1d4ea9ab41c605f5e9e3bd4d108734d71ac825870cfc071971"
+        },
+        {
+          "entry": "source-registry-nested-compiler-ordinal-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "128bb10d7f49d77099b506dd67c99e234f89306a0d73b740741a0a4ee7817b8c"
+        }
+      ]
+    }
   }
 }
