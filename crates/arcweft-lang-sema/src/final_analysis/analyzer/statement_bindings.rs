@@ -42,7 +42,7 @@ impl Analyzer<'_, '_, '_> {
             .check()
             .map_err(AnalyzerExpressionError::fatal)?;
         match statement {
-            HirStmtKind::LifetimeSet { target, .. } => {
+            HirStmtKind::LifetimeSet { target, value } => {
                 let module = self
                     .module(owner.module())
                     .map_err(AnalyzerExpressionError::fatal)?;
@@ -51,30 +51,37 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(AnalyzerExpressionError::fatal)?,
                 );
                 if let Some(previous) = self.facts.expressions().get(target) {
-                    if matches!(previous.checked_resolution(), Some(crate::final_analysis::CheckedExpressionResolution::RegistryAddress(previous)) if previous == &address)
+                    if !matches!(previous.checked_resolution(), Some(crate::final_analysis::CheckedExpressionResolution::RegistryAddress(previous)) if previous == &address)
                     {
-                        return Ok(());
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        ));
                     }
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::WrongPayloadFamily,
-                    ));
+                } else {
+                    let target = *target;
+                    self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+                        |this, _, _| {
+                            this.facts
+                                .publish_new_expression(
+                                    target,
+                                    crate::final_analysis::CheckedExpression::registry_address(
+                                        address,
+                                    ),
+                                )
+                                .map_err(|_| {
+                                    AnalyzerExpressionError::fatal(
+                                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                                    )
+                                })?;
+                            Ok(super::state::CandidateFactTransactionAction::Commit(()))
+                        },
+                    )?
+                    .into_committed()
+                    .map_err(AnalyzerExpressionError::fact)?;
                 }
-                let target = *target;
-                self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(|this, _, _| {
-                    this.facts
-                        .publish_new_expression(
-                            target,
-                            crate::final_analysis::CheckedExpression::registry_address(address),
-                        )
-                        .map_err(|_| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::WrongPayloadFamily,
-                            )
-                        })?;
-                    Ok(super::state::CandidateFactTransactionAction::Commit(()))
-                })?
-                .into_committed()
-                .map_err(AnalyzerExpressionError::fact)?;
+                // Later inferred bindings can use the checked producer. The
+                // statement is still sealed with the same expression fact.
+                self.evaluate_expression(context, *value, None)?;
             }
             HirStmtKind::Let {
                 pattern,

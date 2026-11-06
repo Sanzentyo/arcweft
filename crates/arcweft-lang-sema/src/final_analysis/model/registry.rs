@@ -10,14 +10,66 @@ use arcweft_lang_hir::{
     leaf::HirLifetimeRegistryPath,
     module::HirModule,
     project::{
-        HirDeclarationBodyRootRole, HirProjectEvaluationTopology, HirSemanticPathOwnerId,
-        HirSemanticPathStep,
+        HirDeclarationBodyRootRole, HirProjectEvaluationTopology, HirSemanticPathLocation,
+        HirSemanticPathOwnerId, HirSemanticPathStep,
     },
-    stmt::HirStmtKind,
+    stmt::{HirStatementBodyRole, HirStmtKind},
 };
 
 use super::super::FinalSemanticAnalysisError;
 use crate::{effects::EffectId, types::TypeKind};
+
+/// Root-relative activation that can supply authored registry type evidence.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(in crate::final_analysis) enum RegistryLexicalActivation<'a> {
+    Flow,
+    Line(&'a [HirSemanticPathStep]),
+}
+
+impl<'a> RegistryLexicalActivation<'a> {
+    pub(in crate::final_analysis) fn at(
+        steps: &'a [HirSemanticPathStep],
+        scope: &LifetimeScopeKind,
+    ) -> Option<Self> {
+        let mut flow = matches!(
+            steps.first(),
+            Some(HirSemanticPathStep::DeclarationBody(
+                HirDeclarationBodyRootRole::FlowBody
+            ))
+        );
+        let mut line = None;
+        // Flow control blocks also contain ThreadItems. Their enclosing
+        // statement-body edge distinguishes them from an independent Thread.
+        for (index, step) in steps.iter().enumerate().skip(2) {
+            match (&steps[index - 1], step) {
+                (
+                    _,
+                    HirSemanticPathStep::ExpressionOwned(
+                        HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. },
+                    ),
+                ) => line = Some(Self::Line(&steps[..index])),
+                (
+                    HirSemanticPathStep::StatementBody(role),
+                    HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. }),
+                ) if *role != HirStatementBodyRole::CancelRule => {}
+                (
+                    _,
+                    HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. })
+                    | HirSemanticPathStep::Expression(HirExpressionChildRole::ClosureBody),
+                ) => {
+                    flow = false;
+                    line = None;
+                }
+                _ => {}
+            }
+        }
+        match scope {
+            LifetimeScopeKind::Flow if flow => Some(Self::Flow),
+            LifetimeScopeKind::Line => line,
+            _ => None,
+        }
+    }
+}
 
 /// The checked key and presence mode of one registry value expression.
 /// The enclosing expression owns the result type. The runtime must still
@@ -30,60 +82,44 @@ pub struct CheckedRegistryRead {
 }
 
 impl CheckedRegistryRead {
-    pub(crate) fn from_path(
-        topology: &HirProjectEvaluationTopology,
+    pub(in crate::final_analysis) fn from_path<'a>(
+        topology: &'a HirProjectEvaluationTopology,
         owner: ExprId,
         path: &HirLifetimeRegistryPath,
-    ) -> Result<Self, FinalSemanticAnalysisError> {
+    ) -> Result<
+        (
+            Self,
+            HirSemanticPathLocation<'a>,
+            RegistryLexicalActivation<'a>,
+        ),
+        FinalSemanticAnalysisError,
+    > {
         let location = topology
             .semantic_path(HirSemanticPathOwnerId::Expression(owner))
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let mut flow = false;
-        let mut line = false;
-        if let Some(location) = location {
-            let steps = location.path().steps();
-            flow = matches!(
-                steps.first(),
-                Some(HirSemanticPathStep::DeclarationBody(
-                    HirDeclarationBodyRootRole::FlowBody
-                ))
-            );
-            // The Flow body itself is represented as a ThreadItem. Only a
-            // nested body can introduce a distinct execution owner.
-            for step in steps.iter().skip(2) {
-                match step {
-                    HirSemanticPathStep::ExpressionOwned(
-                        HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. },
-                    ) => line = true,
-                    HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. })
-                    | HirSemanticPathStep::Expression(HirExpressionChildRole::ClosureBody) => {
-                        flow = false;
-                        line = false;
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if !match path.scope() {
-            LifetimeScopeKind::Flow => flow,
-            LifetimeScopeKind::Line => line,
-            _ => false,
-        } {
+        let Some((location, activation)) = location.and_then(|location| {
+            RegistryLexicalActivation::at(location.path().steps(), path.scope())
+                .map(|activation| (location, activation))
+        }) else {
             return Err(FinalSemanticAnalysisError::RegistryReadScope {
                 owner,
                 scope: path.scope().clone(),
             });
-        }
+        };
         let kind = if path.optional() {
             arcweft_core::effect::RuntimeRegistryReadKind::Optional
         } else {
             arcweft_core::effect::RuntimeRegistryReadKind::Required
         };
-        Ok(Self {
-            owner,
-            key: Arc::clone(path.key()),
-            kind,
-        })
+        Ok((
+            Self {
+                owner,
+                key: Arc::clone(path.key()),
+                kind,
+            },
+            location,
+            activation,
+        ))
     }
 
     pub fn key(&self) -> &LifetimeRegistryKey {

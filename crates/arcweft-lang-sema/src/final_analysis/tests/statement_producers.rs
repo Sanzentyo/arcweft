@@ -910,6 +910,44 @@ fn required_registry_reads_ignore_paths_that_return_before_the_read() {
 }
 
 #[test]
+fn inferred_registry_read_still_requires_reaching_registration() {
+    let world = fixture(
+        "flow main(flag: bool) effects { state.write('flow) } {
+            if flag { 'flow.flag <- true }
+            let value = 'flow.flag
+        }",
+        None,
+    );
+    let result = super::analyze(&world);
+    assert!(
+        matches!(
+            result,
+            Err(FinalSemanticAnalysisError::LocalUse(
+                crate::final_analysis::CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
+            ))
+        ),
+        "{result:?}",
+    );
+}
+
+#[test]
+fn inferred_registry_read_excludes_same_key_from_another_flow() {
+    let world = fixture(
+        "flow first effects { state.write('flow) } { 'flow.flag <- 1i64 }
+         flow second() -> bool effects { state.write('flow) } {
+             let flag = true
+             if flag {
+                 'flow.flag <- flag
+                 let value = 'flow.flag
+                 return value
+             } else { return false }
+         }",
+        None,
+    );
+    super::analyze(&world).expect("the second Flow's write determines the type");
+}
+
+#[test]
 fn registry_write_retains_a_core_facing_static_key_with_unicode_components() {
     let world = fixture(
         "flow registry effects { state.write('flow) } { 'flow.旗.既読 <- true }",

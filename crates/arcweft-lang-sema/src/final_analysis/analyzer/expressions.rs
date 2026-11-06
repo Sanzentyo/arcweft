@@ -55,7 +55,10 @@ use arcweft_lang_hir::expr::{
     HirSelectExpr,
 };
 use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
+use arcweft_lang_hir::project::HirSemanticPathLocation;
 use arcweft_lang_hir::stmt::{HirStmtEvaluationPlan, HirStmtValuePlanKind, HirTrigger};
+
+use crate::final_analysis::model::RegistryLexicalActivation;
 
 use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
@@ -5239,18 +5242,24 @@ impl Analyzer<'_, '_, '_> {
                 else {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 };
-                let Some(ty) = expectation.contextual_shape() else {
-                    return Err(AnalyzerExpressionError::rejected(owner).into());
-                };
-                if path.optional() && !matches!(ty, TypeKind::Option(_)) {
+                if path.optional() && !matches!(expected, Some(TypeKind::Option(_))) {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 }
-                let read =
+                let (read, location, activation) =
                     super::super::CheckedRegistryRead::from_path(&self.topology, owner, path)
                         .map_err(AnalyzerExpressionError::fatal)?;
+                let (ty, selection) = match expected {
+                    Some(ty) => (ty.clone(), CheckedTypeSelection::Expected),
+                    None => {
+                        let ty = self
+                            .infer_required_registry_item(module, location, activation, read.key())?
+                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                        (ty.clone(), CheckedTypeSelection::Inferred)
+                    }
+                };
                 Ok(CheckedExpression::value(
-                    ty.clone(),
-                    CheckedTypeSelection::Expected,
+                    ty,
+                    selection,
                     EffectSet::new(),
                     CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)),
                 ))
@@ -5263,6 +5272,76 @@ impl Analyzer<'_, '_, '_> {
             _ => return Ok(None),
         }
         .map(Some)
+    }
+
+    fn infer_required_registry_item(
+        &self,
+        module: &HirModule,
+        location: HirSemanticPathLocation<'_>,
+        activation: RegistryLexicalActivation<'_>,
+        key: &arcweft_id::LifetimeRegistryKey,
+    ) -> Result<Option<&TypeKind>, AnalyzerExpressionError> {
+        let paths = self
+            .topology
+            .module(module.module_id())
+            .into_iter()
+            .flat_map(|module| module.entries())
+            .flat_map(|entry| {
+                std::iter::once(entry.paths()).chain(entry.body().map(|body| body.paths()))
+            })
+            .find(|paths| paths.root() == location.root())
+            .ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+        let mut inferred = None;
+        // Use original checked write operands in this lexical activation. A
+        // type witness is provisional until the ownership CFG proves presence
+        // and the exact item type on every reaching execution path.
+        for target in paths.expression_owners() {
+            self.control
+                .check()
+                .map_err(AnalyzerExpressionError::fatal)?;
+            let Some(CheckedExpressionResolution::RegistryAddress(address)) = self
+                .facts
+                .expressions()
+                .get(&target)
+                .and_then(PreparedExpressionFact::checked_resolution)
+            else {
+                continue;
+            };
+            if address.key() != key
+                || paths
+                    .statement(address.statement())
+                    .and_then(|path| RegistryLexicalActivation::at(path.steps(), key.scope()))
+                    != Some(activation)
+            {
+                continue;
+            }
+            let statement = module.resolve_stmt(address.statement()).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            let HirStmtKind::LifetimeSet { value, .. } = statement.kind() else {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::WrongPayloadFamily,
+                ));
+            };
+            let Some(ty) = self
+                .facts
+                .expressions()
+                .get(value)
+                .and_then(PreparedExpressionFact::value_type)
+            else {
+                continue;
+            };
+            if matches!(ty, TypeKind::Never | TypeKind::Error(_)) {
+                continue;
+            }
+            if inferred.is_some_and(|prior| prior != ty) {
+                return Ok(None);
+            }
+            inferred = Some(ty);
+        }
+        Ok(inferred)
     }
 
     fn check_dialogue_line_reference(

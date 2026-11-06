@@ -3019,7 +3019,12 @@ entry cli @entry.main { goto @flow.main }
 
 #[test]
 fn source_required_registry_reads_use_reaching_branches_in_native_and_decoded_awbc() {
-    for (flag, expected) in [(true, "then"), (false, "else")] {
+    for (flag, binding, expected) in [
+        (true, "present: String", "then"),
+        (false, "present: String", "else"),
+        (true, "present", "then"),
+        (false, "present", "else"),
+    ] {
         let compiled = compile_source(&format!(
             r#"
 flow main() -> Unit effects {{ state.write('flow), log.write }} {{
@@ -3028,7 +3033,7 @@ flow main() -> Unit effects {{ state.write('flow), log.write }} {{
     }} else {{
         'flow.flags.seen <- "else"
     }}
-    let present: String = 'flow.flags.seen
+    let {binding} = 'flow.flags.seen
     log.info(present)
 }}
 entry cli @entry.main {{ goto @flow.main }}
@@ -3061,7 +3066,7 @@ flow main() -> Unit effects { state.write('flow), state.write('line), log.write 
             let absent: Option<String> = 'line.saved?
             if let .None = absent { log.info("line absent") }
             'line.saved <- "line value"
-            let present: String = 'line.saved
+            let present = 'line.saved
             log.info(present)
             'flow.saved <- "parent value"
         }

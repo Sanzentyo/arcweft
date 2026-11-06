@@ -389,6 +389,8 @@ Line lifetime registry paths use the same lifetime sigil as scope labels:
 `'line.focus` is a guaranteed value only when the checker can prove the key was
 registered, while `'line.focus?` returns an `Option<T>` within the reached scope.
 An expected `Option<T>` can establish the item type when the key is absent.
+A guaranteed read without an expected type can infer the item type when the
+already checked writes to that key in the same Flow or Line agree on the type.
 A guaranteed read needs a registration of its item type on every path reaching
 the read. A branch that leaves the body first imposes no registration requirement.
 Scheduled line actions share the registry with sibling actions. A guaranteed
