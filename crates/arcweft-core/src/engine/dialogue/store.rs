@@ -5,14 +5,18 @@ use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, RuntimeDialogueAbandonedCommitProof,
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationState,
     RuntimeDialogueActivationTransaction, RuntimeDialogueCommitProof, RuntimeDialogueCommitReceipt,
-    RuntimeDialoguePublishedCommitProof, RuntimeHandleDropReceipt, ScopeExit,
+    RuntimeDialoguePublishedCommitProof, RuntimeHandleDropReceipt, RuntimeLineHandleLedger,
+    ScopeExit,
 };
 use crate::pattern::RuntimePattern;
-use crate::runtime_id::{DialogueActivationId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
+use crate::runtime_id::{
+    DialogueActivationId, RuntimeLineHandleToken, RuntimeLocalDeclarationId, RuntimePlanTypeId,
+};
 use crate::step::{RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind};
 use crate::time::LogicalDuration;
 use crate::value::ownership::RuntimeOwnedSlotId;
-use crate::value::{RuntimeLocalBinding, RuntimeValue};
+use crate::value::{RuntimeLocalBinding, RuntimeValue, RuntimeValueView};
+use arcweft_character::id::CharacterId;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -317,9 +321,55 @@ impl DialogueActivationStoreRollbackImage {
                 crate::runtime_id::RuntimeDeferSiteId,
             ),
         >,
+        execution_for_parent: impl Fn(
+            super::super::FlowFiberId,
+        ) -> Option<crate::runtime_id::ExecutionInstanceId>,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
-        self.registry
-            .admit_retained(admission, expected_deferred_children)?;
+        use crate::plan::{FlowOp, RuntimeLineOperation};
+        use crate::task::RuntimeProgramOwner;
+        use crate::value::RuntimeHandleKind;
+
+        self.registry.admit_retained(
+            admission,
+            expected_deferred_children,
+            |active, command, token, slot| {
+                let frame = &active.frame;
+                let Some(PendingLineOperation::ActorLook {
+                    command: pending, ..
+                }) = &frame.pending_line_operation
+                else {
+                    return false;
+                };
+                let RuntimeProgramOwner::Plan(plan) = &frame.execution.program else {
+                    return false;
+                };
+                let Some(FlowOp::LineOperation {
+                    operation: RuntimeLineOperation::ActorLook { actor, .. },
+                    ..
+                }) = plan
+                    .line_task_groups()
+                    .get(frame.task_group.index())
+                    .and_then(|group| group.activation_ops().get(frame.activation_pc))
+                else {
+                    return false;
+                };
+                pending == command
+                    && execution_for_parent(frame.parent).is_some_and(|execution| {
+                        slot == RuntimeOwnedSlotId::environment_local(execution, actor.local())
+                    })
+                    && frame
+                        .execution
+                        .env
+                        .get_stored(actor.local())
+                        .is_some_and(|value| {
+                            RuntimeLineHandleLedger::decode_affine_handle(
+                                value.view(),
+                                RuntimeHandleKind::StageActor,
+                            )
+                            .is_ok_and(|borrowed| &borrowed == token)
+                        })
+            },
+        )?;
         self.registry.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
             active.frame.admit_reducer(activation, line, admission)
@@ -1558,6 +1608,18 @@ impl DialogueActivationStore {
     ) -> Result<crate::line_task::PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         self.registry
             .inspect_parent_fiber_reconciliation(execution, before, after, drops)
+    }
+
+    pub(super) fn borrow_stage_actor(
+        &self,
+        activation: &DialogueActivationId,
+        local: &RuntimeLineHandleLedger,
+        actor: RuntimeValueView<'_>,
+        slot: RuntimeOwnedSlotId,
+        character: &CharacterId,
+    ) -> Result<RuntimeLineHandleToken, LineRuntimeError> {
+        self.registry
+            .borrow_stage_actor(activation, local, actor, slot, character)
     }
 
     pub(super) fn inspect_received_fiber_reconciliation(

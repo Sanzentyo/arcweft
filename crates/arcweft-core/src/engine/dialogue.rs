@@ -2191,32 +2191,19 @@ impl Engine {
                     .env
                     .get(actor.local())
                     .ok_or(RuntimeEvalError::UnknownLocal(actor.local()))?;
-                let RuntimeValue::Opaque(actor_opaque) = actor_value else {
-                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
-                };
-                let actor_lease = activation.ledger().validate_value(
-                    actor_opaque,
-                    crate::value::RuntimeHandleKind::StageActor,
+                let actor_token = self.dialogue_activations.borrow_stage_actor(
                     activation_id,
+                    activation.ledger(),
+                    actor_value.view(),
+                    self.owned_slot(actor.local())?,
+                    &character,
                 )?;
-                let RuntimeHandleResource::StageActor(actor_resource) = actor_lease.resource()
-                else {
-                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
-                };
-                if actor_resource.character() != &character {
-                    return Err(LineRuntimeError::WrongLookOwner.into());
-                }
-                let actor_token = actor_lease.token().clone();
-                let RuntimeExprKind::EntityRef(look) = look.kind() else {
-                    return Err(LineRuntimeError::WrongLookOwner.into());
-                };
-                let Some((look_character, look)) = look.character_look() else {
-                    return Err(LineRuntimeError::WrongLookOwner.into());
-                };
-                if look_character != &character {
-                    return Err(LineRuntimeError::WrongLookOwner.into());
-                }
-                let look = look.clone();
+                let look_value = self.evaluate_dialogue_expr(slot, &look, pure_backend)?;
+                let look = crate::character_nominal::RuntimeCharacterLookSourceAuthority::decode_program_value(
+                    crate::program_types::RuntimeProgramTypes::Plan(&plan),
+                    &character,
+                    &look_value,
+                ).map_err(|_| LineRuntimeError::WrongLookOwner)?;
                 let RuntimeValue::Duration(crossfade) =
                     self.evaluate_dialogue_expr(slot, &crossfade, pure_backend)?
                 else {

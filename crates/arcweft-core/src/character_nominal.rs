@@ -18,7 +18,7 @@ use crate::{
         RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeSemanticTypeIdentityEncoder,
         RuntimeVariantIdentity,
     },
-    program_types::RuntimeProgramTypeError,
+    program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
     task::RuntimeProgramOwner,
     value::RuntimeValue,
 };
@@ -167,7 +167,7 @@ impl RuntimeCharacterLookSourceAuthority {
         &self.characters
     }
 
-    fn look_identity(character: &CharacterId) -> RuntimeSemanticTypeId {
+    pub(crate) fn look_identity(character: &CharacterId) -> RuntimeSemanticTypeId {
         CharacterNominalType::Look {
             character: character.clone(),
         }
@@ -251,34 +251,50 @@ impl RuntimeCharacterLookSourceAuthority {
         let manifest = self.characters.visual_manifest(character).ok_or_else(|| {
             RuntimeCharacterLookSourceError::MissingVisualManifest(character.clone())
         })?;
+        let look = Self::decode_program_value(self.owner.types(), character, value)?;
+        if manifest.look(&look).is_none() {
+            return Err(RuntimeCharacterLookSourceError::InvalidLookValue(
+                character.clone(),
+            ));
+        }
+        Ok(look)
+    }
+
+    /// Resolves a payloadless Look case from the original executable's typed
+    /// enum row. Stage commands carry the admitted case's CharacterLookId.
+    pub(crate) fn decode_program_value(
+        types: RuntimeProgramTypes<'_>,
+        character: &CharacterId,
+        value: &RuntimeValue,
+    ) -> Result<CharacterLookId, RuntimeCharacterLookSourceError> {
         let semantic = Self::look_identity(character);
-        self.owner
-            .types()
-            .accepts_value(semantic, value, RuntimeSchemaLimits::engine_default())?;
+        types.accepts_value(semantic, value, RuntimeSchemaLimits::engine_default())?;
         let RuntimeValue::Variant(variant) = value else {
             return Err(RuntimeCharacterLookSourceError::InvalidLookValue(
                 character.clone(),
             ));
         };
         let RuntimeVariantIdentity::Nominal {
-            semantic_identity, ..
+            nominal,
+            semantic_identity,
+            ..
         } = variant.owner()
         else {
             return Err(RuntimeCharacterLookSourceError::InvalidLookValue(
                 character.clone(),
             ));
         };
-        if variant.payload().is_some() || variant.type_instantiation().is_some() {
+        if *semantic_identity != semantic
+            || *nominal != RuntimeNominalTypeId::from_checked_digest(*semantic.as_bytes())
+            || variant.payload().is_some()
+            || variant.type_instantiation().is_some()
+        {
             return Err(RuntimeCharacterLookSourceError::InvalidLookValue(
                 character.clone(),
             ));
         }
-        let look = usize::try_from(variant.ordinal())
-            .ok()
-            .and_then(|ordinal| manifest.looks().get(ordinal))
-            .filter(|look| *semantic_identity == semantic && variant.name() == look.id().as_str())
-            .ok_or_else(|| RuntimeCharacterLookSourceError::InvalidLookValue(character.clone()))?;
-        Ok(look.id().clone())
+        CharacterLookId::try_new(variant.name())
+            .map_err(|_| RuntimeCharacterLookSourceError::InvalidLookValue(character.clone()))
     }
 }
 

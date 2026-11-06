@@ -4706,15 +4706,36 @@ impl RuntimePlanBodyConstruction<'_> {
                 actor,
                 look,
                 crossfade,
-            } => RuntimeLineOperation::ActorLook {
-                site,
-                character,
-                actor: super::super::RuntimeBorrowedLocal::new(
-                    self.resolve_local(actor.local())?.0,
-                ),
-                look: self.lower_expression(look)?,
-                crossfade: self.lower_expression(crossfade)?,
-            },
+            } => {
+                let actor =
+                    super::super::RuntimeBorrowedLocal::new(self.resolve_local(actor.local())?.0);
+                let look = self.lower_expression(look)?;
+                let identity =
+                    crate::character_nominal::RuntimeCharacterLookSourceAuthority::look_identity(
+                        &character,
+                    );
+                let nominal =
+                    crate::entry::RuntimeNominalTypeId::from_checked_digest(*identity.as_bytes());
+                if !self.types.get(look.ty()).is_some_and(|row| {
+                    row.semantic_identity() == identity
+                        && matches!(row.projection(),
+                            RuntimePlanTypeProjection::Nominal { nominal: actual, arguments, .. }
+                                if actual == &nominal && arguments.is_empty()
+                        )
+                }) {
+                    return invalid_projection(
+                        "ActorLook manifest-owned Look<Character>",
+                        look.ty(),
+                    );
+                }
+                RuntimeLineOperation::ActorLook {
+                    site,
+                    character,
+                    actor,
+                    look,
+                    crossfade: self.lower_expression(crossfade)?,
+                }
+            }
             RuntimeLineOperationSeed::VoiceHandle { site } => {
                 RuntimeLineOperation::VoiceHandle { site }
             }

@@ -855,6 +855,8 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     environment_definitions
         .append_type_seeds(&mut type_seeds)
         .map_err(|error| vec![error])?;
+    line_plan::append_generated_type_seeds(facts, &mut type_seeds)
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     // The generated plain-text template retains a Content slot even when the
     // authored call and its callback mention only String. Its exact standard
     // owner must enter the same atomic type batch as every authored dependency.

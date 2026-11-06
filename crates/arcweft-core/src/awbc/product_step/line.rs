@@ -2641,8 +2641,7 @@ impl super::AwbcProductStepExecutor {
                 let [
                     VmLineOperationArgument::BorrowedRegister(actor_register),
                     VmLineOperationArgument::OwnedValue {
-                        value: RuntimeValue::EntityRef(look),
-                        ..
+                        value: look_value, ..
                     },
                     VmLineOperationArgument::OwnedValue {
                         value: RuntimeValue::Duration(crossfade),
@@ -2652,42 +2651,25 @@ impl super::AwbcProductStepExecutor {
                 else {
                     return Err(LineRuntimeError::InvalidCrossfade.into());
                 };
-                let RuntimeValue::Opaque(actor) =
-                    fiber.active_frame()?.register(*actor_register)?
-                else {
-                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
-                };
+                let actor = fiber.active_frame()?.register(*actor_register)?;
                 if evidence.site.kind != RuntimeHandleKind::Cue
                     || evidence.site.character.as_ref() != Some(&character)
                     || evidence.site.scheduled_child.is_some()
                 {
                     return Err(LineRuntimeError::InvalidHandleSite.into());
                 }
-                let actor_lease = line.ledger().validate_value(
-                    actor,
-                    RuntimeHandleKind::StageActor,
+                let actor_token = self.dialogues.borrow_stage_actor(
                     activation,
-                )?;
-                let expected_actor_owner = RuntimeHandleOwnerSlot::ActivationLocal(
+                    line.ledger(),
+                    actor.view(),
                     activation_register_owner(self.facade_fiber.execution, fiber, *actor_register)?,
-                );
-                if actor_lease.owner() != &expected_actor_owner {
-                    return Err(LineRuntimeError::WrongOwner.into());
-                }
-                let RuntimeHandleResource::StageActor(actor_resource) = actor_lease.resource()
-                else {
-                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
-                };
-                if actor_resource.character() != &character {
-                    return Err(LineRuntimeError::WrongActorCharacter.into());
-                }
-                let Some((look_character, look)) = look.character_look() else {
-                    return Err(LineRuntimeError::WrongLookOwner.into());
-                };
-                if look_character != &character {
-                    return Err(LineRuntimeError::WrongLookOwner.into());
-                }
-                let actor_token = actor_lease.token().clone();
+                    &character,
+                )?;
+                let look = crate::character_nominal::RuntimeCharacterLookSourceAuthority::decode_program_value(
+                    crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
+                    &character,
+                    look_value,
+                ).map_err(|_| LineRuntimeError::WrongLookOwner)?;
                 let mut ledger = line.ledger().clone();
                 let value = RuntimeValue::Opaque(ledger.issue_exact(
                     activation,
@@ -2704,7 +2686,7 @@ impl super::AwbcProductStepExecutor {
                     token.clone(),
                     actor_token,
                     character,
-                    look.clone(),
+                    look,
                     *crossfade,
                 )?;
                 line.record_commands(activation, commands)?;

@@ -1,10 +1,14 @@
 use super::*;
+use crate::entry::{
+    RuntimeNominalDeclarationId, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
+    RuntimeNominalSchemaDefinition, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
+    RuntimeNominalTypeId, RuntimeSchemaLimits,
+};
 use crate::line_task::{RuntimeLineHandleScope, RuntimeLineHandleSiteKind};
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeSemanticTypeId};
 use crate::runtime_id::RuntimeLineHandleSiteId;
 use crate::value::{
-    RuntimeEntityReference, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
-    RuntimeValue,
+    RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeValue,
 };
 
 fn ty(tag: u8) -> RuntimeSemanticTypeId {
@@ -35,20 +39,38 @@ fn duration(nanos: u64) -> RuntimeExprSeed {
 }
 pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
+    let character = arcweft_character::id::CharacterId::try_new("character.akane").unwrap();
+    let look =
+        crate::character_nominal::RuntimeCharacterLookSourceAuthority::look_identity(&character);
+    let nominal = RuntimeNominalTypeId::from_checked_digest(*look.as_bytes());
+    let graph = RuntimeNominalSchemaGraph::try_new(
+        [RuntimeNominalSchemaDefinition::new(
+            RuntimeNominalDeclarationId::from_bytes(*look.as_bytes()),
+            RuntimeNominalSchemaIdentity::new(nominal.clone(), look),
+            vec![],
+            RuntimeNominalSchemaBody::Variant {
+                cases: vec![RuntimeNominalSchemaCase::new(0, "happy".to_owned(), None)]
+                    .into_boxed_slice(),
+            },
+        )],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    let layout = graph.try_layout_hash(look).unwrap();
     let admitted = builder
-        .admit_type_batch(
+        .admit_semantic_batch(
             [
                 opaque(RuntimeHandleKind::StageActor, ty(0xf3)),
                 opaque(RuntimeHandleKind::Cue, ty(0xf4)),
                 opaque(RuntimeHandleKind::Voice, ty(0xf5)),
                 RuntimePlanTypeSeed::new(ty(0xf6), RuntimePlanTypeProjection::Duration),
                 RuntimePlanTypeSeed::new(
-                    ty(0xf7),
-                    RuntimePlanTypeProjection::EntityReference(
-                        crate::value::RuntimeEntityReferenceType::CharacterLook(
-                            arcweft_character::id::CharacterId::try_new("character.akane").unwrap(),
-                        ),
-                    ),
+                    look,
+                    RuntimePlanTypeProjection::Nominal {
+                        nominal: nominal.clone(),
+                        layout,
+                        arguments: Box::new([]),
+                    },
                 ),
             ],
             [(0xf8, ty(0xf3)), (0xf9, ty(2))]
@@ -66,11 +88,18 @@ pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
                         ty,
                     )
                 }),
+            [],
+            [RuntimeVariantDomainSeed::new(
+                look,
+                nominal,
+                layout,
+                [RuntimeVariantCaseSeed::new("happy", None)],
+            )],
+            &graph,
         )
         .unwrap();
     let actor = admitted.local_ids()[0].clone();
     let packet = admitted.local_ids()[1].clone();
-    let character = arcweft_character::id::CharacterId::try_new("character.akane").unwrap();
     let activation_ops = vec![
         RuntimeFlowOpSeed::LineOperation {
             binding: Some(RuntimePatternSeed::new(
@@ -111,11 +140,11 @@ pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
                     character: character.clone(),
                     actor: RuntimeBorrowedLocalSeed::new(actor),
                     look: RuntimeExprSeed::new(
-                        ty(0xf7),
-                        RuntimeExprSeedKind::EntityRef(RuntimeEntityReference::CharacterLook {
-                            character: character.clone(),
-                            look: arcweft_character::id::CharacterLookId::try_new("happy").unwrap(),
-                        }),
+                        look,
+                        RuntimeExprSeedKind::Variant {
+                            ordinal: 0,
+                            payload: None,
+                        },
                     ),
                     crossfade: duration(2),
                 },

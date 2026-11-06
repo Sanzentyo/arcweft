@@ -2506,6 +2506,21 @@ fn apply_instruction(
                     let crossfade = read_register(verifier, function, block, args[2], state)?;
                     require_compatible(program, *actor_type, actor, &at)?;
                     require_compatible(program, *look_type, look, &at)?;
+                    let look_identity = crate::character_nominal::RuntimeCharacterLookSourceAuthority::look_identity(character);
+                    let look_nominal = crate::entry::RuntimeNominalTypeId::from_checked_digest(
+                        *look_identity.as_bytes(),
+                    );
+                    if !program.runtime_types.get(look_type.index()).is_some_and(|row| {
+                        row.semantic_identity() == look_identity && matches!(row.shape(),
+                            AwbcRuntimeTypeShape::Variant {
+                                owner: crate::awbc::schema::AwbcVariantIdentity::Nominal { public_id, .. },
+                                arguments, cases,
+                            } if arguments.is_empty() && cases.iter().all(|case| case.payload.is_none())
+                                && program.strings.get(public_id.index()).is_some_and(|name| name == look_nominal.as_str())
+                        )
+                    }) {
+                        return invalid_type(&at, "ActorLook manifest-owned Look<Character>");
+                    }
                     if !matches!(
                         runtime_shape(program, crossfade),
                         Some(AwbcRuntimeTypeShape::Duration)

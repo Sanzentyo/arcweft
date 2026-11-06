@@ -1151,7 +1151,7 @@ impl super::ActiveDialogue {
             }) => {
                 fiber.admit_retained(admission)?;
                 if let Some(pending) = pending {
-                    pending.admit_retained(program, activation, fiber.cursor, line, admission)?;
+                    pending.admit_retained(program, activation, fiber, line, admission)?;
                 }
             }
             _ => {}
@@ -1194,6 +1194,50 @@ impl AwbcProductActiveDialogueSaveSnapshot {
         }
     }
 
+    fn validates_received_stage_actor(
+        &self,
+        program: &crate::awbc::schema::AwbcProgram,
+        command: &crate::presentation::RuntimeLineCommandId,
+        actor: &RuntimeLineHandleToken,
+        slot: crate::value::ownership::RuntimeOwnedSlotId,
+    ) -> bool {
+        use crate::awbc::schema::AwbcInstruction;
+        use crate::value::ownership::RuntimeOwnedSlotId;
+
+        let (fiber, pending) = match &self.phase {
+            super::AwbcProductDialoguePhase::Activating { fiber, pending }
+            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                state: super::AwbcProductDialogueClosingState::Activation { fiber, pending },
+                ..
+            }) => (fiber, pending),
+            _ => return false,
+        };
+        let Some(AwbcProductPendingLineOperationSaveSnapshot::ActorLook {
+            command: pending_command,
+            ..
+        }) = pending
+        else {
+            return false;
+        };
+        let Ok(AwbcInstruction::ExecuteLineOperation { args, .. }) =
+            crate::awbc::fiber::instruction_at_site(program, fiber.cursor)
+        else {
+            return false;
+        };
+        let (Some(register), Some(frame)) = (args.first(), fiber.frames.last()) else {
+            return false;
+        };
+        pending_command == command
+            && slot
+                == (RuntimeOwnedSlotId::AwbcRegister {
+                    execution: super::PRODUCT_EXECUTION_ID,
+                    fiber: fiber.instance,
+                    frame: frame.instance,
+                    register: *register,
+                })
+            && stage_actor_in_register(fiber, *register).as_ref() == Some(actor)
+    }
+
     pub(super) fn admit_retained(
         &self,
         program: &crate::awbc::schema::AwbcProgram,
@@ -1227,13 +1271,7 @@ impl AwbcProductActiveDialogueSaveSnapshot {
             }) => {
                 fiber.admit_retained(admission)?;
                 if let Some(pending) = pending {
-                    pending.admit_retained(
-                        program,
-                        &self.activation,
-                        fiber.cursor,
-                        line,
-                        admission,
-                    )?;
+                    pending.admit_retained(program, &self.activation, fiber, line, admission)?;
                 }
             }
             _ => {}
@@ -1301,12 +1339,29 @@ impl AwbcProductActiveDialogueSaveSnapshot {
     }
 }
 
+fn stage_actor_in_register<V: RuntimeStoredValue, O, N, B, R, G>(
+    fiber: &crate::awbc::fiber::FiberState<V, O, N, B, R, G>,
+    register: crate::awbc::schema::AwbcRegisterId,
+) -> Option<RuntimeLineHandleToken> {
+    let value = fiber
+        .frames
+        .last()?
+        .registers
+        .get(register.index())?
+        .as_ref()?;
+    crate::line_task::RuntimeLineHandleLedger::decode_affine_handle(
+        value.borrowed_view(),
+        crate::value::RuntimeHandleKind::StageActor,
+    )
+    .ok()
+}
+
 impl<V: RuntimeStoredValue> super::AwbcProductPendingLineOperation<V> {
-    fn admit_retained(
+    fn admit_retained<O, N, B, R, G>(
         &self,
         program: &crate::awbc::schema::AwbcProgram,
         activation: &DialogueActivationId,
-        current: super::FiberCursor,
+        fiber: &crate::awbc::fiber::FiberState<V, O, N, B, R, G>,
         line: &crate::line_task::RuntimeDialogueActivationState<AwbcTypeId, V>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
@@ -1339,11 +1394,14 @@ impl<V: RuntimeStoredValue> super::AwbcProductPendingLineOperation<V> {
         };
         let command = self.command();
         admission.validate_metadata(&(cursor, destination, command))?;
-        if cursor != current || command.activation() != activation {
+        if cursor != fiber.cursor || command.activation() != activation {
             return Err(invalid());
         }
-        let Ok(AwbcInstruction::ExecuteLineOperation { dst, operation, .. }) =
-            crate::awbc::fiber::instruction_at_site(program, cursor)
+        let Ok(AwbcInstruction::ExecuteLineOperation {
+            dst,
+            operation,
+            args,
+        }) = crate::awbc::fiber::instruction_at_site(program, cursor)
         else {
             return Err(invalid());
         };
@@ -1374,10 +1432,18 @@ impl<V: RuntimeStoredValue> super::AwbcProductPendingLineOperation<V> {
                 AwbcLineOperation::ActorLook { character, .. },
                 Some(RuntimeLineHostCommand::Stage(RuntimeStageCommand::SetCharacterLook {
                     cue,
+                    actor,
                     character: issued_character,
                     ..
                 })),
-            ) if token == cue && character == issued_character => {
+            ) if token == cue
+                && character == issued_character
+                && args
+                    .first()
+                    .and_then(|register| stage_actor_in_register(fiber, *register))
+                    .as_ref()
+                    == Some(actor) =>
+            {
                 (value, token, RuntimeHandleKind::Cue)
             }
             (
@@ -2096,7 +2162,13 @@ impl AwbcProductExecutorSnapshot {
         let deferred_children = expected_deferred_children(snapshot)?;
         snapshot
             .dialogues
-            .admit_retained(admission, &deferred_children)
+            .admit_retained(
+                admission,
+                &deferred_children,
+                |active, command, actor, slot| {
+                    active.validates_received_stage_actor(program, command, actor, slot)
+                },
+            )
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;

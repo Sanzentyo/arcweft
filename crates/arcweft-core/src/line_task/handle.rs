@@ -20,6 +20,7 @@ use crate::value::ownership::{RuntimeOwnedSlotId, RuntimeValuePath};
 use crate::value::{
     RuntimeHandleKind, RuntimeLocalBinding, RuntimeLocalSlot, RuntimeOpaquePersistence,
     RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimePlaceStorage, RuntimeValue,
+    RuntimeValueView,
 };
 use arcweft_character::id::CharacterId;
 use serde::{Deserialize, Serialize};
@@ -408,6 +409,25 @@ pub struct RuntimeHandleLease {
 }
 
 impl RuntimeHandleLease {
+    pub(crate) fn validate_active_stage_actor(
+        &self,
+        character: &CharacterId,
+    ) -> Result<(), LineRuntimeError> {
+        let RuntimeHandleResource::StageActor(actor) = self.resource() else {
+            return Err(LineRuntimeError::WrongOpaqueProducer);
+        };
+        if actor.character() != character {
+            return Err(LineRuntimeError::WrongActorCharacter);
+        }
+        if self.state() != RuntimeHandleLeaseState::Active {
+            return Err(LineRuntimeError::InvalidLeaseTransition {
+                expected: RuntimeHandleLeaseState::Active,
+                actual: self.state(),
+            });
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub const fn token(&self) -> &RuntimeLineHandleToken {
         &self.token
@@ -3034,6 +3054,10 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
 }
 
 impl RuntimePublishedDialogueHandles {
+    pub(crate) fn lease(&self, token: &RuntimeLineHandleToken) -> Option<&RuntimeHandleLease> {
+        self.ledger.lease(token)
+    }
+
     pub(crate) fn receiver_slots(
         &self,
     ) -> impl Iterator<Item = (&RuntimeLineHandleToken, RuntimeOwnedSlotId)> {
@@ -3064,6 +3088,7 @@ impl RuntimePublishedDialogueHandles {
             &BTreeMap::new(),
             &self.resolved_commands,
             &self.ledger,
+            |_, _, _| false,
         )?;
         if self.ledger.leases().values().any(|lease| {
             lease.state() != RuntimeHandleLeaseState::Released
@@ -3422,6 +3447,11 @@ fn validate_restored_command_journal(
     >,
     resolved: &std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
     ledger: &RuntimeLineHandleLedger,
+    validate_received_actor: impl Fn(
+        &crate::presentation::RuntimeLineCommandId,
+        &RuntimeLineHandleToken,
+        &CharacterId,
+    ) -> bool,
 ) -> Result<(), LineRuntimeError> {
     if issued
         .len()
@@ -3442,7 +3472,12 @@ fn validate_restored_command_journal(
         if id != command.command()
             || id.activation() != activation
             || id.sequence() >= command_sequence
-            || !restored_command_references_are_valid(command, activation, ledger)
+            || !restored_command_references_are_valid(
+                command,
+                activation,
+                ledger,
+                &validate_received_actor,
+            )
             || !restored_issued_command_state_is_valid(command, ledger)
         {
             return Err(LineRuntimeError::InvalidRestoredCommandJournal);
@@ -3498,6 +3533,11 @@ fn restored_command_references_are_valid(
     command: &crate::presentation::RuntimeLineHostCommand,
     activation: &DialogueActivationId,
     ledger: &RuntimeLineHandleLedger,
+    validate_received_actor: impl Fn(
+        &crate::presentation::RuntimeLineCommandId,
+        &RuntimeLineHandleToken,
+        &CharacterId,
+    ) -> bool,
 ) -> bool {
     let token_is = |token: &RuntimeLineHandleToken, kind| {
         token.activation() == activation
@@ -3511,9 +3551,20 @@ fn restored_command_references_are_valid(
             | crate::presentation::RuntimeStageCommand::ReleaseActor { actor, .. } => {
                 token_is(actor, RuntimeHandleKind::StageActor)
             }
-            crate::presentation::RuntimeStageCommand::SetCharacterLook { cue, actor, .. } => {
+            crate::presentation::RuntimeStageCommand::SetCharacterLook {
+                command,
+                cue,
+                actor,
+                character,
+                ..
+            } => {
                 token_is(cue, RuntimeHandleKind::Cue)
-                    && token_is(actor, RuntimeHandleKind::StageActor)
+                    && if actor.activation() == activation {
+                        token_is(actor, RuntimeHandleKind::StageActor)
+                    } else {
+                        actor.activation().artifact() == activation.artifact()
+                            && validate_received_actor(command, actor, character)
+                    }
             }
             crate::presentation::RuntimeStageCommand::CancelCue { cue, .. } => {
                 token_is(cue, RuntimeHandleKind::Cue)
@@ -3730,12 +3781,13 @@ impl RuntimeLineHandleLedger {
         Ok(())
     }
 
-    pub(crate) fn validate_value(
-        &self,
-        value: &RuntimeOpaqueValue,
+    pub(crate) fn decode_affine_handle(
+        value: RuntimeValueView<'_>,
         expected_kind: RuntimeHandleKind,
-        activation: &DialogueActivationId,
-    ) -> Result<&RuntimeHandleLease, LineRuntimeError> {
+    ) -> Result<RuntimeLineHandleToken, LineRuntimeError> {
+        let RuntimeValueView::Opaque(value) = value else {
+            return Err(LineRuntimeError::WrongOpaqueProducer);
+        };
         if value.producer()
             != &expected_kind
                 .try_producer()
@@ -3745,25 +3797,8 @@ impl RuntimeLineHandleLedger {
         {
             return Err(LineRuntimeError::WrongOpaqueProducer);
         }
-        let token = RuntimeLineHandleToken::try_decode_payload(value.payload())
-            .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
-        if token.activation().artifact() != activation.artifact() {
-            return Err(LineRuntimeError::StaleGeneration);
-        }
-        if token.activation() != activation {
-            return Err(LineRuntimeError::WrongActivation);
-        }
-        let lease = self
-            .leases
-            .get(&token)
-            .ok_or(LineRuntimeError::UnknownHandle)?;
-        if lease.resource.kind() != expected_kind {
-            return Err(LineRuntimeError::InvalidHandleSite);
-        }
-        if lease.state == RuntimeHandleLeaseState::Released {
-            return Err(LineRuntimeError::ReleasedHandle);
-        }
-        Ok(lease)
+        RuntimeLineHandleToken::try_decode_view(value.payload())
+            .map_err(|_| LineRuntimeError::InvalidHandlePayload)
     }
 
     pub(crate) fn set_state(
@@ -4645,7 +4680,9 @@ pub enum LineRuntimeError {
     UnjournaledHandleDrop,
     #[error("restored dialogue handle ledger violates activation/resource ownership invariants")]
     InvalidRestoredLedgerState,
-    #[error("restored dialogue command journal is noncanonical or cross-activation")]
+    #[error(
+        "restored dialogue command journal is noncanonical or has an invalid resource reference"
+    )]
     InvalidRestoredCommandJournal,
     #[error("restored scheduled work is inconsistent with its cue resource or activation")]
     InvalidRestoredScheduledState,
@@ -5056,13 +5093,18 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
     where
         V: crate::value::RuntimeStoredValue,
     {
-        self.restore_admit_with_deferred_child(activation, None)
+        self.restore_admit_with_deferred_child(activation, None, |_, _, _| false)
     }
 
     pub(crate) fn restore_admit_with_deferred_child(
         &self,
         activation: &DialogueActivationId,
         expected_child: Option<(RuntimeDeferRegistrationId, RuntimeDeferSiteId)>,
+        validate_received_actor: impl Fn(
+            &crate::presentation::RuntimeLineCommandId,
+            &RuntimeLineHandleToken,
+            &CharacterId,
+        ) -> bool,
     ) -> Result<(), LineRuntimeError>
     where
         V: crate::value::RuntimeStoredValue,
@@ -5113,6 +5155,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             &self.superseded_commands,
             &self.resolved_commands,
             &self.ledger,
+            validate_received_actor,
         )?;
         let mut scheduled_tokens = std::collections::BTreeSet::new();
         let mut scheduled_capture_tokens = std::collections::BTreeSet::new();
@@ -5656,11 +5699,16 @@ mod tests {
             unpaired.restore_admit_with_deferred_child(
                 &activation,
                 Some((newest.id(), defer_site(1))),
+                |_, _, _| false,
             ),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
         unpaired
-            .restore_admit_with_deferred_child(&activation, Some((newest.id(), newest.site())))
+            .restore_admit_with_deferred_child(
+                &activation,
+                Some((newest.id(), newest.site())),
+                |_, _, _| false,
+            )
             .expect("the exact saved child owner admits an in-flight activation");
         state
             .complete_deferred_child(

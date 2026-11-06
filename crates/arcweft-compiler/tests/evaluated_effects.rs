@@ -3313,6 +3313,15 @@ fn compile_nested_awbc(
     CompiledProject,
     arcweft_core::executor::ArcweftRuntimeExecutor,
 ) {
+    nested_awbc_from_compiled(compile_attached_dialogue_project(source).unwrap())
+}
+
+fn nested_awbc_from_compiled(
+    compiled: CompiledProject,
+) -> (
+    CompiledProject,
+    arcweft_core::executor::ArcweftRuntimeExecutor,
+) {
     use arcweft_core::{
         awbc::{
             codec::AwbcDecodeBudget,
@@ -3321,7 +3330,6 @@ fn compile_nested_awbc(
         executor::ArcweftRuntimeExecutor,
     };
 
-    let compiled = compile_attached_dialogue_project(source).unwrap();
     let runtime = compiled.runtime_plan();
     let bytes = AwbcLowerer::new(
         &runtime.plan,
@@ -3424,6 +3432,8 @@ flow main() -> Unit {
                 out lease
             }
             let moved = actor
+            let cue = moved.look(.normal)
+            let _ = cue
             let _ = moved
             log.info("parent consumed the child handle")
         }
@@ -3431,6 +3441,28 @@ flow main() -> Unit {
 }
 entry cli @entry.main { goto @flow.main }
 "#;
+
+const LINE_HANDLE_CHARACTER_MANIFEST: &str = r#"{
+  "format": "arcweft.character",
+  "version": 1,
+  "character": "character.alice",
+  "canvas": { "width": 64, "height": 128 },
+  "anchor": { "x": 32, "y": 128 },
+  "default_look": "normal",
+  "parts": [{
+    "id": "body",
+    "z": 0,
+    "variants": [{
+      "id": "default",
+      "asset": "layers/body.png",
+      "rect": { "x": 0, "y": 0, "width": 64, "height": 128 },
+      "opacity": 255,
+      "blend": "normal",
+      "clipping": false
+    }]
+  }],
+  "looks": [{ "id": "normal", "select": [{ "part": "body", "variant": "default" }] }]
+}"#;
 
 fn execute_nested_line_handle_transfer(
     mut step: impl FnMut(
@@ -3451,6 +3483,8 @@ fn execute_nested_line_handle_transfer(
 
     let mut input = RuntimeStepInput::default();
     let mut actor = None;
+    let mut look_cue = None;
+    let mut cancelled_cue = false;
     let mut released = false;
     let mut lines = Vec::new();
     let mut effects = Vec::new();
@@ -3483,6 +3517,27 @@ fn execute_nested_line_handle_transfer(
                         actor: token,
                     }
                 }
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::SetCharacterLook {
+                    command,
+                    actor: borrowed,
+                    cue,
+                    look,
+                    ..
+                }) => {
+                    assert_eq!(actor.as_ref(), Some(&borrowed));
+                    assert_eq!(cue.activation(), command.activation());
+                    assert_ne!(borrowed.activation(), command.activation());
+                    assert_eq!(look.as_str(), "normal");
+                    assert!(look_cue.replace(cue.clone()).is_none());
+                    RuntimeStageCommandOutcome::Accepted { command, cue }
+                }
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::CancelCue { command, cue }) => {
+                    assert_eq!(look_cue.as_ref(), Some(&cue));
+                    assert_eq!(cue.activation(), command.activation());
+                    assert!(!cancelled_cue);
+                    cancelled_cue = true;
+                    RuntimeStageCommandOutcome::Cancelled { command, cue }
+                }
                 RuntimeLineHostCommand::Stage(RuntimeStageCommand::ReleaseActor {
                     command,
                     actor: token,
@@ -3510,6 +3565,8 @@ fn execute_nested_line_handle_transfer(
                 };
                 assert_ne!(inner, outer);
                 assert_eq!(actor.unwrap().activation(), inner);
+                assert_eq!(look_cue.unwrap().activation(), outer);
+                assert!(cancelled_cue);
                 assert!(released);
                 assert_eq!(log_messages(&effects), ["parent consumed the child handle"]);
                 return;
@@ -3528,7 +3585,12 @@ fn native_nested_line_handle_moves_into_the_receiving_activation() {
         task::RuntimeProgramOwner,
     };
 
-    let compiled = compile_attached_dialogue_project(NESTED_LINE_HANDLE_SOURCE).unwrap();
+    let compiled = with_attached_dialogue_project_and_visual(
+        NESTED_LINE_HANDLE_SOURCE,
+        Some(LINE_HANDLE_CHARACTER_MANIFEST),
+        compile_project,
+    )
+    .unwrap();
     let mut plan = compiled.runtime_plan().plan.clone();
     let flow = plan.flows()[0].id.clone();
     let artifact = blake3::hash(NESTED_LINE_HANDLE_SOURCE.as_bytes());
@@ -3554,17 +3616,60 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
         executor::ArcweftRuntimeExecutorSnapshot, pure::VmRuntimePureCallBackend,
     };
 
-    let (compiled, awbc) = compile_nested_awbc(NESTED_LINE_HANDLE_SOURCE);
+    let (compiled, awbc) = nested_awbc_from_compiled(
+        with_attached_dialogue_project_and_visual(
+            NESTED_LINE_HANDLE_SOURCE,
+            Some(LINE_HANDLE_CHARACTER_MANIFEST),
+            compile_project,
+        )
+        .unwrap(),
+    );
     let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
     let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
     let mut awbc = Some(awbc);
     let mut checked_published_lease = false;
+    let mut checked_pending_look = false;
     execute_nested_line_handle_transfer(|input, options| {
         let mut current = awbc.take().unwrap();
         let result = current.step_with_pure_backend(input, options, &mut backend);
         let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, save| {
+            let mut executor = executor;
+            if !checked_pending_look {
+                let mut forged = save.clone();
+                let look = forged["dialogues"]["entries"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .filter_map(|entry| {
+                        entry
+                            .pointer_mut("/Active/line/issued_commands")?
+                            .as_object_mut()
+                    })
+                    .flat_map(serde_json::Map::values_mut)
+                    .map(|row| &mut row["command"])
+                    .find(|command| command["kind"] == "set_character_look");
+                if let Some(look) = look {
+                    let issuance = &mut look["actor"]["issuance"];
+                    *issuance = (issuance.as_u64().unwrap() + 1).into();
+                    let bad = serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(forged)
+                        .expect("the foreign actor still has a well-formed token");
+                    let bad = executor.bind_product_save_snapshot(bad).unwrap();
+                    let Err(rejected) =
+                        executor.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bad))
+                    else {
+                        panic!("the pending look must refer to the exact borrowed actor");
+                    };
+                    let (unchanged, error) = rejected.into_parts();
+                    assert!(
+                        error.to_string().contains("dialogue command journal"),
+                        "{error}"
+                    );
+                    executor = unchanged;
+                    checked_pending_look = true;
+                }
+            }
             if checked_published_lease {
                 return executor;
             }
@@ -3613,6 +3718,10 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
     assert!(
         checked_published_lease,
         "a live published lease crossed the public save boundary"
+    );
+    assert!(
+        checked_pending_look,
+        "a pending look crossed the public save boundary"
     );
 }
 
@@ -4176,6 +4285,24 @@ fn with_attached_dialogue_project<T>(
         &ProjectCompilationContext,
     ) -> T,
 ) -> T {
+    with_attached_dialogue_project_and_visual(source, None, run)
+}
+
+fn with_attached_dialogue_project_and_visual<T>(
+    source: &str,
+    visual: Option<&str>,
+    run: impl FnOnce(
+        &mut ProjectCompilationSession,
+        &ProjectSources,
+        &BTreeMap<CanonicalModulePath, ParsedSource>,
+        &ProjectCompilationContext,
+    ) -> T,
+) -> T {
+    use arcweft_character::{
+        manifest::registration::SourceBackedCharacterManifest,
+        registration_catalog::SourceBackedCharacterCatalog,
+    };
+
     let source_document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-test://evaluated-effects/source")
@@ -4226,11 +4353,29 @@ source = \"src/main.arcw\"\n",
         "evaluated-effects-test",
     )
     .expect("dialogue symbol world");
+    let mut registration_documents =
+        vec![Arc::clone(&source_document), Arc::clone(&manifest_document)];
+    let character_catalogs = visual.map(|json| {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://evaluated-effects/alice-visual").unwrap(),
+                SourceName::path("alice.json"),
+                json,
+            )
+            .unwrap(),
+        );
+        let manifest = SourceBackedCharacterManifest::decode_registration_json(&document).unwrap();
+        let catalog =
+            SourceBackedCharacterCatalog::try_new(document.identity().clone(), vec![manifest])
+                .unwrap();
+        registration_documents.push(document);
+        catalog
+    });
     let facts = ProjectRegistrationFacts::try_new(
         world,
-        vec![Arc::clone(&source_document), Arc::clone(&manifest_document)],
+        registration_documents,
         Vec::new(),
-        Vec::new(),
+        character_catalogs.into_iter().collect(),
         Vec::new(),
     )
     .expect("dialogue registration facts");

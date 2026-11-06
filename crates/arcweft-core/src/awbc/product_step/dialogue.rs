@@ -7,13 +7,14 @@ use crate::line_task::{
     RuntimeDialogueAbandonedCommitProof, RuntimeDialogueActivationRegistry,
     RuntimeDialogueActivationState, RuntimeDialogueActivationTransaction,
     RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
-    RuntimeDialogueRegistryCommitReceipt,
+    RuntimeDialogueRegistryCommitReceipt, RuntimeLineHandleLedger,
 };
 use crate::runtime_id::{DialogueActivationId, RuntimeLineHandleToken};
 use crate::step::RuntimeDialogueContentEvent;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
-use crate::value::{RuntimeValue, ownership::RuntimeOwnedSlotId};
+use crate::value::{RuntimeValue, RuntimeValueView, ownership::RuntimeOwnedSlotId};
+use arcweft_character::id::CharacterId;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod receiver;
@@ -769,6 +770,18 @@ impl ProductDialogueStore {
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         self.registry
             .inspect_parent_fiber_reconciliation(execution, before, after, drops)
+    }
+
+    pub(super) fn borrow_stage_actor(
+        &self,
+        activation: &DialogueActivationId,
+        local: &RuntimeLineHandleLedger,
+        actor: RuntimeValueView<'_>,
+        slot: RuntimeOwnedSlotId,
+        character: &CharacterId,
+    ) -> Result<RuntimeLineHandleToken, LineRuntimeError> {
+        self.registry
+            .borrow_stage_actor(activation, local, actor, slot, character)
     }
 
     pub(super) fn inspect_received_fiber_reconciliation(

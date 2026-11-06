@@ -1,8 +1,8 @@
 use super::{
     AwbcRuntimeDialogueActivationSnapshot, AwbcRuntimePublishedDialogueHandlesSnapshot,
     LineRuntimeError, RuntimeDialogueActivationState, RuntimeDialogueCommitReceipt,
-    RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt, RuntimeHandleOwnerSlot,
-    RuntimePublishedDialogueHandles,
+    RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt, RuntimeHandleLease,
+    RuntimeHandleOwnerSlot, RuntimeLineHandleLedger, RuntimePublishedDialogueHandles,
 };
 use crate::runtime_id::{
     DialogueActivationId, ExecutionInstanceId, RuntimeDeferRegistrationId, RuntimeDeferSiteId,
@@ -10,6 +10,8 @@ use crate::runtime_id::{
 };
 use crate::task::RuntimeProgramOwner;
 use crate::value::ownership::RuntimeOwnedSlotId;
+use crate::value::{RuntimeHandleKind, RuntimeValueView};
+use arcweft_character::id::CharacterId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, btree_map::Entry};
 use thiserror::Error;
@@ -62,6 +64,39 @@ impl RuntimePublishedDialogueRegistry {
 }
 
 impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
+    pub(crate) fn borrow_stage_actor(
+        &self,
+        activation: &DialogueActivationId,
+        local: &RuntimeLineHandleLedger,
+        actor: RuntimeValueView<'_>,
+        slot: RuntimeOwnedSlotId,
+        character: &CharacterId,
+    ) -> Result<RuntimeLineHandleToken, LineRuntimeError> {
+        let token =
+            RuntimeLineHandleLedger::decode_affine_handle(actor, RuntimeHandleKind::StageActor)?;
+        if token.activation().artifact() != activation.artifact() {
+            return Err(LineRuntimeError::StaleGeneration);
+        }
+        let lease = if token.activation() == activation {
+            local.lease(&token)
+        } else {
+            self.published_lease(&token)
+        }
+        .ok_or(LineRuntimeError::UnknownHandle)?;
+        if lease.owner() != &RuntimeHandleOwnerSlot::in_dialogue_fiber(activation, &token, slot) {
+            return Err(LineRuntimeError::WrongOwner);
+        }
+        lease.validate_active_stage_actor(character)?;
+        Ok(token)
+    }
+
+    fn published_lease(&self, token: &RuntimeLineHandleToken) -> Option<&RuntimeHandleLease> {
+        match self.entries.get(token.activation())? {
+            RuntimeDialogueRegistryEntry::PublishedHandles { handles, .. } => handles.lease(token),
+            _ => None,
+        }
+    }
+
     pub(crate) fn try_visit_active<'a, E>(
         &'a self,
         mut visit: impl FnMut(
@@ -510,7 +545,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        snapshot.admit_retained(&mut admission, expected_children)?;
+        snapshot.admit_retained(&mut admission, expected_children, |_, _, _, _| false)?;
         Self::from_admitted_save_snapshot(snapshot, owner, restore_frame)
     }
 
@@ -581,9 +616,27 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
             DialogueActivationId,
             (RuntimeDeferRegistrationId, RuntimeDeferSiteId),
         >,
+        validate_receiver: impl Fn(
+            &F,
+            &crate::presentation::RuntimeLineCommandId,
+            &RuntimeLineHandleToken,
+            RuntimeOwnedSlotId,
+        ) -> bool,
     ) -> Result<(), RuntimeDialogueRegistrySnapshotError> {
         admission.validate_metadata_collection(self.entries.len())?;
         admission.validate_metadata(expected_children)?;
+        let published = self
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                RuntimeDialogueRegistrySaveEntry::PublishedHandles {
+                    activation,
+                    handles,
+                    ..
+                } => Some((activation, handles)),
+                RuntimeDialogueRegistrySaveEntry::Active { .. } => None,
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut identities = std::collections::BTreeSet::new();
         let mut active_children = std::collections::BTreeSet::new();
         for entry in &self.entries {
@@ -606,11 +659,24 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
                 });
             }
             match entry {
-                RuntimeDialogueRegistrySaveEntry::Active { line, .. } => {
+                RuntimeDialogueRegistrySaveEntry::Active { frame, line, .. } => {
                     line.admit_retained_resources(Some(*activation), admission)?;
                     line.restore_admit_with_deferred_child(
                         activation,
                         expected_children.get(activation).copied(),
+                        |command, actor, character| {
+                            let Some(lease) = published
+                                .get(actor.activation())
+                                .and_then(|handles| handles.lease(actor))
+                            else {
+                                return false;
+                            };
+                            let RuntimeHandleOwnerSlot::ParentFiber(slot) = lease.owner() else {
+                                return false;
+                            };
+                            lease.validate_active_stage_actor(character).is_ok()
+                                && validate_receiver(frame, command, actor, *slot)
+                        },
                     )?;
                     active_children.insert(activation);
                 }

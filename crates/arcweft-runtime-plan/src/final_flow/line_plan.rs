@@ -7,7 +7,8 @@
 use crate::assertion_identity::RuntimeAssertionSite;
 use crate::errors::RuntimePlanLowerError;
 use crate::semantic_facts::{
-    RuntimeLineCallable, RuntimeNormalizedType, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+    RuntimeCheckedTypeProjectionError, RuntimeLineCallable, RuntimeNormalizedType,
+    RuntimePlanSemanticFacts, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
     RuntimeResolvedStaticCallTarget, RuntimeScopedExecutableSemanticFactView, RuntimeTypeShape,
 };
 use arcweft_core::line_task::{
@@ -18,7 +19,7 @@ use arcweft_core::plan::{
     RuntimeBorrowedLocalSeed, RuntimeDialogueContentPlanSeedId, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeLineHandleSiteSeed, RuntimeLineOperationSeed,
     RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed,
-    RuntimeLineTaskNodeSeedId, RuntimeLineTaskTriggerSeed, RuntimePatternSeed,
+    RuntimeLineTaskNodeSeedId, RuntimeLineTaskTriggerSeed, RuntimePatternSeed, RuntimePlanTypeSeed,
     RuntimeScheduledCaptureSeed,
 };
 use arcweft_core::runtime_id::RuntimeLineHandleSiteId;
@@ -34,6 +35,35 @@ use arcweft_lang_hir::stmt::{
 use super::{
     ClosureFrameLocals, FinalFlowLowerer, FinalLoweringContext, RuntimeAssertionOwner, module_by_id,
 };
+
+fn default_actor_look_crossfade_type() -> RuntimeNormalizedType {
+    RuntimeNormalizedType::new(
+        arcweft_core::pattern::RuntimeCheckedType::Duration.semantic_identity_digest(),
+        RuntimeTypeShape::Duration,
+    )
+}
+
+pub(super) fn append_generated_type_seeds(
+    facts: &RuntimePlanSemanticFacts,
+    seeds: &mut Vec<RuntimePlanTypeSeed>,
+) -> Result<(), RuntimeCheckedTypeProjectionError> {
+    let mut needs_crossfade_default = false;
+    facts.visit_scoped_calls(&mut |_, _, call| {
+        needs_crossfade_default |= matches!(
+            call.dispatch(),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Line(
+                RuntimeLineCallable::ActorLook {
+                    crossfade: None,
+                    ..
+                }
+            ))
+        );
+    });
+    if needs_crossfade_default {
+        default_actor_look_crossfade_type().append_runtime_plan_type_seeds(seeds)?;
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy)]
 struct SiteDraftId(usize);
@@ -826,8 +856,7 @@ impl LinePlanLowerer<'_, '_> {
                         .lower(crossfade)
                         .map_err(RuntimePlanLowerError::new)?,
                     None => RuntimeExprSeed::new(
-                        arcweft_core::pattern::RuntimeCheckedType::Duration
-                            .semantic_identity_digest(),
+                        default_actor_look_crossfade_type().identity(),
                         RuntimeExprSeedKind::Value(RuntimeValue::Duration(
                             arcweft_core::time::LogicalDuration::default(),
                         )),

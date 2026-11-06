@@ -1261,7 +1261,11 @@ impl NativeEngineRollbackImage {
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
         })?;
         self.dialogue_activations
-            .admit_values(&mut admission, &expected_deferred_children)
+            .admit_values(&mut admission, &expected_deferred_children, |parent| {
+                self.session_fibers()
+                    .find(|fiber| fiber.id == parent)
+                    .map(|fiber| fiber.execution)
+            })
             .map_err(|error| error.to_string())?;
         admission
             .finish_presentation_custody()

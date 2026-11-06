@@ -2298,12 +2298,36 @@ fn return_program() -> AwbcProgram {
 fn actor_look_program() -> AwbcProgram {
     use crate::awbc::schema::{
         AwbcLineHandleSite, AwbcLineOperation, AwbcLineTaskGroup, AwbcLineTaskNode,
+        AwbcVariantCase, AwbcVariantIdentity,
+    };
+    use crate::entry::{
+        RuntimeNominalDeclarationId, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
+        RuntimeNominalSchemaDefinition, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
+        RuntimeNominalTypeId, RuntimeSchemaLimits,
     };
     use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
-    use crate::value::RuntimeEntityReference;
 
     let character = arcweft_character::id::CharacterId::try_new("character.alice")
         .expect("fixture character identity");
+    let look =
+        crate::character_nominal::RuntimeCharacterLookSourceAuthority::look_identity(&character);
+    let nominal = RuntimeNominalTypeId::from_checked_digest(*look.as_bytes());
+    let graph = RuntimeNominalSchemaGraph::try_new(
+        [RuntimeNominalSchemaDefinition::new(
+            RuntimeNominalDeclarationId::from_bytes(*look.as_bytes()),
+            RuntimeNominalSchemaIdentity::new(nominal.clone(), look),
+            vec![],
+            RuntimeNominalSchemaBody::Variant {
+                cases: vec![
+                    RuntimeNominalSchemaCase::new(0, "normal".to_owned(), None),
+                    RuntimeNominalSchemaCase::new(1, "bright".to_owned(), None),
+                ]
+                .into_boxed_slice(),
+            },
+        )],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
     let mut program = return_program();
     program.strings = vec![
         "entry.main".to_owned(),
@@ -2311,6 +2335,9 @@ fn actor_look_program() -> AwbcProgram {
         "std.line.cue_handle".to_owned(),
         "std.character_dialogue".to_owned(),
         "content.actor_look".to_owned(),
+        nominal.as_str().to_owned(),
+        "normal".to_owned(),
+        "bright".to_owned(),
     ];
     program.runtime_types = vec![
         AwbcRuntimeType::unit(),
@@ -2339,13 +2366,24 @@ fn actor_look_program() -> AwbcProgram {
             },
         ),
         AwbcRuntimeType::new(
-            RuntimeCheckedType::EntityReference(
-                crate::value::RuntimeEntityReferenceType::CharacterLook(character.clone()),
-            )
-            .semantic_identity_digest(),
-            AwbcRuntimeTypeShape::EntityRef(
-                crate::value::RuntimeEntityReferenceType::CharacterLook(character.clone()),
-            ),
+            look,
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Nominal {
+                    public_id: AwbcStringId(5),
+                    layout: *graph.try_layout_hash(look).unwrap().as_bytes(),
+                },
+                arguments: vec![],
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(6),
+                        payload: None,
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(7),
+                        payload: None,
+                    },
+                ],
+            },
         ),
         AwbcRuntimeType::new(
             RuntimeCheckedType::Duration.semantic_identity_digest(),
@@ -2372,17 +2410,17 @@ fn actor_look_program() -> AwbcProgram {
         effects: AwbcEffectSetId(0),
     }];
     program.constants = vec![
-        AwbcConstant::EntityRef(RuntimeEntityReference::CharacterLook {
-            character: character.clone(),
-            look: arcweft_character::id::CharacterLookId::try_new("normal")
-                .expect("normal look identity"),
-        }),
+        AwbcConstant::Variant {
+            ty: AwbcTypeId(3),
+            case: 0,
+            payload: None,
+        },
         AwbcConstant::DurationNanos(0),
-        AwbcConstant::EntityRef(RuntimeEntityReference::CharacterLook {
-            character: character.clone(),
-            look: arcweft_character::id::CharacterLookId::try_new("bright")
-                .expect("bright look identity"),
-        }),
+        AwbcConstant::Variant {
+            ty: AwbcTypeId(3),
+            case: 1,
+            payload: None,
+        },
         AwbcConstant::DurationNanos(120_000_000),
     ];
     program.frame_layouts = vec![
