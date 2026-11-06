@@ -16,6 +16,9 @@ use crate::time::LogicalDuration;
 use crate::value::{RuntimeValue, ownership::RuntimeOwnedSlotId};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod receiver;
+pub(super) use receiver::ProductDialogueReceivers;
+
 /// Product adapter over the executor-neutral dialogue registry. Product owns
 /// only ingress readiness and its AWBC frame payload; Active/PublishedHandles,
 /// revisions, ledger/command transactions, publication, and parent drops are
@@ -91,46 +94,6 @@ impl AwbcProductStepExecutor {
             }
             _ => Err(FiberStateError::InvalidFrame),
         }
-    }
-}
-
-impl<V, O, E, F, L, P, H>
-    super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>
-{
-    /// One actual Product receiver authenticates its parent, original site and
-    /// activation identity for live, private and public inert admission alike.
-    pub(super) fn admit_parent_receiver<'a, PV: 'a, PO: 'a, PN: 'a, PB: 'a, PR: 'a, PG: 'a>(
-        &self,
-        program: &crate::awbc::schema::AwbcProgram,
-        expected: &DialogueActivationId,
-        parents: impl Iterator<Item = &'a crate::awbc::fiber::FiberState<PV, PO, PN, PB, PR, PG>>,
-        actual: &mut Option<DialogueActivationId>,
-    ) -> Result<(), crate::awbc::fiber::FiberStateError> {
-        let invalid = || crate::awbc::fiber::FiberStateError::InvalidDialogueReceiver {
-            activation: *expected,
-        };
-        if self.activation != *expected
-            || actual.is_some()
-            || super::AwbcProductStepExecutor::runtime_dialogue_content_id(self.content)
-                .map_err(|_| invalid())?
-                != expected.content()
-        {
-            return Err(invalid());
-        }
-        let parent = parents
-            .into_iter()
-            .find(|fiber| fiber.instance.get().get() == expected.owner_fiber().get())
-            .ok_or_else(invalid)?;
-        parent.validate_dialogue_receiver(
-            program,
-            *expected,
-            self.content,
-            self.target_type,
-            &self.result,
-            matches!(self.phase, super::AwbcProductDialoguePhase::Closing(_)),
-        )?;
-        *actual = Some(*expected);
-        Ok(())
     }
 }
 

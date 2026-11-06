@@ -126,6 +126,13 @@ unfinished restartable work, while `Rollback` preserves its accepted submission
 frontier. Product rollback and native rollback use the latter; ordinary Product
 save restore uses the former.
 
+Live admission, private rollback and public save restore use the same
+dialogue receiver check. The activation ID identifies the receiving fiber.
+Its original Dialogue instruction authenticates the content, target type and
+result binding. An activation fiber must be allocated after its receiver.
+Each waiting receiver must have its matching activation before restore can
+reconstruct owned values.
+
 Published dialogue registry metadata has one movable owner independent of the
 executor's released frame type. A registry may enter that published transfer
 phase only when every activation is published. Active or in-flight state rejects

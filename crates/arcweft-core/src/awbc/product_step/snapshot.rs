@@ -825,6 +825,38 @@ impl<V, O, E, N, B, R, G, L, P, H>
         H,
     >
 {
+    pub(super) fn original_content_group<'program>(
+        &self,
+        program: &'program crate::awbc::schema::AwbcProgram,
+    ) -> Result<
+        (
+            &'program crate::awbc::schema::AwbcContentUnit,
+            &'program crate::awbc::schema::AwbcLineTaskGroup,
+        ),
+        crate::line_task::RuntimeDialogueRegistrySnapshotError,
+    > {
+        let invalid =
+            |message: &str| crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                message: message.to_owned(),
+            };
+        let content = program
+            .content_units
+            .get(self.content.index())
+            .ok_or_else(|| invalid("active dialogue snapshot references missing AWBC content"))?;
+        let group = content
+            .line_task_group
+            .and_then(|id| program.line_task_groups.get(id.index()))
+            .ok_or_else(|| invalid("active dialogue snapshot content has no line-task group"))?;
+        if self.activation_fiber().is_some_and(|fiber| {
+            fiber.root != crate::awbc::fiber::AwbcFiberRoot::Function(group.activation)
+        }) {
+            return Err(invalid(
+                "dialogue activation fiber root differs from its original content group",
+            ));
+        }
+        Ok((content, group))
+    }
+
     /// Borrows the original frame grammar before either storage role is projected.
     fn admit_retained_values<'a>(
         &'a self,
@@ -874,21 +906,7 @@ impl<V, O, E, N, B, R, G, L, P, H>
         ] {
             admission.validate_metadata_collection(count)?;
         }
-        let content = program
-            .content_units
-            .get(self.content.index())
-            .ok_or_else(|| invalid("active dialogue snapshot references missing AWBC content"))?;
-        let group = content
-            .line_task_group
-            .and_then(|id| program.line_task_groups.get(id.index()))
-            .ok_or_else(|| invalid("active dialogue snapshot content has no line-task group"))?;
-        if self.activation_fiber().is_some_and(|fiber| {
-            fiber.root != crate::awbc::fiber::AwbcFiberRoot::Function(group.activation)
-        }) {
-            return Err(invalid(
-                "dialogue activation fiber root differs from its original content group",
-            ));
-        }
+        let (content, group) = self.original_content_group(program)?;
         let has_reducer = matches!(
             &self.phase,
             super::AwbcProductDialoguePhase::Reducing { .. }

@@ -5,10 +5,88 @@ use super::snapshot::{
     AwbcProductExecutorSnapshot, AwbcProductLineTaskWorkInstanceSnapshot,
 };
 use super::*;
+use crate::awbc::fiber::FiberStateError;
 use crate::presentation::resources::{
     PresentationBanks, PresentationBody, PresentationExecutionAdmission, PresentationExecutionRole,
 };
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+
+struct ProductPresentationContour<'a, F> {
+    program: &'a crate::awbc::schema::AwbcProgram,
+    banks: PresentationExecutionAdmission<'a>,
+    receivers: dialogue::ProductDialogueReceivers<'a, F>,
+    has_active_dialogue: bool,
+}
+
+impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B, R, G>> {
+    fn new(
+        program: &'a crate::awbc::schema::AwbcProgram,
+        banks: PresentationExecutionAdmission<'a>,
+    ) -> Self {
+        Self {
+            program,
+            banks,
+            receivers: dialogue::ProductDialogueReceivers::default(),
+            has_active_dialogue: false,
+        }
+    }
+
+    fn register_fiber(
+        &mut self,
+        fiber: &'a FiberState<V, O, N, B, R, G>,
+        role: PresentationExecutionRole,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.banks
+            .register_fiber(fiber.instance, fiber.presentation_bank(), role, admission)?;
+        Ok(self.receivers.register_fiber(fiber)?)
+    }
+
+    fn register_dialogue<E, L, P, H>(
+        &mut self,
+        activation: DialogueActivationId,
+        frame: &'a AwbcProductActiveDialogue<
+            V,
+            O,
+            E,
+            AwbcProductDialoguePhase<FiberState<V, O, N, B, R, G>, L, P>,
+            H,
+        >,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        // The current step scheduler can drive only one active reducer. Keep
+        // this execution restriction separate from the receiver graph.
+        if std::mem::replace(&mut self.has_active_dialogue, true) {
+            return Err(FiberStateError::InvalidDialogueReceiver { activation }.into());
+        }
+        self.banks.admit_dialogue(activation, admission)?;
+        if let Some(fiber) = frame.activation_fiber() {
+            self.register_fiber(
+                fiber,
+                PresentationExecutionRole::Dialogue(activation),
+                admission,
+            )?;
+        }
+        // The bank/allocator and the original activation root authenticate
+        // the frame before any suspension on that frame can supply an edge.
+        frame
+            .original_content_group(self.program)
+            .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
+                message: error.to_string(),
+            })?;
+        self.receivers.register_dialogue(activation, frame)?;
+        Ok(())
+    }
+
+    fn finish(
+        self,
+        banks: impl Iterator<Item = crate::runtime_id::RuntimePresentationBankId>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.receivers.validate(self.program)?;
+        self.banks.finish(banks, admission)
+    }
+}
 
 impl AwbcProductProgram {
     pub(super) fn preflight_fiber_unwinds<'fiber>(
@@ -142,19 +220,17 @@ impl AwbcProductStepExecutor {
         >,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        let mut context = PresentationExecutionAdmission::new(
-            self.next_fiber_instance.last_issued(),
-            self.dialogue_occurrences
-                .iter()
-                .map(|(&(owner, content), next)| (owner, content, next)),
-            admission,
-        )?;
-        context.register_fiber(
-            self.fiber.instance,
-            self.fiber.presentation_bank(),
-            PresentationExecutionRole::Root,
-            admission,
-        )?;
+        let mut context = ProductPresentationContour::new(
+            &self.program,
+            PresentationExecutionAdmission::new(
+                self.next_fiber_instance.last_issued(),
+                self.dialogue_occurrences
+                    .iter()
+                    .map(|(&(owner, content), next)| (owner, content, next)),
+                admission,
+            )?,
+        );
+        context.register_fiber(&self.fiber, PresentationExecutionRole::Root, admission)?;
         admission.validate_metadata_collection(self.child_fibers.len())?;
         for child in &self.child_fibers {
             let role = if matches!(
@@ -165,40 +241,11 @@ impl AwbcProductStepExecutor {
             } else {
                 child.owner.presentation_role()
             };
-            context.register_fiber(
-                child.fiber.instance,
-                child.fiber.presentation_bank(),
-                role,
-                admission,
-            )?;
+            context.register_fiber(&child.fiber, role, admission)?;
         }
-        let mut active_receiver = None;
-        dialogues.try_visit_active(
-            |activation, frame, _| -> Result<(), AwbcRuntimeValueSnapshotError> {
-                frame.admit_parent_receiver(
-                    &self.program,
-                    activation,
-                    std::iter::once(&self.fiber)
-                        .chain(self.child_fibers.iter().map(|child| &child.fiber)),
-                    &mut active_receiver,
-                )?;
-                context.admit_dialogue(*activation, admission)?;
-                if let Some(fiber) = frame.activation_fiber() {
-                    context.register_fiber(
-                        fiber.instance,
-                        fiber.presentation_bank(),
-                        PresentationExecutionRole::Dialogue(*activation),
-                        admission,
-                    )?;
-                }
-                Ok(())
-            },
-        )?;
-        for parent in
-            std::iter::once(&self.fiber).chain(self.child_fibers.iter().map(|child| &child.fiber))
-        {
-            parent.validate_dialogue_receiver_presence(active_receiver)?;
-        }
+        dialogues.try_visit_active(|activation, frame, _| {
+            context.register_dialogue(*activation, frame, admission)
+        })?;
         context.finish(
             self.presentation.iter().flat_map(|banks| banks.bank_ids()),
             admission,
@@ -216,21 +263,19 @@ impl AwbcProductExecutorSnapshot {
             |error: AwbcRuntimeValueSnapshotError| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             };
-        let mut context = PresentationExecutionAdmission::new(
-            self.next_fiber_instance.last_issued(),
-            self.dialogue_occurrences
-                .iter()
-                .map(|row| (row.owner, row.content, &row.next)),
-            admission,
-        )
-        .map_err(invalid)?;
-        context
-            .register_fiber(
-                self.fiber.instance,
-                self.fiber.presentation_bank(),
-                PresentationExecutionRole::Root,
+        let mut context = ProductPresentationContour::new(
+            program,
+            PresentationExecutionAdmission::new(
+                self.next_fiber_instance.last_issued(),
+                self.dialogue_occurrences
+                    .iter()
+                    .map(|row| (row.owner, row.content, &row.next)),
                 admission,
             )
+            .map_err(invalid)?,
+        );
+        context
+            .register_fiber(&self.fiber, PresentationExecutionRole::Root, admission)
             .map_err(invalid)?;
         admission
             .validate_metadata_collection(self.child_fibers.len())
@@ -245,69 +290,14 @@ impl AwbcProductExecutorSnapshot {
                 child.owner.presentation_role()
             };
             context
-                .register_fiber(
-                    child.fiber.instance,
-                    child.fiber.presentation_bank(),
-                    role,
-                    admission,
-                )
+                .register_fiber(&child.fiber, role, admission)
                 .map_err(invalid)?;
         }
-        let mut active_receiver = None;
         self.dialogues
             .try_visit_active(|activation, frame, _| {
-                frame
-                    .admit_parent_receiver(
-                        program,
-                        activation,
-                        std::iter::once(&self.fiber)
-                            .chain(self.child_fibers.iter().map(|child| &child.fiber)),
-                        &mut active_receiver,
-                    )
-                    .map_err(|error| {
-                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                            message: error.to_string(),
-                        }
-                    })?;
-                context
-                    .admit_dialogue(*activation, admission)
-                    .map_err(|error| {
-                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                            message: error.to_string(),
-                        }
-                    })?;
-                if let Some(fiber) = frame.activation_fiber() {
-                    context
-                        .register_fiber(
-                            fiber.instance,
-                            fiber.presentation_bank(),
-                            PresentationExecutionRole::Dialogue(*activation),
-                            admission,
-                        )
-                        .map_err(|error| {
-                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                message: error.to_string(),
-                            }
-                        })?;
-                }
-                Ok(())
+                context.register_dialogue(*activation, frame, admission)
             })
-            .map_err(
-                |error: crate::line_task::RuntimeDialogueRegistrySnapshotError| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: error.to_string(),
-                    }
-                },
-            )?;
-        for parent in
-            std::iter::once(&self.fiber).chain(self.child_fibers.iter().map(|child| &child.fiber))
-        {
-            parent
-                .validate_dialogue_receiver_presence(active_receiver)
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?;
-        }
+            .map_err(invalid)?;
         context
             .finish(
                 self.presentation.iter().flat_map(|banks| banks.bank_ids()),
@@ -327,21 +317,19 @@ impl AwbcProductExecutorSaveSnapshot {
             |error: AwbcRuntimeValueSnapshotError| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             };
-        let mut context = PresentationExecutionAdmission::new(
-            self.next_fiber_instance.last_issued(),
-            self.dialogue_occurrences
-                .iter()
-                .map(|row| (row.owner, row.content, &row.next)),
-            admission,
-        )
-        .map_err(invalid)?;
-        context
-            .register_fiber(
-                self.fiber.instance,
-                self.fiber.presentation_bank(),
-                PresentationExecutionRole::Root,
+        let mut context = ProductPresentationContour::new(
+            program,
+            PresentationExecutionAdmission::new(
+                self.next_fiber_instance.last_issued(),
+                self.dialogue_occurrences
+                    .iter()
+                    .map(|row| (row.owner, row.content, &row.next)),
                 admission,
             )
+            .map_err(invalid)?,
+        );
+        context
+            .register_fiber(&self.fiber, PresentationExecutionRole::Root, admission)
             .map_err(invalid)?;
         admission
             .validate_metadata_collection(self.child_fibers.len())
@@ -356,69 +344,14 @@ impl AwbcProductExecutorSaveSnapshot {
                 child.owner.presentation_role()
             };
             context
-                .register_fiber(
-                    child.fiber.instance,
-                    child.fiber.presentation_bank(),
-                    role,
-                    admission,
-                )
+                .register_fiber(&child.fiber, role, admission)
                 .map_err(invalid)?;
         }
-        let mut active_receiver = None;
         self.dialogues
             .try_visit_active(|activation, frame, _| {
-                frame
-                    .admit_parent_receiver(
-                        program,
-                        activation,
-                        std::iter::once(&self.fiber)
-                            .chain(self.child_fibers.iter().map(|child| &child.fiber)),
-                        &mut active_receiver,
-                    )
-                    .map_err(|error| {
-                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                            message: error.to_string(),
-                        }
-                    })?;
-                context
-                    .admit_dialogue(*activation, admission)
-                    .map_err(|error| {
-                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                            message: error.to_string(),
-                        }
-                    })?;
-                if let Some(fiber) = frame.activation_fiber() {
-                    context
-                        .register_fiber(
-                            fiber.instance,
-                            fiber.presentation_bank(),
-                            PresentationExecutionRole::Dialogue(*activation),
-                            admission,
-                        )
-                        .map_err(|error| {
-                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                message: error.to_string(),
-                            }
-                        })?;
-                }
-                Ok(())
+                context.register_dialogue(*activation, frame, admission)
             })
-            .map_err(
-                |error: crate::line_task::RuntimeDialogueRegistrySnapshotError| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: error.to_string(),
-                    }
-                },
-            )?;
-        for parent in
-            std::iter::once(&self.fiber).chain(self.child_fibers.iter().map(|child| &child.fiber))
-        {
-            parent
-                .validate_dialogue_receiver_presence(active_receiver)
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?;
-        }
+            .map_err(invalid)?;
         context
             .finish(
                 self.presentation.iter().flat_map(|banks| banks.bank_ids()),

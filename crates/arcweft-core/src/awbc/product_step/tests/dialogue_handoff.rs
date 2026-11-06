@@ -1,5 +1,9 @@
 use super::*;
 use crate::awbc::fiber::{FiberStateError, FiberSuspensionReason};
+use crate::awbc::product_step::{AwbcProductDialoguePhase, dialogue::ProductDialogueReceivers};
+use crate::runtime_id::{
+    DialogueActivationId, RuntimeFiberInstanceId, RuntimeIdNamespace, RuntimePersistentFiberId,
+};
 
 #[test]
 fn pending_dialogue_packet_roundtrips_and_failed_handoff_keeps_the_complete_session() {
@@ -111,4 +115,76 @@ fn active_dialogue_save_rejects_missing_or_replaced_parent_receiver_without_chan
         executor = original;
         assert_eq!(executor.snapshot().unwrap(), before, "case={case}");
     }
+}
+
+#[test]
+fn dialogue_receiver_topology_checks_nested_edges_in_any_registry_order() {
+    let (executor, outer_id) = initial_actor_dialogue_executor();
+    let mut image = executor.snapshot().unwrap();
+    let mut outer = None;
+    image
+        .dialogues
+        .try_visit_active(|_, frame, _| {
+            assert!(outer.replace(frame.clone()).is_none());
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .unwrap();
+    let mut outer = outer.unwrap();
+    let mut inner = outer.clone();
+    let AwbcProductDialoguePhase::Activating { fiber, .. } = &mut outer.phase else {
+        panic!("the outer fixture still owns its execution fiber");
+    };
+    let instance = fiber.instance;
+    // Use the fixture's original Dialogue site in the intermediate frame so
+    // the edge is checked against a real resume point and result pattern.
+    *fiber = image.fiber.clone();
+    fiber.instance = instance;
+    let inner_id = DialogueActivationId::new(
+        outer_id.artifact(),
+        RuntimePersistentFiberId::from_allocated(instance.get().get()),
+        outer_id.content(),
+        0,
+    );
+    fiber.suspension.as_mut().unwrap().reason = FiberSuspensionReason::DialogueActive {
+        activation: inner_id,
+    };
+    inner.activation = inner_id;
+    let AwbcProductDialoguePhase::Activating { fiber, .. } = &mut inner.phase else {
+        panic!("the inner fixture retains its allocated activation fiber");
+    };
+    fiber.instance = RuntimeFiberInstanceId::from_allocated(
+        image
+            .next_fiber_instance
+            .take_next(RuntimeIdNamespace::FiberInstance)
+            .unwrap(),
+    );
+
+    let mut receivers = ProductDialogueReceivers::default();
+    receivers.register_dialogue(inner_id, &inner).unwrap();
+    receivers.register_dialogue(outer_id, &outer).unwrap();
+    receivers.register_fiber(&image.fiber).unwrap();
+    assert_eq!(
+        receivers.validate(&executor.program),
+        Err(FiberStateError::InvalidDialogueReceiver {
+            activation: inner_id
+        }),
+    );
+    receivers
+        .register_fiber(outer.activation_fiber().unwrap())
+        .unwrap();
+    receivers
+        .register_fiber(inner.activation_fiber().unwrap())
+        .unwrap();
+    receivers.validate(&executor.program).unwrap();
+
+    let AwbcProductDialoguePhase::Activating { fiber, .. } = &mut inner.phase else {
+        unreachable!("inner phase was established above");
+    };
+    fiber.instance = instance;
+    assert_eq!(
+        ProductDialogueReceivers::default().register_dialogue(inner_id, &inner),
+        Err(FiberStateError::InvalidDialogueReceiver {
+            activation: inner_id
+        }),
+    );
 }
