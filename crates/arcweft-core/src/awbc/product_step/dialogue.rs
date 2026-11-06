@@ -790,9 +790,53 @@ impl ProductDialogueStore {
         before: &BTreeMap<RuntimeLineHandleToken, crate::line_task::RuntimeHandleOwnerSlot>,
         after: &BTreeMap<RuntimeLineHandleToken, crate::line_task::RuntimeHandleOwnerSlot>,
         drops: &crate::line_task::RuntimeHandleDropAuthorization,
+        result: Option<(
+            &DialogueActivationId,
+            &[crate::value::ownership::RuntimeAffineLineHandle],
+        )>,
     ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
         self.registry
-            .inspect_received_fiber_reconciliation(execution, before, after, drops, None)
+            .inspect_received_fiber_reconciliation(execution, before, after, drops, None, result)
+    }
+
+    pub(super) fn prepare_result_abandonment(
+        &self,
+        transaction: &mut ProductDialogueTransaction,
+    ) -> Result<bool, LineRuntimeError> {
+        self.registry.prepare_result_abandonment(transaction)
+    }
+
+    pub(super) fn inspect_received_result_retirement(
+        &self,
+        transaction: &ProductDialogueTransaction,
+    ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
+        self.registry
+            .inspect_received_result_retirement(transaction)
+    }
+
+    pub(super) fn has_pending_result_retirement(
+        &self,
+        transaction: &ProductDialogueTransaction,
+    ) -> bool {
+        self.registry
+            .has_staged_or_pending_received_result_retirement(transaction)
+    }
+
+    pub(super) fn inspect_received_result_publication(
+        &self,
+        receiver: &DialogueActivationId,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        handles: &[crate::value::ownership::RuntimeAffineLineHandle],
+        destinations: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        line_ready: bool,
+    ) -> Result<(bool, Option<PreparedRuntimeParentFiberReconciliation>), LineRuntimeError> {
+        self.registry.inspect_received_result_publication(
+            receiver,
+            execution,
+            handles,
+            destinations,
+            line_ready,
+        )
     }
 
     pub(super) fn commit_parent_fiber_reconciliation(

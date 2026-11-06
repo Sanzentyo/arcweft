@@ -46,6 +46,11 @@ use thiserror::Error;
 
 type NativeDialogueActivationState = RuntimeDialogueActivationState<RuntimePlanTypeId>;
 
+enum NativeDialogueHandleTransition<'a> {
+    Receive(&'a std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>),
+    Result(&'a [crate::value::ownership::RuntimeAffineLineHandle]),
+}
+
 /// Between evaluations the step owns the activation transaction. During an
 /// evaluation the engine temporarily owns it and can borrow the whole contour.
 struct DialogueActivationExecutionSlot(Option<DialogueActivationTransaction>);
@@ -301,7 +306,10 @@ impl Engine {
 
     fn apply_dialogue_commit_disposition(&mut self, disposition: DialogueCommitDisposition) {
         match disposition {
-            DialogueCommitDisposition::Published { bindings } => {
+            DialogueCommitDisposition::Published { bindings, arrivals } => {
+                if let Some(receiver) = self.dialogue_activations.inline_stack.last_mut() {
+                    receiver.record_result_arrivals(arrivals);
+                }
                 self.fiber.frame.env.bind_all(bindings);
                 self.fiber.frame.status = super::FlowFiberStatus::Running;
             }
@@ -545,9 +553,28 @@ impl Engine {
         output: &mut RuntimeStepOutput,
     ) {
         let activation_id = transaction.activation().clone();
-        if let Err(error) = transaction.line_mut().abandon() {
-            self.fail_eval(error, output);
-            return;
+        match self
+            .dialogue_activations
+            .prepare_result_abandonment(&mut transaction)
+        {
+            Ok(false) => {}
+            Ok(true) => {
+                match self.commit_dialogue_activation_transaction(transaction, output) {
+                    Ok(()) => {
+                        self.fiber.frame.status =
+                            super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
+                                activation_id,
+                                DialogueRuntimePhase::Closing,
+                            ));
+                    }
+                    Err(error) => self.fail_eval(error, output),
+                }
+                return;
+            }
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
         }
         if !self.has_joined_dialogue_work(&activation_id) {
             while !transaction.frame().scopes.is_empty() {
@@ -633,8 +660,11 @@ impl Engine {
             }
         }
         let (state, activation) = transaction.parts_mut();
-        let terminal =
-            activation.failure_close_ready() && !self.has_joined_dialogue_work(&activation_id);
+        let terminal = activation.failure_close_ready()
+            && !self.has_joined_dialogue_work(&activation_id)
+            && !self
+                .dialogue_activations
+                .has_pending_result_retirement(&activation_id);
         if terminal {
             let Some(error) = state.failure.clone() else {
                 self.fail_eval(LineRuntimeError::InvalidResultTransition, output);
@@ -1107,13 +1137,12 @@ impl Engine {
                 );
             }
             let before = self.activation_local_handle_owners(&activation_id, frame)?;
-            let resumed_child = match &frame.execution.status {
-                super::FlowFiberStatus::Dialogue(status) => Some(*status.activation()),
-                _ => None,
-            };
             let staged =
                 self.step_dialogue_execution(slot, None, input, events, pure_backend, None)?;
-            self.reconcile_activation_instruction(slot.transaction_mut(), &before, resumed_child)?;
+            let arrivals = slot.transaction_mut().take_result_arrivals();
+            let transition = (!arrivals.is_empty())
+                .then_some(NativeDialogueHandleTransition::Receive(&arrivals));
+            self.reconcile_activation_instruction(slot.transaction_mut(), &before, transition)?;
             return Ok(DialogueActivationStep::Execution(staged));
         }
         if frame.pending_line_operation.is_some() {
@@ -1324,10 +1353,50 @@ impl Engine {
                 )?;
             }
             FlowOp::CommitDialogueResult { value } => {
-                let value = self.evaluate_dialogue_expr(slot, value, pure_backend)?;
-                let (frame, activation) = slot.transaction_mut().parts_mut();
-                self.stage_dialogue_result(frame, activation, value)?;
-                frame.exiting_for_result = true;
+                let rollback = if assignment_before
+                    .keys()
+                    .any(|token| token.activation() != &activation_id)
+                {
+                    Some(
+                        self.inert_rollback_image_with_dialogue(
+                            Some(slot.transaction()),
+                            crate::entry::RuntimeSchemaLimits::engine_default(),
+                        )
+                        .map_err(
+                            |message| DialogueExecutionError::ActivationExecutionFailed { message },
+                        )?
+                        .0,
+                    )
+                } else {
+                    None
+                };
+                let result = (|| {
+                    let value = self.evaluate_dialogue_expr(slot, value, pure_backend)?;
+                    let transaction = slot.transaction_mut();
+                    let (frame, activation) = transaction.parts_mut();
+                    let handles =
+                        self.stage_dialogue_result(&activation_id, frame, activation, value)?;
+                    frame.exiting_for_result = true;
+                    self.reconcile_activation_instruction(
+                        transaction,
+                        &assignment_before,
+                        Some(NativeDialogueHandleTransition::Result(&handles)),
+                    )?;
+                    advance_activation_pc(transaction.frame_mut())?;
+                    Ok(DialogueActivationStep::Continue)
+                })();
+                return match (result, rollback) {
+                    (Err(cause), Some(image)) => {
+                        let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
+                        Err(self.restore_failed_dialogue_instruction(
+                            slot.transaction_mut(),
+                            image,
+                            &owner,
+                            cause,
+                        ))
+                    }
+                    (result, _) => result,
+                };
             }
             FlowOp::EvaluatedEffect(effect) => {
                 let request = self.execute_dialogue_evaluated_effect(
@@ -1482,12 +1551,12 @@ impl Engine {
         &self,
         transaction: &mut DialogueActivationTransaction,
         before: &std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
-        resumed_child: Option<DialogueActivationId>,
+        transition: Option<NativeDialogueHandleTransition<'_>>,
     ) -> Result<(), DialogueExecutionError> {
         let id = *transaction.activation();
         let (frame, line) = transaction.parts_mut();
         let received =
-            self.commit_activation_assignment_discards(&id, frame, line, before, resumed_child)?;
+            self.commit_activation_assignment_discards(&id, frame, line, before, transition)?;
         transaction.stage_received_handles(received);
         Ok(())
     }
@@ -1498,16 +1567,23 @@ impl Engine {
         frame: &mut DialogueActivationFrame,
         activation: &mut NativeDialogueActivationState,
         before: &std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
-        resumed_child: Option<DialogueActivationId>,
+        transition: Option<NativeDialogueHandleTransition<'_>>,
     ) -> Result<
         Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
         DialogueExecutionError,
     > {
         let drops = frame.execution.env.take_assignment_discard_authorization();
         let after = self.activation_local_handle_owners(activation_id, frame)?;
-        if !drops.has_displaced_values() && before == &after {
+        if !drops.has_displaced_values() && before == &after && transition.is_none() {
             return Ok(None);
         }
+        let (arrivals, result) = match transition {
+            Some(NativeDialogueHandleTransition::Receive(arrivals)) => (Some(arrivals), None),
+            Some(NativeDialogueHandleTransition::Result(handles)) => {
+                (None, Some((activation_id, handles)))
+            }
+            None => (None, None),
+        };
         drops.validate_removed(
             |token| before.contains_key(token),
             |token| after.contains_key(token),
@@ -1519,7 +1595,8 @@ impl Engine {
                 before,
                 &after,
                 &drops,
-                resumed_child,
+                arrivals,
+                result,
             )?;
         let mut ledger = activation.ledger().clone();
         let mut commands =
@@ -1834,6 +1911,7 @@ impl Engine {
                 &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
                     RuntimeDropPolicy::Default,
                 )),
+                None,
                 None,
             )?;
         flush_commands(activation_id, activation, commands)?;
@@ -2618,10 +2696,11 @@ impl Engine {
 
     fn stage_dialogue_result(
         &mut self,
+        activation_id: &DialogueActivationId,
         state: &mut DialogueActivationFrame,
         activation: &mut NativeDialogueActivationState,
         value: RuntimeValue,
-    ) -> Result<(), DialogueExecutionError> {
+    ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, DialogueExecutionError> {
         if !matches!(activation.result(), RuntimeDialogueResultState::Uncommitted) {
             return Err(LineRuntimeError::ResultAlreadyCommitted.into());
         }
@@ -2635,7 +2714,10 @@ impl Engine {
         }
         let handles = unique_affine_line_handles(&value)?;
         let mut ledger = activation.ledger().clone();
-        for handle in &handles {
+        for handle in handles
+            .iter()
+            .filter(|handle| handle.token().activation() == activation_id)
+        {
             let lease = ledger
                 .lease(handle.token())
                 .ok_or(LineRuntimeError::UnknownHandle)?;
@@ -2657,7 +2739,7 @@ impl Engine {
         }
         activation.commit_ledger(ledger);
         activation.commit_result(state.result_target.ty(), value)?;
-        Ok(())
+        Ok(handles)
     }
 
     fn begin_dialogue_reveal(
@@ -2800,11 +2882,21 @@ impl Engine {
                     handle.token(),
                 )?
                 .map(|local| self.owned_slot(local))
-                .transpose()?
-                .map(RuntimeHandleOwnerSlot::ParentFiber);
+                .transpose()?;
                 Ok::<_, DialogueExecutionError>((handle, destination))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let local_destinations = || {
+            destinations
+                .iter()
+                .filter(|(handle, _)| handle.token().activation() == activation_id)
+        };
+        let parent_owners = destinations
+            .iter()
+            .filter_map(|(handle, destination)| {
+                destination.map(|slot| (handle.token().clone(), slot))
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
         if begin_publication {
             let mut ledger = activation.ledger().clone();
             let mut commands =
@@ -2835,7 +2927,7 @@ impl Engine {
         let mut ledger = activation.ledger().clone();
         let mut commands =
             RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
-        for (handle, destination) in &destinations {
+        for (handle, destination) in local_destinations() {
             if destination.is_some() {
                 continue;
             }
@@ -2856,16 +2948,30 @@ impl Engine {
         }
         activation.commit_ledger(ledger);
         flush_commands(activation_id, activation, commands)?;
-        if activation.has_pending_commands() {
+        let handles = destinations
+            .iter()
+            .map(|(handle, _)| handle.clone())
+            .collect::<Vec<_>>();
+        let (ready, received) = self
+            .dialogue_activations
+            .inspect_received_result_publication(
+                activation_id,
+                self.fiber.execution,
+                &handles,
+                &parent_owners,
+                !activation.has_pending_commands(),
+            )?;
+        if !ready {
+            transaction.stage_received_handles(received);
             return Ok(DialoguePublicationOutcome::Pending);
         }
         let mut ledger = activation.ledger().clone();
-        for (handle, destination) in &destinations {
+        for (handle, destination) in local_destinations() {
             if let Some(destination) = destination {
                 ledger.transfer(
                     handle.token(),
                     &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
-                    destination.clone(),
+                    RuntimeHandleOwnerSlot::ParentFiber(*destination),
                 )?;
             }
         }
@@ -2876,6 +2982,7 @@ impl Engine {
         }) {
             return Err(LineRuntimeError::UnownedLeaseAtPublish.into());
         }
+        transaction.stage_received_handles(received);
         let proof = self
             .dialogue_activations
             .inspect_published_transaction(transaction)?;
@@ -2895,7 +3002,10 @@ impl Engine {
         .expect("prepared publication pattern remains valid")
         .expect("publication pattern passed borrowed owning preflight");
         transaction
-            .stage_disposition(DialogueCommitDisposition::Published { bindings })
+            .stage_disposition(DialogueCommitDisposition::Published {
+                bindings,
+                arrivals: parent_owners,
+            })
             .expect("prepared publication has a vacant disposition");
         Ok(DialoguePublicationOutcome::Published(proof))
     }
@@ -2979,7 +3089,7 @@ impl Engine {
         })();
         match result {
             Ok(step) => Ok(step),
-            Err(cause) => Err(self.restore_failed_line_registry_write(
+            Err(cause) => Err(self.restore_failed_dialogue_instruction(
                 slot.transaction_mut(),
                 image,
                 &owner,
@@ -3030,7 +3140,7 @@ impl Engine {
         })();
         match result {
             Ok(step) => Ok(step),
-            Err(cause) => Err(self.restore_failed_line_registry_write(
+            Err(cause) => Err(self.restore_failed_dialogue_instruction(
                 slot.transaction_mut(),
                 image,
                 &owner,
@@ -3039,7 +3149,7 @@ impl Engine {
         }
     }
 
-    fn restore_failed_line_registry_write(
+    fn restore_failed_dialogue_instruction(
         &mut self,
         transaction: &mut DialogueActivationTransaction,
         image: super::NativeEngineRollbackImage,
@@ -3058,7 +3168,7 @@ impl Engine {
         match result {
             Ok(()) => cause,
             Err(message) => DialogueExecutionError::ActivationEffectFailed {
-                message: format!("{cause}; effect rollback failed: {message}"),
+                message: format!("{cause}; instruction rollback failed: {message}"),
             },
         }
     }
@@ -3775,7 +3885,7 @@ mod tests {
                     message: "registry operation failed".into(),
                 };
                 assert_eq!(
-                    engine.restore_failed_line_registry_write(
+                    engine.restore_failed_dialogue_instruction(
                         nested_slot.transaction_mut(),
                         image,
                         &owner,

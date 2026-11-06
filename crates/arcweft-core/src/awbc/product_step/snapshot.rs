@@ -2168,6 +2168,9 @@ impl AwbcProductExecutorSnapshot {
                 |active, command, actor, slot| {
                     active.validates_received_stage_actor(program, command, actor, slot)
                 },
+                |activation, _, value, retired| {
+                    dialogue_receivers.validate_result_discards(program, activation, value, retired)
+                },
             )
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
@@ -2214,9 +2217,7 @@ impl AwbcProductExecutorSnapshot {
         snapshot
             .dialogues
             .try_visit_active(|activation, active, shared_line| {
-            shared_line.admit_result_discards(|value, retired| {
-                dialogue_receivers.validate_result_discards(program, activation, value, retired)
-            }).map_err(|error| AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() })?;
+
             active.admit_retained(program, shared_line, admission).map_err(|error| {
                 AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
             })?;

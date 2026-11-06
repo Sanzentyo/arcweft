@@ -369,9 +369,7 @@ impl DialogueActivationStoreRollbackImage {
                             .is_ok_and(|borrowed| &borrowed == token)
                         })
             },
-        )?;
-        self.registry.try_visit_active(|activation, active, line| {
-            line.admit_result_discards(|value, retired| {
+            |_, active, value, retired| {
                 for token in retired {
                     let destinations = crate::pattern::runtime_pattern_handle_destinations_view(
                         active.frame.result_target.pattern(),
@@ -384,7 +382,9 @@ impl DialogueActivationStoreRollbackImage {
                     }
                 }
                 Ok(())
-            })?;
+            },
+        )?;
+        self.registry.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
             active.frame.admit_reducer(activation, line, admission)
         })?;
@@ -1037,7 +1037,12 @@ impl DialogueActivationStore {
                         DialogueLineTaskState::Live(task) if task.is_closed()
                     )
             }
-            DialogueRuntimePhase::Closing | DialogueRuntimePhase::Publishing => !joined_work,
+            DialogueRuntimePhase::Closing | DialogueRuntimePhase::Publishing => {
+                !joined_work
+                    && !self
+                        .registry
+                        .has_pending_received_result_retirement(activation)
+            }
         }
     }
 
@@ -1204,12 +1209,20 @@ struct EngineDialogueActivationFrame<F = DialogueActivationFrame> {
 pub(crate) struct DialogueActivationTransaction {
     inner: RuntimeDialogueActivationTransaction<EngineDialogueActivationFrame, RuntimePlanTypeId>,
     disposition: Option<DialogueCommitDisposition>,
+    result_arrivals: BTreeMap<
+        crate::runtime_id::RuntimeLineHandleToken,
+        crate::value::ownership::RuntimeOwnedSlotId,
+    >,
 }
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum DialogueCommitDisposition {
     Published {
         bindings: Vec<crate::value::RuntimeLocalBinding>,
+        arrivals: BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::value::ownership::RuntimeOwnedSlotId,
+        >,
     },
     Failed {
         error: super::DialogueExecutionError,
@@ -1293,6 +1306,29 @@ impl DialogueActivationTransaction {
         self.inner.stage_received_handles(prepared);
     }
 
+    pub(super) fn record_result_arrivals(
+        &mut self,
+        arrivals: BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::value::ownership::RuntimeOwnedSlotId,
+        >,
+    ) {
+        assert!(
+            self.result_arrivals.is_empty(),
+            "one inline publication per instruction"
+        );
+        self.result_arrivals = arrivals;
+    }
+
+    pub(super) fn take_result_arrivals(
+        &mut self,
+    ) -> BTreeMap<
+        crate::runtime_id::RuntimeLineHandleToken,
+        crate::value::ownership::RuntimeOwnedSlotId,
+    > {
+        std::mem::take(&mut self.result_arrivals)
+    }
+
     pub(crate) fn stage_disposition(
         &mut self,
         disposition: DialogueCommitDisposition,
@@ -1355,6 +1391,7 @@ impl DialogueActivationStore {
         Ok(DialogueActivationTransaction {
             inner: self.registry.begin_transaction(activation)?,
             disposition: None,
+            result_arrivals: BTreeMap::new(),
         })
     }
 
@@ -1648,15 +1685,59 @@ impl DialogueActivationStore {
             crate::line_task::RuntimeHandleOwnerSlot,
         >,
         drops: &crate::line_task::RuntimeHandleDropAuthorization,
-        resumed_child: Option<DialogueActivationId>,
+        arrivals: Option<
+            &BTreeMap<
+                crate::runtime_id::RuntimeLineHandleToken,
+                crate::value::ownership::RuntimeOwnedSlotId,
+            >,
+        >,
+        result: Option<(
+            &DialogueActivationId,
+            &[crate::value::ownership::RuntimeAffineLineHandle],
+        )>,
     ) -> Result<Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>, LineRuntimeError>
     {
         self.registry.inspect_received_fiber_reconciliation(
+            execution, before, after, drops, arrivals, result,
+        )
+    }
+
+    pub(super) fn prepare_result_abandonment(
+        &self,
+        transaction: &mut DialogueActivationTransaction,
+    ) -> Result<bool, LineRuntimeError> {
+        self.registry
+            .prepare_result_abandonment(&mut transaction.inner)
+    }
+
+    pub(super) fn has_pending_result_retirement(&self, activation: &DialogueActivationId) -> bool {
+        self.registry
+            .has_pending_received_result_retirement(activation)
+    }
+
+    pub(super) fn inspect_received_result_publication(
+        &self,
+        activation: &DialogueActivationId,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        handles: &[crate::value::ownership::RuntimeAffineLineHandle],
+        destinations: &BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::value::ownership::RuntimeOwnedSlotId,
+        >,
+        line_ready: bool,
+    ) -> Result<
+        (
+            bool,
+            Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
+        ),
+        LineRuntimeError,
+    > {
+        self.registry.inspect_received_result_publication(
+            activation,
             execution,
-            before,
-            after,
-            drops,
-            resumed_child,
+            handles,
+            destinations,
+            line_ready,
         )
     }
 
@@ -2002,6 +2083,7 @@ mod tests {
         transaction
             .stage_disposition(DialogueCommitDisposition::Published {
                 bindings: Vec::new(),
+                arrivals: BTreeMap::new(),
             })
             .expect("disposition");
         store.commit_published_prepared(transaction, proof);
@@ -2160,6 +2242,7 @@ mod tests {
         mismatch
             .stage_disposition(DialogueCommitDisposition::Published {
                 bindings: Vec::new(),
+                arrivals: BTreeMap::new(),
             })
             .expect("stage mismatch");
         assert!(matches!(

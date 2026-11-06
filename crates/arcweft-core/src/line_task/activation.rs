@@ -9,7 +9,7 @@ use crate::runtime_id::{
     RuntimeLineHandleToken,
 };
 use crate::task::RuntimeProgramOwner;
-use crate::value::ownership::RuntimeOwnedSlotId;
+use crate::value::ownership::{RuntimeAffineLineHandle, RuntimeOwnedSlotId};
 use crate::value::{RuntimeHandleKind, RuntimeValueView};
 use arcweft_character::id::CharacterId;
 use serde::{Deserialize, Serialize};
@@ -233,6 +233,13 @@ pub(crate) struct PreparedRuntimeParentFiberReconciliation {
     receipt: RuntimeHandleDropReceipt,
 }
 
+struct ReceivedResultIssuerStage<'a> {
+    revision: u64,
+    original: &'a RuntimePublishedDialogueHandles,
+    candidate: RuntimePublishedDialogueHandles,
+    commands: crate::presentation::RuntimeCommandQueue,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RuntimeDialogueRegistrySaveSnapshot<F, T> {
@@ -388,6 +395,15 @@ impl<F, T> RuntimeDialogueActivationTransaction<F, T> {
         }
     }
 
+    pub(crate) fn stage_received_result_retirement(
+        &mut self,
+        prepared: Option<PreparedRuntimeParentFiberReconciliation>,
+    ) {
+        if let Some(prepared) = prepared {
+            self.received_handles = Some(prepared);
+        }
+    }
+
     /// Replaces the frame representation while moving the sole line owner
     /// through the same registry transaction.
     pub(crate) fn map_frame<G>(
@@ -406,6 +422,217 @@ impl<F, T> RuntimeDialogueActivationTransaction<F, T> {
 }
 
 impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+    fn stage_received_result_issuers(
+        &self,
+        receiver: &DialogueActivationId,
+        handles: &[RuntimeAffineLineHandle],
+        prior: Option<&PreparedRuntimeParentFiberReconciliation>,
+    ) -> Result<BTreeMap<DialogueActivationId, ReceivedResultIssuerStage<'_>>, LineRuntimeError>
+    {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut issuers = BTreeMap::new();
+        if let Some(prior) = prior {
+            for (issuer, expected, _, candidate) in &prior.updates {
+                let Some(RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles }) =
+                    self.entries.get(issuer)
+                else {
+                    return Err(LineRuntimeError::StaleActivationTransaction);
+                };
+                if revision != expected {
+                    return Err(LineRuntimeError::StaleActivationTransaction);
+                }
+                issuers.insert(
+                    *issuer,
+                    ReceivedResultIssuerStage {
+                        revision: *revision,
+                        original: handles,
+                        candidate: candidate.clone(),
+                        commands: candidate.result_drop_queue(*issuer),
+                    },
+                );
+            }
+        }
+        for handle in handles {
+            let token = handle.token();
+            let issuer = token.activation();
+            if issuer.artifact() != receiver.artifact() {
+                return Err(LineRuntimeError::StaleGeneration);
+            }
+            if !seen.insert(token) {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+            if issuer == receiver {
+                continue;
+            }
+            if let Entry::Vacant(entry) = issuers.entry(*issuer) {
+                let Some(RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles }) =
+                    self.entries.get(issuer)
+                else {
+                    return Err(LineRuntimeError::ParentHandleBeforePublication);
+                };
+                entry.insert(ReceivedResultIssuerStage {
+                    revision: *revision,
+                    original: handles,
+                    candidate: handles.clone(),
+                    commands: handles.result_drop_queue(*issuer),
+                });
+            }
+        }
+        Ok(issuers)
+    }
+
+    fn finish_received_result_issuers(
+        issuers: BTreeMap<DialogueActivationId, ReceivedResultIssuerStage<'_>>,
+        mut commands: Vec<crate::presentation::RuntimeLineHostCommand>,
+    ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
+        let mut updates = Vec::new();
+        for (issuer, stage) in issuers {
+            let mut candidate = stage.candidate;
+            commands.extend(candidate.record_parent_drop_commands(&issuer, stage.commands)?);
+            if &candidate != stage.original {
+                let next = stage
+                    .revision
+                    .checked_add(1)
+                    .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
+                updates.push((issuer, stage.revision, next, candidate));
+            }
+        }
+        Ok(
+            (!updates.is_empty()).then_some(PreparedRuntimeParentFiberReconciliation {
+                updates,
+                receipt: RuntimeHandleDropReceipt::from_commands(commands),
+            }),
+        )
+    }
+
+    /// While either ledger has pending cleanup, keep every result value in
+    /// its exact slot. Publish the bindings and the issuer changes together.
+    pub(crate) fn inspect_received_result_publication(
+        &self,
+        receiver: &DialogueActivationId,
+        execution: ExecutionInstanceId,
+        handles: &[RuntimeAffineLineHandle],
+        destinations: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        line_ready: bool,
+    ) -> Result<(bool, Option<PreparedRuntimeParentFiberReconciliation>), LineRuntimeError> {
+        let mut issuers = self.stage_received_result_issuers(receiver, handles, None)?;
+        let foreign = || {
+            handles
+                .iter()
+                .filter(|handle| handle.token().activation() != receiver)
+        };
+        let mut ready = line_ready && !self.has_pending_received_result_retirement(receiver);
+        for handle in foreign() {
+            let stage = issuers
+                .get_mut(handle.token().activation())
+                .expect("checked issuer");
+            if let Some(destination) = destinations.get(handle.token()) {
+                if destination.execution() != execution {
+                    return Err(LineRuntimeError::WrongOwner);
+                }
+                stage.candidate.result_lease(receiver, handle)?;
+            } else {
+                ready &= stage.candidate.stage_received_result_drop(
+                    receiver,
+                    handle,
+                    &mut stage.commands,
+                )?;
+            }
+        }
+        if ready {
+            for handle in foreign() {
+                let stage = issuers
+                    .get_mut(handle.token().activation())
+                    .expect("checked issuer");
+                if let Some(destination) = destinations.get(handle.token()) {
+                    stage
+                        .candidate
+                        .publish_received_result(receiver, handle, *destination)?;
+                } else {
+                    stage.candidate.remove_received_result(receiver, handle)?;
+                }
+            }
+        }
+        Ok((
+            ready,
+            Self::finish_received_result_issuers(issuers, Vec::new())?,
+        ))
+    }
+
+    pub(crate) fn inspect_received_result_retirement(
+        &self,
+        transaction: &RuntimeDialogueActivationTransaction<F, T>,
+    ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
+        let receiver = transaction.activation();
+        let handles = transaction.line().retained_result_line_handles()?;
+        if !handles
+            .iter()
+            .any(|handle| handle.token().activation() != receiver)
+        {
+            return Ok(None);
+        }
+        let prior = transaction.received_handles.as_ref();
+        let mut issuers = self.stage_received_result_issuers(receiver, &handles, prior)?;
+        for handle in handles
+            .iter()
+            .filter(|handle| handle.token().activation() != receiver)
+        {
+            let stage = issuers
+                .get_mut(handle.token().activation())
+                .expect("checked issuer");
+            stage
+                .candidate
+                .stage_received_result_drop(receiver, handle, &mut stage.commands)?;
+            stage.candidate.remove_received_result(receiver, handle)?;
+        }
+        Self::finish_received_result_issuers(
+            issuers,
+            prior
+                .map(|prepared| prepared.receipt.clone().into_commands())
+                .unwrap_or_default(),
+        )
+    }
+
+    pub(crate) fn prepare_result_abandonment(
+        &self,
+        transaction: &mut RuntimeDialogueActivationTransaction<F, T>,
+    ) -> Result<bool, LineRuntimeError> {
+        let received = self.inspect_received_result_retirement(transaction)?;
+        transaction.line_mut().abandon()?;
+        let staged = received.is_some();
+        transaction.stage_received_result_retirement(received);
+        Ok(staged)
+    }
+
+    pub(crate) fn has_staged_or_pending_received_result_retirement(
+        &self,
+        transaction: &RuntimeDialogueActivationTransaction<F, T>,
+    ) -> bool {
+        let activation = transaction.activation();
+        self.has_pending_received_result_retirement(activation)
+            || transaction
+                .received_handles
+                .as_ref()
+                .is_some_and(|prepared| {
+                    prepared
+                        .updates
+                        .iter()
+                        .any(|(_, _, _, handles)| handles.has_pending_result_retirement(activation))
+                })
+    }
+
+    pub(crate) fn has_pending_received_result_retirement(
+        &self,
+        receiver: &DialogueActivationId,
+    ) -> bool {
+        self.entries.values().any(|entry| {
+            matches!(entry,
+                RuntimeDialogueRegistryEntry::PublishedHandles { handles, .. }
+                if handles.has_pending_result_retirement(receiver)
+            )
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn to_save_snapshot<S>(
         &self,
@@ -545,7 +772,12 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        snapshot.admit_retained(&mut admission, expected_children, |_, _, _, _| false)?;
+        snapshot.admit_retained(
+            &mut admission,
+            expected_children,
+            |_, _, _, _| false,
+            |_, _, _, _| Err(LineRuntimeError::InvalidRestoredResultState),
+        )?;
         Self::from_admitted_save_snapshot(snapshot, owner, restore_frame)
     }
 
@@ -622,6 +854,12 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
             &RuntimeLineHandleToken,
             RuntimeOwnedSlotId,
         ) -> bool,
+        validate_discards: impl Fn(
+            &DialogueActivationId,
+            &F,
+            RuntimeValueView<'_>,
+            &std::collections::BTreeSet<RuntimeLineHandleToken>,
+        ) -> Result<(), LineRuntimeError>,
     ) -> Result<(), RuntimeDialogueRegistrySnapshotError> {
         admission.validate_metadata_collection(self.entries.len())?;
         admission.validate_metadata(expected_children)?;
@@ -639,6 +877,7 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
             .collect::<BTreeMap<_, _>>();
         let mut identities = std::collections::BTreeSet::new();
         let mut active_children = std::collections::BTreeSet::new();
+        let mut matched_received_results = std::collections::BTreeSet::new();
         for entry in &self.entries {
             let (activation, revision) = match entry {
                 RuntimeDialogueRegistrySaveEntry::Active {
@@ -677,6 +916,27 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
                             lease.validate_active_stage_actor(character).is_ok()
                                 && validate_receiver(frame, command, actor, *slot)
                         },
+                        |handle, publishing| {
+                            published
+                                .get(handle.token().activation())
+                                .is_some_and(|handles| {
+                                    handles.restored_received_result_is_valid(
+                                        activation, handle, publishing,
+                                    )
+                                })
+                                && matched_received_results.insert(handle.token().clone())
+                        },
+                    )?;
+                    line.admit_result_discards(
+                        |handle| {
+                            published
+                                .get(handle.token().activation())
+                                .and_then(|handles| handles.result_lease(activation, handle).ok())
+                                .is_some_and(|lease| {
+                                    super::handle::result_lease_was_retired(lease.state())
+                                })
+                        },
+                        |value, retired| validate_discards(activation, frame, value, retired),
                     )?;
                     active_children.insert(activation);
                 }
@@ -687,6 +947,17 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
                         return Err(RuntimeDialogueRegistrySnapshotError::TerminalPublishedHandles);
                     }
                 }
+            }
+        }
+        for handles in published.values() {
+            if handles
+                .received_result_leases()
+                .any(|(token, _, _)| !matched_received_results.contains(token))
+                || handles
+                    .pending_result_retirements()
+                    .any(|receiver| !active_children.contains(receiver))
+            {
+                return Err(LineRuntimeError::InvalidRestoredResultState.into());
             }
         }
         if expected_children
@@ -1262,16 +1533,54 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     pub(crate) fn inspect_parent_fiber_reconciliation(
         &self,
         execution: ExecutionInstanceId,
-        before: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        after: &BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        before: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        after: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         drops: &super::RuntimeHandleDropAuthorization,
+    ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
+        self.inspect_parent_fiber_reconciliation_with_results(execution, before, after, drops, None)
+    }
+
+    /// A single issuer candidate covers slot moves, drops and transfers into
+    /// the receiver's result, even when one instruction affects all three.
+    fn inspect_parent_fiber_reconciliation_with_results(
+        &self,
+        execution: ExecutionInstanceId,
+        before: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        after: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        drops: &super::RuntimeHandleDropAuthorization,
+        result: Option<(&DialogueActivationId, &[RuntimeAffineLineHandle])>,
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         if after.keys().any(|token| !before.contains_key(token)) {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
+        let mut result_transfers = BTreeMap::<DialogueActivationId, Vec<_>>::new();
+        let mut result_tokens = std::collections::BTreeSet::new();
+        if let Some((receiver, handles)) = result {
+            for handle in handles
+                .iter()
+                .filter(|handle| handle.token().activation() != receiver)
+            {
+                let token = handle.token();
+                let Some(source) = before.get(token) else {
+                    return Err(LineRuntimeError::WrongOwner);
+                };
+                if source.execution() != execution
+                    || token.activation().artifact() != receiver.artifact()
+                {
+                    return Err(LineRuntimeError::WrongOwner);
+                }
+                if after.contains_key(token) || !result_tokens.insert(token) {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                }
+                result_transfers
+                    .entry(*token.activation())
+                    .or_default()
+                    .push((receiver, handle, *source));
+            }
+        }
         drops.validate_removed(
             |token| before.contains_key(token),
-            |token| after.contains_key(token),
+            |token| after.contains_key(token) || result_tokens.contains(token),
         )?;
         let mut grouped_before = BTreeMap::<DialogueActivationId, BTreeMap<_, _>>::new();
         let mut grouped_after = BTreeMap::<DialogueActivationId, BTreeMap<_, _>>::new();
@@ -1291,7 +1600,11 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         let mut updates = Vec::new();
         let mut commands = Vec::new();
         for (activation, source) in grouped_before {
-            let destination = grouped_after.remove(&activation).unwrap_or_default();
+            let mut destination = grouped_after.remove(&activation).unwrap_or_default();
+            let transfers = result_transfers.remove(&activation).unwrap_or_default();
+            for (_, handle, slot) in &transfers {
+                destination.insert(handle.token().clone(), *slot);
+            }
             let Some(RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles }) =
                 self.entries.get(&activation)
             else {
@@ -1305,7 +1618,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 &destination,
                 drops,
             )?;
-            if source == destination {
+            for (receiver, handle, slot) in transfers {
+                candidate.move_received_into_result(receiver, slot, handle)?;
+            }
+            if &candidate == handles {
                 continue;
             }
             let next_revision = revision
@@ -1314,7 +1630,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             updates.push((activation, *revision, next_revision, candidate));
             commands.extend(receipt.into_commands());
         }
-        if !grouped_after.is_empty() {
+        if !grouped_after.is_empty() || !result_transfers.is_empty() {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
         Ok(PreparedRuntimeParentFiberReconciliation {
@@ -1329,7 +1645,8 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         before: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
         after: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
         drops: &super::RuntimeHandleDropAuthorization,
-        resumed_child: Option<DialogueActivationId>,
+        arrivals: Option<&BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>>,
+        result: Option<(&DialogueActivationId, &[RuntimeAffineLineHandle])>,
     ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
         let receiver_slots = |owners: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>| {
             owners
@@ -1342,12 +1659,19 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         };
         let mut published_before = receiver_slots(before);
         let published_after = receiver_slots(after);
-        if published_before == published_after {
+        if published_before == published_after && arrivals.is_none() && result.is_none() {
             return Ok(None);
+        }
+        if arrivals.is_some_and(|arrivals| {
+            arrivals.iter().any(|(token, slot)| {
+                published_before.contains_key(token) || published_after.get(token) != Some(slot)
+            })
+        }) {
+            return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
         for (token, slot) in &published_after {
             if let Entry::Vacant(entry) = published_before.entry(token.clone()) {
-                if Some(*token.activation()) != resumed_child {
+                if arrivals.and_then(|arrivals| arrivals.get(token)) != Some(slot) {
                     return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
                 }
                 // Publication already bound this exact destination. The
@@ -1356,11 +1680,12 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             }
         }
         let drops = drops.for_tokens(|token| published_before.contains_key(token));
-        let prepared = self.inspect_parent_fiber_reconciliation(
+        let prepared = self.inspect_parent_fiber_reconciliation_with_results(
             execution,
             &published_before,
             &published_after,
             &drops,
+            result,
         )?;
         Ok((!prepared.updates.is_empty()).then_some(prepared))
     }

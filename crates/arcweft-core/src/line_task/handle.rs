@@ -263,6 +263,17 @@ pub enum RuntimeHandleOwnerSlot {
     ChildScope(LineTaskWorkTag),
     DialogueResult(RuntimeValuePath),
     ParentFiber(RuntimeOwnedSlotId),
+    /// A returned token in another line's pending result. The issuer keeps
+    /// the lease and its host-command journal.
+    ReceivedDialogueResult {
+        receiver: DialogueActivationId,
+        path: RuntimeValuePath,
+    },
+    /// The receiving line discarded its result value while the issuer still
+    /// owns release settlement.
+    RetiringDialogueResult {
+        receiver: DialogueActivationId,
+    },
 }
 
 impl RuntimeHandleOwnerSlot {
@@ -293,7 +304,7 @@ pub enum RuntimeHandleLeaseState {
     Released,
 }
 
-const fn result_lease_was_retired(state: RuntimeHandleLeaseState) -> bool {
+pub(crate) const fn result_lease_was_retired(state: RuntimeHandleLeaseState) -> bool {
     matches!(
         state,
         RuntimeHandleLeaseState::Cancelling
@@ -2376,7 +2387,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence);
                 }
                 if handle.token().activation() != tag.activation_id() {
-                    return Err(LineRuntimeError::WrongActivation);
+                    // The registry transaction retires this exact result slot
+                    // through the published issuer before committing selection.
+                    continue;
                 }
                 ledger.drop_owned(
                     handle.token(),
@@ -3076,6 +3089,177 @@ impl RuntimePublishedDialogueHandles {
         })
     }
 
+    pub(crate) fn received_result_leases(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &RuntimeLineHandleToken,
+            &DialogueActivationId,
+            &RuntimeValuePath,
+        ),
+    > {
+        self.ledger
+            .leases()
+            .iter()
+            .filter_map(|(token, lease)| match lease.owner() {
+                RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, path } => {
+                    Some((token, receiver, path))
+                }
+                _ => None,
+            })
+    }
+
+    pub(crate) fn pending_result_retirements(&self) -> impl Iterator<Item = &DialogueActivationId> {
+        self.ledger
+            .leases()
+            .values()
+            .filter_map(|lease| match lease.owner() {
+                RuntimeHandleOwnerSlot::RetiringDialogueResult { receiver }
+                | RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. }
+                    if lease.state() == RuntimeHandleLeaseState::Cancelling =>
+                {
+                    Some(receiver)
+                }
+                _ => None,
+            })
+    }
+
+    pub(crate) fn has_pending_result_retirement(&self, receiver: &DialogueActivationId) -> bool {
+        self.pending_result_retirements()
+            .any(|owner| owner == receiver)
+    }
+
+    pub(crate) fn restored_received_result_is_valid(
+        &self,
+        receiver: &DialogueActivationId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        publishing: bool,
+    ) -> bool {
+        self.result_lease(receiver, handle)
+            .is_ok_and(|lease| publishing || !result_lease_was_retired(lease.state()))
+    }
+
+    pub(crate) fn result_drop_queue(&self, issuer: DialogueActivationId) -> RuntimeCommandQueue {
+        RuntimeCommandQueue::new(issuer, self.command_sequence)
+    }
+
+    pub(crate) fn move_received_into_result(
+        &mut self,
+        receiver: &DialogueActivationId,
+        source: RuntimeOwnedSlotId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+    ) -> Result<(), LineRuntimeError> {
+        let token = handle.token();
+        if receiver == token.activation() || receiver.artifact() != token.activation().artifact() {
+            return Err(LineRuntimeError::WrongActivation);
+        }
+        let lease = self
+            .ledger
+            .lease(token)
+            .ok_or(LineRuntimeError::UnknownHandle)?;
+        if lease.resource().kind() != handle.kind() {
+            return Err(LineRuntimeError::WrongOpaqueProducer);
+        }
+        if result_lease_was_retired(lease.state()) {
+            return Err(LineRuntimeError::ReleasedHandle);
+        }
+        self.ledger.transfer(
+            token,
+            &RuntimeHandleOwnerSlot::ParentFiber(source),
+            RuntimeHandleOwnerSlot::ReceivedDialogueResult {
+                receiver: *receiver,
+                path: handle.path().clone(),
+            },
+        )
+    }
+
+    pub(crate) fn result_lease(
+        &self,
+        receiver: &DialogueActivationId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+    ) -> Result<&RuntimeHandleLease, LineRuntimeError> {
+        let lease = self
+            .ledger
+            .lease(handle.token())
+            .ok_or(LineRuntimeError::UnknownHandle)?;
+        if !matches!(lease.owner(),
+            RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver: owner, path }
+            if owner == receiver && path == handle.path()
+        ) {
+            return Err(LineRuntimeError::WrongOwner);
+        }
+        if lease.resource().kind() != handle.kind() {
+            return Err(LineRuntimeError::WrongOpaqueProducer);
+        }
+        Ok(lease)
+    }
+
+    pub(crate) fn publish_received_result(
+        &mut self,
+        receiver: &DialogueActivationId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        destination: RuntimeOwnedSlotId,
+    ) -> Result<(), LineRuntimeError> {
+        let lease = self.result_lease(receiver, handle)?;
+        if result_lease_was_retired(lease.state()) {
+            return Err(LineRuntimeError::ReleasedHandle);
+        }
+        let expected = lease.owner().clone();
+        self.ledger.transfer(
+            handle.token(),
+            &expected,
+            RuntimeHandleOwnerSlot::ParentFiber(destination),
+        )
+    }
+
+    /// Queues release at the original issuer while the result shape is still
+    /// needed for its pattern. A retry observes the existing receipt.
+    pub(crate) fn stage_received_result_drop(
+        &mut self,
+        receiver: &DialogueActivationId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        queue: &mut RuntimeCommandQueue,
+    ) -> Result<bool, LineRuntimeError> {
+        let lease = self.result_lease(receiver, handle)?;
+        match lease.state() {
+            RuntimeHandleLeaseState::Released => return Ok(true),
+            RuntimeHandleLeaseState::Cancelling => return Ok(false),
+            _ => {}
+        }
+        let expected = lease.owner().clone();
+        self.ledger.drop_owned(handle.token(), &expected, queue)?;
+        if self.result_lease(receiver, handle)?.state() == RuntimeHandleLeaseState::Cancelled {
+            // The issuer has already finished the scheduled callback. There
+            // is no host outcome to wait for on this cancelled cue.
+            self.ledger.drop_owned(handle.token(), &expected, queue)?;
+        }
+        Ok(self.result_lease(receiver, handle)?.state() == RuntimeHandleLeaseState::Released)
+    }
+
+    /// Removes the result slot only after its value is consumed or discarded.
+    /// In-flight releases continue under the unchanged issuer command ID.
+    pub(crate) fn remove_received_result(
+        &mut self,
+        receiver: &DialogueActivationId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+    ) -> Result<(), LineRuntimeError> {
+        let lease = self.result_lease(receiver, handle)?;
+        if !matches!(
+            lease.state(),
+            RuntimeHandleLeaseState::Cancelling | RuntimeHandleLeaseState::Released
+        ) {
+            return Err(LineRuntimeError::InvalidDropTransition);
+        }
+        self.ledger
+            .leases
+            .get_mut(handle.token())
+            .expect("result lease was checked")
+            .owner = RuntimeHandleOwnerSlot::RetiringDialogueResult {
+            receiver: *receiver,
+        };
+        Ok(())
+    }
+
     pub(crate) fn restore_admit(
         &self,
         activation: &DialogueActivationId,
@@ -3090,10 +3274,30 @@ impl RuntimePublishedDialogueHandles {
             &self.ledger,
             |_, _, _| false,
         )?;
-        if self.ledger.leases().values().any(|lease| {
-            lease.state() != RuntimeHandleLeaseState::Released
-                && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
-        }) {
+        if self
+            .ledger
+            .leases()
+            .values()
+            .any(|lease| match lease.owner() {
+                RuntimeHandleOwnerSlot::ParentFiber(_) => false,
+                RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. } => {
+                    receiver == activation
+                        || receiver.artifact() != activation.artifact()
+                        || lease.state() == RuntimeHandleLeaseState::Cancelled
+                        || !published_result_retirement_is_correlated(lease, &self.issued_commands)
+                }
+                RuntimeHandleOwnerSlot::RetiringDialogueResult { receiver } => {
+                    receiver == activation
+                        || receiver.artifact() != activation.artifact()
+                        || !matches!(
+                            lease.state(),
+                            RuntimeHandleLeaseState::Cancelling | RuntimeHandleLeaseState::Released
+                        )
+                        || !published_result_retirement_is_correlated(lease, &self.issued_commands)
+                }
+                _ => lease.state() != RuntimeHandleLeaseState::Released,
+            })
+        {
             return Err(LineRuntimeError::InvalidRestoredLedgerState);
         }
         Ok(())
@@ -3296,7 +3500,7 @@ impl RuntimePublishedDialogueHandles {
         Ok(RuntimeHandleDropReceipt { commands })
     }
 
-    fn record_parent_drop_commands(
+    pub(crate) fn record_parent_drop_commands(
         &mut self,
         activation: &DialogueActivationId,
         queue: RuntimeCommandQueue,
@@ -3333,7 +3537,9 @@ impl RuntimePublishedDialogueHandles {
 
     #[must_use]
     pub(crate) fn is_terminal(&self) -> bool {
-        !self.has_live_leases() && self.issued_commands.is_empty()
+        !self.has_live_leases()
+            && self.issued_commands.is_empty()
+            && self.received_result_leases().next().is_none()
     }
 }
 
@@ -3397,7 +3603,9 @@ fn validate_restored_ledger(
             | RuntimeHandleOwnerSlot::ScopedDefer(_)
             | RuntimeHandleOwnerSlot::DialogueResult(_)
             | RuntimeHandleOwnerSlot::ChildScope(_)
-            | RuntimeHandleOwnerSlot::ParentFiber(_) => {}
+            | RuntimeHandleOwnerSlot::ParentFiber(_)
+            | RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
+            | RuntimeHandleOwnerSlot::RetiringDialogueResult { .. } => {}
         }
         let valid_state = match lease.resource() {
             RuntimeHandleResource::StageActor(_) => matches!(
@@ -3883,8 +4091,13 @@ fn owner_transition_is_legal(
             RuntimeHandleOwnerSlot::ChildScope(_),
             RuntimeHandleOwnerSlot::LineScope | RuntimeHandleOwnerSlot::DialogueResult(_)
         ) | (
-            RuntimeHandleOwnerSlot::DialogueResult(_) | RuntimeHandleOwnerSlot::ParentFiber(_),
+            RuntimeHandleOwnerSlot::DialogueResult(_)
+                | RuntimeHandleOwnerSlot::ParentFiber(_)
+                | RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. },
             RuntimeHandleOwnerSlot::ParentFiber(_)
+        ) | (
+            RuntimeHandleOwnerSlot::ParentFiber(_),
+            RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
         )
     )
 }
@@ -4877,10 +5090,30 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         &self.result
     }
 
+    pub(crate) fn retained_result_line_handles(
+        &self,
+    ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, LineRuntimeError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        match &self.result {
+            RuntimeDialogueResultState::Committed { value, .. }
+            | RuntimeDialogueResultState::Selected { value, .. }
+            | RuntimeDialogueResultState::Publishing { value, .. } => value
+                .borrowed_view()
+                .line_handle_projection()
+                .map_err(|_| LineRuntimeError::InvalidHandlePayload),
+            RuntimeDialogueResultState::Uncommitted
+            | RuntimeDialogueResultState::Published
+            | RuntimeDialogueResultState::Abandoned => Ok(Vec::new()),
+        }
+    }
+
     /// A Publishing value still carries its full pattern shape while drops
     /// settle. The receiver must prove its pattern discards each retired lease.
     pub(crate) fn admit_result_discards(
         &self,
+        retired_received: impl Fn(&crate::value::ownership::RuntimeAffineLineHandle) -> bool,
         validate: impl FnOnce(
             RuntimeValueView<'_>,
             &std::collections::BTreeSet<RuntimeLineHandleToken>,
@@ -4892,21 +5125,16 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         let RuntimeDialogueResultState::Publishing { value, .. } = &self.result else {
             return Ok(());
         };
-        if !self.ledger.leases().values().any(|lease| {
-            matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
-                && result_lease_was_retired(lease.state())
-        }) {
-            return Ok(());
-        }
         let view = value.borrowed_view();
         let retired = view
             .line_handle_projection()
             .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?
             .into_iter()
             .filter(|handle| {
-                self.ledger
-                    .lease(handle.token())
-                    .is_some_and(|lease| result_lease_was_retired(lease.state()))
+                self.ledger.lease(handle.token()).map_or_else(
+                    || retired_received(handle),
+                    |lease| result_lease_was_retired(lease.state()),
+                )
             })
             .map(|handle| handle.token().clone())
             .collect::<std::collections::BTreeSet<_>>();
@@ -5132,7 +5360,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
     where
         V: crate::value::RuntimeStoredValue,
     {
-        self.restore_admit_with_deferred_child(activation, None, |_, _, _| false)
+        self.restore_admit_with_deferred_child(activation, None, |_, _, _| false, |_, _| false)
     }
 
     pub(crate) fn restore_admit_with_deferred_child(
@@ -5143,6 +5371,10 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             &crate::presentation::RuntimeLineCommandId,
             &RuntimeLineHandleToken,
             &CharacterId,
+        ) -> bool,
+        mut validate_received_result: impl FnMut(
+            &crate::value::ownership::RuntimeAffineLineHandle,
+            bool,
         ) -> bool,
     ) -> Result<(), LineRuntimeError>
     where
@@ -5187,6 +5419,15 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
         validate_restored_ledger(activation, &self.ledger)?;
+        if self.ledger.leases().values().any(|lease| {
+            matches!(
+                lease.owner(),
+                RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
+                    | RuntimeHandleOwnerSlot::RetiringDialogueResult { .. }
+            )
+        }) {
+            return Err(LineRuntimeError::InvalidRestoredLedgerState);
+        }
         validate_restored_command_journal(
             activation,
             self.command_sequence,
@@ -5360,13 +5601,18 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             RuntimeDialogueResultState::Committed { value, .. }
             | RuntimeDialogueResultState::Selected { value, .. }
             | RuntimeDialogueResultState::Publishing { value, .. } => {
+                let publishing =
+                    matches!(self.result, RuntimeDialogueResultState::Publishing { .. });
                 for handle in value
                     .borrowed_view()
                     .line_handle_projection()
                     .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?
                 {
                     if handle.token().activation() != activation {
-                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                        if !validate_received_result(&handle, publishing) {
+                            return Err(LineRuntimeError::InvalidRestoredResultState);
+                        }
+                        continue;
                     }
                     if !result_tokens.insert(handle.token().clone()) {
                         return Err(LineRuntimeError::InvalidRestoredResultState);
@@ -5379,10 +5625,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                         || lease.owner()
                             != &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone())
                         || (result_lease_was_retired(lease.state())
-                            && (!matches!(
-                                self.result,
-                                RuntimeDialogueResultState::Publishing { .. }
-                            ) || !self.publishing_retirement_is_correlated(lease)))
+                            && (!publishing || !self.publishing_retirement_is_correlated(lease)))
                     {
                         return Err(LineRuntimeError::InvalidRestoredResultState);
                     }
@@ -5449,7 +5692,29 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                     && scheduled.state() == RuntimeScheduledState::Cancelling
             });
         }
-        self.issued_commands
+        published_result_retirement_is_correlated(lease, &self.issued_commands)
+    }
+}
+
+fn published_result_retirement_is_correlated(
+    lease: &RuntimeHandleLease,
+    issued_commands: &BTreeMap<
+        crate::presentation::RuntimeLineCommandId,
+        crate::presentation::RuntimeLineHostCommand,
+    >,
+) -> bool {
+    if let RuntimeHandleResource::Cue(cue) = lease.resource()
+        && matches!(cue.origin(), RuntimeCueOrigin::Scheduled { .. })
+    {
+        return !matches!(
+            lease.state(),
+            RuntimeHandleLeaseState::Pending
+                | RuntimeHandleLeaseState::Running
+                | RuntimeHandleLeaseState::Cancelling
+        );
+    }
+    lease.state() != RuntimeHandleLeaseState::Cancelling
+        || issued_commands
             .values()
             .filter(|command| {
                 let token = match command {
@@ -5464,7 +5729,6 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             })
             .count()
             == 1
-    }
 }
 
 impl<V> RuntimeScheduledLineTask<V> {
@@ -5778,6 +6042,7 @@ mod tests {
                 &activation,
                 Some((newest.id(), defer_site(1))),
                 |_, _, _| false,
+                |_, _| false,
             ),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
@@ -5786,6 +6051,7 @@ mod tests {
                 &activation,
                 Some((newest.id(), newest.site())),
                 |_, _, _| false,
+                |_, _| false,
             )
             .expect("the exact saved child owner admits an in-flight activation");
         state

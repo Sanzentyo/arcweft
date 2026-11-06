@@ -3442,6 +3442,29 @@ flow main() -> Unit {
 entry cli @entry.main { goto @flow.main }
 "#;
 
+const NESTED_LINE_HANDLE_REEXPORT_SOURCE: &str = r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice()[Outer[p]] with {
+        init {
+            let actor = alice()[Middle[p]] with {
+                let received = alice()[Inner[p]] with {
+                    let lease = alice.stage.acquire(scope=line)
+                    out lease
+                }
+                out received
+            }
+            let moved = actor
+            let cue = moved.look(.normal)
+            let _ = cue
+            let _ = moved
+            log.info("parent consumed the child handle")
+        }
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+
 const LINE_HANDLE_CHARACTER_MANIFEST: &str = r#"{
   "format": "arcweft.character",
   "version": 1,
@@ -3465,6 +3488,7 @@ const LINE_HANDLE_CHARACTER_MANIFEST: &str = r#"{
 }"#;
 
 fn execute_nested_line_handle_transfer(
+    expected_lines: usize,
     mut step: impl FnMut(
         arcweft_core::step::RuntimeStepInput,
         arcweft_core::step::RuntimeStepOptions,
@@ -3560,12 +3584,17 @@ fn execute_nested_line_handle_transfer(
         match result.fiber_status {
             FlowFiberStatus::Dialogue(_) | FlowFiberStatus::Running => {}
             FlowFiberStatus::Done(FlowExit::Done) if input.line_outcomes.is_empty() => {
-                let [inner, outer] = lines.as_slice() else {
-                    panic!("revealed lines: {lines:?}")
-                };
-                assert_ne!(inner, outer);
-                assert_eq!(actor.unwrap().activation(), inner);
-                assert_eq!(look_cue.unwrap().activation(), outer);
+                assert_eq!(lines.len(), expected_lines, "revealed lines: {lines:?}");
+                assert_eq!(
+                    lines
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len(),
+                    expected_lines,
+                    "each nested line reveals once"
+                );
+                assert_eq!(actor.unwrap().activation(), lines.first().unwrap());
+                assert_eq!(look_cue.unwrap().activation(), lines.last().unwrap());
                 assert!(cancelled_cue);
                 assert!(released);
                 assert_eq!(log_messages(&effects), ["parent consumed the child handle"]);
@@ -3580,20 +3609,29 @@ fn execute_nested_line_handle_transfer(
 
 #[test]
 fn native_nested_line_handle_moves_into_the_receiving_activation() {
+    native_nested_line_handle_transfer(NESTED_LINE_HANDLE_SOURCE, 2);
+}
+
+#[test]
+fn native_nested_line_handle_reexports_from_receiving_activation() {
+    native_nested_line_handle_transfer(NESTED_LINE_HANDLE_REEXPORT_SOURCE, 3);
+}
+
+fn native_nested_line_handle_transfer(source: &str, expected_lines: usize) {
     use arcweft_core::{
         effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
         task::RuntimeProgramOwner,
     };
 
     let compiled = with_attached_dialogue_project_and_visual(
-        NESTED_LINE_HANDLE_SOURCE,
+        source,
         Some(LINE_HANDLE_CHARACTER_MANIFEST),
         compile_project,
     )
     .unwrap();
     let mut plan = compiled.runtime_plan().plan.clone();
     let flow = plan.flows()[0].id.clone();
-    let artifact = blake3::hash(NESTED_LINE_HANDLE_SOURCE.as_bytes());
+    let artifact = blake3::hash(source.as_bytes());
     plan.bind_artifact(RuntimeArtifactFingerprint::try_from_bytes(*artifact.as_bytes()).unwrap())
         .unwrap();
     let mut native = Engine::for_flow(plan, &flow).unwrap();
@@ -3604,13 +3642,22 @@ fn native_nested_line_handle_moves_into_the_receiving_activation() {
     let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
-    execute_nested_line_handle_transfer(|input, options| {
+    execute_nested_line_handle_transfer(expected_lines, |input, options| {
         native.step_with_pure_backend(input, options, &mut backend)
     });
 }
 
 #[test]
 fn decoded_awbc_nested_line_handle_moves_through_save() {
+    decoded_awbc_nested_line_handle_transfer(NESTED_LINE_HANDLE_SOURCE, 2);
+}
+
+#[test]
+fn decoded_awbc_nested_line_handle_reexports_through_save() {
+    decoded_awbc_nested_line_handle_transfer(NESTED_LINE_HANDLE_REEXPORT_SOURCE, 3);
+}
+
+fn decoded_awbc_nested_line_handle_transfer(source: &str, expected_lines: usize) {
     use arcweft_core::{
         awbc::product_step::AwbcProductExecutorSaveSnapshot,
         executor::ArcweftRuntimeExecutorSnapshot, pure::VmRuntimePureCallBackend,
@@ -3618,7 +3665,7 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
 
     let (compiled, awbc) = nested_awbc_from_compiled(
         with_attached_dialogue_project_and_visual(
-            NESTED_LINE_HANDLE_SOURCE,
+            source,
             Some(LINE_HANDLE_CHARACTER_MANIFEST),
             compile_project,
         )
@@ -3631,7 +3678,8 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
     let mut awbc = Some(awbc);
     let mut checked_published_lease = false;
     let mut checked_pending_look = false;
-    execute_nested_line_handle_transfer(|input, options| {
+    let mut checked_reexported_lease = source != NESTED_LINE_HANDLE_REEXPORT_SOURCE;
+    execute_nested_line_handle_transfer(expected_lines, |input, options| {
         let mut current = awbc.take().unwrap();
         let result = current.step_with_pure_backend(input, options, &mut backend);
         let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, save| {
@@ -3668,6 +3716,39 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
                     );
                     executor = unchanged;
                     checked_pending_look = true;
+                }
+            }
+            if !checked_reexported_lease {
+                let mut forged = save.clone();
+                let result_slot = forged["dialogues"]["entries"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .filter_map(|entry| {
+                        entry
+                            .pointer_mut("/PublishedHandles/handles/ledger/leases")?
+                            .as_object_mut()
+                    })
+                    .flat_map(serde_json::Map::values_mut)
+                    .find_map(|lease| lease.pointer_mut("/owner/ReceivedDialogueResult/path"));
+                if let Some(path) = result_slot {
+                    assert_eq!(*path, serde_json::json!([]));
+                    *path = serde_json::json!([{"kind":"tuple_element","index":0}]);
+                    let bad = serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(forged)
+                        .expect("the replacement path is well-formed");
+                    let bad = executor.bind_product_save_snapshot(bad).unwrap();
+                    let Err(rejected) =
+                        executor.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bad))
+                    else {
+                        panic!("the issuer's result slot must match the receiver's value path");
+                    };
+                    let (unchanged, error) = rejected.into_parts();
+                    assert!(
+                        error.to_string().contains("restored dialogue result"),
+                        "{error}"
+                    );
+                    executor = unchanged;
+                    checked_reexported_lease = true;
                 }
             }
             if checked_published_lease {
@@ -3723,25 +3804,15 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
         checked_pending_look,
         "a pending look crossed the public save boundary"
     );
+    assert!(
+        checked_reexported_lease,
+        "the original issuer's forwarded lease crossed the public save boundary"
+    );
 }
 
 #[test]
 fn decoded_awbc_dialogue_result_wildcard_survives_pending_release() {
-    use arcweft_core::{
-        awbc::product_step::AwbcProductExecutorSaveSnapshot,
-        engine::{FlowExit, FlowFiberStatus},
-        executor::ArcweftRuntimeExecutorSnapshot,
-        plan::FlowEvent,
-        presentation::{
-            RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
-            RuntimeStageCommandOutcome,
-        },
-        pure::VmRuntimePureCallBackend,
-        step::{RuntimeStepInput, RuntimeStepOptions},
-        time::TickId,
-    };
-
-    let (compiled, mut awbc) = compile_nested_awbc(
+    assert_decoded_awbc_dialogue_result_wildcard(
         r#"
 pub character alice { display = "Alice" }
 flow main() -> Unit {
@@ -3756,6 +3827,46 @@ flow main() -> Unit {
 entry cli @entry.main { goto @flow.main }
 "#,
     );
+}
+
+#[test]
+fn decoded_awbc_reexported_result_wildcard_waits_for_issuer_release() {
+    assert_decoded_awbc_dialogue_result_wildcard(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let (keep, _) = alice()[Discard[p]] with {
+        let pair = alice()[Issuer[p]] with {
+            let first = alice.stage.acquire(scope=line)
+            let second = alice.stage.acquire(scope=line)
+            out (first, second)
+        }
+        out pair
+    }
+    log.info("caller resumed after release")
+    let _ = keep
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+}
+
+fn assert_decoded_awbc_dialogue_result_wildcard(source: &str) {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        engine::{FlowExit, FlowFiberStatus},
+        executor::ArcweftRuntimeExecutorSnapshot,
+        plan::FlowEvent,
+        presentation::{
+            RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
+            RuntimeStageCommandOutcome,
+        },
+        pure::VmRuntimePureCallBackend,
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let (compiled, mut awbc) = compile_nested_awbc(source);
     let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
     let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
@@ -3834,20 +3945,36 @@ entry cli @entry.main { goto @flow.main }
                 return executor;
             }
             let mut forged = save.clone();
-            let line = forged["dialogues"]["entries"]
-                .as_array_mut()
-                .unwrap()
-                .iter_mut()
-                .filter_map(|entry| entry.pointer_mut("/Active/line"))
-                .find(|line| line.pointer("/result/Publishing").is_some())
-                .expect("the result remains publishing during release");
+            let entries = forged["dialogues"]["entries"].as_array_mut().unwrap();
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.pointer("/Active/line/result/Publishing").is_some()),
+                "the result remains publishing during release"
+            );
             pending_saved += 1;
             if tampered {
                 return executor;
             }
             let kept = serde_json::to_value(&acquired[0]).unwrap();
             let discarded = serde_json::to_value(&acquired[1]).unwrap();
-            let leases = line["ledger"]["leases"].as_object_mut().unwrap();
+            let issuer = entries
+                .iter_mut()
+                .filter_map(|entry| {
+                    let path = if entry.get("Active").is_some() {
+                        "/Active/line"
+                    } else {
+                        "/PublishedHandles/handles"
+                    };
+                    entry.pointer_mut(path)
+                })
+                .find(|line| {
+                    line["ledger"]["leases"].as_object().is_some_and(|leases| {
+                        leases.values().any(|lease| lease["token"] == discarded)
+                    })
+                })
+                .expect("the discarded handle stays in its issuer's ledger");
+            let leases = issuer["ledger"]["leases"].as_object_mut().unwrap();
             for lease in leases.values_mut() {
                 if lease["token"] == kept {
                     assert_eq!(lease["state"], "active");
@@ -3857,7 +3984,7 @@ entry cli @entry.main { goto @flow.main }
                     lease["state"] = "active".into();
                 }
             }
-            let issued = line["issued_commands"]
+            let issued = issuer["issued_commands"]
                 .as_object_mut()
                 .unwrap()
                 .values_mut()

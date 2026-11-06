@@ -5330,19 +5330,20 @@ impl AwbcProductStepExecutor {
                     .extend(receipt.into_line().into_commands());
                 return progressed.into();
             }
-            let publication = match self.prepare_dialogue_publication(&mut transaction, resume) {
-                Ok(publication) => publication,
-                Err(error) => {
-                    return self
-                        .begin_product_dialogue_failure_with_batch(
-                            transaction,
-                            error,
-                            command_batch,
-                            output,
-                        )
-                        .into();
-                }
-            };
+            let (publication, received_handles) =
+                match self.prepare_dialogue_publication(&mut transaction, resume) {
+                    Ok(publication) => publication,
+                    Err(error) => {
+                        return self
+                            .begin_product_dialogue_failure_with_batch(
+                                transaction,
+                                error,
+                                command_batch,
+                                output,
+                            )
+                            .into();
+                    }
+                };
             return (match publication {
                 line::ProductPublicationProgress::Pending => {
                     let prepared =
@@ -5373,6 +5374,7 @@ impl AwbcProductStepExecutor {
                                     .into();
                             }
                         };
+                    transaction.stage_received_handles(received_handles);
                     let proof = match self.dialogues.inspect_commit(&transaction) {
                         Ok(proof) => proof,
                         Err(error) => {
@@ -5430,6 +5432,7 @@ impl AwbcProductStepExecutor {
                                     .into();
                             }
                         };
+                    transaction.stage_received_handles(received_handles);
                     let proof = match self.dialogues.inspect_published(&transaction) {
                         Ok(proof) => proof,
                         Err(error) => {
@@ -5637,7 +5640,7 @@ impl AwbcProductStepExecutor {
             frame.pending_advance = false;
             frame
         });
-        if let Err(error) = transaction.line_mut().abandon() {
+        if let Err(error) = self.dialogues.prepare_result_abandonment(&mut transaction) {
             return Err((transaction, batch, error.into()));
         }
         if let Err(error) =
@@ -5832,6 +5835,7 @@ impl AwbcProductStepExecutor {
         };
         let activation = transaction.activation().clone();
         let terminal = transaction.line().failure_close_ready()
+            && !self.dialogues.has_pending_result_retirement(&transaction)
             && !batch.has_joined_dialogue_work(&activation, &self.child_fibers, &prepared);
         if terminal {
             let receiver = if self.fiber.instance.get().get() == activation.owner_fiber().get() {
@@ -6095,6 +6099,9 @@ impl AwbcProductStepExecutor {
                 &group.result_type,
                 value,
             )?;
+            let retired = self
+                .dialogues
+                .inspect_received_result_retirement(transaction)?;
             let Some(FiberTerminalValue::DialogueResultSelected(value)) = child.terminal.take()
             else {
                 unreachable!("borrowed result selection was preflighted")
@@ -6102,6 +6109,7 @@ impl AwbcProductStepExecutor {
             transaction
                 .line_mut()
                 .select_result_prepared(prepared, value);
+            transaction.stage_received_result_retirement(retired);
             (selected_tokens, Some(selected_live))
         } else {
             (BTreeSet::new(), None)
