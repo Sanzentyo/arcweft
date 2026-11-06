@@ -15047,5 +15047,119 @@
         }
       ]
     }
+  },
+  "reachedRegistryWriteOwnerVerification": {
+    "source": "7d31dc1bd81398a904c267336c3d2406668b33c4",
+    "evidenceBase": "870c9a80746321bde4af16e50172cb6bb655f3c0",
+    "selection": [
+      "--locked",
+      "-p",
+      "arcweft-core",
+      "--lib",
+      "-p",
+      "arcweft-lang-sema",
+      "-p",
+      "arcweft-runtime-plan",
+      "-p",
+      "arcweft-compiler",
+      "--test",
+      "evaluated_effects"
+    ],
+    "result": {
+      "version": 1,
+      "base": "870c9a80746321bde4af16e50172cb6bb655f3c0",
+      "run": "registry-write-row-admission-owner-20261107.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 105.272s] 4075 tests run: 4075 passed, 1 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 4075,
+      "passed": 4075,
+      "failed": 0,
+      "skipped": 1,
+      "selectedPackages": 4,
+      "matchedPackages": 4,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T16:54:42.5699249Z"
+    },
+    "runtimeCommand": [
+      "nextest",
+      "run",
+      "--locked",
+      "-p",
+      "arcweft-core",
+      "--lib",
+      "-p",
+      "arcweft-lang-sema",
+      "-p",
+      "arcweft-runtime-plan",
+      "-p",
+      "arcweft-compiler",
+      "--test",
+      "evaluated_effects",
+      "--no-tests",
+      "fail",
+      "--no-fail-fast",
+      "--status-level",
+      "all",
+      "--final-status-level",
+      "all"
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-write-row-admission-owner.raw.zip",
+      "sha256": "626b4d1b7e6b23977c5f11d5eab660874d71b68763997b0a5b0825c40c2442b3",
+      "entries": [
+        {
+          "entry": "registry-write-row-admission-owner-20261107.active.json",
+          "bytes": 448,
+          "sha256": "06b84d0e66c25e2386dea1c7ac87e79e28f6ee58bef30463b6ebd4be770ed97b"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.source-freeze.json",
+          "bytes": 788095,
+          "sha256": "b3c71860c925b6e42cd660c0a1a4b2b5d3e24f424ea04af1c8f85547a609ddcd"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.binaries-before.json",
+          "bytes": 1132,
+          "sha256": "c0871f07da2c07f2cdc12d4f376b0d63b1fa0048d60672edaeb2525b31a5e387"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.catalog.inventory.json",
+          "bytes": 1049516,
+          "sha256": "00aef0f212868986f6a02dac6e74b53907652d9979c1588f741d8919bc8bd6ac"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.catalog.json",
+          "bytes": 687,
+          "sha256": "0e27d39d443114fbe215bec928d4eaecece833a1809ead2af6d094a2ca6474b9"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.catalog.log",
+          "bytes": 798647,
+          "sha256": "01918fdbcba269f4fa341ca4e802ddc48f614e7d22a7c7acbff7f14104aca929"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.runtime.json",
+          "bytes": 779,
+          "sha256": "def4aef6477f4329ea95b31695be5ed57b7bf8ad36238a26433f1564c9a0a004"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.runtime.log",
+          "bytes": 1357764,
+          "sha256": "01380ee00ba12e07f7a7cff130c402bf1334b084dc59fc956ec8634f6f98fe8c"
+        },
+        {
+          "entry": "registry-write-row-admission-owner-20261107.runtime.terminal-audit.json",
+          "bytes": 632,
+          "sha256": "496a93a040133fe5d0e960eed7f94aa4b7a33fc8fce580f3b2411918fd98fc11"
+        }
+      ]
+    }
   }
 }

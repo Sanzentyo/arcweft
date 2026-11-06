@@ -15022,3 +15022,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry writes commit against their observed row
 
 - Source 7d31dc1bd81398a904c267336c3d2406668b33c4 で、書込み準備は対象行と検査済みの件数を保持する。隣接行が入れ替わって対象の位置が変わった場合も、キーで引き直して同じ行を更新する。対象行が差し替わった場合は、領域の確保後でも書込みを拒否する。Core／Compiler の関連59件が通過した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Reached registry write verification
+
+- Source 7d31dc1bd81398a904c267336c3d2406668b33c4 の書込み行再照合を Core、Sema、Runtime Plan、Compiler の4クレートで検証した。4,075件通過、1件スキップ。検査対象ソース4,032件と nextest の列挙結果は実行前後で一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
