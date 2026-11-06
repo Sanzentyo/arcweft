@@ -707,5 +707,261 @@
       ]
     },
     "retainedHistory": "The focused evidence fields preserve their original state. This is a later, separately executed reverse matrix on the published source. Workspace check/Clippy are not reported as part of this run."
+  },
+  "ownedPromotionCallProbe": {
+    "version": 1,
+    "inspectedSource": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "recordedAt": "2026-11-06T00:00:03.3947621Z",
+    "scope": "An owned scalar and an authored public Proof ID reached the actual CLI front door. The unmodified return is the accepted control. The promoted receiver cases fail before lifetime or proof admission. The bare and ordinary proof value controls preserve their actual diagnostics.",
+    "probe": {
+      "version": 1,
+      "head": "89cb496d73d5bb8dbea8302ed5b0147c499211b8",
+      "binarySha256": "b523ab09939bac11b7accad8974a7ad12d0b0968ba7b71ff6920df0e41a489f7",
+      "cases": [
+        {
+          "case": "control",
+          "exitCode": 0,
+          "stage": null,
+          "diagnostics": [
+            {
+              "id": "verify.pending.proof.owned_payload.body",
+              "message": "proof `owned_payload` awaits typed proof discharge",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-promotion-receiver-before-20261106.control/owned-promotion-receiver-before-20261106.control.arcw",
+                  "revision": "da0b277eb5937b685022dd40de644343d77036ad97903aa7090c7e3d73dcb036",
+                  "source_len": 148
+                },
+                "start": 0,
+                "end": 47
+              }
+            }
+          ],
+          "obligations": [
+            "proof_body"
+          ],
+          "sourceSha256": "7ade6fcc4f34e3a394800cde46f93eceff2a3003e8e997e4ecf73d1ee1777ef9",
+          "stdoutSha256": "604cfdb42bc7382b54703554c398fb8422b21f636a3ca435abf3fa02e5f84323",
+          "stderrSha256": "842878e9d02854bd701fff6df835f2c05bd4c00381b847d5063cea07c1e9f71a"
+        },
+        {
+          "case": "receiver",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "id": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-promotion-receiver-before-20261106.receiver/owned-promotion-receiver-before-20261106.receiver.arcw",
+                  "revision": "75f9365b446e9b19c8de848c3c55656e19868f4e232a7e4bac516cc7461484c4",
+                  "source_len": 163
+                },
+                "start": 122,
+                "end": 144
+              }
+            }
+          ],
+          "obligations": [
+            null
+          ],
+          "sourceSha256": "46e90592910bd38f770473fbed75c8eddcd18dc515593dff9680f72ba13bfb5b",
+          "stdoutSha256": "5d658c4a03f211ae2d9e43d51dadd35dc60d61bda5c018612cb584ee17d77a69",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "explicit_proof",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "id": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-promotion-receiver-before-20261106.explicit_proof/owned-promotion-receiver-before-20261106.explicit_proof.arcw",
+                  "revision": "e2c9578f1a9668872182916667a468b31b2a2a34ee1a42aab3c03e6dbd5f75cb",
+                  "source_len": 193
+                },
+                "start": 122,
+                "end": 174
+              }
+            }
+          ],
+          "obligations": [
+            null
+          ],
+          "sourceSha256": "a205023f493e10c25524fbb5911bd10d0bdf43b69bc26597fcffc892b884fc91",
+          "stdoutSha256": "7999df81ae9b484b2a537f7a88fc7563438d8d79c666ecff6c6d770a4a45fbfc",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "bare_intrinsic",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "id": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }) has no admissible final type",
+              "span": null
+            }
+          ],
+          "obligations": [
+            null
+          ],
+          "sourceSha256": "52880f4c34a7a357538931e965c5f039bf5639181d0920948f964b2792fdf0af",
+          "stdoutSha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "proof_as_value",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "id": "sema.final_analysis",
+              "message": "semantic fact does not match its final-HIR payload family",
+              "span": null
+            }
+          ],
+          "obligations": [
+            null
+          ],
+          "sourceSha256": "062385a06c5af1e36d1ea7269a1c99c7e50c1fa293d5ad7788b8f04ebcbcf18f",
+          "stdoutSha256": "6c90828bad813afb297725218199b4f84bc184520fe399c5f3155bd37488ef3d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "unchecked",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "id": "sema.call.unknown_target",
+              "message": "unknown method `promote_unchecked`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-promotion-receiver-before-20261106.unchecked/owned-promotion-receiver-before-20261106.unchecked.arcw",
+                  "revision": "a7f1cbd04d19813a5ef128e0090c2fa36b98fb1db4e65480f067664a041af89f",
+                  "source_len": 222
+                },
+                "start": 181,
+                "end": 213
+              }
+            }
+          ],
+          "obligations": [
+            null
+          ],
+          "sourceSha256": "672a9be27d6e5c8c1210abaf463324963cd82e886dc3f39a075c8528299f117e",
+          "stdoutSha256": "e1860735f80d4e40c4767c2224f17482e096b28af48d4c82d3e06c11d1ffe5cd",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-owned-promotion-admission.raw.zip",
+      "bytes": 8870,
+      "sha256": "d6c2bb811c8f6d58a0dbf80d5ea7f481096c00872b01499f7ebc28bef34b8806",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "owned-promotion-receiver-before-20261106.bare_intrinsic.arcw",
+          "bytes": 185,
+          "sha256": "52880f4c34a7a357538931e965c5f039bf5639181d0920948f964b2792fdf0af"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.bare_intrinsic.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.bare_intrinsic.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.control.arcw",
+          "bytes": 148,
+          "sha256": "7ade6fcc4f34e3a394800cde46f93eceff2a3003e8e997e4ecf73d1ee1777ef9"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.control.json",
+          "bytes": 3602,
+          "sha256": "604cfdb42bc7382b54703554c398fb8422b21f636a3ca435abf3fa02e5f84323"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.control.stderr.log",
+          "bytes": 982,
+          "sha256": "842878e9d02854bd701fff6df835f2c05bd4c00381b847d5063cea07c1e9f71a"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.explicit_proof.arcw",
+          "bytes": 193,
+          "sha256": "a205023f493e10c25524fbb5911bd10d0bdf43b69bc26597fcffc892b884fc91"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.explicit_proof.json",
+          "bytes": 1349,
+          "sha256": "7999df81ae9b484b2a537f7a88fc7563438d8d79c666ecff6c6d770a4a45fbfc"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.explicit_proof.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.proof_as_value.arcw",
+          "bytes": 161,
+          "sha256": "062385a06c5af1e36d1ea7269a1c99c7e50c1fa293d5ad7788b8f04ebcbcf18f"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.proof_as_value.json",
+          "bytes": 446,
+          "sha256": "6c90828bad813afb297725218199b4f84bc184520fe399c5f3155bd37488ef3d"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.proof_as_value.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.receipt.json",
+          "bytes": 5453,
+          "sha256": "8c626382d8a7b08e117281e55d9971ffca73dcba3ecb8214b7a686fdd389277b"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.receiver.arcw",
+          "bytes": 163,
+          "sha256": "46e90592910bd38f770473fbed75c8eddcd18dc515593dff9680f72ba13bfb5b"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.receiver.json",
+          "bytes": 1325,
+          "sha256": "5d658c4a03f211ae2d9e43d51dadd35dc60d61bda5c018612cb584ee17d77a69"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.receiver.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.unchecked.arcw",
+          "bytes": 222,
+          "sha256": "672a9be27d6e5c8c1210abaf463324963cd82e886dc3f39a075c8528299f117e"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.unchecked.json",
+          "bytes": 1339,
+          "sha256": "e1860735f80d4e40c4767c2224f17482e096b28af48d4c82d3e06c11d1ffe5cd"
+        },
+        {
+          "entry": "owned-promotion-receiver-before-20261106.unchecked.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
   }
 }
