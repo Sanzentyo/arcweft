@@ -16243,5 +16243,68 @@
         }
       ]
     }
+  },
+  "registryInputCustodyRuntimeReverse": {
+    "source": "fc7aaa4ffe8773c9df17a3d570c21bbf909da42b",
+    "packages": [
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-save"
+    ],
+    "passed": 260,
+    "failed": 0,
+    "skipped": 0,
+    "comparedTestIdsFrom": "f0b3274fe9195dac8babc1d559751a5025ee0457",
+    "testIdDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "fc7aaa4ffe8773c9df17a3d570c21bbf909da42b",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-runtime-driver",
+        "-p",
+        "arcweft-runtime-host",
+        "-p",
+        "arcweft-save",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "Summary [  77.548s] 260 tests run: 260 passed (1 slow), 0 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T18:17:35.2556378Z",
+      "finishedAt": "2026-11-06T18:22:08.4003116Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-input-before-snapshot-runtime-reverse.raw.zip",
+      "sha256": "bbaf4b880d1c447f83b33b35f931d9e4bf8529ca4a9eac330da0a06050541767",
+      "entries": [
+        {
+          "entry": "registry-input-before-snapshot-runtime-reverse-20261107.log",
+          "bytes": 165536,
+          "sha256": "3a78047386123ebc2426759a66ce3b0c6dece1668951d1d369e206ac119095fe"
+        },
+        {
+          "entry": "registry-input-before-snapshot-runtime-reverse-20261107.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "7a2ff6a226e3132e026dd75d5f57ab8cce51d2f84810a14d529bd9e7d44fc88a"
+        },
+        {
+          "entry": "registry-input-before-snapshot-runtime-reverse-20261107.receipt.json",
+          "bytes": 648,
+          "sha256": "ef0d276edbbb5ec3157cd293ee5873a70bf96154a2df97785b36649eda3ff0fc"
+        }
+      ]
+    }
   }
 }

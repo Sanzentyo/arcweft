@@ -15066,3 +15066,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry source custody owner verification
 
 - Source fc7aaa4ffe8773c9df17a3d570c21bbf909da42b の Core、Sema、Runtime Plan、Compiler の対象4クレートで4,080件通過、1件スキップ。実行IDは列挙結果と一致し、ソース入力3638件のハッシュは実行前後で一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry source custody runtime reverse dependencies
+
+- Source fc7aaa4ffe8773c9df17a3d570c21bbf909da42b の元スロットと発行元の照合を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。実行前後でソース入力3638件のハッシュが一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
