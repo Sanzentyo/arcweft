@@ -17735,5 +17735,243 @@
         }
       ]
     }
+  },
+  "orderedReplacementReverseInitial": {
+    "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+    "receipt": {
+      "version": 1,
+      "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "graphPackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "reuseBinaries": "binary_id(=arcweft-lang-sema) | binary_id(=arcweft-runtime-plan) | binary_id(=arcweft-compiler) | binary_id(=arcweft-compiler::evaluated_effects)",
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T20:10:16.2173741Z",
+      "finishedAt": "2026-11-06T20:20:14.1514679Z",
+      "results": [
+        {
+          "version": 1,
+          "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+          "selection": "noncli",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "--status-level",
+            "all",
+            "--final-status-level",
+            "all",
+            "-p",
+            "arcweft-adapter-sema",
+            "-p",
+            "arcweft-agent-mcp",
+            "-p",
+            "arcweft-agent-mcp-client",
+            "-p",
+            "arcweft-agent-repl",
+            "-p",
+            "arcweft-agent-runner",
+            "-p",
+            "arcweft-compiler",
+            "-p",
+            "arcweft-lang-sema",
+            "-p",
+            "arcweft-lsp",
+            "-p",
+            "arcweft-player-native",
+            "-p",
+            "arcweft-player-scene",
+            "-p",
+            "arcweft-player-web",
+            "-p",
+            "arcweft-project-loader",
+            "-p",
+            "arcweft-runtime-driver",
+            "-p",
+            "arcweft-runtime-host",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-test",
+            "-p",
+            "arcweft-tooling",
+            "-p",
+            "arcweft-verify",
+            "-p",
+            "arcweft-verify-lsp",
+            "-p",
+            "arcweft-verify-oxiz",
+            "-p",
+            "arcweft-verify-z3",
+            "--lib",
+            "--tests",
+            "-E",
+            "rdeps(=arcweft-lang-sema) - (binary_id(=arcweft-lang-sema) | binary_id(=arcweft-runtime-plan) | binary_id(=arcweft-compiler) | binary_id(=arcweft-compiler::evaluated_effects))"
+          ],
+          "exitCode": 101,
+          "summary": null,
+          "startedAt": "2026-11-06T20:10:16.2251745Z",
+          "finishedAt": "2026-11-06T20:17:55.7266619Z"
+        },
+        {
+          "version": 1,
+          "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+          "selection": "cli-owner",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "--status-level",
+            "all",
+            "--final-status-level",
+            "all",
+            "-p",
+            "arcweft-cli",
+            "--lib",
+            "--bins",
+            "-E",
+            "rdeps(=arcweft-lang-sema)"
+          ],
+          "exitCode": 0,
+          "summary": "Summary [  36.659s] 196 tests run: 196 passed, 0 skipped",
+          "startedAt": "2026-11-06T20:17:55.7450865Z",
+          "finishedAt": "2026-11-06T20:19:34.4914183Z"
+        },
+        {
+          "version": 1,
+          "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+          "selection": "cli-integrations",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "--status-level",
+            "all",
+            "--final-status-level",
+            "all",
+            "-p",
+            "arcweft-cli",
+            "--test",
+            "runtime_native_options",
+            "--test",
+            "check_core_cli",
+            "--test",
+            "native_style_parity_sample",
+            "--test",
+            "release_trust_json",
+            "--test",
+            "arcw_fixtures_check_run",
+            "--test",
+            "seq04_8_4_persistent_cache_build_cli_goldens",
+            "-E",
+            "rdeps(=arcweft-lang-sema)"
+          ],
+          "exitCode": 0,
+          "summary": "Summary [   8.710s] 29 tests run: 29 passed, 0 skipped",
+          "startedAt": "2026-11-06T20:19:34.4933812Z",
+          "finishedAt": "2026-11-06T20:20:13.6345804Z"
+        }
+      ]
+    },
+    "cliPassed": 225,
+    "cliFailed": 0,
+    "cliSkipped": 0,
+    "nonCliFailure": "The Windows host failed to memory-map dependency archives (OS error 1455) in the combined non-CLI build. The same output contains delayed rustc internal errors. No non-CLI test run started in that attempt.",
+    "retry": {
+      "graphPackages": 22,
+      "availableTargets": 114,
+      "ownerTargets": 4,
+      "curatedCliTargets": 8,
+      "partitionTargets": 102,
+      "partitions": 45,
+      "maximumTargetsPerInvocation": 3,
+      "features": "default plus explicitly required target features",
+      "jobsOverride": false
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-reaching-type-reverse-initial.raw.zip",
+      "sha256": "4e19ccded9ef0c49bc08c084a3f4207b31188717b5643cddc96ea1a868f27002",
+      "entries": [
+        {
+          "entry": "registry-reaching-type-20261107.reverse.receipt.json",
+          "bytes": 4541,
+          "sha256": "ff690ab8abf6207cadd2bb4551a8f2c2c016b826b1bf214de5fe71c796dd2b3f"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse.noncli.log",
+          "bytes": 656415,
+          "sha256": "2feed93f825188419e99600b97fc21449541929059cc643aa5bdc16e499c0b5a"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse.noncli.receipt.json",
+          "bytes": 1479,
+          "sha256": "5b3ae1cec970212ee4cae305c1a651a3a1f25396046bb816f73b3f1b311be5dc"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse.cli-owner.log",
+          "bytes": 145654,
+          "sha256": "9044a40688fbd95567ff02e5bdf1d8d6595b92e442668f0c8de4a166fcb872e8"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse.cli-owner.receipt.json",
+          "bytes": 613,
+          "sha256": "e5c139b3f3c10f0ebca0771ec4ed9343f75b495b9dab50a122832efc675d7f0f"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse.cli-integrations.log",
+          "bytes": 95736,
+          "sha256": "56e0e1cde367c8dbe2a9e253b1cdc03d01e343c1dd428550d44df71f971869e9"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse.cli-integrations.receipt.json",
+          "bytes": 880,
+          "sha256": "139c04dc2c838b6826b3a6eb14d197a0fec9084b0620a5a32b8569cbe1f7a7f5"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse-partitions.json",
+          "bytes": 46797,
+          "sha256": "7f1a00c26988f2f485f8301a0b2dcbe25811028b10e1980504df7970f8528057"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.windows-metadata.json",
+          "bytes": 2811762,
+          "sha256": "930e061c3537036e594abec12b05d0c714c44979b81db58d0a31de0a7bf83a41"
+        }
+      ]
+    }
   }
 }

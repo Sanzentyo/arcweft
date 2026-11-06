@@ -15109,3 +15109,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry replacement workspace Clippy
 
 - Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 のレジストリ型推論変更に対し、workspace Clippy を全ターゲット・全 feature で実行した。警告ありで終了0、実行前後のソース入力3638件の差分は0件。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry replacement reverse validation on Windows
+
+- Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5。CLI のライブラリ・バイナリ196件と指定の統合29件が通過した。一括非CLIビルドは Windows のページファイル不足（OS エラー1455）で依存アーカイブのマッピングに失敗し、同じログに rustc の内部エラーも記録された。非CLIテストは実行に達しなかった。Cargo で照合した22パッケージ114ターゲットのうち、実行済み12ターゲットを再利用し、残り102ターゲットを最大3件ずつ45組に分割した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
