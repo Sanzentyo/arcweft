@@ -14779,3 +14779,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - The first partitioned reverse run on Source db071219f84e57186efa9d40dccc3bb8620f417c executed 1,857 tests. 1,856 passed and one failed. The compile-fail fixture omitted the newly private audit reason, so rustc stopped at the incomplete struct shape and displaced the expected privacy diagnostics.
 - A disposable fixture with `reason: Some(any())` compiled against the existing Sema rlib and was rejected with eight private-field diagnostics and two private-type diagnostics. The original fixture remained frozen during the other batches. [Real nextest and external rustc outputs](acceptance-evidence/task-unsafe-audit-reason.json).
+
+## 2026-11-06 — All CLI targets on the checked proof-trust source
+
+- Source db071219f84e57186efa9d40dccc3bb8620f417c ran the CLI partition with all features and all nextest targets. The result was 711 run, 704 passed, 7 failed, 23 skipped in 573.057 seconds. The seven failure IDs match the preceding actual CLI run exactly. Source, case and executable drift were zero. [Commands, IDs and raw output](acceptance-evidence/task-proof-trust-policy.json).

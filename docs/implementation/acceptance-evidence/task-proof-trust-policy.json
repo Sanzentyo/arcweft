@@ -423,5 +423,120 @@
         }
       ]
     }
+  },
+  "cliAllTargets": {
+    "version": 1,
+    "source": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "recordedAt": "2026-11-06T00:23:46.6646133Z",
+    "terminal": {
+      "version": 1,
+      "base": "972c43c37d0a0d048798535c447bac250c489474",
+      "run": "proof-trust-consumers-20261106-cli.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 573.057s] 711 tests run: 704 passed (31 slow), 7 failed, 23 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 711,
+      "passed": 704,
+      "failed": 7,
+      "skipped": 23,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4126,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "unsafe_json_lists_audit_regions"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_respects_semantic_defer_cancel_discharge"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-06T00:19:23.6134568Z"
+    },
+    "previousSource": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+    "previousRun": "runtime-assertion-reverse22-20261106.runtime",
+    "exactFailureIds": [
+      "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+      "spec_rejected_edge_fixtures_fail_with_diagnostics",
+      "spec_valid_run_edge_fixture_now_executes",
+      "unsafe_json_lists_audit_regions",
+      "verify_json_records_required_solver_checks",
+      "verify_json_reports_missing_promotion_proof",
+      "verify_json_respects_semantic_defer_cancel_discharge"
+    ],
+    "newFailureIds": [],
+    "noLongerFailingIds": [],
+    "scope": "All CLI targets in their own locked all-feature Cargo partition. The source bytes match the published quality receipts. The rest of the reverse dependency batches remain separate.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-proof-trust-policy-cli.raw.zip",
+      "bytes": 68146,
+      "sha256": "49d6fe45f9cc1e63a2baa15c4554a0d10927181f4fd8a9ef6a80728650967ba6",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "proof-trust-consumers-20261106-cli.binaries-before.json",
+          "bytes": 2892,
+          "sha256": "5d207a215a5c69fd9b0e25907e2eebbb0cd1d7c3a5696978457c6217daec0bb7"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-cli.catalog.inventory.json",
+          "bytes": 176162,
+          "sha256": "b5a3b66cc06c1d3a66a238c6904b8616fe861df6bbc55e21ece8bb2f1f523fdf"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-cli.catalog.json",
+          "bytes": 532,
+          "sha256": "02936aab070d09658850bbbb5817dcc1ced9052e5fefd750fb4cfd1f8a84acd0"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-cli.runtime.json",
+          "bytes": 626,
+          "sha256": "bd10c894fd5c9af90197fdc83a58c001714dbdfb24dbdb8473157922026be311"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-cli.runtime.log",
+          "bytes": 317665,
+          "sha256": "c85c5745e8a68fb1e7f761b682ec06384083a43f6c6ee032c72b5444bbe16aa8"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-cli.runtime.terminal-audit.json",
+          "bytes": 1677,
+          "sha256": "bd6ec3abd5881cac29f2e63a66608b722f0061a72d52464140f81a0a2923556d"
+        }
+      ]
+    }
   }
 }
