@@ -220,17 +220,9 @@ impl Engine {
             );
             return;
         };
-        let elapsed = transaction.frame().elapsed;
-        let due_tokens = match transaction.line_mut().arm_due_schedules(elapsed) {
-            Ok(due) => due,
-            Err(error) => {
-                self.begin_dialogue_failure(transaction, error.into(), output);
-                return;
-            }
-        };
         let content_events = transaction.take_content_events();
         let advance = transaction.take_advance();
-        let frame = transaction.frame_mut();
+        let (frame, line) = transaction.parts_mut();
         let mut start = None;
         let mut callback_sites = Vec::new();
         let mut task_inputs = None;
@@ -336,11 +328,9 @@ impl Engine {
                 );
                 return;
             }
-            for token in due_tokens {
-                if let Err(error) = line_task.mark_scheduled_ready(token) {
-                    self.begin_dialogue_failure(transaction, error.into(), output);
-                    return;
-                }
+            if let Err(error) = line.advance_schedules(frame.elapsed, line_task) {
+                self.begin_dialogue_failure(transaction, error.into(), output);
+                return;
             }
             let activation =
                 match progress_live_line_task_group(group, frame.elapsed, ready, line_task) {

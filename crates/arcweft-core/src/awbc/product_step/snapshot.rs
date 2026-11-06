@@ -2705,9 +2705,15 @@ impl AwbcProductExecutorSnapshot {
                             .to_owned(),
                 });
             }
+            // The activation has already matched each unstarted packet's
+            // values to its ChildScope leases. Only taken packets have a
+            // separate executor child fiber to match here.
+            let unstarted = shared_line.unstarted_scheduled_work().collect::<BTreeSet<_>>();
             let mut ledger_child_tokens = BTreeMap::<_, BTreeSet<_>>::new();
             for (token, lease) in shared_line.ledger().leases() {
-                if let crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag) = lease.owner() {
+                if let crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag) = lease.owner()
+                    && !unstarted.contains(tag)
+                {
                     ledger_child_tokens
                         .entry(tag.clone())
                         .or_default()

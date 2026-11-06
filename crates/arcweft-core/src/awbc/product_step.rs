@@ -5112,14 +5112,6 @@ impl AwbcProductStepExecutor {
             }
         }
         let elapsed = LogicalDuration::from_nanos(transaction.frame().elapsed_nanos);
-        let due = match transaction.line_mut().arm_due_schedules(elapsed) {
-            Ok(due) => due,
-            Err(error) => {
-                return self
-                    .begin_product_dialogue_failure(transaction, error.into(), output)
-                    .into();
-            }
-        };
         let (content, content_events, advance) = {
             let active = transaction.frame_mut();
             (
@@ -5139,14 +5131,13 @@ impl AwbcProductStepExecutor {
                 )
                 .into();
         };
-        let accepted_content = match transaction.frame_mut().line_task_mut() {
+        let (frame, line) = transaction.parts_mut();
+        let accepted_content = match frame.line_task_mut() {
             Some(line_task) => {
-                for token in due {
-                    if let Err(error) = line_task.mark_scheduled_ready(token) {
-                        return self
-                            .begin_product_dialogue_failure(transaction, error.into(), output)
-                            .into();
-                    }
+                if let Err(error) = line.advance_schedules(elapsed, line_task) {
+                    return self
+                        .begin_product_dialogue_failure(transaction, error.into(), output)
+                        .into();
                 }
                 line_task.accept_content_event_kinds(&content_events, |event| match event {
                     crate::step::RuntimeDialogueContentEventKind::Mark(mark) => content_unit

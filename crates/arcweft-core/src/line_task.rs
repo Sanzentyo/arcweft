@@ -1372,6 +1372,32 @@ impl LineTaskLiveState {
         Ok(true)
     }
 
+    /// Returns whether the scheduled lane has a child to cancel. A ready
+    /// token without a lane still belongs to its unstarted capture packet.
+    pub(crate) fn cancel_scheduled_cue(
+        &mut self,
+        token: &RuntimeLineHandleToken,
+    ) -> Result<bool, LineRuntimeError> {
+        if self.scheduled_ready.remove(token) {
+            return Ok(false);
+        }
+        let lane = self
+            .scheduled_lanes
+            .get_mut(token)
+            .ok_or(LineRuntimeError::MissingScheduledWork)?;
+        let mut work = lane.outstanding.iter();
+        let (Some(LineTaskWork::Node(node)), None) = (work.next(), work.next()) else {
+            return Err(LineRuntimeError::InvalidScheduledWorkState);
+        };
+        let node = *node;
+        if lane.node_state(node) != Some(LineTaskNodeState::Running) {
+            return Err(LineRuntimeError::InvalidScheduledWorkState);
+        }
+        lane.set_node_state(node, LineTaskNodeState::Cancelling);
+        lane.cancelling_nodes.insert(node);
+        Ok(true)
+    }
+
     /// Validates and consumes one step's exact content-reveal events as one
     /// transaction. The content-plan owner supplies `contains`; no event is
     /// recorded if any activation, coordinate, duplicate, or replay check
@@ -1475,7 +1501,9 @@ impl LineTaskLiveState {
         if let LineTaskWork::Node(node) = work {
             lane.set_node_state(
                 node,
-                if matches!(self.phase, LineTaskPhase::Closing { .. }) {
+                if matches!(self.phase, LineTaskPhase::Closing { .. })
+                    || lane.node_state(node) == Some(LineTaskNodeState::Cancelling)
+                {
                     LineTaskNodeState::Cancelled
                 } else if failed {
                     LineTaskNodeState::Failed

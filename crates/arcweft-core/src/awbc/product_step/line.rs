@@ -282,31 +282,7 @@ impl super::AwbcProductStepExecutor {
         }
 
         if begin {
-            let mut ledger = line.ledger().clone();
-            let mut commands =
-                RuntimeCommandQueue::new(activation.clone(), line.command_sequence());
-            let mut emitted_command = false;
-            let mut remaining = ledger
-                .leases()
-                .values()
-                .filter(|lease| {
-                    !matches!(
-                        lease.state(),
-                        RuntimeHandleLeaseState::Released | RuntimeHandleLeaseState::Cancelling
-                    ) && !matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
-                })
-                .map(|lease| (lease.token().clone(), lease.owner().clone()))
-                .collect::<Vec<_>>();
-            remaining.reverse();
-            for (token, owner) in remaining {
-                let before_sequence = commands.next_sequence();
-                ledger.drop_owned(&token, &owner, &mut commands)?;
-                emitted_command |= commands.next_sequence() != before_sequence;
-            }
-            if emitted_command {
-                line.record_commands(&activation, commands)?;
-            }
-            line.commit_ledger(ledger);
+            line.prepare_handle_unwind(&activation, true)?;
             line.begin_result_publication()?;
             frame.phase = ProductDialoguePhase::Publishing { line_task };
         }
@@ -3676,9 +3652,7 @@ impl super::AwbcProductStepExecutor {
         }
         let mut line_task = LineTaskLiveState::new(&view, activation.clone());
         let elapsed = LogicalDuration::from_nanos(frame.elapsed_nanos);
-        for token in line.arm_due_schedules(elapsed)? {
-            line_task.mark_scheduled_ready(token)?;
-        }
+        line.advance_schedules(elapsed, &mut line_task)?;
         let reducer = progress_live_line_task_group(
             &view,
             elapsed,

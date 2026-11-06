@@ -749,8 +749,12 @@ type and resource limits, the writer checks each handle's original slot and
 issuer before constructing the saved row. The same prepared step updates the
 row and the original issuer's ledger. The version-one save
 retains each owning row and its ledger slot. Restore checks both directions
-of that relationship. Pending release responses remain with the issuer after
-row removal.
+of that relationship, including handles whose work has already ended. Row
+removal records a separate issuer retirement and leaves pending host responses
+with that issuer. For a scheduled cue, the scheduler cancels an unstarted
+packet or joins the exact running child before the issuer releases the cue.
+An unstarted packet owns its captures until the child takes them. Restore
+matches that packet's custody separately from the live child's slots.
 
 Context-free effect dispatch checks that requirement before evaluating or moving
 operands. A rejected write terminates execution before subsequent instructions

@@ -4004,6 +4004,80 @@ entry cli @entry.main {{ goto @flow.main }}
     }
 }
 
+#[test]
+fn line_registry_retires_a_scheduled_cue_when_the_line_ends() {
+    use arcweft_core::pure::VmRuntimePureCallBackend;
+
+    for (cancel, remove) in [
+        (false, ""),
+        (true, ""),
+        (false, "drop('line.saved)"),
+        (false, "'line.saved <- true"),
+    ] {
+        let anchor = if remove.is_empty() { "5s" } else { "0ms" };
+        let source = format!(
+            r#"
+pub character alice {{ display = "Alice" }}
+flow main() -> Unit {{
+    alice()[Outer[p]]
+    with:
+        let actor = alice.stage.acquire(scope=line)
+        let cue = at({anchor}):
+            actor.look(.normal)
+        'line.saved <- cue
+        log.info("scheduled cue stored")
+        {remove}
+        cancel on input(.SkipLine) {{ out () }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#
+        );
+        let expected = ["scheduled cue stored"];
+        let (compiled, awbc) = nested_awbc_from_compiled(
+            with_attached_dialogue_project_and_visual(
+                &source,
+                Some(LINE_HANDLE_CHARACTER_MANIFEST),
+                compile_project,
+            )
+            .unwrap(),
+        );
+        native_line_handle_execution(&source, 1, false, cancel, &expected);
+
+        let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+        let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+        );
+        let mut awbc = Some(awbc);
+        let mut saved_owning_row = false;
+        let mut saved_cancelled_packet = false;
+        execute_nested_line_handle_transfer(1, false, cancel, &expected, |input, options| {
+            let mut current = awbc.take().unwrap();
+            let result = current.step_with_pure_backend(input, options, &mut backend);
+            let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, save| {
+                for line in save["dialogues"]["entries"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|entry| entry.pointer("/Active/line"))
+                {
+                    saved_owning_row |= line.pointer("/line_registry/0/row/value/Opaque").is_some();
+                    saved_cancelled_packet |= line
+                        .pointer("/scheduled/0/state")
+                        .and_then(serde_json::Value::as_str)
+                        == Some("cancelled");
+                }
+                executor
+            });
+            awbc = Some(restored);
+            result
+        });
+        assert!(
+            saved_owning_row && saved_cancelled_packet,
+            "cancel={cancel}, remove={remove}"
+        );
+    }
+}
+
 fn native_nested_line_handle_transfer(source: &str, expected_lines: usize) {
     native_line_handle_execution(
         source,

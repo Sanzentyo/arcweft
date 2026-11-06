@@ -2805,9 +2805,7 @@ impl Engine {
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
         let task_inputs = state.task_inputs_for_reveal(group.activation_exports())?;
         let mut live = LineTaskLiveState::new(group, activation_id.clone());
-        for token in activation.arm_due_schedules(state.elapsed)? {
-            live.mark_scheduled_ready(token)?;
-        }
+        activation.advance_schedules(state.elapsed, &mut live)?;
         let line_task_activation = progress_live_line_task_group(
             group,
             state.elapsed,
@@ -3606,10 +3604,6 @@ mod tests {
             }]
             .into_boxed_slice(),
         );
-        transaction
-            .line_mut()
-            .arm_due_schedules(deadline)
-            .expect("running packet");
         let group = LineTaskGroup::new(
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
             crate::plan::RuntimeEffectSet::empty(),
@@ -3623,6 +3617,13 @@ mod tests {
             Box::new([]),
             LineTaskCleanup::default(),
         );
+        transaction
+            .line_mut()
+            .advance_schedules(
+                deadline,
+                &mut crate::line_task::LineTaskLiveState::new(&group, activation),
+            )
+            .expect("running packet");
         let activation_step = LineTaskActivation {
             commands: vec![
                 LineTaskCommand::Run {

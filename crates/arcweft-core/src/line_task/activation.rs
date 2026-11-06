@@ -912,7 +912,6 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
                         }
                         .ok_or(LineRuntimeError::InvalidRestoredLedgerState)?;
                         if lease.resource().kind() != handle.kind()
-                            || !lease.admits_line_registry()
                             || !matches!(lease.owner(), RuntimeHandleOwnerSlot::LineRegistry { receiver, key: owner_key, path }
                                 if receiver == activation && owner_key == key && path == handle.path())
                             || !matched_registry_handles.insert(token.clone())
@@ -982,7 +981,6 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
         }
         let has_unmatched_registry_lease = |lease: &RuntimeHandleLease| {
             matches!(lease.owner(), RuntimeHandleOwnerSlot::LineRegistry { .. })
-                && !super::handle::result_lease_was_retired(lease.state())
                 && !matched_registry_handles.contains(lease.token())
         };
         for entry in &self.entries {
@@ -1762,7 +1760,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         if lease.owner() != source {
             return Err(LineRuntimeError::WrongOwner);
         }
-        if !lease.admits_line_registry() {
+        if !matches!(source, RuntimeHandleOwnerSlot::LineRegistry { .. })
+            && !lease.admits_line_registry()
+        {
             return Err(LineRuntimeError::ReleasedHandle);
         }
         Ok(())

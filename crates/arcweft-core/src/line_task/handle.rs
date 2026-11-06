@@ -3,7 +3,7 @@ use super::defer::{
     RuntimeDeferUnwindStep, RuntimeLineDeferredRegistration, RuntimeScopedDeferDecision,
 };
 use super::{
-    LineTaskLaneView, LineTaskNodeState, LineTaskPlanView, LineTaskReducerView,
+    LineTaskLaneView, LineTaskLiveState, LineTaskNodeState, LineTaskPlanView, LineTaskReducerView,
     LineTaskScheduledCompletion, LineTaskWork, LineTaskWorkInstance, LineTaskWorkTag,
     RuntimeDialogueContentEventKind, ScopeExit,
 };
@@ -274,6 +274,10 @@ pub enum RuntimeHandleOwnerSlot {
         receiver: DialogueActivationId,
         key: arcweft_id::LifetimeRegistryKey,
         path: RuntimeValuePath,
+    },
+    /// The value left the registry. Its issuer still owns cleanup settlement.
+    RetiringLineRegistry {
+        receiver: DialogueActivationId,
     },
     /// The receiving line discarded its result value while the issuer still
     /// owns release settlement.
@@ -1787,14 +1791,72 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         });
     }
 
-    pub(crate) fn arm_due_schedules(
+    pub(crate) fn advance_schedules(
         &mut self,
         elapsed: LogicalDuration,
-    ) -> Result<Vec<RuntimeLineHandleToken>, LineRuntimeError> {
+        reducer: &mut LineTaskLiveState,
+    ) -> Result<(), LineRuntimeError> {
+        if reducer.is_closing() || reducer.is_closed() {
+            return Ok(());
+        }
+        if !self.scheduled.iter().any(|packet| {
+            (packet.state() == RuntimeScheduledState::Armed && packet.deadline() <= elapsed)
+                || (matches!(
+                    packet.state(),
+                    RuntimeScheduledState::Armed | RuntimeScheduledState::Running
+                ) && self.ledger.lease(packet.token()).is_some_and(|lease| {
+                    matches!(
+                        lease.owner(),
+                        RuntimeHandleOwnerSlot::RetiringLineRegistry { .. }
+                    )
+                }))
+        }) {
+            return Ok(());
+        }
         let mut ledger = self.ledger.clone();
-        let mut due_indices = Vec::new();
+        let mut staged_reducer = reducer.clone();
         let mut due = Vec::new();
+        let mut cancelled = Vec::new();
+        let mut cancelling = Vec::new();
         for (index, callback) in self.scheduled.iter().enumerate() {
+            let lease = ledger
+                .lease(callback.token())
+                .ok_or(LineRuntimeError::UnknownHandle)?;
+            if matches!(
+                lease.owner(),
+                RuntimeHandleOwnerSlot::RetiringLineRegistry { .. }
+            ) {
+                match callback.state() {
+                    RuntimeScheduledState::Armed => {
+                        stage_unstarted_scheduled_completion(
+                            &mut ledger,
+                            callback,
+                            RuntimeScheduledState::Cancelled,
+                        )?;
+                        cancelled.push(index);
+                        continue;
+                    }
+                    RuntimeScheduledState::Running => {
+                        if staged_reducer.cancel_scheduled_cue(callback.token())? {
+                            ledger.set_state(
+                                callback.token(),
+                                RuntimeHandleLeaseState::Running,
+                                RuntimeHandleLeaseState::Cancelling,
+                            )?;
+                            cancelling.push(index);
+                        } else {
+                            stage_unstarted_scheduled_completion(
+                                &mut ledger,
+                                callback,
+                                RuntimeScheduledState::Cancelled,
+                            )?;
+                            cancelled.push(index);
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
             if callback.state() == RuntimeScheduledState::Armed && callback.deadline() <= elapsed {
                 if callback.validate_custody().is_err()
                     || !scheduled_custody_is_admissible(
@@ -1809,20 +1871,32 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     RuntimeHandleLeaseState::Pending,
                     RuntimeHandleLeaseState::Running,
                 )?;
-                due_indices.push(index);
                 due.push((
                     callback.deadline(),
                     callback.token().clone(),
                     callback.child(),
+                    index,
                 ));
             }
         }
-        for index in due_indices {
+        due.sort();
+        for (_, token, _, _) in &due {
+            staged_reducer.mark_scheduled_ready(token.clone())?;
+        }
+        for (_, _, _, index) in due {
             self.scheduled[index].state = RuntimeScheduledState::Running;
         }
+        for index in cancelled {
+            self.scheduled[index]
+                .move_packet_to_line_scope(RuntimeScheduledState::Cancelled)
+                .expect("checked scheduled packet transition remains valid");
+        }
+        for index in cancelling {
+            self.scheduled[index].state = RuntimeScheduledState::Cancelling;
+        }
         self.ledger = ledger;
-        due.sort();
-        Ok(due.into_iter().map(|(_, token, _)| token).collect())
+        *reducer = staged_reducer;
+        Ok(())
     }
 
     pub(crate) fn complete_scheduled_work(
@@ -2632,7 +2706,11 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         leases.reverse();
         for lease in leases {
             if lease.state() == RuntimeHandleLeaseState::Released
-                || matches!(lease.owner(), RuntimeHandleOwnerSlot::ChildScope(_))
+                || matches!(
+                    lease.owner(),
+                    RuntimeHandleOwnerSlot::ChildScope(_)
+                        | RuntimeHandleOwnerSlot::LineRegistry { .. }
+                )
                 || matches!(
                     lease.state(),
                     RuntimeHandleLeaseState::Allocating | RuntimeHandleLeaseState::Cancelling
@@ -3207,7 +3285,7 @@ impl RuntimePublishedDialogueHandles {
             .filter_map(|lease| match lease.owner() {
                 RuntimeHandleOwnerSlot::RetiringDialogueResult { receiver }
                 | RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. }
-                | RuntimeHandleOwnerSlot::LineRegistry { receiver, .. }
+                | RuntimeHandleOwnerSlot::RetiringLineRegistry { receiver }
                     if lease.state() == RuntimeHandleLeaseState::Cancelling =>
                 {
                     Some(receiver)
@@ -3342,14 +3420,18 @@ impl RuntimePublishedDialogueHandles {
             .values()
             .any(|lease| match lease.owner() {
                 RuntimeHandleOwnerSlot::ParentFiber(_) => false,
-                RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. }
-                | RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => {
+                RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. } => {
                     receiver == activation
                         || receiver.artifact() != activation.artifact()
                         || lease.state() == RuntimeHandleLeaseState::Cancelled
                         || !published_result_retirement_is_correlated(lease, &self.issued_commands)
                 }
-                RuntimeHandleOwnerSlot::RetiringDialogueResult { receiver } => {
+                RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => {
+                    receiver == activation
+                        || !published_result_retirement_is_correlated(lease, &self.issued_commands)
+                }
+                RuntimeHandleOwnerSlot::RetiringDialogueResult { receiver }
+                | RuntimeHandleOwnerSlot::RetiringLineRegistry { receiver } => {
                     receiver == activation
                         || receiver.artifact() != activation.artifact()
                         || !matches!(
@@ -3554,13 +3636,6 @@ impl RuntimePublishedDialogueHandles {
                     candidate
                         .ledger
                         .drop_owned_with_policy(token, source, policy, &mut queue)?;
-                    if matches!(source, RuntimeHandleOwnerSlot::LineRegistry { .. })
-                        && candidate.ledger.lease(token).is_some_and(|lease| {
-                            lease.state() == RuntimeHandleLeaseState::Cancelled
-                        })
-                    {
-                        candidate.ledger.drop_owned(token, source, &mut queue)?;
-                    }
                 }
             }
         }
@@ -3608,6 +3683,9 @@ impl RuntimePublishedDialogueHandles {
         !self.has_live_leases()
             && self.issued_commands.is_empty()
             && self.received_result_leases().next().is_none()
+            && !self.has_lease_matching(|lease| {
+                matches!(lease.owner(), RuntimeHandleOwnerSlot::LineRegistry { .. })
+            })
     }
 }
 
@@ -3668,7 +3746,23 @@ fn validate_restored_ledger(
             }
             RuntimeHandleOwnerSlot::LineRegistry { receiver, key, .. }
                 if receiver.artifact() != activation.artifact()
-                    || key.scope() != &arcweft_id::LifetimeScopeKind::Line =>
+                    || key.scope() != &arcweft_id::LifetimeScopeKind::Line
+                    || lease.state() == RuntimeHandleLeaseState::Allocating =>
+            {
+                return Err(LineRuntimeError::InvalidRestoredLedgerState);
+            }
+            RuntimeHandleOwnerSlot::RetiringLineRegistry { receiver }
+                if receiver.artifact() != activation.artifact()
+                    || !match lease.state() {
+                        RuntimeHandleLeaseState::Pending | RuntimeHandleLeaseState::Running => {
+                            matches!(lease.resource(), RuntimeHandleResource::Cue(cue)
+                                if matches!(cue.origin(), RuntimeCueOrigin::Scheduled { .. }))
+                        }
+                        RuntimeHandleLeaseState::Cancelling | RuntimeHandleLeaseState::Released => {
+                            true
+                        }
+                        _ => false,
+                    } =>
             {
                 return Err(LineRuntimeError::InvalidRestoredLedgerState);
             }
@@ -3679,6 +3773,7 @@ fn validate_restored_ledger(
             | RuntimeHandleOwnerSlot::ChildScope(_)
             | RuntimeHandleOwnerSlot::ParentFiber(_)
             | RuntimeHandleOwnerSlot::LineRegistry { .. }
+            | RuntimeHandleOwnerSlot::RetiringLineRegistry { .. }
             | RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
             | RuntimeHandleOwnerSlot::RetiringDialogueResult { .. } => {}
         }
@@ -4039,6 +4134,29 @@ impl RuntimeLineHandleLedger {
         if lease.owner != *expected {
             return Err(LineRuntimeError::WrongOwner);
         }
+        let registry_retirement = match expected {
+            RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => {
+                Some(RuntimeHandleOwnerSlot::RetiringLineRegistry {
+                    receiver: *receiver,
+                })
+            }
+            _ => None,
+        };
+        if let Some(retirement) = &registry_retirement
+            && (matches!(
+                lease.state,
+                RuntimeHandleLeaseState::Cancelling | RuntimeHandleLeaseState::Released
+            ) || matches!(
+                (&lease.resource, lease.state),
+                (
+                    RuntimeHandleResource::Cue(cue),
+                    RuntimeHandleLeaseState::Pending | RuntimeHandleLeaseState::Running
+                ) if matches!(cue.origin(), RuntimeCueOrigin::Scheduled { .. })
+            ))
+        {
+            lease.owner = retirement.clone();
+            return Ok(());
+        }
         if lease.state == RuntimeHandleLeaseState::Released {
             return Err(LineRuntimeError::ReleasedHandle);
         }
@@ -4066,12 +4184,20 @@ impl RuntimeLineHandleLedger {
                 (_, RuntimeHandleLeaseState::Completed | RuntimeHandleLeaseState::Cancelled) => {
                     lease.state = RuntimeHandleLeaseState::Released;
                 }
+                (RuntimeCueOrigin::Scheduled { .. }, RuntimeHandleLeaseState::Failed)
+                    if registry_retirement.is_some() =>
+                {
+                    lease.state = RuntimeHandleLeaseState::Released;
+                }
                 _ => return Err(LineRuntimeError::InvalidDropTransition),
             },
             RuntimeHandleResource::Voice(_) => {
                 commands.push_release_voice(token.clone(), policy)?;
                 lease.state = RuntimeHandleLeaseState::Cancelling;
             }
+        }
+        if let Some(retirement) = registry_retirement {
+            lease.owner = retirement;
         }
         Ok(())
     }
@@ -4378,11 +4504,21 @@ fn stage_scheduled_capture_completion<'a>(
             return Err(LineRuntimeError::InvalidScheduledWorkState);
         }
     };
-    let lease_state = ledger
+    let lease = ledger
         .lease(packet.token())
-        .ok_or(LineRuntimeError::UnknownHandle)?
-        .state();
-    ledger.set_state(packet.token(), lease_state, terminal_lease)?;
+        .ok_or(LineRuntimeError::UnknownHandle)?;
+    let retiring = matches!(
+        lease.owner(),
+        RuntimeHandleOwnerSlot::RetiringLineRegistry { .. }
+    );
+    ledger.set_state(packet.token(), lease.state(), terminal_lease)?;
+    if retiring {
+        ledger.set_state(
+            packet.token(),
+            terminal_lease,
+            RuntimeHandleLeaseState::Released,
+        )?;
+    }
     let expected_owner = RuntimeHandleOwnerSlot::ChildScope(packet.work().clone());
     let mut tokens = std::collections::BTreeSet::new();
     for capture in captures {
@@ -5193,6 +5329,13 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             .collect()
     }
 
+    pub(crate) fn unstarted_scheduled_work(&self) -> impl Iterator<Item = &LineTaskWorkTag> {
+        self.scheduled.iter().filter_map(|scheduled| {
+            matches!(scheduled.custody, RuntimeScheduledCaptureCustody::Packet(_))
+                .then_some(scheduled.work())
+        })
+    }
+
     pub(crate) const fn result(&self) -> &RuntimeDialogueResultState<T, V> {
         &self.result
     }
@@ -5526,13 +5669,20 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
         validate_restored_ledger(activation, &self.ledger)?;
-        if self.ledger.leases().values().any(|lease| {
-            matches!(
-                lease.owner(),
+        if self
+            .ledger
+            .leases()
+            .values()
+            .any(|lease| match lease.owner() {
                 RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
-                    | RuntimeHandleOwnerSlot::RetiringDialogueResult { .. }
-            )
-        }) {
+                | RuntimeHandleOwnerSlot::RetiringDialogueResult { .. } => true,
+                RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => receiver != activation,
+                RuntimeHandleOwnerSlot::RetiringLineRegistry { receiver } => {
+                    receiver != activation || !self.publishing_retirement_is_correlated(lease)
+                }
+                _ => false,
+            })
+        {
             return Err(LineRuntimeError::InvalidRestoredLedgerState);
         }
         validate_restored_command_journal(
@@ -6610,6 +6760,125 @@ mod tests {
                 .iter()
                 .all(|scheduled| scheduled.state() == RuntimeScheduledState::Armed)
         );
+    }
+
+    #[test]
+    fn retiring_one_running_registry_cue_cancels_only_its_scheduled_lane() {
+        use crate::line_task::{
+            ChildCancelPolicy, ChildJoinPolicy, LineTaskCleanup, LineTaskCommand, LineTaskGroup,
+            LineTaskLiveState, LineTaskNode, LineTaskReadyEvents, LineTaskTrigger,
+            RuntimeLineHandleSite, RuntimeLineHandleSiteKind, complete_live_line_task_work,
+            progress_live_line_task_group,
+        };
+        use crate::pattern::RuntimeOpaqueTypeOwner;
+        use crate::presentation::RuntimeCommandQueue;
+        use crate::runtime_id::{ExecutionInstanceId, RuntimePlanTypeId};
+        use crate::value::ownership::{RuntimeOwnedSlotId, RuntimeValuePath};
+        use crate::value::{RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
+        use std::collections::BTreeSet;
+
+        let (activation, mut line) = scheduled_state();
+        let node = |index| RuntimeLineTaskNodeId::from_zero_based(index).unwrap();
+        let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+        let token = line.scheduled[0].token().clone();
+        let sibling = line.scheduled[1].token().clone();
+        let site = RuntimeLineHandleSite::new(
+            token.site(),
+            0,
+            RuntimeLineHandleSiteKind::ScheduledCue,
+            ty,
+            None,
+            Some(node(1)),
+            RuntimeOpaqueTypeOwner::exact_with(
+                RuntimeHandleKind::Cue.try_producer().unwrap(),
+                crate::pattern::RuntimeSemanticTypeId::from_bytes([0x79; 32]),
+                RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+                RuntimeOpaquePersistence::SnapshotOnly,
+            ),
+        )
+        .unwrap();
+        let group = LineTaskGroup::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+            crate::plan::RuntimeEffectSet::empty(),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+            ty,
+            Box::new([site]),
+            node(0),
+            Box::new([
+                LineTaskNode::Sequence(Box::new([node(1)])),
+                LineTaskNode::Child {
+                    trigger: LineTaskTrigger::Scheduled(token.site()),
+                    join_policy: ChildJoinPolicy::Join,
+                    cancel_policy: ChildCancelPolicy::CancelAndJoin,
+                    scope: node(2),
+                },
+                LineTaskNode::Action(Box::new([crate::plan::FlowOp::Return(String::new())])),
+            ]),
+            Box::new([]),
+            LineTaskCleanup::default(),
+        );
+        let owner = RuntimeHandleOwnerSlot::LineRegistry {
+            receiver: activation,
+            key: arcweft_id::LifetimeRegistryKey::new(
+                arcweft_id::LifetimeScopeKind::Line,
+                Box::new([arcweft_id::DeclarationName::try_new("cue").unwrap()]),
+            ),
+            path: RuntimeValuePath::root(),
+        };
+        let local = RuntimeHandleOwnerSlot::ActivationLocal(RuntimeOwnedSlotId::environment_local(
+            ExecutionInstanceId::from_allocated(std::num::NonZeroU64::MIN),
+            RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN),
+        ));
+        line.ledger
+            .transfer(&token, &RuntimeHandleOwnerSlot::LineScope, local.clone())
+            .unwrap();
+        line.ledger.transfer(&token, &local, owner.clone()).unwrap();
+        let elapsed = line.scheduled[0].deadline();
+        let mut reducer = LineTaskLiveState::new(&group, activation);
+        let marks = BTreeSet::new();
+        let events = LineTaskReadyEvents::new(&marks);
+        line.advance_schedules(elapsed, &mut reducer).unwrap();
+        let started = progress_live_line_task_group(&group, elapsed, events, &mut reducer).unwrap();
+        assert_eq!(started.commands.len(), 2);
+        for cue in [&token, &sibling] {
+            assert!(line.take_scheduled_capture_packet(cue).unwrap().is_empty());
+        }
+        let mut queue = RuntimeCommandQueue::new(activation, line.command_sequence());
+        line.ledger.drop_owned(&token, &owner, &mut queue).unwrap();
+        assert!(queue.into_commands().is_empty());
+        line.advance_schedules(elapsed, &mut reducer).unwrap();
+        let cancelled =
+            progress_live_line_task_group(&group, elapsed, events, &mut reducer).unwrap();
+        let tag = LineTaskWorkTag::scheduled(token.clone(), node(2));
+        assert_eq!(
+            cancelled.commands,
+            [LineTaskCommand::Cancel { tag: tag.clone() }]
+        );
+
+        let proof = line
+            .inspect_scheduled_child_bindings(&token, &[], RuntimeScheduledState::Cancelled)
+            .unwrap();
+        let mut stage = line.begin_scheduled_completion_stage();
+        line.stage_scheduled_child_work_completion(&mut stage, &proof, &[], false, true)
+            .unwrap();
+        line.admit_scheduled_child_bindings_prepared(proof, Box::new([]));
+        line.commit_scheduled_completion_stage(stage);
+        complete_live_line_task_work(&group, &mut reducer, tag, false).unwrap();
+
+        assert_eq!(
+            line.ledger.lease(&token).unwrap().state(),
+            RuntimeHandleLeaseState::Released
+        );
+        assert_eq!(
+            line.ledger.lease(&sibling).unwrap().state(),
+            RuntimeHandleLeaseState::Running
+        );
+        let restored = LineTaskLiveState::restore(&group, reducer.snapshot()).unwrap();
+        assert!(restored.has_outstanding());
+        assert_eq!(restored.snapshot().scheduled_lanes().len(), 1);
+        assert_eq!(restored.snapshot().scheduled_lanes()[0].token(), &sibling);
     }
 
     #[test]
