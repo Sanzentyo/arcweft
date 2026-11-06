@@ -85,6 +85,7 @@ pub(super) enum NativePreparedRegistryMutation<'source, 'budget> {
     Drop {
         prepared: RuntimePreparedRegistryDrop,
         fade: Option<&'source crate::value::RuntimeExpr>,
+        policy: crate::effect::RuntimeDropPolicyKind,
     },
 }
 
@@ -126,7 +127,11 @@ impl<'source, 'budget> NativePreparedRegistryMutation<'source, 'budget> {
                     RuntimeDropPolicyExpr::Stop { fade } => Some(fade),
                     _ => None,
                 };
-                Ok(Self::Drop { prepared, fade })
+                Ok(Self::Drop {
+                    prepared,
+                    fade,
+                    policy: policy.kind(),
+                })
             }
             _ => Err(missing.into()),
         }
@@ -147,11 +152,20 @@ impl<'source, 'budget> NativePreparedRegistryMutation<'source, 'budget> {
             Self::Write { prepared, .. } => Ok(RuntimePreparedRegistryMutation::Write(
                 prepared.capture(&value.expect("the write has one input"))?,
             )),
-            Self::Drop { prepared, fade } => {
-                if fade.is_some() && !matches!(value, Some(RuntimeValue::Duration(_))) {
-                    return Err(crate::line_task::LineRuntimeError::InvalidDropPolicy.into());
-                }
-                Ok(RuntimePreparedRegistryMutation::Drop(prepared))
+            Self::Drop {
+                prepared, policy, ..
+            } => {
+                let fade = match value {
+                    Some(RuntimeValue::Duration(fade)) => Some(fade),
+                    Some(_) => {
+                        return Err(crate::line_task::LineRuntimeError::InvalidDropPolicy.into());
+                    }
+                    None => None,
+                };
+                let policy = policy
+                    .materialize(fade)
+                    .ok_or(crate::line_task::LineRuntimeError::InvalidDropPolicy)?;
+                Ok(RuntimePreparedRegistryMutation::Drop(prepared, policy))
             }
         }
     }

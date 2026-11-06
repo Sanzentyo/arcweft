@@ -5,12 +5,17 @@ use super::{
     RuntimeRegistryValue,
 };
 use crate::awbc::schema::{AwbcEffectPayload, AwbcEffectPlanId};
+use crate::effect::RuntimeDropPolicy;
+use crate::line_task::{LineRuntimeError, RuntimeHandleDropAuthorization, RuntimeHandleOwnerSlot};
 use crate::pattern::RuntimeSemanticTypeId;
-use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeFrameInstanceId};
+use crate::runtime_id::{
+    DialogueActivationId, RuntimeFiberInstanceId, RuntimeFrameInstanceId, RuntimeLineHandleToken,
+};
 use crate::task::RuntimeProgramOwner;
-use crate::value::ownership::RuntimeValueOwnershipRequirement;
+use crate::value::ownership::{RuntimeAffineLineHandle, RuntimeValueOwnershipRequirement};
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeValue};
 use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
+use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 /// The actual reached owner against which an inert registry row is admitted.
@@ -30,6 +35,13 @@ impl RuntimeRegistryOwner {
         match self {
             Self::NativeFlow | Self::AwbcFlow { .. } => LifetimeScopeKind::Flow,
             Self::Dialogue(_) => LifetimeScopeKind::Line,
+        }
+    }
+
+    const fn ownership(self) -> RuntimeValueOwnershipRequirement {
+        match self {
+            Self::Dialogue(_) => RuntimeValueOwnershipRequirement::Owned,
+            _ => RuntimeValueOwnershipRequirement::Unrestricted,
         }
     }
 }
@@ -238,11 +250,9 @@ impl RuntimeScopeRegistry {
     ) -> Result<RuntimePreparedRegistryDrop, AwbcRuntimeValueSnapshotError> {
         let row = match self.admit_reached_entry(owner, key, admission)? {
             Some(entry) => {
-                admission.validate_typed_snapshot_in_invocation(
-                    &entry.row.value,
-                    expected,
-                    binding,
-                )?;
+                entry
+                    .row
+                    .validate_value(admission, expected, binding, owner.ownership())?;
                 Some(Arc::clone(&entry.row))
             }
             None if kind == RuntimeRegistryReadKind::Optional => None,
@@ -278,6 +288,7 @@ impl RuntimeScopeRegistry {
             observed: self.observe(position.ok().map(|index| Arc::clone(&self.rows[index].row))),
             source,
             value,
+            ownership: owner.ownership(),
         })
     }
 
@@ -326,11 +337,11 @@ impl RuntimeScopeRegistry {
         &mut self,
         position: Result<usize, usize>,
         source: RuntimeRegistryWriteSource,
-        update: RuntimeRegistryStateUpdate,
+        row: RuntimeRegistryValue,
     ) {
         let entry = RegistryEntry {
             source,
-            row: Arc::new(update.row),
+            row: Arc::new(row),
         };
         match position {
             Ok(index) => self.rows[index] = entry,
@@ -354,10 +365,29 @@ impl RuntimeScopeRegistry {
             entry
                 .source
                 .admit(owner, key, entry.row.expected, admission)?;
-            entry.row.admit_retained(admission)?;
+            entry.row.admit_retained(admission, owner.ownership())?;
             previous = Some(key);
         }
         Ok(())
+    }
+
+    pub(crate) fn line_handle_rows(
+        &self,
+    ) -> Result<Vec<(&LifetimeRegistryKey, RuntimeAffineLineHandle)>, AwbcRuntimeValueSnapshotError>
+    {
+        let mut handles = Vec::new();
+        for entry in &self.rows {
+            handles.extend(
+                entry
+                    .row
+                    .value
+                    .view()
+                    .line_registry_handles()?
+                    .into_iter()
+                    .map(|handle| (&entry.row.key, handle)),
+            );
+        }
+        Ok(handles)
     }
 }
 
@@ -372,18 +402,19 @@ pub(crate) struct RuntimeRegistryWritePreparation<'key, 'budget> {
     observed: RuntimeRegistryObservation,
     source: RuntimeRegistryWriteSource,
     value: PreparedRegistryValue<'key, 'budget>,
+    ownership: RuntimeValueOwnershipRequirement,
 }
 
 impl RuntimeRegistryWritePreparation<'_, '_> {
     pub(crate) fn capture(
-        self,
+        mut self,
         value: &RuntimeValue,
     ) -> Result<RuntimePreparedRegistryWrite, AwbcRuntimeValueSnapshotError> {
         Ok(RuntimePreparedRegistryWrite {
             len: self.len,
             observed: self.observed,
             source: self.source,
-            update: self.value.capture(value)?,
+            row: self.value.capture_row(value, self.ownership)?,
         })
     }
 }
@@ -393,7 +424,7 @@ pub(crate) struct RuntimePreparedRegistryWrite {
     len: usize,
     observed: RuntimeRegistryObservation,
     source: RuntimeRegistryWriteSource,
-    update: RuntimeRegistryStateUpdate,
+    row: RuntimeRegistryValue,
 }
 
 impl RuntimePreparedRegistryWrite {
@@ -404,7 +435,7 @@ impl RuntimePreparedRegistryWrite {
         if rows.rows.len() != self.len {
             return Err(invalid_registry("registry size changed before write"));
         }
-        rows.revalidate_row(self.update.key(), &self.observed)
+        rows.revalidate_row(&self.row.key, &self.observed)
     }
 
     pub(crate) fn reserve(
@@ -420,7 +451,7 @@ impl RuntimePreparedRegistryWrite {
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let position = self.position(rows)?;
         rows.reserve_write(position)?;
-        rows.commit_write(position, self.source, self.update);
+        rows.commit_write(position, self.source, self.row);
         Ok(())
     }
 }
@@ -454,17 +485,48 @@ impl RuntimePreparedRegistryDrop {
 /// execution has admitted the rest of the instruction's effects.
 pub(crate) enum RuntimePreparedRegistryMutation {
     Write(RuntimePreparedRegistryWrite),
-    Drop(RuntimePreparedRegistryDrop),
+    Drop(RuntimePreparedRegistryDrop, RuntimeDropPolicy),
 }
 
 impl RuntimePreparedRegistryMutation {
+    pub(crate) fn line_change(
+        &self,
+    ) -> Result<Option<RuntimeRegistryLineChange<'_>>, AwbcRuntimeValueSnapshotError> {
+        let (key, observed, incoming, policy) = match self {
+            Self::Write(write) => (
+                &write.row.key,
+                &write.observed,
+                Some(&write.row),
+                RuntimeDropPolicy::Default,
+            ),
+            Self::Drop(drop, policy) => (&drop.key, &drop.observed, None, *policy),
+        };
+        if key.scope() != &LifetimeScopeKind::Line {
+            return Ok(None);
+        }
+        let handles = |row: Option<&RuntimeRegistryValue>| match row {
+            Some(row) => row.value.view().line_registry_handles(),
+            None => Ok(Vec::new()),
+        };
+        let previous = handles(observed.row.as_deref())?;
+        let incoming = handles(incoming)?;
+        Ok(
+            (!previous.is_empty() || !incoming.is_empty()).then_some(RuntimeRegistryLineChange {
+                key,
+                previous,
+                incoming,
+                policy,
+            }),
+        )
+    }
+
     pub(crate) fn reserve(
         &self,
         rows: &mut RuntimeScopeRegistry,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
             Self::Write(write) => write.reserve(rows),
-            Self::Drop(drop) => drop.position(rows).map(|_| ()),
+            Self::Drop(drop, _) => drop.position(rows).map(|_| ()),
         }
     }
 
@@ -474,8 +536,59 @@ impl RuntimePreparedRegistryMutation {
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
             Self::Write(write) => write.commit(rows),
-            Self::Drop(drop) => drop.commit(rows),
+            Self::Drop(drop, _) => drop.commit(rows),
         }
+    }
+}
+
+pub(crate) struct RuntimeRegistryLineChange<'a> {
+    key: &'a LifetimeRegistryKey,
+    previous: Vec<RuntimeAffineLineHandle>,
+    incoming: Vec<RuntimeAffineLineHandle>,
+    policy: RuntimeDropPolicy,
+}
+
+impl RuntimeRegistryLineChange<'_> {
+    pub(crate) fn merge_receiver_custody(
+        &self,
+        receiver: DialogueActivationId,
+        before: &mut BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        after: &mut BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        drops: &mut RuntimeHandleDropAuthorization,
+        mut check_issuer: impl FnMut(&RuntimeAffineLineHandle) -> Result<(), LineRuntimeError>,
+    ) -> Result<(), LineRuntimeError> {
+        let registry_slot =
+            |handle: &RuntimeAffineLineHandle| RuntimeHandleOwnerSlot::LineRegistry {
+                receiver,
+                key: self.key.clone(),
+                path: handle.path().clone(),
+            };
+        for handle in &self.previous {
+            check_issuer(handle)?;
+            let token = handle.token();
+            if after.contains_key(token)
+                || before
+                    .insert(token.clone(), registry_slot(handle))
+                    .is_some()
+            {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+        }
+        drops.authorize_tokens_with_policy(
+            self.previous.iter().map(|handle| handle.token().clone()),
+            self.policy,
+        )?;
+        for handle in &self.incoming {
+            check_issuer(handle)?;
+            let token = handle.token();
+            if !before.contains_key(token) {
+                return Err(LineRuntimeError::WrongOwner);
+            }
+            if after.insert(token.clone(), registry_slot(handle)).is_some() {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+        }
+        Ok(())
     }
 }
 

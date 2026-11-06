@@ -878,6 +878,7 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
         let mut identities = std::collections::BTreeSet::new();
         let mut active_children = std::collections::BTreeSet::new();
         let mut matched_received_results = std::collections::BTreeSet::new();
+        let mut matched_registry_handles = std::collections::BTreeSet::new();
         for entry in &self.entries {
             let (activation, revision) = match entry {
                 RuntimeDialogueRegistrySaveEntry::Active {
@@ -900,6 +901,25 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
             match entry {
                 RuntimeDialogueRegistrySaveEntry::Active { frame, line, .. } => {
                     line.admit_retained_resources(Some(*activation), admission)?;
+                    for (key, handle) in line.retained_registry_line_handles()? {
+                        let token = handle.token();
+                        let lease = if token.activation() == activation {
+                            line.ledger().lease(token)
+                        } else {
+                            published
+                                .get(token.activation())
+                                .and_then(|issuer| issuer.lease(token))
+                        }
+                        .ok_or(LineRuntimeError::InvalidRestoredLedgerState)?;
+                        if lease.resource().kind() != handle.kind()
+                            || !lease.admits_line_registry()
+                            || !matches!(lease.owner(), RuntimeHandleOwnerSlot::LineRegistry { receiver, key: owner_key, path }
+                                if receiver == activation && owner_key == key && path == handle.path())
+                            || !matched_registry_handles.insert(token.clone())
+                        {
+                            return Err(LineRuntimeError::InvalidRestoredLedgerState.into());
+                        }
+                    }
                     line.restore_admit_with_deferred_child(
                         activation,
                         expected_children.get(activation).copied(),
@@ -958,6 +978,26 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
                     .any(|receiver| !active_children.contains(receiver))
             {
                 return Err(LineRuntimeError::InvalidRestoredResultState.into());
+            }
+        }
+        let has_unmatched_registry_lease = |lease: &RuntimeHandleLease| {
+            matches!(lease.owner(), RuntimeHandleOwnerSlot::LineRegistry { .. })
+                && !super::handle::result_lease_was_retired(lease.state())
+                && !matched_registry_handles.contains(lease.token())
+        };
+        for entry in &self.entries {
+            let invalid = match entry {
+                RuntimeDialogueRegistrySaveEntry::Active { line, .. } => line
+                    .ledger()
+                    .leases()
+                    .values()
+                    .any(has_unmatched_registry_lease),
+                RuntimeDialogueRegistrySaveEntry::PublishedHandles { handles, .. } => {
+                    handles.has_lease_matching(has_unmatched_registry_lease)
+                }
+            };
+            if invalid {
+                return Err(LineRuntimeError::InvalidRestoredLedgerState.into());
             }
         }
         if expected_children
@@ -1620,7 +1660,13 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         let receiver_slots = |owners: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>| {
             owners
                 .iter()
-                .filter(|(_, owner)| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)))
+                .filter(|(token, owner)| match owner {
+                    RuntimeHandleOwnerSlot::ParentFiber(_) => true,
+                    RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => {
+                        token.activation() != receiver
+                    }
+                    _ => false,
+                })
                 .map(|(token, owner)| (token.clone(), owner.clone()))
                 .collect::<BTreeMap<_, _>>()
         };
@@ -1641,7 +1687,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         for (token, slot) in &published_after {
             if let Entry::Vacant(entry) = published_before.entry(token.clone()) {
                 let RuntimeHandleOwnerSlot::ParentFiber(slot) = slot else {
-                    unreachable!("receiver slot projection selects parent fiber slots")
+                    return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
                 };
                 if arrivals.and_then(|arrivals| arrivals.get(token)) != Some(slot) {
                     return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
@@ -1689,6 +1735,128 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             Clone::clone,
         )?;
         Ok((!prepared.updates.is_empty()).then_some(prepared))
+    }
+
+    pub(crate) fn validate_registry_handle(
+        &self,
+        activation: &DialogueActivationId,
+        ledger: &RuntimeLineHandleLedger,
+        handle: &RuntimeAffineLineHandle,
+    ) -> Result<(), LineRuntimeError> {
+        let token = handle.token();
+        let lease = if token.activation() == activation {
+            ledger.lease(token)
+        } else {
+            match self.entries.get(token.activation()) {
+                Some(RuntimeDialogueRegistryEntry::PublishedHandles { handles, .. }) => {
+                    handles.lease(token)
+                }
+                _ => return Err(LineRuntimeError::ParentHandleBeforePublication),
+            }
+        }
+        .ok_or(LineRuntimeError::UnknownHandle)?;
+        if lease.resource().kind() != handle.kind() {
+            return Err(LineRuntimeError::WrongOpaqueProducer);
+        }
+        if !lease.admits_line_registry() {
+            return Err(LineRuntimeError::ReleasedHandle);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn reconcile_child_registry_step(
+        &self,
+        transaction: &mut RuntimeDialogueActivationTransaction<F, T>,
+        execution: ExecutionInstanceId,
+        tag: &super::LineTaskWorkTag,
+        before: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+        after: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+        drops: &super::RuntimeHandleDropAuthorization,
+        change: Option<&crate::effect::RuntimeRegistryLineChange<'_>>,
+    ) -> Result<(), LineRuntimeError> {
+        let Some(change) = change else {
+            return transaction
+                .line_mut()
+                .reconcile_child_scope_step(tag, before, after, drops);
+        };
+        let activation = *transaction.activation();
+        if tag.activation_id() != &activation
+            || before
+                .iter()
+                .chain(after)
+                .any(|token| token.activation() != &activation)
+        {
+            return Err(LineRuntimeError::WrongActivation);
+        }
+        let child_owners = |tokens: &std::collections::BTreeSet<RuntimeLineHandleToken>| {
+            tokens
+                .iter()
+                .map(|token| {
+                    (
+                        token.clone(),
+                        RuntimeHandleOwnerSlot::ChildScope(tag.clone()),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let mut before = child_owners(before);
+        let mut after = child_owners(after);
+        let mut drops = drops.clone();
+        let line = transaction.line_mut();
+        change.merge_receiver_custody(
+            activation,
+            &mut before,
+            &mut after,
+            &mut drops,
+            |handle| self.validate_registry_handle(&activation, line.ledger(), handle),
+        )?;
+        drops.validate_removed(
+            |token| before.contains_key(token),
+            |token| after.contains_key(token),
+        )?;
+        let foreign = self.inspect_received_fiber_reconciliation(
+            execution, &before, &after, &drops, None, None,
+        )?;
+        line.reconcile_child_registry_owners(&activation, &before, &after, &drops)?;
+        transaction.stage_received_handles(foreign);
+        Ok(())
+    }
+
+    pub(crate) fn retire_line_registry(
+        &self,
+        transaction: &mut RuntimeDialogueActivationTransaction<F, T>,
+        execution: ExecutionInstanceId,
+    ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
+        let activation = *transaction.activation();
+        let line = transaction.line_mut();
+        let mut before = BTreeMap::new();
+        for (key, handle) in line
+            .retained_registry_line_handles()
+            .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+        {
+            self.validate_registry_handle(&activation, line.ledger(), &handle)?;
+            let owner = RuntimeHandleOwnerSlot::LineRegistry {
+                receiver: activation,
+                key: key.clone(),
+                path: handle.path().clone(),
+            };
+            if before.insert(handle.token().clone(), owner).is_some() {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+        }
+        if before.is_empty() {
+            return Ok(None);
+        }
+        let after = BTreeMap::new();
+        let drops = super::RuntimeHandleDropAuthorization::at_boundary(Some(
+            crate::effect::RuntimeDropPolicy::Default,
+        ));
+        let foreign = self.inspect_received_fiber_reconciliation(
+            execution, &before, &after, &drops, None, None,
+        )?;
+        line.reconcile_child_registry_owners(&activation, &before, &after, &drops)?;
+        line.line_registry_mut()?.clear();
+        Ok(foreign)
     }
 
     pub(crate) fn commit_parent_fiber_reconciliation(

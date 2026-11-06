@@ -4478,7 +4478,19 @@ impl Engine {
             let mut transaction = self
                 .dialogue_activations
                 .begin_transaction(owner.tag.activation_id())?;
-            transaction.line_mut().reconcile_child_scope_step(
+            let change = line_registry_mutation
+                .as_ref()
+                .map(|write| write.mutation.line_change())
+                .transpose()
+                .map_err(
+                    |error| dialogue::DialogueExecutionError::ActivationEffectFailed {
+                        message: error.to_string(),
+                    },
+                )?
+                .flatten();
+            self.dialogue_activations.reconcile_child_registry_step(
+                &mut transaction,
+                self.fiber.execution,
                 &owner.tag,
                 before_tokens
                     .as_ref()
@@ -4487,6 +4499,7 @@ impl Engine {
                     .as_ref()
                     .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?,
                 &drops,
+                change.as_ref(),
             )?;
             if let Some(write) = line_registry_mutation {
                 self.commit_dialogue_registry_mutation(&mut transaction, write)

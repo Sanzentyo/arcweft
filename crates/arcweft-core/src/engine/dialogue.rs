@@ -49,6 +49,7 @@ type NativeDialogueActivationState = RuntimeDialogueActivationState<RuntimePlanT
 enum NativeDialogueHandleTransition<'a> {
     Receive(&'a std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>),
     Result(&'a [crate::value::ownership::RuntimeAffineLineHandle]),
+    Registry(&'a crate::effect::RuntimeRegistryLineChange<'a>),
 }
 
 /// Between evaluations the step owns the activation transaction. During an
@@ -647,24 +648,24 @@ impl Engine {
                 }
                 return;
             }
-            let activation = transaction.line_mut();
+            let activation = transaction.line();
             if activation.deferred_inflight().is_none()
                 && activation.deferred_registrations().is_empty()
                 && !activation.has_pending_commands()
-                && let Err(cleanup) =
-                    Self::unwind_dialogue_handles(&activation_id, activation, false)
+                && let Err(cleanup) = self.unwind_dialogue_handles(&mut transaction, false)
             {
                 output.diagnostics.push(RuntimeDiagnostic::new(format!(
                     "dialogue cleanup after primary failure also failed: {cleanup}"
                 )));
             }
         }
+        let pending_received_release = self
+            .dialogue_activations
+            .has_staged_result_retirement(&transaction);
         let (state, activation) = transaction.parts_mut();
         let terminal = activation.failure_close_ready()
             && !self.has_joined_dialogue_work(&activation_id)
-            && !self
-                .dialogue_activations
-                .has_pending_result_retirement(&activation_id);
+            && !pending_received_release;
         if terminal {
             let Some(error) = state.failure.clone() else {
                 self.fail_eval(LineRuntimeError::InvalidResultTransition, output);
@@ -717,6 +718,7 @@ impl Engine {
     ) {
         let activation_id = transaction.activation().clone();
         transaction.frame_mut().phase = DialogueRuntimePhase::Closing;
+        let mut staged_registry_release = false;
         if !self.has_joined_dialogue_work(&activation_id) {
             let Some(exit) = transaction.frame().line_task.closed_exit() else {
                 self.begin_dialogue_failure(
@@ -747,19 +749,27 @@ impl Engine {
                 }
                 return;
             }
-            let activation = transaction.line_mut();
+            let activation = transaction.line();
             if activation.deferred_inflight().is_none()
                 && activation.deferred_registrations().is_empty()
                 && !activation.has_pending_commands()
-                && let Err(error) = Self::unwind_dialogue_handles(&activation_id, activation, true)
             {
-                self.begin_dialogue_failure(transaction, error, output);
-                return;
+                match self.unwind_dialogue_handles(&mut transaction, true) {
+                    Ok(staged) => staged_registry_release = staged,
+                    Err(error) => {
+                        self.begin_dialogue_failure(transaction, error, output);
+                        return;
+                    }
+                }
             }
         }
         let activation = transaction.line();
-        let terminal =
-            activation.successful_close_ready() && !self.has_joined_dialogue_work(&activation_id);
+        let terminal = activation.successful_close_ready()
+            && !staged_registry_release
+            && !self.has_joined_dialogue_work(&activation_id)
+            && !self
+                .dialogue_activations
+                .has_staged_result_retirement(&transaction);
         if terminal {
             self.resume_dialogue_publication_with_transaction(transaction, output);
         } else {
@@ -777,12 +787,20 @@ impl Engine {
     }
 
     fn unwind_dialogue_handles(
-        activation_id: &crate::runtime_id::DialogueActivationId,
-        activation: &mut NativeDialogueActivationState,
+        &self,
+        transaction: &mut DialogueActivationTransaction,
         preserve_result: bool,
-    ) -> Result<(), DialogueExecutionError> {
-        activation.prepare_handle_unwind(activation_id, preserve_result)?;
-        Ok(())
+    ) -> Result<bool, DialogueExecutionError> {
+        let received = self
+            .dialogue_activations
+            .retire_line_registry(transaction, self.fiber.execution)?;
+        let staged = received.is_some();
+        transaction.stage_received_handles(received);
+        let activation_id = *transaction.activation();
+        transaction
+            .line_mut()
+            .prepare_handle_unwind(&activation_id, preserve_result)?;
+        Ok(staged)
     }
 
     pub(super) fn consume_dialogue_host_outcomes(
@@ -1574,17 +1592,37 @@ impl Engine {
         Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
         DialogueExecutionError,
     > {
-        let drops = frame.execution.env.take_assignment_discard_authorization();
-        let after = self.activation_local_handle_owners(activation_id, frame)?;
+        let mut drops = frame.execution.env.take_assignment_discard_authorization();
+        let mut after = self.activation_local_handle_owners(activation_id, frame)?;
         if !drops.has_displaced_values() && before == &after && transition.is_none() {
             return Ok(None);
         }
-        let (arrivals, result) = match transition {
-            Some(NativeDialogueHandleTransition::Receive(arrivals)) => (Some(arrivals), None),
-            Some(NativeDialogueHandleTransition::Result(handles)) => {
-                (None, Some((activation_id, handles)))
+        let mut before_registry;
+        let (arrivals, result, before) = match transition {
+            Some(NativeDialogueHandleTransition::Receive(arrivals)) => {
+                (Some(arrivals), None, before)
             }
-            None => (None, None),
+            Some(NativeDialogueHandleTransition::Result(handles)) => {
+                (None, Some((activation_id, handles)), before)
+            }
+            Some(NativeDialogueHandleTransition::Registry(change)) => {
+                before_registry = before.clone();
+                change.merge_receiver_custody(
+                    *activation_id,
+                    &mut before_registry,
+                    &mut after,
+                    &mut drops,
+                    |handle| {
+                        self.dialogue_activations.validate_registry_handle(
+                            activation_id,
+                            activation.ledger(),
+                            handle,
+                        )
+                    },
+                )?;
+                (None, None, &before_registry)
+            }
+            None => (None, None, before),
         };
         drops.validate_removed(
             |token| before.contains_key(token),
@@ -3082,7 +3120,16 @@ impl Engine {
                 .map_err(|error| failure(error.to_string()))?;
 
             let transaction = slot.transaction_mut();
-            self.reconcile_activation_instruction(transaction, &before, None)?;
+            let change = mutation
+                .line_change()
+                .map_err(|error| failure(error.to_string()))?;
+            self.reconcile_activation_instruction(
+                transaction,
+                &before,
+                change
+                    .as_ref()
+                    .map(NativeDialogueHandleTransition::Registry),
+            )?;
             advance_activation_pc(transaction.frame_mut())?;
             self.commit_dialogue_registry_mutation(
                 transaction,
@@ -3137,7 +3184,17 @@ impl Engine {
             )?;
             let write = pending.ok_or(LineRuntimeError::InvalidActivationOperation)?;
             let transaction = slot.transaction_mut();
-            self.reconcile_activation_instruction(transaction, &before, None)?;
+            let change = write
+                .mutation
+                .line_change()
+                .map_err(|error| failure(error.to_string()))?;
+            self.reconcile_activation_instruction(
+                transaction,
+                &before,
+                change
+                    .as_ref()
+                    .map(NativeDialogueHandleTransition::Registry),
+            )?;
             self.commit_dialogue_registry_mutation(transaction, write)
                 .map_err(|error| failure(error.to_string()))?;
             Ok(DialogueActivationStep::Execution(staged))

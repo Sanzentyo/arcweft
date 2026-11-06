@@ -3882,7 +3882,21 @@ impl AwbcProductStepExecutor {
             if let Some((owner, write)) = &pending_registry_mutation {
                 self.reserve_reached_registry_mutation(*tag.activation_id(), *owner, line, write)?;
             }
-            line.reconcile_child_scope_step(&tag, before_handles, &after_handles, &drop_policy)?;
+            let change = pending_registry_mutation
+                .as_ref()
+                .map(|(_, write)| write.line_change())
+                .transpose()
+                .map_err(crate::awbc::fiber::FiberStateError::Snapshot)?
+                .flatten();
+            self.dialogues.reconcile_child_registry_step(
+                &mut transaction,
+                self.facade_fiber.execution,
+                &tag,
+                before_handles,
+                &after_handles,
+                &drop_policy,
+                change.as_ref(),
+            )?;
             Ok::<_, ProductStepError>(())
         })();
         if let Err(error) = admitted_step {
@@ -5801,6 +5815,17 @@ impl AwbcProductStepExecutor {
                 let completed =
                     self.commit_product_dialogue_failure_close(transaction, batch, output);
                 return completed || (!waiting_for_child && progressed);
+            }
+            match self
+                .dialogues
+                .retire_line_registry(&mut transaction, self.facade_fiber.execution)
+            {
+                Ok(Some(received)) => transaction.stage_received_handles(Some(received)),
+                Ok(None) => {}
+                Err(cleanup) => {
+                    self.fail_with_error(cleanup.into(), output);
+                    return true;
+                }
             }
             if let Err(cleanup) = transaction
                 .line_mut()

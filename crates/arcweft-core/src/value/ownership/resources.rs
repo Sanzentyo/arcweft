@@ -11,6 +11,26 @@ use crate::value::{
 };
 
 impl RuntimeValueView<'_> {
+    /// A Line can take dialogue resources with their original issuer. A
+    /// presentation body or launched Need still requires its owning context.
+    pub(crate) fn line_registry_handles(
+        self,
+    ) -> Result<Vec<RuntimeAffineLineHandle>, crate::value::AwbcRuntimeValueSnapshotError> {
+        let invalid =
+            |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
+        let mut graph = RuntimeValueResourceGraph::default();
+        self.collect_resources(&RuntimeValuePath::root(), &mut graph)
+            .map_err(|error| invalid(error.to_string()))?;
+        if graph.contains_presentation_body || graph.owned_need.is_some() {
+            return Err(invalid(
+                "Line registry cannot take a presentation body or a launched Need".into(),
+            ));
+        }
+        graph
+            .into_line_handles()
+            .map_err(|error| invalid(error.to_string()))
+    }
+
     /// Projects the line ledger's family from the shared resource grammar.
     /// Other resource families remain under their enclosing execution owner;
     /// this does not admit a detached value or replace complete custody checks.
@@ -66,10 +86,13 @@ impl RuntimeValueView<'_> {
                 Ok(())
             }
             Self::Sequence(sequence) => sequence.collect_resources(path, graph),
-            Self::PresentationResource(value) => value.body().collect_resources(
-                &path.child(RuntimeValuePathSegment::PresentationBody)?,
-                graph,
-            ),
+            Self::PresentationResource(value) => {
+                graph.contains_presentation_body = true;
+                value.body().collect_resources(
+                    &path.child(RuntimeValuePathSegment::PresentationBody)?,
+                    graph,
+                )
+            }
             Self::NominalRecord(record) => {
                 for (index, value) in record.fields().iter().enumerate() {
                     let field =

@@ -10,6 +10,7 @@ use crate::entry::schema::value_encoding::ValueAdmissionOrigin;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::task::RuntimeProgramOwner;
+use crate::value::ownership::RuntimeValueOwnershipRequirement;
 use crate::value::{
     AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeBorrowedValue,
     RuntimeRetainedValueAdmission, RuntimeValue,
@@ -21,7 +22,8 @@ pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJour
 pub(crate) use scope::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
 
 pub(crate) use scope::{
-    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryWritePreparation,
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryLineChange,
+    RuntimeRegistryWritePreparation,
 };
 
 /// The checked presence requirement for an operation on a reached registry row.
@@ -181,7 +183,8 @@ impl RuntimeRegistryStateUpdate {
             Err(error) => Err(error),
         };
         result.inspect_err(|error| admission.retain_failure(error.clone()))?;
-        self.row.admit_retained(admission)?;
+        self.row
+            .admit_retained(admission, RuntimeValueOwnershipRequirement::Unrestricted)?;
         self.row.copy_admitted(admission)
     }
 
@@ -224,32 +227,55 @@ pub(crate) struct PreparedRegistryValue<'source, 'budget> {
 
 impl PreparedRegistryValue<'_, '_> {
     pub(crate) fn capture(
-        self,
+        mut self,
         value: &RuntimeValue,
     ) -> Result<RuntimeRegistryStateUpdate, AwbcRuntimeValueSnapshotError> {
+        let row = self.capture_row(value, RuntimeValueOwnershipRequirement::Unrestricted)?;
+        Ok(RuntimeRegistryStateUpdate {
+            program: self
+                .admission
+                .program_owner()
+                .expect("typed admission authenticated the original executable")
+                .clone(),
+            row,
+        })
+    }
+
+    fn capture_row(
+        &mut self,
+        value: &RuntimeValue,
+        ownership: RuntimeValueOwnershipRequirement,
+    ) -> Result<RuntimeRegistryValue, AwbcRuntimeValueSnapshotError> {
         let Self {
             key,
             expected,
             binding,
             admission,
         } = self;
-        admission.validate_typed_in_invocation(value, expected, binding)?;
+        let expected = *expected;
+        match ownership {
+            RuntimeValueOwnershipRequirement::Unrestricted => {
+                admission.validate_typed_in_invocation(value, expected, *binding)?;
+            }
+            RuntimeValueOwnershipRequirement::Owned => {
+                admission.validate_owned_typed_borrowed_in_invocation(
+                    value.into(),
+                    expected,
+                    *binding,
+                )?;
+                value.view().line_registry_handles()?;
+            }
+        }
         let program = admission
             .program_owner()
             .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?;
         let value = AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, program)
             .inspect_err(|error| admission.retain_failure(error.clone()))?;
-        Ok(RuntimeRegistryStateUpdate {
-            program: admission
-                .program_owner()
-                .expect("typed admission authenticated the original executable")
-                .clone(),
-            row: RuntimeRegistryValue {
-                key: key.clone(),
-                expected,
-                binding: binding.cloned(),
-                value,
-            },
+        Ok(RuntimeRegistryValue {
+            key: (*key).clone(),
+            expected,
+            binding: binding.cloned(),
+            value,
         })
     }
 }
@@ -273,6 +299,7 @@ impl RuntimeRegistryValue {
     fn admit_retained(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
+        ownership: RuntimeValueOwnershipRequirement,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         RuntimeRegistryStateUpdate::admit_header(
             &self.key,
@@ -281,11 +308,30 @@ impl RuntimeRegistryValue {
             ValueAdmissionOrigin::InertSnapshot,
             admission,
         )?;
-        admission.validate_typed_snapshot_in_invocation(
-            &self.value,
-            self.expected,
-            self.binding.as_ref(),
-        )
+        self.validate_value(admission, self.expected, self.binding.as_ref(), ownership)
+    }
+
+    fn validate_value(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        ownership: RuntimeValueOwnershipRequirement,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        match ownership {
+            RuntimeValueOwnershipRequirement::Unrestricted => {
+                admission.validate_typed_snapshot_in_invocation(&self.value, expected, binding)
+            }
+            RuntimeValueOwnershipRequirement::Owned => {
+                admission.validate_owned_typed_borrowed_in_invocation(
+                    (&self.value).into(),
+                    expected,
+                    binding,
+                )?;
+                self.value.view().line_registry_handles()?;
+                Ok(())
+            }
+        }
     }
 }
 

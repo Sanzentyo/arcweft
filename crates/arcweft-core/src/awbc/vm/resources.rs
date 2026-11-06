@@ -262,20 +262,21 @@ impl VmExecutionResources<'_> {
             .ok_or(FiberStateError::InvalidFrame)?
             .semantic_identity();
         let frame = fiber.active_frame()?;
-        match (policy, args) {
+        let fade = match (policy, args) {
             (RuntimeDropPolicyKind::Stop, [fade]) => {
-                if !matches!(
-                    frame.register(*fade)?,
-                    crate::value::RuntimeValue::Duration(_)
-                ) {
+                let crate::value::RuntimeValue::Duration(fade) = frame.register(*fade)? else {
                     return Err(FiberStateError::InvalidFrame.into());
-                }
+                };
+                Some(*fade)
             }
             (RuntimeDropPolicyKind::Stop, _) | (_, [_, ..]) => {
                 return Err(FiberStateError::InvalidFrame.into());
             }
-            (_, []) => {}
-        }
+            (_, []) => None,
+        };
+        let policy = policy
+            .materialize(fade)
+            .ok_or(FiberStateError::InvalidFrame)?;
         let transfer = frame.prepare_register_values(program, args)?;
         let binding = frame.type_instantiation.as_deref();
         if let Some(index) = destination {
@@ -320,7 +321,7 @@ impl VmExecutionResources<'_> {
                 .map_err(FiberStateError::Snapshot)?;
             *reached.pending = Some((
                 reached.owner,
-                RuntimePreparedRegistryMutation::Drop(removal),
+                RuntimePreparedRegistryMutation::Drop(removal, policy),
             ));
         }
         drop(

@@ -3647,6 +3647,8 @@ const LINE_HANDLE_CHARACTER_MANIFEST: &str = r#"{
 
 fn execute_nested_line_handle_transfer(
     expected_lines: usize,
+    expect_look: bool,
+    cancel_last: bool,
     mut step: impl FnMut(
         arcweft_core::step::RuntimeStepInput,
         arcweft_core::step::RuntimeStepOptions,
@@ -3659,9 +3661,10 @@ fn execute_nested_line_handle_transfer(
             RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
             RuntimeStageCommandOutcome,
         },
-        step::{RuntimeStepInput, RuntimeStepOptions},
+        step::{RuntimeDialogueInputActionEvent, RuntimeStepInput, RuntimeStepOptions},
         time::TickId,
     };
+    use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
 
     let mut input = RuntimeStepInput::default();
     let mut actor = None;
@@ -3681,7 +3684,18 @@ fn execute_nested_line_handle_transfer(
         effects.extend(result.output.effects.line);
         for event in result.output.flow_events {
             if let FlowEvent::DialogueLine { activation, .. } = event {
-                input.dialogue_advances.push(activation);
+                if cancel_last && lines.len() + 1 == expected_lines {
+                    input
+                        .dialogue_input_actions
+                        .push(RuntimeDialogueInputActionEvent::new(
+                            activation,
+                            InputActionId::new("SkipLine").unwrap(),
+                            InputEpoch::new(1),
+                            InputSequence::new(1),
+                        ));
+                } else {
+                    input.dialogue_advances.push(activation);
+                }
                 lines.push(activation);
             }
         }
@@ -3752,8 +3766,11 @@ fn execute_nested_line_handle_transfer(
                     "each nested line reveals once"
                 );
                 assert_eq!(actor.unwrap().activation(), lines.first().unwrap());
-                assert_eq!(look_cue.unwrap().activation(), lines.last().unwrap());
-                assert!(cancelled_cue);
+                assert_eq!(
+                    look_cue.as_ref().map(|cue| cue.activation()),
+                    expect_look.then(|| lines.last().unwrap())
+                );
+                assert_eq!(cancelled_cue, expect_look);
                 assert!(released);
                 assert_eq!(log_messages(&effects), ["parent consumed the child handle"]);
                 return;
@@ -3775,7 +3792,124 @@ fn native_nested_line_handle_reexports_from_receiving_activation() {
     native_nested_line_handle_transfer(NESTED_LINE_HANDLE_REEXPORT_SOURCE, 3);
 }
 
+#[test]
+fn owned_line_registry_releases_issued_handles_in_native_and_decoded_awbc() {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        executor::ArcweftRuntimeExecutorSnapshot, pure::VmRuntimePureCallBackend,
+    };
+
+    let nested = r#"alice()[Inner[p]] with {
+        let lease = alice.stage.acquire(scope=line)
+        out lease
+    }"#;
+    let cancellation = r#"cancel on input(.SkipLine) {
+        drop_optional('line.saved?)
+        out "cancelled"
+    }
+    out "completed""#;
+    for (acquire, lines) in [("alice.stage.acquire(scope=line)", 1), (nested, 2)] {
+        for (release, cancel) in [("drop('line.saved)", ""), ("", ""), ("", cancellation)] {
+            let source = format!(
+                r#"
+pub character alice {{ display = "Alice" }}
+flow main() -> Unit effects {{ state.write('line), log.write }} {{
+    alice()[Outer[p]] with {{
+        init {{
+            let actor = {acquire}
+            'line.saved <- actor
+            {release}
+            log.info("parent consumed the child handle")
+        }}
+        {cancel}
+    }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#
+            );
+            native_line_handle_execution(&source, lines, false, !cancel.is_empty());
+            let (compiled, awbc) = nested_awbc_from_compiled(
+                with_attached_dialogue_project_and_visual(
+                    &source,
+                    Some(LINE_HANDLE_CHARACTER_MANIFEST),
+                    compile_project,
+                )
+                .unwrap(),
+            );
+            let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+            let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+            );
+            let mut awbc = Some(awbc);
+            let mut checked_registered_value = false;
+            execute_nested_line_handle_transfer(
+                lines,
+                false,
+                !cancel.is_empty(),
+                |input, options| {
+                    let mut current = awbc.take().unwrap();
+                    let result = current.step_with_pure_backend(input, options, &mut backend);
+                    let (restored, _) =
+                        roundtrip_nested_awbc_checking(current, |executor, save| {
+                            if checked_registered_value {
+                                return executor;
+                            }
+                            let mut forged = save.clone();
+                            let rows = forged["dialogues"]["entries"]
+                                .as_array_mut()
+                                .unwrap()
+                                .iter_mut()
+                                .filter_map(|entry| {
+                                    entry
+                                        .pointer_mut("/Active/line/line_registry")?
+                                        .as_array_mut()
+                                })
+                                .find(|rows| !rows.is_empty());
+                            let Some(rows) = rows else {
+                                return executor;
+                            };
+                            rows.clear();
+                            let bad =
+                                serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(forged)
+                                    .unwrap();
+                            let bad = executor.bind_product_save_snapshot(bad).unwrap();
+                            let Err(rejected) = executor
+                                .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bad))
+                            else {
+                                panic!("a live registry lease requires the exact saved row");
+                            };
+                            let (unchanged, error) = rejected.into_parts();
+                            assert!(
+                                error
+                                    .to_string()
+                                    .contains("restored dialogue handle ledger"),
+                                "{error}"
+                            );
+                            checked_registered_value = true;
+                            unchanged
+                        });
+                    awbc = Some(restored);
+                    result
+                },
+            );
+            assert!(
+                checked_registered_value,
+                "the saved frontier included the owning Line registry row"
+            );
+        }
+    }
+}
+
 fn native_nested_line_handle_transfer(source: &str, expected_lines: usize) {
+    native_line_handle_execution(source, expected_lines, true, false);
+}
+
+fn native_line_handle_execution(
+    source: &str,
+    expected_lines: usize,
+    expect_look: bool,
+    cancel_last: bool,
+) {
     use arcweft_core::{
         effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
         task::RuntimeProgramOwner,
@@ -3800,9 +3934,12 @@ fn native_nested_line_handle_transfer(source: &str, expected_lines: usize) {
     let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
-    execute_nested_line_handle_transfer(expected_lines, |input, options| {
-        native.step_with_pure_backend(input, options, &mut backend)
-    });
+    execute_nested_line_handle_transfer(
+        expected_lines,
+        expect_look,
+        cancel_last,
+        |input, options| native.step_with_pure_backend(input, options, &mut backend),
+    );
 }
 
 #[test]
@@ -3837,7 +3974,7 @@ fn decoded_awbc_nested_line_handle_transfer(source: &str, expected_lines: usize)
     let mut checked_published_lease = false;
     let mut checked_pending_look = false;
     let mut checked_reexported_lease = source != NESTED_LINE_HANDLE_REEXPORT_SOURCE;
-    execute_nested_line_handle_transfer(expected_lines, |input, options| {
+    execute_nested_line_handle_transfer(expected_lines, true, false, |input, options| {
         let mut current = awbc.take().unwrap();
         let result = current.step_with_pure_backend(input, options, &mut backend);
         let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, save| {

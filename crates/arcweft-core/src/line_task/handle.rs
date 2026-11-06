@@ -269,6 +269,12 @@ pub enum RuntimeHandleOwnerSlot {
         receiver: DialogueActivationId,
         path: RuntimeValuePath,
     },
+    /// A value parked on a reached Line while the issuer retains its lease.
+    LineRegistry {
+        receiver: DialogueActivationId,
+        key: arcweft_id::LifetimeRegistryKey,
+        path: RuntimeValuePath,
+    },
     /// The receiving line discarded its result value while the issuer still
     /// owns release settlement.
     RetiringDialogueResult {
@@ -284,12 +290,14 @@ impl RuntimeHandleOwnerSlot {
     ) -> Result<(), LineRuntimeError> {
         match self {
             Self::ParentFiber(slot) if slot.execution() == execution => Ok(()),
-            Self::ReceivedDialogueResult { receiver, .. }
+            Self::ReceivedDialogueResult { receiver, .. } | Self::LineRegistry { receiver, .. }
                 if receiver != issuer && receiver.artifact() == issuer.artifact() =>
             {
                 Ok(())
             }
-            Self::ReceivedDialogueResult { .. } => Err(LineRuntimeError::WrongActivation),
+            Self::ReceivedDialogueResult { .. } | Self::LineRegistry { .. } => {
+                Err(LineRuntimeError::WrongActivation)
+            }
             _ => Err(LineRuntimeError::WrongOwner),
         }
     }
@@ -469,6 +477,16 @@ impl RuntimeHandleLease {
     #[must_use]
     pub const fn state(&self) -> RuntimeHandleLeaseState {
         self.state
+    }
+
+    pub(crate) const fn admits_line_registry(&self) -> bool {
+        matches!(
+            self.state,
+            RuntimeHandleLeaseState::Active
+                | RuntimeHandleLeaseState::Pending
+                | RuntimeHandleLeaseState::Running
+                | RuntimeHandleLeaseState::Completed
+        )
     }
 
     #[must_use]
@@ -1991,6 +2009,48 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         Ok(())
     }
 
+    pub(crate) fn reconcile_child_registry_owners(
+        &mut self,
+        activation: &DialogueActivationId,
+        before: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        after: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        drops: &super::RuntimeHandleDropAuthorization,
+    ) -> Result<(), LineRuntimeError> {
+        if after.keys().any(|token| !before.contains_key(token)) {
+            return Err(LineRuntimeError::UnexpectedChildHandleOccurrence);
+        }
+        let mut ledger = self.ledger.clone();
+        let mut queue = RuntimeCommandQueue::new(*activation, self.command_sequence);
+        for (token, source) in before
+            .iter()
+            .filter(|(token, _)| token.activation() == activation)
+        {
+            if ledger
+                .lease(token)
+                .ok_or(LineRuntimeError::UnknownHandle)?
+                .owner()
+                != source
+            {
+                return Err(LineRuntimeError::WrongOwner);
+            }
+            match after.get(token) {
+                Some(destination) if source == destination => {}
+                Some(destination) => ledger.transfer(token, source, destination.clone())?,
+                None => ledger.drop_owned_with_policy(
+                    token,
+                    source,
+                    drops
+                        .policy_for(token)
+                        .ok_or(LineRuntimeError::UnjournaledHandleDrop)?,
+                    &mut queue,
+                )?,
+            }
+        }
+        self.record_commands(activation, queue)?;
+        self.ledger = ledger;
+        Ok(())
+    }
+
     pub(crate) fn consume_issued_command(
         &mut self,
         command: &crate::presentation::RuntimeLineCommandId,
@@ -2608,6 +2668,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.has_pending_deferred_work() {
             return Err(LineRuntimeError::DeferredRegistrationsRemain);
         }
+        if !self
+            .retained_registry_line_handles()
+            .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+            .is_empty()
+        {
+            return Err(LineRuntimeError::UnownedLeaseAtPublish);
+        }
         self.line_registry.clear();
         self.frame_released = true;
         Ok(())
@@ -3088,6 +3155,13 @@ impl RuntimePublishedDialogueHandles {
         self.ledger.lease(token)
     }
 
+    pub(crate) fn has_lease_matching(
+        &self,
+        predicate: impl FnMut(&RuntimeHandleLease) -> bool,
+    ) -> bool {
+        self.ledger.leases().values().any(predicate)
+    }
+
     pub(crate) fn receiver_slots(
         &self,
     ) -> impl Iterator<Item = (&RuntimeLineHandleToken, RuntimeOwnedSlotId)> {
@@ -3133,6 +3207,7 @@ impl RuntimePublishedDialogueHandles {
             .filter_map(|lease| match lease.owner() {
                 RuntimeHandleOwnerSlot::RetiringDialogueResult { receiver }
                 | RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. }
+                | RuntimeHandleOwnerSlot::LineRegistry { receiver, .. }
                     if lease.state() == RuntimeHandleLeaseState::Cancelling =>
                 {
                     Some(receiver)
@@ -3267,7 +3342,8 @@ impl RuntimePublishedDialogueHandles {
             .values()
             .any(|lease| match lease.owner() {
                 RuntimeHandleOwnerSlot::ParentFiber(_) => false,
-                RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. } => {
+                RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. }
+                | RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => {
                     receiver == activation
                         || receiver.artifact() != activation.artifact()
                         || lease.state() == RuntimeHandleLeaseState::Cancelled
@@ -3462,6 +3538,7 @@ impl RuntimePublishedDialogueHandles {
                     if matches!(
                         destination,
                         RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
+                            | RuntimeHandleOwnerSlot::LineRegistry { .. }
                     ) && result_lease_was_retired(lease.state())
                     {
                         return Err(LineRuntimeError::ReleasedHandle);
@@ -3477,6 +3554,13 @@ impl RuntimePublishedDialogueHandles {
                     candidate
                         .ledger
                         .drop_owned_with_policy(token, source, policy, &mut queue)?;
+                    if matches!(source, RuntimeHandleOwnerSlot::LineRegistry { .. })
+                        && candidate.ledger.lease(token).is_some_and(|lease| {
+                            lease.state() == RuntimeHandleLeaseState::Cancelled
+                        })
+                    {
+                        candidate.ledger.drop_owned(token, source, &mut queue)?;
+                    }
                 }
             }
         }
@@ -3582,12 +3666,19 @@ fn validate_restored_ledger(
             {
                 return Err(LineRuntimeError::InvalidRestoredLedgerState);
             }
+            RuntimeHandleOwnerSlot::LineRegistry { receiver, key, .. }
+                if receiver.artifact() != activation.artifact()
+                    || key.scope() != &arcweft_id::LifetimeScopeKind::Line =>
+            {
+                return Err(LineRuntimeError::InvalidRestoredLedgerState);
+            }
             RuntimeHandleOwnerSlot::LineScope
             | RuntimeHandleOwnerSlot::ActivationLocal(_)
             | RuntimeHandleOwnerSlot::ScopedDefer(_)
             | RuntimeHandleOwnerSlot::DialogueResult(_)
             | RuntimeHandleOwnerSlot::ChildScope(_)
             | RuntimeHandleOwnerSlot::ParentFiber(_)
+            | RuntimeHandleOwnerSlot::LineRegistry { .. }
             | RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
             | RuntimeHandleOwnerSlot::RetiringDialogueResult { .. } => {}
         }
@@ -3906,6 +3997,18 @@ impl RuntimeLineHandleLedger {
         if lease.state == RuntimeHandleLeaseState::Released {
             return Err(LineRuntimeError::ReleasedHandle);
         }
+        if let RuntimeHandleOwnerSlot::LineRegistry { receiver, key, .. } = &destination {
+            if !lease.admits_line_registry() {
+                return Err(LineRuntimeError::ReleasedHandle);
+            }
+            let crosses_issuer = matches!(expected, RuntimeHandleOwnerSlot::ParentFiber(_));
+            if receiver.artifact() != token.activation().artifact()
+                || (receiver != token.activation()) != crosses_issuer
+                || key.scope() != &arcweft_id::LifetimeScopeKind::Line
+            {
+                return Err(LineRuntimeError::WrongActivation);
+            }
+        }
         if !owner_transition_is_legal(&lease.owner, &destination) {
             return Err(LineRuntimeError::IllegalOwnerTransition);
         }
@@ -4053,6 +4156,14 @@ fn owner_transition_is_legal(
     source: &RuntimeHandleOwnerSlot,
     destination: &RuntimeHandleOwnerSlot,
 ) -> bool {
+    if matches!(destination, RuntimeHandleOwnerSlot::LineRegistry { .. }) {
+        return matches!(
+            source,
+            RuntimeHandleOwnerSlot::ActivationLocal(_)
+                | RuntimeHandleOwnerSlot::ChildScope(_)
+                | RuntimeHandleOwnerSlot::ParentFiber(_)
+        );
+    }
     if let RuntimeHandleOwnerSlot::ScopedDefer(id) = source {
         return matches!(
             destination,
@@ -4902,6 +5013,18 @@ pub enum LineRuntimeError {
 }
 
 impl<T, V> RuntimeDialogueActivationState<T, V> {
+    pub(crate) fn retained_registry_line_handles(
+        &self,
+    ) -> Result<
+        Vec<(
+            &arcweft_id::LifetimeRegistryKey,
+            crate::value::ownership::RuntimeAffineLineHandle,
+        )>,
+        crate::value::AwbcRuntimeValueSnapshotError,
+    > {
+        self.line_registry.line_handle_rows()
+    }
+
     pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
         &self.ledger
     }

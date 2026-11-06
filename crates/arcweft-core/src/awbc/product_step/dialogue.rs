@@ -798,6 +798,45 @@ impl ProductDialogueStore {
             .inspect_received_fiber_reconciliation(execution, before, after, drops, None, result)
     }
 
+    pub(super) fn validate_registry_handle(
+        &self,
+        activation: &DialogueActivationId,
+        ledger: &crate::line_task::RuntimeLineHandleLedger,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry
+            .validate_registry_handle(activation, ledger, handle)
+    }
+
+    pub(super) fn reconcile_child_registry_step(
+        &self,
+        transaction: &mut ProductDialogueTransaction,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        tag: &crate::line_task::LineTaskWorkTag,
+        before: &std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        after: &std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
+        change: Option<&crate::effect::RuntimeRegistryLineChange<'_>>,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry.reconcile_child_registry_step(
+            transaction,
+            execution,
+            tag,
+            before,
+            after,
+            drops,
+            change,
+        )
+    }
+
+    pub(super) fn retire_line_registry(
+        &self,
+        transaction: &mut ProductDialogueTransaction,
+        execution: crate::runtime_id::ExecutionInstanceId,
+    ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
+        self.registry.retire_line_registry(transaction, execution)
+    }
+
     pub(super) fn prepare_result_abandonment(
         &self,
         transaction: &mut ProductDialogueTransaction,

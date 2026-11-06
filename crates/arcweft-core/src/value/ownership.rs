@@ -214,6 +214,7 @@ pub enum RuntimeDetachedValueError {
 struct RuntimeValueResourceGraph {
     handles: Vec<RuntimeAffineHandle>,
     owned_need: Option<(crate::task::TaskCorrelation, RuntimeValuePath)>,
+    contains_presentation_body: bool,
 }
 
 impl RuntimeValueResourceGraph {

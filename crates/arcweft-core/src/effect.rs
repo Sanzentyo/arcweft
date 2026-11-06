@@ -12,7 +12,8 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 pub(crate) use registry::{
-    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryWritePreparation,
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryLineChange,
+    RuntimeRegistryWritePreparation,
 };
 pub use registry::{
     RuntimeRegistryDropTarget, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
@@ -185,6 +186,21 @@ pub enum RuntimeDropPolicyKind {
 }
 
 impl RuntimeDropPolicyKind {
+    pub(crate) const fn materialize(
+        self,
+        fade: Option<LogicalDuration>,
+    ) -> Option<RuntimeDropPolicy> {
+        Some(match (self, fade) {
+            (Self::Stop, Some(fade)) => RuntimeDropPolicy::Stop { fade },
+            (_, Some(_)) | (Self::Stop, None) => return None,
+            (Self::Default, None) => RuntimeDropPolicy::Default,
+            (Self::Cancel, None) => RuntimeDropPolicy::Cancel,
+            (Self::Finish, None) => RuntimeDropPolicy::Finish,
+            (Self::Release, None) => RuntimeDropPolicy::Release,
+            (Self::Detach, None) => RuntimeDropPolicy::Detach,
+        })
+    }
+
     pub(crate) const fn wire_tag(self) -> u8 {
         match self {
             Self::Default => 0,

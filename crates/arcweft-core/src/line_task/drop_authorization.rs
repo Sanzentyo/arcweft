@@ -58,17 +58,22 @@ impl RuntimeHandleDropAuthorization {
         &mut self,
         tokens: impl IntoIterator<Item = RuntimeLineHandleToken>,
     ) -> Result<(), LineRuntimeError> {
+        self.authorize_tokens_with_policy(tokens, RuntimeDropPolicy::Default)
+    }
+
+    pub(crate) fn authorize_tokens_with_policy(
+        &mut self,
+        tokens: impl IntoIterator<Item = RuntimeLineHandleToken>,
+        policy: RuntimeDropPolicy,
+    ) -> Result<(), LineRuntimeError> {
         let mut observed = BTreeSet::new();
         for token in tokens {
             if self.displaced.contains_key(&token) || !observed.insert(token) {
                 return Err(LineRuntimeError::DuplicateHandleOccurrence);
             }
         }
-        self.displaced.extend(
-            observed
-                .into_iter()
-                .map(|token| (token, RuntimeDropPolicy::Default)),
-        );
+        self.displaced
+            .extend(observed.into_iter().map(|token| (token, policy)));
         Ok(())
     }
 

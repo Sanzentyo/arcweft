@@ -1710,9 +1710,53 @@ impl DialogueActivationStore {
             .prepare_result_abandonment(&mut transaction.inner)
     }
 
-    pub(super) fn has_pending_result_retirement(&self, activation: &DialogueActivationId) -> bool {
+    pub(super) fn validate_registry_handle(
+        &self,
+        activation: &DialogueActivationId,
+        ledger: &crate::line_task::RuntimeLineHandleLedger,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+    ) -> Result<(), LineRuntimeError> {
         self.registry
-            .has_pending_received_result_retirement(activation)
+            .validate_registry_handle(activation, ledger, handle)
+    }
+
+    pub(in crate::engine) fn reconcile_child_registry_step(
+        &self,
+        transaction: &mut DialogueActivationTransaction,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        tag: &crate::line_task::LineTaskWorkTag,
+        before: &std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        after: &std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
+        change: Option<&crate::effect::RuntimeRegistryLineChange<'_>>,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry.reconcile_child_registry_step(
+            &mut transaction.inner,
+            execution,
+            tag,
+            before,
+            after,
+            drops,
+            change,
+        )
+    }
+
+    pub(super) fn retire_line_registry(
+        &self,
+        transaction: &mut DialogueActivationTransaction,
+        execution: crate::runtime_id::ExecutionInstanceId,
+    ) -> Result<Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>, LineRuntimeError>
+    {
+        self.registry
+            .retire_line_registry(&mut transaction.inner, execution)
+    }
+
+    pub(super) fn has_staged_result_retirement(
+        &self,
+        transaction: &DialogueActivationTransaction,
+    ) -> bool {
+        self.registry
+            .has_staged_or_pending_received_result_retirement(&transaction.inner)
     }
 
     pub(super) fn inspect_received_result_publication(

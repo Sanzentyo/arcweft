@@ -200,8 +200,7 @@ impl super::AwbcProductStepExecutor {
         let parent = self
             .dialogue_receiver_fiber(receiver)
             .ok_or(crate::awbc::fiber::FiberStateError::InvalidDialogueReceiver { activation })?;
-        let (frame, line) = transaction.parts_mut();
-        let line_task = match &frame.phase {
+        let line_task = match &transaction.frame().phase {
             ProductDialoguePhase::Reducing { line_task }
             | ProductDialoguePhase::Publishing { line_task } => line_task.clone(),
             ProductDialoguePhase::Activating { .. } => {
@@ -214,6 +213,13 @@ impl super::AwbcProductStepExecutor {
         if !line_task.is_closed() {
             return Err(LineRuntimeError::ResultNotCommitted.into());
         }
+        if let Some(received) = self
+            .dialogues
+            .retire_line_registry(transaction, self.facade_fiber.execution)?
+        {
+            return Ok((ProductPublicationProgress::Pending, Some(received)));
+        }
+        let (frame, line) = transaction.parts_mut();
         let prepared_resume = parent.validate_resume_at(&self.program, resume)?;
         let (ty, value, begin) = match line.result() {
             RuntimeDialogueResultState::Committed { ty, value }
@@ -284,8 +290,10 @@ impl super::AwbcProductStepExecutor {
                 .leases()
                 .values()
                 .filter(|lease| {
-                    lease.state() != RuntimeHandleLeaseState::Released
-                        && !matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                    !matches!(
+                        lease.state(),
+                        RuntimeHandleLeaseState::Released | RuntimeHandleLeaseState::Cancelling
+                    ) && !matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
                 })
                 .map(|lease| (lease.token().clone(), lease.owner().clone()))
                 .collect::<Vec<_>>();
@@ -1817,6 +1825,12 @@ impl super::AwbcProductStepExecutor {
                     owned_observation.as_ref(),
                     Some(VmObservation::DialogueResult { .. })
                 );
+            let registry_change = pending_registry_mutation
+                .as_ref()
+                .map(|(_, mutation)| mutation.line_change())
+                .transpose()
+                .map_err(crate::awbc::fiber::FiberStateError::Snapshot)?
+                .flatten();
             let inspected = self.inspect_activation_fiber_reconciliation(
                 &activation,
                 line,
@@ -1831,6 +1845,7 @@ impl super::AwbcProductStepExecutor {
                 &drops,
                 &deferred_tokens,
                 &scoped_reconciled_tokens,
+                registry_change.as_ref(),
             );
             let mut reconciliation = Some(
                 match inspected.and_then(|prepared| {
@@ -3722,6 +3737,7 @@ impl super::AwbcProductStepExecutor {
             drops,
             deferred_tokens,
             scoped_reconciled_tokens,
+            None,
         )?;
         Ok(Self::commit_activation_fiber_reconciliation(line, prepared))
     }
@@ -3752,6 +3768,7 @@ impl super::AwbcProductStepExecutor {
         drops: &crate::line_task::RuntimeHandleDropAuthorization,
         deferred_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
         scoped_reconciled_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        registry_change: Option<&crate::effect::RuntimeRegistryLineChange<'_>>,
     ) -> Result<PreparedActivationFiberReconciliation, ProductStepError> {
         let mut after =
             activation_fiber_handle_owners(self.facade_fiber.execution, activation, fiber)?;
@@ -3842,6 +3859,24 @@ impl super::AwbcProductStepExecutor {
                 }
             }
         }
+        let (mut registry_before, mut registry_drops);
+        let (before, drops) = if let Some(change) = registry_change {
+            registry_before = before.clone();
+            registry_drops = drops.clone();
+            change.merge_receiver_custody(
+                *activation,
+                &mut registry_before,
+                &mut after,
+                &mut registry_drops,
+                |handle| {
+                    self.dialogues
+                        .validate_registry_handle(activation, line.ledger(), handle)
+                },
+            )?;
+            (&registry_before, &registry_drops)
+        } else {
+            (before, drops)
+        };
         drops.validate_removed(
             |token| before.contains_key(token),
             |token| after.contains_key(token),

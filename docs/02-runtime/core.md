@@ -388,8 +388,12 @@ address the reached Flow when the path selects `'flow`. Both require
 local binding operates on the value held by the binding.
 
 Replayable registry entries carry unrestricted values. The runtime checks the
-registered item's type before removal. A Stop policy takes a `Duration` fade.
-Adapter cleanup for dropped owned values runs through emitted requests.
+registered item's type before removal. A reached Line can take ownership of
+issued line handles in a value. Each lease records the receiving activation,
+key, and path in the row. Replacement and scope exit use the default drop
+policy. Explicit drops use their specified policy, including the `Duration`
+fade for Stop. The original issuer records adapter cleanup and settles the
+response.
 A dialogue cancellation body can reach its Line and parent Flow. An independent
 thread boundary requires an explicit move, share, or detach operation for a
 lower-scope capture.
