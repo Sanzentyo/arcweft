@@ -17698,5 +17698,42 @@
         }
       ]
     }
+  },
+  "orderedReplacementWorkspaceClippy": {
+    "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+    "receipt": {
+      "version": 1,
+      "base": "e7ac3e205a6be0088d576fe218ce4628a66a8fb4",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--all-features"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T20:07:38.7319138Z",
+      "finishedAt": "2026-11-06T20:11:14.2969408Z"
+    },
+    "warningLines": 11137,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-reaching-type-workspace-clippy.raw.zip",
+      "sha256": "b40175b16c159888e4bfb7366e0afee0e417feae4b7822b2b7ecd370e41ac2e6",
+      "entries": [
+        {
+          "entry": "registry-reaching-type-20261107.workspace-clippy.log",
+          "bytes": 9038199,
+          "sha256": "165bcbc0a8372f03e5f192f5c197fca0ebd3812513329575abef78eacd1047e1"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.workspace-clippy.receipt.json",
+          "bytes": 371,
+          "sha256": "d8d8c1b03bc463874d1fcfe790fe94e2158601b4084b06051edb55b3ff8a5223"
+        }
+      ]
+    }
   }
 }
