@@ -442,9 +442,7 @@ pub struct AwbcProductActiveDialogue<V, O, E, P, H> {
     pub target_type: crate::awbc::schema::AwbcTypeId,
     pub line: crate::plan::RuntimeLineId,
     pub result: crate::awbc::schema::AwbcDialogueResultTarget,
-    /// External caller inputs, retained for the activation function ABI.
-    pub captures: Box<[V]>,
-    /// Copyable line-task inputs after reveal: external inputs, then activation exports.
+    /// Copyable line-task inputs projected from actual root registers at reveal.
     pub task_inputs: Box<[V]>,
     pub values: Box<[crate::plan::RuntimeDialogueValueBinding<V>]>,
     /// Pending callbacks are removed at their first accepted effect event.
@@ -5122,6 +5120,7 @@ impl AwbcProductStepExecutor {
             self.dialogues.preflight_receiver_edit(receiver)?;
         }
         let checkpoint = checkpoint::ProductSessionCheckpoint::capture(self)?;
+        let before = self.published_flow_handle_owners(None)?;
         let started = (|| {
             let mut parent = match receiver {
                 dialogue::ProductDialogueReceiver::Fiber(_) => None,
@@ -5162,6 +5161,13 @@ impl AwbcProductStepExecutor {
             if let Some(parent) = parent {
                 self.dialogues.commit_receiver(parent);
             }
+            let after = self.published_flow_handle_owners(None)?;
+            self.dialogues.reconcile_parent_fiber(
+                self.facade_fiber.execution,
+                &before,
+                &after,
+                &Default::default(),
+            )?;
             Ok(activation)
         })();
         if started.is_err() {
@@ -5245,12 +5251,6 @@ impl AwbcProductStepExecutor {
         if group.result_type != result.ty {
             return Err(crate::line_task::LineRuntimeError::DialogueResultTypeMismatch.into());
         }
-        if captures
-            .iter()
-            .any(|capture| !capture.ownership().permits_copy())
-        {
-            return Err(crate::line_task::LineRuntimeError::AffineGroupCapture.into());
-        }
         let Some(next_generation) = self.next_generation.checked_add(1) else {
             return Err(ProductStepError::ChildGenerationOverflow);
         };
@@ -5261,31 +5261,29 @@ impl AwbcProductStepExecutor {
             Ok(instance) => crate::runtime_id::RuntimeFiberInstanceId::from_allocated(instance),
             Err(error) => return Err(error.into()),
         };
-        let mut activation_fiber = match FiberState::for_function_in_context(
+        let inputs = crate::awbc::fiber::validate_function_argument_values(
             &self.program,
-            crate::awbc::fiber::AwbcFiberRoot::Function(group.activation),
             group.activation,
-            crate::awbc::fiber::FiberCreationContext::new(
-                activation_fiber_instance,
-                self.next_generation,
-                quantum,
-                crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
-            ),
-        ) {
-            Ok(fiber) => fiber,
-            Err(error) => return Err(error.into()),
-        };
-        if let Err(error) = activation_fiber.bind_function_argument_values(&self.program, &captures)
-        {
-            return Err(ProductStepError::Type(error.to_string()));
-        }
+            &captures,
+        )?;
+        let activation_fiber = inputs
+            .prepare_fiber(
+                &self.program,
+                crate::awbc::fiber::AwbcFiberRoot::Function(group.activation),
+                crate::awbc::fiber::FiberCreationContext::new(
+                    activation_fiber_instance,
+                    self.next_generation,
+                    quantum,
+                    crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
+                ),
+            )
+            .commit(captures.into_vec());
         let active = ActiveDialogue {
             activation,
             content,
             target,
             target_type,
             line: line_id,
-            captures,
             task_inputs: Box::default(),
             values,
             effect_callbacks,

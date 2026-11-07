@@ -522,6 +522,26 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
 }
 
 impl NativeFlowExecutionFrame {
+    fn owned_local_slot(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> crate::value::ownership::RuntimeOwnedSlotId {
+        match self.presentation_bank {
+            crate::runtime_id::RuntimePresentationBankId::Root => {
+                crate::value::ownership::RuntimeOwnedSlotId::environment_local(execution, local)
+            }
+            crate::runtime_id::RuntimePresentationBankId::Dialogue { activation } => {
+                crate::value::ownership::RuntimeOwnedSlotId::NativeDialogueLocal {
+                    execution,
+                    activation,
+                    local: crate::runtime_id::RuntimeLocalSlotId::from_allocated(
+                        std::num::NonZeroU64::from(local.get()),
+                    ),
+                }
+            }
+        }
+    }
     /// Borrows queued original-code coordinates in dispatch order. Runtime
     /// continuation values stay opaque and are never copied for inspection.
     pub fn source_positions(&self) -> impl Iterator<Item = &NativeCodeCursor> {
@@ -856,8 +876,7 @@ fn flow_fiber_line_handle_owners(
 > {
     let mut owners = BTreeMap::new();
     for (local, value) in fiber.frame.env.bindings() {
-        let owner =
-            crate::value::ownership::RuntimeOwnedSlotId::environment_local(fiber.execution, local);
+        let owner = fiber.frame.owned_local_slot(fiber.execution, local);
         for handle in value
             .view()
             .line_handle_projection()
@@ -2494,8 +2513,8 @@ impl Engine {
         crate::presentation::RuntimePresentationFrame::try_new(self.presentation.as_ref(), limits)
     }
 
-    pub(super) fn allocate_dialogue_activation(
-        &mut self,
+    pub(super) fn inspect_dialogue_activation(
+        &self,
         content: crate::runtime_id::RuntimeDialogueContentPlanId,
     ) -> Result<DialogueActivationId, crate::line_task::LineRuntimeError> {
         let artifact = self
@@ -2510,13 +2529,32 @@ impl Engine {
             return Err(crate::line_task::LineRuntimeError::DialogueNamespaceCapacity);
         }
         let occurrence = self.dialogue_occurrences.get(&key).copied().unwrap_or(0);
-        let next = occurrence
+        occurrence
             .checked_add(1)
             .ok_or(crate::line_task::LineRuntimeError::DialogueOccurrenceOverflow)?;
-        let activation =
-            DialogueActivationId::new(artifact, self.fiber.persistent_id, content, occurrence);
-        self.dialogue_occurrences.insert(key, next);
-        Ok(activation)
+        Ok(DialogueActivationId::new(
+            artifact,
+            self.fiber.persistent_id,
+            content,
+            occurrence,
+        ))
+    }
+
+    pub(super) fn commit_dialogue_activation(&mut self, activation: DialogueActivationId) {
+        assert_eq!(activation.owner_fiber(), self.fiber.persistent_id);
+        assert_eq!(Some(activation.artifact()), self.plan.artifact());
+        let key = (activation.owner_fiber(), activation.content());
+        assert_eq!(
+            self.dialogue_occurrences.get(&key).copied().unwrap_or(0),
+            activation.occurrence()
+        );
+        self.dialogue_occurrences.insert(
+            key,
+            activation
+                .occurrence()
+                .checked_add(1)
+                .expect("exclusive producer retains its admitted occurrence"),
+        );
     }
 
     /// Creates an engine without implicitly selecting a flow.
@@ -4018,29 +4056,6 @@ impl Engine {
         }
     }
 
-    pub(super) fn capture_line_task_locals(
-        &self,
-        group: &LineTaskGroup,
-    ) -> Result<Box<[RuntimeLocalBinding]>, crate::line_task::LineRuntimeError> {
-        group
-            .captures()
-            .iter()
-            .map(|local| {
-                let value = self.fiber.frame.env.get(*local).ok_or(
-                    crate::line_task::LineRuntimeError::UnknownOwnedLocal { local: *local },
-                )?;
-                if !value.ownership().permits_copy() {
-                    return Err(crate::line_task::LineRuntimeError::AffineGroupCapture);
-                }
-                Ok(RuntimeLocalBinding {
-                    local: *local,
-                    value: value.clone(),
-                })
-            })
-            .collect::<Result<Vec<_>, crate::line_task::LineRuntimeError>>()
-            .map(Vec::into_boxed_slice)
-    }
-
     fn inspect_line_task_commands(
         &self,
         transaction: &dialogue::DialogueActivationTransaction,
@@ -4592,11 +4607,16 @@ impl Engine {
         let Some(index) = self.next_child_fiber_index() else {
             return Ok(false);
         };
-        let published_before = self.child_fibers[index]
-            .owner
-            .owns_flow_defers()
-            .then(|| self.published_line_handle_owners(None))
-            .transpose()?;
+        // A suspended Dialogue owns its reconciliation in the activation
+        // transaction. Ordinary opcodes (including initial handoff) use the
+        // flow transaction; applying both would reconcile the same move twice.
+        let published_before = (self.child_fibers[index].owner.owns_flow_defers()
+            && !matches!(
+                self.child_fibers[index].frame.status,
+                FlowFiberStatus::Dialogue(_)
+            ))
+        .then(|| self.published_line_handle_owners(None))
+        .transpose()?;
         let mut child = self
             .child_fibers
             .remove(index)

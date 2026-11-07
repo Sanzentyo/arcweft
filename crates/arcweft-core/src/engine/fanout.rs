@@ -476,7 +476,11 @@ impl Engine {
             .fiber
             .frame
             .env
-            .prepare_task_captures(&transfers)
+            .prepare_local_captures(
+                transfers
+                    .iter()
+                    .map(|capture| (capture.local, capture.mode)),
+            )
             .map_err(|error| error.to_string())?;
         let (receipt, launch, handle) = self
             .need_producers

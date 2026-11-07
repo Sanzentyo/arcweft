@@ -61,8 +61,8 @@ pub use handle::{
 pub struct LineTaskGroup {
     definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     effects: crate::plan::RuntimeEffectSet,
-    captures: Box<[RuntimeLocalDeclarationId]>,
-    activation_exports: Box<[RuntimeLocalDeclarationId]>,
+    initial_inputs: Box<[crate::value::RuntimeLocalRead]>,
+    shared_inputs: Box<[RuntimeLocalDeclarationId]>,
     activation_ops: Box<[FlowOp]>,
     result_type: RuntimePlanTypeId,
     handle_sites: Box<[RuntimeLineHandleSite]>,
@@ -76,8 +76,8 @@ impl LineTaskGroup {
     pub(crate) fn new(
         definition: crate::plan::RuntimeFunctionDefinitionIdentity,
         effects: crate::plan::RuntimeEffectSet,
-        captures: Box<[RuntimeLocalDeclarationId]>,
-        activation_exports: Box<[RuntimeLocalDeclarationId]>,
+        initial_inputs: Box<[crate::value::RuntimeLocalRead]>,
+        shared_inputs: Box<[RuntimeLocalDeclarationId]>,
         activation_ops: Box<[FlowOp]>,
         result_type: RuntimePlanTypeId,
         handle_sites: Box<[RuntimeLineHandleSite]>,
@@ -89,8 +89,8 @@ impl LineTaskGroup {
         Self {
             definition,
             effects,
-            captures,
-            activation_exports,
+            initial_inputs,
+            shared_inputs,
             activation_ops,
             result_type,
             handle_sites,
@@ -112,13 +112,13 @@ impl LineTaskGroup {
     }
 
     #[must_use]
-    pub const fn captures(&self) -> &[RuntimeLocalDeclarationId] {
-        &self.captures
+    pub const fn initial_inputs(&self) -> &[crate::value::RuntimeLocalRead] {
+        &self.initial_inputs
     }
 
     #[must_use]
-    pub const fn activation_exports(&self) -> &[RuntimeLocalDeclarationId] {
-        &self.activation_exports
+    pub const fn shared_inputs(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.shared_inputs
     }
 
     #[must_use]

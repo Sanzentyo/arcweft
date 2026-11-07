@@ -151,6 +151,11 @@ fn encode_group(
     for effect in group.effects().iter() {
         output.text(effect.as_str())?;
     }
+    output.count(group.initial_inputs().len())?;
+    for input in group.initial_inputs() {
+        output.u32(input.local().get().get())?;
+        output.byte(input.mode().semantic_tag())?;
+    }
     output.u32(group.result_type().get().get())?;
     let policy = group.cleanup().policy();
     output.byte(match policy.child_tasks {

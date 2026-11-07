@@ -31,10 +31,6 @@ where
             self.activation_pc,
             self.exiting_for_result,
         ))?;
-        admission.validate_metadata_collection(self.captures.len())?;
-        for local in &self.captures {
-            admission.validate_metadata(local)?;
-        }
         if let Some(target) = &self.target {
             if !matches!(target.borrowed_view(), RuntimeValueView::Opaque(_)) {
                 return Err(invalid_shape(

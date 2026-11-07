@@ -1556,7 +1556,9 @@ impl Engine {
     > {
         let mut owners = std::collections::BTreeMap::new();
         for (local, value) in frame.execution.env.bindings() {
-            let slot = self.owned_slot(local)?;
+            let slot = frame
+                .execution
+                .owned_local_slot(self.fiber.execution, local);
             for handle in unique_affine_line_handles(value)? {
                 let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(
                     self.published_receiver_execution(),
@@ -1787,7 +1789,9 @@ impl Engine {
                     self.published_receiver_execution(),
                     activation_id,
                     handle.token(),
-                    self.owned_slot(local)?,
+                    frame
+                        .execution
+                        .owned_local_slot(self.fiber.execution, local),
                 );
                 if matches!(owner, RuntimeHandleOwnerSlot::ParentFiber { .. }) {
                     received.insert(handle.token().clone(), owner);
@@ -1896,14 +1900,20 @@ impl Engine {
                 RuntimeHandleOwnerSlot::ActivationLocal(slot)
                 | RuntimeHandleOwnerSlot::ParentFiber { slot, .. } => {
                     let mut source_local = if let Some(local) = preconsumed_local {
-                        (&self.owned_slot(local)? == slot
+                        (&frame
+                            .execution
+                            .owned_local_slot(self.fiber.execution, local)
+                            == slot
                             && value_contains_token(&value, handle.token())?)
                         .then_some(local)
                     } else {
                         None
                     };
                     for (local, value) in frame.execution.env.bindings() {
-                        if &self.owned_slot(local)? == slot
+                        if &frame
+                            .execution
+                            .owned_local_slot(self.fiber.execution, local)
+                            == slot
                             && value_contains_token(value, handle.token())?
                         {
                             if source_local.replace(local).is_some() {
@@ -1922,7 +1932,11 @@ impl Engine {
                     discarded_received.push(handle);
                 }
             } else if let Some(local) = destination {
-                let destination = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
+                let destination = RuntimeHandleOwnerSlot::ActivationLocal(
+                    frame
+                        .execution
+                        .owned_local_slot(self.fiber.execution, local),
+                );
                 if source != destination {
                     ledger.transfer(handle.token(), &source, destination)?;
                 }
@@ -2138,6 +2152,7 @@ impl Engine {
                 let mut commands =
                     RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
                 self.inspect_operation_binding(
+                    activation_id,
                     &mut ledger,
                     &mut commands,
                     binding.as_ref(),
@@ -2177,7 +2192,9 @@ impl Engine {
                     activation_id,
                     activation.ledger(),
                     actor_value.view(),
-                    self.owned_slot(actor.local())?,
+                    state
+                        .execution
+                        .owned_local_slot(self.fiber.execution, actor.local()),
                     &character,
                 )?;
                 let look_value = self.evaluate_dialogue_expr(slot, &look, pure_backend)?;
@@ -2242,6 +2259,7 @@ impl Engine {
                             activation.command_sequence(),
                         );
                         self.inspect_operation_binding(
+                            activation_id,
                             &mut ledger,
                             &mut commands,
                             binding.as_ref(),
@@ -2326,6 +2344,7 @@ impl Engine {
                             activation.command_sequence(),
                         );
                         self.inspect_operation_binding(
+                            activation_id,
                             &mut ledger,
                             &mut commands,
                             binding.as_ref(),
@@ -2403,6 +2422,7 @@ impl Engine {
                             activation.command_sequence(),
                         );
                         self.inspect_operation_binding(
+                            activation_id,
                             &mut ledger,
                             &mut commands,
                             binding.as_ref(),
@@ -2516,6 +2536,7 @@ impl Engine {
                 let mut commands =
                     RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
                 self.inspect_operation_binding(
+                    activation_id,
                     &mut ledger,
                     &mut commands,
                     binding.as_ref(),
@@ -2544,6 +2565,7 @@ impl Engine {
 
     fn inspect_operation_binding(
         &self,
+        activation_id: &DialogueActivationId,
         ledger: &mut crate::line_task::RuntimeLineHandleLedger,
         commands: &mut RuntimeCommandQueue,
         pattern: Option<&RuntimePattern>,
@@ -2569,7 +2591,7 @@ impl Engine {
                 return Err(LineRuntimeError::WrongOwner.into());
             }
             let destination = preview_result_destination_local(pattern, value, handle.token())?
-                .map(|local| self.owned_slot(local))
+                .map(|local| self.activation_slot(activation_id, local))
                 .transpose()?
                 .map(RuntimeHandleOwnerSlot::ActivationLocal);
             match destination {
@@ -2666,7 +2688,7 @@ impl Engine {
             .line_task_groups()
             .get(state.task_group.index())
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
-        let task_inputs = state.task_inputs_for_reveal(group.activation_exports())?;
+        let task_inputs = state.task_inputs_for_reveal(group.shared_inputs())?;
         let mut live = LineTaskLiveState::new(group, activation_id.clone());
         activation.advance_schedules(state.elapsed, &mut live)?;
         let line_task_activation = progress_live_line_task_group(
@@ -3217,6 +3239,23 @@ impl Engine {
         }
         result.map(|()| None)
     }
+    fn activation_slot(
+        &self,
+        activation: &DialogueActivationId,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> Result<RuntimeOwnedSlotId, LineRuntimeError> {
+        self.plan
+            .local_declarations()
+            .get(local)
+            .ok_or(LineRuntimeError::UnknownOwnedLocal { local })?;
+        Ok(RuntimeOwnedSlotId::NativeDialogueLocal {
+            execution: self.fiber.execution,
+            activation: *activation,
+            local: crate::runtime_id::RuntimeLocalSlotId::from_allocated(
+                std::num::NonZeroU64::from(local.get()),
+            ),
+        })
+    }
     fn owned_slot(
         &self,
         local: crate::runtime_id::RuntimeLocalDeclarationId,
@@ -3225,10 +3264,10 @@ impl Engine {
             .local_declarations()
             .get(local)
             .ok_or(LineRuntimeError::UnknownOwnedLocal { local })?;
-        Ok(RuntimeOwnedSlotId::environment_local(
-            self.fiber.execution,
-            local,
-        ))
+        Ok(self
+            .fiber
+            .frame
+            .owned_local_slot(self.fiber.execution, local))
     }
 }
 
@@ -3576,7 +3615,6 @@ mod tests {
                 RuntimeValue::Unit,
             )),
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("group"),
-            captures: Box::new([]),
             task_inputs: Box::new([]),
             execution: crate::engine::NativeFlowExecutionFrame::running(
                 crate::task::RuntimeProgramOwner::Plan(engine.program_plan()),

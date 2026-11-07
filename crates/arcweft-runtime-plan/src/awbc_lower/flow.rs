@@ -18,8 +18,8 @@ use arcweft_core::awbc::schema::{
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId,
     AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
     AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
-    AwbcLineActivationExport, AwbcLineCancelHandler, AwbcLineHandleSite, AwbcLineHandleSiteId,
-    AwbcLineOperation, AwbcLineOperationId, AwbcLineTaskGroup, AwbcLineTaskGroupId,
+    AwbcLineCancelHandler, AwbcLineHandleSite, AwbcLineHandleSiteId, AwbcLineOperation,
+    AwbcLineOperationId, AwbcLineSharedInput, AwbcLineTaskGroup, AwbcLineTaskGroupId,
     AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPattern,
     AwbcPatternId, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
     AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
@@ -478,24 +478,22 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             }
         };
         let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| node_ids[id.index()];
-        let captures = group.captures().to_vec();
         let previous = self.line_group.replace(LineGroupLoweringContext {
             id,
             group: group.clone(),
             node_ids: node_ids.clone(),
         });
         debug_assert!(previous.is_none());
-        let Some((activation, activation_exports)) = self.lower_line_task_activation(
-            &captures,
-            group.activation_exports(),
+        let Some((activation, shared_inputs)) = self.lower_line_task_activation(
+            group.initial_inputs(),
+            group.shared_inputs(),
             group.activation_ops(),
             "line_task.activation",
         ) else {
             self.line_group = previous;
             return None;
         };
-        let mut task_inputs = captures.clone();
-        task_inputs.extend(group.activation_exports());
+        let task_inputs = group.shared_inputs().to_vec();
         let Some(scheduled_action_inputs) =
             self.line_task_scheduled_action_inputs(group, &node_ids, id)
         else {
@@ -579,8 +577,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .program
             .line_task_groups
             .push(AwbcLineTaskGroup {
-                captures,
-                activation_exports,
+                shared_inputs,
                 activation,
                 result_type,
                 handle_sites,
@@ -658,18 +655,29 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
     fn lower_line_task_activation(
         &mut self,
-        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        captures: &[arcweft_core::value::RuntimeLocalRead],
         exports: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
         ops: &[FlowOp],
         path: &str,
-    ) -> Option<(AwbcFunctionId, Vec<AwbcLineActivationExport>)> {
+    ) -> Option<(AwbcFunctionId, Vec<AwbcLineSharedInput>)> {
         let (function, slots) = self.lower_line_function_with_capture_slots(
             arcweft_core::plan::RuntimeGeneratedFunctionRole::LineActivation,
-            captures,
+            captures.iter().map(|input| {
+                (
+                    input.local(),
+                    match input.mode() {
+                        arcweft_core::value::RuntimeLocalReadMode::Copy => {
+                            arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone
+                        }
+                        arcweft_core::value::RuntimeLocalReadMode::Move => {
+                            arcweft_core::plan::RuntimeFunctionCaptureMode::Move
+                        }
+                    },
+                )
+            }),
             ops,
             path,
             AwbcFunctionKind::LineActivation,
-            arcweft_core::plan::RuntimeFunctionCaptureMode::SnapshotClone,
         );
         let layout = self
             .inventory
@@ -687,13 +695,15 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .map(|local| {
                 let register = slots.iter().find(|slot| slot.local == *local)?.register;
                 let slot = layout.slots.get(register.index())?;
-                (slot.scope_depth == 0 && slot.role == AwbcFrameSlotRole::Local).then_some(
-                    AwbcLineActivationExport {
-                        local: *local,
-                        register,
-                        ty: slot.ty,
-                    },
-                )
+                (slot.scope_depth == 0
+                    && matches!(
+                        slot.role,
+                        AwbcFrameSlotRole::Local | AwbcFrameSlotRole::Parameter
+                    ))
+                .then_some(AwbcLineSharedInput {
+                    register,
+                    ty: slot.ty,
+                })
             })
             .collect::<Option<Vec<_>>>();
         let Some(exports) = exports else {
@@ -849,18 +859,29 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         kind: AwbcFunctionKind,
         capture_mode: arcweft_core::plan::RuntimeFunctionCaptureMode,
     ) -> AwbcFunctionId {
-        self.lower_line_function_with_capture_slots(role, captures, ops, path, kind, capture_mode)
-            .0
+        self.lower_line_function_with_capture_slots(
+            role,
+            captures.iter().map(|local| (*local, capture_mode)),
+            ops,
+            path,
+            kind,
+        )
+        .0
     }
 
     fn lower_line_function_with_capture_slots(
         &mut self,
         role: arcweft_core::plan::RuntimeGeneratedFunctionRole,
-        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        inputs: impl Clone
+        + ExactSizeIterator<
+            Item = (
+                arcweft_core::runtime_id::RuntimeLocalDeclarationId,
+                arcweft_core::plan::RuntimeFunctionCaptureMode,
+            ),
+        >,
         ops: &[FlowOp],
         path: &str,
         kind: AwbcFunctionKind,
-        capture_mode: arcweft_core::plan::RuntimeFunctionCaptureMode,
     ) -> (
         AwbcFunctionId,
         Vec<crate::awbc_lower::frame::FrameCaptureSlot>,
@@ -875,9 +896,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let effect_set = self.inventory.intern_effect_set(&effects);
         let owner = self.inventory.reserve_function_slot(definition);
         let mut frame = FrameBuilder::new();
-        for capture in captures {
-            let ty = self.local_type(*capture);
-            frame.parameter(*capture, ty);
+        for (local, _) in inputs.clone() {
+            let ty = self.local_type(local);
+            frame.parameter(local, ty);
         }
         let mut body =
             FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
@@ -895,9 +916,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 point.frame_layout = layout;
             }
         }
-        let params = captures
-            .iter()
-            .map(|capture| self.local_type(*capture))
+        let params = inputs
+            .clone()
+            .map(|(local, _)| self.local_type(local))
             .collect();
         let result = body.returns_value.then(|| self.inventory.dynamic_ty());
         let signature = self.inventory.intern_signature(params, result, effect_set);
@@ -911,19 +932,22 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 kind,
                 signature,
                 type_context: None,
-                input_ownership: captures
-                    .iter()
+                input_ownership: inputs
                     .enumerate()
-                    .map(|(position, local)| {
-                        AwbcFunctionInputOwnership::capture(
+                    .map(|(position, (local, mode))| {
+                        let mut input = AwbcFunctionInputOwnership::capture(
                             self.plan
                                 .local_declarations()
-                                .get(*local)
+                                .get(local)
                                 .expect("admitted Line capture declaration")
                                 .origin(),
                             table_index(position),
-                            capture_mode,
-                        )
+                            mode,
+                        );
+                        if mode != arcweft_core::plan::RuntimeFunctionCaptureMode::Move {
+                            input.requirement = arcweft_core::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted;
+                        }
+                        input
                     })
                     .collect(),
                 frame_layout: layout,
@@ -1347,13 +1371,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         return;
                     }
                 };
-                let line_task_captures = group_captures
-                    .iter()
-                    .map(|capture| {
-                        let ty = self.local_type(*capture);
-                        frame.local(*capture, ty)
-                    })
-                    .collect();
                 let result_ty = admitted_plan_type(self.inventory, self.plan, result.ty());
                 let result_target = AwbcDialogueResultTarget {
                     ty: result_ty,
@@ -1434,6 +1451,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         captures,
                     });
                 }
+                let line_task_captures = group_captures
+                    .iter()
+                    .map(|input| {
+                        frame
+                            .register_for_local(input.local())
+                            .expect("the admitted Line input has its actual caller slot")
+                    })
+                    .collect();
                 body.suspend(self.inventory, AwbcSafePointKind::Dialogue, |resume| {
                     AwbcTerminator::Dialogue {
                         target,

@@ -2,7 +2,7 @@ use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
 use crate::awbc_lower::table_index;
 use arcweft_core::awbc::schema::{AwbcContentUnitId, AwbcDialogueMark, AwbcLineTaskGroupId};
 use arcweft_core::plan::{RuntimeDialogueContentPlan, RuntimePlan};
-use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
+use arcweft_core::value::RuntimeLocalRead;
 
 /// Dialogue/content side of AWBC lowering.
 pub struct AwbcLineLowerer<'a> {
@@ -18,7 +18,7 @@ impl<'a> AwbcLineLowerer<'a> {
         &mut self,
         content: &RuntimeDialogueContentPlan,
         plan: &'plan RuntimePlan,
-    ) -> Result<(AwbcContentUnitId, &'plan [RuntimeLocalDeclarationId]), AwbcLowerDiagnostic> {
+    ) -> Result<(AwbcContentUnitId, &'plan [RuntimeLocalRead]), AwbcLowerDiagnostic> {
         let line = content.line().public_label().into_string();
         let Some(_template) = self
             .inventory
@@ -45,7 +45,7 @@ impl<'a> AwbcLineLowerer<'a> {
                 })?;
                 (
                     Some(AwbcLineTaskGroupId(table_index(group.index()))),
-                    row.captures(),
+                    row.initial_inputs(),
                 )
             }
             None => (None, &[][..]),

@@ -70,6 +70,37 @@ fn owned_deferred_line_source() -> String {
     )
 }
 
+fn copied_line_input_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE.replace(
+        "defer { let _ = actor; log.info(\"cleanup\") }",
+        r#"let message = "kept"
+        let received = alice()[Copy[p]] with { out message }
+        log.info(message)
+        log.info(received)
+        defer { let _ = actor; log.info("cleanup") }"#,
+    )
+}
+
+#[test]
+fn native_initial_copy_line_input_remains_available_in_its_caller() {
+    native_line_handle_execution(
+        &copied_line_input_source(),
+        2,
+        false,
+        false,
+        &["kept", "kept", "body", "cleanup"],
+    );
+}
+
+#[test]
+fn saved_awbc_initial_copy_line_input_remains_available_in_its_caller() {
+    assert_saved_awbc_with_reveals(
+        &copied_line_input_source(),
+        2,
+        &["kept", "kept", "body", "cleanup"],
+    );
+}
+
 #[test]
 fn native_nested_deferred_line_uses_the_innermost_capture_frame() {
     native_line_handle_execution(

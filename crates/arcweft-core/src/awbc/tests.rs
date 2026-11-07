@@ -1608,8 +1608,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
     ]);
     program.line_task_nodes = vec![AwbcLineTaskNode::Action(AwbcFunctionId(2))];
     program.line_task_groups = vec![AwbcLineTaskGroup {
-        captures: Vec::new(),
-        activation_exports: Vec::new(),
+        shared_inputs: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(1),
         handle_sites: Vec::new(),
@@ -1630,15 +1629,12 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("selector is a verified line-action terminal");
     let mut invalid_export = program.clone();
-    invalid_export.line_task_groups[0].activation_exports.push(
-        super::schema::AwbcLineActivationExport {
-            local: crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
-                std::num::NonZeroU32::MIN,
-            ),
+    invalid_export.line_task_groups[0]
+        .shared_inputs
+        .push(super::schema::AwbcLineSharedInput {
             register: AwbcRegisterId(0),
             ty: AwbcTypeId(0),
-        },
-    );
+        });
     assert!(
         invalid_export
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
@@ -5297,11 +5293,7 @@ fn pattern_rest_modes_roundtrip_in_the_schema_one_codec() {
 #[test]
 fn line_cancel_input_action_roundtrips_in_schema_one_codec() {
     let group = AwbcLineTaskGroup {
-        captures: Vec::new(),
-        activation_exports: vec![super::schema::AwbcLineActivationExport {
-            local: crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
-                std::num::NonZeroU32::MIN,
-            ),
+        shared_inputs: vec![super::schema::AwbcLineSharedInput {
             register: AwbcRegisterId(2),
             ty: AwbcTypeId(3),
         }],

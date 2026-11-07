@@ -3488,11 +3488,40 @@ fn execute_terminator(
             for effect in effects {
                 operand_registers.extend(effect.captures.iter().copied());
             }
+            let prefix_count = operand_registers.len();
             operand_registers.extend(line_task_captures.iter().copied());
-            let mut transferred = fiber
-                .active_frame_mut()?
-                .take_register_values(program, &operand_registers)?
-                .into_iter();
+            let group = program
+                .content_units
+                .get(content.index())
+                .and_then(|content| content.line_task_group)
+                .and_then(|group| program.line_task_groups.get(group.index()))
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let activation = program
+                .functions
+                .get(group.activation.index())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if activation.input_ownership.len() != line_task_captures.len() {
+                return Err(FiberStateError::InvalidFrame.into());
+            }
+            let mut modes = vec![crate::value::RuntimeLocalReadMode::Move; prefix_count];
+            for input in &activation.input_ownership {
+                use crate::plan::{RuntimeFunctionCaptureMode, RuntimeFunctionInputTransfer};
+                modes.push(match input.transfer {
+                    RuntimeFunctionInputTransfer::Transferred(
+                        RuntimeFunctionCaptureMode::Copy
+                        | RuntimeFunctionCaptureMode::SnapshotClone,
+                    ) => crate::value::RuntimeLocalReadMode::Copy,
+                    RuntimeFunctionInputTransfer::Transferred(RuntimeFunctionCaptureMode::Move) => {
+                        crate::value::RuntimeLocalReadMode::Move
+                    }
+                    _ => return Err(FiberStateError::InvalidFrame.into()),
+                });
+            }
+            let prepared = fiber.active_frame()?.prepare_register_operand_values(
+                program,
+                operand_registers.iter().copied().zip(modes),
+            )?;
+            let mut transferred = prepared.commit(fiber.active_frame_mut()?).into_iter();
             let target_value = transferred.next().ok_or_else(|| {
                 VmError::Runtime("dialogue target transfer is missing".to_owned())
             })?;

@@ -204,7 +204,7 @@ impl Engine {
             .fiber
             .frame
             .env
-            .prepare_task_captures(&captures)
+            .prepare_local_captures(captures.iter().map(|capture| (capture.local, capture.mode)))
             .map_err(Box::new)?;
         let (accepted, launch, bindings) =
             self.need_producers

@@ -40,7 +40,7 @@ pub use path::{
     MAX_RUNTIME_VALUE_PATH_SEGMENTS, RuntimeValuePath, RuntimeValuePathError,
     RuntimeValuePathSegment,
 };
-pub use slot::RuntimeOwnedSlotId;
+pub use slot::{RuntimeDialogueOperand, RuntimeOwnedSlotId};
 
 /// Whether a runtime value may be duplicated without transferring authority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

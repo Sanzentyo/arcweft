@@ -1115,6 +1115,7 @@ fn dialogue_runtime_plan(
         .expect("dialogue content admits");
     let line_task_group = builder
         .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
+            initial_inputs: Box::new([]),
             effects: arcweft_core::plan::RuntimeEffectSet::empty(),
             definition:
                 arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(

@@ -127,6 +127,8 @@ impl AwbcProductStepExecutor {
                 }
             }
         }
+        self.dialogues
+            .extend_received_frame_handle_owners(PRODUCT_EXECUTION_ID, &mut owners)?;
         Ok(owners)
     }
 

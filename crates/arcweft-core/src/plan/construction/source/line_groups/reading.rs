@@ -52,6 +52,7 @@ pub(super) struct Cancel<'a> {
 pub(super) struct Group<'a> {
     pub definition: [u8; 32],
     pub effects: &'a [u8],
+    pub initial_inputs: Vec<(u32, crate::value::RuntimeLocalReadMode)>,
     pub result: u32,
     pub policy: LineCleanupPolicy,
     pub sites: Vec<Site<'a>>,
@@ -252,6 +253,41 @@ impl<'a> Cursor<'a> {
             previous = Some(label);
         }
         let effects = &self.bytes[effect_start..self.offset];
+        let input_count = self.u32()? as usize;
+        counts.array::<(u32, crate::value::RuntimeLocalReadMode)>(input_count)?;
+        counts.storage(
+            input_count
+                .checked_mul(
+                    size_of::<u32>()
+                        + size_of::<crate::plan::RuntimeLocalReadSeed>()
+                        + size_of::<crate::value::RuntimeLocalRead>(),
+                )
+                .ok_or(Error::Arithmetic)?,
+        )?;
+        let mut seen = Vec::with_capacity(input_count);
+        let mut initial_inputs = if retain {
+            Vec::with_capacity(input_count)
+        } else {
+            Vec::new()
+        };
+        for _ in 0..input_count {
+            let local =
+                self.positive("initial input", counts.limits.flow.expression.local_count)?;
+            super::charge(meter, seen.len().checked_add(1).ok_or(Error::Arithmetic)?)?;
+            if seen.contains(&local) {
+                return Err(Error::Handle {
+                    kind: "initial input",
+                });
+            }
+            seen.push(local);
+            let mode = crate::value::RuntimeLocalReadMode::from_semantic_tag(
+                self.tag("initial input transfer", 2)?,
+            )
+            .expect("the owning mode grammar has two admitted tags");
+            if retain {
+                initial_inputs.push((local, mode));
+            }
+        }
         let result = self.positive("result type", counts.limits.flow.expression.type_count)?;
         let child_tasks = match self.tag("child cleanup", 3)? {
             0 => ChildTaskCleanup::CancelAndJoin,
@@ -434,6 +470,7 @@ impl<'a> Cursor<'a> {
         Ok(Group {
             definition,
             effects,
+            initial_inputs,
             result,
             policy,
             sites,

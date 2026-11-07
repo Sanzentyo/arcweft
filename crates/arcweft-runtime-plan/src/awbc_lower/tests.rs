@@ -751,6 +751,7 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
         .expect("dialogue content seed admits");
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            initial_inputs: Box::new([]),
             effects: arcweft_core::plan::RuntimeEffectSet::empty(),
             definition:
                 arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
@@ -950,6 +951,7 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
         .expect("content admits");
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            initial_inputs: Box::new([]),
             effects: arcweft_core::plan::RuntimeEffectSet::empty(),
             definition:
                 arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
@@ -1008,11 +1010,7 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
     let program = inventory.finish();
     let group = &program.line_task_groups[0];
-    assert!(
-        group.captures.is_empty(),
-        "activation local is not a caller input"
-    );
-    let [export] = group.activation_exports.as_slice() else {
+    let [export] = group.shared_inputs.as_slice() else {
         panic!("one retained activation local must reach line-task work")
     };
     let activation = &program.functions[group.activation.index()];

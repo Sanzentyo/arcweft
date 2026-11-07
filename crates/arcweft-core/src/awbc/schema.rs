@@ -3416,11 +3416,11 @@ pub struct AwbcDialogueMark {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwbcLineTaskGroup {
-    /// Caller-owned values supplied to the activation function before reveal.
-    pub captures: Vec<RuntimeLocalDeclarationId>,
-    /// Root activation locals copied into unscheduled line-task work at reveal.
-    pub activation_exports: Vec<AwbcLineActivationExport>,
+    /// Actual root registers copied into unscheduled work after activation.
+    /// The activation function alone owns the initial positional input ABI.
+    pub shared_inputs: Vec<AwbcLineSharedInput>,
     pub activation: AwbcFunctionId,
     pub result_type: AwbcTypeId,
     pub handle_sites: Vec<AwbcLineHandleSite>,
@@ -3433,11 +3433,10 @@ pub struct AwbcLineTaskGroup {
     pub cleanup: AwbcLineCleanupPolicy,
 }
 
-/// Exact source register and child parameter coordinate for one activation
-/// local retained when the line task begins.
+/// Exact root register and child parameter coordinate for one shared input.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcLineActivationExport {
-    pub local: RuntimeLocalDeclarationId,
+#[serde(deny_unknown_fields)]
+pub struct AwbcLineSharedInput {
     pub register: AwbcRegisterId,
     pub ty: AwbcTypeId,
 }

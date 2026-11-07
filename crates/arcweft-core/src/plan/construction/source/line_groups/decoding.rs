@@ -216,6 +216,16 @@ pub(super) fn group(
     Ok(RuntimeLineTaskGroupSeed {
         definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity(group.definition),
         effects,
+        initial_inputs: group
+            .initial_inputs
+            .into_iter()
+            .map(|(local, mode)| {
+                crate::plan::RuntimeLocalReadSeed::new(
+                    source.locals[local as usize - 1].clone(),
+                    mode,
+                )
+            })
+            .collect(),
         activation_ops,
         result_type,
         handle_sites,

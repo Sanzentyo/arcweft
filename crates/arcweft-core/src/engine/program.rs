@@ -191,6 +191,18 @@ impl Engine {
                 }
             }
         }
+        self.dialogue_activations
+            .extend_received_frame_handle_owners(
+                |parent| {
+                    std::iter::once(&self.fiber)
+                        .chain(self.child_fibers.iter())
+                        .chain(self.parked_main.iter())
+                        .chain(detached)
+                        .find(|fiber| fiber.id == parent)
+                        .map(|fiber| fiber.execution)
+                },
+                &mut owners,
+            )?;
         Ok(owners)
     }
 

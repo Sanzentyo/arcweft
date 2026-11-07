@@ -20,6 +20,18 @@ use std::{cmp::Ordering, fmt};
 /// This enum is evidence only. Storage remains in each owning runtime domain.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RuntimeOwnedSlotId {
+    NativeDialogueLocal {
+        execution: ExecutionInstanceId,
+        activation: crate::runtime_id::DialogueActivationId,
+        local: RuntimeLocalSlotId,
+    },
+    AwbcDialogueOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        content: crate::awbc::schema::AwbcContentUnitId,
+        operand: RuntimeDialogueOperand,
+    },
     NativeDeferCapture {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
@@ -142,7 +154,48 @@ pub enum RuntimeOwnedSlotId {
     },
 }
 
+/// Coordinate in the actual packet owned by a suspended Dialogue instruction.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RuntimeDialogueOperand {
+    Target,
+    Value {
+        slot: crate::runtime_id::RuntimeDialogueValueSlotId,
+    },
+    EffectCapture {
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+        ordinal: u32,
+    },
+    InitialInput {
+        ordinal: u32,
+    },
+}
+
+impl RuntimeDialogueOperand {
+    fn render_canonical(self) -> String {
+        match self {
+            Self::Target => "target".to_owned(),
+            Self::Value { slot } => format!("value/{}", slot.get()),
+            Self::EffectCapture { site, ordinal } => {
+                format!("effect/{}/capture/{ordinal}", site.get())
+            }
+            Self::InitialInput { ordinal } => format!("initial-input/{ordinal}"),
+        }
+    }
+}
 impl RuntimeOwnedSlotId {
+    #[must_use]
+    pub fn native_dialogue_local(
+        execution: ExecutionInstanceId,
+        activation: crate::runtime_id::DialogueActivationId,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> Self {
+        Self::NativeDialogueLocal {
+            execution,
+            activation,
+            local: RuntimeLocalSlotId::from_allocated(std::num::NonZeroU64::from(local.get())),
+        }
+    }
     #[must_use]
     pub fn environment_local(
         execution: ExecutionInstanceId,
@@ -157,6 +210,8 @@ impl RuntimeOwnedSlotId {
     #[must_use]
     pub const fn canonical_tag(self) -> u8 {
         match self {
+            Self::NativeDialogueLocal { .. } => 20,
+            Self::AwbcDialogueOperand { .. } => 21,
             Self::EnvironmentLocal { .. } => 0,
             Self::ClosureCapture { .. } => 1,
             Self::AwbcRegister { .. } => 2,
@@ -183,7 +238,9 @@ impl RuntimeOwnedSlotId {
     #[must_use]
     pub const fn execution(self) -> ExecutionInstanceId {
         match self {
-            Self::EnvironmentLocal { execution, .. }
+            Self::NativeDialogueLocal { execution, .. }
+            | Self::AwbcDialogueOperand { execution, .. }
+            | Self::EnvironmentLocal { execution, .. }
             | Self::ProgramResult { execution, .. }
             | Self::NativePendingReturn { execution, .. }
             | Self::NativeDeferCapture { execution, .. }
@@ -210,6 +267,29 @@ impl RuntimeOwnedSlotId {
     pub fn render_canonical(self) -> String {
         let execution = self.execution().get().get();
         match self {
+            Self::NativeDialogueLocal {
+                activation, local, ..
+            } => format!(
+                "exec/{execution}/dialogue/{}/{}/{}/{}/local/{}",
+                blake3::Hash::from_bytes(*activation.artifact().as_bytes()).to_hex(),
+                activation.owner_fiber().get(),
+                activation.content().get(),
+                activation.occurrence(),
+                local.get(),
+            ),
+            Self::AwbcDialogueOperand {
+                fiber,
+                frame,
+                content,
+                operand,
+                ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/dialogue/{}/operand/{}",
+                fiber.get(),
+                frame.get(),
+                content.0,
+                operand.render_canonical(),
+            ),
             Self::NativeDeferCapture {
                 fiber,
                 registration,
@@ -487,6 +567,30 @@ impl Ord for RuntimeOwnedSlotId {
                         ordinal,
                     } => (execution, fiber, frame, scope, registration, ordinal),
                     _ => unreachable!("the canonical tag selects AWBC defer custody"),
+                };
+                key(*self).cmp(&key(*other))
+            }
+            20 => {
+                let key = |slot| match slot {
+                    Self::NativeDialogueLocal {
+                        execution,
+                        activation,
+                        local,
+                    } => (execution, activation, local),
+                    _ => unreachable!("the canonical tag selects a native dialogue local"),
+                };
+                key(*self).cmp(&key(*other))
+            }
+            21 => {
+                let key = |slot| match slot {
+                    Self::AwbcDialogueOperand {
+                        execution,
+                        fiber,
+                        frame,
+                        content,
+                        operand,
+                    } => (execution, fiber, frame, content, operand),
+                    _ => unreachable!("the canonical tag selects a dialogue packet operand"),
                 };
                 key(*self).cmp(&key(*other))
             }
@@ -935,6 +1039,18 @@ impl PartialOrd for RuntimeOwnedSlotId {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum HumanOwnedSlot {
+    NativeDialogueLocal {
+        execution: ExecutionInstanceId,
+        activation: crate::runtime_id::DialogueActivationId,
+        local: RuntimeLocalSlotId,
+    },
+    AwbcDialogueOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        content: crate::awbc::schema::AwbcContentUnitId,
+        operand: RuntimeDialogueOperand,
+    },
     NativeDeferCapture {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
@@ -1060,6 +1176,18 @@ enum HumanOwnedSlot {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HumanOwnedSlotInput {
+    NativeDialogueLocal {
+        execution: ExecutionInstanceId,
+        activation: crate::runtime_id::DialogueActivationId,
+        local: RuntimeLocalSlotId,
+    },
+    AwbcDialogueOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        content: crate::awbc::schema::AwbcContentUnitId,
+        operand: RuntimeDialogueOperand,
+    },
     NativeDeferCapture {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
@@ -1185,6 +1313,28 @@ enum HumanOwnedSlotInput {
 impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
     fn from(slot: RuntimeOwnedSlotId) -> Self {
         match slot {
+            RuntimeOwnedSlotId::NativeDialogueLocal {
+                execution,
+                activation,
+                local,
+            } => Self::NativeDialogueLocal {
+                execution,
+                activation,
+                local,
+            },
+            RuntimeOwnedSlotId::AwbcDialogueOperand {
+                execution,
+                fiber,
+                frame,
+                content,
+                operand,
+            } => Self::AwbcDialogueOperand {
+                execution,
+                fiber,
+                frame,
+                content,
+                operand,
+            },
             RuntimeOwnedSlotId::NativeDeferCapture {
                 execution,
                 fiber,
@@ -1400,6 +1550,28 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
 impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
     fn from(slot: HumanOwnedSlotInput) -> Self {
         match slot {
+            HumanOwnedSlotInput::NativeDialogueLocal {
+                execution,
+                activation,
+                local,
+            } => Self::NativeDialogueLocal {
+                execution,
+                activation,
+                local,
+            },
+            HumanOwnedSlotInput::AwbcDialogueOperand {
+                execution,
+                fiber,
+                frame,
+                content,
+                operand,
+            } => Self::AwbcDialogueOperand {
+                execution,
+                fiber,
+                frame,
+                content,
+                operand,
+            },
             HumanOwnedSlotInput::NativeDeferCapture {
                 execution,
                 fiber,

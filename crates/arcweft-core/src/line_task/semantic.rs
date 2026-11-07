@@ -41,8 +41,8 @@ impl LineTaskGroup {
         let mut actual = 0;
         for count in [
             self.effects.len(),
-            self.captures.len(),
-            self.activation_exports.len(),
+            self.initial_inputs.len(),
+            self.shared_inputs.len(),
             self.handle_sites.len(),
             self.nodes.len(),
             self.cancel_rules.len(),
@@ -118,13 +118,18 @@ impl LineTaskGroup {
             encoder.string(effect.as_str());
         }
         context.write_type(encoder, self.result_type)?;
-        for locals in [&self.captures, &self.activation_exports] {
-            encoder.count(locals.len());
-            for (ordinal, local) in locals.iter().enumerate() {
-                encoder.enter_element();
-                encoder.count(ordinal);
-                context.write_local(encoder, *local)?;
-            }
+        encoder.count(self.initial_inputs.len());
+        for (ordinal, input) in self.initial_inputs.iter().enumerate() {
+            encoder.enter_element();
+            encoder.count(ordinal);
+            context.write_local(encoder, input.local())?;
+            encoder.tag(input.mode().semantic_tag());
+        }
+        encoder.count(self.shared_inputs.len());
+        for (ordinal, local) in self.shared_inputs.iter().enumerate() {
+            encoder.enter_element();
+            encoder.count(ordinal);
+            context.write_local(encoder, *local)?;
         }
         context.write_flow(encoder, &self.activation_ops, task_owner)?;
         encoder.count(self.handle_sites.len());

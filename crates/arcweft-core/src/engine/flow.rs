@@ -646,35 +646,39 @@ impl Engine {
                     );
                     return;
                 }
-                let captures = match self.capture_line_task_locals(group) {
-                    Ok(captures) => captures,
+                let activation =
+                    match self
+                        .inspect_dialogue_activation(content)
+                        .and_then(|activation| {
+                            self.dialogue_activations.inspect_begin(&activation)?;
+                            Ok(activation)
+                        }) {
+                        Ok(activation) => activation,
+                        Err(message) => {
+                            self.fiber.frame.status = FlowFiberStatus::Failed(message.to_string());
+                            return;
+                        }
+                    };
+                let locals = match self.fiber.frame.env.prepare_local_captures(
+                    group
+                        .initial_inputs()
+                        .iter()
+                        .map(|input| (input.local(), input.mode())),
+                ) {
+                    Ok(prepared) => prepared.commit(),
                     Err(error) => {
                         self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());
                         return;
                     }
                 };
-                let activation = match self.allocate_dialogue_activation(content) {
-                    Ok(activation) => activation,
-                    Err(message) => {
-                        self.fiber.frame.status = FlowFiberStatus::Failed(message.to_string());
-                        return;
-                    }
-                };
+                self.commit_dialogue_activation(activation);
                 self.advance_if_needed(next_op_index);
-                let mut locals = RuntimeEnv::default();
-                let capture_locals = captures
-                    .iter()
-                    .map(|capture| capture.local)
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
-                locals.bind_all(captures.into_vec());
                 let dialogue = DialogueActivationFrame {
                     parent: self.fiber.id,
                     line,
                     content,
                     target: Some(target_value),
                     task_group,
-                    captures: capture_locals,
                     task_inputs: Box::new([]),
                     execution: super::NativeFlowExecutionFrame::running(
                         self.fiber.frame.program.clone(),
@@ -694,13 +698,11 @@ impl Engine {
                     pending_host_call: None,
                     failure: None,
                 };
-                if let Err(error) = self
-                    .dialogue_activations
+                self.dialogue_activations
                     .begin(activation.clone(), dialogue)
-                {
-                    self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());
-                    return;
-                }
+                    .expect(
+                        "exclusive ingress retains its admitted registry and owned input frame",
+                    );
                 self.fiber.frame.status =
                     FlowFiberStatus::Dialogue(super::DialogueExecutionStatus::new(
                         activation,

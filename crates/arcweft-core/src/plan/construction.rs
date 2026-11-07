@@ -279,6 +279,10 @@ pub enum RuntimePlanBuildError {
     },
     #[error("a construction-only local handle belongs to another runtime-plan builder")]
     ForeignLocalSeed,
+    #[error(
+        "Line initial inputs must transfer every external local exactly once as a whole binding"
+    )]
+    InvalidLineInitialInputs,
     #[error("Program task repeats capture local {local:?}")]
     DuplicateProgramTaskCapture { local: RuntimeLocalDeclarationId },
     #[error(
@@ -1958,7 +1962,7 @@ impl RuntimePlanBuilder {
     ) -> Result<RuntimeLineTaskGroupSeedId, RuntimePlanBuildError> {
         seed.validate_policies()?;
         let event_owners = self.line_task_event_owners(&seed)?;
-        let captures = seed
+        let required_inputs = seed
             .free_locals()
             .into_vec()
             .into_iter()
@@ -1969,7 +1973,29 @@ impl RuntimePlanBuilder {
                     .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let capture_scope = captures.iter().copied().collect::<BTreeSet<_>>();
+        let capture_scope = required_inputs.iter().copied().collect::<BTreeSet<_>>();
+        let mut supplied = BTreeSet::new();
+        let initial_inputs = seed
+            .initial_inputs
+            .into_vec()
+            .into_iter()
+            .map(|input| {
+                let (local, mode, fields) = input.into_parts();
+                let (local, _) = local
+                    .resolve(&self.issuer)
+                    .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
+                if !fields.is_empty() || !capture_scope.contains(&local) || !supplied.insert(local)
+                {
+                    return Err(RuntimePlanBuildError::InvalidLineInitialInputs);
+                }
+                Ok(crate::value::RuntimeLocalRead::from_admitted_parts(
+                    local, mode,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if supplied != capture_scope {
+            return Err(RuntimePlanBuildError::InvalidLineInitialInputs);
+        }
         let activation_ops = self.lower_flow_ops(seed.activation_ops)?;
         let mut activation_scope = capture_scope.clone();
         self.validate_flow_operation_locals(&activation_ops, &mut activation_scope)?;
@@ -2100,9 +2126,8 @@ impl RuntimePlanBuilder {
                 Ok(())
             })?;
         }
-        let activation_exports = activation_scope
-            .difference(&capture_scope)
-            .filter(|local| used.contains(local))
+        let shared_inputs = activation_scope
+            .intersection(&used)
             .copied()
             .collect::<Vec<_>>();
         let group = RuntimeLineTaskGroupId::from_zero_based(self.line_task_groups.len()).ok_or(
@@ -2113,8 +2138,8 @@ impl RuntimePlanBuilder {
         self.line_task_groups.push(LineTaskGroup::new(
             seed.definition,
             seed.effects,
-            captures.into_boxed_slice(),
-            activation_exports.into_boxed_slice(),
+            initial_inputs.into_boxed_slice(),
+            shared_inputs.into_boxed_slice(),
             activation_ops.into_boxed_slice(),
             result_type,
             handle_sites,

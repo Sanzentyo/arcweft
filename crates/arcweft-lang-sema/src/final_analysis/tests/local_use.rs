@@ -996,6 +996,85 @@ fn stage_actor_look_cannot_borrow_after_owner_transfer() {
 }
 
 #[test]
+fn initial_line_input_has_one_owning_capture_and_an_independent_body() {
+    let fixture = character_nominal_fixture(
+        r#"
+pub character akane {}
+flow line_input() {
+    let actor = akane(voice=auto)[First[p]] with {
+        out akane.stage.acquire(scope=line)
+    }
+    let returned = akane(voice=auto)[Second[p]] with {
+        actor.look(.normal)
+        out actor
+    }
+    let _ = returned
+}
+"#,
+    );
+    let report = analyze(&fixture).expect("the Line owns its captured Actor before borrowing it");
+    let captures = report
+        .checked_local_uses()
+        .value_transfers()
+        .filter(|(site, row)| {
+            matches!(site, CheckedLocalUseSite::Capture { .. })
+                && report
+                    .local(row.local())
+                    .is_some_and(|binding| matches!(binding.ty(), TypeKind::StageActorHandle(_)))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].1.mode(), CheckedLocalReadMode::Move);
+}
+
+#[test]
+fn borrowing_a_captured_actor_inside_a_line_does_not_leave_it_in_the_caller() {
+    let fixture = character_nominal_fixture(
+        r#"
+pub character akane {}
+flow moved_line_input() {
+    let actor = akane(voice=auto)[First[p]] with {
+        out akane.stage.acquire(scope=line)
+    }
+    akane(voice=auto)[Second[p]] with {
+        actor.look(.normal)
+    }
+    let _ = actor
+}
+"#,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::LocalUse(
+            CheckedLocalUseError::Unavailable { .. }
+        ))
+    ));
+}
+
+#[test]
+fn initial_line_capture_moves_the_complete_affine_input_before_field_projection() {
+    let source = r#"
+pub character akane {}
+struct Packet { item: Need<i64>, other: i64 }
+flow projected_line_input(packet: Packet) {
+    let item = akane(voice=auto)[Second[p]] with {
+        out packet.item
+    }
+    let _ = item
+}
+"#;
+    analyze(&character_nominal_fixture(source))
+        .expect("the child may move one field of its owned input");
+    let reuse = source.replace("let _ = item", "let _ = packet.other; let _ = item");
+    assert!(matches!(
+        analyze(&character_nominal_fixture(&reuse)),
+        Err(FinalSemanticAnalysisError::LocalUse(
+            CheckedLocalUseError::Unavailable { .. }
+        ))
+    ));
+}
+
+#[test]
 fn repeated_pop_reads_an_affine_vec_receiver_as_a_mutable_place() {
     let fixture = fixture(
         r#"

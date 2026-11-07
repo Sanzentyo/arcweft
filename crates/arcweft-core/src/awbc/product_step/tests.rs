@@ -827,11 +827,6 @@ fn asset_capture_program() -> (AwbcProgram, AwbcFunctionId) {
     });
     let mut capture_group = program.line_task_groups[0].clone();
     capture_group.activation = function;
-    capture_group.captures = vec![
-        crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
-            std::num::NonZeroU32::MIN,
-        ),
-    ];
     capture_group.handle_sites.clear();
     capture_group.root = crate::awbc::schema::AwbcLineTaskNodeId(1);
     capture_group.nodes = AwbcTableRange::new(1, 1);
@@ -874,7 +869,8 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
 
     assert_eq!(
         roles,
-        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle; 2]
+        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle],
+        "the actual activation input is visited once; no duplicate capture payload is retained"
     );
     let inert = executor.inert_rollback_image().unwrap();
     let mut inert_roles = Vec::new();
@@ -975,7 +971,6 @@ fn only_explicit_selector_terminal_selects_dialogue_result_for_its_owner() {
                 target_type: AwbcTypeId(2),
                 line: crate::plan::RuntimeLineId::from_runtime_line_value("line.cancel.result")
                     .expect("line identity"),
-                captures: Box::new([]),
                 task_inputs: Box::new([]),
                 values: Box::new([]),
                 effect_callbacks: BTreeMap::new(),
@@ -1839,7 +1834,6 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
             target_type: AwbcTypeId(0),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("fixture line identity"),
-            captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: BTreeMap::new(),
@@ -1911,8 +1905,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
     program
         .line_task_groups
         .push(crate::awbc::schema::AwbcLineTaskGroup {
-            captures: Vec::new(),
-            activation_exports: Vec::new(),
+            shared_inputs: Vec::new(),
             activation: AwbcFunctionId(0),
             result_type: AwbcTypeId(0),
             handle_sites: Vec::new(),
@@ -1958,7 +1951,6 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
             target_type: AwbcTypeId(0),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
-            captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: BTreeMap::new(),
@@ -2574,8 +2566,7 @@ fn actor_look_program() -> AwbcProgram {
     }];
     program.line_task_nodes = vec![AwbcLineTaskNode::Sequence(Vec::new())];
     program.line_task_groups = vec![AwbcLineTaskGroup {
-        captures: Vec::new(),
-        activation_exports: Vec::new(),
+        shared_inputs: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(5),
         handle_sites: vec![
@@ -3591,8 +3582,7 @@ fn mark_selector_program(
         crate::awbc::schema::AwbcLineTaskNode::Action(AwbcFunctionId(2)),
     ];
     program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
-        captures: Vec::new(),
-        activation_exports: Vec::new(),
+        shared_inputs: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(1),
         handle_sites: Vec::new(),
@@ -3939,12 +3929,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
     }];
     program.line_task_nodes = vec![crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new())];
     program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
-        captures: vec![
-            crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
-                std::num::NonZeroU32::MIN,
-            ),
-        ],
-        activation_exports: Vec::new(),
+        shared_inputs: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(0),
         handle_sites: vec![crate::awbc::schema::AwbcLineHandleSite {
@@ -4214,8 +4199,7 @@ fn defer_host_call_program() -> AwbcProgram {
     }];
     program.line_task_nodes = vec![crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new())];
     program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
-        captures: Vec::new(),
-        activation_exports: Vec::new(),
+        shared_inputs: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(0),
         handle_sites: Vec::new(),

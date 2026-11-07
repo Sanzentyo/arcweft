@@ -1200,6 +1200,29 @@ impl LinePlanLowerer<'_, '_> {
         effects: arcweft_core::plan::RuntimeEffectSet,
         result: &RuntimeNormalizedType,
     ) -> Result<(RuntimeLineTaskGroupSeed, Vec<RuntimeAssertionSite>), RuntimePlanLowerError> {
+        let initial_inputs = self
+            .flow
+            .semantic_facts
+            .checked_captures_at(self.owner)
+            .into_iter()
+            .map(|capture| {
+                let local = self
+                    .flow
+                    .locals
+                    .get(&capture.local())
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "Line input {:?} has no admitted source slot",
+                            capture.local()
+                        ))
+                    })?;
+                Ok(arcweft_core::plan::RuntimeLocalReadSeed::new(
+                    local,
+                    crate::final_expr::runtime_local_read_mode(capture.mode()),
+                ))
+            })
+            .collect::<Result<Box<[_]>, RuntimePlanLowerError>>()?;
         let root = NodeDraft::Sequence(vec![NodeDraft::Start(self.root_children)]);
         let mut next_node = 0_usize;
         let mut child_nodes = std::collections::BTreeMap::new();
@@ -1281,6 +1304,7 @@ impl LinePlanLowerer<'_, '_> {
         let group = RuntimeLineTaskGroupSeed {
             definition,
             effects,
+            initial_inputs,
             activation_ops,
             result_type: result.identity(),
             handle_sites,

@@ -3985,7 +3985,7 @@ impl super::AwbcProductStepExecutor {
                 fiber,
                 pending: None,
             } => group
-                .activation_exports
+                .shared_inputs
                 .iter()
                 .map(|export| {
                     let value = fiber.active_frame()?.register(export.register)?;
@@ -4000,9 +4000,7 @@ impl super::AwbcProductStepExecutor {
                 .collect::<Result<Vec<_>, ProductStepError>>()?,
             _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
         };
-        let mut task_inputs = frame.captures.to_vec();
-        task_inputs.extend(exports);
-        frame.task_inputs = task_inputs.into_boxed_slice();
+        frame.task_inputs = exports.into_boxed_slice();
         frame.phase = ProductDialoguePhase::Reducing { line_task };
         Ok(ProductActivationProgress {
             trap: None,
@@ -4543,7 +4541,14 @@ fn activation_fiber_handle_owners(
 }
 
 /// The same physical slots back live reconciliation and inert admission.
-pub(super) fn physical_fiber_line_handle_slots<V: RuntimeStoredValue, O, N, B, R, G>(
+pub(super) fn physical_fiber_line_handle_slots<
+    V: RuntimeStoredValue,
+    O: RuntimeStoredValue,
+    N,
+    B,
+    R,
+    G,
+>(
     execution: crate::runtime_id::ExecutionInstanceId,
     fiber: &FiberState<V, O, N, B, R, G>,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
@@ -4596,10 +4601,77 @@ pub(super) fn physical_fiber_line_handle_slots<V: RuntimeStoredValue, O, N, B, R
             }
         }
     }
+    if let Some(crate::awbc::fiber::FiberSuspension {
+        reason:
+            crate::awbc::fiber::FiberSuspensionReason::Dialogue {
+                target,
+                content,
+                values,
+                effects,
+                line_task_captures,
+                ..
+            },
+        ..
+    }) = &fiber.suspension
+    {
+        use crate::value::ownership::RuntimeDialogueOperand;
+        let frame = fiber.active_frame()?.instance;
+        let mut insert =
+            |operand, value: crate::value::RuntimeValueView<'_>| -> Result<(), ProductStepError> {
+                let owner = RuntimeOwnedSlotId::AwbcDialogueOperand {
+                    execution,
+                    fiber: fiber.instance,
+                    frame,
+                    content: *content,
+                    operand,
+                };
+                for handle in unique_line_handles_in_view(value)? {
+                    if owners.insert(handle.token().clone(), owner).is_some() {
+                        return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                    }
+                }
+                Ok(())
+            };
+        insert(RuntimeDialogueOperand::Target, target.borrowed_view())?;
+        for binding in values.iter() {
+            insert(
+                RuntimeDialogueOperand::Value { slot: binding.slot },
+                binding.value.borrowed_view(),
+            )?;
+        }
+        for effect in effects.iter() {
+            for (ordinal, value) in effect.captures.iter().enumerate() {
+                insert(
+                    RuntimeDialogueOperand::EffectCapture {
+                        site: effect.site,
+                        ordinal: u32::try_from(ordinal)
+                            .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                    },
+                    value.borrowed_view(),
+                )?;
+            }
+        }
+        for (ordinal, value) in line_task_captures.iter().enumerate() {
+            insert(
+                RuntimeDialogueOperand::InitialInput {
+                    ordinal: u32::try_from(ordinal)
+                        .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                },
+                value.borrowed_view(),
+            )?;
+        }
+    }
     Ok(owners)
 }
 
-pub(super) fn product_fiber_handle_owners<V: RuntimeStoredValue, O, N, B, R, G>(
+pub(super) fn product_fiber_handle_owners<
+    V: RuntimeStoredValue,
+    O: RuntimeStoredValue,
+    N,
+    B,
+    R,
+    G,
+>(
     execution: crate::runtime_id::ExecutionInstanceId,
     fiber: &FiberState<V, O, N, B, R, G>,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {

@@ -3457,6 +3457,26 @@ fn apply_terminator(
     {
         return invalid_type(&at, "nonlocal transfer leaves a format attempt open");
     }
+    if program.functions[function].kind == AwbcFunctionKind::LineActivation
+        && matches!(
+            terminator,
+            AwbcTerminator::Return { .. } | AwbcTerminator::Complete
+        )
+    {
+        for group in program
+            .line_task_groups
+            .iter()
+            .filter(|group| group.activation.index() == function)
+        {
+            for input in &group.shared_inputs {
+                let actual = read_register(verifier, function, block, input.register, state)?;
+                require_compatible(program, input.ty, actual, &at)?;
+                if !state.copy_proofs[input.register.index()].permits_copy() {
+                    return invalid_type(&at, "producer-proven unrestricted shared Line input");
+                }
+            }
+        }
+    }
     let mut successors = Vec::new();
     match terminator {
         AwbcTerminator::Jump { target } => {
@@ -3701,7 +3721,13 @@ fn apply_terminator(
             let group = program.content_units[content.index()]
                 .line_task_group
                 .and_then(|group| program.line_task_groups.get(group.index()));
-            if group.is_some_and(|group| group.captures.len() != line_task_captures.len()) {
+            if group.is_some_and(|group| {
+                program
+                    .functions
+                    .get(group.activation.index())
+                    .and_then(|function| program.signatures.get(function.signature.index()))
+                    .is_none_or(|signature| signature.params.len() != line_task_captures.len())
+            }) {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
                     message: "dialogue line-task capture arity disagrees with its content group"
@@ -3747,11 +3773,25 @@ fn apply_terminator(
                     at: at.clone(),
                     message: "line activation capture signature is absent".to_owned(),
                 })?;
-            for (capture, expected) in line_task_captures.iter().zip(capture_types) {
+            let capture_ownership = &program.functions[group.activation.index()].input_ownership;
+            for ((capture, expected), ownership) in line_task_captures
+                .iter()
+                .zip(capture_types)
+                .zip(capture_ownership)
+            {
                 let actual = read_register(verifier, function, block, *capture, state)?;
                 require_compatible(program, *expected, actual, &at)?;
-                if !runtime_type_permits_copy(program, actual, 0) {
-                    return invalid_type(&at, "recursively unrestricted line-task group capture");
+                if (ownership.requirement == RuntimeValueOwnershipRequirement::Unrestricted
+                    || matches!(
+                        ownership.transfer,
+                        crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                            crate::plan::RuntimeFunctionCaptureMode::Copy
+                                | crate::plan::RuntimeFunctionCaptureMode::SnapshotClone
+                        )
+                    ))
+                    && !state.copy_proofs[capture.index()].permits_copy()
+                {
+                    return invalid_type(&at, "producer-proven unrestricted initial Line copy");
                 }
             }
             let content_unit = &program.content_units[content.index()];
@@ -4324,6 +4364,7 @@ fn apply_terminator_copy_and_move_effects(
         }
         AwbcTerminator::Dialogue {
             target,
+            content,
             values,
             effects,
             line_task_captures,
@@ -4337,7 +4378,28 @@ fn apply_terminator_copy_and_move_effects(
                     .iter()
                     .flat_map(|effect| effect.captures.iter().copied()),
             );
-            consumed.extend(line_task_captures.iter().copied());
+            let activation = verifier.program.content_units[content.index()]
+                .line_task_group
+                .and_then(|group| verifier.program.line_task_groups.get(group.index()))
+                .and_then(|group| verifier.program.functions.get(group.activation.index()))
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.to_owned(),
+                    message: "Dialogue activation input ABI is absent".to_owned(),
+                })?;
+            consumed.extend(
+                line_task_captures
+                    .iter()
+                    .zip(&activation.input_ownership)
+                    .filter_map(|(register, input)| {
+                        matches!(
+                            input.transfer,
+                            crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                                crate::plan::RuntimeFunctionCaptureMode::Move
+                            )
+                        )
+                        .then_some(*register)
+                    }),
+            );
             outputs.insert(result.destination);
             extend_pattern_targets(verifier.program, result.pattern, &mut outputs)?;
         }

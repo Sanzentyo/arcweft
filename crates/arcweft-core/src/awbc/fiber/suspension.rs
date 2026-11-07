@@ -648,27 +648,27 @@ impl<V, O, N> FiberSuspensionReason<V, O, N> {
                     .line_task_groups
                     .get(id.index())
                     .ok_or(FiberStateError::InvalidFrame)?;
-                let signature = program
+                let activation = program
                     .functions
                     .get(group.activation.index())
-                    .and_then(|f| program.signatures.get(f.signature.index()))
                     .ok_or(FiberStateError::InvalidFrame)?;
-                if group.captures.len() != line_task_captures.len()
-                    || signature.params.len() != line_task_captures.len()
+                let signature = program
+                    .signatures
+                    .get(activation.signature.index())
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                if signature.params.len() != line_task_captures.len()
+                    || activation.input_ownership.len() != line_task_captures.len()
                 {
                     return Err(FiberStateError::InvalidFrame);
                 }
-                for ((value, register), expected) in line_task_captures
+                for (((value, register), expected), ownership) in line_task_captures
                     .iter()
                     .zip(capture_registers)
                     .zip(&signature.params)
+                    .zip(&activation.input_ownership)
                 {
                     let value = view(value);
-                    value.admit_ownership(
-                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
-                        resources,
-                        0,
-                    )?;
+                    value.admit_ownership(ownership.requirement, resources, 0)?;
                     for ty in [
                         frame
                             .layout

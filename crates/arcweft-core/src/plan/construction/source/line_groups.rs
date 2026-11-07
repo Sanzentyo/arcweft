@@ -2,8 +2,9 @@
 //!
 //! Group frames contain original definition/result/cleanup metadata, typed
 //! handle sites, activation Flow Source, a preorder node prefix, cancellation
-//! branches and the three outcome cleanup bodies. Captures and activation
-//! exports are derived by the actual Line factory. Content Source remains the
+//! branches and the three outcome cleanup bodies. Initial transfers retain
+//! their selected ABI; shared inputs are derived by the actual Line factory.
+//! Content Source remains the
 //! sole owner of attachments; a Mark carries its genuine content/local identity.
 
 mod decoding;

@@ -392,8 +392,8 @@ fn content_line_link_excludes_debug_marks_and_delegates_body_to_the_line_owner()
     changed.inventory.line_task_groups[0] = crate::line_task::LineTaskGroup::new(
         RuntimeFunctionDefinitionIdentity::from_accepted_identity([85; 32]),
         old.effects().clone(),
-        old.captures().into(),
-        old.activation_exports().into(),
+        old.initial_inputs().into(),
+        old.shared_inputs().into(),
         old.activation_ops().into(),
         old.result_type(),
         old.handle_sites().into(),

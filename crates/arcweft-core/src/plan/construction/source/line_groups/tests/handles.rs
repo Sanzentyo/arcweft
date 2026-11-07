@@ -218,6 +218,7 @@ pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     }
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            initial_inputs: Box::new([]),
             effects: crate::plan::RuntimeEffectSet::empty(),
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xfb; 32]),
             activation_ops,
@@ -247,6 +248,7 @@ fn default_source_artifact_accepts_the_full_line_handle_site_limit() {
     let count = u32::try_from(crate::line_task::MAX_LINE_HANDLE_SITES).unwrap();
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            initial_inputs: Box::new([]),
             effects: crate::plan::RuntimeEffectSet::empty(),
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xed; 32]),
             activation_ops: vec![RuntimeFlowOpSeed::Noop],
@@ -353,8 +355,8 @@ fn line_sources_restore_all_handle_site_kinds_scheduled_packets_and_borrowed_act
             .bytes()
     );
     let group = &restored.line_task_groups()[0];
-    assert_eq!(group.activation_exports().len(), 1);
-    assert!(group.captures().is_empty());
+    assert_eq!(group.shared_inputs().len(), 1);
+    assert!(group.initial_inputs().is_empty());
     assert_eq!(
         group
             .handle_sites()

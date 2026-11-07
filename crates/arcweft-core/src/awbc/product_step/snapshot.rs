@@ -822,7 +822,6 @@ impl Clone for AwbcProductActiveDialogueSaveSnapshot {
             target_type: self.target_type,
             line: self.line.clone(),
             result: self.result.clone(),
-            captures: self.captures.clone(),
             task_inputs: self.task_inputs.clone(),
             values: self.values.clone(),
             effect_callbacks: self.effect_callbacks.clone(),
@@ -925,12 +924,7 @@ impl<V, O, E, N, B, R, G, L, P, H>
             self.pending_advance,
             &self.pending_line_outcomes,
         ))?;
-        for count in [
-            self.captures.len(),
-            self.task_inputs.len(),
-            self.values.len(),
-            callbacks.len(),
-        ] {
+        for count in [self.task_inputs.len(), self.values.len(), callbacks.len()] {
             admission.validate_metadata_collection(count)?;
         }
         let (content, group) = self.original_content_group(program)?;
@@ -972,36 +966,12 @@ impl<V, O, E, N, B, R, G, L, P, H>
                 ));
             }
         }
-        let signature = program
-            .functions
-            .get(group.activation.index())
-            .and_then(|function| program.signatures.get(function.signature.index()))
-            .ok_or_else(|| invalid("line task group activation signature is absent"))?;
-        if self.captures.len() != group.captures.len()
-            || self.captures.len() != signature.params.len()
-        {
-            return Err(invalid(
-                "active dialogue snapshot capture arity disagrees with its content group",
-            ));
-        }
         let expected_inputs = if has_reducer {
-            group.captures.len() + group.activation_exports.len()
+            group.shared_inputs.len()
         } else {
             0
         };
-        if self.task_inputs.len() != expected_inputs
-            || has_reducer
-                && self
-                    .task_inputs
-                    .iter()
-                    .zip(&self.captures)
-                    .any(|(left, right)| {
-                        !crate::value::runtime_value_views_equal(
-                            left.borrowed_view(),
-                            right.borrowed_view(),
-                        )
-                    })
-        {
+        if self.task_inputs.len() != expected_inputs {
             return Err(invalid(
                 "active dialogue snapshot line-task input ABI is invalid",
             ));
@@ -1029,7 +999,7 @@ impl<V, O, E, N, B, R, G, L, P, H>
         admission.admit_composite(V::admission_origin(), |owner, resources| {
             resources.validate_view(target, 0, None)?;
             AwbcRuntimeValueSnapshot::validate_admitted_storage_view(target, owner, resources)?;
-            for value in self.captures.iter().chain(self.task_inputs.iter()) {
+            for value in self.task_inputs.iter() {
                 let view = value.borrowed_view();
                 view.admit_ownership(
                     crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
@@ -1056,20 +1026,7 @@ impl<V, O, E, N, B, R, G, L, P, H>
                 &resources.work(),
                 V::admission_origin(),
             )?;
-            for (capture, ty) in self.captures.iter().zip(&signature.params) {
-                crate::program_types::RuntimeProgramValueType::Awbc { program, ty: *ty }
-                    .validate_snapshot_storage(
-                        capture.borrowed_view(),
-                        &resources.work(),
-                        V::admission_origin(),
-                    )?;
-            }
-            for (value, export) in self
-                .task_inputs
-                .iter()
-                .skip(group.captures.len())
-                .zip(&group.activation_exports)
-            {
+            for (value, export) in self.task_inputs.iter().zip(&group.shared_inputs) {
                 crate::program_types::RuntimeProgramValueType::Awbc {
                     program,
                     ty: export.ty,
@@ -1324,7 +1281,7 @@ impl AwbcProductActiveDialogueSaveSnapshot {
         visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
     ) -> Result<(), E> {
         visit(&self.target)?;
-        for value in self.captures.iter().chain(&self.task_inputs) {
+        for value in &self.task_inputs {
             visit(value)?;
         }
         for value in &self.values {
@@ -1859,13 +1816,6 @@ fn snapshot_active_dialogue(
         target_type: active.target_type,
         line: active.line.clone(),
         result: active.result.clone(),
-        captures: active
-            .captures
-            .iter()
-            .map(|value| {
-                crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
-            })
-            .collect::<Result<_, _>>()?,
         task_inputs: active
             .task_inputs
             .iter()
@@ -2318,32 +2268,12 @@ impl AwbcProductExecutorSnapshot {
             let group = content
                 .line_task_group
                 .and_then(|group| program.line_task_groups.get(group.index()));
-            let expected_captures = group.map_or(0, |group| group.captures.len());
-            if active.captures.len() != expected_captures {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message:
-                        "active dialogue snapshot capture arity disagrees with its content group"
-                            .to_owned(),
-                });
-            }
             let expected_task_inputs = if active.line_task().is_some() {
-                group.map_or(0, |group| {
-                    group.captures.len() + group.activation_exports.len()
-                })
+                group.map_or(0, |group| group.shared_inputs.len())
             } else {
                 0
             };
-            if active.task_inputs.len() != expected_task_inputs
-                || active.line_task().is_some()
-                    && active
-                        .task_inputs
-                        .get(..expected_captures)
-                        .is_none_or(|prefix| {
-                            prefix.iter().zip(&active.captures).any(|(left, right)| {
-                                !crate::value::runtime_value_views_equal(left.view(), right.view())
-                            })
-                        })
-            {
+            if active.task_inputs.len() != expected_task_inputs {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message: "active dialogue snapshot line-task input ABI is invalid".to_owned(),
                 });
@@ -4187,13 +4117,6 @@ impl AwbcProductStepExecutor {
                     target_type: active.target_type,
                     line: active.line,
                     result: active.result,
-                    captures: active
-                        .captures
-                        .into_vec()
-                        .into_iter()
-                        .map(|value| value.into_admitted_runtime_value(materialization))
-                        .collect::<Result<_, _>>()
-                        .map_err(invalid)?,
                     task_inputs: active
                         .task_inputs
                         .into_vec()
@@ -4508,7 +4431,6 @@ mod tests {
             target_type: AwbcTypeId(0),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
-            captures: Box::new([]),
             task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: std::collections::BTreeMap::new(),

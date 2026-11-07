@@ -2961,6 +2961,15 @@ impl<'a> LocalUseChecker<'a> {
             }
         }
 
+        // The input transfer is emitted in the caller, while the same binding
+        // identities inside the Line belong to its independent owned frame.
+        // Reserve the edge before visiting the body; its exact free inputs
+        // come from that single selected evaluation traversal.
+        let input_frame = self.flow.detached();
+        let mut caller = std::mem::replace(state, Availability::at(input_frame));
+        let caller_loans = std::mem::take(&mut self.active_receiver_loans);
+        let caller_loops = std::mem::take(&mut self.loops);
+        self.callback_local_uses.push(BTreeSet::new());
         let parent_site = std::mem::replace(&mut self.registry_site, RegistrySite::line(owner));
         self.flow
             .append(state, Event::EnterRegistry(RegistryOwner::Line(owner)));
@@ -3012,6 +3021,26 @@ impl<'a> LocalUseChecker<'a> {
             },
         );
         self.registry_site = parent_site;
+        self.active_receiver_loans = caller_loans;
+        self.loops = caller_loops;
+        let locals = self
+            .callback_local_uses
+            .pop()
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        let inputs = scheduled_free_locals(self.analysis, owner, locals)?;
+        for local in &inputs {
+            self.use_local(
+                CheckedLocalUseSite::Capture {
+                    owner,
+                    local: *local,
+                },
+                *local,
+                &mut caller,
+            )?;
+        }
+        self.flow.seal_input_frame(input_frame, owner, inputs)?;
+        self.flow.connect(&caller, input_frame);
+        self.flow.append(state, Event::ExitInputFrame(owner));
         Ok(())
     }
 

@@ -137,6 +137,11 @@ impl Availability {
 
 pub(super) enum Event {
     Join,
+    EnterInputFrame {
+        owner: ExprId,
+        inputs: Box<[LocalId]>,
+    },
+    ExitInputFrame(ExprId),
     Access(CheckedLocalUseSite),
     Synthetic(ExprId),
     Bind(Box<[LocalId]>),
@@ -231,9 +236,23 @@ impl Default for LocalInitialization {
     }
 }
 
+impl LocalInitialization {
+    fn join(&mut self, incoming: &Self) {
+        self.state = self.state.join(incoming.state);
+        self.moves.extend(&incoming.moves);
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct CapturedInputFrame {
+    inputs: BTreeSet<LocalId>,
+    caller: BTreeMap<MovePath, LocalInitialization>,
+}
+
 #[derive(Clone, Default, Eq, PartialEq)]
 struct Initialization {
     locals: BTreeMap<MovePath, LocalInitialization>,
+    input_frames: BTreeMap<ExprId, CapturedInputFrame>,
     synthetic: BTreeMap<CheckedSyntheticUseOwner, BTreeSet<ExprId>>,
     registry: RegistryFacts,
 }
@@ -248,6 +267,32 @@ impl Initialization {
         registry_schedules: &[RegistrySchedule],
     ) -> Result<(), CheckedLocalUseError> {
         match event {
+            Event::EnterInputFrame { owner, inputs } => {
+                let inputs = inputs.iter().copied().collect::<BTreeSet<_>>();
+                let caller = self
+                    .locals
+                    .iter()
+                    .filter(|(path, _)| inputs.contains(&path.root))
+                    .map(|(path, fact)| (path.clone(), fact.clone()))
+                    .collect();
+                self.locals.retain(|path, _| !inputs.contains(&path.root));
+                if self
+                    .input_frames
+                    .insert(*owner, CapturedInputFrame { inputs, caller })
+                    .is_some()
+                {
+                    return Err(CheckedLocalUseError::InvalidTopology);
+                }
+            }
+            Event::ExitInputFrame(owner) => {
+                let frame = self
+                    .input_frames
+                    .remove(owner)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                self.locals
+                    .retain(|path, _| !frame.inputs.contains(&path.root));
+                self.locals.extend(frame.caller);
+            }
             Event::Access(site) => {
                 let access = rows
                     .get(site)
@@ -334,26 +379,42 @@ impl Initialization {
         Ok(())
     }
 
-    fn join(&mut self, other: &Self) -> bool {
+    fn join(&mut self, other: &Self) -> Result<bool, CheckedLocalUseError> {
         let before = self.clone();
-        let keys = self
-            .locals
-            .keys()
-            .chain(other.locals.keys())
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        for local in keys {
-            let left = self.locals.get(&local).cloned().unwrap_or_default();
-            let right = other.locals.get(&local).cloned().unwrap_or_default();
-            let target = self.locals.entry(local).or_default();
-            target.state = left.state.join(right.state);
-            target.moves.extend(right.moves);
+        Self::join_local_facts(&mut self.locals, &other.locals);
+        if !self.input_frames.keys().eq(other.input_frames.keys()) {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        }
+        for (owner, incoming) in &other.input_frames {
+            let current = self
+                .input_frames
+                .get_mut(owner)
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            if current.inputs != incoming.inputs {
+                return Err(CheckedLocalUseError::InvalidTopology);
+            }
+            Self::join_local_facts(&mut current.caller, &incoming.caller);
         }
         for (owner, sites) in &other.synthetic {
             self.synthetic.entry(*owner).or_default().extend(sites);
         }
         self.registry.join(&other.registry);
-        *self != before
+        Ok(*self != before)
+    }
+
+    fn join_local_facts(
+        target: &mut BTreeMap<MovePath, LocalInitialization>,
+        incoming: &BTreeMap<MovePath, LocalInitialization>,
+    ) {
+        let keys = target
+            .keys()
+            .chain(incoming.keys())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        for local in keys {
+            let fact = incoming.get(&local).cloned().unwrap_or_default();
+            target.entry(local).or_default().join(&fact);
+        }
     }
 }
 
@@ -573,6 +634,23 @@ impl OwnershipFlow {
         id
     }
 
+    pub(super) fn seal_input_frame(
+        &mut self,
+        node: NodeId,
+        owner: ExprId,
+        inputs: Box<[LocalId]>,
+    ) -> Result<(), CheckedLocalUseError> {
+        let node = self
+            .nodes
+            .get_mut(node.0)
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        if !matches!(node.event, Event::Join) {
+            return Err(CheckedLocalUseError::InvalidTopology);
+        }
+        node.event = Event::EnterInputFrame { owner, inputs };
+        Ok(())
+    }
+
     pub(super) fn connect(&mut self, state: &Availability, target: NodeId) {
         if state.reachable {
             for predecessor in &state.frontier {
@@ -629,7 +707,7 @@ impl OwnershipFlow {
                     &state
                 };
                 let changed = match &mut incoming[successor.0] {
-                    Some(previous) => previous.join(state),
+                    Some(previous) => previous.join(state)?,
                     target @ None => {
                         *target = Some(state.clone());
                         true

@@ -72,9 +72,6 @@ pub(crate) struct DialogueActivationFrame<
     pub(in crate::engine) content: crate::runtime_id::RuntimeDialogueContentPlanId,
     pub(in crate::engine) target: Option<O>,
     pub(in crate::engine) task_group: crate::runtime_id::RuntimeLineTaskGroupId,
-    /// Source-order capture coordinates; the values themselves live only in
-    /// `execution.env` and may be affine while activation executes.
-    pub(in crate::engine) captures: Box<[RuntimeLocalDeclarationId]>,
     /// Copyable external and activation-local inputs for unscheduled line work.
     pub(in crate::engine) task_inputs: Box<[RuntimeLocalBinding<V>]>,
     /// The same execution frame used by ordinary fibers. The parent continuation
@@ -203,7 +200,6 @@ impl Clone for NativeDialogueActivationFrameRollbackImage {
             content: self.content,
             target: self.target.clone(),
             task_group: self.task_group,
-            captures: self.captures.clone(),
             task_inputs: self.task_inputs.clone(),
             execution: self.execution.clone(),
             line_task: self.line_task.clone(),
@@ -361,7 +357,11 @@ impl DialogueActivationStoreRollbackImage {
                 };
                 pending == command
                     && execution_for_parent(frame.parent).is_some_and(|execution| {
-                        slot == RuntimeOwnedSlotId::environment_local(execution, actor.local())
+                        slot == RuntimeOwnedSlotId::native_dialogue_local(
+                            execution,
+                            *command.activation(),
+                            actor.local(),
+                        )
                     })
                     && frame
                         .execution
@@ -592,7 +592,6 @@ impl DialogueActivationFrame {
                 })
                 .transpose()?,
             task_group: self.task_group,
-            captures: self.captures.clone(),
             task_inputs: self
                 .task_inputs
                 .iter()
@@ -665,7 +664,6 @@ impl DialogueActivationFrame {
             content: image.content,
             target,
             task_group: image.task_group,
-            captures: image.captures,
             task_inputs: image
                 .task_inputs
                 .into_iter()
@@ -728,10 +726,10 @@ impl DialogueActivationFrame {
 impl DialogueActivationFrame {
     pub(in crate::engine) fn task_inputs_for_reveal(
         &self,
-        exports: &[RuntimeLocalDeclarationId],
+        shared: &[RuntimeLocalDeclarationId],
     ) -> Result<Box<[RuntimeLocalBinding]>, LineRuntimeError> {
-        let mut inputs = Vec::with_capacity(self.captures.len() + exports.len());
-        for local in self.captures.iter().chain(exports.iter()) {
+        let mut inputs = Vec::with_capacity(shared.len());
+        for local in shared {
             let value = self
                 .execution
                 .env
@@ -813,6 +811,33 @@ pub struct DialogueActivationStore {
 }
 
 impl DialogueActivationStore {
+    pub(in crate::engine) fn extend_received_frame_handle_owners(
+        &self,
+        execution_for_parent: impl Fn(
+            super::super::FlowFiberId,
+        ) -> Option<crate::runtime_id::ExecutionInstanceId>,
+        owners: &mut BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry.try_visit_active(|activation, active, _| {
+            let execution = execution_for_parent(active.frame.parent)
+                .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            for (local, value) in active.frame.execution.env.bindings() {
+                let slot = active.frame.execution.owned_local_slot(execution, local);
+                for handle in value
+                    .view()
+                    .line_handle_projection()
+                    .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+                {
+                    if handle.token().activation() != activation
+                        && owners.insert(handle.token().clone(), slot).is_some()
+                    {
+                        return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
     pub(in crate::engine) fn published_lease(
         &self,
         token: &RuntimeLineHandleToken,
@@ -1342,6 +1367,13 @@ impl DialogueTerminalReceipt {
 }
 
 impl DialogueActivationStore {
+    pub(crate) fn inspect_begin(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry.inspect_begin(activation)
+    }
+
     pub(crate) fn begin(
         &mut self,
         activation: DialogueActivationId,
@@ -1844,7 +1876,6 @@ mod tests {
                 crate::value::RuntimeValue::Unit,
             )),
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("task group"),
-            captures: Box::default(),
             task_inputs: Box::default(),
             execution: crate::engine::NativeFlowExecutionFrame::running(
                 program,
@@ -1997,11 +2028,10 @@ mod tests {
             NonZeroU32::new(2).expect("nonzero local"),
         );
         let mut state = frame(test_program(), DialogueRuntimePhase::Activating);
-        state.captures = vec![external].into_boxed_slice();
         state.execution.env.set(external, RuntimeValue::Unit);
         state.execution.env.set(export, RuntimeValue::Bool(true));
         let inputs = state
-            .task_inputs_for_reveal(&[export])
+            .task_inputs_for_reveal(&[external, export])
             .expect("copyable activation local is available to line work");
         assert_eq!(
             inputs.iter().map(|row| row.local).collect::<Vec<_>>(),
@@ -2017,7 +2047,7 @@ mod tests {
             )),
         );
         assert_eq!(
-            state.task_inputs_for_reveal(&[export]),
+            state.task_inputs_for_reveal(&[external, export]),
             Err(LineRuntimeError::AffineGroupCapture),
         );
     }

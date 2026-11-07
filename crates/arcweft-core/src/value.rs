@@ -2811,8 +2811,8 @@ pub enum RuntimeEvalError {
     Quantity(#[from] RuntimeOpaqueValueError),
     #[error(transparent)]
     ValueOwnership(#[from] ownership::RuntimeValueOwnershipAdmissionError),
-    #[error("Program task repeats capture local {local:?}")]
-    DuplicateProgramTaskCapture { local: RuntimeLocalDeclarationId },
+    #[error("input capture repeats local {local:?}")]
+    DuplicateLocalCapture { local: RuntimeLocalDeclarationId },
     #[error("native task request evaluation failed: {message}")]
     HostTaskRequest { message: String },
     #[error(transparent)]

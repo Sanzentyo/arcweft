@@ -321,6 +321,9 @@ pub struct RuntimeLineTaskCancelRuleSeed {
 pub struct RuntimeLineTaskGroupSeed {
     pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub effects: crate::plan::RuntimeEffectSet,
+    /// Complete caller inputs, with the semantic owner's selected transfers.
+    /// Every external binding occurs once; the body keeps its original local.
+    pub initial_inputs: Box<[RuntimeLocalReadSeed]>,
     pub activation_ops: Vec<RuntimeFlowOpSeed>,
     pub result_type: RuntimeSemanticTypeId,
     pub handle_sites: Box<[RuntimeLineHandleSiteSeed]>,

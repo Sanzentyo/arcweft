@@ -697,6 +697,75 @@ fn register_transfer_prepares_copy_duplicates_and_rejects_bad_later_inputs_atomi
 }
 
 #[test]
+fn selected_input_packet_checks_a_later_copy_before_any_move_and_preserves_copy_sources() {
+    use crate::value::RuntimeLocalReadMode::{Copy, Move};
+    let mut program = program();
+    program.runtime_types.push(AwbcRuntimeType::new(
+        crate::pattern::RuntimeSemanticTypeId::from_bytes([0x69; 32]),
+        AwbcRuntimeTypeShape::Need(AwbcTypeId(0)),
+    ));
+    program.frame_layouts[0].slots[0].ty = AwbcTypeId(2);
+    let mut second = program.frame_layouts[0].slots[0].clone();
+    second.ty = AwbcTypeId(2);
+    program.frame_layouts[0].slots.push(second);
+    let mut frame = super::super::FiberFrame::new(
+        crate::runtime_id::RuntimeFrameInstanceId::from_allocated(std::num::NonZeroU64::MIN),
+        &program,
+        AwbcFunctionId(0),
+        None,
+    )
+    .unwrap();
+    let first = crate::tests::reusable_need("need.initial-first");
+    let first_correlation = first.correlation().clone();
+    let second = crate::tests::reusable_need("need.initial-second");
+    let second_correlation = second.correlation().clone();
+    frame
+        .set_register(AwbcRegisterId(0), RuntimeValue::NeedHandle(first))
+        .unwrap();
+    frame
+        .set_register(AwbcRegisterId(1), RuntimeValue::NeedHandle(second))
+        .unwrap();
+    let inputs = [(AwbcRegisterId(0), Move), (AwbcRegisterId(1), Copy)];
+    assert!(matches!(
+        frame.prepare_register_operand_values(&program, inputs.into_iter()),
+        Err(FiberStateError::Snapshot(
+            crate::value::AwbcRuntimeValueSnapshotError::AffineValue
+        ))
+    ));
+    for (register, correlation) in [
+        (AwbcRegisterId(0), &first_correlation),
+        (AwbcRegisterId(1), &second_correlation),
+    ] {
+        assert!(
+            matches!(frame.register(register), Ok(RuntimeValue::NeedHandle(handle)) if handle.correlation() == correlation)
+        );
+    }
+    program.frame_layouts[0].slots[1].ty = AwbcTypeId(0);
+    frame
+        .set_register(AwbcRegisterId(1), RuntimeValue::String("retained".into()))
+        .unwrap();
+    drop(
+        frame
+            .prepare_register_operand_values(&program, inputs.into_iter())
+            .unwrap(),
+    );
+    assert!(frame.register(AwbcRegisterId(0)).is_ok());
+    let prepared = frame
+        .prepare_register_operand_values(&program, inputs.into_iter())
+        .unwrap();
+    let packet = prepared.commit(&mut frame);
+    assert!(
+        matches!(&packet[0], RuntimeValue::NeedHandle(handle) if handle.correlation() == &first_correlation)
+    );
+    assert_eq!(packet[1], RuntimeValue::String("retained".into()));
+    assert!(frame.registers[0].is_vacant());
+    assert_eq!(
+        frame.register(AwbcRegisterId(1)).unwrap(),
+        &RuntimeValue::String("retained".into())
+    );
+}
+
+#[test]
 fn register_transfer_rejects_affine_duplicates_before_moving_the_source() {
     let mut program = program();
     program.runtime_types.push(AwbcRuntimeType::new(

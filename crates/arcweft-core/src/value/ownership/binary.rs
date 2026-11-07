@@ -1,6 +1,9 @@
 //! Canonical binary representation for diagnostic ownership identities.
 
-use super::{RuntimeOwnedSlotId, RuntimeValuePath, RuntimeValuePathError, RuntimeValuePathSegment};
+use super::{
+    RuntimeDialogueOperand, RuntimeOwnedSlotId, RuntimeValuePath, RuntimeValuePathError,
+    RuntimeValuePathSegment,
+};
 use crate::{
     awbc::{
         fiber::FiberCursor,
@@ -30,6 +33,10 @@ pub(super) enum RuntimeOwnershipBinaryError {
     UnknownOwnedSlotTag { tag: u8 },
     #[error("runtime AWBC cleanup scope presence tag {tag} is invalid")]
     InvalidCleanupScopeTag { tag: u8 },
+    #[error("runtime dialogue operand tag {tag} is unknown")]
+    UnknownDialogueOperandTag { tag: u8 },
+    #[error(transparent)]
+    Artifact(#[from] crate::effect::RuntimeIdentityDecodeError),
     #[error("runtime value-path binary tag {tag} is unknown")]
     UnknownPathSegmentTag { tag: u8 },
     #[error(transparent)]
@@ -42,6 +49,46 @@ pub(super) fn encode_owned_slot(slot: RuntimeOwnedSlotId) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.push(slot.canonical_tag());
     match slot {
+        RuntimeOwnedSlotId::NativeDialogueLocal {
+            execution,
+            activation,
+            local,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            bytes.extend_from_slice(activation.artifact().as_bytes());
+            push_raw_u64(&mut bytes, activation.owner_fiber().get());
+            push_u32(&mut bytes, activation.content().get());
+            push_raw_u64(&mut bytes, activation.occurrence());
+            push_u64(&mut bytes, local.get());
+        }
+        RuntimeOwnedSlotId::AwbcDialogueOperand {
+            execution,
+            fiber,
+            frame,
+            content,
+            operand,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            push_raw_u32(&mut bytes, content.0);
+            match operand {
+                RuntimeDialogueOperand::Target => bytes.push(0),
+                RuntimeDialogueOperand::Value { slot } => {
+                    bytes.push(1);
+                    push_u32(&mut bytes, slot.get());
+                }
+                RuntimeDialogueOperand::EffectCapture { site, ordinal } => {
+                    bytes.push(2);
+                    push_u32(&mut bytes, site.get());
+                    push_raw_u32(&mut bytes, ordinal);
+                }
+                RuntimeDialogueOperand::InitialInput { ordinal } => {
+                    bytes.push(3);
+                    push_raw_u32(&mut bytes, ordinal);
+                }
+            }
+        }
         RuntimeOwnedSlotId::NativeDeferCapture {
             execution,
             fiber,
@@ -273,11 +320,47 @@ pub(super) fn decode_owned_slot(
 ) -> Result<RuntimeOwnedSlotId, RuntimeOwnershipBinaryError> {
     let mut reader = Reader::new(bytes);
     let tag = reader.u8()?;
-    if tag > 19 {
+    if tag > 21 {
         return Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag });
     }
     let execution = ExecutionInstanceId::from_allocated(reader.nonzero_u64()?);
     let slot = match tag {
+        20 => RuntimeOwnedSlotId::NativeDialogueLocal {
+            execution,
+            activation: crate::runtime_id::DialogueActivationId::new(
+                crate::effect::RuntimeArtifactFingerprint::try_from_bytes(reader.take()?)?,
+                RuntimePersistentFiberId::from_allocated(reader.u64()?),
+                crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                    reader.nonzero_u32()?,
+                ),
+                reader.u64()?,
+            ),
+            local: RuntimeLocalSlotId::from_allocated(reader.nonzero_u64()?),
+        },
+        21 => RuntimeOwnedSlotId::AwbcDialogueOperand {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            content: crate::awbc::schema::AwbcContentUnitId(reader.u32()?),
+            operand: match reader.u8()? {
+                0 => RuntimeDialogueOperand::Target,
+                1 => RuntimeDialogueOperand::Value {
+                    slot: crate::runtime_id::RuntimeDialogueValueSlotId::from_accepted_ordinal(
+                        reader.nonzero_u32()?,
+                    ),
+                },
+                2 => RuntimeDialogueOperand::EffectCapture {
+                    site: crate::runtime_id::RuntimeDialogueEffectSiteId::from_accepted_ordinal(
+                        reader.nonzero_u32()?,
+                    ),
+                    ordinal: reader.u32()?,
+                },
+                3 => RuntimeDialogueOperand::InitialInput {
+                    ordinal: reader.u32()?,
+                },
+                tag => return Err(RuntimeOwnershipBinaryError::UnknownDialogueOperandTag { tag }),
+            },
+        },
         18 => RuntimeOwnedSlotId::NativeDeferCapture {
             execution,
             fiber: RuntimePersistentFiberId::from_allocated(reader.u64()?),
@@ -603,6 +686,75 @@ mod tests {
     }
 
     #[test]
+    fn dialogue_slots_preserve_the_actual_frame_and_packet_coordinates() {
+        let execution = ExecutionInstanceId::from_allocated(NonZeroU64::MIN);
+        let activation = crate::runtime_id::DialogueActivationId::new(
+            crate::effect::RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
+            RuntimePersistentFiberId::from_allocated(2),
+            crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                NonZeroU32::new(3).unwrap(),
+            ),
+            4,
+        );
+        let local = RuntimeOwnedSlotId::NativeDialogueLocal {
+            execution,
+            activation,
+            local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(5).unwrap()),
+        };
+        let encoded = encode_owned_slot(local);
+        assert_eq!(encoded.len(), 69);
+        assert_eq!(&encoded[..9], &[20, 1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&encoded[9..41], &[7; 32]);
+        assert_eq!(decode_owned_slot(&encoded).unwrap(), local);
+        assert_eq!(
+            serde_json::from_str::<RuntimeOwnedSlotId>(&serde_json::to_string(&local).unwrap())
+                .unwrap(),
+            local
+        );
+        let operands = [
+            RuntimeDialogueOperand::Target,
+            RuntimeDialogueOperand::Value {
+                slot: crate::runtime_id::RuntimeDialogueValueSlotId::from_accepted_ordinal(
+                    NonZeroU32::new(6).unwrap(),
+                ),
+            },
+            RuntimeDialogueOperand::EffectCapture {
+                site: crate::runtime_id::RuntimeDialogueEffectSiteId::from_accepted_ordinal(
+                    NonZeroU32::new(7).unwrap(),
+                ),
+                ordinal: 8,
+            },
+            RuntimeDialogueOperand::InitialInput { ordinal: 9 },
+        ];
+        for operand in operands {
+            let slot = RuntimeOwnedSlotId::AwbcDialogueOperand {
+                execution,
+                fiber: RuntimeFiberInstanceId::from_allocated(NonZeroU64::new(2).unwrap()),
+                frame: RuntimeFrameInstanceId::from_allocated(NonZeroU64::new(3).unwrap()),
+                content: crate::awbc::schema::AwbcContentUnitId(4),
+                operand,
+            };
+            let encoded = encode_owned_slot(slot);
+            assert_eq!(encoded[0], 21);
+            assert_eq!(decode_owned_slot(&encoded).unwrap(), slot);
+            assert_eq!(
+                serde_json::from_str::<RuntimeOwnedSlotId>(&serde_json::to_string(&slot).unwrap())
+                    .unwrap(),
+                slot
+            );
+            for end in 0..encoded.len() {
+                assert!(decode_owned_slot(&encoded[..end]).is_err());
+            }
+            let mut unknown = encoded;
+            unknown[29] = 4;
+            assert!(matches!(
+                decode_owned_slot(&unknown),
+                Err(RuntimeOwnershipBinaryError::UnknownDialogueOperandTag { tag: 4 })
+            ));
+        }
+    }
+
+    #[test]
     fn owned_slot_binary_goldens_round_trip() {
         let goldens = [
             (
@@ -736,8 +888,8 @@ mod tests {
     #[test]
     fn binary_decoders_reject_unknown_zero_truncated_and_trailing_forms() {
         assert!(matches!(
-            decode_owned_slot(&[20]),
-            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 20 })
+            decode_owned_slot(&[22]),
+            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 22 })
         ));
         let mut invalid_defer_registration = encode_owned_slot(self::json(
             r#"{"kind":"native_defer_capture","execution":"1","fiber":2,"registration":"3","ordinal":4}"#,

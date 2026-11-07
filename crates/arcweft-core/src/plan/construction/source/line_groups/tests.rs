@@ -127,6 +127,7 @@ fn scoped_fixture(
     ])]);
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            initial_inputs: Box::new([]),
             effects: crate::plan::RuntimeEffectSet::try_from_effects([
                 arcweft_id::EffectId::parse("state.write('flow)").unwrap(),
             ])
@@ -477,7 +478,7 @@ fn line_sources_cover_scope_snapshot_storage_and_derive_actual_activation_export
         ChildCancelPolicy::CancelAndJoin,
         32,
     );
-    assert_eq!(plan.line_task_groups()[0].activation_exports().len(), 1);
+    assert_eq!(plan.line_task_groups()[0].shared_inputs().len(), 1);
     let bounds = limits(&plan);
     let encoded = plan
         .encode_line_group_sources(bounds, &resources(), &mut meter())

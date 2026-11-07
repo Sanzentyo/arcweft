@@ -265,6 +265,22 @@ impl AwbcProductStepExecutor {
 }
 
 impl ProductDialogueStore {
+    pub(super) fn extend_received_frame_handle_owners(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        owners: &mut BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+    ) -> Result<(), ProductStepError> {
+        self.registry.try_visit_active(|activation, active, _| {
+            if let Some(fiber) = active.receiving_fiber() {
+                for (token, slot) in super::line::product_fiber_handle_owners(execution, fiber)? {
+                    if token.activation() != activation && owners.insert(token, slot).is_some() {
+                        return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
     pub(super) fn into_published(
         self,
     ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
@@ -439,7 +455,6 @@ impl ProductDialogueStore {
     ) -> Result<(), E> {
         self.registry.try_visit_active(|_, frame, line| {
             visit_value_graph(frame.target.payload(), &mut visitor)?;
-            visit_value_slice(&frame.captures, &mut visitor)?;
             visit_value_slice(&frame.task_inputs, &mut visitor)?;
             for binding in frame.values.iter() {
                 visit_value_graph(&binding.value, &mut visitor)?;

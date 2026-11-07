@@ -2897,14 +2897,27 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 at: at.clone(),
                 message: "line task group activation signature is absent".to_owned(),
             })?;
-        if capture_types.len() != group.captures.len()
-            || capture_types
-                .iter()
-                .any(|ty| !super::code::runtime_type_permits_copy(program, *ty, 0))
+        if capture_types.len() != activation.input_ownership.len()
+            || activation.input_ownership.iter().enumerate().any(|(position, input)| {
+                input.source != crate::plan::RuntimeFunctionInputSource::Capture { position: position as u32 }
+                    || input.pattern.is_some()
+                    || !input.unrestricted_bindings.is_empty()
+                    || !matches!(input.transfer,
+                        crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                            crate::plan::RuntimeFunctionCaptureMode::Copy
+                            | crate::plan::RuntimeFunctionCaptureMode::SnapshotClone
+                            | crate::plan::RuntimeFunctionCaptureMode::Move))
+                    || matches!(input.transfer,
+                        crate::plan::RuntimeFunctionInputTransfer::Transferred(
+                            crate::plan::RuntimeFunctionCaptureMode::Copy
+                            | crate::plan::RuntimeFunctionCaptureMode::SnapshotClone))
+                        && input.requirement != crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
+                        && !super::code::runtime_type_permits_copy(program, capture_types[position], 0)
+            })
         {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at: at.clone(),
-                message: "line task group capture ABI must be exact and recursively unrestricted"
+                message: "line activation must own its exact positional Copy/Move input ABI"
                     .to_owned(),
             });
         }
@@ -2915,21 +2928,22 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 at: at.clone(),
                 message: "line task activation frame layout is absent".to_owned(),
             })?;
-        let mut known_locals = group.captures.iter().copied().collect::<BTreeSet<_>>();
-        let mut task_types = capture_types.to_vec();
-        for export in &group.activation_exports {
+        let mut known_registers = BTreeSet::new();
+        let mut task_types = Vec::with_capacity(group.shared_inputs.len());
+        for export in &group.shared_inputs {
             let slot = activation_layout.slots.get(export.register.index());
-            if !known_locals.insert(export.local)
+            if !known_registers.insert(export.register)
                 || slot.is_none_or(|slot| {
-                    slot.role != AwbcFrameSlotRole::Local
-                        || slot.scope_depth != 0
+                    !matches!(
+                        slot.role,
+                        AwbcFrameSlotRole::Local | AwbcFrameSlotRole::Parameter
+                    ) || slot.scope_depth != 0
                         || slot.ty != export.ty
                 })
-                || !super::code::runtime_type_permits_copy(program, export.ty, 0)
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
-                    message: "line task activation export must be a distinct copyable root local"
+                    message: "line shared input must name one distinct typed root register"
                         .to_owned(),
                 });
             }
@@ -3184,6 +3198,51 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
                     message: "line cleanup capture signature disagrees with its group".to_owned(),
+                });
+            }
+        }
+        let shared_consumers = group
+            .cancel_handlers
+            .iter()
+            .map(|handler| handler.function)
+            .chain(
+                [
+                    group.cleanup_completed,
+                    group.cleanup_cancelled,
+                    group.cleanup_failed,
+                ]
+                .into_iter()
+                .flatten(),
+            )
+            .chain(
+                program.line_task_nodes[group.nodes.start as usize..node_end as usize]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(offset, node)| {
+                        let id = crate::awbc::schema::AwbcLineTaskNodeId(
+                            group.nodes.start + offset as u32,
+                        );
+                        match node {
+                            AwbcLineTaskNode::Action(function)
+                                if !scheduled_action_types.contains_key(&id) =>
+                            {
+                                Some(*function)
+                            }
+                            _ => None,
+                        }
+                    }),
+            );
+        for consumer in shared_consumers {
+            let function = &program.functions[consumer.index()];
+            if function.input_ownership.len() != task_types.len()
+                || function.input_ownership.iter().zip(&task_types).any(|(input, ty)| {
+                    input.requirement != crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
+                        && !super::code::runtime_type_permits_copy(program, *ty, 0)
+                })
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "unscheduled Line work requires an unrestricted shared input ABI".to_owned(),
                 });
             }
         }

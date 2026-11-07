@@ -1032,11 +1032,23 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
 }
 
 impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+    pub(crate) fn inspect_begin(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Result<(), LineRuntimeError> {
+        if self.entries.contains_key(activation) {
+            Err(LineRuntimeError::DuplicateActivationLedger)
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn begin(
         &mut self,
         activation: DialogueActivationId,
         frame: F,
     ) -> Result<(), LineRuntimeError> {
+        self.inspect_begin(&activation)?;
         match self.entries.entry(activation) {
             Entry::Vacant(entry) => {
                 entry.insert(RuntimeDialogueRegistryEntry::Active {

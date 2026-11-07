@@ -491,11 +491,29 @@ impl super::FiberFrame {
         program: &AwbcProgram,
         registers: &[super::AwbcRegisterId],
     ) -> Result<PreparedRegisterTransfer, FiberStateError> {
+        self.prepare_register_operand_values(
+            program,
+            registers
+                .iter()
+                .map(|register| (*register, crate::value::RuntimeLocalReadMode::Move)),
+        )
+    }
+
+    /// Prepares an entire selected Copy/Move packet before moving any source.
+    pub(in crate::awbc) fn prepare_register_operand_values(
+        &self,
+        program: &AwbcProgram,
+        operands: impl Clone
+        + ExactSizeIterator<
+            Item = (super::AwbcRegisterId, crate::value::RuntimeLocalReadMode),
+        >,
+    ) -> Result<PreparedRegisterTransfer, FiberStateError> {
+        use crate::value::RuntimeLocalReadMode;
         let mut resources =
             ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
         resources
             .work()
-            .collection(registers.len())
+            .collection(operands.len())
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         let layout = super::validate_frame_layout(
             program,
@@ -507,12 +525,13 @@ impl super::FiberFrame {
             &resources.work(),
         )?;
         let mut occurrences = std::collections::BTreeMap::new();
-        for register in registers {
+        let mut moves = std::collections::BTreeMap::new();
+        for (register, mode) in operands.clone() {
             let slot = layout
                 .slots
                 .get(register.index())
                 .ok_or(FiberStateError::InvalidFrame)?;
-            let value = self.register(*register)?;
+            let value = self.register(register)?;
             crate::program_types::RuntimeProgramValueType::Awbc {
                 program,
                 ty: slot.ty,
@@ -527,27 +546,37 @@ impl super::FiberFrame {
                     Box::new(error),
                 ))
             })?;
-            let count = occurrences.entry(*register).or_insert(0usize);
+            let count = occurrences.entry(register).or_insert(0usize);
             *count += 1;
-            if *count > 1 && !value.ownership().permits_copy() {
+            if (*count > 1 || mode == RuntimeLocalReadMode::Copy)
+                && !value.ownership().permits_copy()
+            {
                 return Err(FiberStateError::Snapshot(
                     crate::value::AwbcRuntimeValueSnapshotError::AffineValue,
                 ));
             }
+            if mode == RuntimeLocalReadMode::Move {
+                *moves.entry(register).or_insert(0usize) += 1;
+            }
         }
         // Prepare all copies while every source is still present. A failed
         // Copy proof cannot follow an earlier register move.
-        let mut prepared = Vec::with_capacity(registers.len());
-        for register in registers {
-            let remaining = occurrences
-                .get_mut(register)
-                .expect("admitted input has an occurrence");
-            *remaining -= 1;
-            prepared.push(if *remaining == 0 {
-                PreparedOperand::Move(*register)
+        let mut prepared = Vec::with_capacity(operands.len());
+        for (register, mode) in operands {
+            let final_move = if mode == RuntimeLocalReadMode::Move {
+                let remaining = moves
+                    .get_mut(&register)
+                    .expect("admitted Move has an occurrence");
+                *remaining -= 1;
+                *remaining == 0
+            } else {
+                false
+            };
+            prepared.push(if final_move {
+                PreparedOperand::Move(register)
             } else {
                 PreparedOperand::Copy(
-                    self.register(*register)?
+                    self.register(register)?
                         .live_view()
                         .copy_unrestricted()
                         .ok_or(FiberStateError::Snapshot(
@@ -556,7 +585,7 @@ impl super::FiberFrame {
                 )
             });
         }
-        // Each admitted source has exactly one Move. The exclusive frame
+        // Each source selected for transfer has exactly one Move. The exclusive frame
         // borrow prevents changes between admission, preparation and commit.
         Ok(PreparedRegisterTransfer {
             frame: self.instance,

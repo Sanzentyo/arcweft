@@ -371,6 +371,20 @@ with:
 
 Only values exported with `out` from the line plan can escape the line. Borrowed values such as `&'frame T` and `&'lease T` cannot be exported or captured across `at`, `await`, `yield`, or cancellation boundaries.
 
+The line owns its initial external inputs. Semantic analysis selects one Copy
+or Move of each complete captured binding after the target and content operands
+have been evaluated. A moved input becomes unavailable in the caller, even when
+the line only borrows it or moves one field. Inside the line, the input starts
+initialized in that line's frame and may be borrowed, consumed, or returned with
+`out`. Copy inputs remain available in the caller.
+
+Initial inputs and inputs shared after reveal have different lifetimes. Only
+the root values actually used by unscheduled line work are shared at reveal,
+and their complete value graphs must permit Copy. Scheduled children instead
+receive their separately owned capture packets. A suspended call retains its
+actual input packet until transfer into the activation frame; saving does not
+create another owner for those values.
+
 A scheduled child takes its captured handles from the line packet exactly once,
 when its complete `Run` command batch is admitted. If a later command in that
 batch is invalid, the packet and its leases remain in line custody; no child is
