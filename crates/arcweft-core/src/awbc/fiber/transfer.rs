@@ -115,11 +115,6 @@ impl<V: RuntimeStoredValue, B: Borrow<RuntimeFunctionEffectInstantiation>, R, G>
             frame.function,
             &arguments,
             &resources.work(),
-        )
-        .map_err(
-            |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
-                message: error.to_string(),
-            },
         )?;
         let source = self.origin.source();
         super::validate_cursor(program, source)?;

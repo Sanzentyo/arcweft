@@ -340,6 +340,7 @@ mod actions;
 #[path = "tests/context.rs"]
 mod context;
 mod dialogue_handoff;
+mod flow_transfer;
 mod presentation;
 
 fn completed_handle_program() -> (

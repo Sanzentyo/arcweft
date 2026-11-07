@@ -204,3 +204,33 @@ fn goto_without_callbacks_commits_within_its_original_vm_operation() {
         1
     );
 }
+
+#[test]
+fn pending_flow_transfer_preserves_its_shared_copy_proof_work_failure() {
+    use crate::entry::schema::value_encoding::ValueResourceAdmission;
+    let (fiber, owner) = pending();
+    let RuntimeProgramOwner::Awbc(program) = owner else {
+        unreachable!()
+    };
+    let mut program = (*program).clone();
+    program.functions[0].input_ownership[0].requirement =
+        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted;
+    let pending = fiber.pending_flow_transfer.as_ref().unwrap();
+    let mut exact =
+        ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
+    pending.validate_retained(&program, &mut exact).unwrap();
+    let needed = exact.work().consumed();
+    assert!(needed > 0);
+    let mut limited = ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits {
+        max_validation_work: needed - 1,
+        ..crate::entry::RuntimeSchemaLimits::engine_default()
+    });
+    let failure = pending
+        .validate_retained(&program, &mut limited)
+        .unwrap_err();
+    assert!(limited.work().failure().is_some());
+    assert!(
+        matches!(failure, AwbcRuntimeValueSnapshotError::Resource(_)),
+        "{failure:?}"
+    );
+}

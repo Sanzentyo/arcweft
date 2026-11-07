@@ -4532,7 +4532,7 @@ pub(super) fn physical_fiber_line_handle_slots<V: RuntimeStoredValue, O, N, B, R
     fiber: &FiberState<V, O, N, B, R, G>,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
     let mut owners = awbc_formatter_handle_owners(execution, fiber)?;
-    for frame in &fiber.frames {
+    for frame in fiber.retained_frames() {
         for (index, value) in frame
             .registers
             .iter()

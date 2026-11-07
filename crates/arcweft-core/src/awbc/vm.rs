@@ -5912,7 +5912,7 @@ pub(in crate::awbc) fn validate_function_input_ownership_views(
     function: AwbcFunctionId,
     values: &[RuntimeValueView<'_>],
     work: &crate::entry::schema::value_budget::ValidationWork,
-) -> Result<(), VmError> {
+) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
     let values = values
         .iter()
         .map(|value| AdmittedPatternValue {
@@ -5920,7 +5920,17 @@ pub(in crate::awbc) fn validate_function_input_ownership_views(
             work,
         })
         .collect::<Vec<_>>();
-    validate_function_input_ownership(program, function, &values)
+    let result = validate_function_input_ownership(program, function, &values);
+    // A read-only Copy query can report inadmissibility through its predicate;
+    // the enclosing bank still owns the first resource refusal.
+    if let Some(failure) = work.failure() {
+        return Err(failure.into());
+    }
+    result.map_err(
+        |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: error.to_string(),
+        },
+    )
 }
 
 #[derive(Clone, Copy)]
