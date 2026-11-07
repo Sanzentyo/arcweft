@@ -477,6 +477,107 @@ fn saved_awbc_ordinary_flow_defer_rejects_forged_packet_and_child_slots() {
     assert!(packet_seen && child_seen);
 }
 
+#[test]
+fn saved_awbc_initial_line_input_rejects_forged_packet_and_activation_slots() {
+    let mut packet_seen = false;
+    let mut activation_seen = false;
+    assert_saved_awbc_checking(
+        &owned_deferred_line_source(),
+        2,
+        &["body", "cleanup", "nested cleanup"],
+        |mut executor, save| {
+            for (entry_index, entry) in save["dialogues"]["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+            {
+                let Some(leases) = entry
+                    .pointer("/PublishedHandles/handles/ledger/leases")
+                    .and_then(serde_json::Value::as_object)
+                else {
+                    continue;
+                };
+                for (key, lease) in leases {
+                    let Some(slot) = lease.pointer("/owner/ParentFiber/slot") else {
+                        continue;
+                    };
+                    let packet = slot["kind"] == "awbc_dialogue_operand";
+                    let activation =
+                        slot["kind"] == "awbc_register"
+                            && save["dialogues"]["entries"].as_array().unwrap().iter().any(
+                                |entry| {
+                                    entry.pointer("/Active/frame/phase/Activating/fiber/instance")
+                                        == Some(&slot["fiber"])
+                                },
+                            );
+                    if !(packet && !packet_seen || activation && !activation_seen) {
+                        continue;
+                    }
+                    let before = executor.snapshot().unwrap();
+                    let fields: &[&str] = if packet {
+                        &["execution", "fiber", "frame", "content"]
+                    } else {
+                        &["execution", "fiber", "frame", "register"]
+                    };
+                    for field in fields {
+                        let mut forged = save.clone();
+                        let value = &mut forged["dialogues"]["entries"][entry_index]["PublishedHandles"]
+                            ["handles"]["ledger"]["leases"][key]["owner"]["ParentFiber"]["slot"]
+                            [*field];
+                        *value = if let Some(value) = value.as_str() {
+                            (value.parse::<u64>().unwrap() + 1).to_string().into()
+                        } else {
+                            (value.as_u64().unwrap() + 1).into()
+                        };
+                        executor = reject_capture_save(executor, forged);
+                        assert_eq!(executor.snapshot().unwrap(), before);
+                    }
+                    if packet {
+                        assert_eq!(slot["operand"]["kind"], "initial_input");
+                        let mut forged = save.clone();
+                        let ordinal = &mut forged["dialogues"]["entries"][entry_index]["PublishedHandles"]
+                            ["handles"]["ledger"]["leases"][key]["owner"]["ParentFiber"]["slot"]["operand"]
+                            ["ordinal"];
+                        *ordinal = (ordinal.as_u64().unwrap() + 1).into();
+                        executor = reject_capture_save(executor, forged);
+                        assert_eq!(executor.snapshot().unwrap(), before);
+                        let mut forged = save.clone();
+                        let child = forged["child_fibers"]
+                            .as_array_mut()
+                            .unwrap()
+                            .iter_mut()
+                            .find(|child| child["fiber"]["instance"] == slot["fiber"])
+                            .unwrap();
+                        child["fiber"]["suspension"]["reason"]["Dialogue"]["line_task_captures"] =
+                            serde_json::json!([]);
+                        let forged = serde_json::from_value(forged).unwrap();
+                        if let Ok(bound) = executor.bind_product_save_snapshot(forged) {
+                            let Err(rejected) = executor.restore_snapshot(
+                                arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                                    bound,
+                                ),
+                            ) else {
+                                panic!("the original Dialogue input packet is required")
+                            };
+                            (executor, _) = rejected.into_parts();
+                        }
+                        assert_eq!(executor.snapshot().unwrap(), before);
+                        packet_seen = true;
+                    } else {
+                        activation_seen = true
+                    }
+                }
+            }
+            executor
+        },
+    );
+    assert!(
+        packet_seen && activation_seen,
+        "the actual input crossed both public save frontiers"
+    );
+}
+
 fn reject_capture_save(
     executor: arcweft_core::executor::ArcweftRuntimeExecutor,
     forged: serde_json::Value,
