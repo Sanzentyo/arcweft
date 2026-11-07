@@ -34107,5 +34107,626 @@
         }
       ]
     }
+  },
+  "deferEmissionFrames": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": {
+      "version": 1,
+      "commit": "d3931aa2c7f5ad8284043de8a161a83d6bdc3e17",
+      "parent": "f840bcea1b450535b17769716e33901953995b15",
+      "tree": "bb756a44f6da1ef2639f4778198ecf7969d0daab",
+      "remote": "d3931aa2c7f5ad8284043de8a161a83d6bdc3e17",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "63522d90a8a5f6222bb06e097c62fbd514d0b106"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "blob": "7f0952252b5e4e780bd5a289e708e4ad8f08e9d7"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/defer.rs",
+          "blob": "e10c0ec3777368ee3e737ffdbd6c1297bdaa3086"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/emission_frame.rs",
+          "blob": "00f8b5c225711d0ed5240f2fbff4d3da57d66803"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "bdcc338d687ab92e6c0185986b00225d53702193"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "blob": "55f402d9f351ebe7618736ccd42fdd6cd848ce86"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "d88dcf3783dc82350c8dc951da0d90224e848a4a945f11f1fcbad106830d64ad",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T16:35:17.0997846Z"
+    },
+    "behavior": [
+      "One construction-frame index selects the actual reserved defer definition, not a copied local table or a runtime fallback.",
+      "Exact scoped expression owners distinguish closed generic instances. HIR body projections and statement evaluation edges retain body-owned roots; nested defer roots keep their own frames.",
+      "Dialogue value/callback capture producers, Line plans and deferred bodies use the same selected physical frame. No runtime IDs, public grammar, dependencies or wire versions change."
+    ],
+    "actual": {
+      "compiler": {
+        "run": 104,
+        "passed": 100,
+        "failed": 4,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:32:28.7066102Z",
+          "endedAt": "2026-11-07T16:33:02.3596987Z"
+        }
+      },
+      "scopedDefer": {
+        "run": 30,
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scoped_defer",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:33:02.7263043Z",
+          "endedAt": "2026-11-07T16:33:18.4171646Z"
+        }
+      },
+      "runtimePlan": {
+        "run": 165,
+        "passed": 165,
+        "failed": 0,
+        "skipped": 1,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:33:18.7803024Z",
+          "endedAt": "2026-11-07T16:34:33.8187841Z"
+        },
+        "note": "Actual unit and integration run, including public API compile checks. Not combined with the previous 134-case owner run."
+      },
+      "positiveNativeCases": [
+        "ordinary_defer::native_nested_deferred_line_uses_the_innermost_capture_frame",
+        "ordinary_defer::native_generic_deferred_line_uses_each_closed_capture_frame"
+      ],
+      "boundaries": {
+        "operationBound": 1,
+        "tickBound": 512,
+        "nativeNestedReveals": 2,
+        "nativeGenericReveals": 3,
+        "genericInstantiations": [
+          "integer literal 7",
+          "String literal value"
+        ],
+        "stageAcquireAndRelease": 1
+      },
+      "quality": {
+        "compiler": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:32:28.7066102Z",
+          "endedAt": "2026-11-07T16:33:02.3596987Z"
+        },
+        "scoped": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scoped_defer",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:33:02.7263043Z",
+          "endedAt": "2026-11-07T16:33:18.4171646Z"
+        },
+        "runtime-plan": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:33:18.7803024Z",
+          "endedAt": "2026-11-07T16:34:33.8187841Z"
+        },
+        "clippy": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-compiler",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:34:34.1826822Z",
+          "endedAt": "2026-11-07T16:34:43.8981771Z"
+        },
+        "structure": {
+          "command": "just structure-audit-gate",
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0
+        },
+        "fmt": {
+          "command": "rustfmt --check --edition 2024 --config skip_children=true",
+          "exitCode": 0,
+          "paths": [
+            "crates/arcweft-runtime-plan/src/final_flow.rs",
+            "crates/arcweft-runtime-plan/src/final_flow/defer.rs",
+            "crates/arcweft-runtime-plan/src/final_flow/emission_frame.rs",
+            "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+            "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+            "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs"
+          ],
+          "sourceDrift": 0
+        }
+      },
+      "freeze": {
+        "base": "f840bcea1b450535b17769716e33901953995b15",
+        "paths": 3416,
+        "selection": "rg --files --hidden: *.rs, Cargo.toml, Cargo.lock, rust-toolchain*, .cargo/config*; target and .git excluded",
+        "drift": 0,
+        "note": "This is a new scoped input inventory, not a relabeling of the earlier complete 3834-input matrix."
+      }
+    },
+    "developmentFailures": [
+      {
+        "receipt": "defer-emission-frame-20261108.first.receipt.json",
+        "failure": "E0583 module lookup",
+        "resolution": "Explicit path attribute for a child of the explicitly imported final_flow.rs module."
+      },
+      {
+        "receipt": "defer-emission-frame-20261108.r1.receipt.json",
+        "failure": "structural ExprId slot 50 had no admitted semantic owner",
+        "resolution": "Visit every selected expression owner, including structural non-value nodes."
+      },
+      {
+        "receipt": "defer-emission-frame-20261108.r2.receipt.json",
+        "failure": "unknown runtime local declaration 4",
+        "resolution": "Traverse HIR-owned statement/body roots as well as selected expression dependencies."
+      },
+      {
+        "receipt": "defer-emission-frame-20261108.r3.receipt.json",
+        "failure": "AffineGroupCapture",
+        "resolution": "Physical frame mismatch is fixed; the owned activation input boundary remains open."
+      },
+      {
+        "receipt": "defer-emission-frame-20261108.positive.receipt.json",
+        "failure": "Both combined Native/AWBC tests reached the AWBC deferred-dialogue rejection at tick 39 after Native passed",
+        "resolution": "Keep separate named Native and saved-AWBC cases in the full 104-case run."
+      }
+    ],
+    "remainingFailures": [
+      "ordinary_defer::native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line: Line task captures require unrestricted values",
+      "ordinary_defer::saved_awbc_ordinary_flow_defer_keeps_returned_line_actor_until_its_cleanup: invalid ordinary deferred scope transition at tick 15",
+      "ordinary_defer::saved_awbc_nested_deferred_line_uses_the_innermost_capture_frame: deferred child suspended on a product-owned dialogue or choice boundary at tick 39",
+      "ordinary_defer::saved_awbc_generic_deferred_line_uses_each_closed_capture_frame: same deferred child dialogue boundary at tick 39"
+    ],
+    "corrections": [
+      "Replace the current unknown-local remaining-work clause because the same Actor input now passes the local lookup and reaches the separate affine-input guard. Native scalar nested/generic execution also passes with original operation limits.",
+      "The two newly named AWBC dialogue failures establish a missing ordinary-defer integration boundary; they do not reopen accepted Generic Match, Line/init or bounded Native features.",
+      "Collapse the cumulative ordinary-Flow current-status narrative into one current contract and the three concrete remaining boundaries. Preserve all earlier test counts, failures, raw archives and full Source SHAs in history and this append-only ledger."
+    ],
+    "reverseGraph": {
+      "metadata": "function-scope-20261107.metadata-all.json",
+      "cargoChanged": 0,
+      "count": 16,
+      "packages": [
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify-lsp"
+      ]
+    },
+    "ownershipReview": {
+      "base": "f840bcea1b450535b17769716e33901953995b15",
+      "rows": [
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "owner": "arcweft-runtime-plan",
+          "classification": "production",
+          "bytes": 455009,
+          "physicalLines": 10639,
+          "basePhysicalLines": 10629,
+          "growth": 10,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Existing preparation owner admits the frame index after reserving deferred bodies, before emitting content; capture production selects the same physical frame."
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/defer.rs",
+          "owner": "arcweft-runtime-plan",
+          "classification": "production",
+          "bytes": 11301,
+          "physicalLines": 290,
+          "basePhysicalLines": 270,
+          "growth": 20,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The reserved deferred definition remains the sole local-table owner and exposes a borrowed construction view."
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/emission_frame.rs",
+          "owner": "arcweft-runtime-plan",
+          "classification": "production",
+          "bytes": 8483,
+          "physicalLines": 198,
+          "basePhysicalLines": 0,
+          "growth": 198,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Private construction owner: select actual admitted defer frames through accepted semantic scopes and HIR-owned body edges; borrow local tables without copied state or runtime fallback."
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "owner": "arcweft-runtime-plan",
+          "classification": "production",
+          "bytes": 57025,
+          "physicalLines": 1442,
+          "basePhysicalLines": 1440,
+          "growth": 2,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing Line plan lowerer consumes the selected construction frame for all control and value locals."
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "owner": "arcweft-runtime-plan",
+          "classification": "production",
+          "bytes": 630047,
+          "physicalLines": 16019,
+          "basePhysicalLines": 15971,
+          "growth": 48,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Exact selected-owner visitors belong to the existing semantic view and instance catalog. They publish no second semantic authority or public API."
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "owner": "arcweft-compiler",
+          "classification": "integration-test",
+          "bytes": 6011,
+          "physicalLines": 203,
+          "basePhysicalLines": 123,
+          "growth": 80,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Behavioral compiler regressions execute actual nested/generic capture values in Native and saved AWBC with existing strict operation and resource assertions."
+        }
+      ],
+      "boundaries": "No new crate edge, public API, runtime frame, wire grammar or copied local-table authority.",
+      "structureGate": "defer-emission-frame-20261108.quality-final.structure.receipt.json",
+      "reverseGraph": "line-out-producer-20261108.reverse-graph.json",
+      "reuseReason": "Cargo manifests and lockfile are unchanged; the retained graph identifies RuntimePlan closure16."
+    },
+    "limits": [
+      "No fresh full RuntimePlan reverse-closure16, Core53 or workspace-wide final matrix is claimed. Cargo dependency inputs are unchanged.",
+      "Core 2323 tests and 80 doctests at ddd7307237fb1697e15cc5cadf6efe00426ea07c are prior unchanged-Core-input evidence, not new runs.",
+      "AWBC capture custody, ordinary deferred-dialogue dispatch, owned initial Line input separation, cancellation and aggregate preconstruction limits still require implementation and validation."
+    ],
+    "raw": {
+      "path": "task-defer-emission-frames.raw.zip",
+      "sha256": "2f0a5b75aa43063eb44ac7dde74e6f84bc0d8ba6e6524a2256c6072e7344c9a4",
+      "entries": [
+        {
+          "entry": "defer-emission-frame-20261108.first.log",
+          "bytes": 88080,
+          "sha256": "39666cd57b7b77caff94a6f07c34133d89a3f65349c84297340615a8694fbbb1"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.first.receipt.json",
+          "bytes": 443,
+          "sha256": "6d995c02c5a400468120e4cb4997837ee0d813e0c60c5d64faaada077f0b8d7c"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.ownership-review.json",
+          "bytes": 3394,
+          "sha256": "40c0903c925ecae8b88c5265878c76a8580bc00ead5b4ce2a8d7d2878a992a63"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.positive.log",
+          "bytes": 90246,
+          "sha256": "4717d4b834bc27c065a8743a42ef4f23bf9b5e0ae198a988b755338e246f3118"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.positive.receipt.json",
+          "bytes": 458,
+          "sha256": "87405b2458ae90243e894b8f0e6e1d6b9415acbc84a95df436e2d432c5e36080"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.clippy.log",
+          "bytes": 7149704,
+          "sha256": "6cce79762bfed285100ad0f0db1c8871ca663bd593b25e9abfb6d73633ac6aca"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "f55955bc2f65c0ae204e8cdb9a90e75645a176e6f798e2a07361b25794b8df5b"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.compiler.log",
+          "bytes": 106999,
+          "sha256": "031e57c600c59c3d008b4ce14f7ec0f3699508dc4b33006f8482ff8dfc784b88"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.compiler.receipt.json",
+          "bytes": 365,
+          "sha256": "3cc67653a4427ba1e6a67e7f42e9215e41cfd10bbd435d2bc6966dd0ae0cdf50"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.fmt.receipt.json",
+          "bytes": 518,
+          "sha256": "2fd4a36a1ec5ca8ae15f370ed671ec46f73be3b788634ea69e753d1a0040ac84"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.runtime-plan.log",
+          "bytes": 112445,
+          "sha256": "47771a6152a002ae601a4b863fd9c9eb26ea669bb66cc1d80e3740a73f5512cf"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.runtime-plan.receipt.json",
+          "bytes": 326,
+          "sha256": "2166332d08b7a044b74bf907d323ee4f6a3455ea4b84766baede587b9a382c40"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.scoped.log",
+          "bytes": 91996,
+          "sha256": "45619a0e40fc67eb313a7025a1c1bded0db4db4ab44e0de868b8b0f6ae86c6e9"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.scoped.receipt.json",
+          "bytes": 358,
+          "sha256": "65aacf2ca7cff6fd5354fc269c7219ef80a8a0fa3a0e715680888edee37810f2"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.source.json",
+          "bytes": 605889,
+          "sha256": "9622e1f19e1da43d3fdd2f04f77398bfe5bff04b20187b15b3ff8c419851ad37"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.structure.log",
+          "bytes": 65874,
+          "sha256": "4cdc1bdbc62075adcc23842206bf446b47ab5ba025d4ef93cbbc77c0837ad857"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality-final.structure.receipt.json",
+          "bytes": 112,
+          "sha256": "0492917c91b2c78f60933c75205f9d1673aee1cd02a401cf1ce97a6486667dc3"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.clippy.log",
+          "bytes": 7152773,
+          "sha256": "17864873fbe0faaf3390ef1689ecd5e064600aab6e20303fca4045c7e1776946"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "38c4b6c170dd53370b09780a4711a6e2de5aa1932f599582642a2da903cb6b78"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.compiler.log",
+          "bytes": 106999,
+          "sha256": "5d1be7292cf63ba49de27c37dc5f35389d30283318d7bd42aacb63d25c6373e4"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.compiler.receipt.json",
+          "bytes": 365,
+          "sha256": "48a18effef39f8ae2d5d1ec90c2c805ad8501734ee0068d1452b15d218a9e7b6"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.fmt.receipt.json",
+          "bytes": 518,
+          "sha256": "2fd4a36a1ec5ca8ae15f370ed671ec46f73be3b788634ea69e753d1a0040ac84"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.runtime-plan.log",
+          "bytes": 112925,
+          "sha256": "30ba3bc11eb226e61522e9cf9bbfab1dc2ac766dc6098f8689b5c4f436ebc012"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.runtime-plan.receipt.json",
+          "bytes": 326,
+          "sha256": "302bcba2ce6561a5a336222880040b1a4bf02b5a2f8526910afbb66e65171391"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.scoped.log",
+          "bytes": 91996,
+          "sha256": "820121398fccfaab4fbe0388b7be5ad929a7bfdba8e8a53ad3a69faad70d1ed0"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.scoped.receipt.json",
+          "bytes": 358,
+          "sha256": "e037e840c61a2fc5c0a408b39fe899990e77bfa8f9fb31a48cde5da15a8644f6"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.source.json",
+          "bytes": 605889,
+          "sha256": "401cec3d444b984c3ab6d4622325d74f22c3d6aea3bb591b274b06545d9abc91"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.structure.log",
+          "bytes": 65874,
+          "sha256": "353c57644bd451654f2dbef3cb7d3af95266c44422371d2eb0539d1ad439d053"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.quality.structure.receipt.json",
+          "bytes": 112,
+          "sha256": "0492917c91b2c78f60933c75205f9d1673aee1cd02a401cf1ce97a6486667dc3"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.r1.log",
+          "bytes": 91270,
+          "sha256": "b62102db3888278de32737d5bd04d5c60abbc338350905ac2b193f5c47ddd84c"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.r1.receipt.json",
+          "bytes": 443,
+          "sha256": "7c5a3f22503cb234e79e0ddf13762f2632cd2caf49c6fb47635117fa974a6c8b"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.r2.log",
+          "bytes": 89313,
+          "sha256": "a0196c9c586696f4fd596bfe155b957c635937b416164fbb2f208630e389d310"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.r2.receipt.json",
+          "bytes": 443,
+          "sha256": "037cefdd10871e77387ed3d4372946d70d0b9e652b8376908c505e6fa4445bba"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.r3.log",
+          "bytes": 89327,
+          "sha256": "64407d6072b22e2512b96cfaf0991c51607d328c30b844c5d91dade66d63ee16"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.r3.receipt.json",
+          "bytes": 443,
+          "sha256": "9e37bddc4e1b64482bc18986452fe6a7d4141c10a98f5d1f5f9b93fbe57dffec"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.source.message.txt",
+          "bytes": 417,
+          "sha256": "2fbc22f9f4111ce378e8b1fcad7cc3edba1edee28413a5b847a2f5846c745b5d"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.source.owned.txt",
+          "bytes": 331,
+          "sha256": "666ff1691c747dcd89ac3c2d48d3b8de95c08de7c0343a1e26e18b39a02638c6"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.source.pathspec",
+          "bytes": 331,
+          "sha256": "358b10dea991903fe4719cc1e97223c74cdf619a5803d2b485c1be77debbab9c"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.source.prepared.json",
+          "bytes": 2026,
+          "sha256": "f112811e0f6a53e3503b4e3cd030fab0cdbe71f71ac38eb1c42853c34c51fec9"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.source.reviewed.patch",
+          "bytes": 22234,
+          "sha256": "d88dcf3783dc82350c8dc951da0d90224e848a4a945f11f1fcbad106830d64ad"
+        },
+        {
+          "entry": "defer-emission-frame-20261108.source.verified.json",
+          "bytes": 1428,
+          "sha256": "12ac6dfb0531773497fe1984ef0c585e7450d6a1ba2f6913b808bbd0dd779340"
+        },
+        {
+          "entry": "record-defer-emission-frame-20261108.ps1",
+          "bytes": 12999,
+          "sha256": "2f2b8932290a39d583ce7a88b292fda3b2b7f01e30bc506149606bfdd75d053f"
+        },
+        {
+          "entry": "run-defer-emission-frame-quality-20261108.ps1",
+          "bytes": 3122,
+          "sha256": "c2e0d44322aebc57618b66e418090deee905996e3c4e2bc3fa608eee8b4c8c8b"
+        },
+        {
+          "entry": "run-defer-emission-frame-quality-final-20261108.ps1",
+          "bytes": 3128,
+          "sha256": "a18bccf780269bd115bbd1f75d9d3083600b87b94403f43e73427d84401b565a"
+        }
+      ]
+    }
   }
 }
