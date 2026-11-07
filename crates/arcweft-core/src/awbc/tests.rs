@@ -13,6 +13,7 @@ mod or_patterns;
 mod ownership_admission;
 mod record_shapes;
 mod registry_effect;
+mod scope_termination;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,
     FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
