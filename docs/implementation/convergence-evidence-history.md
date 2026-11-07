@@ -15171,3 +15171,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - Compiler の evaluated_effects 87件と Core の2,296件がすべて通過した。デコード済み AWBC の正常終了・ゼロ除算による失敗・入力による取消しで、対応する defer が結果公開または失敗報告より先に実行された。複数が該当する場合は逆登録順だった。各ステップで保存・復元した。init でスキップした defer の捕捉値は Native と AWBC で解放を1回だけ要求した。AWBC は解放要求直後の保存からも復元でき、実行中の子を別ファイバーに付け替えた保存を拒否した。構造ゲートのブロッキング違反は0件だった。[コマンド・実測](acceptance-evidence/task-flow-registry-execution.json)。
 - 初回の対象3件は既存2件が通過し、追加したマークのテストは登録時に失敗した。VM の命令トレースを除き、同じステップで一つの登録要求だけを認めるよう修正し、対象3件はすべて通過した。失敗・取消しを追加した初回のビルドは不足した `VmError` の import で停止した。追加して全スイートを実行した。現状一覧はマークハンドラーの AWBC 側だけを検証・公開済みに更新し、旧ソースの拒否を履歴に保持した。[初回の失敗・修正後の原本](acceptance-evidence/task-flow-registry-execution.json)。
 - Runtime Driver／Runtime Host／Save の260件がすべて通過した。全ターゲット・全機能の workspace check と Clippy は終了コード0で、警告を原本に保持した。3,638件のソース入力には既存の未コミット変更12パスを含み、開始時と終了時のハッシュ差分は0件だった。公開した Rust 差分の SHA-256 は検証時と一致した。[実行結果・入力・公開差分の照合](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Workspace clean during Native scoped defer work
+
+- 基点 `2bc93e9f1188c574a60264ea5a4f5f8a61f0034f` の `main` で、Native の実装中の差分と先行作業の未コミット差分がある状態で実行した。Cargo が示すワークスペースの出力先を確認し、ユーザーの指定で `cargo clean` を実行した。終了コード0で66,672ファイル、81.0 GiBを削除した。直後に出力先が消え、D: の空きは448,671,453,184バイトから532,306,432,000バイトに増えた。
