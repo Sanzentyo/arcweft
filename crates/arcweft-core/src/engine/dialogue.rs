@@ -525,6 +525,27 @@ impl Engine {
                 .filter(|registration| registration.outcome_filter().matches(fixed_exit))
                 .map(|registration| self.inspect_deferred_line_child(registration))
                 .transpose()?;
+            let received = if before.is_empty() {
+                None
+            } else {
+                let after = prepared
+                    .as_ref()
+                    .map(|child| child.received_handle_slots(&activation_id))
+                    .unwrap_or_default();
+                let mut drops = crate::line_task::RuntimeHandleDropAuthorization::default();
+                if prepared.is_none() {
+                    drops.authorize_tokens(before.keys().cloned())?;
+                }
+                Some(
+                    self.dialogue_activations
+                        .inspect_parent_fiber_reconciliation(
+                            self.published_receiver_execution(),
+                            &before,
+                            &after,
+                            &drops,
+                        )?,
+                )
+            };
             let unwind = transaction.line_mut().inspect_next_deferred_with(
                 &activation_id,
                 fixed_exit,
@@ -541,6 +562,8 @@ impl Engine {
                     )
                 },
             )?;
+            let received_transition = received.is_some();
+            transaction.stage_received_handles(received);
             match transaction.line_mut().commit_next_deferred_prepared(unwind) {
                 Some(RuntimeDeferUnwindStep::Run(registration)) => {
                     let batch = self.commit_prepared_deferred_line_child(
@@ -550,40 +573,10 @@ impl Engine {
                         prepared.expect("matching defer was preflighted before moving captures"),
                         super::defer::NativeDeferParent::Root,
                     );
-                    if !before.is_empty() {
-                        let mut after = std::collections::BTreeMap::new();
-                        for child in &batch.child_fibers {
-                            for (token, slot) in super::flow_fiber_line_handle_owners(child)? {
-                                if token.activation() != &activation_id {
-                                    after.insert(token, slot);
-                                }
-                            }
-                        }
-                        let received = self
-                            .dialogue_activations
-                            .inspect_parent_fiber_reconciliation(
-                                self.published_receiver_execution(),
-                                &before,
-                                &after,
-                                &crate::line_task::RuntimeHandleDropAuthorization::default(),
-                            )?;
-                        transaction.stage_received_handles(Some(received));
-                    }
                     return Ok(Some(batch));
                 }
                 Some(RuntimeDeferUnwindStep::Skipped(id)) => {
-                    if !before.is_empty() {
-                        let mut drops = crate::line_task::RuntimeHandleDropAuthorization::default();
-                        drops.authorize_tokens(before.keys().cloned())?;
-                        let received = self
-                            .dialogue_activations
-                            .inspect_parent_fiber_reconciliation(
-                                self.published_receiver_execution(),
-                                &before,
-                                &std::collections::BTreeMap::new(),
-                                &drops,
-                            )?;
-                        transaction.stage_received_handles(Some(received));
+                    if received_transition {
                         return Ok(None);
                     }
                     if transaction

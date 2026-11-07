@@ -263,11 +263,39 @@ struct NativePreparedLineTaskCommands {
 struct NativePreparedDeferredLineChild {
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     site_id: crate::runtime_id::RuntimeFunctionSiteId,
-    capture_tokens: BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+    capture_destinations: BTreeMap<
+        crate::runtime_id::RuntimeLineHandleToken,
+        crate::runtime_id::RuntimeLocalDeclarationId,
+    >,
     ordinal: u64,
     allocated: std::num::NonZeroU64,
     next_fiber_id: u64,
     pending_ops: VecDeque<NativePendingWork>,
+}
+
+impl NativePreparedDeferredLineChild {
+    fn received_handle_slots(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> BTreeMap<
+        crate::runtime_id::RuntimeLineHandleToken,
+        crate::value::ownership::RuntimeOwnedSlotId,
+    > {
+        self.capture_destinations
+            .iter()
+            .filter(|(token, _)| token.activation() != activation)
+            .map(|(token, local)| {
+                (
+                    token.clone(),
+                    crate::value::ownership::RuntimeOwnedSlotId::native_dialogue_local(
+                        crate::runtime_id::ExecutionInstanceId::from_allocated(self.allocated),
+                        *activation,
+                        *local,
+                    ),
+                )
+            })
+            .collect()
+    }
 }
 
 pub(super) struct NativePreparedDialogueEffectCallback {
@@ -4362,19 +4390,7 @@ impl Engine {
         if !matches!(site.body(), RuntimeFunctionSiteBody::Executable(_)) {
             return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
         }
-        let mut capture_tokens = BTreeSet::new();
-        for capture in captures {
-            for handle in capture
-                .affine_line_handles()
-                .map_err(|_| crate::line_task::LineRuntimeError::InvalidDeferredTransition)?
-            {
-                if !capture_tokens.insert(handle.token().clone()) {
-                    return Err(
-                        crate::line_task::LineRuntimeError::DuplicateHandleOccurrence.into(),
-                    );
-                }
-            }
-        }
+        let mut capture_destinations = BTreeMap::new();
         let mut positions = BTreeSet::new();
         for input in site.inputs() {
             let RuntimeFunctionInputSource::Capture { position } = input.source() else {
@@ -4413,6 +4429,14 @@ impl Engine {
                         crate::line_task::LineRuntimeError::InvalidDeferredTransition.into(),
                     );
                 }
+                if capture_destinations
+                    .insert(handle.token().clone(), destinations[0])
+                    .is_some()
+                {
+                    return Err(
+                        crate::line_task::LineRuntimeError::DuplicateHandleOccurrence.into(),
+                    );
+                }
             }
         }
         if positions.len() != captures.len() {
@@ -4427,7 +4451,7 @@ impl Engine {
         Ok(NativePreparedDeferredLineChild {
             type_instantiation: site.type_instantiation.clone(),
             site_id,
-            capture_tokens,
+            capture_destinations,
             ordinal,
             allocated,
             next_fiber_id,
@@ -4551,7 +4575,10 @@ impl Engine {
         debug_assert_eq!(
             flow_fiber_line_handle_tokens(&child)
                 .expect("checked deferred capture ownership remains unique"),
-            prepared.capture_tokens
+            prepared
+                .capture_destinations
+                .into_keys()
+                .collect::<BTreeSet<_>>()
         );
         child
     }
