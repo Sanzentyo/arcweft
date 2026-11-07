@@ -528,6 +528,7 @@ impl Engine {
                         &activation_id,
                         registration,
                         prepared.expect("matching defer was preflighted before moving captures"),
+                        super::defer::NativeDeferParent::Root,
                     )));
                 }
                 Some(RuntimeDeferUnwindStep::Skipped(id)) => {
@@ -1699,147 +1700,25 @@ impl Engine {
             RuntimeDeferOwner::LineRoot if frame.scopes.is_empty() => {}
             _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
         }
-        let function_id = self
-            .plan
-            .defer_function_site(site)
-            .ok_or(RuntimeEvalError::UnknownDeferredSite { site })?;
-        let function = self
-            .plan
-            .function_sites()
-            .get(function_id)
-            .ok_or(RuntimeEvalError::UnknownDeferredSite { site })?;
-        if captures.len() != function.capture_inputs().count() {
-            return Err(LineRuntimeError::InvalidActivationOperation.into());
-        }
-
-        let mut ledger = activation.ledger().clone();
-        let mut moved_locals = std::collections::BTreeSet::new();
-        let mut captured_handles = std::collections::BTreeSet::new();
-        let mut scoped_transfers = Vec::new();
-        let mut capture_refs = Vec::with_capacity(captures.len());
-        for (capture, input) in captures.iter().zip(function.capture_inputs()) {
-            let RuntimeExprKind::Local(read) = capture.kind() else {
-                return Err(LineRuntimeError::InvalidActivationOperation.into());
-            };
-            let local = read.local();
-            if capture.ty() != input.pattern().ty() {
-                return Err(LineRuntimeError::InvalidActivationOperation.into());
-            }
-            let value = frame
-                .execution
-                .env
-                .get(local)
-                .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-            capture_refs.push(value);
-            if !self
-                .plan
-                .value_matches_type(capture.ty(), value)
-                .map_err(RuntimeEvalError::from)?
-            {
-                return Err(RuntimeEvalError::InvalidExpressionType(capture.ty()).into());
-            }
-            if read.mode() == crate::value::RuntimeLocalReadMode::Copy {
-                if !value.ownership().permits_copy() {
-                    return Err(RuntimeEvalError::AffineLocalCopy(local).into());
-                }
-                continue;
-            }
-            if !moved_locals.insert(local) {
-                return Err(LineRuntimeError::InvalidActivationOperation.into());
-            }
-            for handle in unique_affine_line_handles(value)? {
-                if !captured_handles.insert(handle.token().clone()) {
-                    return Err(LineRuntimeError::InvalidActivationOperation.into());
-                }
-                let lease = ledger
-                    .lease(handle.token())
-                    .ok_or(LineRuntimeError::UnknownHandle)?;
-                if lease.resource().kind() != handle.kind() {
-                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
-                }
-                match lease.owner() {
-                    RuntimeHandleOwnerSlot::LineScope => {
-                        if owner_kind == RuntimeDeferOwner::CurrentScope {
-                            scoped_transfers
-                                .push((handle.token().clone(), RuntimeHandleOwnerSlot::LineScope));
-                        }
-                    }
-                    source @ RuntimeHandleOwnerSlot::ActivationLocal(_) => {
-                        let source = source.clone();
-                        if owner_kind == RuntimeDeferOwner::CurrentScope {
-                            scoped_transfers.push((handle.token().clone(), source));
-                        } else {
-                            ledger.transfer(
-                                handle.token(),
-                                &source,
-                                RuntimeHandleOwnerSlot::LineScope,
-                            )?;
-                        }
-                    }
-                    _ => return Err(LineRuntimeError::WrongOwner.into()),
-                }
-            }
-        }
-        let prepared = activation.inspect_deferred_registration_refs(&capture_refs)?;
-        drop(capture_refs);
-        for (token, source) in &scoped_transfers {
-            ledger.transfer(
-                token,
-                source,
-                RuntimeHandleOwnerSlot::ScopedDefer(prepared.id()),
-            )?;
-        }
-        let mut values = (0..captures.len()).map(|_| None).collect::<Vec<_>>();
-        for (index, capture) in captures.iter().enumerate() {
-            let RuntimeExprKind::Local(read) = capture.kind() else {
-                unreachable!("defer capture was checked as a local")
-            };
-            if read.mode() == crate::value::RuntimeLocalReadMode::Copy {
-                values[index] = Some(
-                    frame
-                        .execution
-                        .env
-                        .get(read.local())
-                        .expect("checked copied defer local remains present")
-                        .clone(),
-                );
-            }
-        }
-        for (index, capture) in captures.iter().enumerate() {
-            let RuntimeExprKind::Local(read) = capture.kind() else {
-                unreachable!("defer capture was checked as a local")
-            };
-            if read.mode() == crate::value::RuntimeLocalReadMode::Move {
-                values[index] = Some(
-                    frame
-                        .execution
-                        .env
-                        .take(read.local())
-                        .expect("checked moved defer local remains present"),
-                );
-            }
-        }
-        let values = values
-            .into_iter()
-            .map(|value| value.expect("checked defer read has one mode"))
-            .collect::<Vec<_>>();
-        let scoped_registration = match owner_kind {
-            RuntimeDeferOwner::CurrentScope => {
-                Some(activation.commit_deferred_registration(site, outcome, values, prepared))
-            }
-            RuntimeDeferOwner::LineRoot => {
-                activation.register_deferred_prepared(site, outcome, values, prepared);
-                None
-            }
-        };
-        activation.commit_ledger(ledger);
+        let scoped_registration = super::defer::register_line_defer(
+            &self.plan,
+            &mut frame.execution.env,
+            activation,
+            site,
+            outcome,
+            captures,
+            super::defer::NativeDeferCaptureOwner::Activation(owner_kind),
+        )?;
         if let Some(registration) = scoped_registration {
             frame
                 .scopes
                 .last_mut()
                 .expect("current scope was checked")
                 .deferred
-                .push(registration);
+                .push(super::defer::NativeLexicalDeferred {
+                    packet: registration,
+                    source: super::defer::NativeDeferSource::Activation,
+                });
         }
         Ok(())
     }
@@ -1858,41 +1737,19 @@ impl Engine {
             .scopes
             .last_mut()
             .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-        scope.freeze_exit(exit);
-        if scope.inflight.is_some() || activation.has_pending_commands() {
-            return Ok(ActivationScopeStep::Waiting);
-        }
-        let fixed_exit = scope.exit.expect("scope exit was frozen");
-        while let Some(registration) = scope.deferred.last() {
-            let registration_id = registration.id();
-            let prepared = registration
-                .outcome_filter()
-                .matches(fixed_exit)
-                .then(|| self.inspect_deferred_line_child(registration))
-                .transpose()?;
-            let step =
-                activation.prepare_scoped_deferred(activation_id, registration, fixed_exit)?;
-            let popped = scope.deferred.pop().expect("checked pending registration");
-            debug_assert_eq!(popped.id(), registration_id);
-            match step {
-                crate::line_task::RuntimeScopedDeferDecision::Run => {
-                    scope.inflight = Some((popped.id(), popped.site()));
-                    return Ok(ActivationScopeStep::Deferred(
-                        self.commit_prepared_deferred_line_child(
-                            frame.parent,
-                            activation_id,
-                            popped,
-                            prepared
-                                .expect("matching defer was preflighted before moving captures"),
-                        ),
-                    ));
-                }
-                crate::line_task::RuntimeScopedDeferDecision::Skipped => {
-                    if activation.has_pending_commands() {
-                        return Ok(ActivationScopeStep::Waiting);
-                    }
-                }
+        match self.step_line_defer_scope(
+            activation_id,
+            activation,
+            scope,
+            frame.parent,
+            super::defer::NativeDeferParent::Activation,
+            exit,
+        )? {
+            super::defer::NativeDeferScopeStep::Waiting => return Ok(ActivationScopeStep::Waiting),
+            super::defer::NativeDeferScopeStep::Deferred(batch) => {
+                return Ok(ActivationScopeStep::Deferred(batch));
             }
+            super::defer::NativeDeferScopeStep::Drained => {}
         }
         let received = self.release_activation_scope_locals(activation_id, frame, activation)?;
         frame.scopes.pop();
@@ -3381,7 +3238,7 @@ fn advance_activation_pc(state: &mut DialogueActivationFrame) -> Result<(), Line
     Ok(())
 }
 
-fn unique_affine_line_handles(
+pub(super) fn unique_affine_line_handles(
     value: &RuntimeValue,
 ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, LineRuntimeError> {
     let handles = value
@@ -4144,7 +4001,14 @@ mod tests {
             .expect("failed-only defer");
         let first_id = first.id();
         let second_id = second.id();
-        frame.scopes[0].deferred.extend([first, second, failed]);
+        frame.scopes[0]
+            .deferred
+            .extend([first, second, failed].map(|packet| {
+                crate::engine::defer::NativeLexicalDeferred {
+                    packet,
+                    source: crate::engine::defer::NativeDeferSource::Activation,
+                }
+            }));
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
         line.commit_result(ty, RuntimeValue::Unit)
             .expect("result staged before scope exit");
@@ -4155,7 +4019,13 @@ mod tests {
         else {
             panic!("the last matching registration must run first");
         };
-        assert_eq!(frame.scopes[0].inflight, Some((second_id, site)));
+        assert_eq!(
+            frame.scopes[0]
+                .inflight
+                .as_ref()
+                .map(|row| (row.id, row.site)),
+            Some((second_id, site))
+        );
         assert_eq!(frame.scopes[0].exit, Some(ScopeExit::Completed));
         line.complete_scoped_deferred_child(&id, second_id, &Default::default())
             .expect("second child closes");
@@ -4167,7 +4037,13 @@ mod tests {
         else {
             panic!("earlier completion registration must run next");
         };
-        assert_eq!(frame.scopes[0].inflight, Some((first_id, site)));
+        assert_eq!(
+            frame.scopes[0]
+                .inflight
+                .as_ref()
+                .map(|row| (row.id, row.site)),
+            Some((first_id, site))
+        );
         assert_eq!(frame.scopes[0].exit, Some(ScopeExit::Completed));
         line.complete_scoped_deferred_child(&id, first_id, &Default::default())
             .expect("first child closes");

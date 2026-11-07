@@ -600,6 +600,8 @@ impl LinePlanLowerer<'_, '_> {
         statements: &[StmtId],
     ) -> Result<Vec<FlowDraft>, RuntimePlanLowerError> {
         self.flow.begin_dialogue_result_selection(self.owner)?;
+        let previous_defer_context =
+            std::mem::replace(&mut self.flow.lower_line_child_defers, true);
         let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope {
             identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
         })];
@@ -612,16 +614,11 @@ impl LinePlanLowerer<'_, '_> {
                     )));
                 }
                 let kind = payload.kind().clone();
-                if matches!(kind, HirStmtKind::Defer { .. }) {
-                    actions.push(FlowDraft::Flow(
-                        self.flow.lower_defer_registration(*statement)?,
-                    ));
-                } else {
-                    actions.extend(self.lower_statement_action(*statement, &kind)?);
-                }
+                actions.extend(self.lower_statement_action(*statement, &kind)?);
             }
             Ok(())
         })();
+        self.flow.lower_line_child_defers = previous_defer_context;
         let selected_result = self.flow.finish_dialogue_result_selection(self.owner)?;
         lowered?;
         actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));
@@ -650,9 +647,9 @@ impl LinePlanLowerer<'_, '_> {
             HirStmtKind::Expression { expression } if self.line_call(*expression)?.is_some() => {
                 Ok(vec![self.lower_line_call(*expression, None)?])
             }
-            HirStmtKind::On { .. } | HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(
-                format!("line-plan statement {statement:?} requires a scope-owned disposition"),
-            )),
+            HirStmtKind::On { .. } => Err(RuntimePlanLowerError::new(format!(
+                "line-plan statement {statement:?} requires a scope-owned disposition"
+            ))),
             _ => self
                 .flow
                 .lower_statement(statement, kind)

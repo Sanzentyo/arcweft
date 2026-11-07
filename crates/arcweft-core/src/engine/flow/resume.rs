@@ -26,7 +26,10 @@ impl Engine {
                 self.push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
             }
             Resume::ExitTaskScope => {
-                if let Err(error) = self.exit_emitted_scope(output, backend) {
+                self.request_emitted_lexical_exit(None);
+                if self.fiber.frame.lexical_exit.is_none()
+                    && let Err(error) = self.exit_emitted_scope(output, backend)
+                {
                     self.fail_eval(error, output);
                 }
             }
@@ -134,7 +137,9 @@ impl Engine {
                     return;
                 }
                 if !self.complete_match_guard(output, backend) {
-                    if let Err(error) = self.pop_scope_frame(output, backend) {
+                    if !self.request_scheduled_lexical_exit(token)
+                        && let Err(error) = self.pop_scope_frame(output, backend)
+                    {
                         self.fail_eval(error, output);
                     }
                 }

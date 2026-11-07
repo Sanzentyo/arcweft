@@ -1,6 +1,6 @@
 //! Borrowed admission of Native dialogue frame roots in the session allowance.
 
-use super::{DialogueActivationFrame, DialogueActivationScope, PendingLineOperation};
+use super::{DialogueActivationFrame, PendingLineOperation};
 use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue,
     RuntimeValueView,
@@ -69,7 +69,10 @@ where
         }
         admission.validate_metadata_collection(self.scopes.len())?;
         for scope in &self.scopes {
-            scope.admit_roots(admission)?;
+            scope.admit_roots(
+                admission,
+                crate::engine::defer::NativeDeferScopeOwner::Activation,
+            )?;
         }
         if let Some(pending) = &self.pending_line_operation {
             pending.admit_roots(admission)?;
@@ -83,20 +86,6 @@ where
                     .as_ref()
                     .map(|pattern| pattern.ty().get().get()),
             ))?;
-        }
-        Ok(())
-    }
-}
-
-impl<V: RuntimeStoredValue> DialogueActivationScope<V> {
-    fn admit_roots(
-        &self,
-        admission: &mut RuntimeRetainedValueAdmission,
-    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        admission.validate_metadata(&(self.exit, self.inflight))?;
-        admission.validate_metadata_collection(self.deferred.len())?;
-        for registration in &self.deferred {
-            registration.admit_retained(admission)?;
         }
         Ok(())
     }

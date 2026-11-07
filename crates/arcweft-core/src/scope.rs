@@ -61,6 +61,10 @@ pub enum RuntimeScopeExitError {
     ScheduledTargetMismatch,
     #[error("native scheduled scope identity capacity exhausted")]
     IdentityCapacityExhausted,
+    #[error("native lexical scope still owns deferred work")]
+    DeferredWorkPending,
+    #[error("native lexical exit binding lost its original operation")]
+    OriginalExitMissing,
 }
 impl<T: Copy + Eq> RuntimeScopeExitTarget<T> {
     pub fn resolve(

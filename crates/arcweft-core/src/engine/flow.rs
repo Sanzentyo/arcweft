@@ -519,10 +519,12 @@ impl Engine {
                     Ok(selected) => {
                         self.fiber.frame.selected_dialogue_result = Some(selected);
                         *drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
-                        self.fiber.frame.pending_ops.clear();
-                        if let Err(error) = self.unwind_control_stack(output, pure_backend) {
-                            self.fail_eval(error, output);
-                            return;
+                        if !self.fiber.frame.has_scope_defer_work() {
+                            self.fiber.frame.pending_ops.clear();
+                            if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+                                self.fail_eval(error, output);
+                                return;
+                            }
                         }
                         self.fiber.frame.status = FlowFiberStatus::Done(super::FlowExit::Done);
                     }
@@ -1137,12 +1139,19 @@ impl Engine {
                 }
                 self.advance_if_needed(next_op_index);
             }
-            FlowOp::RegisterDefer { site, .. } => {
-                self.fail_eval(
+            FlowOp::RegisterDefer { site, owner, .. } => match (owner, line_registry) {
+                (
+                    crate::plan::RuntimeDeferOwner::CurrentScope,
+                    Some(super::registry::NativeLineRegistryExecution::Child(context)),
+                ) => {
+                    assert!(context.reached_defer.replace(source_site).is_none());
+                    self.advance_if_needed(next_op_index);
+                }
+                _ => self.fail_eval(
                     RuntimeEvalError::UnknownDeferredSite { site: *site },
                     output,
-                );
-            }
+                ),
+            },
             FlowOp::RegisterCleanup { .. } => {
                 let FlowOp::RegisterCleanup { key, effect } = op.into_owned() else {
                     unreachable!("selected cleanup registration");
@@ -1159,7 +1168,10 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScope => {
-                if let Err(error) = self.exit_emitted_scope(output, pure_backend) {
+                self.request_emitted_lexical_exit(None);
+                if self.fiber.frame.lexical_exit.is_none()
+                    && let Err(error) = self.exit_emitted_scope(output, pure_backend)
+                {
                     self.fail_eval(error, output);
                     return;
                 }
@@ -1172,6 +1184,12 @@ impl Engine {
                         self.fail_format_aware_eval(error, output, pure_backend);
                         return;
                     }
+                };
+                let Some((_, value)) =
+                    self.request_emitted_lexical_exit(Some((source_site, value)))
+                else {
+                    self.advance_if_needed(next_op_index);
+                    return;
                 };
                 if let Err(error) = self.exit_emitted_scope(output, pure_backend) {
                     self.fail_eval(error, output);
@@ -1555,6 +1573,7 @@ impl Engine {
                 origin,
                 cleanups: Vec::new(),
                 match_guard: None,
+                defers: super::defer::NativeLexicalDeferScope::new(),
             },
         });
     }
@@ -1883,6 +1902,12 @@ impl Engine {
             })
         ) {
             return Ok(false);
+        }
+        if self.fiber.frame.control_stack.last().is_some_and(|entry| {
+            matches!(&entry.kind,
+            FlowControlStackEntryKind::Scope { defers, .. } if defers.has_work())
+        }) {
+            return Err(crate::scope::RuntimeScopeExitError::DeferredWorkPending.into());
         }
         self.pop_runtime_scope()?;
         let Some(FlowControlStackEntry {

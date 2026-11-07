@@ -3045,20 +3045,7 @@ entry cli @entry.main { goto @flow.main }
     );
 }
 
-#[test]
-fn awbc_failed_mark_unwinds_its_lexical_defer_before_reporting_failure() {
-    use arcweft_core::{
-        engine::FlowFiberStatus,
-        plan::FlowEvent,
-        step::{
-            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind, RuntimeStepInput,
-            RuntimeStepOptions,
-        },
-        time::TickId,
-    };
-
-    let (compiled, mut awbc) = compile_nested_awbc(
-        r#"
+const FAILED_MARK_DEFER: &str = r#"
 pub character alice { display = "Alice" }
 fn divisor() -> i64 { 0i64 }
 flow main() -> Unit {
@@ -3075,23 +3062,78 @@ flow main() -> Unit {
     log.info(result)
 }
 entry cli @entry.main { goto @flow.main }
-"#,
-    );
+"#;
+
+#[test]
+fn awbc_failed_mark_unwinds_its_lexical_defer_before_reporting_failure() {
+    let (compiled, awbc) = compile_nested_awbc(FAILED_MARK_DEFER);
     let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
     let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
+    assert_failed_mark_defer(awbc, |mut engine, input, options| {
+        let result = engine.step_with_pure_backend(input, options, &mut backend);
+        (roundtrip_nested_awbc(engine).0, result)
+    });
+}
+
+#[test]
+fn native_failed_mark_unwinds_its_lexical_defer_before_reporting_failure() {
+    let (compiled, mut engine) = compile_native_mark_defer(FAILED_MARK_DEFER);
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+    );
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    assert_failed_mark_defer(&mut engine, |engine, input, options| {
+        let result = engine.step_with_pure_backend(input, options, &mut backend);
+        (engine, result)
+    });
+}
+
+fn assert_failed_mark_defer<S>(
+    mut engine: S,
+    mut step: impl FnMut(
+        S,
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> (S, arcweft_core::step::RuntimeStepResult),
+) {
+    use arcweft_core::{
+        engine::FlowFiberStatus,
+        plan::FlowEvent,
+        step::{
+            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind, RuntimeStepInput,
+            RuntimeStepOptions,
+        },
+        time::TickId,
+    };
+
     let mut input = RuntimeStepInput::default();
     let mut effects = Vec::new();
     let mut diagnostics = Vec::new();
     for tick in 0..512 {
         input.tick = TickId(tick);
-        let result = awbc.step_with_pure_backend(
+        let result;
+        (engine, result) = step(
+            engine,
             std::mem::take(&mut input),
             RuntimeStepOptions::default(),
-            &mut backend,
         );
         effects.extend(result.output.effects.line);
+        if !result.output.diagnostics.is_empty() {
+            assert_eq!(
+                log_messages(&effects),
+                [
+                    "mark-handler-enter",
+                    "failed cleanup",
+                    "unconditional cleanup"
+                ],
+                "failure reported before the scope finished unwinding"
+            );
+        }
         diagnostics.extend(result.output.diagnostics);
         for event in result.output.flow_events {
             if let FlowEvent::DialogueLine { activation, .. } = event {
@@ -3105,8 +3147,6 @@ entry cli @entry.main { goto @flow.main }
                     ));
             }
         }
-        let (restored, _) = roundtrip_nested_awbc(awbc);
-        awbc = restored;
         if let FlowFiberStatus::Failed(message) = result.fiber_status {
             assert!(message.contains("division by zero"), "{message}");
             assert!(!diagnostics.is_empty());
@@ -3124,21 +3164,7 @@ entry cli @entry.main { goto @flow.main }
     panic!("failed mark handler did not unwind: {diagnostics:?}");
 }
 
-#[test]
-fn awbc_cancelled_mark_joins_after_its_lexical_defer() {
-    use arcweft_core::{
-        engine::{FlowExit, FlowFiberStatus},
-        plan::FlowEvent,
-        step::{
-            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind,
-            RuntimeDialogueInputActionEvent, RuntimeStepInput, RuntimeStepOptions,
-        },
-        time::TickId,
-    };
-    use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
-
-    let (compiled, mut awbc) = compile_nested_awbc(
-        r#"
+const CANCELLED_MARK_DEFER: &str = r#"
 pub character alice { display = "Alice" }
 flow main() -> Unit {
     let result = alice()[本文。[mark @.release][p]] with {
@@ -3153,22 +3179,67 @@ flow main() -> Unit {
     log.info(result)
 }
 entry cli @entry.main { goto @flow.main }
-"#,
-    );
+"#;
+
+#[test]
+fn awbc_cancelled_mark_joins_after_its_lexical_defer() {
+    let (compiled, awbc) = compile_nested_awbc(CANCELLED_MARK_DEFER);
     let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
     let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
+    assert_cancelled_mark_defer(awbc, |mut engine, input, options| {
+        let result = engine.step_with_pure_backend(input, options, &mut backend);
+        (roundtrip_nested_awbc(engine).0, result)
+    });
+}
+
+#[test]
+fn native_cancelled_mark_joins_after_its_lexical_defer() {
+    let (compiled, mut engine) = compile_native_mark_defer(CANCELLED_MARK_DEFER);
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+    );
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    assert_cancelled_mark_defer(&mut engine, |engine, input, options| {
+        let result = engine.step_with_pure_backend(input, options, &mut backend);
+        (engine, result)
+    });
+}
+
+fn assert_cancelled_mark_defer<S>(
+    mut engine: S,
+    mut step: impl FnMut(
+        S,
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> (S, arcweft_core::step::RuntimeStepResult),
+) {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        step::{
+            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind,
+            RuntimeDialogueInputActionEvent, RuntimeStepInput, RuntimeStepOptions,
+        },
+        time::TickId,
+    };
+    use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
+
     let mut input = RuntimeStepInput::default();
     let mut revealed = None;
     let mut effects = Vec::new();
     let mut sent_cancel = false;
     for tick in 0..512 {
         input.tick = TickId(tick);
-        let result = awbc.step_with_pure_backend(
+        let result;
+        (engine, result) = step(
+            engine,
             std::mem::take(&mut input),
             RuntimeStepOptions::default(),
-            &mut backend,
         );
         assert!(
             result.output.diagnostics.is_empty(),
@@ -3200,8 +3271,6 @@ entry cli @entry.main { goto @flow.main }
                 ));
             sent_cancel = true;
         }
-        let (restored, _) = roundtrip_nested_awbc(awbc);
-        awbc = restored;
         if result.fiber_status == FlowFiberStatus::Done(FlowExit::Done) {
             assert!(sent_cancel);
             assert_eq!(
@@ -3215,6 +3284,72 @@ entry cli @entry.main { goto @flow.main }
         "cancelled mark handler did not join: {:?}",
         log_messages(&effects)
     );
+}
+
+#[test]
+fn native_mark_defer_runs_on_lexical_and_result_exit() {
+    let (compiled, mut engine) = compile_native_mark_defer(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let result = alice()[本文。[mark @.release][p]] with {
+        on mark(@.release) {
+            let message = "captured"
+            defer { log.info(message) }
+            defer on failed { log.info("wrong outcome") }
+            defer on completed { log.info("completed cleanup") }
+            if true {
+                defer { log.info("inner cleanup") }
+                log.info("inner body")
+            }
+            log.info("mark-handler-enter")
+            out "Released"
+        }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+    );
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let (logs, completed) = execute_dialogue_result_with_mark(
+        |input, options| engine.step_with_pure_backend(input, options, &mut backend),
+        true,
+        "native mark scope defer",
+    );
+    assert!(completed);
+    assert_eq!(
+        logs,
+        [
+            "inner body",
+            "inner cleanup",
+            "mark-handler-enter",
+            "completed cleanup",
+            "captured",
+            "Released"
+        ]
+    );
+}
+
+fn compile_native_mark_defer(source: &str) -> (CompiledProject, arcweft_core::engine::Engine) {
+    let compiled = compile_attached_dialogue_project(source).unwrap();
+    let runtime = compiled.runtime_plan();
+    let [flow] = runtime.plan.flows() else {
+        panic!("one flow")
+    };
+    let mut plan = runtime.plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x65; 32]).unwrap(),
+    )
+    .unwrap();
+    let engine = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+    (compiled, engine)
 }
 
 fn execute_dialogue_result_with_mark(

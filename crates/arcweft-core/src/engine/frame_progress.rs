@@ -83,7 +83,8 @@ impl Engine {
     /// Accepted Need publications and local Program results are internal work.
     /// A waiting fiber without either must not consume another source operation.
     pub(super) fn fiber_can_attempt_runtime_op(&self, fiber: &FlowFiber) -> bool {
-        !self.fiber_waits_for_join(fiber)
+        !self.fiber_waits_for_lexical_defer(fiber)
+            && !self.fiber_waits_for_join(fiber)
             && match fiber.frame.status {
                 FlowFiberStatus::NeedWaiting(_)
                 | FlowFiberStatus::ActionWaiting(_)
@@ -92,6 +93,27 @@ impl Engine {
                 | FlowFiberStatus::HostCall(_) => self.fiber_has_internal_work(fiber),
                 _ => true,
             }
+    }
+
+    fn fiber_waits_for_lexical_defer(&self, fiber: &FlowFiber) -> bool {
+        let super::FlowFiberOwner::LineTask(owner) = &fiber.owner else {
+            return false;
+        };
+        fiber
+            .frame
+            .control_stack
+            .iter()
+            .any(|entry| match &entry.kind {
+                super::FlowControlStackEntryKind::Scope { defers, .. } => {
+                    defers.inflight.is_some()
+                        || (defers.exit.is_some()
+                            && self
+                                .dialogue_activations
+                                .active_line(owner.tag.activation_id())
+                                .is_some_and(|line| line.has_pending_commands()))
+                }
+                _ => false,
+            })
     }
 
     pub(super) fn fiber_waits_for_join(&self, fiber: &FlowFiber) -> bool {

@@ -2298,6 +2298,7 @@ impl AwbcProductStepExecutor {
                 await_observer: None,
                 invocation_result: None,
                 selected_dialogue_result: None,
+                lexical_exit: None,
                 root_cleanups: Vec::new(),
                 env: RuntimeEnv::default(),
                 observations: RuntimeObservationState::default(),

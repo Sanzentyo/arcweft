@@ -5867,6 +5867,7 @@ struct FinalFlowLowerer<'a> {
     carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
     result_selection_application: Option<ExprId>,
     result_selection_emitted: bool,
+    lower_line_child_defers: bool,
     scope_continuations: Vec<scopes::ScopeContinuationFrame>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
@@ -6221,6 +6222,7 @@ impl<'a> FinalFlowLowerer<'a> {
             carrier_continuations: BTreeMap::new(),
             result_selection_application: None,
             result_selection_emitted: false,
+            lower_line_child_defers: false,
             scope_continuations: Vec::new(),
             assertion_owner,
             assertion_ordinal: 0,
@@ -6705,6 +6707,21 @@ impl<'a> FinalFlowLowerer<'a> {
                 )
             }
             HirStmtKind::Wait { .. } => self.lower_wait_statement(id, RuntimeFlowTail::None),
+            HirStmtKind::Defer { .. } if self.lower_line_child_defers => {
+                let op = self.lower_defer_registration(id)?;
+                if !matches!(
+                    op,
+                    RuntimeFlowOpSeed::RegisterDefer {
+                        owner: arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
+                        ..
+                    }
+                ) {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "line child defer {id:?} has no checked lexical owner"
+                    )));
+                }
+                Ok(vec![op])
+            }
             HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
                 "defer {id:?} requires scope-owned runtime registration"
             ))),

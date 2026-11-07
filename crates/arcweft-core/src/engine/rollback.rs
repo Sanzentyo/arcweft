@@ -500,6 +500,17 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         if let Some(value) = &self.selected_dialogue_result {
             admission.validate_owned_borrowed(value.borrowed_value())?;
         }
+        if let Some(exit) = &self.lexical_exit {
+            if self
+                .control_stack
+                .get(exit.target)
+                .and_then(ScopeControl::defer_scope)
+                .is_none()
+            {
+                return Err(invalid("native lexical exit target is absent".into()));
+            }
+            exit.admit(admission)?;
+        }
         self.admit_invocation_result(admission)?;
         Ok(())
     }
@@ -665,6 +676,10 @@ enum RootInvocation<'a> {
 }
 
 pub(super) trait ScopeControl<O> {
+    type DeferValue: crate::value::RuntimeStoredValue;
+
+    fn defer_scope(&self) -> Option<&super::defer::NativeLexicalDeferScope<Self::DeferValue>>;
+
     fn function_context(&self) -> Option<FunctionContext<'_>>;
     fn admit_control_values(
         &self,
@@ -678,23 +693,36 @@ pub(super) trait ScopeControl<O> {
 }
 
 impl<O, P, V> ScopeControl<O>
-    for FlowControlStackEntryKind<FunctionCallFrame<O, P>, NativeFormatAttemptFrame<V, O>>
+    for FlowControlStackEntryKind<FunctionCallFrame<O, P>, NativeFormatAttemptFrame<V, O>, V>
 where
     V: crate::value::RuntimeStoredValue,
     P: PendingStorage,
     O: NativeStoredWork,
 {
+    type DeferValue = V;
+
+    fn defer_scope(&self) -> Option<&super::defer::NativeLexicalDeferScope<V>> {
+        match self {
+            Self::Scope { defers, .. } => Some(defers),
+            _ => None,
+        }
+    }
+
     fn admit_control_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         match self {
-            Self::Scope { match_guard, .. } => {
+            Self::Scope {
+                match_guard,
+                defers,
+                ..
+            } => {
                 if let Some(guard) = match_guard {
                     guard.admit_retained(admission)?;
                 }
-                Ok(())
+                defers.admit_roots(admission, super::defer::NativeDeferScopeOwner::Control)
             }
             Self::Loop { source }
             | Self::While { source }
@@ -775,6 +803,12 @@ where
 }
 
 impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
+    type DeferValue = crate::value::RuntimeValue;
+
+    fn defer_scope(&self) -> Option<&super::defer::NativeLexicalDeferScope<Self::DeferValue>> {
+        self.kind.defer_scope()
+    }
+
     fn admit_control_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -890,6 +924,23 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
                     ScopeState::Frame(_) => Ok(()),
                 })?;
             }
+            if let Some(exit) = &frame.lexical_exit
+                && let Some(token) = exit.scheduled_close
+            {
+                let target = frame
+                    .control_stack
+                    .get(exit.target)
+                    .ok_or_else(|| "native lexical exit target is absent".to_owned())?;
+                let mut target_matches = false;
+                target.visit_scope_state::<String>(|state| {
+                    target_matches |=
+                        matches!(state, ScopeState::Frame(frame_token) if frame_token == token);
+                    Ok(())
+                })?;
+                if !target_matches || !valid(token) || !closed.insert(token) {
+                    return Err("native lexical exit does not own the exact scheduled close".into());
+                }
+            }
         }
         if opened != closed {
             return Err(
@@ -991,12 +1042,21 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
             let Some(parent) = child.parent else {
                 return Err(invalid_identity());
             };
+            let defer_control = matches!(&child.owner,
+                FlowFiberOwner::LineTask(owner)
+                    if matches!(owner.defer_parent, Some(super::defer::NativeDeferParent::Control { .. })));
             if parent.0 >= child.id.0
                 || (child.owner.has_joined_work() && !fiber_ids.contains(&parent.0))
-                || child
-                    .owner
-                    .dialogue_activation()
-                    .is_some_and(|activation| !parent.matches_persistent(activation.owner_fiber()))
+                || (!defer_control
+                    && child.owner.dialogue_activation().is_some_and(|activation| {
+                        !parent.matches_persistent(activation.owner_fiber())
+                    }))
+                || (defer_control
+                    && !self.session_children().any(|candidate| {
+                        candidate.id == parent
+                            && candidate.owner.dialogue_activation()
+                                == child.owner.dialogue_activation()
+                    }))
             {
                 return Err(invalid_identity());
             }
@@ -1081,10 +1141,12 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
             let crate::line_task::LineTaskWork::Defer(id) = child_owner.tag.work() else {
                 continue;
             };
+            if child_owner.defer_parent != Some(super::defer::NativeDeferParent::Root) {
+                continue;
+            }
             let activation = child_owner.tag.activation_id();
             let Some((inflight_id, site)) = inflight(activation) else {
-                // Scoped defers have a frame-owned in-flight marker instead.
-                continue;
+                return Err("native root defer child has no in-flight registration".into());
             };
             if inflight_id != id
                 || expected_deferred_children
@@ -1095,6 +1157,129 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
             }
         }
         Ok(expected_deferred_children)
+    }
+}
+
+impl<N, P, R, V, FP, O, C, A, S, D> Engine<N, P, R, NativeFlowExecutionFrame<V, FP, O, C, A, S>, D>
+where
+    V: crate::value::RuntimeStoredValue,
+    C: ScopeControl<O, DeferValue = V>,
+{
+    fn validate_lexical_defer_contour<'a>(
+        &self,
+        reached: impl Fn(&DialogueActivationId) -> Option<super::defer::NativeReachedLineDefers<'a, V>>,
+    ) -> Result<(), String>
+    where
+        V: 'a,
+    {
+        use super::defer::NativeDeferParent;
+        use crate::line_task::{LineTaskWork, RuntimeHandleOwnerSlot};
+        let invalid =
+            || "native defer is not paired with its exact reached lexical owner".to_owned();
+        let mut pending = BTreeMap::new();
+        let mut registrations = BTreeMap::<_, Vec<_>>::new();
+        let mut scoped_tokens = BTreeSet::new();
+        for child in self.session_children() {
+            for (index, entry) in child.frame.control_stack.iter().enumerate() {
+                let Some(scope) = entry.defer_scope().filter(|scope| scope.has_work()) else {
+                    continue;
+                };
+                let FlowFiberOwner::LineTask(owner) = &child.owner else {
+                    return Err(invalid());
+                };
+                let activation = owner.tag.activation_id();
+                let (line, _) = reached(activation).ok_or_else(invalid)?;
+                registrations
+                    .entry(*activation)
+                    .or_default()
+                    .extend(scope.ids());
+                if let Some(inflight) = &scope.inflight {
+                    if child.frame.control_stack.len().checked_sub(1) != Some(index)
+                        || pending
+                            .insert((*activation, child.id, index), inflight)
+                            .is_some()
+                    {
+                        return Err(invalid());
+                    }
+                }
+                for registration in &scope.deferred {
+                    for value in registration.packet.captures() {
+                        for handle in value
+                            .borrowed_view()
+                            .line_handle_projection()
+                            .map_err(|_| invalid())?
+                        {
+                            if !scoped_tokens.insert(handle.token().clone())
+                                || line.ledger().lease(handle.token()).is_none_or(|lease| {
+                                    lease.owner()
+                                        != &RuntimeHandleOwnerSlot::ScopedDefer(
+                                            registration.packet.id(),
+                                        )
+                                        || lease.resource().kind() != handle.kind()
+                                })
+                            {
+                                return Err(invalid());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (activation, ids) in registrations {
+            let (line, activation_scopes) = reached(&activation).ok_or_else(invalid)?;
+            line.admit_restored_scoped_defer_registrations(
+                activation_scopes
+                    .iter()
+                    .flat_map(|scope| scope.ids())
+                    .chain(ids),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        let mut activation_children = BTreeSet::new();
+        for child in self.session_children() {
+            let FlowFiberOwner::LineTask(owner) = &child.owner else {
+                continue;
+            };
+            let LineTaskWork::Defer(id) = owner.tag.work() else {
+                if owner.defer_parent.is_some() {
+                    return Err(invalid());
+                }
+                continue;
+            };
+            let activation = owner.tag.activation_id();
+            let parent = child.parent.ok_or_else(invalid)?;
+            let site = match owner.defer_parent.ok_or_else(invalid)? {
+                NativeDeferParent::Root => continue,
+                NativeDeferParent::Activation => {
+                    let (_, scopes) = reached(activation).ok_or_else(invalid)?;
+                    if !activation_children.insert(*activation) {
+                        return Err(invalid());
+                    }
+                    scopes.last().and_then(|scope| scope.inflight.as_ref())
+                }
+                NativeDeferParent::Control { scope } => {
+                    pending.remove(&(*activation, parent, scope))
+                }
+            }
+            .filter(|inflight| inflight.id == id)
+            .ok_or_else(invalid)?
+            .site;
+            let function = self.plan.defer_function_site(site).ok_or_else(invalid)?;
+            if child
+                .frame
+                .env
+                .function_contexts()
+                .next()
+                .map(|(site, _)| site)
+                != Some(function)
+            {
+                return Err(invalid());
+            }
+        }
+        if !pending.is_empty() {
+            return Err(invalid());
+        }
+        Ok(())
     }
 }
 
@@ -1172,6 +1357,15 @@ impl Engine {
                 .map(super::dialogue::DialogueActivationTransaction::line)
                 .or_else(|| self.dialogue_activations.active_line(activation))
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
+        })
+        .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
+        self.validate_lexical_defer_contour(|activation| {
+            transaction
+                .into_iter()
+                .chain(&self.dialogue_activations.inline_stack)
+                .find(|transaction| transaction.activation() == activation)
+                .map(|transaction| (transaction.line(), transaction.frame().scopes.as_slice()))
+                .or_else(|| self.dialogue_activations.active_defer_state(activation))
         })
         .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
         Ok(())
@@ -1259,6 +1453,9 @@ impl NativeEngineRollbackImage {
             self.dialogue_activations
                 .active_line(activation)
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
+        })?;
+        self.validate_lexical_defer_contour(|activation| {
+            self.dialogue_activations.active_defer_state(activation)
         })?;
         self.dialogue_activations
             .admit_values(&mut admission, &expected_deferred_children, |parent| {

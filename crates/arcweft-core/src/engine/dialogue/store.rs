@@ -1,6 +1,7 @@
 #[cfg(test)]
 use crate::effect::RuntimeDropPolicy;
 use crate::engine::DialogueRuntimePhase;
+pub(crate) use crate::engine::defer::NativeLexicalDeferScope as DialogueActivationScope;
 use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, RuntimeDialogueAbandonedCommitProof,
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationState,
@@ -125,13 +126,7 @@ impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
         &self,
         line: &RuntimeDialogueActivationState<RuntimePlanTypeId, L>,
     ) -> Result<(), LineRuntimeError> {
-        let ids = self.scopes.iter().flat_map(|scope| {
-            scope
-                .deferred
-                .iter()
-                .map(|registration| registration.id())
-                .chain(scope.inflight.iter().map(|&(id, _)| id))
-        });
+        let ids = self.scopes.iter().flat_map(|scope| scope.ids());
         line.admit_restored_scoped_defer_registrations(ids)
     }
 
@@ -233,16 +228,6 @@ impl Clone for NativeEngineDialogueFrameRollbackImage {
         Self {
             frame: self.frame.clone(),
             inbox: self.inbox.clone(),
-        }
-    }
-}
-
-impl Clone for NativeDialogueScopeRollbackImage {
-    fn clone(&self) -> Self {
-        Self {
-            deferred: self.deferred.clone(),
-            exit: self.exit,
-            inflight: self.inflight,
         }
     }
 }
@@ -442,6 +427,24 @@ impl DialogueActivationStoreRollbackImage {
     ) -> Option<&crate::line_task::AwbcRuntimeDialogueActivationSnapshot<RuntimePlanTypeId>> {
         self.registry.active_line(activation)
     }
+
+    pub(in crate::engine) fn active_defer_state(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<
+        crate::engine::defer::NativeReachedLineDefers<'_, crate::value::AwbcRuntimeValueSnapshot>,
+    > {
+        let mut reached = None;
+        self.registry
+            .try_visit_active(|id, active, line| {
+                if id == activation {
+                    reached = Some((line, active.frame.scopes.as_slice()));
+                }
+                Ok::<(), std::convert::Infallible>(())
+            })
+            .expect("borrowing active dialogue defer state is infallible");
+        reached
+    }
 }
 
 fn inert_dialogue_value(
@@ -559,48 +562,6 @@ impl NativePendingLineOperationRollbackImage {
                 binding,
                 site,
             },
-        })
-    }
-}
-
-impl NativeDialogueScopeRollbackImage {
-    fn from_live(
-        scope: &DialogueActivationScope,
-        owner: &crate::task::RuntimeProgramOwner,
-    ) -> Result<Self, String> {
-        Ok(Self {
-            deferred: scope
-                .deferred
-                .iter()
-                .map(|registration| {
-                    crate::line_task::AwbcRuntimeDeferredRegistrationSnapshot::from_admitted_live(
-                        registration,
-                        Some(owner),
-                    )
-                    .map_err(|error| error.to_string())
-                })
-                .collect::<Result<_, String>>()?,
-            exit: scope.exit,
-            inflight: scope.inflight,
-        })
-    }
-
-    fn into_live(
-        self,
-        owner: &crate::task::RuntimeProgramOwner,
-    ) -> Result<DialogueActivationScope, String> {
-        Ok(DialogueActivationScope {
-            deferred: self
-                .deferred
-                .into_iter()
-                .map(|registration| {
-                    registration
-                        .into_admitted_live(owner)
-                        .map_err(|error| error.to_string())
-                })
-                .collect::<Result<_, String>>()?,
-            exit: self.exit,
-            inflight: self.inflight,
         })
     }
 }
@@ -786,31 +747,6 @@ pub(crate) struct PendingActivationHostCall {
     pub(in crate::engine) id: crate::step::RuntimeHostCallId,
     pub(in crate::engine) result: RuntimePlanTypeId,
     pub(in crate::engine) binding: Option<RuntimePattern>,
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) struct DialogueActivationScope<V = RuntimeValue> {
-    pub(in crate::engine) deferred: Vec<crate::line_task::RuntimeLineDeferredRegistration<V>>,
-    /// Frozen on first exit. A failing cleanup must not change its filter.
-    pub(in crate::engine) exit: Option<crate::line_task::ScopeExit>,
-    pub(in crate::engine) inflight: Option<(
-        crate::runtime_id::RuntimeDeferRegistrationId,
-        crate::runtime_id::RuntimeDeferSiteId,
-    )>,
-}
-
-impl DialogueActivationScope {
-    pub(in crate::engine) fn new() -> Self {
-        Self {
-            deferred: Vec::new(),
-            exit: None,
-            inflight: None,
-        }
-    }
-
-    pub(in crate::engine) fn freeze_exit(&mut self, exit: crate::line_task::ScopeExit) {
-        self.exit.get_or_insert(exit);
-    }
 }
 
 /// Durable step ingress owned by one activation until its executor phase can
@@ -1080,6 +1016,14 @@ impl DialogueActivationStore {
         activation: &DialogueActivationId,
     ) -> Option<&RuntimeDialogueActivationState<RuntimePlanTypeId>> {
         self.registry.active_line(activation)
+    }
+
+    pub(in crate::engine) fn active_defer_state(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<crate::engine::defer::NativeReachedLineDefers<'_, RuntimeValue>> {
+        let frame = &self.registry.active_frame(activation)?.frame;
+        Some((self.registry.active_line(activation)?, &frame.scopes))
     }
 
     fn admit_contour<'a>(

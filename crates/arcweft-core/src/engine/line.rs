@@ -117,28 +117,49 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), crate::value::RuntimeEvalError> {
-        while let Some(entry) = self.fiber.frame.control_stack.last() {
-            let owns_scope = match &entry.kind {
-                FlowControlStackEntryKind::Scope { .. } => true,
-                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
-                FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
-                _ => false,
-            };
-            if owns_scope {
-                self.pop_runtime_scope()?;
-            }
-            let entry = self
-                .fiber
-                .frame
-                .control_stack
-                .pop()
-                .expect("inspected control owner");
-            if let FlowControlStackEntryKind::Scope { cleanups, .. } = entry.kind {
-                self.emit_scope_cleanups(cleanups, output, pure_backend);
-            }
+        while !self.fiber.frame.control_stack.is_empty() {
+            self.unwind_control_entry(output, pure_backend)?;
         }
         self.drain_root_cleanups(output, pure_backend)?;
         self.fiber.frame.env.close_root_flow_registry();
+        Ok(())
+    }
+
+    pub(super) fn unwind_control_entry(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<(), crate::value::RuntimeEvalError> {
+        let Some(entry) = self.fiber.frame.control_stack.last() else {
+            return Ok(());
+        };
+        let owns_scope = match &entry.kind {
+            FlowControlStackEntryKind::Scope { defers, .. } => {
+                if defers.has_work() {
+                    return Err(crate::scope::RuntimeScopeExitError::DeferredWorkPending.into());
+                }
+                true
+            }
+            FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
+            FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
+            _ => false,
+        };
+        if owns_scope {
+            self.pop_runtime_scope()?;
+        }
+        let entry = self
+            .fiber
+            .frame
+            .control_stack
+            .pop()
+            .expect("inspected control owner");
+        if let FlowControlStackEntryKind::Scope {
+            origin, cleanups, ..
+        } = entry.kind
+        {
+            self.cancel_scheduled_scope_close(origin);
+            self.emit_scope_cleanups(cleanups, output, pure_backend);
+        }
         Ok(())
     }
     pub(super) fn finish(

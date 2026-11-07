@@ -69,6 +69,7 @@ pub(super) enum NativeLineRegistryExecution<'a> {
 pub(super) struct NativeChildRegistryExecution<'a> {
     pub(super) before: &'a BTreeSet<RuntimeLineHandleToken>,
     pub(super) pending: &'a mut Option<NativeDialogueRegistryMutation>,
+    pub(super) reached_defer: &'a mut Option<NativeSourceOperation>,
 }
 
 pub(super) struct NativeActivationRegistryExecution<'a> {
