@@ -42265,5 +42265,930 @@
         }
       ]
     }
+  },
+  "initialInputLineRootDefer": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "5ba67c20a9aacafe3d1dd25939be42c92cddf52a",
+    "reproductionSource": "56a3b280c9047861960c72071e0c864b8d7fdc06",
+    "custodySource": "9bbe68a9a97d12f9126f668460f0f010e5c5563a",
+    "testAndContractSource": "a6196f5cd57c9a481b740128280e9b986a89a316",
+    "firstProbe": {
+      "passed": 0,
+      "failed": 2,
+      "skipped": 117,
+      "native": "tick 15: line handle is not live in this activation",
+      "savedAwbc": "line handle is owned by another runtime slot",
+      "limit": "Each test stopped in its normal-completion branch; cancellation was not executed in this first failed probe."
+    },
+    "accepted": "Owned initial Actor input can move into a reached Line root defer. Always/completed/cancelled filters across normal completion/cancellation and Native/saved AWBC cover 12 runtime conditions in four tests. Existing 1-op/512-step, two-reveal, one-acquire/release and ordered-log assertions remain unchanged. A fifth test refuses six slot-coordinate mutations plus packet removal and duplication, verifies the original snapshot after every refusal, and completes the original execution.",
+    "storage": "RuntimeOwnedSlotId::LineDeferCapture identifies actual execution/activation/registration/ordinal custody; binary tag 22, unknown tag 23 rejection, human/binary roundtrips, and all contract markers remain at version 1. Published issuer leases authenticate received custody. Native prepares actual child-local destinations and the whole issuer transition before taking the packet; AWBC projects actual prepared child-register slots before taking it.",
+    "validation": {
+      "compilerFinal": {
+        "version": 1,
+        "base": "a6196f5cd57c9a481b740128280e9b986a89a316",
+        "run": "line-root-defer-20261108.prepared-transfer.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   7.880s] 152 tests run: 152 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 152,
+        "passed": 152,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3416,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-07T22:23:54.1879366Z"
+      },
+      "corePrior": {
+        "source": "9bbe68a9a97d12f9126f668460f0f010e5c5563a",
+        "passed": 2327,
+        "failed": 0,
+        "skipped": 0,
+        "scope": "Earlier Core unit run before the Native preflight-only implementation change; not promoted to a new full Core or Core53 run."
+      },
+      "workspaceGates": "Final 5ba67c20a9aacafe3d1dd25939be42c92cddf52a all-target/all-feature workspace check and Clippy, canonical structural gate and 16-path fmt exit 0 with warnings retained.",
+      "sourceInputs": 3416,
+      "sourceDrift": 0,
+      "graph": {
+        "version": 1,
+        "source": "5ba67c20a9aacafe3d1dd25939be42c92cddf52a",
+        "workingTree": "12 preserved original tracked paths and 6 actual original untracked files; no uncommitted task Rust paths before recording evidence",
+        "base": "bb37a6084997ed3ccce688c278e6e3623ca83118",
+        "files": [
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step.rs",
+            "owner": "arcweft-core",
+            "bytes": 280318,
+            "physicalLines": 6856,
+            "embeddedTestLines": 0,
+            "classification": "production",
+            "baseLines": 6832,
+            "growth": 24
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+            "owner": "arcweft-core",
+            "bytes": 17114,
+            "physicalLines": 435,
+            "embeddedTestLines": 0,
+            "classification": "production",
+            "baseLines": 436,
+            "growth": -1
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+            "owner": "arcweft-core",
+            "bytes": 38339,
+            "physicalLines": 988,
+            "embeddedTestLines": 0,
+            "classification": "production",
+            "baseLines": 974,
+            "growth": 14
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+            "owner": "arcweft-core",
+            "bytes": 214616,
+            "physicalLines": 5074,
+            "embeddedTestLines": 74,
+            "classification": "production",
+            "baseLines": 4986,
+            "growth": 88
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+            "owner": "arcweft-core",
+            "bytes": 191991,
+            "physicalLines": 4504,
+            "embeddedTestLines": 181,
+            "classification": "production",
+            "baseLines": 4486,
+            "growth": 18
+          },
+          {
+            "path": "crates/arcweft-core/src/engine.rs",
+            "owner": "arcweft-core",
+            "bytes": 263795,
+            "physicalLines": 6540,
+            "embeddedTestLines": 887,
+            "classification": "production",
+            "baseLines": 6477,
+            "growth": 63
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/defer.rs",
+            "owner": "arcweft-core",
+            "bytes": 47560,
+            "physicalLines": 1266,
+            "embeddedTestLines": 0,
+            "classification": "production",
+            "baseLines": 1235,
+            "growth": 31
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/dialogue.rs",
+            "owner": "arcweft-core",
+            "bytes": 197901,
+            "physicalLines": 4630,
+            "embeddedTestLines": 1121,
+            "classification": "production",
+            "baseLines": 4538,
+            "growth": 92
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+            "owner": "arcweft-core",
+            "bytes": 108504,
+            "physicalLines": 2833,
+            "embeddedTestLines": 991,
+            "classification": "production",
+            "baseLines": 2819,
+            "growth": 14
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/program.rs",
+            "owner": "arcweft-core",
+            "bytes": 17268,
+            "physicalLines": 446,
+            "embeddedTestLines": 0,
+            "classification": "production",
+            "baseLines": 440,
+            "growth": 6
+          },
+          {
+            "path": "crates/arcweft-core/src/line_task/activation.rs",
+            "owner": "arcweft-core",
+            "bytes": 81520,
+            "physicalLines": 2040,
+            "embeddedTestLines": 82,
+            "classification": "production",
+            "baseLines": 2011,
+            "growth": 29
+          },
+          {
+            "path": "crates/arcweft-core/src/line_task/defer.rs",
+            "owner": "arcweft-core",
+            "bytes": 10797,
+            "physicalLines": 300,
+            "embeddedTestLines": 0,
+            "classification": "production",
+            "baseLines": 260,
+            "growth": 40
+          },
+          {
+            "path": "crates/arcweft-core/src/line_task/handle.rs",
+            "owner": "arcweft-core",
+            "bytes": 282185,
+            "physicalLines": 7232,
+            "embeddedTestLines": 975,
+            "classification": "production",
+            "baseLines": 7127,
+            "growth": 105
+          },
+          {
+            "path": "crates/arcweft-core/src/value/ownership/binary.rs",
+            "owner": "arcweft-core",
+            "bytes": 41550,
+            "physicalLines": 989,
+            "embeddedTestLines": 296,
+            "classification": "production",
+            "baseLines": 938,
+            "growth": 51
+          },
+          {
+            "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+            "owner": "arcweft-core",
+            "bytes": 66737,
+            "physicalLines": 2053,
+            "embeddedTestLines": 182,
+            "classification": "production",
+            "baseLines": 1986,
+            "growth": 67
+          },
+          {
+            "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+            "owner": "arcweft-compiler",
+            "bytes": 33740,
+            "physicalLines": 909,
+            "embeddedTestLines": 0,
+            "classification": "test",
+            "baseLines": 704,
+            "growth": 205
+          }
+        ],
+        "workspacePackages": 98,
+        "resolvedPackages": 846,
+        "coreReversePackages": [
+          "arcweft",
+          "arcweft-adapter-desktop",
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-policy",
+          "arcweft-agent-protocol",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-browser-bench",
+          "arcweft-bundle",
+          "arcweft-bundle-assets",
+          "arcweft-character-view",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-core",
+          "arcweft-debug-model",
+          "arcweft-debug-sqlite",
+          "arcweft-dialogue",
+          "arcweft-glyphon",
+          "arcweft-host-adapter",
+          "arcweft-lang-jit-cranelift",
+          "arcweft-lang-sema",
+          "arcweft-launch",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-text-input",
+          "arcweft-player-web",
+          "arcweft-project",
+          "arcweft-project-loader",
+          "arcweft-rag",
+          "arcweft-render-text",
+          "arcweft-render-web",
+          "arcweft-render-wgpu",
+          "arcweft-resource-manifest",
+          "arcweft-resource-model",
+          "arcweft-runtime-accelerator",
+          "arcweft-runtime-codegen",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-runtime-scheduler",
+          "arcweft-save",
+          "arcweft-test",
+          "arcweft-text-layout",
+          "arcweft-text-model",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3",
+          "arcweft-view"
+        ],
+        "packageMetrics": [
+          {
+            "package": "arcweft-compiler",
+            "manifest": "crates/arcweft-compiler/Cargo.toml",
+            "workspace_fan_in": "3",
+            "workspace_fan_out": "25",
+            "development_workspace_fan_in": "2",
+            "development_workspace_fan_out": "10"
+          },
+          {
+            "package": "arcweft-core",
+            "manifest": "crates/arcweft-core/Cargo.toml",
+            "workspace_fan_in": "31",
+            "workspace_fan_out": "8",
+            "development_workspace_fan_in": "4",
+            "development_workspace_fan_out": "5"
+          }
+        ],
+        "ownership": "Core owns the unique line-resource ledger and revisioned Active/PublishedHandles registry. The defer packet owns values; received leases remain at their issuer. Native and AWBC enumerate actual packet/frame/register storage and submit borrowed transition proofs. Native child preparation now keeps the validated token-to-local destinations in place of its previous token set, admitting the complete lease transition before taking a packet. No live-value copy, persistent side table, source reconstruction, fallback resolver, I/O dependency, compatibility reader, or contract-version bump was added.",
+        "cohesion": "Large Native engine/dialogue and AWBC product-step/line/snapshot owners retain their existing scheduler, transactional execution, or retained-graph admission boundaries. line_task handle/activation/defer own resource state, revision authority and sole capture packets. ownership slot/binary own the closed diagnostic identity and its codecs. Core stores adapt those same proofs to their actual frames. Compiler ordinary_defer is an integration-test owner with shared real Source/host/cold-restore fixtures. Exact LOC, growth, embedded tests and fan-in/out are retained above; size triggers alone do not justify widening APIs or splitting these coupled state transitions."
+      }
+    },
+    "limitations": "Core53/default-CLI primary matrix on this source has no terminal yet. The f267dc30d20a25092c64d08bb42b596b14ad3400 8030-run matrix remains prior-source evidence with its actual four failures. Root defer cleanup acceptance is not full producer/platform/Native-public-save/Tier2/parity acceptance. Generic Match and all other accepted boundaries remain accepted.",
+    "auditNotes": "Focused raw audits retain the old wrapper historical held=14 metadata. Actual original WIP is independently pinned as 12 tracked and 6 actual untracked files, never inferred from that metadata. Initial E0423/E0282 build diagnostics, obsolete-wrapper preparation refusal, intermediate 2/149/3/152 runs and every published SHA are preserved, not relabeled as one fresh run.",
+    "raw": {
+      "path": "task-initial-line-root-defer.raw.zip",
+      "sha256": "80e8477501c64a03dce3e57c9147564b68095dd04ea508499cac3c6b6467766d",
+      "entries": [
+        {
+          "entry": "line-root-defer-20261108.auth-source.message.txt",
+          "bytes": 74,
+          "sha256": "ffbac9e6f73f3c79aec332aae6453b92dc0ea965559fcb105b76b5ca078ebaa5"
+        },
+        {
+          "entry": "line-root-defer-20261108.auth-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-root-defer-20261108.auth-source.owned.txt",
+          "bytes": 120,
+          "sha256": "8f17c6133fc25ad2c93c2bd4224fb846c9cd08a023b6129cdc594815e90f5e3e"
+        },
+        {
+          "entry": "line-root-defer-20261108.auth-source.pathspec",
+          "bytes": 120,
+          "sha256": "3925f83b33b7c9b4c8a35f3986a5d29eefffc76542ba9a7199f7da29eaf5becf"
+        },
+        {
+          "entry": "line-root-defer-20261108.auth-source.prepared.json",
+          "bytes": 1451,
+          "sha256": "bd02d2047ce09b75c2136f3e1d1a03eccd650126d9778c47dbf2f25eded8573f"
+        },
+        {
+          "entry": "line-root-defer-20261108.auth-source.reviewed.patch",
+          "bytes": 8574,
+          "sha256": "232c973e2c5040ef4090daffbf59e124623cbdfa7f105146dd9c542a2c9f1ade"
+        },
+        {
+          "entry": "line-root-defer-20261108.auth-source.verified.json",
+          "bytes": 853,
+          "sha256": "4ede7a37b2cfd1cda118691d0b11d8926e502e58d2a37fc776e48ec1aac1e7bb"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-check-r1.log",
+          "bytes": 12588,
+          "sha256": "6995e46d87a790daae5df60a2ce3e9da429ecb76319b15a54d56ab992a7140bd"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-check-r1.log.exit",
+          "bytes": 3,
+          "sha256": "16dc368a89b428b2485484313ba67a3912ca03f2b2b42429174a4f8b3dc84e44"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-check-r2.log",
+          "bytes": 73302,
+          "sha256": "00e561527797d600a2587e810c73412366042185d50048675eebbc1b282f0be8"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-check-r2.log.exit",
+          "bytes": 1,
+          "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-quality-r1.clippy.log",
+          "bytes": 7741277,
+          "sha256": "ed84bbf68a4d085235078563aef6ff3545ddd7d8db3bac094b2e278ba8a7ef2e"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-quality-r1.clippy.receipt.json",
+          "bytes": 387,
+          "sha256": "48274d1f95696945bd24eec9757b53c5ec49feb0c7b1a46d66df93eecabcdf2b"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-quality-r1.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-quality-r1.fmt.receipt.json",
+          "bytes": 933,
+          "sha256": "2cff11c4eb1abd35f9e2bd1c2356fb5047293ec6d2c26ce4091ac0d0cabbe576"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-quality-r1.source.json",
+          "bytes": 605889,
+          "sha256": "8bff9bcb73d40c112f6a8dab8279f64ad67022d631324dfba2316160bfa47965"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.binaries-before.json",
+          "bytes": 202,
+          "sha256": "3e8c414308dd7d048b44ff4f0692fd17b687cc48b909f2c6532f8bb37c66cfce"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.catalog.inventory.json",
+          "bytes": 592569,
+          "sha256": "a13611b2566695335517c70df27b7aaed12c43412e94e4b048b79ef6aa000c6b"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.catalog.json",
+          "bytes": 550,
+          "sha256": "174cee93c9e45e64e2e47004e601aedf72d13b59d14beaac93018394437cf9b0"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.catalog.log",
+          "bytes": 437749,
+          "sha256": "d098edc59340719bb9031f0be551721218a6429cc4ab4c342167c5d7fc9c6240"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.runtime.json",
+          "bytes": 642,
+          "sha256": "7c3b84d1a33780fa084416eecee8c882536606f50905689759425cf3ba272675"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.runtime.log",
+          "bytes": 750164,
+          "sha256": "83f4fc59f98ba4b391f4c53a98c5fe5aae45fa970e2e796729cdb766aa3b8f8f"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.runtime.terminal-audit.json",
+          "bytes": 626,
+          "sha256": "9695b79b1ef068c41d3726c71ebaebcdf90e3087d3c66c61f842d30498e4d1c4"
+        },
+        {
+          "entry": "line-root-defer-20261108.core-unit-r1.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "fbb3ffff20dd316b5e95826a8b23ad1b7c6885a097102d126cad44174b849dfe"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.binaries-before.json",
+          "bytes": 230,
+          "sha256": "54ac17c848ff4ec858f50b70cbb1c7f88225005644c77e4d2cda0b628c14925a"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.catalog.inventory.json",
+          "bytes": 30948,
+          "sha256": "3f235d6a92e5c0facd2042e4344d6af3496172b3243f5ca6044514ab7577e01e"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.catalog.json",
+          "bytes": 728,
+          "sha256": "afd0f38b3b647654173d5ca52b714106b2d94c3a8e91aa5b6ba2baec3afa5e00"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.catalog.log",
+          "bytes": 109217,
+          "sha256": "96522d7f466be2d4f9c6aa353194f72c12e785f6f97b3db0313e62157f22bc77"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.runtime.json",
+          "bytes": 820,
+          "sha256": "fd047c47112c9dec0f8f4ae44ac7bde6ddcd606ac6eb79b555497cb6cb9805d1"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.runtime.log",
+          "bytes": 123928,
+          "sha256": "3be87ba760da991151a3bf4e1cb14b2c14267ee950edb07b4ac8841611fafca4"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.runtime.terminal-audit.json",
+          "bytes": 621,
+          "sha256": "3bb98c1537553d2d34cdd6f5717fe85099dd51806ec9fd2c47c49085428ced02"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-auth-r1.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "fd285a4f92b6325dbec5fb9a9c9a5ad6ec5e4680c5721e1fb3dafecfaf2cac4e"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-source.message.txt",
+          "bytes": 75,
+          "sha256": "a893ab0b41abc76b2dbdcb9ff380d9f9b4dda875d2f07f89f64624dcc781faa6"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-source.owned.txt",
+          "bytes": 695,
+          "sha256": "18fdc2f217d36c5ddc39e36d38f09b0b942efbf238e13c7cfb21e27603442ccc"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-source.pathspec",
+          "bytes": 695,
+          "sha256": "fa0ce21ba233e321771d83c03e8fe84f3c9ec2206626545c1adfe47ace6cbcc6"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-source.prepared.json",
+          "bytes": 3209,
+          "sha256": "583cddffd301891a5b2387d054bf449e60a701eb97d16b589ff1d9d451ed3a2b"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-source.reviewed.patch",
+          "bytes": 74279,
+          "sha256": "079f82e2e901c7cb30598fd3356a17839252b8271d0f9d46d33e41a4b55b1d5a"
+        },
+        {
+          "entry": "line-root-defer-20261108.custody-source.verified.json",
+          "bytes": 2611,
+          "sha256": "9bc380896509e368ad92f7f783554b553e490c17812bada562deed45c4efddb2"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.binaries-before.json",
+          "bytes": 477,
+          "sha256": "251a5f56276510805b993855f125a3756a2d65086c88e753f846e10574f63a9a"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.catalog.inventory.json",
+          "bytes": 38007,
+          "sha256": "1f4f25e46820d638af79c98116b0e7e760a2d6cd058e43f6ff667f78435b5e68"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.catalog.json",
+          "bytes": 617,
+          "sha256": "dc14c06543ed8b2fe700b8e5ab15003c581e7ec969da14c9e7d8989e2c1df8fa"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.catalog.log",
+          "bytes": 110888,
+          "sha256": "1c286d95573fb2d9fd77ca4519dacb736203fa9b4b365e1066e9744853ad6a25"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.runtime.json",
+          "bytes": 709,
+          "sha256": "5892706da5c0b2630f7fa6fbc1aab7b3f349387969964e227c76d9c348e39447"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.runtime.log",
+          "bytes": 131402,
+          "sha256": "bda9fa1f2dd309829819f9490f3bcba2966c96f9fe1eb331fc08d7c066b37743"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.runtime.terminal-audit.json",
+          "bytes": 622,
+          "sha256": "2a44726e7b95838a2b302ff6aebe084026a3c77ab113ed7857cc69a0848049c5"
+        },
+        {
+          "entry": "line-root-defer-20261108.final-owners.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "9a9dcbc232eeeb5c4365d2baaf3da988643efb91b54271f49365508fee03386e"
+        },
+        {
+          "entry": "line-root-defer-20261108.first.run.log",
+          "bytes": 90250,
+          "sha256": "341018a1b52979b7fa68d826abaa56886cc6d94995c8651aa617b555a9cbf0cd"
+        },
+        {
+          "entry": "line-root-defer-20261108.first.run.receipt.json",
+          "bytes": 514,
+          "sha256": "fd201c97513ae3810f57b1bddd35f69aab0ce9f967a640a70a3c16c0d22101fe"
+        },
+        {
+          "entry": "line-root-defer-20261108.first.selection.json",
+          "bytes": 20902,
+          "sha256": "e1b86d729a084d8a85244bec719307c46a948b630000b059ea1b2cf3a14e9e43"
+        },
+        {
+          "entry": "line-root-defer-20261108.first.selection.log",
+          "bytes": 87807,
+          "sha256": "7cb3152c244ad49d2d4276dc6f5437de8ea0495d5b2cc3c118d19ad543b231a6"
+        },
+        {
+          "entry": "line-root-defer-20261108.first.selection.receipt.json",
+          "bytes": 496,
+          "sha256": "8a04ad2ac90b4833fb9ea473bd67eaef8983134e8a0cd6a11e12e8e480e27743"
+        },
+        {
+          "entry": "line-root-defer-20261108.metadata-all.json",
+          "bytes": 4293339,
+          "sha256": "121ed3fb126ba5868048c8c69fb3ddaa29528ddb7f1d174b7e5da348681d8c60"
+        },
+        {
+          "entry": "line-root-defer-20261108.metadata-all.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-root-defer-20261108.metadata-all.receipt.json",
+          "bytes": 218,
+          "sha256": "3da25650a9e85e365edade8c205533785d53456aac5c5bf6be1d25da0b4fcc50"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.binaries-before.json",
+          "bytes": 477,
+          "sha256": "dfcf21d705edee1c664a32ad1846b32f6ac84cbe699468f1270dd5f1b7cdae5e"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.catalog.inventory.json",
+          "bytes": 37226,
+          "sha256": "d714e6ba4450d9254ba0ced11f2e76b9ec69e26957b6ec56c0efe281a9172cd0"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.catalog.json",
+          "bytes": 614,
+          "sha256": "d172754748bf0bf495724a95a5ab67eb7c0e099396e3f87f85023679c746a85b"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.catalog.log",
+          "bytes": 112087,
+          "sha256": "6eac7a46593840830c45875f3a10641b97362475c1e1a279a238c00f06632e81"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.runtime.json",
+          "bytes": 706,
+          "sha256": "bbd50da5c34c6aa05128b6f5c23ec5552287a95300d61deef71ebf352fa89101"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.runtime.log",
+          "bytes": 130482,
+          "sha256": "0373c828713f5546d92afe5a8b6161c34ed02b28d446a89e4c4b6e0590f9731e"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.runtime.terminal-audit.json",
+          "bytes": 619,
+          "sha256": "9d661e7ae450e6b7931997bd0a718b53b5ef4175652c9f428bcc36ca88a77bea"
+        },
+        {
+          "entry": "line-root-defer-20261108.owners-r1.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "d4e7fb53c1b75374d3571c3b67b6e43804821695cbb4bea1e6902c37e17fd04f"
+        },
+        {
+          "entry": "line-root-defer-20261108.ownership-review.json",
+          "bytes": 8218,
+          "sha256": "5e12062c3f9d7956dbab5e9ff3a0b34aa258ca441017f85add9862f7b94cf22f"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-source.message.txt",
+          "bytes": 77,
+          "sha256": "561fe260fc6649a7ee59eacc2eab7ce883d5a1aaf75f9d6adfc71482a63f5f7c"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-source.owned.txt",
+          "bytes": 77,
+          "sha256": "b99fe117369ed6af825242a52a92949b2531f8b7fcf55a7a5eac98c16db168de"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-source.pathspec",
+          "bytes": 77,
+          "sha256": "b2e05c26a69be3f3d223eba0464ef558f7c3022e1567ea439e16b1dac2a622d3"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-source.prepared.json",
+          "bytes": 1408,
+          "sha256": "3feacaf7b3bc07c8c4861f2e3b04374aca701fec6ec8b818f109dd3293552efd"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-source.reviewed.patch",
+          "bytes": 8481,
+          "sha256": "b36b6feab65ee5ecb88d710b0b8ef385f2bd52516f51ae99cfa083c389a6f9d8"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-source.verified.json",
+          "bytes": 810,
+          "sha256": "aaaa588eff88ae5e0d7ed876dc753b92c3114677554aa0256addd2c1a02dd6b9"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.binaries-before.json",
+          "bytes": 477,
+          "sha256": "49806e4db6b72cb29e35411c5d61f52b23f70b23b9fbb0eba14f23cf51573bd0"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.catalog.inventory.json",
+          "bytes": 38007,
+          "sha256": "1f4f25e46820d638af79c98116b0e7e760a2d6cd058e43f6ff667f78435b5e68"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.catalog.json",
+          "bytes": 622,
+          "sha256": "7024e81b5ca3cdf06b62148c421f2082043c06f5108427d15f4e1d3b404099f5"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.catalog.log",
+          "bytes": 112541,
+          "sha256": "cdb67d773d818bc302c589e9101c7ddca813419d98ae180e80dff2244b23b5c7"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.runtime.json",
+          "bytes": 714,
+          "sha256": "209ee1234006281b3553b77871626772395dbd4e34b57e027227e35898f797dd"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.runtime.log",
+          "bytes": 131402,
+          "sha256": "1f9d5c7b37e2a7e0bbe311359b22faf2816821adbf8a91170a366ffabf2f62d6"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.runtime.terminal-audit.json",
+          "bytes": 627,
+          "sha256": "db18e363da0a42d205db3a3fde7518e18bd3c6d62c4a1cf099fe0d4b9620c9e0"
+        },
+        {
+          "entry": "line-root-defer-20261108.prepared-transfer.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "0b2a24c80cfa2e3c8f47163e1717fd7cf1f427dd63f646d6d790fe2b06fcc0d1"
+        },
+        {
+          "entry": "line-root-defer-20261108.regression-source.message.txt",
+          "bytes": 67,
+          "sha256": "de264baaee79ded7b5bd609de74bf9d0a9966fa10007c21a1c35eb3c398eef12"
+        },
+        {
+          "entry": "line-root-defer-20261108.regression-source.other.txt",
+          "bytes": 98,
+          "sha256": "beaa45275f6c32a0719d5d9b27a16617895f89fcd631c074d37092618f0b284d"
+        },
+        {
+          "entry": "line-root-defer-20261108.regression-source.owned.txt",
+          "bytes": 66,
+          "sha256": "a08079b8dc10f2cf877aa1e758d416350226bda2b73b9f74383b0faf39f640a1"
+        },
+        {
+          "entry": "line-root-defer-20261108.regression-source.pathspec",
+          "bytes": 66,
+          "sha256": "5688552ed8f80d17630dc784942987f1ca8db1a06f7e9b1f20bce1957b47569c"
+        },
+        {
+          "entry": "line-root-defer-20261108.regression-source.prepared.json",
+          "bytes": 1641,
+          "sha256": "37c86cde27cff9bd47c3d737bee51ec06441e899765f4292b5b275f94d949770"
+        },
+        {
+          "entry": "line-root-defer-20261108.regression-source.reviewed.patch",
+          "bytes": 1816,
+          "sha256": "9051b52b7eca4ec212bb310d99da9862bb71d342c36543885970d21231c31e68"
+        },
+        {
+          "entry": "line-root-defer-20261108.regression-source.verified.json",
+          "bytes": 1043,
+          "sha256": "e8babff84802b518ca03b3df3e7b9d56d81f91925b36d2f8bdc70f91c77e50d9"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r1.preparation-refusal.json",
+          "bytes": 338,
+          "sha256": "e010281434fcd41ef99fd04e0fd64fa597e1962847d4ff3ecd83be9d5ebf9a85"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.binaries-before.json",
+          "bytes": 230,
+          "sha256": "b821a04dee789d09a1a658bb944ef0b9f7987cbe6c0eaf3c7532faf6252c38bd"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.catalog.inventory.json",
+          "bytes": 30165,
+          "sha256": "c796e68f19fbaad9c82a1ad8950bdcfa7d174a8c57aae9092fb929eb0ac72fb3"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.catalog.json",
+          "bytes": 659,
+          "sha256": "d4efcd9a9936d8a7fa890c949ae8c30c53ade59b8dceab0c358ee45952841476"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.catalog.log",
+          "bytes": 110290,
+          "sha256": "da33e9d9df605f98846b08e6646e7ad06c575f8c26633e83f963a91a80c8270a"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.runtime.json",
+          "bytes": 751,
+          "sha256": "52b5cd0032ad9bf487c2d19ab6b30b37968a26e7474a34d25674fc366c338efb"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.runtime.log",
+          "bytes": 123008,
+          "sha256": "387957afa8db6b27f07b5c081c420678cf6ad8bcf4f54ffbf684608186c04a9f"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.runtime.terminal-audit.json",
+          "bytes": 615,
+          "sha256": "225e6d18d43d60b721cb949b6c25229f8fd04f6171d1c26b2f6494a517a60d5d"
+        },
+        {
+          "entry": "line-root-defer-20261108.repair-r2.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "afb4697c7712470bf10d1449571a2325292f7bd4a68687bc62b6c1a273114440"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.check.log",
+          "bytes": 113079,
+          "sha256": "741c9214186fefae2885da2f905f62b32d9d4b137e50959def94d4847878c3d1"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.check.receipt.json",
+          "bytes": 338,
+          "sha256": "f6b1c2b690e8071d54775d5e77eca48d8e366891500cd80a038edad2f11bd807"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.clippy.log",
+          "bytes": 9171216,
+          "sha256": "997e452bd6e2c4b1e02ecd088cfccc354c5caa870eab7f5a5ab4e8f6c9cf9aa1"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "502f01cce65e9b043f9072f944c9812e55597946980578b284bad4556b6c4f71"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.fmt.receipt.json",
+          "bytes": 1007,
+          "sha256": "921980ca0ef19920750044acfcd7be9068ce66e16484cce7a5ac687902dd5488"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.source.json",
+          "bytes": 605889,
+          "sha256": "8bff9bcb73d40c112f6a8dab8279f64ad67022d631324dfba2316160bfa47965"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.structure.log",
+          "bytes": 65874,
+          "sha256": "487a81274676d57c60e90e02e3dee7fc31d52c230db9aceb513d9ff2423e127c"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r1.structure.receipt.json",
+          "bytes": 361,
+          "sha256": "88cdc00aa77597ad2389496c8e2b7edfc18552501e42e77bc9abaf1ceed05dd3"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.check.log",
+          "bytes": 113079,
+          "sha256": "18eea16685987741e056bd591569ee76e39407f778bfc92cfb4abb7dc824922c"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.check.receipt.json",
+          "bytes": 338,
+          "sha256": "af666b84d903f6b1552801bde67292f5c89925223d2b1b2c74d02120ff104564"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.clippy.log",
+          "bytes": 9170598,
+          "sha256": "d1828a0d8d90c7315ee4803928b690d25218aeb2bdd6a9a3e3bab808447edeb7"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "f84debff717641a942ec1632ed75c520ee4c77da5c4a7da7558307ef1fc53a06"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.fmt.receipt.json",
+          "bytes": 1007,
+          "sha256": "8a2e7b93955e6156c175290300dde49421ca00a27227c22d5c541a2b18857f55"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.source.json",
+          "bytes": 605889,
+          "sha256": "fd6108f151976f87ab08fddf12efcd594e239839ccc8f4fa29c13e7f6b8b3248"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.structure.log",
+          "bytes": 65959,
+          "sha256": "e41ff2f5c699fa37d3e932141ab7d6679f48911f2ec86b7e9a22adcf88078ea9"
+        },
+        {
+          "entry": "line-root-defer-20261108.workspace-quality-r2.structure.receipt.json",
+          "bytes": 508,
+          "sha256": "f0f0b330040785e344379b47a3360fefecbf0ecbe1c160b2bf56836a3c713898"
+        },
+        {
+          "entry": "record-line-root-defer-20261108.ps1",
+          "bytes": 17601,
+          "sha256": "0c99deb1dcecb876663942585b7e0da24b2a26cc3a7bc4bfb87876e2edc7a562"
+        },
+        {
+          "entry": "run-line-root-core-quality-20261108.ps1",
+          "bytes": 1754,
+          "sha256": "c0273c88574af4e4f1fbeabacbdb3d0ee612af89736ef169b817c15641393888"
+        },
+        {
+          "entry": "run-line-root-frozen-nextest-20261108.ps1",
+          "bytes": 3803,
+          "sha256": "5cbce63b02812b6192755720659bff3e7d0bf18eadf87ee97d53143589b016b8"
+        },
+        {
+          "entry": "run-line-root-workspace-quality-20261108.ps1",
+          "bytes": 2001,
+          "sha256": "320e9d722fb9007490f1d1b2ff701ad1620d9c50f1052fca265db814295ebcce"
+        },
+        {
+          "entry": "run-line-root-workspace-quality-r2-20261108.ps1",
+          "bytes": 2065,
+          "sha256": "16b3bbe9b0259b7413569246f91653370ec4153c91032ff0d5c66d0bf1adc41a"
+        },
+        {
+          "entry": "run-source-frozen-nextest.ps1",
+          "bytes": 3684,
+          "sha256": "38cd04037165043381a708293a39a3f0c6807b30fab9fa0d15d7edb227e70440"
+        },
+        {
+          "entry": "structure-report/dependency_edges.csv",
+          "bytes": 78209,
+          "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+        },
+        {
+          "entry": "structure-report/file_metrics.csv",
+          "bytes": 342422,
+          "sha256": "7c8bec4432ab3de2b85664e6bdb684b7637fe3c2d25391f1266b6282f72b79e5"
+        },
+        {
+          "entry": "structure-report/findings.md",
+          "bytes": 124015,
+          "sha256": "4b47b48d01252d1374129059c266402cd3b814200beede17ede4bb936122e241"
+        },
+        {
+          "entry": "structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+        },
+        {
+          "entry": "structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "faa5ddc30be32585bf47b6c06a3e68eef4b0d7b67083510d5e7e71f04a36f290"
+        }
+      ]
+    }
   }
 }

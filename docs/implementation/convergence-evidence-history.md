@@ -15435,3 +15435,15 @@ workspace一体の全feature catalogは2回ともOS1455／メモリ確保不足�
 旧workspace全feature catalogのOS1455失敗2回は前記録のまま保持する。個別packageのfeature差による再buildが続いたため80 target／5273 PASSで中断し、lib-only準備もfeature構成が異なるため中断した。両中断は実行済みテストの失敗や全件合格に置き換えない。独立する純粋なowner単体と全CLI checkを並行実行し、規約の資源配分例外に従って各Cargo buildを4 jobsとした。実子process引数を保存し、test threads・profile・assertion・原budget・ignored条件は維持した。後続の相補runはCargo既定jobs。CLI標準対象の全feature228 PASSと先行owner各件は補完証拠であり、今回の総数へ二重計上しない。
 
 4失敗は旧Source b6df0c825805b9ac77cad6a9760761a861007679のIDと一致した。Scrollはshared callableの意味解析、fixture011は実音声なしの必須VoiceHandle、promotionの2件はreceiverなし旧入力がtype-checkで停止する。Generic Match／Native／Line-init／初期入力の既受入を戻す根拠とはしない。旧7962件の数値・SHAを保持した上で、現状の4 ownerのみの進捗表示とCLI710件表示を今回の終端へ置換した。初回監査のordered dictionary key参照ミスも残し、修正後の重複0を確認した。[全選択・feature分割・実binary・失敗・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは218 entries、SHA-256 82ff78cfd137b7b57b9691d5c1247575d1e8f6bebffdb515f28b3f2f87f6910e。
+
+## 2026-11-08 — 初期所有入力からLine root deferへの移動
+
+再現テスト Source **56a3b280c9047861960c72071e0c864b8d7fdc06** の初回は0 PASS／2 FAIL／117 SKIP。Nativeはtick15の登録でactivation内にhandleがなく、保存AWBCは所有slot不一致で停止した。両テストは最初の通常終了で失敗し、取消しは未実行だった。受入済みの初期Actor再返却／Copy再利用とは別の追加条件であり、Generic MatchやLine/init等を戻す根拠にはしない。
+
+所有権 Source **9bbe68a9a97d12f9126f668460f0f010e5c5563a** は、実root packetのexecution／activation／登録ID／ordinalをLineDeferCaptureとして識別し、元のPublishedHandles台帳で捕捉・子移動・dropを検証する。保存は実packet／frameとの一致を検査する。全contract markerは1のまま、owned-slot binary tag22の往復と未知tag23拒否をCore単体内で確認した。回帰・契約 Source **a6196f5cd57c9a481b740128280e9b986a89a316** は、Always／completed／cancelled×通常終了／取消し×Native／保存AWBCの12実行条件と、6座標・packet欠落／重複の8改変拒否を検証する。全拒否後に元snapshotが一致し、元実行が完走した。先行2 PASS／117 SKIP、149 PASS、3 PASS／119 SKIP、152 PASSの各runは別入力として残す。
+
+最終 Source **5ba67c20a9aacafe3d1dd25939be42c92cddf52a** は、Nativeの既存元pattern検査で得る受取localを子構築proofへ保持し、捕捉packetを取り出す前に元発行元台帳の更新を集約検査する。後段のfallible照合を前倒しし、公開した前の通過を失敗へ読み替えない。最終Compiler2 targetは **152 PASS／0 SKIP**。元の1-op／512-step、2 reveal、取得・解放各1回、log順を維持した。Core unit **2327 PASS** は9bbe Sourceの先行結果であり、新Source全Core結果とはしない。最終workspace全target／全feature check／Clippy、構造gate、16 path fmtは終了0、3416入力drift0。Core53／CLIの新統合終端はまだなく、前Source f267dc30d20a25092c64d08bb42b596b14ad3400の8030件と4失敗を保持する。
+
+構造監査の実byte／物理LOC／embedded test LOC／増分とfan-in/outを原本へ保持する。Coreの大きなengine／dialogueとAWBC product／line／snapshotは、実行・所有取引または保持graph検査の既存境界を担当する。共通handle／activationは唯一のresource台帳・revisionを、deferは唯一の捕捉packetを、slot／binaryは閉じたidentityとcodecを所有する。子準備のtoken集合を元pattern由来の受取先proofへ置換し、live値のcopy、永続side table、Source再構築、fallbackやI/O依存を足さない。Compiler ordinary_deferは同じ実Source・host・cold restore fixtureを用いるintegration ownerであり、LOCだけを理由とするAPI拡大や分割は行わない。
+
+途中のE0423／E0282と、古い検証wrapperが削除済みviewport.rsを参照したCargo開始前の拒否も原本へ保持した。raw wrapperのhistorical held=14 labelを現状WIP数に使わず、既存12 tracked／6 actual untrackedを別照合する。現状一覧の初期入力行と古いgate説明を今回の具体的な通過で置換し、重複した旧拒否の説明を履歴へ移した。[全入力・失敗・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは124 entries、SHA-256 80e8477501c64a03dce3e57c9147564b68095dd04ea508499cac3c6b6467766d。
