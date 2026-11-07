@@ -15217,3 +15217,20 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 合流対象の子を持つ関数内 goto は、子のスコープ開始・log・return の3操作の間、元の命令位置に留まった。待機のための余分な操作予算を課さず、各段階で内部復元した。初回の対象7件はすべて通過し、2,298件をスキップした。合流待ちと新しい Flow レジストリの確認を加えた対象8件もすべて通過した。最終の Core／RuntimePlan は2,440件通過、1件スキップ。構造監査のブロッキング違反は0件だった。[実測・公開差分・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 現状一覧の「goto が残る」を命令からの Native 実行範囲について更新した。元の命令位置を保持していない旧 Choice の target からの移譲、通常 Flow のソース変換と AWBC は別の受入として残る。既存の明示スコープと早期 return の結果は履歴に保持した。[現状一覧](current-status.md#項目別の状態)。
 - Compiler の対象414件、Runtime Driver／Runtime Host／Save の260件が通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0だった。Cargo の全機能の依存グラフでは Core を含む53パッケージを特定した。この区切りの nextest は対象の6クレートで実行し、全53パッケージのテスト行列は未実行。固定した3,642入力の差分は0件。検証入力に既存の未コミット12パスを含め、公開した10ファイルの Git blob と検証差分の一致を確認した。[コマンド・実測・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 Native Choice selection through scoped defer
+
+- Source **c8a494099784d9c7044b6f8059110738a466a91b** を既存 main へ通常 commit/push し、parent **4cd7fc72e868b4a5dcf924e3fa90824f6ea739f9**、公開 tree／15 blob／差分の一致を照合した。ユーザーの途中 commit 方針に従い、ビルドを通過した実装を先行公開し、広域実測の確定まで継続した。全 clean は cargo clean で56,885ファイル／67.8 GiBを削除して終了0。
+- ChoiceState は元の immutable Plan lease・命令位置・選択番号を保持する。表示用の観測行を Native の実行権限へ戻さない。元の操作または選択肢を表す型付き Goto origin を、既存の lexical exit が保持する。
+- 新しい Core 3検査と Source Choice の Compiler 検査が PASS。関数・親 Flow の cleanup、失敗時の goto 破棄、target なしの継続、合流待ちの入力保持、ステップごとの内部復元、選択番号の改変と観測用 Choice の復元拒否を対象とした。Source 側は公開 step API で実行し、内部復元は Core 内で検証した。
+- 訂正理由：旧現状欄の「旧 Choice」は、現行 final_flow.rs が RuntimeFlowOpSeed::Choice を生成していることと一致しなかった。この記述を削除・訂正し、今回検証した Native の target 移譲を完了側へ反映した。既に受入済みの Source Choice、Generic Match、他の完了機能を未完了へ戻していない。
+- 最終逆依存：Summary [1014.342s] 7209 tests run: 7209 passed (10 slow), 18 skipped。CLI unit/bin：Summary [  33.642s] 196 tests run: 196 passed, 0 skipped。CLI 規定6 integration：Summary [   8.830s] 29 tests run: 29 passed, 0 skipped。workspace check／Clippy は警告ありで終了0、変更Rustの fmt は終了0、構造監査 blocking 0。固定した3,644入力の差分は0件。
+- 開発途中の metadata Serialize 仮定・テスト import の誤り、Compiler 外から非公開の内部復元 API を呼んだ失敗を修正した。広域列挙の OS 1455／終了101も残す。初回 owner の2,443 PASS／1 skipped は最後の停止判定修正中の実行であり、最終ソースの実測へ合算しない。Cargo jobs・Windows paging設定は変更していない。
+- 構造上の所有者は Core の選択状態185 production LOC と、既存 defer fixture に属する選択・cleanup 境界の315 test LOC。元 Plan の実行権限と、他 executor の観測行を明確に分ける責務であり、依存追加・公開範囲の試験都合での拡大はない。
+- 既存12 tracked WIP の binary diff SHA256 c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c と6 actual untrackedを保持した。public Native save、通常 Flow source defer、AWBC scoped defer等の現状は current-status.md の該当行に置く。[実測・公開差分・各失敗原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+置換した旧検証欄は当時の入力・実測の履歴であり、現在形や残作業の authority には使わない：
+
+| 共有契約／推移的逆依存matrix | **最新Presentation／CLIの47逆依存matrixは7169実行／7162 PASS／7 FAIL** | Source 3bd77a9e200cb882f6dd516e3644fc42d38111cd、Summary [ 849.473s] 7169 tests run: 7162 passed (40 slow), 7 failed, 49 skipped。CLI以外6462件は全PASS。47選択のうち44 packageを実行し、3 packageはhost buildのみ。4122入力／case／実行ファイルdrift0。Generic Match受入151 IDも151／151 PASS・欠落0として厳密照合した。以前の全30＋SemaやRenderer実6の実測は履歴へ保持する。[実graph・全実測・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |
+| CLI全target照合 | **最新712件は705 PASS／7 FAIL** | Source 6b72d7ca42beb3661a7025598cf74a341d61fc21。前回の全711件との失敗ID比較は、新規0件・解消0件。過去の件数と各失敗は元入力の履歴に保持する。[実測・失敗ID・原本](acceptance-evidence/task-proof-trust-policy.json)。 |
+| workspace check／Clippy・fmt・構造gate | **全ワークスペース check／Clippy・構造gateは終了0** | Source 6b72d7ca42beb3661a7025598cf74a341d61fc21。4,127入力、all-target／all-feature／lockedでcheck・Clippyを実行し、変更Rustのformatも検査した。Clippyの警告と構造監査の結果は原本に保持する。verifierのdoctest対象は0件。[実測・入力・原本](acceptance-evidence/task-proof-trust-policy.json)。過去のGPU 7件とwasm32 render-web／player-web library checkは[当該入力の記録](acceptance-evidence/task-rich-text-property-identity.json)へ保持する。 |
