@@ -207,9 +207,11 @@ runtime dry run.
 `arcw plan <file.arcw> [--json]` exposes the lowered Sans I/O runtime plan. It
 runs the same parse, HIR, typecheck, verifier, and line-plan lowering path as
 `arcw check`, then prints a compact line/task summary. JSON `lines` contains
-each plan's root node tree and counts for child tasks, effects, captures, nodes,
-cancel rules, and cleanup actions. Task nodes include trigger, join/cancel
-policy, and the nested scope tree.
+each plan's root node tree and counts for child tasks, effects, initial inputs,
+shared inputs, nodes, cancel rules, and cleanup actions. `initial_inputs` counts
+the selected Copy/Move inputs to the activation frame; `shared_inputs` counts
+the Copy inputs retained for work after reveal. Task nodes include trigger,
+join/cancel policy, and the nested scope tree.
 
 `dialogue_content_catalog.records` contains static, source-owned line records: line and
 text-key identities, template identity and digest, checked character presentation

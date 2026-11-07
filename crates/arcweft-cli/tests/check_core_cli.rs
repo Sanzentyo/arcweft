@@ -92,5 +92,34 @@ fn check_keeps_explicit_id_lint_on_the_independent_lint_path() {
 #[path = "check_core_cli/runtime_exit.rs"]
 mod runtime_exit;
 
+#[test]
+fn plan_reports_initial_line_inputs_separately_from_shared_work_inputs() {
+    let path = temp_arcw(
+        "line-input-summary",
+        r#"
+pub character alice {}
+flow run() -> Unit {
+    let initial = "initial"
+    let shared = "shared"
+    alice()[Report[p]] with {
+        let _ = initial
+        cancel on input(.SkipLine) { let _ = shared; out () }
+    }
+}
+entry cli @entry.run { goto @flow.run }
+"#,
+    );
+    let output = CommandOutput::run([OsStr::new("plan"), path.as_os_str(), OsStr::new("--json")])
+        .expect("run the actual plan report");
+    output.assert_success();
+    let report: serde_json::Value = serde_json::from_str(&output.stdout()).unwrap();
+    let lines = report["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 1, "{report}");
+    assert_eq!(lines[0]["initial_inputs"], 2, "{report}");
+    assert_eq!(lines[0]["shared_inputs"], 1, "{report}");
+    assert!(lines[0].get("captures").is_none(), "{report}");
+    fs::remove_file(path).expect("remove the temporary source");
+}
+
 #[path = "check_core_cli/runtime_dialogue.rs"]
 mod runtime_dialogue;
