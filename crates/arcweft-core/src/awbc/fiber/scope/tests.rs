@@ -716,9 +716,9 @@ fn selected_input_packet_checks_a_later_copy_before_any_move_and_preserves_copy_
     )
     .unwrap();
     let first = crate::tests::reusable_need("need.initial-first");
-    let first_correlation = first.correlation().clone();
+    let first_correlation = first.correlation();
     let second = crate::tests::reusable_need("need.initial-second");
-    let second_correlation = second.correlation().clone();
+    let second_correlation = second.correlation();
     frame
         .set_register(AwbcRegisterId(0), RuntimeValue::NeedHandle(first))
         .unwrap();
@@ -737,7 +737,7 @@ fn selected_input_packet_checks_a_later_copy_before_any_move_and_preserves_copy_
         (AwbcRegisterId(1), &second_correlation),
     ] {
         assert!(
-            matches!(frame.register(register), Ok(RuntimeValue::NeedHandle(handle)) if handle.correlation() == correlation)
+            matches!(frame.register(register), Ok(RuntimeValue::NeedHandle(handle)) if handle.correlation() == *correlation)
         );
     }
     program.frame_layouts[0].slots[1].ty = AwbcTypeId(0);
@@ -755,7 +755,7 @@ fn selected_input_packet_checks_a_later_copy_before_any_move_and_preserves_copy_
         .unwrap();
     let packet = prepared.commit(&mut frame);
     assert!(
-        matches!(&packet[0], RuntimeValue::NeedHandle(handle) if handle.correlation() == &first_correlation)
+        matches!(&packet[0], RuntimeValue::NeedHandle(handle) if handle.correlation() == first_correlation)
     );
     assert_eq!(packet[1], RuntimeValue::String("retained".into()));
     assert!(frame.registers[0].is_vacant());

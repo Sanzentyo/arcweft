@@ -1639,7 +1639,7 @@ impl Engine {
         let received = self
             .dialogue_activations
             .inspect_received_fiber_reconciliation(
-                self.fiber.execution,
+                self.published_receiver_execution(),
                 before,
                 &after,
                 &drops,
@@ -1812,7 +1812,7 @@ impl Engine {
         let received = self
             .dialogue_activations
             .inspect_received_fiber_reconciliation(
-                self.fiber.execution,
+                self.published_receiver_execution(),
                 &received,
                 &Default::default(),
                 &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
@@ -4351,7 +4351,7 @@ mod tests {
         .expect("site");
         let mut ledger = RuntimeLineHandleLedger::default();
         let owner = RuntimeHandleOwnerSlot::ActivationLocal(
-            engine.owned_slot(source).expect("local owner"),
+            engine.activation_slot(&id, source).expect("local owner"),
         );
         let actor = ledger
             .issue(
@@ -4410,7 +4410,9 @@ mod tests {
         assert_eq!(
             line.ledger().lease(&token).expect("lease").owner(),
             &RuntimeHandleOwnerSlot::ActivationLocal(
-                engine.owned_slot(destination).expect("destination owner"),
+                engine
+                    .activation_slot(&id, destination)
+                    .expect("destination owner"),
             )
         );
 
@@ -4421,7 +4423,9 @@ mod tests {
                 &id,
                 &site,
                 RuntimeHandleResource::StageActor(RuntimeStageActorLease::new(character)),
-                RuntimeHandleOwnerSlot::ActivationLocal(engine.owned_slot(incoming_local).unwrap()),
+                RuntimeHandleOwnerSlot::ActivationLocal(
+                    engine.activation_slot(&id, incoming_local).unwrap(),
+                ),
             )
             .unwrap();
         let incoming_token =
@@ -4469,7 +4473,9 @@ mod tests {
         );
         assert_eq!(
             line.ledger().lease(&incoming_token).unwrap().owner(),
-            &RuntimeHandleOwnerSlot::ActivationLocal(engine.owned_slot(destination).unwrap())
+            &RuntimeHandleOwnerSlot::ActivationLocal(
+                engine.activation_slot(&id, destination).unwrap()
+            )
         );
         let commands = line.take_commit_receipt().into_commands();
         let [

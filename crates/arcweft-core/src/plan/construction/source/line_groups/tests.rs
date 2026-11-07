@@ -276,7 +276,7 @@ fn group_policy_offset(plan: &RuntimePlan) -> usize {
         .iter()
         .map(|effect| 4 + effect.as_str().len())
         .sum::<usize>();
-    DOMAIN.len() + 5 + 32 + 4 + effect_bytes + 4
+    DOMAIN.len() + 5 + 32 + 4 + effect_bytes + 4 + group.initial_inputs().len() * 5 + 4
 }
 
 #[test]
@@ -372,7 +372,12 @@ fn line_sources_admit_cumulative_quota_edges_and_reject_every_truncated_frame() 
     }
     let effect_count = DOMAIN.len() + 5 + 32;
     let first_effect = effect_count + 4;
-    let end = group_policy_offset(&plan) - 4;
+    let end = first_effect
+        + plan.line_task_groups()[0]
+            .effects()
+            .iter()
+            .map(|effect| 4 + effect.as_str().len())
+            .sum::<usize>();
     let mut duplicate = encoded.bytes().to_vec();
     duplicate[effect_count..first_effect].copy_from_slice(&2u32.to_le_bytes());
     duplicate.splice(end..end, encoded.bytes()[first_effect..end].iter().copied());
@@ -536,4 +541,187 @@ fn line_sources_share_actual_detach_policy_rejection_before_flow_values() {
         );
         assert!(bank.status().is_err());
     }
+}
+
+fn initial_input_seed(
+    mode: crate::value::RuntimeLocalReadMode,
+) -> (
+    RuntimePlanBuilder,
+    RuntimeDialogueContentPlanSeedId,
+    RuntimeLineTaskGroupSeed,
+) {
+    let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
+    let boolean = crate::pattern::RuntimeSemanticTypeId::from_bytes([2; 32]);
+    let admitted = builder
+        .admit_type_batch(
+            [],
+            [RuntimeLocalDeclarationSeed::new(
+                RuntimeLocalDeclarationSource::Binding {
+                    identity: [0xec; 32],
+                    declaration: RuntimeLocalBindingDeclaration::new(
+                        RuntimeLocalBindingKind::PatternBinding,
+                        false,
+                        RuntimeLocalBindingStorage::Derived,
+                    ),
+                },
+                boolean,
+            )],
+        )
+        .unwrap();
+    let local = admitted.local_ids()[0].clone();
+    builder
+        .push_function_site_seed(
+            RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xee; 32]),
+            RuntimeFunctionSemanticRole::Ordinary,
+            [RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Transferred(
+                    RuntimeFunctionCaptureMode::Copy,
+                ),
+                origin: RuntimeFunctionInputOrigin::Binding([0xec; 32]),
+                source: RuntimeFunctionInputSource::Capture { position: 0 },
+                input_local: local.clone(),
+                pattern: RuntimePatternSeed::new(
+                    boolean,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: local.clone(),
+                    },
+                ),
+                ownership: RuntimeValueOwnershipRequirement::Owned,
+                unrestricted_bindings: Box::new([]),
+            }],
+            RuntimeExprSeed::new(
+                boolean,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local.clone(),
+                    crate::value::RuntimeLocalReadMode::Copy,
+                )),
+            ),
+        )
+        .unwrap();
+    let read = || RuntimeFlowOpSeed::Let {
+        pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Discard),
+        expr: RuntimeExprSeed::new(
+            boolean,
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                local.clone(),
+                crate::value::RuntimeLocalReadMode::Copy,
+            )),
+        ),
+    };
+    let seed = RuntimeLineTaskGroupSeed {
+        definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xed; 32]),
+        effects: crate::plan::RuntimeEffectSet::empty(),
+        initial_inputs: Box::new([RuntimeLocalReadSeed::new(local.clone(), mode)]),
+        activation_ops: vec![read()],
+        result_type: crate::pattern::RuntimeSemanticTypeId::from_bytes([1; 32]),
+        handle_sites: Box::new([]),
+        root: RuntimeLineTaskNodeSeed::Action(vec![read()]),
+        cancel_rules: Box::new([]),
+        cleanup_completed: vec![],
+        cleanup_cancelled: vec![],
+        cleanup_failed: vec![],
+        cleanup_policy: LineCleanupPolicy::default(),
+    };
+    (builder, content, seed)
+}
+
+#[test]
+fn initial_input_source_preserves_selected_transfers_and_authenticates_packet_metadata() {
+    use crate::value::RuntimeLocalReadMode::{Copy, Move};
+    let mut encoded_modes = Vec::new();
+    let mut digests = Vec::new();
+    for mode in [Copy, Move] {
+        let (mut builder, content, seed) = initial_input_seed(mode);
+        let group = builder.push_line_task_group_seed(seed).unwrap();
+        builder
+            .attach_line_task_group_seed(&content, &group)
+            .unwrap();
+        let plan = builder.finish().unwrap();
+        let bounds = limits(&plan);
+        let encoded = plan
+            .encode_line_group_sources(bounds, &resources(), &mut meter())
+            .unwrap();
+        let restored = restore(&plan, encoded.bytes(), bounds);
+        assert_eq!(
+            restored.line_task_groups()[0].initial_inputs()[0].mode(),
+            mode
+        );
+        assert_eq!(restored.line_task_groups()[0].shared_inputs().len(), 1);
+        assert_eq!(restored.line_task_groups(), plan.line_task_groups());
+        assert_eq!(
+            restored
+                .encode_line_group_sources(bounds, &resources(), &mut meter())
+                .unwrap()
+                .bytes(),
+            encoded.bytes()
+        );
+        digests.push(plan.executable_semantic_digest());
+        let count = DOMAIN.len() + 5 + 32 + 4;
+        let input = count + 4;
+        let mut bad_mode = encoded.bytes().to_vec();
+        bad_mode[input + 4] = 2;
+        assert!(
+            PreparedRuntimeLineGroupSources::preflight(
+                &bad_mode,
+                bounds,
+                &resources(),
+                &mut meter()
+            )
+            .is_err()
+        );
+        let mut duplicate = encoded.bytes().to_vec();
+        duplicate[count..input].copy_from_slice(&2u32.to_le_bytes());
+        duplicate.splice(
+            input + 5..input + 5,
+            encoded.bytes()[input..input + 5].iter().copied(),
+        );
+        assert!(matches!(
+            PreparedRuntimeLineGroupSources::preflight(
+                &duplicate,
+                bounds,
+                &resources(),
+                &mut meter()
+            ),
+            Err(Error::Handle {
+                kind: "initial input"
+            })
+        ));
+        encoded_modes.push(encoded.bytes().to_vec());
+    }
+    assert_ne!(encoded_modes[0], encoded_modes[1]);
+    assert_ne!(
+        digests[0], digests[1],
+        "selected transfer participates in executable identity"
+    );
+}
+
+#[test]
+fn line_factory_rejects_missing_duplicate_and_foreign_initial_inputs() {
+    let (mut builder, _, seed) = initial_input_seed(crate::value::RuntimeLocalReadMode::Move);
+    let mut missing = seed.clone();
+    missing.initial_inputs = Box::new([]);
+    assert!(matches!(
+        builder.push_line_task_group_seed(missing),
+        Err(RuntimePlanBuildError::InvalidLineInitialInputs)
+    ));
+    assert!(
+        builder.finish().is_err(),
+        "a rejected construction poisons its builder"
+    );
+    let (mut builder, _, seed) = initial_input_seed(crate::value::RuntimeLocalReadMode::Move);
+    let mut duplicate = seed.clone();
+    duplicate.initial_inputs = vec![seed.initial_inputs[0].clone(); 2].into_boxed_slice();
+    assert!(matches!(
+        builder.push_line_task_group_seed(duplicate),
+        Err(RuntimePlanBuildError::InvalidLineInitialInputs)
+    ));
+    let (mut builder, _, seed) = initial_input_seed(crate::value::RuntimeLocalReadMode::Move);
+    let (_, _, foreign) = initial_input_seed(crate::value::RuntimeLocalReadMode::Move);
+    let mut wrong_owner = seed.clone();
+    wrong_owner.initial_inputs = foreign.initial_inputs;
+    assert!(matches!(
+        builder.push_line_task_group_seed(wrong_owner),
+        Err(RuntimePlanBuildError::ForeignLocalSeed)
+    ));
 }

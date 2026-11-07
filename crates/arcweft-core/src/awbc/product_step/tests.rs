@@ -852,9 +852,28 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
         64,
     )
     .expect("fixture Product executor starts");
-    begin_fixture_dialogue(
+    let activation = begin_fixture_dialogue(
         &mut executor,
         vec![RuntimeValue::Tuple(vec![fixture_bundle_image_handle()])],
+    );
+    let ProductDialoguePhase::Activating { fiber, .. } = &executor
+        .dialogues
+        .active_frame_for(&activation)
+        .unwrap()
+        .phase
+    else {
+        panic!("the admitted input belongs to its activation frame")
+    };
+    let receiver = fiber.active_frame().unwrap();
+    assert_eq!(
+        receiver.register(AwbcRegisterId(0)).unwrap(),
+        executor
+            .fiber
+            .active_frame()
+            .unwrap()
+            .register(AwbcRegisterId(2))
+            .unwrap(),
+        "Copy keeps the actual caller input and initializes the actual receiving frame"
     );
     let mut roles = Vec::new();
 
@@ -869,8 +888,8 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
 
     assert_eq!(
         roles,
-        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle],
-        "the actual activation input is visited once; no duplicate capture payload is retained"
+        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle; 2],
+        "one value belongs to the caller and one to the receiving frame"
     );
     let inert = executor.inert_rollback_image().unwrap();
     let mut inert_roles = Vec::new();
