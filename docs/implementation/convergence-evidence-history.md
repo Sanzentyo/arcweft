@@ -15306,3 +15306,13 @@ Core の53逆依存と、その外にあった Syntax／HIR の排他的補完�
 CLI unit/bin 196件と規定6 integration 29件、Core doctest 80件は全通過。全 target／全 feature の workspace check／Clippy、変更13 Rust path の fmt、構造ゲートは終了0、blocking violation 0。警告とサイズ review trigger は原本へ保持した。
 既存 WIP を含む3,648入力と Cargo 100入力は drift 0。元の tracked 12 path と untracked 6 file を保持した。Generic Match と以前の Native 受入境界を未完了へ戻さず、通常 defer の残る機能条件は current-status.md の一行で追跡する。
 [初回失敗・訂正理由・全コマンド・公開 SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Lazy View value grammar and the joined scalar-call contour
+
+Production **919a3a139e248c1bcbe381d337e46aee2f375bb6** と fixture **dedca415fdaac2836eb63cdb122e92e0d322d0ab** を既存 main へ通常 commit/push し、各 parent／tree／3+1 blob／完全差分を照合した。
+前 Source `14465d699b7606eb70bc591ae9994de3aad22856` の追加検査は1件失敗。View 内 seq が ViewBodyApplication を0件しか持たず、期待1件を失っていた。lazy body は cleanup の実行文脈だけを解除し、元の View 値文脈を保持する所有型の規則へ修正した。Syntax 全748件、cleanup を含む対象4件、workspace 全 target／全 feature の check／Clippy と構造ゲートは通過した。
+Production Source の Syntax 逆依存25パッケージを、CLIを除外せず workspace 既定 feature 構成で実行した。5,981件中5,973 PASS／8 FAIL／32 SKIP。非CLIは5,271件全通過、CLIは710件中702 PASS／8 FAIL。旧7件のIDは同じで、追加1件は scalar の joined-source-work fixture だった。
+追加失敗では、元 Flow の child が goto 前に正しく join され、scalar 呼出し時には生存していなかった。元・移設後の入力を OneOp／Drain と VM／AOT の8通りで比較し、child を呼出し元 Flow 内へ移した。max_ops64、128／8 step、子の本文、結果、AOT prefix、JIT0／AOT0／VM1／pure1 を保持し、呼出し時の child 生存も追加検査した。修正した1件は同じ workspace 構成で PASS、残り493件は filter により未実行。CLI all-target／all-feature Clippy と fmt は終了0。広域の8 FAILを、全体再実行した7 FAILへ書き換えない。
+旧一覧の「全 check 712件」は、一次記録の scope に従い「旧 Source の独立した全 feature CLI 全 target partition、705 PASS／7 FAIL」へ訂正する。今回の workspace 既定 CLI 710件（check471／lib196／他43）とは区別する。旧 Source・件数・7失敗IDは保持した。
+最終3,648入力、元の tracked 12 path と untracked 6 file を保持。View の既受入境界と Generic Match を未完了へ戻さず、この実測で確認した構文文脈の退行と fixture の条件不足だけを修復した。
+[失敗・訂正理由・8比較・実測・全公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

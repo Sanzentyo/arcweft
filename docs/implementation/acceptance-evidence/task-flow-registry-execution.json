@@ -26653,5 +26653,865 @@
         }
       ]
     }
+  },
+"lazyViewGrammarAndScalarContour": {
+  "version": 1,
+  "recordedAt": "2026-11-07T09:11:21.363751Z",
+  "production": {
+    "version": 1,
+    "commit": "919a3a139e248c1bcbe381d337e46aee2f375bb6",
+    "parent": "14465d699b7606eb70bc591ae9994de3aad22856",
+    "tree": "a73b9d5f62b2f44089cabd6d0d3efc1bff3d71a4",
+    "remote": "919a3a139e248c1bcbe381d337e46aee2f375bb6",
+    "paths": [
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/cursor.rs",
+        "blob": "52016a36957a86f7564cefb41f2af90b33c9a5b9"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/expression.rs",
+        "blob": "28b656b6b70d3d7fbf9d77ce713a7f365665e1a3"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/view_grammar_tests.rs",
+        "blob": "4378e065aa07e94533ea8fffb6c62e5246fc6b15"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "fa885104fc53e7c32dae02006b142e1c6babe3569e3ede20f6565c6b24c6d0e5",
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-07T08:39:54.3236363Z"
+  },
+  "fixture": {
+    "version": 1,
+    "commit": "dedca415fdaac2836eb63cdb122e92e0d322d0ab",
+    "parent": "919a3a139e248c1bcbe381d337e46aee2f375bb6",
+    "tree": "3ca032c7d0c340c4ec990f0cc0d06d6e558e87ad",
+    "remote": "dedca415fdaac2836eb63cdb122e92e0d322d0ab",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check/toolchain_jit.rs",
+        "blob": "5fa08e383fd7f1b7f1b3eea5b7dbf8c580dabdbe"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "00e9fc97c4e979b309a182869093ba4055e7272f7ff9e3e2a89480319b2381be",
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-07T09:07:32.2855113Z"
+  },
+  "parser": {
+    "reproduction": {
+      "passed": 0,
+      "failed": 1,
+      "skipped": 747,
+      "finding": "A seq inside View parsed cleanly but published zero ViewBodyApplication nodes instead of one. The preceding defer patch reset the existing ViewValue context along with the new RuntimeValue context.",
+      "log": "lazy-view-grammar-20261107.reproduction.log"
+    },
+    "owner": {
+      "receipt": {
+        "version": 1,
+        "command": "cargo nextest run --locked -p arcweft-lang-syntax --lib --no-tests fail --no-fail-fast",
+        "exitCode": 0,
+        "endedAt": "2026-11-07T08:35:42.5968583Z"
+      },
+      "failed": 0,
+      "skipped": 0,
+      "passed": 748
+    },
+    "repair": "ExpressionContext::lazy_body drops runtime statement grammar and preserves ordinary/View value grammar. No second parser or semantic fallback was added.",
+    "reproductionSource": "14465d699b7606eb70bc591ae9994de3aad22856",
+    "focused": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 744,
+      "log": "lazy-view-grammar-20261107.fixed.log"
+    },
+    "finalRegression": "Seq/stream preserve two immediate child/sibling View applications, one ordinary record in the following function, no closure, and lossless source. Existing deferred-wait grammar cases remain unchanged."
+  },
+  "graph": {
+    "features": "Windows workspace default composition, including all normal CLI library/integration targets; no CLI exclusion.",
+    "cargoInputs": 100,
+    "reusedMetadata": "function-scope-20261107.metadata-all.json in task-ordinary-flow-defer-wait.raw.zip",
+    "packages": [
+      {
+        "name": "arcweft-adapter-sema",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-mcp",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-mcp-client",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-repl",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-runner",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+      },
+      {
+        "name": "arcweft-cli",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+      },
+      {
+        "name": "arcweft-compiler",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+      },
+      {
+        "name": "arcweft-lang-hir",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-hir#0.1.0"
+      },
+      {
+        "name": "arcweft-lang-sema",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+      },
+      {
+        "name": "arcweft-lang-syntax",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-syntax#0.1.0"
+      },
+      {
+        "name": "arcweft-lsp",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+      },
+      {
+        "name": "arcweft-player-native",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+      },
+      {
+        "name": "arcweft-player-scene",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+      },
+      {
+        "name": "arcweft-player-web",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+      },
+      {
+        "name": "arcweft-project",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+      },
+      {
+        "name": "arcweft-project-loader",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-driver",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-host",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-plan",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+      },
+      {
+        "name": "arcweft-test",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+      },
+      {
+        "name": "arcweft-tooling",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+      },
+      {
+        "name": "arcweft-verify",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+      },
+      {
+        "name": "arcweft-verify-lsp",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+      },
+      {
+        "name": "arcweft-verify-oxiz",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+      },
+      {
+        "name": "arcweft-verify-z3",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+      }
+    ],
+    "cargoDrift": 0,
+    "resolvedPackages": 25
+  },
+  "matrix": {
+    "cliFailed": 8,
+    "failureSet": [
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "scalar_live_budget_owner_tests::pending_joined_source_work_keeps_the_original_scalar_return_continuation"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge"
+      }
+    ],
+    "cliTargets": [
+      {
+        "binary": "arcw_fixtures_check_run",
+        "selected": 8
+      },
+      {
+        "binary": "arcweft_cli",
+        "selected": 196
+      },
+      {
+        "binary": "bracket_numeric_batch",
+        "selected": 5
+      },
+      {
+        "binary": "check",
+        "selected": 471
+      },
+      {
+        "binary": "check_core_cli",
+        "selected": 10
+      },
+      {
+        "binary": "environment_callable_tensor",
+        "selected": 1
+      },
+      {
+        "binary": "native_host_contracts",
+        "selected": 8
+      },
+      {
+        "binary": "native_style_parity_sample",
+        "selected": 1
+      },
+      {
+        "binary": "release_trust_json",
+        "selected": 5
+      },
+      {
+        "binary": "runtime_native_options",
+        "selected": 3
+      },
+      {
+        "binary": "seq04_8_4_persistent_cache_build_cli_goldens",
+        "selected": 2
+      }
+    ],
+    "explanation": "This failed run is retained as executed at production Source 919a3a139e248c1bcbe381d337e46aee2f375bb6. The subsequent single-case pass is not relabeled as a full rerun or added to its passed count.",
+    "cliPassed": 702,
+    "skipped": 32,
+    "passed": 5973,
+    "failed": 8,
+    "receipt": {
+      "version": 1,
+      "sourceCommit": "919a3a139e248c1bcbe381d337e46aee2f375bb6",
+      "filter": "rdeps(=arcweft-lang-syntax)",
+      "listArguments": [
+        "nextest",
+        "list",
+        "--locked",
+        "--workspace",
+        "--lib",
+        "--tests",
+        "-E",
+        "rdeps(=arcweft-lang-syntax)",
+        "--message-format",
+        "json"
+      ],
+      "arguments": [
+        "nextest",
+        "run",
+        "--locked",
+        "--workspace",
+        "--lib",
+        "--tests",
+        "-E",
+        "rdeps(=arcweft-lang-syntax)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ],
+      "listExitCode": 0,
+      "filterMatchedTests": 5981,
+      "exitCode": 100,
+      "sourceInputCount": 3648,
+      "sourceDrift": 0,
+      "summary": [
+        "     Summary [ 869.050s] 5981 tests run: 5973 passed (37 slow), 8 failed, 32 skipped"
+      ],
+      "startedAt": "2026-11-07T08:39:55.5551485Z",
+      "endedAt": "2026-11-07T09:02:15.0874849Z"
+    },
+    "nonCliPassed": 5271,
+    "executed": 5981,
+    "cliSelected": 710
+  },
+  "scalar": {
+    "repair": "Move the unchanged child body into the calling Flow linear and retain the root linear prefix. Add a OneOp assertion that the scalar call itself still has a child. Preserve max_ops64, steps128/8, child body, returned18/done, AOT fast-path activity, JIT0/AOT0/VM1/pure1 expectations.",
+    "probes": [
+      {
+        "variant": "original",
+        "executor": "bytecode-vm",
+        "mode": "one-op",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 0,
+            "jit": 0,
+            "vm": 1,
+            "pure": 1
+          }
+        ],
+        "aotFast": 0
+      },
+      {
+        "variant": "original",
+        "executor": "bytecode-vm",
+        "mode": "drain",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 0,
+            "jit": 1,
+            "vm": 0,
+            "pure": 1
+          }
+        ],
+        "aotFast": 0
+      },
+      {
+        "variant": "original",
+        "executor": "aot",
+        "mode": "one-op",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 0,
+            "jit": 0,
+            "vm": 1,
+            "pure": 1
+          }
+        ],
+        "aotFast": 1
+      },
+      {
+        "variant": "original",
+        "executor": "aot",
+        "mode": "drain",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 0,
+            "jit": 1,
+            "vm": 0,
+            "pure": 1
+          }
+        ],
+        "aotFast": 1
+      },
+      {
+        "variant": "relocated",
+        "executor": "bytecode-vm",
+        "mode": "one-op",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 1,
+            "jit": 0,
+            "vm": 1,
+            "pure": 1
+          }
+        ],
+        "aotFast": 0
+      },
+      {
+        "variant": "relocated",
+        "executor": "bytecode-vm",
+        "mode": "drain",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 0,
+            "jit": 0,
+            "vm": 1,
+            "pure": 1
+          }
+        ],
+        "aotFast": 0
+      },
+      {
+        "variant": "relocated",
+        "executor": "aot",
+        "mode": "one-op",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 1,
+            "jit": 0,
+            "vm": 1,
+            "pure": 1
+          }
+        ],
+        "aotFast": 1
+      },
+      {
+        "variant": "relocated",
+        "executor": "aot",
+        "mode": "drain",
+        "exitCode": 0,
+        "status": "done Return(\"done\")",
+        "scalarSteps": [
+          {
+            "children": 0,
+            "jit": 0,
+            "vm": 1,
+            "pure": 1
+          }
+        ],
+        "aotFast": 1
+      }
+    ],
+    "probeCount": 8,
+    "fixed": {
+      "receipt": {
+        "version": 1,
+        "sourceCommit": "919a3a139e248c1bcbe381d337e46aee2f375bb6",
+        "command": "cargo nextest run (exact structured arguments retained below)",
+        "exitCode": 0,
+        "endedAt": "2026-11-07T09:03:50.019454Z",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "package(=arcweft-cli) & binary(=check) & test(=scalar_live_budget_owner_tests::pending_joined_source_work_keeps_the_original_scalar_return_continuation)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ]
+      },
+      "failed": 0,
+      "skipped": 493,
+      "passed": 1
+    },
+    "cause": "The old fixture launched a joined child in root, then performed a scope-exiting goto before score in linear. That goto correctly joined the child: the OneOp scalar step had zero children and Drain admitted one JIT call. The fixture therefore did not establish its intended pending-joined-work precondition.",
+    "clippy": {
+      "version": 1,
+      "command": "cargo clippy --locked -p arcweft-cli --all-targets --all-features",
+      "exitCode": 0,
+      "fmtExitCode": 0,
+      "startedAt": "2026-11-07T09:04:32.3204106Z",
+      "endedAt": "2026-11-07T09:07:12.3642646Z"
+    }
+  },
+  "unresolved": {
+    "diagnostics": "lazy-view-grammar-20261107.known-seven.diagnostics.json",
+    "count": 7,
+    "status": "These exact seven CLI failures remain unresolved; this checkpoint does not change their assertions or classify them as newly caused by the lazy-View repair.",
+    "failureSet": [
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge"
+      }
+    ],
+    "comparisonSource": "db071219f84e57186efa9d40dccc3bb8620f417c"
+  },
+  "cliScopeCorrection": {
+    "actualHistoricalScope": "All CLI targets in their own locked all-feature Cargo partition. The source bytes match the published quality receipts. The rest of the reverse dependency batches remain separate.",
+    "historicalCounts": "705 PASS / 7 FAIL",
+    "previousWording": "The current list called the old 712-test measurement the full check target.",
+    "historicalSource": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "currentScope": "Workspace default CLI normal targets: 710 selected, including check471, library196 and other integrations43. The old all-feature isolated CLI partition and this workspace-default run have different inputs/features and are not treated as the same rerun."
+  },
+  "gates": {
+    "workspace-check": {
+      "version": 1,
+      "command": "cargo check --locked --workspace --all-targets --all-features",
+      "arguments": [
+        "check",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--all-features"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-07T08:37:02.4336936Z",
+      "endedAt": "2026-11-07T08:37:44.6954543Z"
+    },
+    "workspace-clippy": {
+      "version": 1,
+      "command": "cargo clippy --locked --workspace --all-targets --all-features",
+      "arguments": [
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--all-features"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-07T08:37:44.7260126Z",
+      "endedAt": "2026-11-07T08:38:34.2680971Z"
+    },
+    "structure": {
+      "version": 1,
+      "command": "cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking",
+      "arguments": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-07T08:38:34.270983Z",
+      "endedAt": "2026-11-07T08:38:38.2880588Z"
+    }
+  },
+  "verification": {
+    "version": 1,
+    "productionCommit": "919a3a139e248c1bcbe381d337e46aee2f375bb6",
+    "fixtureCommit": "dedca415fdaac2836eb63cdb122e92e0d322d0ab",
+    "sourceInputs": 3648,
+    "sourceDrift": 0,
+    "resolvedReversePackages": 25,
+    "actualExecutedPackages": 25,
+    "selectedTests": 5981,
+    "nonCliPassed": 5271,
+    "cliSelected": 710,
+    "cliPassed": 702,
+    "cliFailed": 8,
+    "originalTrackedWip": 12,
+    "originalTrackedWipSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "originalUntrackedFiles": 6,
+    "originalUntrackedDrift": 0,
+    "at": "2026-11-07T09:11:20.9519714Z"
+  },
+  "ownership": "The existing scoped expression-grammar authority owns the lazy-body projection. Ordinary closure grammar is unchanged. The existing scalar live-budget test owner retains its original scheduler/return invariant with a stronger witnessed precondition. No production runtime, budget, batch, capture, ABI, version marker or dependency changed in the fixture repair. Existing large cursor/Pratt and CLI integration owners retain their cohesive grammar and scalar-budget responsibilities; no public API widened.",
+  "limits": "The 5981-test matrix has eight recorded failures, one subsequently resolved by a separately observed exact-case rerun. No all-feature CLI execution, ignored Tier2 or other-platform runtime execution was added here. Prior all-Core/union55 evidence remains attached to its original 1d60 source and is not summed into this new run. Generic Match and other accepted boundaries remain accepted.",
+  "raw": {
+    "sha256": "2d7a78232fa6e1d4b983b28c3fbd670afc943a17c423e37499233c66e19e88b7",
+    "path": "task-lazy-view-grammar-and-scalar.raw.zip",
+    "entries": [
+      {
+        "entry": "lazy-view-grammar-20261107.reproduction.log",
+        "bytes": 2944,
+        "sha256": "b770ba99ec92d779e766a534ee85911898ed9ec29274a7e60124f73f990c3cba"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.fixed.log",
+        "bytes": 2460,
+        "sha256": "55c392d34c6128bc08bdf0c9241f4529052e568902573c997057550707a48cf1"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.syntax-all.log",
+        "bytes": 112359,
+        "sha256": "993d1b5e45d52f8cefdcc1c497b1ce5892e86b8e618ff560d389b4ee62680413"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.syntax-all.receipt.json",
+        "bytes": 190,
+        "sha256": "5d00f1490ea8ae97ef37a09b098b34d777304ddaf5be6a2440d974ee51145bc7"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.source-freeze.json",
+        "bytes": 711733,
+        "sha256": "1bbd9b3cffec31fb0b30dcf79aecd457117fea00d7552d7ccd507294171e953d"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.delta.json",
+        "bytes": 255,
+        "sha256": "8682d19b792b69799f618dc9ed27e7da14c7343d3948360b9fd89a542cb85e97"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.owner-metrics.json",
+        "bytes": 359,
+        "sha256": "db7e7849ff41cefeea4504c26fba6c3db8ee559e4799118bab42c9ef65383752"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.source.reviewed.patch",
+        "bytes": 3331,
+        "sha256": "fa885104fc53e7c32dae02006b142e1c6babe3569e3ede20f6565c6b24c6d0e5"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.source.prepared.json",
+        "bytes": 1582,
+        "sha256": "6854b7abe1ec679f99dd37818ecf45014320daf5a5481d8f5256e873d7c38c88"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.source.verified.json",
+        "bytes": 984,
+        "sha256": "9eb5ca5a6275cee32f321c2098595abb4b44c4e3a1a5dddfa694cf00c8a35ff8"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.reverse.log",
+        "bytes": 1023189,
+        "sha256": "f8119ab4097c7f4bf225e771fb4f8705fe83d40105d42b8c30806616b723e283"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.reverse.receipt.json",
+        "bytes": 888,
+        "sha256": "af8d4bb74aec63a8106457c2bf856b8686dd328bbb6628ee0595b96bd8d28605"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.reverse.selection.json",
+        "bytes": 1112267,
+        "sha256": "429326a6bc4b7c77818356445612df7ceee8516b4daab25d0463686fcc41433d"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.reverse.list.stderr.log",
+        "bytes": 109691,
+        "sha256": "4d5c7baeb10deb0c17791b9d55584a637c3895700b0d66e93f95067a5918ebf3"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.known-seven.diagnostics.json",
+        "bytes": 4377,
+        "sha256": "9fcd61deb619e837fe65875f2634fa0ad4a4d7a3ed244fbd6f70403ed2faafad"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.final.verified.json",
+        "bytes": 613,
+        "sha256": "94c7ba76589712365254276829ff24e5123033983576e5448bb1c957bcaaaee2"
+      },
+      {
+        "entry": "awbc-defer-runnable-20261107.metadata-reverse-union.json",
+        "bytes": 10829,
+        "sha256": "210b97f651b467a0c8cc04676cfbbaec50a28b4608b8b7c2fb96020307f7f521"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.fixed.log",
+        "bytes": 108219,
+        "sha256": "b4bd57b7b35fbb4e7db46bb2766b5ba32f1ff5a0caec03bd9eb0b360dd6326b1"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.fixed.receipt.json",
+        "bytes": 572,
+        "sha256": "44604cde8c2db7ef295c978faeb939e761f74bc21e835e82f0e61e2acdeb4b4a"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.clippy.log",
+        "bytes": 7386630,
+        "sha256": "deeff2bad3a12b94395c5fec70bb7f34ec5aedc87db6fd395d1fd6bfeef92d99"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.clippy.receipt.json",
+        "bytes": 238,
+        "sha256": "e17d74af318736c7ae5ebdd5ab6d8bccffc5b4471c511d220d1ddbedcd86a4f6"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.source-freeze.json",
+        "bytes": 711733,
+        "sha256": "de9dc663575ba6948a89209736a3a4a2da95b4444502cfe065bb80a6bf3ccc9a"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.source.reviewed.patch",
+        "bytes": 1915,
+        "sha256": "00e9fc97c4e979b309a182869093ba4055e7272f7ff9e3e2a89480319b2381be"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.source.prepared.json",
+        "bytes": 1288,
+        "sha256": "d6d1f9a0c9a0b4af1d8dc80cc78fe627f8ca03b0f636ce8daaf4cf0531293aa6"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.source.verified.json",
+        "bytes": 690,
+        "sha256": "9fea10f31efe08cbc114f275641e2ee7fb074b2d4a6f187b8ef86f40d1a25698"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.arcw",
+        "bytes": 861,
+        "sha256": "b8d10c835423380288a7149c623827f06d554093915b648cf76c9a6641823e64"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.arcw",
+        "bytes": 877,
+        "sha256": "eaa57bba71fafc88be3ea230a10c3e79fd42b11f47f74826dc370e1b0bc8124a"
+      },
+      {
+        "entry": "scalar-joined-contour-20261107.probes.json",
+        "bytes": 2373,
+        "sha256": "6149c550787d173c6481e03ee13dc10a2555e49cb88ac7c6d92868dfbaca5de8"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.workspace-check.log",
+        "bytes": 109603,
+        "sha256": "63d2441542514e3304438be151474a010e7140dc4e77aa36f1e284f14deda64d"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.workspace-check.receipt.json",
+        "bytes": 332,
+        "sha256": "816886539ff99d5e60dc94819ce4753f961a08dd47553a42aee30198998704e0"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.workspace-clippy.log",
+        "bytes": 9113784,
+        "sha256": "000acb92424fb1a5086147bf9b4b99e54b793aa3c0b66fdd5377ac712e06f3ac"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.workspace-clippy.receipt.json",
+        "bytes": 334,
+        "sha256": "3e0fc628eef125130bf67193241034098e91e7a3171d83e9abe0c51b5a75f0c0"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.structure.log",
+        "bytes": 65874,
+        "sha256": "0df18bee9ef74aa1e946a214dbab56c849535b5220891f221d902ac0a5790ecd"
+      },
+      {
+        "entry": "lazy-view-grammar-20261107.structure.receipt.json",
+        "bytes": 370,
+        "sha256": "308b99d936c1221e60705c42062c66d8e15ff737a3ddc7d59d38a2f6a4b07894"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.bytecode-vm.one-op.json",
+        "bytes": 41311,
+        "sha256": "41c7f4da51030e0741f1943ea173a678a2b024a95fabfc0bcf0408f6042ccc0e"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.bytecode-vm.one-op.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.bytecode-vm.drain.json",
+        "bytes": 5899,
+        "sha256": "c9b8b9c8d87765592a531847a7b514aeb5e1327beaf36177199fa21ae1aa62fa"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.bytecode-vm.drain.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.aot.one-op.json",
+        "bytes": 41303,
+        "sha256": "615406bd4688c437ba46090da776c76d67aebf06256c0db9db624417155a3423"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.aot.one-op.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.aot.drain.json",
+        "bytes": 5890,
+        "sha256": "3966e669c738d1ed0953f0c5c861888181f770ad1a19ef5be3d33098d8171bc0"
+      },
+      {
+        "entry": "scalar-joined-original-20261107.aot.drain.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.bytecode-vm.one-op.json",
+        "bytes": 41319,
+        "sha256": "af7d9d2b5ce4ab62add3ef3c3267c23c3cf734794be613f000e942734a0dffbe"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.bytecode-vm.one-op.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.bytecode-vm.drain.json",
+        "bytes": 5897,
+        "sha256": "48ca0061ffaf2ac485bd8d132946d9f3bfa0450d6ebad1a21c7b8f0078717b1f"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.bytecode-vm.drain.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.aot.one-op.json",
+        "bytes": 41311,
+        "sha256": "51a20073a52044c21181fc0234cac13f71f32865c2e5317e7d64dc272a1db37a"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.aot.one-op.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.aot.drain.json",
+        "bytes": 5889,
+        "sha256": "81da685b2b13d7c060fe1f5be663df18d7fbc8f242e117adc9d392567238c2cb"
+      },
+      {
+        "entry": "scalar-joined-relocated-20261107.aot.drain.json.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "fixtureOwnerMetrics": {
+    "path": "crates/arcweft-cli/tests/check/toolchain_jit.rs",
+    "classification": "integration test",
+    "loc": 2938,
+    "bytes": 96173,
+    "owner": "scalar_live_budget_owner_tests",
+    "disposition": "The existing scalar budget and joined-return tests keep their responsibility. This patch moves the existing child contour and strengthens its actual call-time liveness witness without adding unrelated state or widening an API."
   }
+}
 }
