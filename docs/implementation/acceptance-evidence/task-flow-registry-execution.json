@@ -36276,5 +36276,137 @@
         }
       ]
     }
+  },
+  "ownedLineInputBaseline": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": {
+      "version": 1,
+      "commit": "b9c3cc9c24a45250d3032cb7faf6b41475edc014",
+      "parent": "91341d2b9c9a8f62de074901470b810bcacd8b4c",
+      "tree": "28eb429fcfe7fa0f05e3afd41f7629fbc4253c71",
+      "remote": "b9c3cc9c24a45250d3032cb7faf6b41475edc014",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "585449fc68c37d2010b446efc09614b24be3e35e"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "e8dbda59c5a26d70029ef04eecd8ffbdbdb7930bbc649d77cc3f337ef0a3b2e6",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T17:58:30.7818164Z"
+    },
+    "status": "Failing acceptance reproduction, not an implementation acceptance. Production code is unchanged.",
+    "input": "The same returned Actor moves into an ordinary defer, is returned by its Cleanup Line, then is consumed by another nested defer. Both backends use the exact same source factory and unchanged 1-op/512-step, two-line and one-acquire/one-release expectations.",
+    "actual": {
+      "run": 2,
+      "passed": 0,
+      "failed": 2,
+      "skipped": 112,
+      "receipt": {
+        "sourceBase": "91341d2b9c9a8f62de074901470b810bcacd8b4c",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "evaluated_effects",
+          "-E",
+          "test(saved_awbc_ordinary_flow_defer_reexports_) | test(native_ordinary_flow_defer_reexports_)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 100,
+        "startedAt": "2026-11-07T17:56:27.3057365Z",
+        "endedAt": "2026-11-07T17:56:41.3624899Z"
+      }
+    },
+    "failures": [
+      {
+        "id": "ordinary_defer::native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line",
+        "boundary": "Native Line ingress",
+        "diagnostic": "line-task group capture must be unrestricted because group work may fan out"
+      },
+      {
+        "id": "ordinary_defer::saved_awbc_ordinary_flow_defer_reexports_an_actor_through_its_nested_line",
+        "boundary": "AWBC verifier, before execution or save",
+        "diagnostic": "line task group capture ABI must be exact and recursively unrestricted"
+      }
+    ],
+    "corrections": [
+      "The unresolved initial owned Line input affects both executors on this exact input; replace the Native-only current wording with the concrete two-backend evidence.",
+      "This is not a failure of previously accepted ordinary defer Actor packets or ordinary deferred-child Dialogue dispatch. Those accepted boundaries are unchanged.",
+      "Keep the earlier complete 113-case 112 PASS/1 FAIL run as history. The new catalog has one additional test, but only the selected two tests ran; do not infer a complete 114-case result."
+    ],
+    "nextBoundary": "Separate the one-time initial Line input ABI from post-reveal shared Copy inputs on the owning plan/function schemas and migrate Native, AWBC lowering/verifier/runtime, custody and save consumers together. Preserve exact selected Copy/Move decisions; no runtime value heuristic, cloned affine inputs or fake frame identity.",
+    "validation": {
+      "fmt": "rustfmt --check --edition 2024 --config skip_children=true: one owned path, exit 0",
+      "productionChanged": false,
+      "fullOwnerOrReverseRun": "Not rerun for this reproduction-only source",
+      "originalTrackedWip": 12,
+      "originalUntrackedWip": 6
+    },
+    "raw": {
+      "path": "task-line-initial-inputs-baseline.raw.zip",
+      "sha256": "24f7c814156d42fc4f5b6935979cce6679da466d39e4921e6a8600b2dca2cff7",
+      "entries": [
+        {
+          "entry": "line-initial-inputs-20261108.awbc-baseline.log",
+          "bytes": 90134,
+          "sha256": "9277fa62813ecbb874b9be782a5d6598b8cf8543fb25772443de4a7fdc911b91"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.awbc-baseline.receipt.json",
+          "bytes": 493,
+          "sha256": "750a3a163f859741a6a33d07b7f501444e9afb5611722dd1db339f4f06667704"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.message.txt",
+          "bytes": 57,
+          "sha256": "afcc2343b708c792d87e37b318950a4f62ca8918be448b841219e5cf3b3bc48c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.owned.txt",
+          "bytes": 67,
+          "sha256": "49cd052e639b99decdb080cdad37f796e58970612ad5b91d0169e88ad0655fec"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.pathspec",
+          "bytes": 66,
+          "sha256": "5688552ed8f80d17630dc784942987f1ca8db1a06f7e9b1f20bce1957b47569c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.prepared.json",
+          "bytes": 1306,
+          "sha256": "3887eebe2f102ee1a481a6815a5229262986a1425d40f00b9e7ee5c5686f16d5"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.reviewed.patch",
+          "bytes": 1852,
+          "sha256": "e8dbda59c5a26d70029ef04eecd8ffbdbdb7930bbc649d77cc3f337ef0a3b2e6"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.verified.json",
+          "bytes": 708,
+          "sha256": "5f0bba3bd66ef515287f5954e5fb9718e70c1f1f848a028da24c2a0359cfd5d2"
+        },
+        {
+          "entry": "record-line-initial-inputs-baseline-20261108.ps1",
+          "bytes": 7613,
+          "sha256": "7affe15af0147af11ea58045cb3387cd44b28aedd90f35fbbaacf42c6906362f"
+        }
+      ]
+    }
   }
 }
