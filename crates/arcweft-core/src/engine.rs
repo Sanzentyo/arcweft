@@ -811,11 +811,11 @@ fn flow_fiber_line_handle_tokens(
             tokens.insert(handle.token().clone());
         }
     }
-    if let Some((_, value)) = fiber
+    if let Some(value) = fiber
         .frame
         .lexical_exit
         .as_ref()
-        .and_then(|exit| exit.binding.as_ref())
+        .and_then(|exit| exit.action.value())
     {
         for handle in value
             .view()
@@ -956,6 +956,18 @@ pub(crate) enum FlowControlStackEntryKind<
     /// loop/scope frames are unwound before the returned value is admitted to
     /// the caller's result pattern.
     FunctionCall(Function),
+}
+
+impl<F, A, V> FlowControlStackEntryKind<F, A, V> {
+    fn loop_source(&self) -> Option<&NativeSourceOperation> {
+        match self {
+            Self::Loop { source }
+            | Self::While { source }
+            | Self::WhileLet { source }
+            | Self::For { source } => Some(source),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

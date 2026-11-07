@@ -13,6 +13,9 @@ use crate::value::{
     RuntimeStoredValue, RuntimeValue,
 };
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Copy)]
 pub(super) enum NativeDeferScopeOwner {
     Activation,
@@ -54,8 +57,97 @@ pub(super) enum NativeDeferScopeStep {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativeLexicalExit<V> {
     pub(super) target: usize,
-    pub(super) scheduled_close: Option<RuntimeScheduledScopeToken>,
-    pub(super) binding: Option<(NativeSourceOperation, V)>,
+    pub(super) action: NativeLexicalExitAction<V>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum NativeLexicalExitAction<V> {
+    Emitted,
+    Scheduled(RuntimeScheduledScopeToken),
+    Bind {
+        source: NativeSourceOperation,
+        value: V,
+    },
+    Transfer(NativeLoopTransfer<V>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct NativeLoopTransfer<V> {
+    pub(super) source: NativeSourceOperation,
+    pub(super) target: NativeSourceOperation,
+    pub(super) kind: NativeLoopTransferKind<V>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum NativeLoopTransferKind<V> {
+    Break(V),
+    Continue,
+}
+
+impl<V> NativeLoopTransferKind<V> {
+    pub(super) fn misplaced_error(&self) -> crate::value::RuntimeEvalError {
+        let operation = match self {
+            Self::Break(_) => "break",
+            Self::Continue => "continue",
+        };
+        crate::value::RuntimeEvalError::MisplacedLoopControl(operation)
+    }
+}
+
+impl<V> NativeLexicalExitAction<V> {
+    fn borrowed(&self) -> NativeLexicalExitAction<&V> {
+        match self {
+            Self::Emitted => NativeLexicalExitAction::Emitted,
+            Self::Scheduled(token) => NativeLexicalExitAction::Scheduled(*token),
+            Self::Bind { source, value } => NativeLexicalExitAction::Bind {
+                source: source.clone(),
+                value,
+            },
+            Self::Transfer(transfer) => NativeLexicalExitAction::Transfer(NativeLoopTransfer {
+                source: transfer.source.clone(),
+                target: transfer.target.clone(),
+                kind: match &transfer.kind {
+                    NativeLoopTransferKind::Break(value) => NativeLoopTransferKind::Break(value),
+                    NativeLoopTransferKind::Continue => NativeLoopTransferKind::Continue,
+                },
+            }),
+        }
+    }
+
+    fn try_map<W, E>(
+        self,
+        map: impl FnOnce(V) -> Result<W, E>,
+    ) -> Result<NativeLexicalExitAction<W>, E> {
+        Ok(match self {
+            Self::Emitted => NativeLexicalExitAction::Emitted,
+            Self::Scheduled(token) => NativeLexicalExitAction::Scheduled(token),
+            Self::Bind { source, value } => NativeLexicalExitAction::Bind {
+                source,
+                value: map(value)?,
+            },
+            Self::Transfer(transfer) => NativeLexicalExitAction::Transfer(NativeLoopTransfer {
+                source: transfer.source,
+                target: transfer.target,
+                kind: match transfer.kind {
+                    NativeLoopTransferKind::Break(value) => {
+                        NativeLoopTransferKind::Break(map(value)?)
+                    }
+                    NativeLoopTransferKind::Continue => NativeLoopTransferKind::Continue,
+                },
+            }),
+        })
+    }
+
+    pub(super) fn value(&self) -> Option<&V> {
+        match self {
+            Self::Bind { value, .. }
+            | Self::Transfer(NativeLoopTransfer {
+                kind: NativeLoopTransferKind::Break(value),
+                ..
+            }) => Some(value),
+            _ => None,
+        }
+    }
 }
 
 impl NativeLexicalExit<RuntimeValue> {
@@ -63,19 +155,13 @@ impl NativeLexicalExit<RuntimeValue> {
         &self,
         owner: &RuntimeProgramOwner,
     ) -> Result<NativeLexicalExit<AwbcRuntimeValueSnapshot>, String> {
-        let binding = self
-            .binding
-            .as_ref()
-            .map(|(source, value)| {
-                AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
-                    .map(|value| (source.clone(), value))
-                    .map_err(|error| error.to_string())
-            })
-            .transpose()?;
+        let action = self.action.borrowed().try_map(|value| {
+            AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
+                .map_err(|error| error.to_string())
+        })?;
         Ok(NativeLexicalExit {
             target: self.target,
-            scheduled_close: self.scheduled_close,
-            binding,
+            action,
         })
     }
 }
@@ -85,19 +171,14 @@ impl NativeLexicalExit<AwbcRuntimeValueSnapshot> {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<NativeLexicalExit<RuntimeValue>, String> {
-        let binding = self
-            .binding
-            .map(|(source, value)| {
-                value
-                    .into_admitted_runtime_value(owner)
-                    .map(|value| (source, value))
-                    .map_err(|error| error.to_string())
-            })
-            .transpose()?;
+        let action = self.action.try_map(|value| {
+            value
+                .into_admitted_runtime_value(owner)
+                .map_err(|error| error.to_string())
+        })?;
         Ok(NativeLexicalExit {
             target: self.target,
-            scheduled_close: self.scheduled_close,
-            binding,
+            action,
         })
     }
 }
@@ -106,24 +187,66 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
     pub(super) fn admit(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let invalid = || AwbcRuntimeValueSnapshotError::Message {
+            message: "native lexical exit differs from its original operation or loop target"
+                .into(),
+        };
         admission.validate_metadata(&self.target)?;
-        if let Some(token) = self.scheduled_close {
-            admission.validate_metadata(&token)?;
-        }
-        if let Some((source, value)) = &self.binding {
-            source.admit_retained(admission)?;
-            let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
-                unreachable!("native position has an admitted plan");
-            };
-            if !matches!(source.operation(plan), Some(FlowOp::ExitScopeBind { .. })) {
-                return Err(AwbcRuntimeValueSnapshotError::Message {
-                    message: "native lexical exit binding lost its original operation".into(),
-                });
+        let (source, transfer_target) = match &self.action {
+            NativeLexicalExitAction::Emitted => return Ok(()),
+            NativeLexicalExitAction::Scheduled(token) => return admission.validate_metadata(token),
+            NativeLexicalExitAction::Bind { source, .. } => (source, None),
+            NativeLexicalExitAction::Transfer(transfer) => {
+                (&transfer.source, Some(&transfer.target))
             }
-            admission.validate_borrowed(value.borrowed_value())?;
+        };
+        source.admit_retained(admission)?;
+        if let Some(target) = transfer_target {
+            target.admit_retained(admission)?;
         }
-        Ok(())
+        let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
+            unreachable!("native position has an admitted plan");
+        };
+        let expected = match (&self.action, source.operation(plan)) {
+            (NativeLexicalExitAction::Bind { .. }, Some(FlowOp::ExitScopeBind { expr, .. })) => {
+                Some(expr.ty())
+            }
+            (NativeLexicalExitAction::Transfer(transfer), Some(FlowOp::Break { depth, value }))
+                if matches!(transfer.kind, NativeLoopTransferKind::Break(_))
+                    && source.has_loop_target(plan, *depth, &transfer.target) =>
+            {
+                value.as_ref().map(|expr| expr.ty())
+            }
+            (NativeLexicalExitAction::Transfer(transfer), Some(FlowOp::Continue { depth }))
+                if matches!(transfer.kind, NativeLoopTransferKind::Continue)
+                    && source.has_loop_target(plan, *depth, &transfer.target) =>
+            {
+                return Ok(());
+            }
+            _ => return Err(invalid()),
+        };
+        let value = self.action.value().ok_or_else(invalid)?;
+        if let Some(ty) = expected {
+            let expected = plan
+                .type_table()
+                .get(ty)
+                .ok_or_else(invalid)?
+                .semantic_identity();
+            admission.validate_owned_typed_borrowed_in_invocation(
+                value.borrowed_value(),
+                expected,
+                binding,
+            )
+        } else if matches!(
+            value.borrowed_view(),
+            crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::Unit)
+        ) {
+            admission.validate_owned_borrowed(value.borrowed_value())
+        } else {
+            Err(invalid())
+        }
     }
 }
 
@@ -335,11 +458,11 @@ impl NativeLexicalDeferScopeImage {
 impl super::Engine {
     pub(super) fn request_emitted_lexical_exit(
         &mut self,
-        binding: Option<(NativeSourceOperation, RuntimeValue)>,
-    ) -> Option<(NativeSourceOperation, RuntimeValue)> {
+        action: NativeLexicalExitAction<RuntimeValue>,
+    ) -> Result<(), NativeLexicalExitAction<RuntimeValue>> {
         use super::FlowControlStackEntryKind;
         if !matches!(self.fiber.owner, super::FlowFiberOwner::LineTask(_)) {
-            return binding;
+            return Err(action);
         }
         let mut pending = false;
         for (index, entry) in self.fiber.frame.control_stack.iter().enumerate().rev() {
@@ -351,15 +474,14 @@ impl super::Engine {
                 if pending {
                     self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
                         target: index,
-                        scheduled_close: None,
-                        binding,
+                        action,
                     });
-                    return None;
+                    return Ok(());
                 }
                 break;
             }
         }
-        binding
+        Err(action)
     }
 
     pub(super) fn request_scheduled_lexical_exit(
@@ -376,8 +498,7 @@ impl super::Engine {
         }
         self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
             target,
-            scheduled_close: Some(token),
-            binding: None,
+            action: NativeLexicalExitAction::Scheduled(token),
         });
         true
     }
@@ -477,16 +598,25 @@ impl super::Engine {
                     .lexical_exit
                     .take()
                     .expect("completed exact lexical exit");
-                if !terminal
-                    && failure.is_none()
-                    && let Some((source, value)) = exit.binding
-                {
-                    let plan = self.plan.clone();
-                    let Some(FlowOp::ExitScopeBind { pattern, .. }) = source.operation(&plan)
-                    else {
-                        return Err(crate::scope::RuntimeScopeExitError::OriginalExitMissing.into());
-                    };
-                    self.bind_value(pattern, value, output);
+                if !terminal && failure.is_none() {
+                    match exit.action {
+                        NativeLexicalExitAction::Emitted
+                        | NativeLexicalExitAction::Scheduled(_) => {}
+                        NativeLexicalExitAction::Bind { source, value } => {
+                            let plan = self.plan.clone();
+                            let Some(FlowOp::ExitScopeBind { pattern, .. }) =
+                                source.operation(&plan)
+                            else {
+                                return Err(
+                                    crate::scope::RuntimeScopeExitError::OriginalExitMissing.into(),
+                                );
+                            };
+                            self.bind_value(pattern, value, output);
+                        }
+                        NativeLexicalExitAction::Transfer(transfer) => {
+                            self.resume_loop_transfer(transfer, output, backend);
+                        }
+                    }
                 }
             }
         } else {

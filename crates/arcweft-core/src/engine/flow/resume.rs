@@ -1,6 +1,7 @@
 //! Runtime continuation dispatch borrows every authored header from its source.
 
 use super::{Engine, FlowFiberStatus, FlowOp, RuntimeCallBackend, RuntimeStepOutput};
+use crate::engine::defer::NativeLexicalExitAction;
 use crate::engine::work::NativeRuntimeContinuation;
 use crate::scope::RuntimeScopeFrameOrigin;
 use std::sync::Arc;
@@ -26,8 +27,9 @@ impl Engine {
                 self.push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
             }
             Resume::ExitTaskScope => {
-                self.request_emitted_lexical_exit(None);
-                if self.fiber.frame.lexical_exit.is_none()
+                if self
+                    .request_emitted_lexical_exit(NativeLexicalExitAction::Emitted)
+                    .is_err()
                     && let Err(error) = self.exit_emitted_scope(output, backend)
                 {
                     self.fail_eval(error, output);

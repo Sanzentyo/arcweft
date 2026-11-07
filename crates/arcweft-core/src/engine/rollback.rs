@@ -1,6 +1,8 @@
 //! Borrowed admission of native execution ownership before rollback projection.
 
 use super::NativePendingWork;
+use super::code_cursor::NativeSourceOperation;
+use super::defer::NativeLexicalExitAction;
 use super::work::{NativePendingWorkKind, NativeRuntimeContinuation, NativeStoredWork};
 use super::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
@@ -509,7 +511,19 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             {
                 return Err(invalid("native lexical exit target is absent".into()));
             }
-            exit.admit(admission)?;
+            exit.admit(admission, self.env.function_instantiation())?;
+            if let NativeLexicalExitAction::Transfer(transfer) = &exit.action
+                && !self
+                    .control_stack
+                    .iter()
+                    .rev()
+                    .take_while(|entry| entry.function_context().is_none())
+                    .any(|entry| entry.loop_source() == Some(&transfer.target))
+            {
+                return Err(invalid(
+                    "native lexical exit has no active loop target".into(),
+                ));
+            }
         }
         self.admit_invocation_result(admission)?;
         Ok(())
@@ -680,6 +694,8 @@ pub(super) trait ScopeControl<O> {
 
     fn defer_scope(&self) -> Option<&super::defer::NativeLexicalDeferScope<Self::DeferValue>>;
 
+    fn loop_source(&self) -> Option<&NativeSourceOperation>;
+
     fn function_context(&self) -> Option<FunctionContext<'_>>;
     fn admit_control_values(
         &self,
@@ -706,6 +722,10 @@ where
             Self::Scope { defers, .. } => Some(defers),
             _ => None,
         }
+    }
+
+    fn loop_source(&self) -> Option<&NativeSourceOperation> {
+        FlowControlStackEntryKind::loop_source(self)
     }
 
     fn admit_control_values(
@@ -807,6 +827,10 @@ impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
 
     fn defer_scope(&self) -> Option<&super::defer::NativeLexicalDeferScope<Self::DeferValue>> {
         self.kind.defer_scope()
+    }
+
+    fn loop_source(&self) -> Option<&NativeSourceOperation> {
+        self.kind.loop_source()
     }
 
     fn admit_control_values(
@@ -925,7 +949,7 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
                 })?;
             }
             if let Some(exit) = &frame.lexical_exit
-                && let Some(token) = exit.scheduled_close
+                && let NativeLexicalExitAction::Scheduled(token) = exit.action
             {
                 let target = frame
                     .control_stack
@@ -1160,17 +1184,16 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
     }
 }
 
-impl<N, P, R, V, FP, O, C, A, S, D> Engine<N, P, R, NativeFlowExecutionFrame<V, FP, O, C, A, S>, D>
-where
-    V: crate::value::RuntimeStoredValue,
-    C: ScopeControl<O, DeferValue = V>,
+impl<N, P, R, V, FP, O, C, A, S, D>
+    Engine<N, P, R, NativeFlowExecutionFrame<V, FP, O, C, A, S>, D>
 {
     fn validate_lexical_defer_contour<'a>(
         &self,
         reached: impl Fn(&DialogueActivationId) -> Option<super::defer::NativeReachedLineDefers<'a, V>>,
     ) -> Result<(), String>
     where
-        V: 'a,
+        V: crate::value::RuntimeStoredValue + 'a,
+        C: ScopeControl<O, DeferValue = V>,
     {
         use super::defer::NativeDeferParent;
         use crate::line_task::{LineTaskWork, RuntimeHandleOwnerSlot};

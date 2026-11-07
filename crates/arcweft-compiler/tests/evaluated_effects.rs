@@ -3188,10 +3188,14 @@ fn awbc_cancelled_mark_joins_after_its_lexical_defer() {
     let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
-    assert_cancelled_mark_defer(awbc, |mut engine, input, options| {
-        let result = engine.step_with_pure_backend(input, options, &mut backend);
-        (roundtrip_nested_awbc(engine).0, result)
-    });
+    assert_cancelled_mark_defer(
+        awbc,
+        &["mark-handler-enter", "cancelled cleanup", "Cancelled"],
+        |mut engine, input, options| {
+            let result = engine.step_with_pure_backend(input, options, &mut backend);
+            (roundtrip_nested_awbc(engine).0, result)
+        },
+    );
 }
 
 #[test]
@@ -3204,14 +3208,19 @@ fn native_cancelled_mark_joins_after_its_lexical_defer() {
     let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
-    assert_cancelled_mark_defer(&mut engine, |engine, input, options| {
-        let result = engine.step_with_pure_backend(input, options, &mut backend);
-        (engine, result)
-    });
+    assert_cancelled_mark_defer(
+        &mut engine,
+        &["mark-handler-enter", "cancelled cleanup", "Cancelled"],
+        |engine, input, options| {
+            let result = engine.step_with_pure_backend(input, options, &mut backend);
+            (engine, result)
+        },
+    );
 }
 
 fn assert_cancelled_mark_defer<S>(
     mut engine: S,
+    expected: &[&str],
     mut step: impl FnMut(
         S,
         arcweft_core::step::RuntimeStepInput,
@@ -3260,7 +3269,11 @@ fn assert_cancelled_mark_defer<S>(
                     ));
             }
         }
-        if !sent_cancel && log_messages(&effects).contains(&"mark-handler-enter".to_owned()) {
+        if !sent_cancel
+            && log_messages(&effects)
+                .iter()
+                .any(|message| message == expected[0])
+        {
             input
                 .dialogue_input_actions
                 .push(RuntimeDialogueInputActionEvent::new(
@@ -3273,10 +3286,7 @@ fn assert_cancelled_mark_defer<S>(
         }
         if result.fiber_status == FlowFiberStatus::Done(FlowExit::Done) {
             assert!(sent_cancel);
-            assert_eq!(
-                log_messages(&effects),
-                ["mark-handler-enter", "cancelled cleanup", "Cancelled"]
-            );
+            assert_eq!(log_messages(&effects), expected);
             return;
         }
     }
@@ -3335,6 +3345,142 @@ entry cli @entry.main { goto @flow.main }
             "Released"
         ]
     );
+}
+
+const LOOP_TRANSFER_MARK_DEFER: &str = r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let result = alice()[本文。[mark @.release][p]] with {
+        on mark(@.release) {
+            let mut turn = 0i64
+            let number = 'outer: loop {
+                turn = turn + 1i64
+                let captured = turn
+                defer on completed { log.info("outer cleanup") }
+                loop {
+                    defer { log.info("inner first") }
+                    if turn == 1i64 {
+                        defer on completed { log.info("continue cleanup") }
+                        continue 'outer
+                    }
+                    defer { log.info("inner last") }
+                    defer on failed { log.info("wrong outcome") }
+                    break 'outer captured + 40i64
+                }
+            }
+            let mut sum = 0i64
+            for item in [1i64, 2i64] {
+                defer { log.info("for cleanup") }
+                if item == 1i64 { continue }
+                sum = sum + item
+            }
+            log.info("mark-handler-enter")
+            if number == 42i64 && sum == 2i64 { out "Released" } else { out "Wrong" }
+        }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+
+const LOOP_TRANSFER_MARK_LOGS: &[&str] = &[
+    "continue cleanup",
+    "inner first",
+    "outer cleanup",
+    "inner last",
+    "inner first",
+    "outer cleanup",
+    "for cleanup",
+    "for cleanup",
+    "mark-handler-enter",
+    "Released",
+];
+
+#[test]
+fn native_cancelled_mark_discards_the_suspended_break_after_cleanup() {
+    let (compiled, mut engine) = compile_native_mark_defer(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let result = alice()[本文。[mark @.release][p]] with {
+        on mark(@.release) {
+            let number = 'outer: loop {
+                defer on cancelled { log.info("cancelled outer cleanup") }
+                loop {
+                    defer on completed { log.info("break cleanup began") }
+                    break 'outer 42i64
+                }
+            }
+            log.info("break result escaped")
+            if number == 42i64 { out "Released" } else { out "Wrong" }
+        }
+        cancel on input(.SkipLine) { out "Cancelled" }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+    );
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    assert_cancelled_mark_defer(
+        &mut engine,
+        &[
+            "break cleanup began",
+            "cancelled outer cleanup",
+            "Cancelled",
+        ],
+        |engine, input, options| {
+            let result = engine.step_with_pure_backend(input, options, &mut backend);
+            (engine, result)
+        },
+    );
+}
+
+#[test]
+fn native_mark_defers_run_before_loop_transfers() {
+    let (compiled, mut engine) = compile_native_mark_defer(LOOP_TRANSFER_MARK_DEFER);
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+    );
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let (logs, completed) = execute_dialogue_result_with_mark(
+        |input, options| engine.step_with_pure_backend(input, options, &mut backend),
+        true,
+        "native mark loop transfer",
+    );
+    assert!(completed);
+    assert_eq!(logs, LOOP_TRANSFER_MARK_LOGS);
+}
+
+#[test]
+fn awbc_mark_defers_run_before_loop_transfers_after_restore() {
+    let (compiled, awbc) = compile_nested_awbc(LOOP_TRANSFER_MARK_DEFER);
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut awbc = Some(awbc);
+    let (logs, completed) = execute_dialogue_result_with_mark(
+        |input, options| {
+            let mut engine = awbc.take().unwrap();
+            let result = engine.step_with_pure_backend(input, options, &mut backend);
+            awbc = Some(roundtrip_nested_awbc(engine).0);
+            result
+        },
+        true,
+        "decoded AWBC mark loop transfer",
+    );
+    assert!(completed);
+    assert_eq!(logs, LOOP_TRANSFER_MARK_LOGS);
 }
 
 fn compile_native_mark_defer(source: &str) -> (CompiledProject, arcweft_core::engine::Engine) {

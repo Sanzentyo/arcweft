@@ -6,6 +6,9 @@ mod resume;
 
 use super::NativePendingWork;
 use super::code_cursor::NativeSourceOperation;
+use super::defer::{
+    NativeLexicalExit, NativeLexicalExitAction, NativeLoopTransfer, NativeLoopTransferKind,
+};
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState};
 use super::work::{NativePendingWorkKind, NativeRuntimeContinuation, NativeSourceRangeRole};
 use super::{
@@ -1003,52 +1006,25 @@ impl Engine {
                     },
                     None => RuntimeValue::Unit,
                 };
-                let mut value = Some(value);
-                let mut remaining = *depth;
-                let mut handled =
-                    self.break_nearest_loop(&mut remaining, &mut value, output, pure_backend);
-                while !handled {
-                    if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
-                        return;
-                    }
-                    match self.abandon_format_attempt_for_transfer() {
-                        Ok(true) => {}
-                        Ok(false) => break,
-                        Err(error) => {
-                            self.fail_eval(error, output);
-                            return;
-                        }
-                    }
-                    handled =
-                        self.break_nearest_loop(&mut remaining, &mut value, output, pure_backend);
-                }
-                if handled {
+                if self.start_loop_transfer(
+                    source_site,
+                    *depth,
+                    NativeLoopTransferKind::Break(value),
+                    output,
+                    pure_backend,
+                ) {
                     self.advance_if_needed(next_op_index);
-                } else {
-                    self.fail_eval(RuntimeEvalError::MisplacedLoopControl("break"), output);
                 }
             }
             FlowOp::Continue { depth } => {
-                let mut remaining = *depth;
-                let mut handled = self.continue_nearest_loop(&mut remaining, output, pure_backend);
-                while !handled {
-                    if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
-                        return;
-                    }
-                    match self.abandon_format_attempt_for_transfer() {
-                        Ok(true) => {}
-                        Ok(false) => break,
-                        Err(error) => {
-                            self.fail_eval(error, output);
-                            return;
-                        }
-                    }
-                    handled = self.continue_nearest_loop(&mut remaining, output, pure_backend);
-                }
-                if handled {
+                if self.start_loop_transfer(
+                    source_site,
+                    *depth,
+                    NativeLoopTransferKind::Continue,
+                    output,
+                    pure_backend,
+                ) {
                     self.advance_if_needed(next_op_index);
-                } else {
-                    self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 }
             }
             FlowOp::Goto(target) => self.goto(target, output, pure_backend),
@@ -1168,8 +1144,9 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScope => {
-                self.request_emitted_lexical_exit(None);
-                if self.fiber.frame.lexical_exit.is_none()
+                if self
+                    .request_emitted_lexical_exit(NativeLexicalExitAction::Emitted)
+                    .is_err()
                     && let Err(error) = self.exit_emitted_scope(output, pure_backend)
                 {
                     self.fail_eval(error, output);
@@ -1185,8 +1162,11 @@ impl Engine {
                         return;
                     }
                 };
-                let Some((_, value)) =
-                    self.request_emitted_lexical_exit(Some((source_site, value)))
+                let Err(NativeLexicalExitAction::Bind { value, .. }) = self
+                    .request_emitted_lexical_exit(NativeLexicalExitAction::Bind {
+                        source: source_site,
+                        value,
+                    })
                 else {
                     self.advance_if_needed(next_op_index);
                     return;
@@ -1982,161 +1962,157 @@ impl Engine {
         None
     }
 
-    pub(super) fn break_nearest_loop(
+    fn start_loop_transfer(
         &mut self,
-        remaining: &mut u32,
-        value: &mut Option<RuntimeValue>,
+        source: NativeSourceOperation,
+        depth: u32,
+        kind: NativeLoopTransferKind<RuntimeValue>,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
+        backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        if !self.skip_transferred_loops(remaining, output, pure_backend) {
-            return false;
-        }
-        let _ = self.discard_pending_until_loop_next();
-        let Some(kind) = self.pop_loop_frame(output, pure_backend) else {
-            return false;
-        };
-        self.fiber.frame.await_observer = None;
-        let plan = Arc::clone(&self.plan);
-        match kind {
-            FlowControlStackEntryKind::Loop { source } => {
-                let Some(FlowOp::Loop { result, .. }) = source.operation(&plan) else {
-                    self.fail_eval("native value loop lost its original declaration", output);
-                    return true;
-                };
-                if let Some(pattern) = result {
-                    self.bind_value(
-                        pattern,
-                        value.take().expect("selected break value remains owned"),
-                        output,
-                    );
-                }
-            }
-            FlowControlStackEntryKind::While { .. }
-            | FlowControlStackEntryKind::WhileLet { .. }
-            | FlowControlStackEntryKind::For { .. } => {
-                if value.as_ref() != Some(&RuntimeValue::Unit) {
-                    self.fail_eval(RuntimeEvalError::BreakValueOutsideValueLoop, output);
-                }
-            }
-            FlowControlStackEntryKind::Scope { .. } => return false,
-            FlowControlStackEntryKind::FormatAttempt(_) => return false,
-            FlowControlStackEntryKind::FunctionCall(_) => return false,
-        }
-        true
-    }
-
-    pub(super) fn continue_nearest_loop(
-        &mut self,
-        remaining: &mut u32,
-        output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> bool {
-        if !self.skip_transferred_loops(remaining, output, pure_backend) {
-            return false;
-        }
-        if let Err(error) = self.pop_scope_frames_until_loop(output, pure_backend) {
-            self.fail_eval(error, output);
-            return false;
-        }
-        let next = self.discard_pending_until_loop_next();
-        let Some(kind) = self
+        let target = self
             .fiber
             .frame
             .control_stack
-            .last()
-            .map(|frame| &frame.kind)
-        else {
+            .iter()
+            .rev()
+            .take_while(|entry| !matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_)))
+            .filter_map(|entry| entry.kind.loop_source())
+            .nth(depth as usize)
+            .cloned();
+        let Some(target) = target else {
+            self.fail_eval(kind.misplaced_error(), output);
             return false;
         };
-        self.fiber.frame.await_observer = None;
-        match kind {
-            FlowControlStackEntryKind::Loop { source } => {
-                let source = source.clone();
-                if let Err(error) = self.push_loop_iteration(&source) {
-                    self.fail_format_aware_eval(error, output, pure_backend);
-                }
+        self.resume_loop_transfer(
+            NativeLoopTransfer {
+                source,
+                target,
+                kind,
+            },
+            output,
+            backend,
+        )
+    }
+
+    pub(super) fn resume_loop_transfer(
+        &mut self,
+        transfer: NativeLoopTransfer<RuntimeValue>,
+        output: &mut RuntimeStepOutput,
+        backend: &mut impl RuntimeCallBackend,
+    ) -> bool {
+        loop {
+            let mut scope_target = None;
+            let mut has_defers = false;
+            for (index, entry) in self.fiber.frame.control_stack.iter().enumerate().rev() {
+                let FlowControlStackEntryKind::Scope { defers, .. } = &entry.kind else {
+                    break;
+                };
+                scope_target = Some(index);
+                has_defers |= defers.has_work();
             }
-            FlowControlStackEntryKind::While { source } => {
-                let work = [Some(NativePendingWork::resume(
-                    NativeRuntimeContinuation::WhileNext {
-                        source: source.clone(),
-                    },
-                ))];
-                match self.prepare_native_work(&work) {
-                    Ok(()) => self.prepend_admitted_native_work(work),
-                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-                }
+            if let Some(target) = scope_target.filter(|_| has_defers) {
+                self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
+                    target,
+                    action: NativeLexicalExitAction::Transfer(transfer),
+                });
+                return true;
             }
-            FlowControlStackEntryKind::WhileLet { source } => {
-                let work = [Some(NativePendingWork::resume(
-                    NativeRuntimeContinuation::WhileLetNext {
-                        source: source.clone(),
-                    },
-                ))];
-                match self.prepare_native_work(&work) {
-                    Ok(()) => self.prepend_admitted_native_work(work),
-                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-                }
+            if let Err(error) = self.pop_scope_frames_until_loop(output, backend) {
+                self.fail_eval(error, output);
+                return false;
             }
-            FlowControlStackEntryKind::For { source } => {
-                let Some(NativeRuntimeContinuation::ForNext {
-                    source: next_source,
-                    iterator,
-                }) = next
-                else {
+            if let Some(source) = self
+                .fiber
+                .frame
+                .control_stack
+                .last()
+                .and_then(|entry| entry.kind.loop_source())
+                .cloned()
+            {
+                let Some(next) = self.discard_pending_until_loop_next() else {
                     self.fail_eval(
-                        "native continue lost its original iterator continuation",
+                        "native loop transfer lost its iteration continuation",
                         output,
                     );
                     return false;
                 };
-                if source != &next_source {
+                use NativeRuntimeContinuation as Resume;
+                let continuation_source = match &next {
+                    Resume::LoopNext { source }
+                    | Resume::WhileNext { source }
+                    | Resume::WhileLetNext { source }
+                    | Resume::ForNext { source, .. } => source,
+                    _ => unreachable!("the queue selected an iteration continuation"),
+                };
+                if continuation_source != &source {
                     self.fail_eval(
-                        "native iterator continuation differs from its loop frame",
+                        "native iteration continuation differs from its loop frame",
                         output,
                     );
                     return false;
                 }
-                let work = [Some(NativePendingWork::resume(
-                    NativeRuntimeContinuation::ForNext {
-                        source: next_source,
-                        iterator,
-                    },
-                ))];
-                match self.prepare_native_work(&work) {
-                    Ok(()) => self.prepend_admitted_native_work(work),
-                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
+                if source == transfer.target {
+                    self.fiber.frame.await_observer = None;
+                    return self.finish_loop_transfer(transfer, next, output, backend);
+                }
+                self.fiber.frame.control_stack.pop();
+                continue;
+            }
+            match self.abandon_format_attempt_for_transfer() {
+                Ok(true) => {}
+                Ok(false) => {
+                    self.fail_eval(transfer.kind.misplaced_error(), output);
+                    return false;
+                }
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return false;
                 }
             }
-            FlowControlStackEntryKind::Scope { .. } => {
-                self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
-                return false;
-            }
-            FlowControlStackEntryKind::FormatAttempt(_) => return false,
-            FlowControlStackEntryKind::FunctionCall(_) => {
-                self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
-                return false;
-            }
         }
-        true
     }
 
-    /// Retire skipped iterations through the ordinary scope/cleanup authority.
-    /// A format-attempt boundary leaves `remaining` intact for its caller to
-    /// abandon that attempt before continuing the same transfer.
-    fn skip_transferred_loops(
+    fn finish_loop_transfer(
         &mut self,
-        remaining: &mut u32,
+        transfer: NativeLoopTransfer<RuntimeValue>,
+        next: NativeRuntimeContinuation,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
+        backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        while *remaining > 0 {
-            let _ = self.discard_pending_until_loop_next();
-            if self.pop_loop_frame(output, pure_backend).is_none() {
-                return false;
+        match transfer.kind {
+            NativeLoopTransferKind::Break(value) => {
+                self.fiber.frame.control_stack.pop();
+                let plan = Arc::clone(&self.plan);
+                match transfer.target.operation(&plan) {
+                    Some(FlowOp::Loop { result, .. }) => {
+                        if let Some(pattern) = result {
+                            self.bind_value(pattern, value, output);
+                        }
+                    }
+                    Some(FlowOp::While { .. } | FlowOp::WhileLet { .. } | FlowOp::For { .. }) => {
+                        if value != RuntimeValue::Unit {
+                            self.fail_eval(RuntimeEvalError::BreakValueOutsideValueLoop, output);
+                        }
+                    }
+                    _ => {
+                        self.fail_eval("native loop transfer lost its original header", output);
+                        return false;
+                    }
+                }
             }
-            *remaining -= 1;
+            NativeLoopTransferKind::Continue => {
+                let prepared = if matches!(next, NativeRuntimeContinuation::LoopNext { .. }) {
+                    self.push_loop_iteration(&transfer.target)
+                } else {
+                    let work = [Some(NativePendingWork::resume(next))];
+                    self.prepare_native_work(&work)
+                        .map(|()| self.prepend_admitted_native_work(work))
+                };
+                if let Err(error) = prepared {
+                    self.fail_format_aware_eval(error, output, backend);
+                }
+            }
         }
         true
     }

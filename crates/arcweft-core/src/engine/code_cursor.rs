@@ -206,6 +206,45 @@ impl NativeSourceOperation {
         self.position.operations(plan)?.first()
     }
 
+    /// Rechecks the selected loop against the original body path of a
+    /// suspended transfer. The active stack supplies custody of that same
+    /// operation, while the authored path determines its lexical depth.
+    pub(super) fn has_loop_target(&self, plan: &RuntimePlan, depth: u32, target: &Self) -> bool {
+        use RuntimeFlowLocationStep::{Body, Operation};
+        let Some(RuntimeCodeBodyRef::Operations(mut body)) = plan.inventory.code_body(self.owner())
+        else {
+            return false;
+        };
+        let Some(target) = target.operation(plan) else {
+            return false;
+        };
+        let mut path = self.position.body.steps().skip(1);
+        let mut loops_inside_target = None;
+        while let Some(Operation(index)) = path.next() {
+            let (Some(op), Some(Body(role))) = (body.get(index), path.next()) else {
+                return false;
+            };
+            if matches!(
+                op,
+                FlowOp::Loop { .. }
+                    | FlowOp::While { .. }
+                    | FlowOp::WhileLet { .. }
+                    | FlowOp::For { .. }
+            ) {
+                if std::ptr::eq(op, target) {
+                    loops_inside_target = Some(0);
+                } else if let Some(count) = &mut loops_inside_target {
+                    *count += 1;
+                }
+            }
+            let Some(child) = op.owned_body(role) else {
+                return false;
+            };
+            body = child;
+        }
+        loops_inside_target == Some(depth as usize)
+    }
+
     pub(super) fn admit_retained(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
