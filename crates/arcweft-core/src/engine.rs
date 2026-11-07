@@ -5463,6 +5463,9 @@ impl Engine {
     }
 
     fn fiber_has_internal_work(&self, fiber: &FlowFiber) -> bool {
+        if self.fiber_waits_for_lexical_defer(fiber) {
+            return false;
+        }
         if fiber.owner.requests_scope_close() {
             return true;
         }
@@ -5494,7 +5497,7 @@ impl Engine {
                 || (matches!(
                     child.frame.status,
                     FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-                ) && !self.fiber_waits_for_join(child))
+                ) && self.fiber_can_attempt_runtime_op(child))
         })
     }
 }

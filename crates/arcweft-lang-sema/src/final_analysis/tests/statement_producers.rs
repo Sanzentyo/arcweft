@@ -644,6 +644,45 @@ fn wait_duration_context_keeps_fractional_and_computed_operands() {
 }
 
 #[test]
+fn deferred_bodies_publish_wait_operands_and_unit_results() {
+    for source in [
+        "flow row { defer { wait(0.1s) } }\n",
+        "fn row() { defer { wait(0.1s) } }\n",
+        "flow row { defer { if true { wait(0.1s) } } }\n",
+        "fn row() {\n    defer on completed:\n        wait(0.1s)\n}\n",
+        "flow row { scope region { defer { log.info(\"enter\"); wait(0.1s); log.info(\"done\") } } }\n",
+        "flow row { defer { defer { wait(0.1s) }; log.info(\"outer\") } }\n",
+    ] {
+        let world = fixture(source, None);
+        let module = root_module(&world);
+        let report = super::analyze(&world).unwrap_or_else(|error| {
+            if let FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } = &error {
+                panic!(
+                    "{error:?}: {:?}",
+                    module.resolve_expr(*owner).unwrap().kind()
+                );
+            }
+            panic!("{error:?}");
+        });
+        for (_, statement) in module.statements() {
+            let (expression, expected) = match statement.kind() {
+                HirStmtKind::Wait { target } => (*target, crate::types::TypeKind::Duration),
+                HirStmtKind::Defer { expression, .. } => {
+                    (*expression, crate::types::TypeKind::Unit)
+                }
+                _ => continue,
+            };
+            assert_eq!(
+                report
+                    .expression(expression)
+                    .and_then(|fact| fact.value_type()),
+                Some(&expected)
+            );
+        }
+    }
+}
+
+#[test]
 fn wait_publication_rejects_another_statements_duration_operand() {
     let world = fixture("flow row {\n    wait(1s)\n    wait(2s)\n}\n", None);
     let waits = root_module(&world)

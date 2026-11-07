@@ -2008,7 +2008,9 @@ fn emit_control_children(
     thread_flow_context: bool,
 ) {
     if kind == SyntaxKind::DeferBlockStatement {
-        emit_defer_block_children(parser, end, item_kind);
+        parser.with_expression_context(super::cursor::ExpressionContext::RuntimeValue, |parser| {
+            emit_defer_block_children(parser, end, item_kind)
+        });
         return;
     }
     if kind == SyntaxKind::UnsafeLifetimeStatement {

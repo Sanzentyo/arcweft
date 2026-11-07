@@ -102,7 +102,7 @@ impl Engine {
             }
     }
 
-    fn fiber_waits_for_lexical_defer(&self, fiber: &FlowFiber) -> bool {
+    pub(super) fn fiber_waits_for_lexical_defer(&self, fiber: &FlowFiber) -> bool {
         let activation = fiber.owner.dialogue_activation();
         fiber
             .frame

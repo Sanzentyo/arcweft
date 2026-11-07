@@ -1107,6 +1107,54 @@ fn thread_wait_owns_its_flow_grammar_inside_an_ordinary_function() {
 }
 
 #[test]
+fn deferred_wait_owns_runtime_grammar_and_preserves_function_closures() {
+    for declaration in ["fn", "flow"] {
+        let source = format!(
+            "{declaration} launch() {{\n defer {{\n if ready {{ wait(0.35s) }}\n let callback = || {{ wait(ready, timeout = 1s) }}\n let sequence = seq {{ wait(ready, timeout = 1s); yield true }}\n wait(0.1s)\n }}\n}}\nfn after() {{ wait(ready, timeout = 1s) }}\n"
+        );
+        let built =
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(built.green().to_string(), source);
+        assert_eq!(
+            green_kind_count(built.green(), SyntaxKind::WaitStatement),
+            2
+        );
+        assert_eq!(
+            green_kind_count(built.green(), SyntaxKind::CallExpression),
+            3
+        );
+    }
+}
+
+#[test]
+fn indented_deferred_wait_keeps_its_body_and_following_function() {
+    let source =
+        "fn launch() {\n    defer on completed:\n        wait(0.1s)\n}\nfn after() { true }\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::WaitStatement),
+        1
+    );
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::FunctionItem), 2);
+}
+
+#[test]
+fn malformed_deferred_wait_recovers_before_the_following_function() {
+    let source = "fn launch() { defer { wait 0.35s } }\nfn after() { true }\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert!(!built.diagnostics().is_empty());
+    assert_eq!(built.green().to_string(), source);
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::WaitStatement),
+        1
+    );
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::FunctionItem), 2);
+}
+
+#[test]
 fn malformed_thread_wait_recovers_inside_its_body_before_the_next_function() {
     let source = "fn launch() { thread { wait 0.35s } }\nfn after() { true }\n";
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();

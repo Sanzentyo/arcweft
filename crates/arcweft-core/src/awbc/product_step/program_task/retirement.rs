@@ -20,6 +20,9 @@ impl AwbcProductStepExecutor {
         &self,
         child: &ProductChildFiber,
     ) -> bool {
+        if child.fiber.has_pending_deferred_cleanup() {
+            return false;
+        }
         (child.has_internal_work() || child.fiber.suspension.as_ref().is_some_and(|suspension| matches!(
             suspension.reason, crate::awbc::fiber::FiberSuspensionReason::ActionReceive { payload } if self.actions.has_message(payload))))
             && !(matches!(

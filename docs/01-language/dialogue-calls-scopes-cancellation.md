@@ -347,6 +347,13 @@ Registration happens only when execution reaches the `defer` statement. Each
 scope runs its matching registered blocks once in reverse registration order;
 an untaken branch registers nothing. A line scope waits for cancelled children
 to unwind before running its own registered cleanup.
+A braced or indented deferred body uses runtime statement grammar, including
+`wait(Duration)`, even when registered inside an ordinary function. Its nested
+ordinary callables and lazy `seq`/`stream` bodies retain their own grammar.
+Registration alone does not make a waiting owner runnable. A running cleanup
+may itself suspend; its owner resumes or publishes completion only after that
+cleanup finishes. Suspension and save/restore preserve the original deadline
+and do not repeat the callback's earlier effects.
 Registration transfers the captured inputs and leaves existing registry entries
 available. A deferred registry write takes effect during its owning scope's
 cleanup. A later read needs type and presence evidence for the registry after

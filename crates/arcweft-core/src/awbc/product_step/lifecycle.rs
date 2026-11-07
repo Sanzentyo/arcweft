@@ -289,10 +289,11 @@ impl AwbcProductStepExecutor {
         {
             return RuntimeStepStopReason::BudgetExhausted;
         }
-        if matches!(
+        if (matches!(
             self.fiber.status,
             FiberStatus::Suspended | FiberStatus::Returned | FiberStatus::Cancelled
-        ) && !self.has_internal_work()
+        ) || self.fiber.has_pending_deferred_cleanup())
+            && !self.has_internal_work()
         {
             return if output.has_presentation_visible_output() || output.has_host_requests() {
                 RuntimeStepStopReason::Output
@@ -343,10 +344,11 @@ impl AwbcProductStepExecutor {
         {
             return true;
         }
-        if matches!(
+        if (matches!(
             self.fiber.status,
             FiberStatus::Suspended | FiberStatus::Returned | FiberStatus::Cancelled
-        ) && !self.has_internal_work()
+        ) || self.fiber.has_pending_deferred_cleanup())
+            && !self.has_internal_work()
         {
             return true;
         }

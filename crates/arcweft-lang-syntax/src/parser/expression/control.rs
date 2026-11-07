@@ -16,7 +16,7 @@ use crate::expressions::{
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::name::SyntaxName;
-use crate::parser::cursor::{DocumentParser, ExpressionContext};
+use crate::parser::cursor::DocumentParser;
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
@@ -34,7 +34,7 @@ pub(super) fn emit_block_expression(
     crate::parser::statement::emit_braced_block_until(
         parser,
         end,
-        SyntaxKind::FunctionItem,
+        parser.expression_context().block_item_kind(),
         SyntaxKind::Block,
         SyntaxRole::Body,
         "syntax.expression.missing_block_close",
@@ -57,7 +57,7 @@ pub(super) fn emit_unbraced_block_expression(
     crate::parser::statement::emit_unbraced_block_until(
         parser,
         end,
-        SyntaxKind::FunctionItem,
+        parser.expression_context().block_item_kind(),
         SyntaxKind::Block,
         SyntaxRole::Body,
     );
@@ -221,7 +221,7 @@ pub(super) fn emit_loop_expression(
     if parser.at("{") {
         emit_braced_block(
             parser,
-            SyntaxKind::FunctionItem,
+            parser.expression_context().block_item_kind(),
             SyntaxKind::Block,
             SyntaxRole::Body,
             "syntax.expression.missing_block_close",
@@ -456,7 +456,7 @@ fn emit_match_arm(
     let guard = if parser.at("when") {
         parser.bump();
         parser.bump_trivia_before(arrow);
-        let guard = parser.with_expression_context(ExpressionContext::Ordinary, |parser| {
+        let guard = parser.with_expression_context(parser.expression_context().value(), |parser| {
             emit_expression_node(parser, arrow, SyntaxRole::Guard)
         });
         let slot = completed_slot(parser, guard);
@@ -603,7 +603,7 @@ fn emit_block(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> Complete
 pub(super) fn emit_block_contents(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) {
     emit_braced_block(
         parser,
-        SyntaxKind::FunctionItem,
+        parser.expression_context().block_item_kind(),
         SyntaxKind::Block,
         role,
         "syntax.expression.missing_block_close",

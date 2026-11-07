@@ -2826,10 +2826,11 @@ impl AwbcProductStepExecutor {
             _ => false,
         };
         self.root_has_pending_reduction()
-            || self.fiber.status == FiberStatus::Running
-            || self.fiber.has_deferred_work()
-            || self.fiber.suspension.as_ref().is_some_and(|suspension| matches!(
-                suspension.reason, FiberSuspensionReason::ActionReceive { payload } if self.actions.has_message(payload)))
+            || (!self.fiber.has_pending_deferred_cleanup()
+                && (self.fiber.status == FiberStatus::Running
+                    || (self.fiber.status.is_terminal() && self.fiber.has_deferred_work())
+                    || self.fiber.suspension.as_ref().is_some_and(|suspension| matches!(
+                        suspension.reason, FiberSuspensionReason::ActionReceive { payload } if self.actions.has_message(payload)))))
             || dialogue_work
             || self
                 .child_fibers

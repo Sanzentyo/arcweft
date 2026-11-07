@@ -1,7 +1,7 @@
 //! Parenthesized Call argument ownership on the shared expression cursor.
 
 use crate::name::{CallArgumentName, SyntaxNameIssue};
-use crate::parser::cursor::{ExpressionContext, is_trivia_kind};
+use crate::parser::cursor::is_trivia_kind;
 
 use super::{
     DocumentParser, ExpressionComponentRole, PendingExpressionComponent, SourceRange,
@@ -140,7 +140,7 @@ fn emit_call_argument(
     parser.start(SyntaxKind::CallArgument, SyntaxRole::Argument(ordinal));
     let assignment = find_top_level_boundary(parser, parser.cursor(), end, &["="]);
     let (projection, mut components) =
-        parser.with_expression_context(ExpressionContext::Ordinary, |parser| {
+        parser.with_expression_context(parser.expression_context().value(), |parser| {
             if assignment < end {
                 emit_named_call_argument(parser, end, assignment, ordinal)
             } else {

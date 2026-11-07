@@ -5,7 +5,11 @@ use arcweft_core::{
     engine::{Engine, FlowExit, FlowFiberStatus},
     executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot},
     pure::VmRuntimePureCallBackend,
-    step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult},
+    step::{
+        RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+        RuntimeStepResult, RuntimeStepStopReason,
+    },
+    time::LogicalDuration,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
@@ -95,16 +99,19 @@ fn saved_awbc(source: &str) -> Vec<String> {
 }
 
 fn saved_awbc_steps(source: &str) -> impl FnMut() -> RuntimeStepResult {
+    let mut step = saved_awbc_input_steps(source);
+    move || step(Default::default(), Default::default())
+}
+
+fn saved_awbc_input_steps(
+    source: &str,
+) -> impl FnMut(RuntimeStepInput, RuntimeStepOptions) -> RuntimeStepResult {
     let compiled = compile_source(source).expect("ordinary scoped defer source compiles");
     let mut executor = Some(awbc(&compiled));
     let mut backend = VmRuntimePureCallBackend::default();
-    move || {
+    move |input, options| {
         let mut current = executor.take().unwrap();
-        let result = current.step_with_pure_backend(
-            RuntimeStepInput::default(),
-            RuntimeStepOptions::default(),
-            &mut backend,
-        );
+        let result = current.step_with_pure_backend(input, options, &mut backend);
         let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = current.snapshot().unwrap();
         let saved = AwbcProductExecutorSaveSnapshot::from_live(
             &snapshot,
@@ -121,6 +128,185 @@ fn saved_awbc_steps(source: &str) -> impl FnMut() -> RuntimeStepResult {
         );
         result
     }
+}
+
+fn assert_deferred_wait(source: &str, before: &[&str], after: &[&str]) {
+    let compiled = compile_source(source).unwrap();
+    let mut native = Engine::for_flow(compiled.plan.clone(), &compiled.plan.flows()[0].id).unwrap();
+    let mut native_step = |input, options| native.step(input, options);
+    let mut awbc_step = saved_awbc_input_steps(source);
+    for (backend, step) in [
+        (
+            "Native",
+            &mut native_step
+                as &mut dyn FnMut(RuntimeStepInput, RuntimeStepOptions) -> RuntimeStepResult,
+        ),
+        ("saved AWBC", &mut awbc_step),
+    ] {
+        let options = RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 128 },
+            ..Default::default()
+        };
+        let logs = |result: &RuntimeStepResult| {
+            result
+                .output
+                .effects
+                .line
+                .iter()
+                .filter_map(|effect| match effect {
+                    LineEffectRequest::Log(row) => Some(row.message.as_str()),
+                    _ => None,
+                })
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+        let entered = step(Default::default(), options);
+        assert!(
+            entered.output.diagnostics.is_empty(),
+            "{backend}: {:?}",
+            entered.output.diagnostics
+        );
+        assert_eq!(logs(&entered), before, "{backend}");
+        let paused = step(Default::default(), options);
+        assert!(
+            paused.output.diagnostics.is_empty(),
+            "{backend}: {:?}",
+            paused.output.diagnostics
+        );
+        assert_eq!(paused.stats.executed_ops, 0, "{backend}");
+        assert!(logs(&paused).is_empty(), "{backend}");
+        assert_eq!(
+            paused.stop_reason,
+            RuntimeStepStopReason::Blocked,
+            "{backend}"
+        );
+        let partial = step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(40_000_000),
+                ..Default::default()
+            },
+            options,
+        );
+        assert!(partial.output.diagnostics.is_empty(), "{backend}");
+        assert!(logs(&partial).is_empty(), "{backend}");
+        assert_eq!(partial.stats.executed_ops, 0, "{backend}");
+        assert_eq!(
+            partial.stop_reason,
+            RuntimeStepStopReason::Blocked,
+            "{backend}"
+        );
+        let resumed = step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(60_000_000),
+                ..Default::default()
+            },
+            options,
+        );
+        assert!(
+            resumed.output.diagnostics.is_empty(),
+            "{backend}: {:?}",
+            resumed.output.diagnostics
+        );
+        assert_eq!(logs(&resumed), after, "{backend}");
+        assert_eq!(
+            resumed.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Done),
+            "{backend}"
+        );
+        let finished = step(Default::default(), options);
+        assert!(
+            logs(&finished).is_empty(),
+            "{backend}: completed cleanup must not replay"
+        );
+    }
+}
+
+#[test]
+fn registered_defer_does_not_make_a_waiting_flow_runnable() {
+    assert_deferred_wait(
+        r#"
+flow main() {
+    defer { log.info("cleanup") }
+    wait(0.1s)
+    log.info("after-wait")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        &[],
+        &["after-wait", "cleanup"],
+    );
+}
+
+#[test]
+fn deferred_callback_wait_blocks_until_its_original_deadline() {
+    assert_deferred_wait(
+        r#"
+flow main() {
+    scope region {
+        defer { log.info("cleanup-enter"); wait(0.1s); log.info("cleanup-done") }
+        log.info("body")
+    }
+    log.info("after-scope")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        &["body", "cleanup-enter"],
+        &["cleanup-done", "after-scope"],
+    );
+}
+
+#[test]
+fn invocation_cleanup_waits_before_publishing_completion() {
+    assert_deferred_wait(
+        r#"
+flow main() {
+    defer { log.info("cleanup-enter"); wait(0.1s); log.info("cleanup-done") }
+    log.info("body")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        &["body", "cleanup-enter"],
+        &["cleanup-done"],
+    );
+}
+
+#[test]
+fn direct_function_cleanup_waits_before_delivering_return_value() {
+    assert_deferred_wait(
+        r#"
+fn relay() -> i64 effects { log.write, control.suspend } {
+    defer { log.info("cleanup-enter"); wait(0.1s); log.info("cleanup-done") }
+    log.info("function-body")
+    return 42i64
+}
+flow main() { let value = relay(); log.info(value) }
+entry cli @entry.main { goto @flow.main }
+"#,
+        &["function-body", "cleanup-enter"],
+        &["cleanup-done", "42"],
+    );
+}
+
+#[test]
+fn nested_deferred_callback_wait_blocks_all_waiting_ancestors() {
+    assert_deferred_wait(
+        r#"
+flow main() {
+    scope region {
+        defer {
+            defer { log.info("inner-enter"); wait(0.1s); log.info("inner-done") }
+            log.info("outer")
+        }
+        log.info("body")
+    }
+    log.info("after-scope")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        &["body", "outer", "inner-enter"],
+        &["inner-done", "after-scope"],
+    );
 }
 
 #[test]

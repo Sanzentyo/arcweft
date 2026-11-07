@@ -261,6 +261,25 @@ pub(super) struct DocumentParser<'source, 'events> {
 pub(super) enum ExpressionContext {
     Ordinary,
     ViewValue,
+    /// A deferred executable body retains value tails while its statements
+    /// use runtime grammar, independently of the enclosing declaration.
+    RuntimeValue,
+}
+
+impl ExpressionContext {
+    pub(super) const fn value(self) -> Self {
+        match self {
+            Self::Ordinary | Self::ViewValue => Self::Ordinary,
+            Self::RuntimeValue => Self::RuntimeValue,
+        }
+    }
+
+    pub(super) const fn block_item_kind(self) -> SyntaxKind {
+        match self {
+            Self::Ordinary | Self::ViewValue => SyntaxKind::FunctionItem,
+            Self::RuntimeValue => SyntaxKind::FlowItem,
+        }
+    }
 }
 
 impl<'source, 'events> DocumentParser<'source, 'events> {

@@ -66,7 +66,7 @@ pub(super) struct CompletedNode {
 }
 
 pub(super) fn emit_expression(parser: &mut DocumentParser<'_, '_>, end: usize, role: SyntaxRole) {
-    parser.with_expression_context(ExpressionContext::Ordinary, |parser| {
+    parser.with_expression_context(parser.expression_context().value(), |parser| {
         let _ = emit_expression_node(parser, end, role);
     });
 }
@@ -451,7 +451,11 @@ fn parse_prefix(
             .with_expression_context(ExpressionContext::Ordinary, |parser| {
                 composite::emit_thread_expression(parser, end, role)
             }),
-        "result" | "option" | "seq" | "stream" if composite::has_braced_body(parser, end) => {
+        "seq" | "stream" if composite::has_braced_body(parser, end) => parser
+            .with_expression_context(ExpressionContext::Ordinary, |parser| {
+                composite::emit_computation_block(parser, end, role)
+            }),
+        "result" | "option" if composite::has_braced_body(parser, end) => {
             composite::emit_computation_block(parser, end, role)
         }
         "scope" if composite::has_braced_body(parser, end) => {
@@ -622,16 +626,20 @@ fn emit_await_branches(
     parser.bump();
     parser.bump_trivia_before(end);
     let branches = if parser.at("{") {
-        super::statement::emit_await_with_branch_block(parser, end, SyntaxKind::FunctionItem)
-            .into_iter()
-            .map(PendingAwaitBranchProjection::kind)
-            .collect::<Box<[_]>>()
+        super::statement::emit_await_with_branch_block(
+            parser,
+            end,
+            parser.expression_context().block_item_kind(),
+        )
+        .into_iter()
+        .map(PendingAwaitBranchProjection::kind)
+        .collect::<Box<[_]>>()
     } else if parser.at(":") {
         let interval = super::statement::await_with_indented_suite_interval(parser, with, end);
         super::statement::emit_await_with_indented_branch_block(
             parser,
             interval,
-            SyntaxKind::FunctionItem,
+            parser.expression_context().block_item_kind(),
         )
         .into_iter()
         .map(PendingAwaitBranchProjection::kind)
