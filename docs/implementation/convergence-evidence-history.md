@@ -15344,3 +15344,13 @@ Syntaxの全25逆依存をworkspace既定featureで実行し、5997件中5992 PA
 広域run終了時のroot fixture180件と現行仕様を含む3830入力、Cargo100入力はdrift0。その後の変更は当該Sema test methodの1 pathだけで、他の広域入力は不変。修正済みの入力を固定した最終Clippy／公開時も差分0。最初のfixture修復で露出したValueResolutionFailedと、編集に重なった先行Clippyの適用限界も原本へ保持した。
 現状一覧の末尾書込みHIR recoveryは解消として置換し、元の診断・失敗・SHAは履歴へ保持した。次のgoto probeはDoneだけで判定せずログを照合し、AWBCのstatic／dynamic gotoでouter cleanup、関数内gotoでfunction／outer cleanupの欠落を確認した。各CLIの元binary identityを保持し、Nativeの受入を戻さない。Generic Matchも受入・公開済みを維持する。
 [修正前後・原本・全公開SHA](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — AWBC goto / Choice の呼出しスタック cleanup
+
+Source **9f84b60643bcc46328724e69a16b93336bbd70c2**、補強 **82f4a37865361752d01a20a189e37dda7f716123** を既存 main に通常 commit/push。全差分・tree・blob・親 SHA と元 WIP を照合した。移譲元を型付きで保持し、未実行の実移譲先フレームが引数を所有する。元スタックの内側 scope、関数本体、caller の順に cleanup を drain してから切り替え、置換した caller のコードを再開しない。通常の callback なし goto は元の 1 操作で完了する。
+初回 goto 4 件は Native の assert 後に AWBC がすべて失敗し、修復後の 28 件、Choice と cleanup 失敗を加えた最終 30 件はすべて PASS。AWBC は各 step の公開 JSON 保存と cold restore を行う。待機中 0 op と 40ms+60ms、失敗後の caller cleanup と移譲先未実行、改変保存 9 条件の原子拒否、共通 node quota、budget yield、scope grant 上限時の所有移譲を検証した。
+Core 初回 owner は 2318 件中 2316 PASS / 2 FAIL。quota の新テストは元の ProgramType(Resource(nodes)) を期待するよう訂正した。もう 1 件は初回 checkpoint の unresolved goto effect の分類退行で、MissingDynamicTarget を保持する根本の型付きエラー伝搬へ修復した。後続 affected 6 件は PASS。これを初回全件 PASS に書き換えない。
+広域の初回 list は windows crate の rlib 不在と rustc の内部エラーでテスト前に終了 101。同じ固定入力・コマンドの再試行は終了 0 となり、全件を選択して実行した。追加の clean やキャッシュファイルの移動・複写は行っていない。
+Core 全 53 逆依存の実測は 7960 件中 7956 PASS / 4 FAIL / 41 SKIP。CLI は 710 件中 706 PASS / 4 FAIL、非 CLI の新規失敗は 0 件。全 target / 全 feature check・Clippy、18 Rust path の fmt、構造 gate、Core doctest は終了 0。実行入力 3833 件（root fixture 180 / Cargo 100 を含む）は drift 0。freeze 時の main は初回 SHA、補強 diff を含む同一入力を後続 SHA で公開した。元 12 tracked / 6 untracked WIP を含む実測であり、clean commit のみの検証とは主張しない。
+元と同じ 3 CLI Source・1 op / 128 step の Native / AWBC 6 条件も、元の完全な log 順序と Done を確認。実バイナリ hash と入力 hash を保存した。旧 Source24 の exit 0 / Done に cleanup 欠落があった事実も保持する。
+現状一覧の AWBC goto 欠落と Choice 未検証の列挙を、上記実測に基づき置換した。直接 raw AWBC return、AWBC の未検証の取消し・Line affine 捕捉、登録・子構築前の集約検査等は当該範囲だけ継続とし、Native / Line-init / Generic Match の既受入を全体 goal の未達で戻さない。以前の Syntax25 の 5 FAIL と後続 fixture 修復は履歴のまま保持する。[全結果・訂正・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIP は 82 entries、SHA-256 0d2ec847849449dbee0195da94e34ec6b6a55e87025638fd9c2c3a5835824e57。

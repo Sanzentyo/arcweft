@@ -30474,5 +30474,1118 @@
         }
       ]
     }
+  },
+  "flowTransferInvocationUnwind": {
+    "version": 1,
+    "date": "2026-11-07",
+    "source": {
+      "version": 1,
+      "commit": "82f4a37865361752d01a20a189e37dda7f716123",
+      "parent": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+      "tree": "5896578925502ff9c647870a19e3f77fe54291b5",
+      "remote": "82f4a37865361752d01a20a189e37dda7f716123",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "blob": "cf4eac5cf3bd93aa585d74c4e2ee0266c55b71f6"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "9cd67c5021147c1960cb8b53eb32e1741d4063ab"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "blob": "6f1910ba5f6ec6f92d7a224e5aa38e4d81b03b65"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/tests/transfer.rs",
+          "blob": "801ebead00c53e20285f4e21ada0dbc8d21ee5d5"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/transfer.rs",
+          "blob": "69129665f65b940eccd518f78d7a53db82520884"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/validation.rs",
+          "blob": "1ebd152cc6354acd6e854507c87269b9c0afb7b9"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "0fe740bd3e8bb817a68088002ad3cc4409fc9234"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/unwind.rs",
+          "blob": "f4ea684aa07388b159b322ab0e64e4d1e922f90e"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+          "blob": "b840da51e244ed07293c8ad3537b5bb63f5118ad"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+          "blob": "e314a92fa72879605c4f4fb068d3af1e7663c03b"
+        },
+        {
+          "path": "docs/01-language/block-scopes.md",
+          "blob": "1dc4cf3424a169a323f9fa6a1f2cb496c42e334b"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "fa76d62061ea0afcf842fe512b4af5e597b6949c069e048ab23f990a64ffa8e5",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T12:29:36.5579616Z"
+    },
+    "initialSource": {
+      "version": 1,
+      "commit": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+      "parent": "204cfb995ad40542c947cd000db8e75b9422b613",
+      "tree": "381451698676bfbc876ec8fd95beb023548fb877",
+      "remote": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "blob": "d96d5b0d82e9469159a995cbbd115318077a7c63"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "d21defb5a3de41cd4cd42954b4424e9f5215b671"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "blob": "2704112aa5ac352006bf84ace0c585305f1e6aa3"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/transfer.rs",
+          "blob": "4bc98721e81cbd7649da5b1a046cacd183c28fdd"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/validation.rs",
+          "blob": "917954630326c44e6affc46a42b7f690301de0cf"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "3a0556ea4e96f0ea45d089fc69d89390dc1d41d6"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+          "blob": "a980e3eb40f169bc4fc1c114daad3e27c21f1042"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "blob": "9963f702b1d80408ace4772f1174eb75ba9157ba"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "1b6775b9b94fb2c595daec6d7c22513de0c6949d"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "blob": "7ed7d60c06847c89d1ea2f85dbfdb34bba3d128b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "5c639e5fec886d86e644f9ffeaea8a3c292e728c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify.rs",
+          "blob": "66deccec7a200c19547f54b992d2d11b80d439f2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "851e91e7d034732cc9d8ac25b4cb0467b4eba25d"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "blob": "31378beb195f1cf62bf3128909517789d6be09d3"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/unwind.rs",
+          "blob": "ec4c522e40f243de3e8fc0b8593601e06a08fddd"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "9d6822d8aab8ddd5c33da36f237805c3c5755c2d6927fc74c350373169cd0b97",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T12:12:31.5882709Z"
+    },
+    "scope": "Drain all old invocation/scope cleanup before a static/dynamic or selected Choice Flow transfer. Retain the actual unexecuted destination frame and typed original operation in the one live/inert fiber grammar. Preserve Native accepted behavior.",
+    "originalReproduction": {
+      "version": 1,
+      "sourceBase": "204cfb995ad40542c947cd000db8e75b9422b613",
+      "arguments": [
+        "nextest",
+        "run",
+        "--locked",
+        "--workspace",
+        "--test",
+        "scoped_defer",
+        "-E",
+        "test(static_goto_drains_) | test(dynamic_goto_drains_) | test(function_goto_drains_) | test(goto_waits_for_invocation_)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ],
+      "exitCode": 100,
+      "testFileSha256": "d817b955c8ee397b1eba44fb88ba51e1e1c8cffd2587fad8e199acb33a98ae27",
+      "testPatchSha256": "08a62a5d9ee04352bd9c1ff2dafca17860d93f6fc2cda9a6f1b506138d40dbbc",
+      "composition": "Target-specific owner, distinct from full workspace --lib --tests",
+      "startedAt": "2026-11-07T11:30:40.7693379Z",
+      "endedAt": "2026-11-07T11:30:56.9166638Z"
+    },
+    "initialOwner": {
+      "command": "cargo nextest run --locked --workspace --test scoped_defer --no-tests fail --no-fail-fast",
+      "startUtc": "2026-11-07T12:08:02.7744242Z",
+      "endUtc": "2026-11-07T12:11:30.7351923Z",
+      "exitCode": 0,
+      "sourceDrift": []
+    },
+    "coreOwnerInitial": {
+      "command": "cargo nextest run --locked -p arcweft-core --lib --no-tests fail --no-fail-fast",
+      "startUtc": "2026-11-07T12:16:32.2302317Z",
+      "endUtc": "2026-11-07T12:18:52.2698905Z",
+      "exitCode": 100
+    },
+    "coreAffectedFixed": {
+      "arguments": [
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(pending_flow_transfer_) | test(goto_without_callbacks_) | test(partial_unwind_moves_) | test(control_failures_retire_actual_)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ],
+      "startUtc": "2026-11-07T12:20:27.886931Z",
+      "endUtc": "2026-11-07T12:21:15.8738173Z",
+      "exitCode": 0
+    },
+    "corrections": [
+      "The first four regressions all pass their Native assertion and fail AWBC before the production fix. Source24 CLI exits zero/Done even while AWBC omits invocation cleanup; status alone is not success.",
+      "The initial Core owner run is 2318 run / 2316 pass / 2 fail. One new quota test expected a top-level Resource error instead of the owning ProgramType(Resource(nodes)) boundary. The other exposes a real regression in the first source checkpoint: unresolved Goto effects became InternalInvariant instead of MissingDynamicTarget. Correct the expectation and preserve the typed runtime target error; the subsequent six affected tests pass. Do not rewrite or sum the original run.",
+      "The storage-only model check proves no execution behavior. The first execution-check overlapped later edits and is retained only as a development attempt. Final workspace quality and reverse runs use the complete frozen input.",
+      "The broad input was frozen on the first source commit plus the exact hardening diff. The second source commit publishes identical bytes; original 12 tracked / 6 untracked WIP are preserved and are part of the observed checkout, not asserted clean commit-only test inputs.",
+      "Replace the current AWBC goto loss / unverified Choice enumeration with the now verified bounded behavior. Retain old CLI failures, test attempts, counts and full SHAs as history. Do not reopen Native goto/Choice, Line/init or Generic Match acceptance because the overall goal is incomplete."
+    ],
+    "ownerConditions": [
+      "static/dynamic whole-stack cleanup order",
+      "called-function and caller cleanup without resuming displaced code",
+      "100ms cleanup wait with zero-op blocked / 40ms+60ms progression",
+      "selected Choice nested/body cleanup before target",
+      "cleanup failure drains callers without entering target",
+      "every-step canonical decoded AWBC public JSON save/cold restore",
+      "nine forged destination/origin/value/status forms reject before activation and keep sticky admission failure",
+      "shared exact live/inert node allowance",
+      "pending budget-yield save/restore",
+      "callback-free goto remains one original operation",
+      "partial presentation unwind needs no extra grant and transfers only actual exiting owners"
+    ],
+    "buildAttempts": [
+      {
+        "version": 1,
+        "arguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--message-format",
+          "json"
+        ],
+        "exitCode": 101,
+        "startedAt": "2026-11-07T12:30:52.0462663Z",
+        "endedAt": "2026-11-07T12:39:07.1699037Z"
+      },
+      {
+        "version": 1,
+        "arguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--message-format",
+          "json"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T12:41:09.7081272Z",
+        "endedAt": "2026-11-07T12:49:29.6687345Z",
+        "initialAttempt": "awbc-goto-unwind-hardening-20261107.reverse.list.receipt.json"
+      }
+    ],
+    "quality": {
+      "compiler-owner": {
+        "version": 1,
+        "sourceBase": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "--workspace",
+          "--test",
+          "scoped_defer",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3833,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T12:22:45.3019983Z",
+        "endedAt": "2026-11-07T12:25:37.9644865Z"
+      },
+      "fmt": {
+        "version": 1,
+        "arguments": [
+          "--edition",
+          "2024",
+          "--config",
+          "skip_children=true",
+          "--check",
+          "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/transfer.rs",
+          "crates/arcweft-core/src/awbc/fiber/validation.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "crates/arcweft-core/src/awbc/vm/unwind.rs",
+          "crates/arcweft-core/src/awbc/verify.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/control.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/transfer.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs"
+        ],
+        "exitCode": 0
+      },
+      "workspace-check": {
+        "version": 1,
+        "sourceBase": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+        "arguments": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3833,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T12:25:37.9691862Z",
+        "endedAt": "2026-11-07T12:28:14.7020357Z"
+      },
+      "workspace-clippy": {
+        "version": 1,
+        "sourceBase": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+        "arguments": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3833,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T12:28:14.7044862Z",
+        "endedAt": "2026-11-07T12:30:45.7928503Z"
+      },
+      "structure": {
+        "version": 1,
+        "sourceBase": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+        "arguments": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3833,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T12:30:45.7952806Z",
+        "endedAt": "2026-11-07T12:30:51.4720749Z"
+      }
+    },
+    "coreDoctests": {
+      "version": 1,
+      "source": "82f4a37865361752d01a20a189e37dda7f716123",
+      "arguments": [
+        "test",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--doc"
+      ],
+      "startedAt": "2026-11-07T12:53:53.7907043Z",
+      "endedAt": "2026-11-07T13:00:42.5063364Z",
+      "exitCode": 0,
+      "sourceInputs": 3833,
+      "sourceDrift": 0,
+      "summary": [
+        "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.37s"
+      ]
+    },
+    "reverse": {
+      "receipt": {
+        "version": 1,
+        "sourceBase": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+        "filter": "rdeps(=arcweft-core)",
+        "listArguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--message-format",
+          "json"
+        ],
+        "listReceipt": "awbc-goto-unwind-hardening-20261107.reverse.retry1.list.receipt.json",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "listExitCode": 0,
+        "filterMatchedTests": 7960,
+        "exitCode": 100,
+        "sourceInputs": 3833,
+        "sourceDrift": 0,
+        "cargoInputs": 100,
+        "cargoDrift": 0,
+        "summary": [
+          "     Summary [1405.967s] 7960 tests run: 7956 passed (74 slow), 4 failed, 41 skipped"
+        ],
+        "startedAt": "2026-11-07T12:41:09.7081272Z",
+        "endedAt": "2026-11-07T13:13:04.3271008Z"
+      },
+      "counts": {
+        "run": 7960,
+        "passed": 7956,
+        "failed": 4,
+        "skipped": 41
+      },
+      "resolvedPackages": 53,
+      "actualTestPackages": 50,
+      "cliRun": 710,
+      "cliPassed": 706,
+      "cliFailed": 4,
+      "nonCliRun": 7250,
+      "nonCliFailed": 0,
+      "failures": [
+        {
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ]
+    },
+    "cliProbeDevelopment": {
+      "version": 1,
+      "at": "2026-11-07T12:51:43.7889875Z",
+      "source": "82f4a37865361752d01a20a189e37dda7f716123",
+      "attempt": "static bytecode-vm",
+      "failure": "The CLI exposes cumulative observations at each step; the first harness concatenated every snapshot and double-counted logs. This is an assertion-harness error, not a Native execution failure.",
+      "actualFinalLogs": [
+        "inner",
+        "outer",
+        "target"
+      ],
+      "finalStatus": "done Done",
+      "stdout": "awbc-goto-unwind-cli-20261107.static.bytecode-vm.json",
+      "stdoutSha256": "c85a687776bfc123992c967e2d79ba2f9b33288948f1826443bd62839e5fa5e2"
+    },
+    "originalCliAfter": {
+      "version": 1,
+      "sourceBase": "9f84b60643bcc46328724e69a16b93336bbd70c2",
+      "sourceFreezeAt": "2026-11-07T12:22:44.4191413Z",
+      "binary": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "binarySha256": "15030dcfa7cb9a0ecf9565499941c36903c9bd27cfbc4bc7848d90388a855501",
+      "binaryLastWriteUtc": "2026-11-07T12:43:05.2174655Z",
+      "sourceDrift": 0,
+      "originalReceipt": "awbc-defer-goto-probe-20261107.current.receipt.json",
+      "rows": [
+        {
+          "variant": "static",
+          "executor": "bytecode-vm",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-defer-goto-probe-20261107.static.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "bytecode-vm",
+            "--mode",
+            "drain",
+            "--max-ops",
+            "1",
+            "--steps",
+            "128",
+            "--json"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T12:51:46.2759017Z",
+          "endedAt": "2026-11-07T12:51:46.9749044Z",
+          "sourceSha256": "bc3724d7e5615c28afd42c5c3b523bb335402a46062021a852674713cb35ca09",
+          "expectedLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "actualLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "finalStatus": "done Done",
+          "stepCount": 17,
+          "maxExecutedOps": 1.0,
+          "stdoutSha256": "cc683d17916100b1d235298a25781602e9948e9b9ce812c8fc4ee417c95cd985"
+        },
+        {
+          "variant": "static",
+          "executor": "awbc-product",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-defer-goto-probe-20261107.static.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "awbc-product",
+            "--mode",
+            "drain",
+            "--max-ops",
+            "1",
+            "--steps",
+            "128",
+            "--json"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T12:51:46.9780125Z",
+          "endedAt": "2026-11-07T12:51:48.3130538Z",
+          "sourceSha256": "bc3724d7e5615c28afd42c5c3b523bb335402a46062021a852674713cb35ca09",
+          "expectedLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "actualLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "finalStatus": "done Done",
+          "stepCount": 21,
+          "maxExecutedOps": 1.0,
+          "stdoutSha256": "e99f1b230a34d1c1d1dc0e8e497a575cb6b45335401e0e3fb88f21af456fddae"
+        },
+        {
+          "variant": "dynamic",
+          "executor": "bytecode-vm",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-defer-goto-probe-20261107.dynamic.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "bytecode-vm",
+            "--mode",
+            "drain",
+            "--max-ops",
+            "1",
+            "--steps",
+            "128",
+            "--json"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T12:51:48.3579441Z",
+          "endedAt": "2026-11-07T12:51:49.5522974Z",
+          "sourceSha256": "c4148146e5a72a5753c2633167a59ca68927b0464d3c7fae46f00b0cc20d2ce5",
+          "expectedLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "actualLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "finalStatus": "done Done",
+          "stepCount": 18,
+          "maxExecutedOps": 1.0,
+          "stdoutSha256": "be30374ed7b644de26e8157717640e31951aaaf3b14d3ff5e343f8854c4de7db"
+        },
+        {
+          "variant": "dynamic",
+          "executor": "awbc-product",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-defer-goto-probe-20261107.dynamic.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "awbc-product",
+            "--mode",
+            "drain",
+            "--max-ops",
+            "1",
+            "--steps",
+            "128",
+            "--json"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T12:51:49.5543672Z",
+          "endedAt": "2026-11-07T12:51:50.8752446Z",
+          "sourceSha256": "c4148146e5a72a5753c2633167a59ca68927b0464d3c7fae46f00b0cc20d2ce5",
+          "expectedLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "actualLogs": [
+            "inner",
+            "outer",
+            "target"
+          ],
+          "finalStatus": "done Done",
+          "stepCount": 25,
+          "maxExecutedOps": 1.0,
+          "stdoutSha256": "852542710e78649d9ac2a1af00354c11edd26ba7e7ec9a4a31352ae2cc0f7287"
+        },
+        {
+          "variant": "function",
+          "executor": "bytecode-vm",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-defer-goto-probe-20261107.function.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "bytecode-vm",
+            "--mode",
+            "drain",
+            "--max-ops",
+            "1",
+            "--steps",
+            "128",
+            "--json"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T12:51:50.8949468Z",
+          "endedAt": "2026-11-07T12:51:52.5265629Z",
+          "sourceSha256": "ed5b9bcbfcf7d089dad692dd366d7a6e05ec45c267959d4544a020515ea04c00",
+          "expectedLogs": [
+            "function",
+            "outer",
+            "target"
+          ],
+          "actualLogs": [
+            "function",
+            "outer",
+            "target"
+          ],
+          "finalStatus": "done Done",
+          "stepCount": 17,
+          "maxExecutedOps": 1.0,
+          "stdoutSha256": "bbb9d2aab0f2e14476ac121b9191dec69a3bd9cd034b8b2343bfe8b52df18d40"
+        },
+        {
+          "variant": "function",
+          "executor": "awbc-product",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-defer-goto-probe-20261107.function.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "awbc-product",
+            "--mode",
+            "drain",
+            "--max-ops",
+            "1",
+            "--steps",
+            "128",
+            "--json"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T12:51:52.5281879Z",
+          "endedAt": "2026-11-07T12:51:54.2516306Z",
+          "sourceSha256": "ed5b9bcbfcf7d089dad692dd366d7a6e05ec45c267959d4544a020515ea04c00",
+          "expectedLogs": [
+            "function",
+            "outer",
+            "target"
+          ],
+          "actualLogs": [
+            "function",
+            "outer",
+            "target"
+          ],
+          "finalStatus": "done Done",
+          "stepCount": 22,
+          "maxExecutedOps": 1.0,
+          "stdoutSha256": "ad3a5eacf1028b540cf71eceec9bbb314331d828e2c7a22f5429793a44f73341"
+        }
+      ]
+    },
+    "limits": "The four existing CLI failures remain. Do not synthesize a clean full-workspace result, add owner counts to the matrix, or relabel earlier Source24 Syntax25 five-failure evidence. This cut does not accept direct raw AWBC return from open scopes, additional AWBC cancellation/Line-affine capture cases, aggregate registration/child-construction resource admission, MustDrop/promotion proofs, Native public saves, other platforms or ignored Tier2 execution.",
+    "raw": {
+      "path": "task-awbc-flow-transfer.raw.zip",
+      "sha256": "0d2ec847849449dbee0195da94e34ec6b6a55e87025638fd9c2c3a5835824e57",
+      "entries": [
+        {
+          "entry": "awbc-defer-goto-probe-20261107.audit.json",
+          "bytes": 2935,
+          "sha256": "dc1d7387aab39012798d35c4e2911d6b3b3fdcbd2900d27bc06fe0999d213c18"
+        },
+        {
+          "entry": "awbc-defer-goto-probe-20261107.current.receipt.json",
+          "bytes": 5158,
+          "sha256": "aca51e20ebbac5bc6c7fbd30410e6c20a4de6076bcd7bd8b340fa498292b9998"
+        },
+        {
+          "entry": "awbc-defer-goto-probe-20261107.dynamic.arcw",
+          "bytes": 236,
+          "sha256": "c4148146e5a72a5753c2633167a59ca68927b0464d3c7fae46f00b0cc20d2ce5"
+        },
+        {
+          "entry": "awbc-defer-goto-probe-20261107.function.arcw",
+          "bytes": 271,
+          "sha256": "ed5b9bcbfcf7d089dad692dd366d7a6e05ec45c267959d4544a020515ea04c00"
+        },
+        {
+          "entry": "awbc-defer-goto-probe-20261107.static.arcw",
+          "bytes": 208,
+          "sha256": "bc3724d7e5615c28afd42c5c3b523bb335402a46062021a852674713cb35ca09"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.execution-check.log",
+          "bytes": 85044,
+          "sha256": "81b485d2a2ddad9faab81c2ae7409afc05d08218e868d1f90890daea5894866a"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.execution-check.receipt.json",
+          "bytes": 198,
+          "sha256": "ba4ca8f06e9091d9ec32ad17bccb5251957a0ec683a1969ed02b0b9a6e3ef3e9"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.integrated-check.log",
+          "bytes": 83980,
+          "sha256": "d0bad340de138110ac681cd172d4fc82e0d7efef02c4e62cf41cf918a3fe6c6c"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.integrated-check.receipt.json",
+          "bytes": 198,
+          "sha256": "2ac3b1bce7b546fe861f5242baf9b1c1e09f171730da9859960209af2481549d"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.message.txt",
+          "bytes": 517,
+          "sha256": "12567c4a3bbae1c3341abf8d38c0fd2ab144f89332f774570706c0973a45398f"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.model-check.log",
+          "bytes": 83761,
+          "sha256": "53d576375747e9c3fb46b61ca8c06ff5145d9601cc328bdae334dae9af311c58"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.model-check.receipt.json",
+          "bytes": 421,
+          "sha256": "7807f779ad7f520410b8bbc5f4a5f3128d4c748901ce8fbf3ad0fd4b008ed54e"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.owned.txt",
+          "bytes": 715,
+          "sha256": "856b04b52bb7714884c2b50e819b537d7a1a0fbf2a94fbf5c0a9dc04e832266f"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.owner-first.log",
+          "bytes": 93263,
+          "sha256": "1e5a92ef87063387085efc999c1f726ea72f6ce17c3c603d4306470e61dd47a6"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.owner-first.receipt.json",
+          "bytes": 244,
+          "sha256": "e27a75aaf58c5e911326384ad527bada8e940ef6e5e3c3ab616c8d13e25a84ef"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.owner-first.sources.json",
+          "bytes": 2340,
+          "sha256": "f48a8502052b60499cf54fe5dd8e1b6f88a7d2c93271d1a6347107417079eec0"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.pathspec",
+          "bytes": 700,
+          "sha256": "3f5655fe5783c1e73903178d2ed3dd0692f469159cd96df3daf883a597630227"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.prepared.json",
+          "bytes": 3214,
+          "sha256": "a7389b9d72d916cd1e197a0f280e6dc75df380936718c460fecf9a3dcf8c117e"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.repro.log",
+          "bytes": 91601,
+          "sha256": "b147b2382e40ffc8949c7c9da429722f56ff77817afe77b4b0509bc321426d5d"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.repro.receipt.json",
+          "bytes": 781,
+          "sha256": "de5d0ac75e1893c890690a9e5f403c77dd8ed76e55d3b2312d932508400b07a3"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.repro.test-patch",
+          "bytes": 2383,
+          "sha256": "08a62a5d9ee04352bd9c1ff2dafca17860d93f6fc2cda9a6f1b506138d40dbbc"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.reviewed.patch",
+          "bytes": 87701,
+          "sha256": "9d6822d8aab8ddd5c33da36f237805c3c5755c2d6927fc74c350373169cd0b97"
+        },
+        {
+          "entry": "awbc-goto-unwind-20261107.verified.json",
+          "bytes": 2616,
+          "sha256": "d9a2220da69b77e13b046e1010ff4dc935f24cbb13f2c85e348fe47831fc0ea9"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.dynamic.awbc-product.json",
+          "bytes": 46810,
+          "sha256": "852542710e78649d9ac2a1af00354c11edd26ba7e7ec9a4a31352ae2cc0f7287"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.dynamic.awbc-product.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.dynamic.bytecode-vm.json",
+          "bytes": 34752,
+          "sha256": "be30374ed7b644de26e8157717640e31951aaaf3b14d3ff5e343f8854c4de7db"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.dynamic.bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.function.awbc-product.json",
+          "bytes": 41919,
+          "sha256": "ad3a5eacf1028b540cf71eceec9bbb314331d828e2c7a22f5429793a44f73341"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.function.awbc-product.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.function.bytecode-vm.json",
+          "bytes": 33266,
+          "sha256": "bbb9d2aab0f2e14476ac121b9191dec69a3bd9cd034b8b2343bfe8b52df18d40"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.function.bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.static.awbc-product.json",
+          "bytes": 40354,
+          "sha256": "e99f1b230a34d1c1d1dc0e8e497a575cb6b45335401e0e3fb88f21af456fddae"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.static.awbc-product.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.static.bytecode-vm.json",
+          "bytes": 33139,
+          "sha256": "cc683d17916100b1d235298a25781602e9948e9b9ce812c8fc4ee417c95cd985"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.final.static.bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.initial-harness.json",
+          "bytes": 626,
+          "sha256": "7de8ed1a3de9a750b4eb03a3ce448ae6c509f4f0d2899631419100e37e5b2d2a"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.receipt.json",
+          "bytes": 6736,
+          "sha256": "dd7d39ca9ddfb093d46687e6db49410e55b29ba7aad4df5a8643514e478b8024"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.static.bytecode-vm.json",
+          "bytes": 33139,
+          "sha256": "c85a687776bfc123992c967e2d79ba2f9b33288948f1826443bd62839e5fa5e2"
+        },
+        {
+          "entry": "awbc-goto-unwind-cli-20261107.static.bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.broad-regressions.json",
+          "bytes": 1681,
+          "sha256": "20a1c23f58eaa76389c6205ad709e9af529f1eea680bee5dc33bbbd96ff77ba3"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.compiler-owner.log",
+          "bytes": 93528,
+          "sha256": "ac6fd861352e8b2f1f1455283a4ba15aab3b5f3bae118ecd5ebeebd19847f906"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.compiler-owner.receipt.json",
+          "bytes": 420,
+          "sha256": "d91c112917a61e67c9693990c414d6a36a726bf290d803ab1b4573eda3f446f4"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.core-fixed-owner.log",
+          "bytes": 35982,
+          "sha256": "55edba266f11bd0bd61aff7f8e6066c23700dfaac5c54ecf4817ae5b379427a1"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.core-fixed-owner.receipt.json",
+          "bytes": 434,
+          "sha256": "1ce5c68d96af0e6b1485ca68f07cc1221788b3c6acc103fc132d60b4c1f1b824"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.core-owner.log",
+          "bytes": 393253,
+          "sha256": "3382e0075390f0be358618a9f1e5b6747dc923326ba19de1477cabc8f26ade88"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.core-owner.receipt.json",
+          "bytes": 214,
+          "sha256": "f59948706822541f58d2ab2e8203bca1480f53f533026534c57f0cb9041cae8d"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.doctest.log",
+          "bytes": 83434,
+          "sha256": "9e32e1fbf4e79294a16fda16dc8ffd94d40dced4a9e2590a20c394396383a680"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.doctest.receipt.json",
+          "bytes": 460,
+          "sha256": "7b9c715e38575b692ef3f3b5d546e17eb285c00547e4947699b800f56df4b91f"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.fmt.receipt.json",
+          "bytes": 1191,
+          "sha256": "392f93296c051d3aef25a856e2146c5f07ec9b435a55a2418deb67aee5d79a65"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.graph.json",
+          "bytes": 7013,
+          "sha256": "7d69fd9ee862c9bb508398db98c99bc095c5d9cb7344999afed9c24af8173bc9"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.owned-candidates.txt",
+          "bytes": 911,
+          "sha256": "fc2f8783b82e3384a623d425835a85a29c4389d2dab62b67c3b6c9db7f812914"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.list.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.list.receipt.json",
+          "bytes": 333,
+          "sha256": "b5578e235c647c34dad049fea1b73e3e397f5a5fc5895f5f0fd5d67d4470c397"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.list.stderr.log",
+          "bytes": 133869,
+          "sha256": "16c2d91b6b2c5d059b2cb36dd20db19fa492d2ff9ee5cabba10789f1ebecc903"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.log",
+          "bytes": 1315524,
+          "sha256": "8ace4d459efa8bf8c1161e4cb25d7a7307cbfec65f612cfe97a775994570690b"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.receipt.json",
+          "bytes": 994,
+          "sha256": "ee09f784cb76214a34d2c1378cce8cdfc0cadc29edff3deeba776adced99b3d3"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.retry1.list.json",
+          "bytes": 1412881,
+          "sha256": "f28654a42916253ba90301e5d64255b5c07301c846e3e51702fe15ccb37ba83b"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.retry1.list.receipt.json",
+          "bytes": 417,
+          "sha256": "e5d77159a27a157a4d75dc95b8fd73995fac8b118e24029494599397e8bd4752"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.retry1.list.stderr.log",
+          "bytes": 110064,
+          "sha256": "8719ed48be335076cf1438de6ab32481e7622f0a23938f426cddfdcfee268fdc"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.selection.json",
+          "bytes": 1458096,
+          "sha256": "8b86d7de0b4f5ea81d6309ac4c66f125e41accf98cf7ac7865b97cc84663cc6f"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.reverse.tree.log",
+          "bytes": 25372,
+          "sha256": "ab3a36615f5e7fa83c6e308c3520c003dbf356839dc635fd649f0d460631fe57"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source-freeze.json",
+          "bytes": 751171,
+          "sha256": "303e1bc2d0928b625756875bedf10847037a4bb235405cb782c8b3deca584574"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source.message.txt",
+          "bytes": 617,
+          "sha256": "dad2182fea1f2c9f282b4164683fffeb8881257341e9e1b74fb60e4141f153fd"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source.owned.txt",
+          "bytes": 538,
+          "sha256": "8aab3b8c8ea2db2210927a37285ea59897fe68ddc7fb8241b01e81dc28b21799"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source.pathspec",
+          "bytes": 527,
+          "sha256": "8d0f8e62ef942183bab26cc16f44d60b4c67b97ec071c7fe0e9314b0cd66c5ba"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source.prepared.json",
+          "bytes": 2677,
+          "sha256": "879389a3598ceb19a7dce57f42a9157d9c113f62eca4815b523bad0efc0b1848"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source.reviewed.patch",
+          "bytes": 33875,
+          "sha256": "fa76d62061ea0afcf842fe512b4af5e597b6949c069e048ab23f990a64ffa8e5"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.source.verified.json",
+          "bytes": 2079,
+          "sha256": "5252ee74b20952119b945c42bf5de1d2b69c6bd3ba982d77e73af757ac0758f6"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.structure.log",
+          "bytes": 65874,
+          "sha256": "7661a71765672877bd43dee68cf581d3100dd4a336bdfc5decc46917cbc8376a"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.structure.receipt.json",
+          "bytes": 383,
+          "sha256": "26f4dee45dac3e17f0c5c8a3f5e7ee64f026b12053065ea6cb68c5dd3ee9763f"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.workspace-check.log",
+          "bytes": 113010,
+          "sha256": "84db379933c99dcafe0adc60401b132d914ca3e858280763b2e2f6e9622eabac"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.workspace-check.receipt.json",
+          "bytes": 360,
+          "sha256": "307d2a353201d79aa8f61ac48eb4de70b11e2c9320797a7481aeaaaae089b116"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.workspace-clippy.log",
+          "bytes": 9134452,
+          "sha256": "0580eb94f3575ef14c436d71b31ddb4d7b17a7e1020c06fd282dc1f76a08cc5a"
+        },
+        {
+          "entry": "awbc-goto-unwind-hardening-20261107.workspace-clippy.receipt.json",
+          "bytes": 361,
+          "sha256": "2c0fa3d4fdfaa76f40061231cd231da7025b8bd109ade652cf4d6b43c77052f6"
+        },
+        {
+          "entry": "function-scope-20261107.metadata-all.json",
+          "bytes": 4293339,
+          "sha256": "121ed3fb126ba5868048c8c69fb3ddaa29528ddb7f1d174b7e5da348681d8c60"
+        },
+        {
+          "entry": "record-goto-unwind.ps1",
+          "bytes": 16120,
+          "sha256": "ab412bdc76fc077021761a0252e87fd17ac67bf0aa09b8213018e3747ee53258"
+        },
+        {
+          "entry": "retry-goto-unwind-matrix.ps1",
+          "bytes": 2730,
+          "sha256": "096dd73e70ed4e37089b2e1112d42a042d91dbc048d65265110c9d046758d2e1"
+        },
+        {
+          "entry": "run-goto-cli-after.ps1",
+          "bytes": 3200,
+          "sha256": "6219d3ef162c64174f1b9f4270dbebe0fbb24e93e8d26ab116d64641bfa42512"
+        },
+        {
+          "entry": "run-goto-unwind-validation.ps1",
+          "bytes": 5726,
+          "sha256": "58bb765eb7db30a11c941ae4f5802f48866a5331bb5191418d175f52a7738aa8"
+        }
+      ]
+    }
   }
 }
