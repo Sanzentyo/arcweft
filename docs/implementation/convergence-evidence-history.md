@@ -15279,3 +15279,18 @@ production は `dbd34d860869726765dcb1f2e27be7b8f351054e` と同じ。
 新規 owner の物理 LOC／bytes と責務・fan-in／fan-outのレビューも原本へ記録した。
 この記録は逆依存テスト全体の終了や通常 defer 全体の完了を表さない。
 [コマンド・結果・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Ordinary defer checkpoint reverse-dependency matrix
+
+Source `df46b44b3a42eea9336d16d75f01cfc33aa9102a` と既存 WIP を含む3,648入力を固定し、最後まで drift 0。
+production は `dbd34d860869726765dcb1f2e27be7b8f351054e`。Cargo manifest／lockfile 100入力が不変で、
+既存の全 feature グラフから Core を含む推移的逆依存53パッケージを再利用した。
+非 CLI の実テストは49パッケージ。workspace の既定 feature 構成で4,799件と補完2,422件が全通過、スキップ18件。
+両 filter は排他的で、合計7,221件。単体実行と workspace 実行では依存側の feature が異なるため、
+当初除外した Core／Compiler 対象を workspace 構成でも確認した。先行する単体2,321／8／93件をこの合計へ再加算しない。
+CLI unit/bin は196件、規定6 integration は29件が通過。Core doctest は80件通過。
+全 target／全 feature の workspace check と Clippy の終了0は前節の同 Source の実測を使う。
+cold build と公開 API fixture のコンパイルを含む実時間、slow 表示、警告、18 skip と全コマンドを原本へ保持した。
+全 CLI check は未再実行で、旧 Source の705 PASS／7 FAILを今回の225件で解消済みとは判定しない。
+この matrix は通常 defer の残る機能条件を完了扱いせず、Generic Match などの受入済み境界も戻さない。
+[全 filter・feature 比較・実測・入力照合・原本](acceptance-evidence/task-flow-registry-execution.json)。

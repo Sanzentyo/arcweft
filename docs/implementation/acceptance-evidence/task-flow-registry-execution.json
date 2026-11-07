@@ -25412,5 +25412,526 @@
         }
       ]
     }
+  },
+"ordinaryFlowAwbcReverseMatrix": {
+    "version": 1,
+    "recordedAt": "2026-11-07T07:24:41.6016019Z",
+    "sourceCommit": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+    "productionCommit": "dbd34d860869726765dcb1f2e27be7b8f351054e",
+    "graph": {
+      "actualNonCliExecutedPackages": 49,
+      "packages": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-character-view",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "cargoInputDrift": 0,
+      "reusedFrom": "function-scope-20261107.metadata-reverse.json in task-native-function-body-scopes.raw.zip",
+      "unchangedCargoManifestAndLockInputs": 100,
+      "transitiveReverseWorkspacePackages": 53
+    },
+    "nonCli": {
+      "complement": {
+        "summary": "     Summary [  21.604s] 2422 tests run: 2422 passed, 0 skipped",
+        "failed": 0,
+        "log": "awbc-flow-defer-20261107.reverse-complement.log",
+        "passed": 2422,
+        "command": "cargo nextest run --locked --workspace --lib --tests --exclude arcweft-cli -E <recorded filter> --no-tests fail --no-fail-fast",
+        "skipped": 0,
+        "filter": "rdeps(=arcweft-core) & ((package(=arcweft-core) & (kind(lib) | binary(=direct_suspension))) | (package(=arcweft-compiler) & (binary(=scoped_defer) | binary(=evaluated_effects))))",
+        "exitCode": 0
+      },
+      "target": "Windows, workspace default feature composition; --workspace --lib --tests --exclude arcweft-cli",
+      "first": {
+        "summary": "     Summary [ 956.081s] 4799 tests run: 4799 passed (10 slow), 18 skipped",
+        "failed": 0,
+        "log": "awbc-flow-defer-20261107.reverse.log",
+        "passed": 4799,
+        "command": "cargo nextest run --locked --workspace --lib --tests --exclude arcweft-cli -E <recorded filter> --no-tests fail --no-fail-fast",
+        "skipped": 18,
+        "filter": "rdeps(=arcweft-core) & not (package(=arcweft-core) & (kind(lib) | binary(=direct_suspension))) & not (package(=arcweft-compiler) & (binary(=scoped_defer) | binary(=evaluated_effects)))",
+        "exitCode": 0
+      },
+      "union": {
+        "passed": 7221,
+        "explanation": "These two filters are disjoint and cover the selected non-CLI reverse closure under the same workspace Cargo command. The earlier isolated Core 2321 / Compiler 8 and 93 runs are separate feature compositions and are not added again.",
+        "failed": 0,
+        "skipped": 18
+      }
+    },
+    "featureDecision": {
+      "comparison": {
+        "version": 1,
+        "source": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+        "command": "cargo tree --locked --workspace --exclude arcweft-cli --prefix none --format {p}|{f}",
+        "comparisons": [
+          {
+            "owner": "core",
+            "packages": 121,
+            "differences": [
+              {
+                "package": "half v2.7.1",
+                "owner": "",
+                "reverse": "num-traits"
+              },
+              {
+                "package": "num-integer v0.1.46",
+                "owner": "i128",
+                "reverse": "i128,std"
+              },
+              {
+                "package": "num-bigint v0.4.6",
+                "owner": "",
+                "reverse": "default,serde,std"
+              },
+              {
+                "package": "semver v1.0.28",
+                "owner": "default,serde,std",
+                "reverse": "default,std"
+              },
+              {
+                "package": "toml v1.1.2+spec-1.1.0",
+                "owner": "default,display,parse,serde,std",
+                "reverse": "default,display,parse,preserve_order,serde,std"
+              },
+              {
+                "package": "cc v1.2.62",
+                "owner": "",
+                "reverse": "parallel"
+              },
+              {
+                "package": "windows-sys v0.61.2",
+                "owner": "Win32,Win32_Foundation,Win32_Storage,Win32_Storage_FileSystem,Win32_System,Win32_System_Console,Win32_System_SystemInformation,default",
+                "reverse": "Win32,Win32_Foundation,Win32_Globalization,Win32_Security,Win32_Storage,Win32_Storage_FileSystem,Win32_System,Win32_System_Com,Win32_System_Console,Win32_System_SystemInformation,Win32_UI,Win32_UI_Shell,Win32_UI_Shell_Common,Win32_UI_WindowsAndMessaging,default"
+              },
+              {
+                "package": "num-traits v0.2.19",
+                "owner": "default,i128,std",
+                "reverse": "default,i128,libm,std"
+              },
+              {
+                "package": "serde_core v1.0.228",
+                "owner": "alloc,rc,result,std",
+                "reverse": "alloc,default,rc,result,std"
+              },
+              {
+                "package": "memchr v2.8.0",
+                "owner": "alloc,std",
+                "reverse": "alloc,default,std"
+              },
+              {
+                "package": "hashbrown v0.17.1",
+                "owner": "",
+                "reverse": "allocator-api2,default,default-hasher,equivalent,inline-more,raw-entry"
+              },
+              {
+                "package": "syn v2.0.117",
+                "owner": "clone-impls,default,derive,extra-traits,fold,full,parsing,printing,proc-macro,visit",
+                "reverse": "clone-impls,default,derive,extra-traits,fold,full,parsing,printing,proc-macro,visit,visit-mut"
+              },
+              {
+                "package": "num-rational v0.4.2",
+                "owner": "num-bigint",
+                "reverse": "num-bigint,std"
+              },
+              {
+                "package": "regex-automata v0.4.14",
+                "owner": "dfa-search",
+                "reverse": "alloc,dfa-onepass,dfa-search,hybrid,meta,nfa,nfa-backtrack,nfa-pikevm,nfa-thompson,perf,perf-inline,perf-literal,perf-literal-multisubstring,perf-literal-substring,std,syntax,unicode,unicode-age,unicode-bool,unicode-case,unicode-gencat,unicode-perl,unicode-script,unicode-segment,unicode-word-boundary"
+              },
+              {
+                "package": "winnow v1.0.3",
+                "owner": "",
+                "reverse": "alloc,ascii,binary,default,parser,std"
+              },
+              {
+                "package": "either v1.15.0",
+                "owner": "",
+                "reverse": "default,std,use_std"
+              },
+              {
+                "package": "smallvec v1.15.1",
+                "owner": "const_generics,const_new",
+                "reverse": "const_generics,const_new,serde,union"
+              }
+            ]
+          },
+          {
+            "owner": "compiler",
+            "packages": 258,
+            "differences": [
+              {
+                "package": "regex-automata v0.4.14",
+                "owner": "alloc,dfa-search,hybrid,meta,nfa,nfa-backtrack,nfa-pikevm,nfa-thompson,perf,perf-inline,perf-literal,perf-literal-multisubstring,perf-literal-substring,std,syntax",
+                "reverse": "alloc,dfa-onepass,dfa-search,hybrid,meta,nfa,nfa-backtrack,nfa-pikevm,nfa-thompson,perf,perf-inline,perf-literal,perf-literal-multisubstring,perf-literal-substring,std,syntax,unicode,unicode-age,unicode-bool,unicode-case,unicode-gencat,unicode-perl,unicode-script,unicode-segment,unicode-word-boundary"
+              },
+              {
+                "package": "hashbrown v0.16.1",
+                "owner": "default-hasher",
+                "reverse": "allocator-api2,default,default-hasher,equivalent,inline-more,raw-entry"
+              },
+              {
+                "package": "smallvec v1.15.1",
+                "owner": "const_generics,const_new",
+                "reverse": "const_generics,const_new,serde,union"
+              },
+              {
+                "package": "half v2.7.1",
+                "owner": "",
+                "reverse": "num-traits"
+              },
+              {
+                "package": "windows-sys v0.61.2",
+                "owner": "Win32,Win32_Foundation,Win32_Storage,Win32_Storage_FileSystem,Win32_System,Win32_System_Console,Win32_System_SystemInformation,default",
+                "reverse": "Win32,Win32_Foundation,Win32_Globalization,Win32_Security,Win32_Storage,Win32_Storage_FileSystem,Win32_System,Win32_System_Com,Win32_System_Console,Win32_System_SystemInformation,Win32_UI,Win32_UI_Shell,Win32_UI_Shell_Common,Win32_UI_WindowsAndMessaging,default"
+              },
+              {
+                "package": "regex-syntax v0.8.10",
+                "owner": "std",
+                "reverse": "default,std,unicode,unicode-age,unicode-bool,unicode-case,unicode-gencat,unicode-perl,unicode-script,unicode-segment"
+              },
+              {
+                "package": "hashbrown v0.14.5",
+                "owner": "inline-more",
+                "reverse": "ahash,allocator-api2,default,inline-more,raw"
+              },
+              {
+                "package": "winnow v1.0.3",
+                "owner": "",
+                "reverse": "alloc,ascii,binary,default,parser,std"
+              },
+              {
+                "package": "regex-lite v0.1.9",
+                "owner": "std,string",
+                "reverse": "default,std,string"
+              },
+              {
+                "package": "toml v1.1.2+spec-1.1.0",
+                "owner": "default,display,parse,serde,std",
+                "reverse": "default,display,parse,preserve_order,serde,std"
+              },
+              {
+                "package": "num-rational v0.4.2",
+                "owner": "num-bigint",
+                "reverse": "num-bigint,std"
+              },
+              {
+                "package": "hashbrown v0.17.1",
+                "owner": "",
+                "reverse": "allocator-api2,default,default-hasher,equivalent,inline-more,raw-entry"
+              },
+              {
+                "package": "num-traits v0.2.19",
+                "owner": "default,i128,std",
+                "reverse": "default,i128,libm,std"
+              },
+              {
+                "package": "serde_core v1.0.228",
+                "owner": "alloc,rc,result,std",
+                "reverse": "alloc,default,rc,result,std"
+              },
+              {
+                "package": "log v0.4.29",
+                "owner": "",
+                "reverse": "std"
+              },
+              {
+                "package": "image v0.25.10",
+                "owner": "gif,jpeg,png,webp",
+                "reverse": "bmp,gif,jpeg,png,webp"
+              },
+              {
+                "package": "bytemuck v1.25.0",
+                "owner": "extern_crate_alloc",
+                "reverse": "bytemuck_derive,derive,extern_crate_alloc,min_const_generics"
+              },
+              {
+                "package": "ahash v0.8.12",
+                "owner": "default,getrandom,runtime-rng,std",
+                "reverse": "compile-time-rng,const-random,default,getrandom,runtime-rng,std"
+              },
+              {
+                "package": "memchr v2.8.0",
+                "owner": "alloc,std",
+                "reverse": "alloc,default,std"
+              },
+              {
+                "package": "once_cell v1.21.4",
+                "owner": "alloc,default,race,std",
+                "reverse": "alloc,default,portable-atomic,race,std"
+              },
+              {
+                "package": "tracing-core v0.1.36",
+                "owner": "once_cell,std",
+                "reverse": "default,once_cell,std"
+              },
+              {
+                "package": "zeroize v1.9.0",
+                "owner": "alloc",
+                "reverse": "alloc,default"
+              }
+            ]
+          }
+        ],
+        "decision": "The previously excluded Core and Compiler targets also need a run in the workspace reverse-dependency composition; dependency features differ from their isolated owner runs."
+      },
+      "reason": "Although Core and Compiler package-level features matched, their dependency feature sets differed between isolated and workspace commands. The initially excluded targets were therefore run again as a complementary workspace slice. Cargo child process arguments were observed as cargo --color=auto test --no-run --message-format json-render-diagnostics --workspace --exclude arcweft-cli --lib --tests --locked."
+    },
+    "cliUnit": {
+      "command": "cargo nextest run --locked -p arcweft-cli --lib --bins --no-tests fail --no-fail-fast",
+      "log": "awbc-flow-defer-20261107.cli-unit.log",
+      "failed": 0,
+      "summary": "     Summary [  32.805s] 196 tests run: 196 passed, 0 skipped",
+      "exitCode": 0,
+      "skipped": 0,
+      "passed": 196
+    },
+    "cliPolicy": {
+      "command": "cargo nextest run --locked -p arcweft-cli --test runtime_native_options --test check_core_cli --test native_style_parity_sample --test release_trust_json --test arcw_fixtures_check_run --test seq04_8_4_persistent_cache_build_cli_goldens --no-tests fail --no-fail-fast",
+      "log": "awbc-flow-defer-20261107.cli-policy.log",
+      "failed": 0,
+      "summary": "     Summary [   8.001s] 29 tests run: 29 passed, 0 skipped",
+      "exitCode": 0,
+      "skipped": 0,
+      "passed": 29
+    },
+    "coreDoc": {
+      "command": "cargo test --locked -p arcweft-core --doc",
+      "log": "awbc-flow-defer-20261107.core-doc.log",
+      "failed": 0,
+      "summary": "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s",
+      "ignored": 0,
+      "exitCode": 0,
+      "passed": 80
+    },
+    "verification": {
+      "version": 1,
+      "sourceCommit": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+      "sourceInputCount": 3648,
+      "sourceDrift": 0,
+      "originalUntrackedFiles": 6,
+      "originalUntrackedDrift": 0,
+      "nonCliExecutedPackages": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-character-view",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "nonCliExecutedPackageCount": 49,
+      "terminals": [
+        {
+          "phase": "reverse",
+          "summary": [
+            "     Summary [ 956.081s] 4799 tests run: 4799 passed (10 slow), 18 skipped"
+          ]
+        },
+        {
+          "phase": "reverse-complement",
+          "summary": [
+            "     Summary [  21.604s] 2422 tests run: 2422 passed, 0 skipped"
+          ]
+        },
+        {
+          "phase": "cli-unit",
+          "summary": [
+            "     Summary [  32.805s] 196 tests run: 196 passed, 0 skipped"
+          ]
+        },
+        {
+          "phase": "cli-policy",
+          "summary": [
+            "     Summary [   8.001s] 29 tests run: 29 passed, 0 skipped"
+          ]
+        },
+        {
+          "phase": "core-doc",
+          "summary": [
+            "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s"
+          ]
+        }
+      ],
+      "at": "2026-11-07T07:22:59.5254292Z"
+    },
+    "sourceFreeze": "awbc-flow-defer-20261107.consumer.source-freeze.json in task-ordinary-flow-awbc-consumers.raw.zip",
+    "limits": "The full CLI check target, ignored Tier2 and other-platform runtime checks were not run by this matrix. Earlier full check 705 PASS / 7 FAIL at 6b72d7ca42beb3661a7025598cf74a341d61fc21 remains historical evidence; the 225 CLI policy passes do not resolve those seven failures.",
+    "acceptance": "This completes the recorded checkpoint consumer matrix, not the remaining ordinary Flow defer registry/control-transfer/cancellation/resource conditions. Generic Match and other previously accepted boundaries remain accepted.",
+    "originalWip": {
+      "trackedPaths": 12,
+      "preserved": true,
+      "binaryPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "actualUntrackedFiles": 6
+    },
+    "raw": {
+      "path": "task-ordinary-flow-awbc-reverse.raw.zip",
+      "entries": [
+        {
+          "entry": "awbc-flow-defer-20261107.reverse.log",
+          "bytes": 822762,
+          "sha256": "0808eaaf01d5ca9b3172dfac67a145f049f43be981ac19d80369f18cedb4d93d"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.reverse.receipt.json",
+          "bytes": 483,
+          "sha256": "d0ff00986abecfad0b1d1e762e8f06f17b6c0614e744417ed1f540ea1fe86a41"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.reverse-complement.log",
+          "bytes": 477849,
+          "sha256": "6e373a37b496648d1be1dc7691d707fc1496d04e480901707be47a83d426fcda"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.cli-unit.log",
+          "bytes": 128897,
+          "sha256": "d9fc13646b940388497ea08fe5763e20c9ec1087b6e7d975b011d8860933a9a9"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.cli-policy.log",
+          "bytes": 93258,
+          "sha256": "5eea5b1a1df9981ffa77b6f1752c084866f3eb028657346935d92a42ce81c400"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.core-doc.log",
+          "bytes": 82339,
+          "sha256": "77ac47395cae7b5ac15bda962b4b811975207ddc88d685760b3d977885e258e2"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.reverse-complement.receipt.json",
+          "bytes": 1331,
+          "sha256": "ed0d57beeed1c14414d76dd0c1b007bdca6961a1d1ee3d9a6a8f09ebef88035e"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.matrix.verified.json",
+          "bytes": 2476,
+          "sha256": "bb9d42e767e656411b2a20126a0fe6eb906093fa6e428d1ab9f12563f3cd735d"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.reverse-selection.json",
+          "bytes": 746,
+          "sha256": "08ac9d928c3b0c5e23c83b4e9123d130eb6acd502d4101e8f582cd9015e29bb1"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.features-core.txt",
+          "bytes": 12048,
+          "sha256": "77bd67f60de51a753f33d7953ebac54b7901cba98b36cfb88ca76f528129c8ce"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.features-compiler.txt",
+          "bytes": 38037,
+          "sha256": "6b3047b5a7aca64698f4a5272875fd5cf66da58669935eb240ae24db671a6a10"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.features-workspace.txt",
+          "bytes": 121517,
+          "sha256": "96efb98c065c132b553f7118bc50c0533a3250e16793eb3c7a42a0693ee4923f"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.features-reverse.txt",
+          "bytes": 116422,
+          "sha256": "aca54050809464e96c5815a186cf234e510483b52e0b142929b81e9b06541be4"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.feature-comparison.json",
+          "bytes": 8167,
+          "sha256": "7d8f64e3fc4ebd182cf98aa199ca6c44083875320963fd940c77f33a53aeec44"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.reverse-feature-comparison.json",
+          "bytes": 8265,
+          "sha256": "5be4a42b672554d6a9cdd8a74fb326c9b96e8dff5a6629655dfc317d4af46c6a"
+        }
+      ],
+      "sha256": "5a2fff828d459d4b46adc1324723f8baf4c6a035f7b54b3a8468c084134c9ad3"
+    }
   }
 }
