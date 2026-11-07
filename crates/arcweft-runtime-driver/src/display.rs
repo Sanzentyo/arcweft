@@ -772,7 +772,7 @@ fn choices_from_status(status: &FlowFiberStatus) -> Vec<BundleChoice> {
         return Vec::new();
     };
     state
-        .options
+        .options()
         .iter()
         .map(|option| BundleChoice {
             id: option.id.clone(),

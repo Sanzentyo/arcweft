@@ -76,9 +76,72 @@ pub(super) enum NativeLexicalExitAction<V> {
         result: NativeReturnResult<V>,
     },
     Goto {
-        source: NativeSourceOperation,
+        source: NativeGotoOrigin,
         destination: FlowRuntimeId,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum NativeGotoOrigin {
+    Operation(NativeSourceOperation),
+    Choice {
+        source: NativeSourceOperation,
+        option: usize,
+    },
+}
+
+impl From<NativeSourceOperation> for NativeGotoOrigin {
+    fn from(source: NativeSourceOperation) -> Self {
+        Self::Operation(source)
+    }
+}
+
+impl NativeGotoOrigin {
+    pub(super) fn operation(&self) -> &NativeSourceOperation {
+        match self {
+            Self::Operation(source) | Self::Choice { source, .. } => source,
+        }
+    }
+
+    fn admit_destination(
+        &self,
+        destination: &FlowRuntimeId,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.operation().admit_retained(admission)?;
+        admission.validate_metadata(destination)?;
+        if let Self::Choice { option, .. } = self {
+            admission.validate_metadata(option)?;
+        }
+        let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
+            unreachable!("admitted Native goto owns its Plan")
+        };
+        let agrees = match (self, self.operation().operation(plan)) {
+            (Self::Operation(_), Some(FlowOp::Goto(original))) => destination == original,
+            (Self::Operation(_), Some(FlowOp::GotoExpr(_))) => true,
+            (
+                Self::Operation(_),
+                Some(FlowOp::Effect(crate::effect::LineEffectRequest::Goto(label))),
+            ) => plan
+                .resolve_flow_target_value(label)
+                .is_ok_and(|original| original == *destination),
+            (Self::Choice { option, .. }, Some(FlowOp::Choice { options, .. })) => {
+                options
+                    .get(*option)
+                    .and_then(|option| option.target.as_ref())
+                    == Some(destination)
+            }
+            _ => false,
+        };
+        if !agrees || plan.validate_flow_invocation(destination, &[]).is_err() {
+            return Err(AwbcRuntimeValueSnapshotError::Message {
+                message:
+                    "Native goto differs from its original operation or selected Choice target"
+                        .into(),
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -260,12 +323,19 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
                 .into(),
         };
         admission.validate_metadata(&self.target)?;
+        if let NativeLexicalExitAction::Goto {
+            source,
+            destination,
+        } = &self.action
+        {
+            return source.admit_destination(destination, admission);
+        }
         let (source, transfer_target) = match &self.action {
             NativeLexicalExitAction::Emitted => return Ok(()),
             NativeLexicalExitAction::Scheduled(token) => return admission.validate_metadata(token),
             NativeLexicalExitAction::Bind { source, .. }
-            | NativeLexicalExitAction::Return { source, .. }
-            | NativeLexicalExitAction::Goto { source, .. } => (source, None),
+            | NativeLexicalExitAction::Return { source, .. } => (source, None),
+            NativeLexicalExitAction::Goto { .. } => unreachable!("admitted goto above"),
             NativeLexicalExitAction::Transfer(transfer) => {
                 (&transfer.source, Some(&transfer.target))
             }
@@ -273,9 +343,6 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
         source.admit_retained(admission)?;
         if let Some(target) = transfer_target {
             target.admit_retained(admission)?;
-        }
-        if let NativeLexicalExitAction::Goto { destination, .. } = &self.action {
-            admission.validate_metadata(destination)?;
         }
         let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
             unreachable!("native position has an admitted plan");
@@ -300,20 +367,6 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
                     return admission.validate_metadata(label);
                 }
                 Some(expr.ty())
-            }
-            (NativeLexicalExitAction::Goto { destination, .. }, Some(operation)) => {
-                let agrees = match operation {
-                    FlowOp::Goto(original) => destination == original,
-                    FlowOp::GotoExpr(_) => true,
-                    FlowOp::Effect(crate::effect::LineEffectRequest::Goto(label)) => plan
-                        .resolve_flow_target_value(label)
-                        .is_ok_and(|original| original == *destination),
-                    _ => false,
-                };
-                if !agrees || plan.validate_flow_invocation(destination, &[]).is_err() {
-                    return Err(invalid());
-                }
-                return Ok(());
             }
             (NativeLexicalExitAction::Transfer(transfer), Some(FlowOp::Break { depth, value }))
                 if matches!(transfer.kind, NativeLoopTransferKind::Break(_))

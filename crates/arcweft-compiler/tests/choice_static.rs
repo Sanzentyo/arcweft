@@ -51,4 +51,73 @@ flow done() -> String {
     )
     .lower()
     .expect("static Choice goto lowers to verified AWBC");
+
+    use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
+    use arcweft_core::plan::FlowEvent;
+    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+    use arcweft_interaction_model::{
+        id::Identifier,
+        input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
+        payload::InteractionPayload,
+    };
+    let main = compiled.plan.flows()[0].id.clone();
+    let mut engine = Engine::for_flow(compiled.plan.clone(), &main).unwrap();
+    let mut sent = false;
+    let mut selected = 0;
+    let mut transferred = 0;
+    for _ in 0..40 {
+        let input = if let FlowFiberStatus::Choice(state) = &engine.fiber().frame.status {
+            assert!(!sent, "one selection input is sufficient");
+            assert_eq!(state.id(), Some("choice.main.first"));
+            let option = &state.options()[0];
+            sent = true;
+            RuntimeStepInput {
+                input_events: vec![
+                    RoutedInputEvent::new(
+                        InputEpoch::new(0),
+                        InputSequence::new(0),
+                        InteractionTarget::new("choice").unwrap(),
+                        InputEventKind::Custom {
+                            name: Identifier::new("choice:choice.main.first").unwrap(),
+                        },
+                    )
+                    .with_payload(InteractionPayload::Text(option.id.clone().unwrap())),
+                ],
+                ..RuntimeStepInput::default()
+            }
+        } else {
+            RuntimeStepInput::default()
+        };
+        let step = engine.step(input, RuntimeStepOptions::default());
+        assert!(
+            step.output.diagnostics.is_empty(),
+            "{:?}",
+            step.output.diagnostics
+        );
+        selected += step
+            .output
+            .flow_events
+            .iter()
+            .filter(|event| matches!(event, FlowEvent::ChoiceSelected { .. }))
+            .count();
+        transferred += step
+            .output
+            .flow_events
+            .iter()
+            .filter(|event| matches!(event, FlowEvent::Goto { .. }))
+            .count();
+        if let FlowFiberStatus::Done(FlowExit::Return(value)) = step.fiber_status {
+            assert_eq!(value, "done");
+            assert!(sent);
+            assert_eq!(selected, 1);
+            assert_eq!(transferred, 1);
+            return;
+        }
+        assert!(
+            !matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+            "{:?}",
+            step.fiber_status
+        );
+    }
+    panic!("source-lowered Choice must reach its selected Flow");
 }

@@ -708,15 +708,26 @@ impl Engine {
                     ));
             }
             FlowOp::Choice { .. } => {
-                let FlowOp::Choice { id, options } = op.into_owned() else {
-                    unreachable!("selected choice");
+                let admitted = self.native_work_admission().and_then(|mut admission| {
+                    ChoiceState::native(self.plan.clone(), source_site, &mut admission).map_err(
+                        |source| crate::value::RuntimeEvalError::NativeWorkAdmission {
+                            source: Box::new(source),
+                        },
+                    )
+                });
+                let state = match admitted {
+                    Ok(state) => state,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
                 };
                 output.flow_events.push(FlowEvent::ChoicePresented {
-                    id: id.clone(),
-                    options: options.clone(),
+                    id: state.id().map(str::to_owned),
+                    options: state.options().to_vec(),
                 });
                 self.advance_if_needed(next_op_index);
-                self.fiber.frame.status = FlowFiberStatus::Choice(ChoiceState { id, options });
+                self.fiber.frame.status = FlowFiberStatus::Choice(state);
             }
             FlowOp::Await { .. } => {
                 self.start_need_await(source_site, next_op_index, output, pure_backend);
@@ -1027,9 +1038,11 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                 }
             }
-            FlowOp::Goto(target) => self.goto(target, Some(source_site), output, pure_backend),
+            FlowOp::Goto(target) => {
+                self.goto(target, Some(source_site.into()), output, pure_backend)
+            }
             FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(expr, pure_backend) {
-                Ok(target) => self.goto(&target, Some(source_site), output, pure_backend),
+                Ok(target) => self.goto(&target, Some(source_site.into()), output, pure_backend),
                 Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::Return(_) => {
@@ -1048,7 +1061,7 @@ impl Engine {
                 Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::Effect(crate::effect::LineEffectRequest::Goto(label)) => {
-                self.goto_from_label(label, Some(source_site), output, pure_backend);
+                self.goto_from_label(label, Some(source_site.into()), output, pure_backend);
             }
             FlowOp::Effect(_) => {
                 let FlowOp::Effect(effect) = op.into_owned() else {

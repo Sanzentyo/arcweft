@@ -139,7 +139,7 @@ pub(super) fn agent_action_targets_for_runtime_status(
         return Vec::new();
     };
     state
-        .options
+        .options()
         .iter()
         .filter_map(|option| {
             let target = option.id.as_deref()?;

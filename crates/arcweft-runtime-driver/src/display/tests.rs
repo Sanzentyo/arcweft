@@ -3,16 +3,16 @@ use arcweft_core::{engine::ChoiceState, plan::ChoiceRuntimeOption};
 
 #[test]
 fn choices_preserve_a_missing_id_without_synthesizing_from_the_label() {
-    let status = FlowFiberStatus::Choice(ChoiceState {
-        id: None,
-        options: vec![ChoiceRuntimeOption {
+    let status = FlowFiberStatus::Choice(ChoiceState::observed(
+        None,
+        vec![ChoiceRuntimeOption {
             id: None,
             label: "Listen".to_owned(),
             target: None,
             out: None,
             effects: Vec::new(),
         }],
-    });
+    ));
 
     assert_eq!(
         choices_from_status(&status),

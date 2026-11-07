@@ -6,7 +6,7 @@ use crate::observation::RuntimeObservationState;
 use crate::pattern::RuntimePattern;
 use crate::plan::code::RuntimeCodeOwner;
 use crate::plan::{
-    ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
+    EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
     RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan,
 };
 use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
@@ -48,6 +48,8 @@ pub mod aot;
 pub mod audio;
 #[cfg(test)]
 mod child_poll_tests;
+mod choice;
+pub use choice::ChoiceState;
 mod code_cursor;
 mod defer;
 mod duration_wait;
@@ -2074,13 +2076,6 @@ impl HostCallState {
     }
 }
 
-/// Suspended choice state.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ChoiceState {
-    pub id: Option<String>,
-    pub options: Vec<ChoiceRuntimeOption>,
-}
-
 /// Terminal flow result observed by the minimal runtime.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowExit {
@@ -2109,7 +2104,7 @@ impl FlowFiberStatus {
             Self::WaitingMany(state) => state.runtime_status_label(),
             Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
-                format!("choice {}", state.id.as_deref().unwrap_or("-"))
+                format!("choice {}", state.id().unwrap_or("-"))
             }
             Self::Done(exit) => exit.runtime_status_label(),
             Self::Failed(message) => format!("failed {message}"),
@@ -2128,7 +2123,7 @@ impl FlowFiberStatus {
             Self::WaitingMany(state) => state.debug_status_label(),
             Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
-                format!("choice {}", state.id.as_deref().unwrap_or("-"))
+                format!("choice {}", state.id().unwrap_or("-"))
             }
             Self::Done(exit) => format!("done {exit:?}"),
             Self::Failed(message) => format!("failed {message}"),
@@ -5353,7 +5348,13 @@ impl Engine {
                     }))
                 }
                 FlowFiberStatus::HostCall(state) => FlowFiberStatus::HostCall(state.clone()),
-                FlowFiberStatus::Choice(state) => FlowFiberStatus::Choice(state.clone()),
+                FlowFiberStatus::Choice(state) => {
+                    if state.selected().is_some() {
+                        FlowFiberStatus::Running
+                    } else {
+                        FlowFiberStatus::Choice(state.clone())
+                    }
+                }
                 FlowFiberStatus::Done(exit) => FlowFiberStatus::Done(exit.clone()),
                 FlowFiberStatus::Failed(message) => FlowFiberStatus::Failed(message.clone()),
             }
@@ -5390,6 +5391,7 @@ impl Engine {
             FlowFiberStatus::Dialogue(_)
                 | FlowFiberStatus::NeedWaiting(_)
                 | FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(_))
+                | FlowFiberStatus::Choice(_)
         ) && self.fiber_has_internal_work(&self.fiber)
         {
             return None;
@@ -5469,6 +5471,9 @@ impl Engine {
             ),
             FlowFiberStatus::NeedWaiting(state) => self.await_has_pending_work(state),
             FlowFiberStatus::ActionWaiting(state) => self.actions.has_message(state.payload()),
+            FlowFiberStatus::Choice(state) => {
+                state.selected().is_some() && !self.fiber_waits_for_join(fiber)
+            }
             FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(state)) => {
                 self.program_fanout_has_pending_work(state)
             }
@@ -5476,8 +5481,7 @@ impl Engine {
             | FlowFiberStatus::Failed(_)
             | FlowFiberStatus::DurationWaiting(_)
             | FlowFiberStatus::WaitingMany(_)
-            | FlowFiberStatus::HostCall(_)
-            | FlowFiberStatus::Choice(_) => false,
+            | FlowFiberStatus::HostCall(_) => false,
         }
     }
 

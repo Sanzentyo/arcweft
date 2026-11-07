@@ -8,6 +8,8 @@ use crate::plan::{
 };
 use crate::tests::function_application::returning_function_builder;
 
+mod choice;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OrdinaryFlowExit {
     End,
@@ -18,13 +20,16 @@ enum OrdinaryFlowExit {
     Goto(GotoCase),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GotoCase {
     Static,
     Dynamic,
     Effect,
     InvalidAbi,
     CleanupFailure,
+    Choice,
+    ChoiceFailure,
+    ChoiceContinue,
 }
 
 fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
@@ -149,6 +154,7 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                 exit,
                 OrdinaryFlowExit::FailDuringReturn
                     | OrdinaryFlowExit::Goto(GotoCase::CleanupFailure)
+                    | OrdinaryFlowExit::Goto(GotoCase::ChoiceFailure)
             )
         {
             ops.push(RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(
@@ -223,12 +229,18 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
             },
         )
     };
-    let nested_transfer = |transfer| RuntimeFlowOpSeed::Loop {
-        result: None,
-        body: vec![RuntimeFlowOpSeed::Scope {
-            identity: RuntimeScopeIdentity::Anonymous,
-            body: vec![inner_defer.clone().unwrap(), transfer],
-        }],
+    let nested_transfer = |transfer| {
+        let mut body = vec![inner_defer.clone().unwrap(), transfer];
+        if exit == OrdinaryFlowExit::Goto(GotoCase::ChoiceContinue) {
+            body.push(RuntimeFlowOpSeed::ReturnExpr(boolean_value(true)));
+        }
+        RuntimeFlowOpSeed::Loop {
+            result: None,
+            body: vec![RuntimeFlowOpSeed::Scope {
+                identity: RuntimeScopeIdentity::Anonymous,
+                body,
+            }],
+        }
     };
     let callee_transfer = match exit {
         OrdinaryFlowExit::CallReturn => Some(RuntimeFlowOpSeed::ReturnExpr(boolean_value(false))),
@@ -322,6 +334,33 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                     LineEffectRequest::Goto(target.canonical_label()),
                 )),
                 GotoCase::InvalidAbi => RuntimeFlowOpSeed::GotoExpr(target_label(&needs_argument)),
+                GotoCase::Choice | GotoCase::ChoiceFailure | GotoCase::ChoiceContinue => {
+                    RuntimeFlowOpSeed::Choice {
+                        id: Some("test.choice".into()),
+                        options: vec![
+                            RuntimeChoiceOptionSeed {
+                                id: Some("next".into()),
+                                label: "Next".into(),
+                                target: (case != GotoCase::ChoiceContinue).then_some(target),
+                                out: None,
+                                effects: vec![RuntimeLineEffectSeed::Static(
+                                    LineEffectRequest::Log(RuntimeLog {
+                                        level: "info".into(),
+                                        message: "selected".into(),
+                                        fields: Vec::new(),
+                                    }),
+                                )],
+                            },
+                            RuntimeChoiceOptionSeed {
+                                id: Some("alternate".into()),
+                                label: "Next".into(),
+                                target: Some(alternate),
+                                out: None,
+                                effects: Vec::new(),
+                            },
+                        ],
+                    }
+                }
             })
         }
         _ => None,

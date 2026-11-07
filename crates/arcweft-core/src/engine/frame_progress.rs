@@ -124,8 +124,9 @@ impl Engine {
         if fiber.owner.requests_scope_close() || !self.has_joined_work_for(fiber.id) {
             return false;
         }
-        match fiber.frame.status {
+        match &fiber.frame.status {
             FlowFiberStatus::Running => fiber.frame.next_transition_completes_task(&self.plan),
+            FlowFiberStatus::Choice(state) => state.selected_has_target(),
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_) => true,
             _ => false,
         }

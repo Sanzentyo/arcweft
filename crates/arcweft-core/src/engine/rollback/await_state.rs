@@ -401,6 +401,7 @@ where
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
+            Self::Choice(state) => state.admit_native(admission),
             Self::ActionWaiting(state) => {
                 let crate::engine::ActionWaitingStatus::Native(state) = state else {
                     return Err(invalid(

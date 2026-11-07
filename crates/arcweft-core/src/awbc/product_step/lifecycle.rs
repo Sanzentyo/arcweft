@@ -474,12 +474,12 @@ impl AwbcProductStepExecutor {
                 ),
             FiberSuspensionReason::Choice { .. } => {
                 let active = self.active_choice.as_ref();
-                FlowFiberStatus::Choice(ChoiceState {
-                    id: active.and_then(|active| active.public_id.clone()),
-                    options: active
+                FlowFiberStatus::Choice(ChoiceState::observed(
+                    active.and_then(|active| active.public_id.clone()),
+                    active
                         .map(|active| active.options.clone())
                         .unwrap_or_default(),
-                })
+                ))
             }
             FiberSuspensionReason::Await {
                 target:

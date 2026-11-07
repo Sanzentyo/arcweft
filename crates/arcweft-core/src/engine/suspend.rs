@@ -978,47 +978,66 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some((requested_choice, selection)) = input_choice_selection(input) else {
-            self.fiber.frame.status = FlowFiberStatus::Choice(state);
+        let admitted = self.native_work_admission().and_then(|mut admission| {
+            state.admit_native(&mut admission).map_err(|source| {
+                RuntimeEvalError::NativeWorkAdmission {
+                    source: Box::new(source),
+                }
+            })
+        });
+        if let Err(error) = admitted {
+            self.fail_eval(error, output);
             return;
-        };
-        if requested_choice.is_some() && requested_choice != state.id.as_deref() {
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Input,
-                format!(
-                    "stale choice selection for `{}` while waiting on `{}`",
-                    requested_choice.unwrap_or_default(),
-                    state.id.as_deref().unwrap_or("-")
-                ),
-            ));
+        }
+        if state.selected().is_none() {
+            let Some((requested_choice, selection)) = input_choice_selection(input) else {
+                self.fiber.frame.status = FlowFiberStatus::Choice(state);
+                return;
+            };
+            if requested_choice.is_some() && requested_choice != state.id() {
+                output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Input,
+                    format!(
+                        "stale choice selection for `{}` while waiting on `{}`",
+                        requested_choice.unwrap_or_default(),
+                        state.id().unwrap_or("-")
+                    ),
+                ));
+                self.fiber.frame.status = FlowFiberStatus::Choice(state);
+                return;
+            }
+            let Some(position) = state.options().iter().position(|option| {
+                option.id.as_deref() == Some(selection) || option.label == selection
+            }) else {
+                output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Input,
+                    format!(
+                        "invalid option `{selection}` for choice `{}`",
+                        state.id().unwrap_or("-")
+                    ),
+                ));
+                self.fiber.frame.status = FlowFiberStatus::Choice(state);
+                return;
+            };
+            state.select(position);
+        }
+        if state.selected_has_target() && self.has_joined_work_for(self.fiber.id) {
             self.fiber.frame.status = FlowFiberStatus::Choice(state);
             return;
         }
-        let Some(position) = state.options.iter().position(|option| {
-            option.id.as_deref() == Some(selection) || option.label == selection
-        }) else {
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Input,
-                format!(
-                    "invalid option `{selection}` for choice `{}`",
-                    state.id.as_deref().unwrap_or("-")
-                ),
-            ));
-            self.fiber.frame.status = FlowFiberStatus::Choice(state);
-            return;
-        };
-        let option = state.options.remove(position);
+        let position = state.selected().expect("accepted original Choice ordinal");
+        let option = &state.options()[position];
         let selected = option.id.clone().unwrap_or_else(|| option.label.clone());
         output.flow_events.push(FlowEvent::ChoiceSelected {
-            id: state.id,
+            id: state.id().map(str::to_owned),
             option: selected,
         });
-        self.emit_line_effects(option.effects, output, pure_backend);
-        if let Some(out) = option.out {
-            self.emit_line_effect(LineEffectRequest::Out(out), output, pure_backend);
+        self.emit_line_effects(option.effects.clone(), output, pure_backend);
+        if let Some(out) = &option.out {
+            self.emit_line_effect(LineEffectRequest::Out(out.clone()), output, pure_backend);
         }
-        if let Some(target) = option.target {
-            self.goto(&target, None, output, pure_backend);
+        if let Some(target) = &option.target {
+            self.goto(target, state.selected_goto(), output, pure_backend);
         } else {
             self.fiber.frame.status = FlowFiberStatus::Running;
         }

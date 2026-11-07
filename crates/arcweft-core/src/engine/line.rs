@@ -1,5 +1,6 @@
-use super::code_cursor::NativeSourceOperation;
-use super::defer::{NativeDeferBoundary, NativeLexicalExit, NativeLexicalExitAction};
+use super::defer::{
+    NativeDeferBoundary, NativeGotoOrigin, NativeLexicalExit, NativeLexicalExitAction,
+};
 use super::{
     Engine, FlowControlStackEntryKind, FlowEvent, FlowExit, FlowFiberStatus, LineEffectRequest,
     RuntimeStepInput, RuntimeStepOutput,
@@ -39,7 +40,7 @@ impl Engine {
     pub(super) fn goto_from_label(
         &mut self,
         label: &str,
-        source: Option<NativeSourceOperation>,
+        source: Option<NativeGotoOrigin>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -55,7 +56,7 @@ impl Engine {
     pub(super) fn goto(
         &mut self,
         target: &FlowRuntimeId,
-        mut source: Option<NativeSourceOperation>,
+        mut source: Option<NativeGotoOrigin>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -98,7 +99,10 @@ impl Engine {
             return;
         }
         if let Some(FlowOp::Effect(effect @ LineEffectRequest::Goto(_))) =
-            source.as_ref().and_then(|source| source.operation(&plan))
+            source.as_ref().and_then(|source| match source {
+                NativeGotoOrigin::Operation(source) => source.operation(&plan),
+                NativeGotoOrigin::Choice { .. } => None,
+            })
         {
             self.emit_line_effect(effect.clone(), output, pure_backend);
         }
