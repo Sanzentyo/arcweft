@@ -1710,6 +1710,12 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         let mut effects = checked.effects().clone();
         let mut deferred_line_effects = EffectSet::new();
         self.include_final_call_effect(owner, &mut effects)?;
+        if let Some(effect) = checked.evaluated_effect()
+            && let super::CheckedEvaluatedEffectOperation::RegistryDrop { target, .. } =
+                effect.operation()
+        {
+            effects.insert(target.effect());
+        }
 
         let latent_callable = matches!(
             checked.resolution(),
@@ -1942,12 +1948,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                let mut direct = application.core().effects().constant_effects()?;
-                if let super::CheckedEvaluatedEffectOperation::RegistryDrop { target, .. } =
-                    checked_effect.operation()
-                {
-                    direct.insert(target.effect());
-                }
+                let direct = application.core().effects().constant_effects()?;
                 Ok(CompletedStatementEffectFold::evaluated_effect(
                     child_effects,
                     effect.application_digest(),

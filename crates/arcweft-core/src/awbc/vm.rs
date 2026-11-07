@@ -6,7 +6,7 @@
 
 use crate::value::runtime_value_views_equal;
 mod resources;
-pub(crate) use resources::{VmDialogueRegistryAccess, VmExecutionResources};
+pub(crate) use resources::{VmExecutionResources, VmRegistryAccess};
 
 #[cfg(test)]
 mod dense_numeric_tests;
@@ -559,7 +559,7 @@ pub(crate) fn trap_fiber(
                 context: None,
                 presentation: None,
                 actions: None,
-                dialogue_registry: None,
+                registry: None,
             },
             trap.code,
             trap.message,
@@ -639,7 +639,7 @@ pub fn step_function_with_host_context(
     )
 }
 
-pub(crate) fn dialogue_registry_instruction(
+pub(crate) fn registry_instruction(
     program: &AwbcProgram,
     fiber: &FiberState,
 ) -> Option<arcweft_id::LifetimeScopeKind> {

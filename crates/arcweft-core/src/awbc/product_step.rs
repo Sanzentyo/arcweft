@@ -20,6 +20,8 @@ mod presentation;
 pub mod program;
 mod program_fanout;
 mod program_task;
+mod registry;
+use registry::ProductRegistryOrigin;
 mod root;
 mod runtime_id;
 mod snapshot;
@@ -2913,7 +2915,7 @@ impl AwbcProductStepExecutor {
                     context: Some(&context),
                     presentation: Some(&mut self.presentation),
                     actions: Some(&mut self.actions),
-                    dialogue_registry: None,
+                    registry: None,
                 },
                 &mut host,
             )
@@ -3390,10 +3392,10 @@ impl AwbcProductStepExecutor {
             }
         };
         let registry_activation = front.owner.line_activation();
-        let mut registry_admission = if registry_activation.is_some()
+        let registry_origin = ProductRegistryOrigin::for_child(&front.owner);
+        let mut registry_admission = if registry_origin.is_some()
             && (front.fiber.status == FiberStatus::Suspended
-                || crate::awbc::vm::dialogue_registry_instruction(&self.program, &front.fiber)
-                    .is_some())
+                || crate::awbc::vm::registry_instruction(&self.program, &front.fiber).is_some())
         {
             match self.retained_execution_admission(ProductCheckpointTarget::Child(0)) {
                 Ok(admission) => Some(admission),
@@ -3554,45 +3556,59 @@ impl AwbcProductStepExecutor {
             terminal_exit.map_or_else(
                 || {
                     let dialogues = &self.dialogues;
-                    let mut validate_source = |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
-                        let activation = registry_activation.ok_or(LineRuntimeError::WrongActivation)?;
-                        if handle.token().activation() != &activation
-                            || before_handles.as_ref().is_none_or(|handles| !handles.contains(handle.token()))
-                        {
-                            return Err(LineRuntimeError::WrongOwner);
-                        }
-                        let tag = match &owner {
-                            ProductChildFiberOwner::LineTask { tag, .. } => tag.clone(),
-                            ProductChildFiberOwner::Deferred { registration, .. }
-                            | ProductChildFiberOwner::ScopedDeferred { registration, .. } => {
-                                LineTaskWorkTag::activation(activation, LineTaskWork::Defer(*registration))
+                    let mut validate_source =
+                        |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
+                            let activation =
+                                registry_activation.ok_or(LineRuntimeError::WrongActivation)?;
+                            if handle.token().activation() != &activation
+                                || before_handles
+                                    .as_ref()
+                                    .is_none_or(|handles| !handles.contains(handle.token()))
+                            {
+                                return Err(LineRuntimeError::WrongOwner);
                             }
-                            _ => return Err(LineRuntimeError::WrongOwner),
+                            let tag = match &owner {
+                                ProductChildFiberOwner::LineTask { tag, .. } => tag.clone(),
+                                ProductChildFiberOwner::Deferred { registration, .. }
+                                | ProductChildFiberOwner::ScopedDeferred { registration, .. } => {
+                                    LineTaskWorkTag::activation(
+                                        activation,
+                                        LineTaskWork::Defer(*registration),
+                                    )
+                                }
+                                _ => return Err(LineRuntimeError::WrongOwner),
+                            };
+                            let line = dialogues
+                                .active_line_for(&activation)
+                                .ok_or(LineRuntimeError::WrongActivation)?;
+                            dialogues.validate_registry_handle(
+                                &activation,
+                                line.ledger(),
+                                handle,
+                                &crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag),
+                            )
                         };
-                        let line = dialogues.active_line_for(&activation).ok_or(LineRuntimeError::WrongActivation)?;
-                        dialogues.validate_registry_handle(
-                            &activation, line.ledger(), handle,
-                            &crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag),
-                        )
-                    };
-                    let registry_access = if let (Some(activation), Some(admission), Some(scope)) = (
-                        registry_activation,
+                    let registry_access = if let (Some(origin), Some(admission), Some(scope)) = (
+                        registry_origin,
                         registry_admission.as_mut(),
-                        crate::awbc::vm::dialogue_registry_instruction(&self.program, &child.fiber),
+                        crate::awbc::vm::registry_instruction(&self.program, &child.fiber),
                     ) {
                         let missing =
                             crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired;
-                        let line = self.dialogues.active_line_for(&activation).ok_or(missing)?;
-                        let (owner, rows) = dialogue::reached_registry(
+                        let line = registry_activation
+                            .map(|activation| {
+                                self.dialogues.active_line_for(&activation).ok_or(missing)
+                            })
+                            .transpose()?;
+                        let (owner, rows) = origin.reached_registry(
                             &self.program,
-                            activation,
                             &scope,
                             line,
                             &self.dialogues,
-                            std::iter::once(&self.fiber)
-                                .chain(self.child_fibers.iter().map(|child| &child.fiber)),
+                            &self.fiber,
+                            self.child_fibers.iter(),
                         )?;
-                        Some(crate::awbc::vm::VmDialogueRegistryAccess {
+                        Some(crate::awbc::vm::VmRegistryAccess {
                             owner,
                             rows,
                             admission,
@@ -3612,7 +3628,7 @@ impl AwbcProductStepExecutor {
                             context: Some(&context),
                             presentation: Some(&mut self.presentation),
                             actions: Some(&mut self.actions),
-                            dialogue_registry: registry_access,
+                            registry: registry_access,
                         },
                         &mut host,
                     )?;
@@ -3897,6 +3913,27 @@ impl AwbcProductStepExecutor {
                 return true;
             }
         };
+        if matches!(&owner, ProductChildFiberOwner::FlowDeferred { .. })
+            && let Some((registry_owner, write)) = &pending_registry_mutation
+            && let Err(error) = self.reserve_reached_registry_mutation(
+                registry_origin.expect("ordinary defer retains its actual parent"),
+                *registry_owner,
+                None,
+                write,
+            )
+        {
+            if self.rollback_selected_child_step(
+                child,
+                checkpoint,
+                pending_host_call_before,
+                resume_journal,
+                need_states,
+                output,
+            ) {
+                self.record_error(error, output);
+            }
+            return true;
+        }
         if owner.line_activation().is_none() {
             let mut batch = line::empty_activation_batch(self);
             let prepared =
@@ -3928,6 +3965,14 @@ impl AwbcProductStepExecutor {
             self.commit_line_task_commands(batch, output);
         }
         if matches!(&owner, ProductChildFiberOwner::FlowDeferred { .. }) {
+            if let Some((registry_owner, write)) = pending_registry_mutation {
+                self.commit_reached_registry_mutation(
+                    registry_origin.expect("ordinary defer retains its actual parent"),
+                    registry_owner,
+                    None,
+                    write,
+                );
+            }
             resume_journal.commit_staged_need_ready(
                 &mut self.need_producers,
                 need_states,
@@ -4171,7 +4216,12 @@ impl AwbcProductStepExecutor {
             }
             let line = transaction.line_mut();
             if let Some((owner, write)) = &pending_registry_mutation {
-                self.reserve_reached_registry_mutation(*tag.activation_id(), *owner, line, write)?;
+                self.reserve_reached_registry_mutation(
+                    ProductRegistryOrigin::Dialogue(*tag.activation_id()),
+                    *owner,
+                    Some(line),
+                    write,
+                )?;
             }
             let change = pending_registry_mutation
                 .as_ref()
@@ -4242,9 +4292,9 @@ impl AwbcProductStepExecutor {
             resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
             if let Some((owner, write)) = pending_registry_mutation {
                 self.commit_reached_registry_mutation(
-                    *tag.activation_id(),
+                    ProductRegistryOrigin::Dialogue(*tag.activation_id()),
                     owner,
-                    transaction.line_mut(),
+                    Some(transaction.line_mut()),
                     write,
                 );
             }

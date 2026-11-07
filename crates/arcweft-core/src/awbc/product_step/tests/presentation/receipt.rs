@@ -336,7 +336,7 @@ fn fixture(
             context: Some(&context),
             presentation: Some(&mut executor.presentation),
             actions: Some(&mut executor.actions),
-            dialogue_registry: None,
+            registry: None,
         },
         &mut host,
     )

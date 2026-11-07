@@ -553,6 +553,116 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn scoped_defer_writes_the_reached_flow_registry_before_resuming_parent() {
+    let source = r#"
+flow main() {
+    'flow.flag <- false
+    scope inner {
+        defer { 'flow.flag <- true; }
+    }
+    let flag: Option<bool> = 'flow.flag?
+    if let .Some(value) = flag { log.info(value) } else { log.info("missing") }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["true"]);
+    assert_eq!(saved_awbc(source), ["true"]);
+}
+
+#[test]
+fn function_defer_writes_its_callers_flow_registry() {
+    let source = r#"
+fn schedule() effects { state.write('flow) } {
+    defer { 'flow.flag <- true; }
+}
+flow main() {
+    'flow.flag <- false
+    schedule()
+    let flag: Option<bool> = 'flow.flag?
+    if let .Some(value) = flag { log.info(value) } else { log.info("missing") }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["true"]);
+    assert_eq!(saved_awbc(source), ["true"]);
+}
+
+#[test]
+fn scoped_defer_reads_and_drops_only_its_reached_flow_registry_key() {
+    let source = r#"
+flow main() {
+    'flow.flag <- false
+    'flow.sibling <- "kept"
+    scope inner {
+        defer {
+            let before: Option<bool> = 'flow.flag?
+            if let .Some(value) = before { log.info(value) } else { log.info("missing") }
+            drop_optional('flow.flag?)
+        }
+    }
+    let flag: Option<bool> = 'flow.flag?
+    if let .None = flag { log.info('flow.sibling) } else { log.info("not-dropped") }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_source(source).unwrap();
+    let [site] = compiled.plan.defer_sites() else {
+        panic!("one original cleanup callback");
+    };
+    let callback = compiled.plan.function_sites().get(*site).unwrap();
+    let write = arcweft_id::EffectId::parse("state.write('flow.flag)").unwrap();
+    assert!(
+        callback
+            .invocation_effects()
+            .iter()
+            .any(|effect| effect.covers(&write)),
+        "the admitted cleanup must retain its registry drop permission"
+    );
+    assert_eq!(native(source), ["false", "kept"]);
+    assert_eq!(saved_awbc(source), ["false", "kept"]);
+}
+
+#[test]
+fn nested_defer_reaches_flow_registry_through_its_real_cleanup_parent() {
+    let source = r#"
+flow main() {
+    'flow.flag <- false
+    scope inner {
+        defer {
+            defer { 'flow.flag <- true; }
+            log.info("outer")
+        }
+    }
+    let flag: Option<bool> = 'flow.flag?
+    if let .Some(value) = flag { log.info(value) } else { log.info("missing") }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["outer", "true"]);
+    assert_eq!(saved_awbc(source), ["outer", "true"]);
+}
+
+#[test]
+fn generic_defer_keeps_registry_values_bound_to_each_original_capture_type() {
+    let source = r#"
+fn schedule<T>(value: T) effects { state.write('flow) } {
+    defer { 'flow.value <- value; }
+}
+flow main() {
+    schedule("kept")
+    let first: Option<String> = 'flow.value?
+    if let .Some(value) = first { log.info(value) } else { log.info("missing-string") }
+    schedule(42i64)
+    let second: Option<i64> = 'flow.value?
+    if let .Some(value) = second { log.info(value) } else { log.info("missing-integer") }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["kept", "42"]);
+    assert_eq!(saved_awbc(source), ["kept", "42"]);
+}
+
+#[test]
 fn callback_failure_drains_remaining_cleanup_without_resuming_normal_code() {
     let source = r#"
 flow main() effects { log.write } {

@@ -328,17 +328,25 @@ impl EffectRow {
         permitted: &Self,
         control: &mut C,
     ) -> Result<bool, C::Error> {
-        let (Some(actual), Some(permitted)) = (&self.formula, &permitted.formula) else {
+        let (Some(actual), Some(permitted_formula)) = (&self.formula, &permitted.formula) else {
             return Ok(false);
         };
-        if actual.is_closed() && permitted.is_closed() {
+        if let Some(missing) = self.closed_effects_not_covered_by(permitted) {
             control.charge(DecisionWork::Visit)?;
-            return Ok(actual
+            return Ok(missing.is_empty());
+        }
+        Ok(actual
+            .subset(permitted_formula, control)?
+            .is_unconstrained())
+    }
+
+    fn closed_effects_not_covered_by(&self, permitted: &Self) -> Option<EffectSet> {
+        let (actual, permitted) = (self.formula.as_ref()?, permitted.formula.as_ref()?);
+        (actual.is_closed() && permitted.is_closed()).then(|| {
+            actual
                 .constant_effects()
                 .effects_not_covered_by(&permitted.constant_effects())
-                .is_empty());
-        }
-        Ok(actual.subset(permitted, control)?.is_unconstrained())
+        })
     }
 
     pub(crate) fn try_map_variables<C: DecisionControl>(
@@ -438,6 +446,14 @@ impl EffectRow {
             row: &actual,
             visit: &mut visit,
         };
+        if let Some(missing) = actual.closed_effects_not_covered_by(&permitted) {
+            control.charge(DecisionWork::Visit)?;
+            return if missing.is_empty() {
+                Ok(())
+            } else {
+                Err(EffectSubsetError::MissingEffects { missing })
+            };
+        }
         let inferred = permitted
             .known()
             .map_err(EffectSubsetError::from_row_error)?
@@ -1267,6 +1283,31 @@ mod tests {
                     .expect("valid missing row"),
             })
         );
+    }
+
+    #[test]
+    fn closed_subset_uses_the_same_scoped_capability_coverage_as_permission_checks() {
+        let grant =
+            EffectRow::closed(EffectSet::from_labels(["state.write('flow.flags)"]).unwrap());
+        let required =
+            EffectRow::closed(EffectSet::from_labels(["state.write('flow.flags.seen)"]).unwrap());
+        let mut substitution = EffectSubstitution::new();
+        EffectRow::check_subset(&required, &grant, &mut substitution).unwrap();
+        assert_eq!(substitution, EffectSubstitution::new());
+        for other in [
+            "state.write('flow.flagship)",
+            "state.write('scene.flags.seen)",
+        ] {
+            let actual = EffectSet::from_labels([other]).unwrap();
+            assert_eq!(
+                EffectRow::check_subset(
+                    &EffectRow::closed(actual.clone()),
+                    &grant,
+                    &mut substitution,
+                ),
+                Err(EffectSubsetError::MissingEffects { missing: actual }),
+            );
+        }
     }
 
     #[test]

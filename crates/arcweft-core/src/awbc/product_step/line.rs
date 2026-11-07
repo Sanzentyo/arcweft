@@ -1673,7 +1673,7 @@ impl super::AwbcProductStepExecutor {
         let mut effect_checkpoint = Some(self.execution_checkpoint(
             super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
         )?);
-        let registry_scope = crate::awbc::vm::dialogue_registry_instruction(&self.program, before);
+        let registry_scope = crate::awbc::vm::registry_instruction(&self.program, before);
         let mut registry_admission = if registry_scope.is_some() {
             Some(self.retained_execution_admission(
                 super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
@@ -1731,16 +1731,16 @@ impl super::AwbcProductStepExecutor {
                 let registry_access = if let Some((scope, admission)) =
                     registry_scope.as_ref().zip(registry_admission.as_mut())
                 {
-                    let (owner, rows) = super::dialogue::reached_registry(
-                        &self.program,
-                        activation,
-                        scope,
-                        line,
-                        &self.dialogues,
-                        std::iter::once(&self.fiber)
-                            .chain(self.child_fibers.iter().map(|child| &child.fiber)),
-                    )?;
-                    Some(crate::awbc::vm::VmDialogueRegistryAccess {
+                    let (owner, rows) = super::ProductRegistryOrigin::Dialogue(activation)
+                        .reached_registry(
+                            &self.program,
+                            scope,
+                            Some(line),
+                            &self.dialogues,
+                            &self.fiber,
+                            self.child_fibers.iter(),
+                        )?;
+                    Some(crate::awbc::vm::VmRegistryAccess {
                         owner,
                         rows,
                         admission,
@@ -1760,7 +1760,7 @@ impl super::AwbcProductStepExecutor {
                         context: Some(&context),
                         presentation: Some(&mut self.presentation),
                         actions: Some(&mut self.actions),
-                        dialogue_registry: registry_access,
+                        registry: registry_access,
                     },
                     &mut host,
                 )
@@ -1786,7 +1786,12 @@ impl super::AwbcProductStepExecutor {
                 if !step.completed_single_effect_instruction() {
                     return Err(LineRuntimeError::InvalidActivationOperation.into());
                 }
-                self.reserve_reached_registry_mutation(activation, *owner, line, write)?;
+                self.reserve_reached_registry_mutation(
+                    super::ProductRegistryOrigin::Dialogue(activation),
+                    *owner,
+                    Some(line),
+                    write,
+                )?;
             }
 
             let mut owned_observation = None;
@@ -2304,7 +2309,12 @@ impl super::AwbcProductStepExecutor {
         })();
         if let Some((owner, write)) = pending_registry_mutation {
             if result.is_ok() {
-                self.commit_reached_registry_mutation(activation, owner, line, write);
+                self.commit_reached_registry_mutation(
+                    super::ProductRegistryOrigin::Dialogue(activation),
+                    owner,
+                    Some(line),
+                    write,
+                );
             } else if let Some(checkpoint) = effect_checkpoint {
                 checkpoint
                     .restore(

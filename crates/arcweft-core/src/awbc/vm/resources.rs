@@ -18,12 +18,12 @@ pub(crate) struct VmExecutionResources<'execution> {
     pub(crate) presentation:
         Option<&'execution mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>>,
     pub(crate) actions: Option<&'execution mut crate::action::RuntimeActionMailbox>,
-    pub(crate) dialogue_registry: Option<VmDialogueRegistryAccess<'execution>>,
+    pub(crate) registry: Option<VmRegistryAccess<'execution>>,
 }
 
-/// Borrows the scope reached by a Product dialogue step. The enclosing
+/// Borrows the scope reached by a Product executable step. The enclosing
 /// transaction publishes any write after the instruction and custody checks.
-pub(crate) struct VmDialogueRegistryAccess<'a> {
+pub(crate) struct VmRegistryAccess<'a> {
     pub(crate) owner: RuntimeRegistryOwner,
     pub(crate) rows: &'a RuntimeScopeRegistry,
     pub(crate) admission: &'a mut RuntimeRetainedValueAdmission,
@@ -31,7 +31,7 @@ pub(crate) struct VmDialogueRegistryAccess<'a> {
     pub(crate) pending: &'a mut Option<(RuntimeRegistryOwner, RuntimePreparedRegistryMutation)>,
 }
 
-impl VmDialogueRegistryAccess<'_> {
+impl VmRegistryAccess<'_> {
     fn prepare_write(
         &mut self,
         program: &AwbcProgram,
@@ -144,7 +144,7 @@ impl VmExecutionResources<'_> {
             )
         } else {
             let reached = self
-                .dialogue_registry
+                .registry
                 .as_mut()
                 .ok_or(VmError::MissingExecutionContext)?;
             reached.rows.read(
@@ -181,14 +181,14 @@ impl VmExecutionResources<'_> {
             .admitted_program(program)
             .map_err(|_| missing.clone())?;
         if key.scope() == &arcweft_id::LifetimeScopeKind::Line {
-            let line = self.dialogue_registry.as_mut().ok_or(missing.clone())?;
+            let line = self.registry.as_mut().ok_or(missing.clone())?;
             return line.prepare_write(program, fiber, effect, key, value_type, args);
         }
         if key.scope() != &arcweft_id::LifetimeScopeKind::Flow {
             return Err(missing.into());
         }
         let Some(destination) = fiber.reached_flow_frame_index(program) else {
-            let parent = self.dialogue_registry.as_mut().ok_or(missing.clone())?;
+            let parent = self.registry.as_mut().ok_or(missing.clone())?;
             return parent.prepare_write(program, fiber, effect, key, value_type, args);
         };
         let [source] = args else {
@@ -308,7 +308,7 @@ impl VmExecutionResources<'_> {
                 .commit(&mut fiber.frames[index].flow_registry)
                 .map_err(FiberStateError::Snapshot)?;
         } else {
-            let reached = self.dialogue_registry.as_mut().ok_or(missing)?;
+            let reached = self.registry.as_mut().ok_or(missing)?;
             if reached.pending.is_some() {
                 return Err(FiberStateError::InvalidFrame.into());
             }
