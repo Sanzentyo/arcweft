@@ -36408,5 +36408,1794 @@
         }
       ]
     }
+  },
+  "selectedInitialLineInputs": {
+    "version": 1,
+    "date": "2026-11-08",
+    "migration": {
+      "version": 1,
+      "commit": "9a99f1d42d9fd3ecbe13e544a31850b833199446",
+      "parent": "d372f309b159c31c073acedc5d5bd0cc1a3ec4ae",
+      "tree": "95cdae88c32a304c6a1eafba275489c96b3cb4da",
+      "remote": "9a99f1d42d9fd3ecbe13e544a31850b833199446",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "edc51fb4f1e12337966b17f4d1b094f9cd5a0b68"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+          "blob": "add2b6cfb844c4571b789b51bed61bf2bb9838dc"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+          "blob": "2c65f762a1f1dc2c50efa215b8e144156e728416"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope/tests.rs",
+          "blob": "96562fb21d7284edcafdc363fda38bd8b410b82a"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/suspension.rs",
+          "blob": "0ea6dedcdb4d1f79b161368dd9b7217053dab8e0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "cfe6e4dbf29fc629b4a77a7aea64fc37599e4d6c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+          "blob": "e3ff060a890aa6503cf785055ec1baa77e38f952"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "05f9dce95d2442c00b7714c64cff3905c791be3a"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "a2ba13eaab12367a420388ffe8e63ca5c705c919"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "34e5a8a981a686f396ee4a4ec5fcc1e55a549278"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "5263607f0d9f25da03663dc55f9162dd145ffd2e"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/schema.rs",
+          "blob": "9e03682c58e2bce12013571b3304040c01fe1ab5"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests.rs",
+          "blob": "38ba5131df91932050cf80fe6ee431d2e9a64b79"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "blob": "5952e8f3d3ab362bd901b200136a4d79f5701a14"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+          "blob": "2273d5eaecd1901195380cf5436e6c433516131c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "da3c2c42b104d8f9602761588b8ab93e454ae611"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "40d87da6d3da29fcc6b6cac99e01df26ea0c52a3"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "blob": "b2886a256eeb55707c23b849b4968a057dfe11d0"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "blob": "51b074f7316f311cf6e26b647b84bad42421d3d5"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store/admission.rs",
+          "blob": "7ff20a5c9a777d5be46b3aa62c767492d223b31a"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/fanout.rs",
+          "blob": "79bd5062c24826daa38632d44393dfe6c87999b3"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "fd479629d2da419c77a805848e5421b091fa03bc"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/program.rs",
+          "blob": "cda509777529e7874ec9c9c17e8e801e4de414c5"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/thread.rs",
+          "blob": "09c7811dbbd167ed38b0b6805c9b103f4cb0eb10"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task.rs",
+          "blob": "2f647d4435f95b70aa0c55d277f978e33c986f0c"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "blob": "613a9801a5df16d02de7573e85cc0a805d129ea7"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/semantic.rs",
+          "blob": "473586aa938d9e4b7716eadb7854e23815a51a37"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/body_semantic/tests.rs",
+          "blob": "d08f7d765932b5dcce392bfe5645865c2584e3d0"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/body_semantic/tests/content_rows.rs",
+          "blob": "3217e69beda1660494396de1b6e2d0b19584b629"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction.rs",
+          "blob": "36b5263fdc111d9a549d8553812dd69a08f92023"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+          "blob": "256987148d1cb5b5b5ff35336d26d4d7f1256390"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/content_plans/tests.rs",
+          "blob": "5353dfd211d5e04a5baefcb3270acc5f83d9012c"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups.rs",
+          "blob": "b9a7c7916eaf6999b6f8b0832cdcc9bcfcad7241"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/decoding.rs",
+          "blob": "39822ead6e2b8b3212d1f29afa726e4c35cf6c07"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/encoding.rs",
+          "blob": "b0e3bc48be3efbd357f207175f9f0dbf00d45cd1"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/reading.rs",
+          "blob": "b1f29b0c13d2421703fb8bb4ce1c6c464bf09d79"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/tests.rs",
+          "blob": "41adbd1905b649169ec55b8a3aaf841a06fa753f"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/tests/handles.rs",
+          "blob": "d915cb706c5245e4d0867b9f90bfbd8275d82203"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "a6cd11025acb9343634cb24bd4fdccc8a9541239"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/env.rs",
+          "blob": "7a4259a0ceb89a470ba3a8d2500eee7b30a11274"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership.rs",
+          "blob": "711a04dfcc45617dee35ac98e4a32295df487c12"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership/binary.rs",
+          "blob": "a53a85c52ff383b00230cf7b7a5ff0e09a94478e"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+          "blob": "5c15a6a8a2a7ed122ba3e23fc37ffc3be7cf3703"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+          "blob": "5c578071a0251dd6aa94bf18a0af5ede4f2352de"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/flow.rs",
+          "blob": "8ab7ff0f7fc77486c82f7709139feae3f4b33306"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs",
+          "blob": "e980ceb1c5e4a0d3e248f00738e9c5701502a73b"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/dev_capture.rs",
+          "blob": "43041f5451f874c278d9124644fe3367b99db767"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/lib.rs",
+          "blob": "80bc6e1ae70f12e424860f9376845ed8530bcdeb"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/patch_endpoint.rs",
+          "blob": "9615c50ca9bd0a8ad5f48aefa73b23edd8f87c4e"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/windowed_runtime.rs",
+          "blob": "26c92c7c14223ce2bb9c130154307c027638d929"
+        },
+        {
+          "path": "crates/arcweft-player-native/tests/support/windowed_live_patch_fixtures.rs",
+          "blob": "5d8f06be7c235ceeab22d745a8d0c2b82d462237"
+        },
+        {
+          "path": "crates/arcweft-player-native/tests/windowed_ingress_runtime.rs",
+          "blob": "2cc353412b109317a2148937820382611b3739da"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+          "blob": "fa741ed393576d7ab3a9ef6ccb078dbf67f16682"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/awbc_lower/line.rs",
+          "blob": "76612d6c7c48c5613f204cd066284e8f22863b3d"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+          "blob": "1bd5e7e78a5712cde2978236b4bf9d8bb92d63e3"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "6e937f4151afe6306b18f2a621a08263689156d9"
+        },
+        {
+          "path": "docs/01-language/dialogue-line-handles-and-returns.md",
+          "blob": "f5307e222c5c6a92a066b1cc17ba9c6f25bdeb75"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "7ad29907cea4dabf1b6e624b7369d373df35a59494332b8b5926b353119520ae",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T18:58:35.9873687Z"
+    },
+    "source": {
+      "version": 1,
+      "commit": "e5b53074fd340d6471a8a86f666866504e104bb9",
+      "parent": "9a99f1d42d9fd3ecbe13e544a31850b833199446",
+      "tree": "06bec0d3ec0f9e7088cf79fcfc5b64774f46fc7e",
+      "remote": "e5b53074fd340d6471a8a86f666866504e104bb9",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope/tests.rs",
+          "blob": "42e1e0f6f2936ca26b5aa1fc24b8647e1643d61f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "2a8a916d364d98414a7039c5ee3a5b030de8f02b"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "blob": "42469b6206ce6d41423afe4a85bd0e82690fce79"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/tests.rs",
+          "blob": "01e4b67eaaca03b7f0c0f436fbf28ab0d0cf8dd9"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "63ab5c80f335ced5b2c5370d23878c8f79eaf446358c741c5ee7be1f20a3facb",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T19:16:49.4489553Z"
+    },
+    "status": "Accepted for the named Actor re-export and caller-preserving Copy conditions, not full goal acceptance.",
+    "implementation": [
+      "Sema selects one whole-binding Copy/Move in the caller and gives the Line its independent initialized input frame.",
+      "Core LineTaskGroup and Source retain explicit initial reads. Factories authenticate the complete free-input set; post-reveal shared inputs are derived separately.",
+      "The AWBC activation function alone owns the positional initial ABI. Group shared inputs name actual typed root registers; no duplicate source-local capture catalog remains.",
+      "Native prepared environments and AWBC selected operand packets admit all inputs before any Move. Copy retains the actual caller source; the receiving frame owns its transferred input.",
+      "Actual pending Dialogue packet coordinates and activation-qualified Native local slots enter custody reconciliation and saved admission. Active frames no longer clone and retain initial payloads in another capture field.",
+      "Copy admission uses producer proofs and input requirements, including function values, rather than a blanket carrier-type blacklist. All Arcweft contract markers remain 1."
+    ],
+    "acceptance": [
+      "The same returned Actor moves into an ordinary defer, into its Cleanup Line, out to the receiver and into another nested defer on Native and saved AWBC.",
+      "Copy String inputs remain usable in the original caller and are returned on both backends.",
+      "Actor acquisition/release counts, two reveals, original log order, one-op execution and the original 512-step bound are unchanged. AWBC performs public JSON save and cold restore after each step.",
+      "Source round trips preserve Copy/Move and distinct executable digests. Missing/duplicate/foreign seeds, duplicate encoded inputs and invalid mode tags are refused."
+    ],
+    "validation": {
+      "finalEpoch": "line-initial-inputs-20261108.owner-quality-r7.source.json",
+      "sourceInputs": 3416,
+      "coreSourceOwner": "11 PASS, 2316 selected-out; this is not a fresh complete Core run.",
+      "coreDevelopment": "The complete 2327-case development run passed 2325 and failed only the two new fixture cases, corrected and passed by the later selected Source owner run. Earlier 2325-case runs and compile errors remain distinct history.",
+      "runtimePlan": "165 PASS, 1 existing ignored fixture generator SKIP; includes public API compile-fail checks.",
+      "compiler": "146 PASS across evaluated_effects (116) and scoped_defer (30), 0 SKIP.",
+      "clippy": "Core, RuntimePlan, Sema and Compiler: all targets/all features, exit 0; warnings retained.",
+      "docs": "Core doctests: 80 PASS, 0 FAIL, 0 SKIP.",
+      "fmt": { "command": "rustfmt --check --edition 2024 --config skip_children=true", "paths": 56, "exitCode": 0 },
+      "structure": {
+        "command": "just structure-audit-gate",
+        "exitCode": 0,
+        "startedAt": "2026-11-07T19:11:22.436536Z",
+        "endedAt": "2026-11-07T19:11:29.7941606Z",
+        "sourceEpoch": "line-initial-inputs-20261108.owner-quality-r5.source.json"
+      },
+      "ownership": {
+        "version": 1,
+        "commit": "9a99f1d42d9fd3ecbe13e544a31850b833199446",
+        "trackedHeld": 12,
+        "cargoChanged": 0,
+        "metadataSource": "line-initial-inputs-20261108.metadata-all.json",
+        "metadataWorkspace": 98,
+        "coreReversePackages": [
+          "arcweft",
+          "arcweft-adapter-desktop",
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-policy",
+          "arcweft-agent-protocol",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-browser-bench",
+          "arcweft-bundle",
+          "arcweft-bundle-assets",
+          "arcweft-character-view",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-core",
+          "arcweft-debug-model",
+          "arcweft-debug-sqlite",
+          "arcweft-dialogue",
+          "arcweft-glyphon",
+          "arcweft-host-adapter",
+          "arcweft-lang-jit-cranelift",
+          "arcweft-lang-sema",
+          "arcweft-launch",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-text-input",
+          "arcweft-player-web",
+          "arcweft-project",
+          "arcweft-project-loader",
+          "arcweft-rag",
+          "arcweft-render-text",
+          "arcweft-render-web",
+          "arcweft-render-wgpu",
+          "arcweft-resource-manifest",
+          "arcweft-resource-model",
+          "arcweft-runtime-accelerator",
+          "arcweft-runtime-codegen",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-runtime-scheduler",
+          "arcweft-save",
+          "arcweft-test",
+          "arcweft-text-layout",
+          "arcweft-text-model",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3",
+          "arcweft-view"
+        ],
+        "coreReverseCount": 53,
+        "files": [
+          {
+            "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+            "bytes": 20991,
+            "physicalLoc": 603,
+            "baseLoc": 572,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+            "bytes": 64652,
+            "physicalLoc": 1799,
+            "baseLoc": 1803,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+            "bytes": 26023,
+            "physicalLoc": 657,
+            "baseLoc": 628,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/fiber/scope/tests.rs",
+            "bytes": 28443,
+            "physicalLoc": 807,
+            "baseLoc": 738,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/fiber/suspension.rs",
+            "bytes": 41039,
+            "physicalLoc": 1064,
+            "baseLoc": 1064,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step.rs",
+            "bytes": 279204,
+            "physicalLoc": 6832,
+            "baseLoc": 6834,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+            "bytes": 17035,
+            "physicalLoc": 436,
+            "baseLoc": 434,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+            "bytes": 37715,
+            "physicalLoc": 974,
+            "baseLoc": 959,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+            "bytes": 211169,
+            "physicalLoc": 4986,
+            "baseLoc": 4914,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+            "bytes": 190732,
+            "physicalLoc": 4486,
+            "baseLoc": 4564,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+            "bytes": 323581,
+            "physicalLoc": 8233,
+            "baseLoc": 8230,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/schema.rs",
+            "bytes": 122848,
+            "physicalLoc": 3820,
+            "baseLoc": 3821,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/tests.rs",
+            "bytes": 334486,
+            "physicalLoc": 9127,
+            "baseLoc": 9135,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+            "bytes": 279473,
+            "physicalLoc": 7093,
+            "baseLoc": 7031,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+            "bytes": 172147,
+            "physicalLoc": 4255,
+            "baseLoc": 4196,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/awbc/vm.rs",
+            "bytes": 254751,
+            "physicalLoc": 6328,
+            "baseLoc": 6299,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine.rs",
+            "bytes": 261438,
+            "physicalLoc": 6477,
+            "baseLoc": 6457,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/dialogue.rs",
+            "bytes": 194151,
+            "physicalLoc": 4538,
+            "baseLoc": 4494,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+            "bytes": 107876,
+            "physicalLoc": 2819,
+            "baseLoc": 2789,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/dialogue/store/admission.rs",
+            "bytes": 4711,
+            "physicalLoc": 137,
+            "baseLoc": 141,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/fanout.rs",
+            "bytes": 20829,
+            "physicalLoc": 521,
+            "baseLoc": 517,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/flow.rs",
+            "bytes": 94854,
+            "physicalLoc": 2285,
+            "baseLoc": 2283,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/program.rs",
+            "bytes": 17087,
+            "physicalLoc": 440,
+            "baseLoc": 428,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/thread.rs",
+            "bytes": 9513,
+            "physicalLoc": 234,
+            "baseLoc": 234,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/line_task.rs",
+            "bytes": 84597,
+            "physicalLoc": 2491,
+            "baseLoc": 2491,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/line_task/activation.rs",
+            "bytes": 79980,
+            "physicalLoc": 2011,
+            "baseLoc": 1999,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/line_task/semantic.rs",
+            "bytes": 10766,
+            "physicalLoc": 301,
+            "baseLoc": 296,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/body_semantic/tests.rs",
+            "bytes": 82173,
+            "physicalLoc": 2196,
+            "baseLoc": 2195,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/body_semantic/tests/content_rows.rs",
+            "bytes": 15947,
+            "physicalLoc": 445,
+            "baseLoc": 445,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction.rs",
+            "bytes": 182614,
+            "physicalLoc": 4470,
+            "baseLoc": 4445,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+            "bytes": 101980,
+            "physicalLoc": 3099,
+            "baseLoc": 3096,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/source/content_plans/tests.rs",
+            "bytes": 18562,
+            "physicalLoc": 547,
+            "baseLoc": 546,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/source/line_groups.rs",
+            "bytes": 10543,
+            "physicalLoc": 290,
+            "baseLoc": 289,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/source/line_groups/decoding.rs",
+            "bytes": 9556,
+            "physicalLoc": 239,
+            "baseLoc": 229,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/source/line_groups/encoding.rs",
+            "bytes": 12610,
+            "physicalLoc": 343,
+            "baseLoc": 338,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/source/line_groups/reading.rs",
+            "bytes": 19424,
+            "physicalLoc": 542,
+            "baseLoc": 505,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/source/line_groups/tests.rs",
+            "bytes": 19217,
+            "physicalLoc": 539,
+            "baseLoc": 538,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/construction/source/line_groups/tests/handles.rs",
+            "bytes": 17023,
+            "physicalLoc": 446,
+            "baseLoc": 444,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-core/src/value.rs",
+            "bytes": 176273,
+            "physicalLoc": 4827,
+            "baseLoc": 4827,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/value/env.rs",
+            "bytes": 89243,
+            "physicalLoc": 2314,
+            "baseLoc": 2307,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/value/ownership.rs",
+            "bytes": 26398,
+            "physicalLoc": 695,
+            "baseLoc": 695,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/value/ownership/binary.rs",
+            "bytes": 39331,
+            "physicalLoc": 938,
+            "baseLoc": 786,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+            "bytes": 64355,
+            "physicalLoc": 1986,
+            "baseLoc": 1814,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+            "bytes": 151698,
+            "physicalLoc": 3905,
+            "baseLoc": 3876,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/flow.rs",
+            "bytes": 30447,
+            "physicalLoc": 860,
+            "baseLoc": 782,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs",
+            "bytes": 75328,
+            "physicalLoc": 2304,
+            "baseLoc": 2225,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-player-native/src/dev_capture.rs",
+            "bytes": 26712,
+            "physicalLoc": 676,
+            "baseLoc": 675,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-player-native/src/lib.rs",
+            "bytes": 28015,
+            "physicalLoc": 688,
+            "baseLoc": 687,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-player-native/src/patch_endpoint.rs",
+            "bytes": 47538,
+            "physicalLoc": 1196,
+            "baseLoc": 1195,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-player-native/src/windowed_runtime.rs",
+            "bytes": 51207,
+            "physicalLoc": 1284,
+            "baseLoc": 1283,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-player-native/tests/support/windowed_live_patch_fixtures.rs",
+            "bytes": 67622,
+            "physicalLoc": 1826,
+            "baseLoc": 1825,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-player-native/tests/windowed_ingress_runtime.rs",
+            "bytes": 16693,
+            "physicalLoc": 418,
+            "baseLoc": 417,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+            "bytes": 155126,
+            "physicalLoc": 3990,
+            "baseLoc": 3965,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/awbc_lower/line.rs",
+            "bytes": 2780,
+            "physicalLoc": 71,
+            "baseLoc": 71,
+            "classification": "production; embedded tests retain their owner"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+            "bytes": 101497,
+            "physicalLoc": 2629,
+            "baseLoc": 2631,
+            "classification": "test"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+            "bytes": 57935,
+            "physicalLoc": 1466,
+            "baseLoc": 1442,
+            "classification": "production; embedded tests retain their owner"
+          }
+        ],
+        "dispositions": [
+          "Core LineTaskGroup owns selected initial transfers and derived shared inputs. Source preserves modes and factory authentication; no parallel capture catalog or legacy reader remains.",
+          "AWBC activation function signature/input ownership alone owns initial inputs. Shared inputs name actual root registers. The slot algebra owns real packet/frame coordinates and canonical binary/JSON projections.",
+          "Sema ownership flow keeps caller move facts and independent Line initialization in one graph. RuntimePlan consumes its checked capture decisions directly.",
+          "Native environments and AWBC prepared register transfers preflight the entire selected packet before moves. Existing execution/dialogue/scope modules retain state transitions and tests; Core acquires no I/O.",
+          "Existing large interpreter, verifier and slot files remain cohesive closed state/grammar owners; visibility is not widened to split files. Final scanner and broad reverse matrix remain pending."
+        ]
+      },
+      "remainingMatrix": "Core reverse closure 53 and final workspace all-target/all-feature matrix are still pending for the new shared contract.",
+      "heldTrackedWip": 12,
+      "heldUntrackedWip": 6
+    },
+    "corrections": [
+      "Delete the current claim that initial inputs and shared inputs remain undivided, because the published owning schemas now separate them.",
+      "Delete the old current Native AffineGroupCapture and AWBC Copy-only ABI failures only for the same Actor re-export input, now passing on both backends.",
+      "Keep every original command, failed/partial run, full commit SHA and archive. Do not recast 113/114/116-case catalogs or selected runs as a single rerun.",
+      "The intermediate 9a99 checkpoint was published under the explicit user instruction permitting unchecked intermediate commits. The receiver fix follows at e5b5; no unrelated WIP was staged.",
+      "Generic Match, Line/init, bounded Native acceptance and accepted ordinary defer/Dialogue behavior remain accepted. Overall goal incompletion does not reopen them."
+    ],
+    "runs": [
+      {
+        "receiptFile": "line-initial-inputs-20261108.awbc-baseline.receipt.json",
+        "receipt": {
+          "sourceBase": "91341d2b9c9a8f62de074901470b810bcacd8b4c",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(saved_awbc_ordinary_flow_defer_reexports_) | test(native_ordinary_flow_defer_reexports_)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "startedAt": "2026-11-07T17:56:27.3057365Z",
+          "endedAt": "2026-11-07T17:56:41.3624899Z"
+        },
+        "actualSummary": "Summary [   0.189s] 2 tests run: 0 passed, 2 failed, 112 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.contract-check-r2.receipt.json",
+        "receipt": {
+          "command": "cargo check --locked -p arcweft-core -p arcweft-runtime-plan --all-targets",
+          "started": "2026-11-07T18:48:58.5701232Z",
+          "ended": "2026-11-07T18:50:12.9749566Z",
+          "exit_code": 0
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.contract-check.receipt.json",
+        "receipt": {
+          "command": "cargo check --locked -p arcweft-core -p arcweft-runtime-plan --all-targets",
+          "started": "2026-11-07T18:41:23.220586Z",
+          "ended": "2026-11-07T18:42:55.506605Z",
+          "exit_code": 101
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.core-shape-first.receipt.json",
+        "receipt": {
+          "arguments": [
+            "check",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib"
+          ],
+          "exitCode": 101,
+          "base": "d372f309b159c31c073acedc5d5bd0cc1a3ec4ae"
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.core-shape-r2.receipt.json",
+        "receipt": {
+          "arguments": [
+            "check",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib"
+          ],
+          "exitCode": 0,
+          "base": "d372f309b159c31c073acedc5d5bd0cc1a3ec4ae"
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.core-shape-r3.receipt.json",
+        "receipt": {
+          "arguments": [
+            "check",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib"
+          ],
+          "exitCode": 0,
+          "base": "d372f309b159c31c073acedc5d5bd0cc1a3ec4ae"
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.custody-check.receipt.json",
+        "receipt": {
+          "command": "cargo check --locked -p arcweft-core --lib",
+          "started": "2026-11-07T18:47:50.0732618Z",
+          "ended": "2026-11-07T18:48:26.3578284Z",
+          "exit_code": 0
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.native-receiver-r4.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line)",
+            "--no-tests",
+            "fail"
+          ],
+          "exitCode": 0,
+          "sourceEpoch": "line-initial-inputs-20261108.owner-quality-r7.source.json",
+          "reason": "Focused verification of the remaining Native custody failure while independent RuntimePlan compile-fail fixtures finish",
+          "startedAt": "2026-11-07T19:19:49.5661507Z",
+          "endedAt": "2026-11-07T19:20:52.0747792Z"
+        },
+        "actualSummary": "Summary [   0.142s] 1 test run: 1 passed, 115 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r2.core.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:01:49.2899749Z",
+          "endedAt": "2026-11-07T19:04:01.1167263Z"
+        },
+        "actualSummary": "Summary [  17.288s] 2325 tests run: 2321 passed, 4 failed, 0 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r3.core.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 101,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:04:58.4193804Z",
+          "endedAt": "2026-11-07T19:05:13.4488858Z"
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r4.core.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:07:26.0309019Z",
+          "endedAt": "2026-11-07T19:08:40.1272811Z"
+        },
+        "actualSummary": "Summary [  17.358s] 2325 tests run: 2324 passed, 1 failed, 0 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r5.core.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:10:32.7162478Z",
+          "endedAt": "2026-11-07T19:11:43.5107163Z"
+        },
+        "actualSummary": "Summary [  18.364s] 2327 tests run: 2325 passed, 2 failed, 0 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r6.core.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "-E",
+            "test(plan::construction::source::line_groups::tests)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:12:47.6477117Z",
+          "endedAt": "2026-11-07T19:13:26.5193076Z"
+        },
+        "actualSummary": "Summary [   0.075s] 11 tests run: 10 passed, 1 failed, 2316 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r7.clippy.receipt.json",
+        "receipt": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-lang-sema",
+            "-p",
+            "arcweft-compiler",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:21:15.4398086Z",
+          "endedAt": "2026-11-07T19:22:57.3733942Z"
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r7.compiler.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--test",
+            "scoped_defer",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:20:28.8095265Z",
+          "endedAt": "2026-11-07T19:21:15.0509987Z"
+        },
+        "actualSummary": "Summary [   7.866s] 146 tests run: 146 passed, 0 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r7.core.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "-E",
+            "test(plan::construction::source::line_groups::tests)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:14:55.0290976Z",
+          "endedAt": "2026-11-07T19:15:30.079751Z"
+        },
+        "actualSummary": "Summary [   0.109s] 11 tests run: 11 passed, 2316 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r7.docs.receipt.json",
+        "receipt": {
+          "arguments": [
+            "test",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--doc"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:22:57.752452Z",
+          "endedAt": "2026-11-07T19:24:15.3892153Z"
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality-r7.runtime-plan.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T19:15:30.5032026Z",
+          "endedAt": "2026-11-07T19:20:28.3722724Z"
+        },
+        "actualSummary": "Summary [ 143.067s] 165 tests run: 165 passed (1 slow), 1 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.owner-quality.core.receipt.json",
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 101,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T18:59:50.1568799Z",
+          "endedAt": "2026-11-07T19:00:52.0916013Z"
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.runtime-first.receipt.json",
+        "receipt": {
+          "command": "cargo nextest run --locked -p arcweft-compiler --test evaluated_effects -E test(ordinary_flow_defer_reexports_an_actor_through_its_nested_line) --no-tests fail",
+          "started": "2026-11-07T18:42:20.4112076Z",
+          "ended": "2026-11-07T18:46:10.20105Z",
+          "exit_code": 100
+        },
+        "actualSummary": "Summary [   0.393s] 2 tests run: 0 passed, 2 failed, 112 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.runtime-r2.receipt.json",
+        "receipt": {
+          "command": "cargo nextest run --locked -p arcweft-compiler --test evaluated_effects -E test(ordinary_flow_defer_reexports_an_actor_through_its_nested_line) --no-tests fail",
+          "started": "2026-11-07T18:50:09.371796Z",
+          "ended": "2026-11-07T18:53:23.0864588Z",
+          "exit_code": 100
+        },
+        "actualSummary": "Summary [   0.646s] 2 tests run: 1 passed, 1 failed, 114 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.runtime-r3.receipt.json",
+        "receipt": {
+          "command": "cargo nextest run --locked -p arcweft-compiler --test evaluated_effects -E test(ordinary_flow_defer_reexports_an_actor_through_its_nested_line) | test(initial_copy_line_input) --no-tests fail --no-fail-fast",
+          "started": "2026-11-07T18:57:43.5214565Z",
+          "ended": "2026-11-07T18:59:54.2065663Z",
+          "exit_code": 100
+        },
+        "actualSummary": "Summary [   0.627s] 4 tests run: 3 passed, 1 failed, 112 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.sema-frame-first.receipt.json",
+        "receipt": {
+          "sourceBase": "d372f309b159c31c073acedc5d5bd0cc1a3ec4ae",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-lang-sema",
+            "--lib",
+            "-E",
+            "test(local_use)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T18:03:32.7706406Z",
+          "endedAt": "2026-11-07T18:04:48.3245548Z"
+        },
+        "actualSummary": "Summary [   1.119s] 76 tests run: 76 passed, 1310 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.sema-frame-r2.receipt.json",
+        "receipt": {
+          "sourceBase": "d372f309b159c31c073acedc5d5bd0cc1a3ec4ae",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-lang-sema",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T18:05:45.8272298Z",
+          "endedAt": "2026-11-07T18:06:28.6398831Z"
+        },
+        "actualSummary": "Summary [  15.194s] 1389 tests run: 1389 passed, 0 skipped"
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.source-selection.receipt.json",
+        "receipt": {
+          "listedAt": "2026-11-07T19:19:24.5396213Z",
+          "timing": "Selection audited after the selected owner run; no claim of a preceding list",
+          "exitCode": 0,
+          "testCount": 2327
+        },
+        "actualSummary": null
+      },
+      {
+        "receiptFile": "line-initial-inputs-20261108.structure.receipt.json",
+        "receipt": {
+          "command": "just structure-audit-gate",
+          "exitCode": 0,
+          "startedAt": "2026-11-07T19:11:22.436536Z",
+          "endedAt": "2026-11-07T19:11:29.7941606Z",
+          "sourceEpoch": "line-initial-inputs-20261108.owner-quality-r5.source.json"
+        },
+        "actualSummary": null
+      }
+    ],
+    "raw": {
+      "path": "task-selected-line-inputs.raw.zip",
+      "sha256": "d722262ece8b115a35ac05d99383972605fd62a4b6570526ec5a92f6fd5ef16e",
+      "entries": [
+        {
+          "entry": "line-initial-inputs-20261108.awbc-baseline.log",
+          "bytes": 90134,
+          "sha256": "9277fa62813ecbb874b9be782a5d6598b8cf8543fb25772443de4a7fdc911b91"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.awbc-baseline.receipt.json",
+          "bytes": 493,
+          "sha256": "750a3a163f859741a6a33d07b7f501444e9afb5611722dd1db339f4f06667704"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.message.txt",
+          "bytes": 57,
+          "sha256": "afcc2343b708c792d87e37b318950a4f62ca8918be448b841219e5cf3b3bc48c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.owned.txt",
+          "bytes": 67,
+          "sha256": "49cd052e639b99decdb080cdad37f796e58970612ad5b91d0169e88ad0655fec"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.pathspec",
+          "bytes": 66,
+          "sha256": "5688552ed8f80d17630dc784942987f1ca8db1a06f7e9b1f20bce1957b47569c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.prepared.json",
+          "bytes": 1306,
+          "sha256": "3887eebe2f102ee1a481a6815a5229262986a1425d40f00b9e7ee5c5686f16d5"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.reviewed.patch",
+          "bytes": 1852,
+          "sha256": "e8dbda59c5a26d70029ef04eecd8ffbdbdb7930bbc649d77cc3f337ef0a3b2e6"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.baseline.verified.json",
+          "bytes": 708,
+          "sha256": "5f0bba3bd66ef515287f5954e5fb9718e70c1f1f848a028da24c2a0359cfd5d2"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.contract-check-r2.log",
+          "bytes": 99385,
+          "sha256": "08e8c4b8bfd62a4059f2c9841971772b606bac9e7df5dba791cc390ad9d46260"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.contract-check-r2.receipt.json",
+          "bytes": 206,
+          "sha256": "2354b55da02feeef824c402f549059b8526f5d80c8a134976f6d1647bc294d9a"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.contract-check.log",
+          "bytes": 98850,
+          "sha256": "02156b51c24f97f2c9b0acaf66174bdf7e366aaedaaff04f8313311e2932d64c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.contract-check.receipt.json",
+          "bytes": 206,
+          "sha256": "4a4e495de98c70d76234c998487ccc21113d32137514e778a0c6e316a2c081e3"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.core-shape-first.log",
+          "bytes": 14832,
+          "sha256": "566176956e612c59fc2fb8896d2bec74d351d56d7b1e2602479e810ed5c3bc39"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.core-shape-first.receipt.json",
+          "bytes": 180,
+          "sha256": "cac4780cb675c340955e440e19be536bce08bb7c81f3d4d3491432c11390d9c0"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.core-shape-r2.log",
+          "bytes": 73144,
+          "sha256": "c12ddafa58fca20b8e9b13f2621c7786109b5c4b1b02964e0a5e38db151fbed5"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.core-shape-r2.receipt.json",
+          "bytes": 178,
+          "sha256": "46bfd567aa253deb15ff55eb408c32b142985a0511c0e567f527bed29566dbdd"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.core-shape-r3.log",
+          "bytes": 73296,
+          "sha256": "20c9a71be9c347c0af9afa208ae4946b789f778275e532761791ba9f8dff4886"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.core-shape-r3.receipt.json",
+          "bytes": 178,
+          "sha256": "46bfd567aa253deb15ff55eb408c32b142985a0511c0e567f527bed29566dbdd"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.custody-check.log",
+          "bytes": 73296,
+          "sha256": "5491da37c445bcc7169bfa0bb67d0952119dbb21ba3f6d9b2c35036b08d7623b"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.custody-check.receipt.json",
+          "bytes": 174,
+          "sha256": "ae628e02416d39a6d531fc38dbbb89d6c381cf2cb78f70ad6d5280021f0b7d9a"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.evidence.message.txt",
+          "bytes": 80,
+          "sha256": "f85771d14e973d7582823ba8cd7d06b67754a4ff10e0ff4f349e8c9d5f10c83b"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.evidence.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.evidence.owned.txt",
+          "bytes": 250,
+          "sha256": "4c52316715a9c93880bb5dba8efaf2550724d9576379acec31693e7dcdc11d48"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.evidence.pathspec",
+          "bytes": 246,
+          "sha256": "911010d185110d4137f873bbdff40dbf12f688b84db19ab3aaa656cb9a9ce425"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.evidence.prepared.json",
+          "bytes": 1759,
+          "sha256": "66853b6405c5ccc514bfba2ba7128d552da35b56e28217174423037abc3504ae"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.evidence.reviewed.patch",
+          "bytes": 45155,
+          "sha256": "e190bd541d5884e11b87b5d24217dd93710ec405100ccd22b3bd59027cbb68fc"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.evidence.verified.json",
+          "bytes": 1161,
+          "sha256": "431af488851f992452d8293cd8ab8c0d686d338bec91f1446d435ac8ebe25f38"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.metadata-all.json",
+          "bytes": 4293339,
+          "sha256": "121ed3fb126ba5868048c8c69fb3ddaa29528ddb7f1d174b7e5da348681d8c60"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.metadata.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.fmt.json",
+          "bytes": 79,
+          "sha256": "90c8963b988cba11f292f871ffdf4f28c6f84896432029a9fe6d8b5a17fe45cc"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.message.txt",
+          "bytes": 752,
+          "sha256": "95056af39933f1d08d72f0bf73052230ccabaca30002f2bb4fb5a1341f30025b"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.owned.txt",
+          "bytes": 3002,
+          "sha256": "9c1d2b7b242036933717544a036d5ac14f602c0e4ab3c3dcaa66364f324cfdc1"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.pathspec",
+          "bytes": 2945,
+          "sha256": "b0e4651db16f57892be3f2ef44028331c30a89abf0bc87a5574214d9349f4932"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.prepared.json",
+          "bytes": 9281,
+          "sha256": "070ee41bb922b7bec818a25fce1e03cd88e8a1ab58fec7d0e2eb38530476da42"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.reviewed.patch",
+          "bytes": 169028,
+          "sha256": "7ad29907cea4dabf1b6e624b7369d373df35a59494332b8b5926b353119520ae"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.migration.verified.json",
+          "bytes": 8683,
+          "sha256": "42ff0d8d9fde0145cf7a61dadf83a8e05140f4e720010718945b371e10b1b58d"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.native-receiver-r4.log",
+          "bytes": 89811,
+          "sha256": "c72ba2f4a0424666782d7db4deb281a1a17a79eb0527fd02c159f158cb653c1c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.native-receiver-r4.receipt.json",
+          "bytes": 604,
+          "sha256": "fd02a23ff9d0e1c0c164b41e93ed04a864a920a9f6b4287dfe05490690551ea6"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r2.core.log",
+          "bytes": 396839,
+          "sha256": "0472cdb27c9d7ef4c0a85667ffcc6c6933e2c83f231a8d68508e3c3c28d5775f"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r2.core.receipt.json",
+          "bytes": 334,
+          "sha256": "c34b2ea2b4285b57dfc85bc91e2f2c402cbcfc4c14b84c073d68b7d8308b13d5"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r2.source.json",
+          "bytes": 605889,
+          "sha256": "2aa4d8470df620a958846d498ac35cf02cfcfc3d45ebd618b3cf70cd832cf014"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r3.core.log",
+          "bytes": 13315,
+          "sha256": "889ec5d60063ceff5f39ffafed89387b081e293833ff2e5c8c74a70e6efb51a5"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r3.core.receipt.json",
+          "bytes": 334,
+          "sha256": "4a6251042aedd9a411860d8d1e2dcbd432fd714a38db28bf912f04499b33605c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r3.source.json",
+          "bytes": 605889,
+          "sha256": "4f98b00d241aafb9965742cdd8fe452cd234537cca056da1105065bd4f4f16f3"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r4.core.log",
+          "bytes": 393710,
+          "sha256": "66fb0f9ef7eb0b593e91f75a518c337fcc00d4546f5b95ac212a4616b46fce7d"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r4.core.receipt.json",
+          "bytes": 334,
+          "sha256": "32c88fd7e0d3c791ea0a9d1852324a79d159ab1af8ed75248953291d6ab0351e"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r4.source.json",
+          "bytes": 605889,
+          "sha256": "e2d083a7e2555bd279df5cae113db0d7b80a7853631ea7c8fd5b31bab60b1c6c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r5.core.log",
+          "bytes": 394979,
+          "sha256": "70295119a2553f5e30958cfef84f0f1ee079afce4c4221117fd429468544db2f"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r5.core.receipt.json",
+          "bytes": 334,
+          "sha256": "8dde091900720b7e3cbe1064c6032d707b4e887adb22b3764edd43b7224e9407"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r5.source.json",
+          "bytes": 605889,
+          "sha256": "83c38b811a3edc20ac05af89c49b4b6428760e98c96530ee2ea88f3a2ecc2924"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r6.core.log",
+          "bytes": 38354,
+          "sha256": "1346a6b82e5f086b5affd8b49cde965e0d1616a5f5463c824178b92791d365c8"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r6.core.receipt.json",
+          "bytes": 406,
+          "sha256": "2a87969b802452127137098a3d14c8a4eb6c6e08e20021997aa13d207c5c0593"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r6.source.json",
+          "bytes": 605889,
+          "sha256": "eb79ac1b5f33219ec0bb4c62fa0e8ec1308e99c876ffb89056e4705b3cf9fd27"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.clippy.log",
+          "bytes": 8107413,
+          "sha256": "39eb6c0520041d102235e6613719c30bd186c976e2e3f20f3f0c7e46fe4569df"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.clippy.receipt.json",
+          "bytes": 408,
+          "sha256": "6a02f3c0ff3ae7e9353af5b11a48aa895236da5b94e58bed1165fef480767da6"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.compiler.log",
+          "bytes": 108902,
+          "sha256": "d353ed083d5aa1b412a04ccb269ef9bd400aa727582725ce4b2f993673c587f8"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.compiler.receipt.json",
+          "bytes": 399,
+          "sha256": "ae77dab004f94eb8a35c63432a76b3690e1e3040d8f7d693b4e089004c7dcb58"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.core.log",
+          "bytes": 37195,
+          "sha256": "23470e010f6831f3f5f7592257e7213c5aa990ff0257c393505cb705bc35c031"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.core.receipt.json",
+          "bytes": 404,
+          "sha256": "6abf74047f832696402fcc5774303011daf037dc30b10d4752520d4c42dfcd21"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.docs.log",
+          "bytes": 83456,
+          "sha256": "934d72172209cd439a8c7aac8130fccc6d593e6f12b1995fe3dd9f781a91d9d2"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.docs.receipt.json",
+          "bytes": 262,
+          "sha256": "d85f278b7b466cf609933480e22879e022d562c151adad3aeede4713cc1d9a37"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.runtime-plan.log",
+          "bytes": 113187,
+          "sha256": "464cfdb62c2bf9366a6d78342934f2420f2df8fffcbc75ac5c36932e7127a043"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.runtime-plan.receipt.json",
+          "bytes": 326,
+          "sha256": "83ac94705f0b6b6e94ef01b50c2d1ac571e781198f960b743a72b26c51f52dd7"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality-r7.source.json",
+          "bytes": 605889,
+          "sha256": "7d4860d44d6b07e6e5bfc8db812f9949eacbfd554fe84283f3ae0f3864a45f95"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality.core.log",
+          "bytes": 14792,
+          "sha256": "5beeef24ef3be9814e86a7216bf22c660423c9e102750c6428df2922052b60de"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality.core.receipt.json",
+          "bytes": 334,
+          "sha256": "0814a51fda26d50ffc7dc655f19605eb25e7bfe5493a362323d6cd0e78b870c7"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.owner-quality.source.json",
+          "bytes": 605889,
+          "sha256": "5f637ef1867787030a6fce47e3b34e2ce3949eaa5063c16bddf2c3b7ff2b3347"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.ownership-review-r2.json",
+          "bytes": 15225,
+          "sha256": "e040c5a487b55c5fdfdc6a8671099704793e984923693c08f9d62257a5966ef0"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.ownership-review.json",
+          "bytes": 15220,
+          "sha256": "d782da86bb92bd30a271eb16e5f54096efbd621b544d50db30a47bcc2c1e0011"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.receiver-fix.message.txt",
+          "bytes": 850,
+          "sha256": "2c6ed7c6d3633f5e2c8dd711192fa3335ad97ab6a24307c79df375b6b44994da"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.receiver-fix.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.receiver-fix.owned.txt",
+          "bytes": 218,
+          "sha256": "e67a606bbcb6068f2693740126cc07b0b8da4adab1df75af648b2f6a9323167a"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.receiver-fix.pathspec",
+          "bytes": 214,
+          "sha256": "8caa87e604e8edb38ef9af1f02706eaaf4e43dc5082915dc38de350e605cada1"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.receiver-fix.prepared.json",
+          "bytes": 1727,
+          "sha256": "d98ae5013848e4549b9c7e118c9fd0c950c247411a1d6b3a9d9f4b4e45d76ea5"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.receiver-fix.reviewed.patch",
+          "bytes": 15407,
+          "sha256": "63ab5c80f335ced5b2c5370d23878c8f79eaf446358c741c5ee7be1f20a3facb"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.receiver-fix.verified.json",
+          "bytes": 1129,
+          "sha256": "93ba760071cdab212e07486249054b7718d6f5b5d388c5fee383a5b25efa1fc4"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.reverse-tree.log",
+          "bytes": 25750,
+          "sha256": "d810d66e7799da56a011828d687a5139078376f373b861502c6e8eebca1539fd"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.runtime-first.log",
+          "bytes": 92092,
+          "sha256": "66fa0866e99fd5c32ef6400b5bbe7b50216e6bad6ebc70e1b2184f67144f0e30"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.runtime-first.receipt.json",
+          "bytes": 291,
+          "sha256": "18c6754ac05817730ebf2807101c429636629a4691191bf9d3d92683df72c31a"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.runtime-r2.log",
+          "bytes": 91079,
+          "sha256": "6ffae358cab37c7e9acff0d9a1eb99e0d57924440b7d2df4fb7556f534291359"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.runtime-r2.receipt.json",
+          "bytes": 292,
+          "sha256": "e1f3b37a3ae3f6ceedfa4d6c4114b82538a153f02f51e5f01f4a5c3ebf4604f6"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.runtime-r3.log",
+          "bytes": 91257,
+          "sha256": "4af6115357852f59d69b316cc29746da7d30d753b0c97c7faf39d80c9612e22e"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.runtime-r3.receipt.json",
+          "bytes": 340,
+          "sha256": "66eaa2eb47083bd75c9d35a8b300bee98a644340c0c3ef5decb0e54a641e241a"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.sema-frame-first.log",
+          "bytes": 92480,
+          "sha256": "4105a2501a44b7c94c5161f4ece4815e559189a2d211101e2cad3265909edf2d"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.sema-frame-first.receipt.json",
+          "bytes": 387,
+          "sha256": "ad2baf4f982b230d268104d66a84938d906290da8679a5c0f2aa15148794882e"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.sema-frame-fmt-development.txt",
+          "bytes": 333,
+          "sha256": "bcc01139413dc8d14f3fb7cb827bba843726c390688aef27e9cde9e9c4c1d8a9"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.sema-frame-r2.inputs.json",
+          "bytes": 742,
+          "sha256": "536e0c7ad827cc567bdab5006c7493ad28f2d236569fbaab2842c6b28f5c8124"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.sema-frame-r2.log",
+          "bytes": 299473,
+          "sha256": "bdb78e7b2e425758daaccfc5b11e5d80963421e66b87fc416430be5c923548c5"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.sema-frame-r2.receipt.json",
+          "bytes": 352,
+          "sha256": "144e5563e2d0ff7d1e9ac30d28ca72a8ccb3ada360b60f417c6bebb72fe1b7f4"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.source-selection.json",
+          "bytes": 456047,
+          "sha256": "5e1d54c83bb8ae44e085195b3dce72e75ec9754c91a4a168d88ea4832ed60367"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.source-selection.log",
+          "bytes": 34896,
+          "sha256": "6eedd8840470faa61be23b0ae86785397196c21f0172f637997a6c43004b9585"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.source-selection.receipt.json",
+          "bytes": 185,
+          "sha256": "618db17976af11377de4e33b2642b566373abdae5e2cb71a596ff1fe23bc791d"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.structure.log",
+          "bytes": 65874,
+          "sha256": "53c3e9577d1feae6ecc47516e9e428fa9c5165e84104cec8fad50849d3e5d50c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.structure.receipt.json",
+          "bytes": 239,
+          "sha256": "54c59cdbf2cb1a41389f8c43c9ec39d97a4b53b4e85c17437d3cedd1e0a1ed72"
+        },
+        {
+          "entry": "record-selected-line-inputs-20261108.ps1",
+          "bytes": 14062,
+          "sha256": "0ddf408fd3e950f6c1253e5d0d4cdaf2f767832972ce1f71d1c9054d7a4ec77d"
+        },
+        {
+          "entry": "review-line-input-owners-20261108.ps1",
+          "bytes": 3384,
+          "sha256": "999ab38b74f02eca047a210247035add752876aab990e5e4ac0d7ee8eab69c61"
+        },
+        {
+          "entry": "review-line-input-owners-r2-20261108.ps1",
+          "bytes": 3397,
+          "sha256": "50cd01a21033205c921ed8b70fdfe477a814b2089b2706812f8f688e514a6870"
+        },
+        {
+          "entry": "run-line-input-owner-check-20261108.ps1",
+          "bytes": 1633,
+          "sha256": "ccaf33f071254c3d9f40e9ec6281244501e9fb783872cdfe031f584637dee83d"
+        },
+        {
+          "entry": "run-line-input-owner-check-r2-20261108.ps1",
+          "bytes": 1636,
+          "sha256": "adbb3f3c2ce33585e920dee1268bb85776aadc074c93890c80525b1d907178ac"
+        },
+        {
+          "entry": "run-line-input-owner-check-r3-20261108.ps1",
+          "bytes": 1636,
+          "sha256": "0a5081f8ca8da5c9b6fe7177adfc020898a40c8c989403d20423cb306834cf90"
+        },
+        {
+          "entry": "run-line-input-owner-check-r4-20261108.ps1",
+          "bytes": 1636,
+          "sha256": "8dc2d66d0384a8c4c126b4995dcf792848cb89b22f39931c1e202e03c502830e"
+        },
+        {
+          "entry": "run-line-input-owner-check-r5-20261108.ps1",
+          "bytes": 1636,
+          "sha256": "e171351f575afe5a75a2755a1ceb1fcc79f073fb9120d3a4ba89a9378b99f719"
+        },
+        {
+          "entry": "run-line-input-owner-check-r6-20261108.ps1",
+          "bytes": 1696,
+          "sha256": "e5135b0482b2b4faefd201744d67620683c3c0ec55e65bfc21573704d72e8b0b"
+        },
+        {
+          "entry": "run-line-input-owner-check-r7-20261108.ps1",
+          "bytes": 1696,
+          "sha256": "f73a301743ee9709396da16b81d96edb884e967282fc7181cf0e76f7d8e5163d"
+        }
+      ]
+    }
   }
 }

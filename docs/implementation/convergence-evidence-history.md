@@ -15405,3 +15405,11 @@ Source **4a6d9c3eb1ceb83f16718cf2a97be13519389b62** を既存 main へ通常 com
 
 再現テストの Source **b9c3cc9c24a45250d3032cb7faf6b41475edc014** を通常 commit/push し、親・tree・全 blob・完全差分を照合した。production は変更せず、既存 Native と同じ source factory で保存 AWBC の受入テストを追加。返却 Actor を通常 defer へ移し、その Cleanup Line の out から受け取り、さらに nested defer で消費する入力で、元の1-op／512-step、2 Line、取得・解放各1回の期待を維持する。選択2件は **0 PASS／2 FAIL／112 SKIP**。Native は Line 入口の AffineGroupCapture、AWBC は実行・保存前の verifier で capture ABI の recursively unrestricted 条件に拒否された。原診断・引数・終了100を保持する。
 これにより、現状の初期所有入力の未達を Native 専用から同一入力の両 backend に訂正した。通常 defer の Actor packet、受入済み子 Dialogue、Generic Match、Line/init の完了は戻さない。直前の全113件112 PASS／1 FAILは当時の全件runとして保持し、追加後の全114件を実行したとはしない。1 path fmt は終了0。Source／ABI の解決は次の入力境界の実装として継続する。[元入力・診断・訂正理由・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIP は10 entries、SHA-256 24f7c814156d42fc4f5b6935979cce6679da466d39e4921e6a8600b2dca2cff7。
+
+## 2026-11-08 — Line の初期所有入力と表示後の共有入力
+
+Source **9a99f1d42d9fd3ecbe13e544a31850b833199446** と受信元修正 **e5b53074fd340d6471a8a86f666866504e104bb9** を既存 main へ通常 commit/push し、親・tree・全 blob・完全差分を照合した。Sema が選ぶ全 binding の Copy／Move を Core／Source／AWBC の実 activation ABI に保持し、表示後に実際に使う共有 Copy 入力を分離した。AWBC は全 operand の検査と Copy 準備を終えてから Move する。Native は子の物理 slot と元 publisher の受信 execution を区別する。実待機 packet／activation frame を custody へ入れ、初期 payload の複製保持欄と旧入力 catalog を除去した。契約 version は1を維持する。
+
+元の Actor 再返却は Native／毎 step 公開 JSON 保存・cold restore AWBC で PASS。Copy String の caller 再利用も両実行器で PASS。取得・解放各1回、2 reveal、元 log 順序、1-op／512-step を維持する。最終 Source owner 11 PASS／2316 選択外、RuntimePlan 165 PASS／既存 generator 1 SKIP、Compiler の evaluated_effects116＋scoped_defer30 は146 PASS／0 SKIP。Core・RuntimePlan・Sema・Compiler の全target／全feature Clippy と56 path fmtは終了0、Core doctest80 PASS。Core 全2327件の開発 run は2325 PASS／新規 fixture2 FAILで、その2件を後の選択runで修復確認した。全件の再実行に合算しない。中間3 PASS／1 FAIL、Core compile error、旧 slot／codec offset と fixture namespace の失敗も raw 原本へ保持する。
+
+同じ元入力が通ったことを理由に、現状の「未分離」、Native AffineGroupCapture、AWBC Copy 専用 ABI 拒否を削除した。既受入の Generic Match／Line-init／Native／通常 defer／子 Dialogue を戻さない。全 Core53／workspace 最終matrix と範囲外の受入をこの検証へ合算しない。[全入力別結果・訂正・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIP は106 entries、SHA-256 d722262ece8b115a35ac05d99383972605fd62a4b6570526ec5a92f6fd5ef16e。
