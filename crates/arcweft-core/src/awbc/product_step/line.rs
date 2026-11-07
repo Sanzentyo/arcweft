@@ -871,7 +871,7 @@ impl super::AwbcProductStepExecutor {
                         }
                         match policy.cancel {
                             ChildCancelPolicy::CancelAndJoin => {
-                                if child.fiber.has_deferred_work() {
+                                if child.fiber.has_exit_work() {
                                     actions.insert(
                                         instance,
                                         ProductExistingChildAction::UnwindAndJoin,
@@ -3769,7 +3769,7 @@ impl super::AwbcProductStepExecutor {
                 return Err(LineRuntimeError::InvalidDeferredTransition.into());
             }
 
-            let (cleanups, failure) = pop_activation_scope(&self.program, fiber, Some(scope_id))?;
+            let (cleanups, failure) = fiber.pop_exiting_scope(&self.program, Some(scope_id))?;
             let mut batch = empty_activation_batch(self);
             for cleanup in cleanups.into_iter().rev() {
                 batch.observations.push(VmObservation::Effect {
@@ -3875,7 +3875,7 @@ impl super::AwbcProductStepExecutor {
             }
             return Err(LineRuntimeError::InvalidDeferredTransition.into());
         }
-        let (cleanups, failure) = pop_activation_scope(&self.program, fiber, Some(scope_id))?;
+        let (cleanups, failure) = fiber.pop_exiting_scope(&self.program, Some(scope_id))?;
         for cleanup in cleanups.into_iter().rev() {
             batch.observations.push(VmObservation::Effect {
                 effect: cleanup.effect,
@@ -4443,71 +4443,6 @@ pub(super) fn empty_activation_batch(
         observations: Vec::new(),
         pure_stats: None,
     }
-}
-
-pub(super) fn pop_activation_scope(
-    program: &crate::awbc::schema::AwbcProgram,
-    fiber: &mut FiberState,
-    scope_id: Option<crate::awbc::schema::AwbcScopeId>,
-) -> Result<
-    (
-        Vec<crate::awbc::fiber::FiberCleanupDispatch>,
-        Option<crate::awbc::fiber::FiberTrap>,
-    ),
-    ProductStepError,
-> {
-    fiber.validate_cleanup_inputs(program)?;
-    let frame = fiber.active_frame_mut()?;
-    if scope_id.is_none() {
-        if !frame.scopes.is_empty()
-            || !frame.root_deferred.defers.is_empty()
-            || !frame.root_deferred.defer_releasing.is_empty()
-            || frame.root_deferred.defer_inflight.is_some()
-        {
-            return Err(LineRuntimeError::InvalidDeferredTransition.into());
-        }
-        let deferred = std::mem::take(&mut frame.root_deferred);
-        return Ok((Vec::new(), deferred.defer_failure));
-    }
-    let Some(scope) = frame.scopes.last() else {
-        return Err(LineRuntimeError::InvalidActivationOperation.into());
-    };
-    if Some(scope.id) != scope_id
-        || !scope.deferred.defers.is_empty()
-        || !scope.deferred.defer_releasing.is_empty()
-        || scope.deferred.defer_inflight.is_some()
-    {
-        return Err(LineRuntimeError::InvalidDeferredTransition.into());
-    }
-    let scope = frame
-        .scopes
-        .pop()
-        .expect("active lexical scope was checked above");
-    let layout = program
-        .frame_layouts
-        .get(frame.layout.index())
-        .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-    let active_scope_depth = u32::try_from(frame.scopes.len())
-        .map_err(|_| LineRuntimeError::InvalidActivationOperation)?;
-    for (register, slot) in frame.registers.iter_mut().zip(&layout.slots) {
-        if slot.scope_depth > active_scope_depth
-            && !matches!(
-                slot.role,
-                crate::awbc::schema::AwbcFrameSlotRole::Parameter
-                    | crate::awbc::schema::AwbcFrameSlotRole::RuntimeState
-            )
-        {
-            *register = Default::default();
-        }
-    }
-    Ok((
-        scope
-            .cleanups
-            .into_iter()
-            .map(|cleanup| cleanup.into_dispatch_admitted(program))
-            .collect(),
-        scope.deferred.defer_failure,
-    ))
 }
 
 fn restore_observed_operands(

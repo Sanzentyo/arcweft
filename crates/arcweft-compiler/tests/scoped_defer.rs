@@ -678,6 +678,73 @@ fn trailing_registry_write_is_an_ordinary_statement_in_cleanup_value_blocks() {
 }
 
 #[test]
+fn static_goto_drains_invocation_and_nested_scope_cleanup_before_target() {
+    let source = r#"
+flow main() {
+    defer { log.info("outer") }
+    scope inner {
+        defer { log.info("inner") }
+        goto @flow.done
+    }
+}
+flow done() { log.info("target") }
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["inner", "outer", "target"]);
+    assert_eq!(saved_awbc(source), ["inner", "outer", "target"]);
+}
+
+#[test]
+fn dynamic_goto_drains_invocation_and_nested_scope_cleanup_before_target() {
+    let source = r#"
+flow main() {
+    defer { log.info("outer") }
+    scope inner {
+        defer { log.info("inner") }
+        let target = @flow.done
+        goto target
+    }
+}
+flow done() { log.info("target") }
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["inner", "outer", "target"]);
+    assert_eq!(saved_awbc(source), ["inner", "outer", "target"]);
+}
+
+#[test]
+fn function_goto_drains_its_own_and_callers_cleanup_without_resuming_caller_code() {
+    let source = r#"
+fn transfer() effects { log.write } {
+    defer { log.info("function") }
+    goto @flow.done
+}
+flow main() {
+    defer { log.info("outer") }
+    transfer()
+    log.info("wrong-after-transfer")
+}
+flow done() { log.info("target") }
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["function", "outer", "target"]);
+    assert_eq!(saved_awbc(source), ["function", "outer", "target"]);
+}
+
+#[test]
+fn goto_waits_for_invocation_cleanup_before_starting_its_original_target() {
+    let source = r#"
+flow main() {
+    defer { wait(100ms); log.info("outer") }
+    goto @flow.done
+}
+flow done() { log.info("target") }
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_deferred_wait(source, &[], &["outer", "target"]);
+}
+
+#[test]
 fn callback_failure_drains_remaining_cleanup_without_resuming_normal_code() {
     let source = r#"
 flow main() effects { log.write } {

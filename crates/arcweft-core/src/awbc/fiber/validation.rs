@@ -167,6 +167,21 @@ impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContin
                 return Err(FiberStateError::InvalidFrame);
             }
         }
+        if let Some(pending) = &self.pending_flow_transfer {
+            if !matches!(
+                self.status,
+                FiberStatus::Running | FiberStatus::Cancelled | FiberStatus::Trapped
+            ) || self.suspension.is_some()
+                || self.frames.is_empty()
+                || !instances.insert(pending.destination.instance)
+                || self
+                    .next_frame_instance
+                    .next()
+                    .is_some_and(|next| pending.destination.instance.get() >= next)
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
         for (index, frame) in self.frames.iter().enumerate() {
             frame.validate_continuations(
                 program,
@@ -183,7 +198,14 @@ impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContin
             .map(|(index, frame)| Ok((self.frame_resume_cursor(index)?, frame.scopes.as_slice())))
             .collect::<Result<Vec<_>, FiberStateError>>()?;
         program
-            .verify_scope_stacks(stacks)
+            .verify_retained_scope_stacks(
+                stacks,
+                if self.status.is_terminal() || self.pending_flow_transfer.is_some() {
+                    crate::awbc::verify::RetainedScopeContour::Unwinding
+                } else {
+                    crate::awbc::verify::RetainedScopeContour::Executing
+                },
+            )
             .map_err(|_| FiberStateError::InvalidFrame)?;
         if matches!(self.status, FiberStatus::Running | FiberStatus::Suspended)
             && self.frames.is_empty()
@@ -207,6 +229,7 @@ impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContin
             && self.frames.is_empty()
             && self.status == FiberStatus::Returned
             && self.suspension.is_none()
+            && self.pending_flow_transfer.is_none()
             && matches!(self.terminal, Some(FiberTerminalValue::Returned(None)))
             && self.return_summary.is_none()
             && self.streams.is_empty()
@@ -250,6 +273,9 @@ impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContin
             )
             .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
         self.validate_structure(program, resources)?;
+        if let Some(pending) = &self.pending_flow_transfer {
+            pending.validate_retained(program, resources)?;
+        }
         for (index, frame) in self.frames.iter().enumerate() {
             if let Some(point) = &frame.return_to {
                 point.continuation.validate_pending_inputs(

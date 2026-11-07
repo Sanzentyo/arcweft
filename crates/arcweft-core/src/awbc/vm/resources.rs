@@ -89,6 +89,84 @@ impl VmRegistryAccess<'_> {
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn retire_exiting_scope(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+    ) -> Result<(), VmError> {
+        let pending_values = fiber.pending_flow_transfer.as_ref().is_some_and(|pending| {
+            pending
+                .destination
+                .registers
+                .iter()
+                .flat_map(|slot| slot.values())
+                .any(|value| {
+                    value.view().affine_handles().map_or(true, |handles| {
+                        handles.iter().any(|handle| {
+                            matches!(
+                                handle,
+                                crate::value::ownership::RuntimeAffineHandle::Presentation { .. }
+                            )
+                        })
+                    })
+                })
+        });
+        if fiber.active_frame()?.presentation_scope_binding().is_none() && !pending_values {
+            return Ok(());
+        }
+        let owner = self
+            .context
+            .ok_or(VmError::MissingExecutionContext)?
+            .program_owner(program)?;
+        let banks = self.banks_mut().ok_or_else(|| {
+            FiberStateError::Snapshot(
+                crate::presentation::RuntimePresentationError::MissingLedger.into(),
+            )
+        })?;
+        fiber
+            .retire_presentation_scope(&owner, banks)
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        Ok(())
+    }
+
+    pub(super) fn discard_pending_flow_transfer(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+    ) -> Result<(), VmError> {
+        if fiber
+            .pending_flow_transfer
+            .as_ref()
+            .is_some_and(|pending| pending.destination.root_presentation_scope.is_some())
+        {
+            let owner = self
+                .context
+                .ok_or(VmError::MissingExecutionContext)?
+                .program_owner(program)?;
+            let banks = self.banks_mut().ok_or_else(|| {
+                FiberStateError::Snapshot(
+                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
+                )
+            })?;
+            let instance = fiber.instance;
+            let pending = fiber
+                .pending_flow_transfer
+                .as_mut()
+                .expect("checked pending transfer");
+            banks
+                .retire_bound_scope(
+                    &owner,
+                    crate::runtime_id::ExecutionInstanceId::from_allocated(instance.get()),
+                    crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+                        instance.get().get(),
+                    ),
+                    pending.destination.presentation_scope_target(),
+                )
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        }
+        fiber.pending_flow_transfer = None;
+        Ok(())
+    }
     pub(super) fn registry_read(
         &mut self,
         program: &AwbcProgram,
@@ -829,51 +907,6 @@ impl VmExecutionResources<'_> {
             .program_owner(program)?;
         banks
             .transition_scope_contour(&owner, targets, destination, &escaping, &[])
-            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        Ok(())
-    }
-
-    pub(super) fn exit_goto_scope(
-        &mut self,
-        program: &AwbcProgram,
-        fiber: &mut FiberState,
-        replacement: &mut crate::awbc::fiber::PreparedFiberRootReplacement,
-        registers: &[AwbcRegisterId],
-    ) -> Result<(), VmError> {
-        fiber.validate_cleanup_inputs(program)?;
-        let escaping = Self::escaping_tokens(fiber, registers.iter().copied())?;
-        let instance = fiber.instance;
-        let targets = fiber
-            .presentation_unwind_scopes_mut()
-            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        if targets.is_empty() && escaping.is_empty() {
-            return Ok(());
-        }
-        let context = self.context;
-        let banks = self.banks_mut().ok_or_else(|| {
-            FiberStateError::Snapshot(
-                crate::presentation::RuntimePresentationError::MissingLedger.into(),
-            )
-        })?;
-        let owner = context
-            .ok_or(VmError::MissingExecutionContext)?
-            .program_owner(program)?;
-        banks
-            .transition_scope_contour(
-                &owner,
-                targets,
-                Some(crate::presentation::resources::PresentationScopeExit {
-                    execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
-                        instance.get(),
-                    ),
-                    fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
-                        instance.get().get(),
-                    ),
-                    scope: replacement.presentation_scope_target(),
-                }),
-                &escaping,
-                &[],
-            )
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         Ok(())
     }

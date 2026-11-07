@@ -154,7 +154,7 @@ impl AwbcProductProgram {
         fiber: &mut FiberState,
         presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
     ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
-        if !fiber.has_deferred_work() {
+        if !fiber.has_exit_work() {
             self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
         }
         crate::awbc::vm::cancel_fiber(self, fiber)
@@ -168,7 +168,7 @@ impl AwbcProductProgram {
         presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
         trap: crate::awbc::fiber::FiberTrap,
     ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
-        if !fiber.has_deferred_work() {
+        if !fiber.has_exit_work() {
             self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
         }
         crate::awbc::vm::trap_fiber(self, fiber, trap)

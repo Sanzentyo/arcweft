@@ -17,6 +17,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 impl<V, O, N, B, R, G> super::FiberState<V, O, N, B, R, G> {
+    /// Every real frame that retains values or grants, including a Flow that
+    /// owns its inputs while the previous invocation stack is leaving.
+    pub(in crate::awbc) fn retained_frames(
+        &self,
+    ) -> impl Iterator<Item = &super::FiberFrame<V, B, R, G>> {
+        self.frames.iter().chain(
+            self.pending_flow_transfer
+                .iter()
+                .map(|pending| &pending.destination),
+        )
+    }
+
+    pub(in crate::awbc) fn has_exit_work(&self) -> bool {
+        self.pending_flow_transfer.is_some() || self.has_deferred_work()
+    }
     pub(in crate::awbc) fn has_inflight_defer(&self) -> bool {
         self.frames
             .iter()
@@ -50,7 +65,7 @@ impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
             admission.validate_metadata(&self.presentation_bank)?;
             self.root
                 .validate_presentation_bank(self.presentation_bank)?;
-            for frame in &self.frames {
+            for frame in self.retained_frames() {
                 if let Some(binding) = &frame.root_presentation_scope {
                     binding.admit_awbc_scope(admission, self.instance, frame.instance, None)?;
                 }
@@ -120,7 +135,7 @@ impl super::FiberState {
     pub(crate) fn presentation_scope_bindings(
         &self,
     ) -> impl Iterator<Item = &crate::presentation::RuntimePresentationScopeBinding> {
-        self.frames.iter().flat_map(|frame| {
+        self.retained_frames().flat_map(|frame| {
             frame.root_presentation_scope.iter().chain(
                 frame
                     .scopes
@@ -253,10 +268,53 @@ impl super::FiberState {
         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
         let fiber =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+        let mut escaping = Vec::new();
+        if let Some(pending) = &self.pending_flow_transfer {
+            for value in pending
+                .destination
+                .registers
+                .iter()
+                .flat_map(|slot| slot.values())
+            {
+                for handle in value
+                    .view()
+                    .affine_handles()
+                    .map_err(|_| crate::presentation::RuntimePresentationError::InvalidState)?
+                {
+                    if let crate::value::ownership::RuntimeAffineHandle::Presentation {
+                        token,
+                        ..
+                    } = handle
+                    {
+                        escaping.push(token);
+                    }
+                }
+            }
+        }
         let frame = self
-            .active_frame_mut()
+            .frames
+            .last_mut()
+            .ok_or(super::FiberStateError::MissingFrame)
             .map_err(|_| crate::presentation::RuntimePresentationError::MissingScope)?;
-        banks.retire_bound_scope(program, execution, fiber, frame.presentation_scope_target())
+        let destination =
+            self.pending_flow_transfer
+                .as_mut()
+                .map(|pending| PresentationScopeExit {
+                    execution,
+                    fiber,
+                    scope: pending.destination.presentation_scope_target(),
+                });
+        banks.transition_scope_contour(
+            program,
+            vec![PresentationScopeExit {
+                execution,
+                fiber,
+                scope: frame.presentation_scope_target(),
+            }],
+            destination,
+            &escaping,
+            &[],
+        )
     }
 
     pub(crate) fn bind_presentation_scope<V>(
@@ -1072,5 +1130,65 @@ impl FiberDeferredScope<AwbcRuntimeValueSnapshot> {
             defer_inflight: self.defer_inflight,
             defer_failure: self.defer_failure,
         })
+    }
+}
+impl super::FiberState {
+    pub(in crate::awbc) fn pop_exiting_scope(
+        &mut self,
+        program: &super::AwbcProgram,
+        scope_id: Option<super::AwbcScopeId>,
+    ) -> Result<(Vec<super::FiberCleanupDispatch>, Option<super::FiberTrap>), FiberStateError> {
+        self.validate_cleanup_inputs(program)?;
+        let frame = self.active_frame_mut()?;
+        if scope_id.is_none() {
+            if !frame.scopes.is_empty()
+                || !frame.root_deferred.defers.is_empty()
+                || !frame.root_deferred.defer_releasing.is_empty()
+                || frame.root_deferred.defer_inflight.is_some()
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            let deferred = std::mem::take(&mut frame.root_deferred);
+            return Ok((Vec::new(), deferred.defer_failure));
+        }
+        let Some(scope) = frame.scopes.last() else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        if Some(scope.id) != scope_id
+            || !scope.deferred.defers.is_empty()
+            || !scope.deferred.defer_releasing.is_empty()
+            || scope.deferred.defer_inflight.is_some()
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let scope = frame
+            .scopes
+            .pop()
+            .expect("active lexical scope was checked above");
+        let layout = program
+            .frame_layouts
+            .get(frame.layout.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let active_scope_depth =
+            u32::try_from(frame.scopes.len()).map_err(|_| FiberStateError::InvalidFrame)?;
+        for (register, slot) in frame.registers.iter_mut().zip(&layout.slots) {
+            if slot.scope_depth > active_scope_depth
+                && !matches!(
+                    slot.role,
+                    crate::awbc::schema::AwbcFrameSlotRole::Parameter
+                        | crate::awbc::schema::AwbcFrameSlotRole::RuntimeState
+                )
+            {
+                *register = Default::default();
+            }
+        }
+        Ok((
+            scope
+                .cleanups
+                .into_iter()
+                .map(|cleanup| cleanup.into_dispatch_admitted(program))
+                .collect(),
+            scope.deferred.defer_failure,
+        ))
     }
 }

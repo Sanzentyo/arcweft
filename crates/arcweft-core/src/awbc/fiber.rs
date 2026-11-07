@@ -37,12 +37,14 @@ mod scope;
 mod stream;
 mod suspension;
 mod terminal;
+mod transfer;
 mod validation;
 use crate::value::{InertRuntimeValueStorage, RuntimeStoredValue};
 pub use await_many::{FiberAwaitManyInFlight, FiberAwaitManyState};
 pub use program_fanout::FiberProgramFanoutState;
 pub use stream::FiberStreamState;
 pub use terminal::FiberTerminalValue;
+pub(in crate::awbc) use transfer::{FiberFlowTransferOrigin, FiberPendingFlowTransfer};
 trait InertFiberNeed: Serialize + serde::de::DeserializeOwned {}
 impl InertFiberNeed for crate::task::RuntimeNeedHandleSaveSnapshot {}
 use format::FormatStaging;
@@ -330,8 +332,8 @@ impl AwbcFiberRoot {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R, G>: Serialize",
-        deserialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R, G>: Deserialize<'de>"
+        serialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, B: Serialize, FiberFrame<V, B, R, G>: Serialize",
+        deserialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, B: Deserialize<'de>, FiberFrame<V, B, R, G>: Deserialize<'de>"
     )
 )]
 pub struct FiberState<
@@ -353,6 +355,7 @@ pub struct FiberState<
     pub status: FiberStatus,
     pub suspension: Option<FiberSuspension<V, O, N>>,
     pub terminal: Option<FiberTerminalValue<V>>,
+    pub(in crate::awbc) pending_flow_transfer: Option<FiberPendingFlowTransfer<V, B, R, G>>,
     /// Non-owning label retained after a return value is delivered to the caller.
     pub return_summary: Option<String>,
     pub budget: FiberBudget,
@@ -458,6 +461,7 @@ impl<
             status: self.status,
             suspension: self.suspension.clone(),
             terminal: self.terminal.clone(),
+            pending_flow_transfer: self.pending_flow_transfer.clone(),
             return_summary: self.return_summary.clone(),
             budget: self.budget,
             line_cursor: self.line_cursor,
@@ -497,17 +501,8 @@ pub(crate) struct PreparedInitialFlow {
 pub(crate) struct PreparedFiberRootReplacement {
     owner: RuntimeFiberInstanceId,
     frame: FiberFrame,
-    cursor: FiberCursor,
     next_frame_instance: RuntimeIdCursor,
     parameters: Box<[AwbcRegisterId]>,
-}
-
-impl PreparedFiberRootReplacement {
-    pub(crate) fn presentation_scope_target(
-        &mut self,
-    ) -> crate::presentation::resources::PresentationScopeTarget<'_> {
-        self.frame.presentation_scope_target()
-    }
 }
 
 /// Borrowed return admission, before result or receiver state leaves the callee.
@@ -668,7 +663,7 @@ impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
         &self,
         mut visitor: impl FnMut(RuntimeFrameInstanceId, FiberCursor, usize, &V) -> Result<(), E>,
     ) -> Result<(), E> {
-        for frame in &self.frames {
+        for frame in self.retained_frames() {
             if let Some(format) = &frame.format {
                 for (ordinal, value) in format.storage.values.iter().enumerate() {
                     if let Some(value) = value.as_ref() {
@@ -1264,7 +1259,7 @@ impl AwbcFiberStateSnapshot {
         include_defers: bool,
         mut visit: impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
     ) -> Result<(), E> {
-        for frame in &self.frames {
+        for frame in self.retained_frames() {
             for value in frame.registers.iter().flat_map(RuntimePlaceStorage::values) {
                 visit(value)?;
             }
@@ -1328,6 +1323,13 @@ impl AwbcFiberStateSnapshot {
                     }
                 }
             }
+        }
+        if let Some(FiberPendingFlowTransfer {
+            origin: FiberFlowTransferOrigin::Dynamic { selector, .. },
+            ..
+        }) = &self.pending_flow_transfer
+        {
+            visit(selector)?;
         }
         if let Some(suspension) = &self.suspension {
             match &suspension.reason {
@@ -1467,6 +1469,11 @@ impl AwbcFiberStateSnapshot {
                 .as_ref()
                 .map(|value| value.snapshot_admitted(owner))
                 .transpose()?,
+            pending_flow_transfer: state
+                .pending_flow_transfer
+                .as_ref()
+                .map(|value| value.snapshot_admitted(owner))
+                .transpose()?,
             return_summary: state.return_summary.clone(),
             budget: state.budget,
             line_cursor: state.line_cursor,
@@ -1493,7 +1500,7 @@ impl AwbcFiberStateSnapshot {
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> AwbcSaveResult<()> {
-        for frame in &self.frames {
+        for frame in self.retained_frames() {
             admission.validate_metadata(&frame.input_order)?;
             frame.admit_flow_registry(self.instance, admission)?;
         }
@@ -1551,6 +1558,10 @@ impl AwbcFiberStateSnapshot {
                 .transpose()?,
             terminal: self
                 .terminal
+                .map(|value| value.into_live_admitted(owner))
+                .transpose()?,
+            pending_flow_transfer: self
+                .pending_flow_transfer
                 .map(|value| value.into_live_admitted(owner))
                 .transpose()?,
             return_summary: self.return_summary,
@@ -2144,7 +2155,7 @@ impl FiberState {
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> AwbcSaveResult<()> {
-        for frame in &self.frames {
+        for frame in self.retained_frames() {
             admission.validate_metadata(&frame.input_order)?;
             frame.admit_flow_registry(self.instance, admission)?;
         }
@@ -2207,7 +2218,7 @@ impl FiberState {
         &self,
         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
     ) -> Result<(), E> {
-        for frame in &self.frames {
+        for frame in self.retained_frames() {
             for value in frame.registers.iter().flat_map(RuntimePlaceStorage::values) {
                 visit_value_graph(value, &mut visitor)?;
             }
@@ -2230,6 +2241,13 @@ impl FiberState {
                 visit_scope_cleanup_values(&scope.cleanups, &mut visitor)?;
                 visit_deferred_capture_values(&scope.deferred.defers, &mut visitor)?;
             }
+        }
+        if let Some(FiberPendingFlowTransfer {
+            origin: FiberFlowTransferOrigin::Dynamic { selector, .. },
+            ..
+        }) = &self.pending_flow_transfer
+        {
+            visit_value_graph(selector, &mut visitor)?;
         }
         if let Some(suspension) = &self.suspension {
             match &suspension.reason {
@@ -2552,6 +2570,7 @@ impl FiberState {
             status: FiberStatus::Running,
             suspension: None,
             terminal: None,
+            pending_flow_transfer: None,
             return_summary: None,
             budget: FiberBudget {
                 remaining: budget_quantum,
@@ -3965,10 +3984,6 @@ impl FiberState {
     ) -> Result<PreparedFiberRootReplacement, FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         let input = validate_function_argument_value_refs(program, function, args)?;
-        let function_record = program
-            .functions
-            .get(function.index())
-            .ok_or(FiberStateError::UnknownFunction(function.0))?;
         let mut next_frame_instance = self.next_frame_instance;
         let frame_instance = RuntimeFrameInstanceId::from_allocated(
             next_frame_instance.take_next(RuntimeIdNamespace::FrameInstance)?,
@@ -3980,27 +3995,7 @@ impl FiberState {
             frame,
             next_frame_instance,
             parameters: input.parameter_registers,
-            cursor: FiberCursor {
-                function,
-                block: function_record.entry_block,
-                instruction_offset: 0,
-            },
         })
-    }
-
-    pub(crate) fn commit_root_replacement(
-        &mut self,
-        mut prepared: PreparedFiberRootReplacement,
-        args: Vec<RuntimeValue>,
-    ) {
-        assert_eq!(self.instance, prepared.owner);
-        assert_eq!(args.len(), prepared.parameters.len());
-        for (register, value) in prepared.parameters.iter().zip(args) {
-            prepared.frame.registers[register.index()] = value.into();
-        }
-        self.next_frame_instance = prepared.next_frame_instance;
-        self.frames = vec![prepared.frame];
-        self.cursor = prepared.cursor;
     }
 
     pub fn pop_call_frame(
@@ -4258,9 +4253,9 @@ impl FiberState {
 
     /// Retires an empty terminal callee so unwind can reach the caller's
     /// lexical scopes. This never resumes the caller's code or binds a result.
-    pub(super) fn retire_terminal_callee(&mut self) -> Result<(), FiberStateError> {
+    pub(super) fn retire_exiting_callee(&mut self) -> Result<(), FiberStateError> {
         let callee = self.active_frame()?;
-        if !self.status.is_terminal()
+        if (!self.status.is_terminal() && self.pending_flow_transfer.is_none())
             || self.frames.len() < 2
             || !callee.scopes.is_empty()
             || !callee.root_cleanups.is_empty()
@@ -4279,7 +4274,7 @@ impl FiberState {
     }
 
     pub(super) fn record_terminal_defer_failure(&mut self, trap: FiberTrap) {
-        assert!(self.status.is_terminal());
+        assert!(self.status.is_terminal() || self.pending_flow_transfer.is_some());
         if self.status != FiberStatus::Trapped {
             self.status = FiberStatus::Trapped;
             self.return_summary = None;
@@ -4314,7 +4309,7 @@ impl FiberState {
             .work()
             .collection(self.frames.len())
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        for frame in &self.frames {
+        for frame in self.retained_frames() {
             validate_frame_layout(
                 program,
                 frame.function,
@@ -4325,7 +4320,7 @@ impl FiberState {
                 &resources.work(),
             )?;
         }
-        for frame in &self.frames {
+        for frame in self.retained_frames() {
             frame.value_context(program)?.validate_scopes(
                 &frame.root_cleanups,
                 &frame.root_deferred,

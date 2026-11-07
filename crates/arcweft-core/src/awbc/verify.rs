@@ -6,6 +6,11 @@ mod program_task;
 mod structure;
 
 pub(in crate::awbc) use code::CopyProof;
+#[derive(Clone, Copy, PartialEq)]
+pub(in crate::awbc) enum RetainedScopeContour {
+    Executing,
+    Unwinding,
+}
 pub(crate) use structure::types_compatible;
 
 use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcFunctionRoleError, AwbcProgram, AwbcTypeId};
@@ -262,6 +267,19 @@ impl AwbcProgram {
             ),
         >,
     ) -> Result<(), AwbcVerifyError> {
+        self.verify_retained_scope_stacks(stacks, RetainedScopeContour::Executing)
+    }
+
+    pub(in crate::awbc) fn verify_retained_scope_stacks<'a, V: 'a, G: 'a>(
+        &self,
+        stacks: impl IntoIterator<
+            Item = (
+                super::fiber::FiberCursor,
+                &'a [super::fiber::FiberScope<V, G>],
+            ),
+        >,
+        contour: RetainedScopeContour,
+    ) -> Result<(), AwbcVerifyError> {
         let stacks = stacks
             .into_iter()
             .filter(|(cursor, scopes)| {
@@ -294,12 +312,17 @@ impl AwbcProgram {
                 cursor.block.index(),
                 cursor.instruction_offset,
             )?;
-            if !expected
+            let matches = expected
                 .scopes
                 .iter()
                 .copied()
-                .eq(scopes.iter().map(|scope| scope.id))
-            {
+                .take(if contour == RetainedScopeContour::Unwinding {
+                    scopes.len()
+                } else {
+                    usize::MAX
+                })
+                .eq(scopes.iter().map(|scope| scope.id));
+            if !matches {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: "saved scope stack".to_owned(),
                     message: "saved lexical scopes do not match the selected resume coordinate"

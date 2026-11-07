@@ -6,7 +6,9 @@
 
 use crate::value::runtime_value_views_equal;
 mod resources;
+mod unwind;
 pub(crate) use resources::{VmExecutionResources, VmRegistryAccess};
+use unwind::step_exiting_scope;
 
 #[cfg(test)]
 mod dense_numeric_tests;
@@ -526,7 +528,7 @@ pub fn cancel_fiber(
 ) -> Result<VmStepOutput, VmError> {
     let mut observations = Vec::new();
     if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
-        if fiber.has_deferred_work() {
+        if fiber.has_exit_work() {
             fiber.validate_cleanup_inputs(program)?;
         } else {
             emit_ordered_cleanup_observations(
@@ -686,6 +688,9 @@ fn step_with_host_context_optional(
 ) -> Result<VmStepOutput, VmError> {
     let mut observations = Vec::new();
     let mut executed = 0_u64;
+    if fiber.status.is_terminal() && fiber.has_exit_work() {
+        return step_exiting_scope(program, fiber, &mut execution);
+    }
     while fiber.status == FiberStatus::Running && executed < options.max_instructions {
         if function_boundary.is_some_and(|function| fiber.cursor.function != function) {
             break;
@@ -702,6 +707,13 @@ fn step_with_host_context_optional(
                 observations,
                 exit: VmExit::BudgetYield(safe_point),
             });
+        }
+        if fiber.pending_flow_transfer.is_some() {
+            let mut output = step_exiting_scope(program, fiber, &mut execution)?;
+            output.executed += executed;
+            observations.append(&mut output.observations);
+            output.observations = observations;
+            return Ok(output);
         }
         let cursor = fiber.cursor;
         let block = program
@@ -2662,6 +2674,18 @@ fn execute_instruction(
             if let Some(plan) = program.effect_plans.get(effect.index()) {
                 plan.payload.require_context_free()?;
             }
+            let flow_transfer = if matches!(
+                program
+                    .effect_plans
+                    .get(effect.index())
+                    .map(|plan| &plan.payload),
+                Some(super::schema::AwbcEffectPayload::Goto(_))
+            ) {
+                let target = program.flow_transfer_effect_target(*effect)?;
+                Some(fiber.prepare_root_replacement(program, target, &[])?)
+            } else {
+                None
+            };
             let args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
@@ -2683,6 +2707,14 @@ fn execute_instruction(
                 effect: *effect,
                 args,
             });
+            if let Some(prepared) = flow_transfer {
+                let origin = super::fiber::FiberFlowTransferOrigin::Effect {
+                    source: fiber.cursor,
+                    effect: *effect,
+                };
+                fiber.stage_flow_transfer(prepared, Vec::new(), origin);
+                return Ok(InstructionControl::Transferred);
+            }
             if let Some(wait) = wait {
                 let mut next = fiber.cursor;
                 next.instruction_offset = next
@@ -3785,7 +3817,7 @@ fn execute_goto(
         .iter()
         .map(|register| fiber.active_frame()?.register(*register))
         .collect::<Result<Vec<_>, FiberStateError>>()?;
-    let mut replacement = fiber.prepare_root_replacement(program, function, &references)?;
+    let replacement = fiber.prepare_root_replacement(program, function, &references)?;
     let operands = target
         .into_iter()
         .chain(args.iter().copied())
@@ -3793,14 +3825,23 @@ fn execute_goto(
     let transfer = fiber
         .active_frame()?
         .prepare_register_values(program, &operands)?;
-    execution.exit_goto_scope(program, fiber, &mut replacement, args)?;
+    fiber.validate_cleanup_inputs(program)?;
+    let source = fiber.cursor;
+    let binding = fiber.active_frame()?.type_instantiation.clone();
     let mut values = transfer.commit(fiber.active_frame_mut()?);
-    if target.is_some() {
-        values.remove(0);
-    }
-    emit_unwind_cleanup_observations(program, fiber, observations)?;
-    fiber.commit_root_replacement(replacement, values);
-    observations.push(VmObservation::Goto(function));
+    let origin = if target.is_some() {
+        super::fiber::FiberFlowTransferOrigin::Dynamic {
+            source,
+            selector: values.remove(0),
+            binding,
+        }
+    } else {
+        super::fiber::FiberFlowTransferOrigin::Static { source }
+    };
+    fiber.stage_flow_transfer(replacement, values, origin);
+    // Even a one-operation slice retains its transfer packet. The next exit
+    // step runs callbacks without re-evaluating the target or its arguments.
+    let _ = (execution, observations);
     Ok(())
 }
 
@@ -5858,6 +5899,70 @@ pub(crate) fn validate_function_input_ownership_values(
     function: AwbcFunctionId,
     values: &[&RuntimeValue],
 ) -> Result<(), VmError> {
+    let values = values
+        .iter()
+        .map(|value| value.live_view())
+        .collect::<Vec<_>>();
+    validate_function_input_ownership(program, function, &values)
+}
+
+/// Replays the same positional ABI against already admitted inert storage.
+/// Projection and deep Copy inspection share the enclosing admission's work.
+pub(in crate::awbc) fn validate_function_input_ownership_views(
+    program: &AwbcProgram,
+    function: AwbcFunctionId,
+    values: &[RuntimeValueView<'_>],
+    work: &crate::entry::schema::value_budget::ValidationWork,
+) -> Result<(), VmError> {
+    let values = values
+        .iter()
+        .map(|value| AdmittedPatternValue {
+            value: *value,
+            work,
+        })
+        .collect::<Vec<_>>();
+    validate_function_input_ownership(program, function, &values)
+}
+
+#[derive(Clone, Copy)]
+struct AdmittedPatternValue<'value, 'work> {
+    value: RuntimeValueView<'value>,
+    work: &'work crate::entry::schema::value_budget::ValidationWork,
+}
+
+impl PatternBindingValue for AdmittedPatternValue<'_, '_> {
+    fn inspect(&self) -> RuntimeValueView<'_> {
+        self.value
+    }
+
+    fn child_at(self, index: usize) -> Option<Self> {
+        self.value.child_at(index).map(|value| Self {
+            value,
+            work: self.work,
+        })
+    }
+
+    fn permits_copy(self) -> bool {
+        crate::entry::schema::value_encoding::visit_admitted_storage(
+            self.value,
+            self.work,
+            |node| {
+                if node.intrinsic_ownership().permits_copy() {
+                    Ok(())
+                } else {
+                    Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue)
+                }
+            },
+        )
+        .is_ok()
+    }
+}
+
+fn validate_function_input_ownership<V: PatternBindingValue>(
+    program: &AwbcProgram,
+    function: AwbcFunctionId,
+    values: &[V],
+) -> Result<(), VmError> {
     let function_record = program
         .functions
         .get(function.index())
@@ -5881,7 +5986,7 @@ pub(crate) fn validate_function_input_ownership_values(
         .enumerate()
     {
         if row.requirement == RuntimeValueOwnershipRequirement::Unrestricted
-            && !value.ownership().permits_copy()
+            && !value.permits_copy()
         {
             return Err(VmError::Runtime(format!(
                 "function input {position} requires a deep Copy value"
@@ -5910,11 +6015,11 @@ pub(crate) fn validate_function_input_ownership_values(
             program,
             None,
             pattern,
-            value.live_view(),
+            *value,
             0,
             &mut |register, projected| {
                 if required.contains(&register) {
-                    if !projected.ownership().permits_copy() {
+                    if !projected.permits_copy() {
                         return Err(VmError::Runtime(format!(
                             "function input {position} binding {register:?} requires a deep Copy value"
                         )));
@@ -6016,7 +6121,7 @@ fn terminate_with_trap(
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<FiberTrap, VmError> {
-    if fiber.has_deferred_work() {
+    if fiber.has_exit_work() {
         fiber.validate_cleanup_inputs(program)?;
     } else {
         execution.retire_unwind(program, fiber)?;

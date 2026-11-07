@@ -2706,7 +2706,7 @@ impl AwbcProductExecutorSnapshot {
                     || owner.fiber >= child.fiber.instance
                     || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
                     || (child.fiber.status.is_terminal()
-                        && !child.fiber.has_deferred_work())
+                        && !child.fiber.has_exit_work())
                     || expected_scoped_inflight.remove(owner) != Some(inflight)
                 {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -3031,11 +3031,11 @@ impl AwbcProductExecutorSnapshot {
                 });
             }
         }
-        for frame in snapshot.fiber.frames.iter().chain(
+        for frame in snapshot.fiber.retained_frames().chain(
             snapshot
                 .child_fibers
                 .iter()
-                .flat_map(|child| &child.fiber.frames),
+                .flat_map(|child| child.fiber.retained_frames()),
         ) {
             let is_flow = program
                 .functions
@@ -3611,7 +3611,7 @@ fn expected_deferred_children(
         else {
             continue;
         };
-        if (child.fiber.status.is_terminal() && !child.fiber.has_deferred_work())
+        if (child.fiber.status.is_terminal() && !child.fiber.has_exit_work())
             || expected
                 .insert(activation.clone(), (*registration, *site))
                 .is_some()
@@ -4306,13 +4306,12 @@ impl AwbcProductStepExecutor {
     fn live_flow_bindings(&self) -> Vec<AwbcFlowBinding> {
         let mut functions = self
             .fiber
-            .frames
-            .iter()
+            .retained_frames()
             .map(|frame| frame.function)
             .chain(
                 self.child_fibers
                     .iter()
-                    .flat_map(|child| child.fiber.frames.iter().map(|frame| frame.function)),
+                    .flat_map(|child| child.fiber.retained_frames().map(|frame| frame.function)),
             )
             .collect::<BTreeSet<_>>();
         if let Some(active) = &self.active_choice {
@@ -4414,6 +4413,7 @@ mod tests {
                     status: FiberStatus::Returned,
                     suspension: None,
                     terminal: Some(crate::awbc::fiber::FiberTerminalValue::Returned(None)),
+                    pending_flow_transfer: None,
                     return_summary: None,
                     budget: FiberBudget {
                         remaining: 1,

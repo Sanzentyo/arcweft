@@ -68,37 +68,14 @@ impl AwbcProductStepExecutor {
                     self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
                 }
             }
-            ProductControlEffect::Goto(target) => self.goto_effect_target(&target, output),
+            // The typed VM instruction or selected Choice already owns the
+            // transfer packet. Host-facing effect text cannot select control.
+            ProductControlEffect::Goto(_) => {}
             ProductControlEffect::Failed(message) => {
                 self.fail_with_trap(AwbcTrapCode::ExplicitPanic, message, None, output);
             }
         }
         true
-    }
-
-    fn goto_effect_target(&mut self, target: &str, output: &mut RuntimeStepOutput) {
-        let (target_id, function) = match self.program.resolve_flow_target_value(target) {
-            Ok(target) => target,
-            Err(error) => {
-                self.fail_with_trap(
-                    AwbcTrapCode::MissingDynamicTarget,
-                    error.to_string(),
-                    None,
-                    output,
-                );
-                return;
-            }
-        };
-        let target_id = target_id.clone();
-        output.flow_events.push(FlowEvent::Goto {
-            target: target_id.clone(),
-        });
-        if let Err(error) = self
-            .fiber
-            .replace_active_function(&self.program, function, &[])
-        {
-            self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
-        }
     }
 }
 
