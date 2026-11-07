@@ -442,14 +442,14 @@ impl super::AwbcProductStepExecutor {
                 ledger.transfer(
                     handle.token(),
                     &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
-                    RuntimeHandleOwnerSlot::ParentFiber(*destination),
+                    RuntimeHandleOwnerSlot::parent_fiber(self.facade_fiber.execution, *destination),
                 )?;
             }
         }
         line.commit_ledger(ledger);
         if line.ledger().leases().values().any(|lease| {
             lease.state() != RuntimeHandleLeaseState::Released
-                && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
         }) {
             return Err(LineRuntimeError::UnownedLeaseAtPublish.into());
         }
@@ -1661,7 +1661,7 @@ impl super::AwbcProductStepExecutor {
             activation_fiber_handle_owners(self.facade_fiber.execution, &activation, before)?;
         let receives_handles = before_owners
             .values()
-            .any(|owner| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)));
+            .any(|owner| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber { .. }));
         if receives_handles {
             self.dialogues.inspect_commit(transaction)?;
         }
@@ -2861,6 +2861,7 @@ impl super::AwbcProductStepExecutor {
                     return Err(LineRuntimeError::InvalidHandleSite.into());
                 }
                 let actor_token = self.dialogues.borrow_stage_actor(
+                    self.facade_fiber.execution,
                     activation,
                     line.ledger(),
                     actor.view(),
@@ -4499,7 +4500,8 @@ fn activation_fiber_handle_owners(
     let mut owners = physical_fiber_line_handle_slots(execution, fiber)?
         .into_iter()
         .map(|(token, slot)| {
-            let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(activation, &token, slot);
+            let owner =
+                RuntimeHandleOwnerSlot::in_dialogue_fiber(execution, activation, &token, slot);
             (token, owner)
         })
         .collect::<BTreeMap<_, _>>();

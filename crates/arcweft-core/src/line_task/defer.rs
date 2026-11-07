@@ -41,7 +41,7 @@ impl<V> RuntimeLineDeferredRegistration<V> {
         admission.validate_metadata(&(self.id, self.site, self.outcome_filter))?;
         admission.validate_metadata_collection(self.captures.len())?;
         for capture in &self.captures {
-            admission.validate_borrowed(capture.borrowed_value())?;
+            admission.validate_owned_borrowed(capture.borrowed_value())?;
         }
         admission.admit_composite(V::admission_origin(), |owner, resources| {
             if let Some(owner) = owner {

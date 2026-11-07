@@ -66,6 +66,7 @@ impl RuntimePublishedDialogueRegistry {
 impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
     pub(crate) fn borrow_stage_actor(
         &self,
+        execution: ExecutionInstanceId,
         activation: &DialogueActivationId,
         local: &RuntimeLineHandleLedger,
         actor: RuntimeValueView<'_>,
@@ -83,14 +84,19 @@ impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
             self.published_lease(&token)
         }
         .ok_or(LineRuntimeError::UnknownHandle)?;
-        if lease.owner() != &RuntimeHandleOwnerSlot::in_dialogue_fiber(activation, &token, slot) {
+        if lease.owner()
+            != &RuntimeHandleOwnerSlot::in_dialogue_fiber(execution, activation, &token, slot)
+        {
             return Err(LineRuntimeError::WrongOwner);
         }
         lease.validate_active_stage_actor(character)?;
         Ok(token)
     }
 
-    fn published_lease(&self, token: &RuntimeLineHandleToken) -> Option<&RuntimeHandleLease> {
+    pub(crate) fn published_lease(
+        &self,
+        token: &RuntimeLineHandleToken,
+    ) -> Option<&RuntimeHandleLease> {
         match self.entries.get(token.activation())? {
             RuntimeDialogueRegistryEntry::PublishedHandles { handles, .. } => handles.lease(token),
             _ => None,
@@ -247,8 +253,23 @@ pub(crate) struct RuntimeDialogueRegistrySaveSnapshot<F, T> {
 }
 
 impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
+    pub(crate) fn published_lease(
+        &self,
+        token: &RuntimeLineHandleToken,
+    ) -> Option<&RuntimeHandleLease> {
+        self.entries.iter().find_map(|entry| match entry {
+            RuntimeDialogueRegistrySaveEntry::PublishedHandles {
+                activation,
+                handles,
+                ..
+            } if activation == token.activation() => handles.lease(token),
+            _ => None,
+        })
+    }
+
     pub(crate) fn validate_awbc_dialogue_receivers(
         &self,
+        execution: ExecutionInstanceId,
         fibers: &std::collections::BTreeSet<crate::runtime_id::RuntimeFiberInstanceId>,
         actual: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
     ) -> Result<(), LineRuntimeError> {
@@ -257,7 +278,10 @@ impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
             let RuntimeDialogueRegistrySaveEntry::PublishedHandles { handles, .. } = entry else {
                 continue;
             };
-            for (token, slot) in handles.receiver_slots() {
+            for (token, receiver_execution, slot) in handles.receiver_slots() {
+                if receiver_execution != execution {
+                    return Err(LineRuntimeError::WrongOwner);
+                }
                 if slot
                     .awbc_fiber()
                     .is_some_and(|fiber| fibers.contains(&fiber))
@@ -511,6 +535,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         &self,
         receiver: &DialogueActivationId,
         execution: ExecutionInstanceId,
+        slot_execution: ExecutionInstanceId,
         handles: &[RuntimeAffineLineHandle],
         destinations: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         line_ready: bool,
@@ -527,7 +552,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 .get_mut(handle.token().activation())
                 .expect("checked issuer");
             if let Some(destination) = destinations.get(handle.token()) {
-                if destination.execution() != execution {
+                if destination.execution() != slot_execution {
                     return Err(LineRuntimeError::WrongOwner);
                 }
                 stage.candidate.result_lease(receiver, handle)?;
@@ -545,9 +570,12 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                     .get_mut(handle.token().activation())
                     .expect("checked issuer");
                 if let Some(destination) = destinations.get(handle.token()) {
-                    stage
-                        .candidate
-                        .publish_received_result(receiver, handle, *destination)?;
+                    stage.candidate.publish_received_result(
+                        execution,
+                        receiver,
+                        handle,
+                        *destination,
+                    )?;
                 } else {
                     stage.candidate.remove_received_result(receiver, handle)?;
                 }
@@ -929,7 +957,8 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
                             else {
                                 return false;
                             };
-                            let RuntimeHandleOwnerSlot::ParentFiber(slot) = lease.owner() else {
+                            let RuntimeHandleOwnerSlot::ParentFiber { slot, .. } = lease.owner()
+                            else {
                                 return false;
                             };
                             lease.validate_active_stage_actor(character).is_ok()
@@ -1576,7 +1605,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         drops: &super::RuntimeHandleDropAuthorization,
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         self.inspect_published_receiver_custody(execution, before, after, drops, |slot| {
-            RuntimeHandleOwnerSlot::ParentFiber(*slot)
+            RuntimeHandleOwnerSlot::parent_fiber(execution, *slot)
         })
     }
 
@@ -1659,7 +1688,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             owners
                 .iter()
                 .filter(|(token, owner)| match owner {
-                    RuntimeHandleOwnerSlot::ParentFiber(_) => true,
+                    RuntimeHandleOwnerSlot::ParentFiber { .. } => true,
                     RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => {
                         token.activation() != receiver
                     }
@@ -1677,14 +1706,14 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             arrivals.iter().any(|(token, slot)| {
                 published_before.contains_key(token)
                     || published_after.get(token)
-                        != Some(&RuntimeHandleOwnerSlot::ParentFiber(*slot))
+                        != Some(&RuntimeHandleOwnerSlot::parent_fiber(execution, *slot))
             })
         }) {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
         for (token, slot) in &published_after {
             if let Entry::Vacant(entry) = published_before.entry(token.clone()) {
-                let RuntimeHandleOwnerSlot::ParentFiber(slot) = slot else {
+                let RuntimeHandleOwnerSlot::ParentFiber { slot, .. } = slot else {
                     return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
                 };
                 if arrivals.and_then(|arrivals| arrivals.get(token)) != Some(slot) {
@@ -1692,7 +1721,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 }
                 // Publication already bound this exact destination. The
                 // published lease must confirm the arriving slot below.
-                entry.insert(RuntimeHandleOwnerSlot::ParentFiber(*slot));
+                entry.insert(RuntimeHandleOwnerSlot::parent_fiber(execution, *slot));
             }
         }
         if let Some((receiver, handles)) = result {

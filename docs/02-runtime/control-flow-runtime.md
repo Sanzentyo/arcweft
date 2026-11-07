@@ -24,6 +24,10 @@ receives the unmatched tail. Guards use the selected semantic Copy obligations
 for their temporary bindings; the original scrutinee remains owned until an arm
 is selected. A rejected guard discards its temporary scope before continuing.
 
+A successful owning pattern bind transfers each affine Line handle to its
+actual binding or journals that exact ignored handle for normal cleanup.
+Discarding one field does not authorize the loss of other retained handles.
+
 `let PAT = EXPR else { ... }` makes its bindings available afterward only when
 the else continuation diverges. Return, goto, an enclosing break/continue, and
 a Never-returning computation are control transfers rather than fabricated

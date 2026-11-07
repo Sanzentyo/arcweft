@@ -168,8 +168,9 @@ impl Engine {
             .map(|(_, value)| value))
     }
 
-    pub(super) fn main_fiber_line_handle_owners(
+    pub(super) fn published_line_handle_owners(
         &self,
+        detached: Option<&super::FlowFiber>,
     ) -> Result<
         std::collections::BTreeMap<
             crate::runtime_id::RuntimeLineHandleToken,
@@ -177,7 +178,20 @@ impl Engine {
         >,
         crate::line_task::LineRuntimeError,
     > {
-        super::flow_fiber_line_handle_owners(&self.fiber)
+        let mut owners = std::collections::BTreeMap::new();
+        for fiber in std::iter::once(&self.fiber)
+            .chain(self.child_fibers.iter())
+            .chain(self.parked_main.iter())
+            .chain(detached)
+            .filter(|fiber| fiber.owner.owns_flow_defers())
+        {
+            for (token, owner) in super::flow_fiber_line_handle_owners(fiber)? {
+                if owners.insert(token, owner).is_some() {
+                    return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
+                }
+            }
+        }
+        Ok(owners)
     }
 
     /// Activates the exact program on its retained plan. Inputs transfer only
@@ -339,7 +353,7 @@ impl Engine {
             }
             let refs = input_refs(&inputs, result)?;
             let site = prepare_program_inputs(&self.plan, program, &refs)?;
-            let before = self.main_fiber_line_handle_owners()?;
+            let before = self.published_line_handle_owners(None)?;
             self.dialogue_activations
                 .inspect_parent_fiber_reconciliation(
                     self.fiber.execution,
@@ -385,7 +399,7 @@ impl Engine {
             .expect("borrowed continuation preflight retains its result");
         self.activate_program_prepared(program, site, into_values(inputs, result));
         let committed = (|| {
-            let after = self.main_fiber_line_handle_owners()?;
+            let after = self.published_line_handle_owners(None)?;
             let receipt = self.dialogue_activations.reconcile_parent_fiber(
                 self.fiber.execution,
                 &before,

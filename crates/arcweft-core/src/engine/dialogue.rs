@@ -1558,8 +1558,12 @@ impl Engine {
         for (local, value) in frame.execution.env.bindings() {
             let slot = self.owned_slot(local)?;
             for handle in unique_affine_line_handles(value)? {
-                let owner =
-                    RuntimeHandleOwnerSlot::in_dialogue_fiber(activation, handle.token(), slot);
+                let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(
+                    self.published_receiver_execution(),
+                    activation,
+                    handle.token(),
+                    slot,
+                );
                 if owners.insert(handle.token().clone(), owner).is_some() {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
@@ -1780,11 +1784,12 @@ impl Engine {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
                 let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(
+                    self.published_receiver_execution(),
                     activation_id,
                     handle.token(),
                     self.owned_slot(local)?,
                 );
-                if matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)) {
+                if matches!(owner, RuntimeHandleOwnerSlot::ParentFiber { .. }) {
                     received.insert(handle.token().clone(), owner);
                     continue;
                 }
@@ -1882,14 +1887,14 @@ impl Engine {
             } else {
                 before
                     .get(handle.token())
-                    .filter(|owner| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)))
+                    .filter(|owner| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber { .. }))
                     .cloned()
                     .ok_or(LineRuntimeError::WrongOwner)?
             };
             match &source {
                 RuntimeHandleOwnerSlot::LineScope => {}
                 RuntimeHandleOwnerSlot::ActivationLocal(slot)
-                | RuntimeHandleOwnerSlot::ParentFiber(slot) => {
+                | RuntimeHandleOwnerSlot::ParentFiber { slot, .. } => {
                     let mut source_local = if let Some(local) = preconsumed_local {
                         (&self.owned_slot(local)? == slot
                             && value_contains_token(&value, handle.token())?)
@@ -2168,6 +2173,7 @@ impl Engine {
                     .get(actor.local())
                     .ok_or(RuntimeEvalError::UnknownLocal(actor.local()))?;
                 let actor_token = self.dialogue_activations.borrow_stage_actor(
+                    self.published_receiver_execution(),
                     activation_id,
                     activation.ledger(),
                     actor_value.view(),
@@ -2804,7 +2810,7 @@ impl Engine {
                     !matches!(
                         lease.owner(),
                         RuntimeHandleOwnerSlot::DialogueResult(_)
-                            | RuntimeHandleOwnerSlot::ParentFiber(_)
+                            | RuntimeHandleOwnerSlot::ParentFiber { .. }
                     ) && lease.state() != RuntimeHandleLeaseState::Released
                 })
                 .map(|lease| (lease.token().clone(), lease.owner().clone()))
@@ -2852,6 +2858,7 @@ impl Engine {
             .dialogue_activations
             .inspect_received_result_publication(
                 activation_id,
+                self.published_receiver_execution(),
                 self.fiber.execution,
                 &handles,
                 &parent_owners,
@@ -2867,14 +2874,17 @@ impl Engine {
                 ledger.transfer(
                     handle.token(),
                     &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
-                    RuntimeHandleOwnerSlot::ParentFiber(*destination),
+                    RuntimeHandleOwnerSlot::parent_fiber(
+                        self.published_receiver_execution(),
+                        *destination,
+                    ),
                 )?;
             }
         }
         activation.commit_ledger(ledger);
         if activation.ledger().leases().values().any(|lease| {
             lease.state() != RuntimeHandleLeaseState::Released
-                && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
         }) {
             return Err(LineRuntimeError::UnownedLeaseAtPublish.into());
         }

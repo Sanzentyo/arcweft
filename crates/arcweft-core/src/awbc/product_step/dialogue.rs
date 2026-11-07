@@ -618,6 +618,7 @@ impl ProductDialogueStore {
 
     pub(super) fn borrow_stage_actor(
         &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
         activation: &DialogueActivationId,
         local: &RuntimeLineHandleLedger,
         actor: RuntimeValueView<'_>,
@@ -625,7 +626,7 @@ impl ProductDialogueStore {
         character: &CharacterId,
     ) -> Result<RuntimeLineHandleToken, LineRuntimeError> {
         self.registry
-            .borrow_stage_actor(activation, local, actor, slot, character)
+            .borrow_stage_actor(execution, activation, local, actor, slot, character)
     }
 
     pub(super) fn inspect_received_fiber_reconciliation(
@@ -716,6 +717,7 @@ impl ProductDialogueStore {
     ) -> Result<(bool, Option<PreparedRuntimeParentFiberReconciliation>), LineRuntimeError> {
         self.registry.inspect_received_result_publication(
             receiver,
+            execution,
             execution,
             handles,
             destinations,

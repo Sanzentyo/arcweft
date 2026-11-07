@@ -1394,23 +1394,41 @@ impl Engine {
         pattern: &RuntimePattern,
         value: RuntimeValue,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        if !crate::pattern::inspect_runtime_pattern_owned(
+        let Some(prepared) = crate::pattern::prepare_runtime_pattern_owned_view(
             &self.plan,
             pattern,
-            &value,
+            value.live_view(),
             self.fiber.frame.env.function_instantiation(),
-        )? {
-            return Ok(Some(value));
-        }
-        let Some(bindings) = crate::pattern::match_runtime_pattern_owned(
-            &self.plan,
-            pattern,
-            value,
-            self.fiber.frame.env.function_instantiation(),
+            &crate::entry::schema::value_budget::ValidationWork::new(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
         )?
         else {
-            unreachable!("borrowed pattern preflight sealed the owning match")
+            return Ok(Some(value));
         };
+        let mut discarded = Vec::new();
+        for handle in value
+            .view()
+            .line_handle_projection()
+            .map_err(|_| RuntimeEvalError::InvalidDiscardGraph)?
+        {
+            if crate::pattern::runtime_pattern_handle_destinations_view(
+                pattern,
+                value.view(),
+                handle.token(),
+            )
+            .map_err(|_| RuntimeEvalError::InvalidDiscardGraph)?
+            .is_empty()
+            {
+                discarded.push(handle);
+            }
+        }
+        self.fiber
+            .frame
+            .env
+            .authorize_assignment_discard_handles(discarded)
+            .map_err(|_| RuntimeEvalError::InvalidDiscardGraph)?;
+        let bindings = prepared.commit(value);
         self.fiber.frame.env.bind_all(bindings);
         Ok(None)
     }

@@ -1081,6 +1081,12 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
 }
 
 impl<N, P, R, F, D> Engine<N, P, R, F, D> {
+    /// Scheduling parks the original receiver while an attached child uses
+    /// its own physical local namespace.
+    pub(super) fn published_receiver_execution(&self) -> crate::runtime_id::ExecutionInstanceId {
+        self.parked_main.as_ref().unwrap_or(&self.fiber).execution
+    }
+
     pub(super) fn admit_metadata(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -1296,6 +1302,9 @@ impl<N, P, R, V, FP, O, C, A, S, D>
     fn validate_lexical_defer_contour<'a>(
         &self,
         reached: impl Fn(&DialogueActivationId) -> Option<super::defer::NativeReachedLineDefers<'a, V>>,
+        published: impl Fn(
+            &crate::runtime_id::RuntimeLineHandleToken,
+        ) -> Option<&'a crate::line_task::RuntimeHandleLease>,
     ) -> Result<(), String>
     where
         V: crate::value::RuntimeStoredValue + 'a,
@@ -1371,22 +1380,38 @@ impl<N, P, R, V, FP, O, C, A, S, D>
                     }
                 }
                 for registration in &scope.deferred {
-                    for value in registration.packet.captures() {
+                    for (ordinal, value) in registration.packet.captures().iter().enumerate() {
+                        let ordinal = u32::try_from(ordinal).map_err(|_| invalid())?;
                         for handle in value
                             .borrowed_view()
                             .line_handle_projection()
                             .map_err(|_| invalid())?
                         {
+                            let (lease, expected) = if let Some((_, line)) = line {
+                                (
+                                    line.ledger().lease(handle.token()),
+                                    RuntimeHandleOwnerSlot::ScopedDefer(registration.packet.id()),
+                                )
+                            } else {
+                                let slot = crate::value::ownership::RuntimeOwnedSlotId::NativeDeferCapture {
+                                    execution: child.execution,
+                                    fiber: child.persistent_id,
+                                    registration: registration.packet.id(),
+                                    ordinal,
+                                };
+                                (
+                                    published(handle.token()),
+                                    RuntimeHandleOwnerSlot::parent_fiber(
+                                        self.published_receiver_execution(),
+                                        slot,
+                                    ),
+                                )
+                            };
                             if !scoped_tokens.insert(handle.token().clone())
-                                || line
-                                    .and_then(|(_, line)| line.ledger().lease(handle.token()))
-                                    .is_none_or(|lease| {
-                                        lease.owner()
-                                            != &RuntimeHandleOwnerSlot::ScopedDefer(
-                                                registration.packet.id(),
-                                            )
-                                            || lease.resource().kind() != handle.kind()
-                                    })
+                                || lease.is_none_or(|lease| {
+                                    lease.owner() != &expected
+                                        || lease.resource().kind() != handle.kind()
+                                })
                             {
                                 return Err(invalid());
                             }
@@ -1555,14 +1580,17 @@ impl Engine {
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
         })
         .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
-        self.validate_lexical_defer_contour(|activation| {
-            transaction
-                .into_iter()
-                .chain(&self.dialogue_activations.inline_stack)
-                .find(|transaction| transaction.activation() == activation)
-                .map(|transaction| (transaction.line(), transaction.frame().scopes.as_slice()))
-                .or_else(|| self.dialogue_activations.active_defer_state(activation))
-        })
+        self.validate_lexical_defer_contour(
+            |activation| {
+                transaction
+                    .into_iter()
+                    .chain(&self.dialogue_activations.inline_stack)
+                    .find(|transaction| transaction.activation() == activation)
+                    .map(|transaction| (transaction.line(), transaction.frame().scopes.as_slice()))
+                    .or_else(|| self.dialogue_activations.active_defer_state(activation))
+            },
+            |token| self.dialogue_activations.published_lease(token),
+        )
         .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
         Ok(())
     }
@@ -1650,9 +1678,10 @@ impl NativeEngineRollbackImage {
                 .active_line(activation)
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
         })?;
-        self.validate_lexical_defer_contour(|activation| {
-            self.dialogue_activations.active_defer_state(activation)
-        })?;
+        self.validate_lexical_defer_contour(
+            |activation| self.dialogue_activations.active_defer_state(activation),
+            |token| self.dialogue_activations.published_lease(token),
+        )?;
         self.dialogue_activations
             .admit_values(&mut admission, &expected_deferred_children, |parent| {
                 self.session_fibers()

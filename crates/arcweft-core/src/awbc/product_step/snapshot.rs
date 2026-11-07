@@ -2805,7 +2805,11 @@ impl AwbcProductExecutorSnapshot {
         })?;
         snapshot
             .dialogues
-            .validate_awbc_dialogue_receivers(&receiver_fibers, &received_slots)
+            .validate_awbc_dialogue_receivers(
+                super::PRODUCT_EXECUTION_ID,
+                &receiver_fibers,
+                &received_slots,
+            )
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;

@@ -448,6 +448,14 @@ formatter の保持値はその位置の caller context と元 operand ABI で�
 借り出した対話 activation も、元の transaction から親と同じ累積資源枠に入れる。
 実行状態、入力、表示値、callback、待機中の操作、defer の捕捉値を live／inert
 共通の借用検査に通し、セッション全体の検査後に保存または復元する。
+
+Native の通常 Flow の defer packet は捕捉値を所有し、元 execution／fiber と
+registration／capture ordinal が物理スロットを特定する。cleanup の子 fiber は
+独立した local namespace を持つ。発行元の公開 lease は、受取りを認可する root
+execution と実際の物理スロットを区別して保持する。packet から子の local へ
+移す際も発行元 token を変えず、live／inert の両方で同じ所有対応を検査する。
+捕捉値の保存は所有値の検査であり、unrestricted な複製の許可にはしない。
+
 default の戻り先と保持 packet も、元 program と共有資源枠で照合する。
 parked Await と待機 status の Need／通知値も同じ枠を使い、通知は元 Need の
 outcome・相関・cursor 順序と照合する。AwaitMany の保持 item／capture は元 Plan の

@@ -282,6 +282,13 @@ pub(crate) struct DialogueActivationStoreRollbackImage {
 }
 
 impl DialogueActivationStoreRollbackImage {
+    pub(in crate::engine) fn published_lease(
+        &self,
+        token: &RuntimeLineHandleToken,
+    ) -> Option<&crate::line_task::RuntimeHandleLease> {
+        self.registry.published_lease(token)
+    }
+
     pub(in crate::engine) fn admit_inline_order(
         &self,
         fiber: crate::runtime_id::RuntimePersistentFiberId,
@@ -806,6 +813,13 @@ pub struct DialogueActivationStore {
 }
 
 impl DialogueActivationStore {
+    pub(in crate::engine) fn published_lease(
+        &self,
+        token: &RuntimeLineHandleToken,
+    ) -> Option<&crate::line_task::RuntimeHandleLease> {
+        self.registry.published_lease(token)
+    }
+
     pub(in crate::engine) fn validate_parent_allocations(
         &self,
         next_fiber_id: u64,
@@ -1623,6 +1637,7 @@ impl DialogueActivationStore {
 
     pub(super) fn borrow_stage_actor(
         &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
         activation: &DialogueActivationId,
         local: &RuntimeLineHandleLedger,
         actor: RuntimeValueView<'_>,
@@ -1630,7 +1645,7 @@ impl DialogueActivationStore {
         character: &CharacterId,
     ) -> Result<RuntimeLineHandleToken, LineRuntimeError> {
         self.registry
-            .borrow_stage_actor(activation, local, actor, slot, character)
+            .borrow_stage_actor(execution, activation, local, actor, slot, character)
     }
 
     pub(super) fn inspect_received_fiber_reconciliation(
@@ -1724,6 +1739,7 @@ impl DialogueActivationStore {
         &self,
         activation: &DialogueActivationId,
         execution: crate::runtime_id::ExecutionInstanceId,
+        slot_execution: crate::runtime_id::ExecutionInstanceId,
         handles: &[crate::value::ownership::RuntimeAffineLineHandle],
         destinations: &BTreeMap<
             crate::runtime_id::RuntimeLineHandleToken,
@@ -1740,6 +1756,7 @@ impl DialogueActivationStore {
         self.registry.inspect_received_result_publication(
             activation,
             execution,
+            slot_execution,
             handles,
             destinations,
             line_ready,
@@ -2055,7 +2072,8 @@ mod tests {
             .transfer(
                 &token,
                 &crate::line_task::RuntimeHandleOwnerSlot::DialogueResult(RuntimeValuePath::root()),
-                crate::line_task::RuntimeHandleOwnerSlot::ParentFiber(
+                crate::line_task::RuntimeHandleOwnerSlot::parent_fiber(
+                    execution,
                     RuntimeOwnedSlotId::EnvironmentLocal {
                         execution,
                         local: RuntimeLocalSlotId::from_allocated(
@@ -2442,10 +2460,13 @@ mod tests {
         let discard_token = crate::line_task::RuntimeLineHandleLedger::token_from_value(&discard)
             .expect("published token");
         let receiver = activation(56);
-        let source = RuntimeHandleOwnerSlot::ParentFiber(RuntimeOwnedSlotId::EnvironmentLocal {
+        let source = RuntimeHandleOwnerSlot::parent_fiber(
             execution,
-            local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(23).unwrap()),
-        });
+            RuntimeOwnedSlotId::EnvironmentLocal {
+                execution,
+                local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(23).unwrap()),
+            },
+        );
         let before = BTreeMap::from([
             (export_token.clone(), source.clone()),
             (discard_token.clone(), source),
@@ -2500,6 +2521,7 @@ mod tests {
             .inspect_received_result_publication(
                 &receiver,
                 execution,
+                execution,
                 &handles,
                 &BTreeMap::from([(export_token.clone(), destination)]),
                 true,
@@ -2551,11 +2573,13 @@ mod tests {
                 program.clone(),
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             );
-            let before =
-                RuntimeHandleOwnerSlot::ParentFiber(RuntimeOwnedSlotId::EnvironmentLocal {
+            let before = RuntimeHandleOwnerSlot::parent_fiber(
+                execution,
+                RuntimeOwnedSlotId::EnvironmentLocal {
                     execution,
                     local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(ordinal).unwrap()),
-                });
+                },
+            );
             let mut validate = |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
                 store.validate_registry_handle(&receiver, line.ledger(), handle, &before)
             };

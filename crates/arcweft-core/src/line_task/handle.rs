@@ -259,6 +259,7 @@ impl RuntimeLineHandleSite {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum RuntimeHandleOwnerSlot {
     LineScope,
     ActivationLocal(RuntimeOwnedSlotId),
@@ -268,7 +269,12 @@ pub enum RuntimeHandleOwnerSlot {
     RetiringScopedDefer(RuntimeDeferRegistrationId),
     ChildScope(LineTaskWorkTag),
     DialogueResult(RuntimeValuePath),
-    ParentFiber(RuntimeOwnedSlotId),
+    ParentFiber {
+        /// The execution that authorized publication, independent of the
+        /// physical namespace used by an attached child's local slot.
+        receiver_execution: crate::runtime_id::ExecutionInstanceId,
+        slot: RuntimeOwnedSlotId,
+    },
     /// A returned token in another line's pending result. The issuer keeps
     /// the lease and its host-command journal.
     ReceivedDialogueResult {
@@ -293,13 +299,25 @@ pub enum RuntimeHandleOwnerSlot {
 }
 
 impl RuntimeHandleOwnerSlot {
+    pub(crate) const fn parent_fiber(
+        receiver_execution: crate::runtime_id::ExecutionInstanceId,
+        slot: RuntimeOwnedSlotId,
+    ) -> Self {
+        Self::ParentFiber {
+            receiver_execution,
+            slot,
+        }
+    }
+
     fn validate_published_receiver(
         &self,
         issuer: &DialogueActivationId,
         execution: crate::runtime_id::ExecutionInstanceId,
     ) -> Result<(), LineRuntimeError> {
         match self {
-            Self::ParentFiber(slot) if slot.execution() == execution => Ok(()),
+            Self::ParentFiber {
+                receiver_execution, ..
+            } if *receiver_execution == execution => Ok(()),
             Self::ReceivedDialogueResult { receiver, .. } | Self::LineRegistry { receiver, .. }
                 if receiver != issuer && receiver.artifact() == issuer.artifact() =>
             {
@@ -313,6 +331,7 @@ impl RuntimeHandleOwnerSlot {
     }
 
     pub(crate) fn in_dialogue_fiber(
+        receiver_execution: crate::runtime_id::ExecutionInstanceId,
         activation: &DialogueActivationId,
         token: &RuntimeLineHandleToken,
         slot: RuntimeOwnedSlotId,
@@ -320,7 +339,7 @@ impl RuntimeHandleOwnerSlot {
         if token.activation() == activation {
             Self::ActivationLocal(slot)
         } else {
-            Self::ParentFiber(slot)
+            Self::parent_fiber(receiver_execution, slot)
         }
     }
 }
@@ -2656,7 +2675,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.has_pending_commands()
             || self.ledger.leases().values().any(|lease| {
                 lease.state() != RuntimeHandleLeaseState::Released
-                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
             })
         {
             return Err(LineRuntimeError::UnownedLeaseAtPublish);
@@ -2734,7 +2753,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 && matches!(
                     lease.owner(),
                     RuntimeHandleOwnerSlot::DialogueResult(_)
-                        | RuntimeHandleOwnerSlot::ParentFiber(_)
+                        | RuntimeHandleOwnerSlot::ParentFiber { .. }
                 )
             {
                 continue;
@@ -2813,7 +2832,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     || matches!(
                         lease.owner(),
                         RuntimeHandleOwnerSlot::DialogueResult(_)
-                            | RuntimeHandleOwnerSlot::ParentFiber(_)
+                            | RuntimeHandleOwnerSlot::ParentFiber { .. }
                     )
             })
     }
@@ -2868,7 +2887,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             })
             || self.ledger.leases().values().any(|lease| {
                 lease.state() != RuntimeHandleLeaseState::Released
-                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
             })
         {
             return Err(LineRuntimeError::TerminalDispositionMismatch);
@@ -2897,7 +2916,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             })
             || self.ledger.leases().values().any(|lease| {
                 lease.state() != RuntimeHandleLeaseState::Released
-                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                    && !matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
             })
         {
             return Err(LineRuntimeError::TerminalDispositionMismatch);
@@ -3259,7 +3278,13 @@ impl RuntimePublishedDialogueHandles {
 
     pub(crate) fn receiver_slots(
         &self,
-    ) -> impl Iterator<Item = (&RuntimeLineHandleToken, RuntimeOwnedSlotId)> {
+    ) -> impl Iterator<
+        Item = (
+            &RuntimeLineHandleToken,
+            crate::runtime_id::ExecutionInstanceId,
+            RuntimeOwnedSlotId,
+        ),
+    > {
         self.ledger.leases().iter().filter_map(|(token, lease)| {
             match (lease.owner(), lease.state()) {
                 (
@@ -3269,7 +3294,13 @@ impl RuntimePublishedDialogueHandles {
                     | RuntimeHandleLeaseState::Cancelled
                     | RuntimeHandleLeaseState::Failed,
                 ) => None,
-                (RuntimeHandleOwnerSlot::ParentFiber(slot), _) => Some((token, *slot)),
+                (
+                    RuntimeHandleOwnerSlot::ParentFiber {
+                        receiver_execution,
+                        slot,
+                    },
+                    _,
+                ) => Some((token, *receiver_execution, *slot)),
                 _ => None,
             }
         })
@@ -3353,6 +3384,7 @@ impl RuntimePublishedDialogueHandles {
 
     pub(crate) fn publish_received_result(
         &mut self,
+        execution: crate::runtime_id::ExecutionInstanceId,
         receiver: &DialogueActivationId,
         handle: &crate::value::ownership::RuntimeAffineLineHandle,
         destination: RuntimeOwnedSlotId,
@@ -3365,7 +3397,7 @@ impl RuntimePublishedDialogueHandles {
         self.ledger.transfer(
             handle.token(),
             &expected,
-            RuntimeHandleOwnerSlot::ParentFiber(destination),
+            RuntimeHandleOwnerSlot::parent_fiber(execution, destination),
         )
     }
 
@@ -3436,7 +3468,7 @@ impl RuntimePublishedDialogueHandles {
             .leases()
             .values()
             .any(|lease| match lease.owner() {
-                RuntimeHandleOwnerSlot::ParentFiber(_) => false,
+                RuntimeHandleOwnerSlot::ParentFiber { .. } => false,
                 RuntimeHandleOwnerSlot::ReceivedDialogueResult { receiver, .. } => {
                     receiver == activation
                         || receiver.artifact() != activation.artifact()
@@ -3794,7 +3826,7 @@ fn validate_restored_ledger(
             | RuntimeHandleOwnerSlot::RetiringScopedDefer(_)
             | RuntimeHandleOwnerSlot::DialogueResult(_)
             | RuntimeHandleOwnerSlot::ChildScope(_)
-            | RuntimeHandleOwnerSlot::ParentFiber(_)
+            | RuntimeHandleOwnerSlot::ParentFiber { .. }
             | RuntimeHandleOwnerSlot::LineRegistry { .. }
             | RuntimeHandleOwnerSlot::RetiringLineRegistry { .. }
             | RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
@@ -4119,7 +4151,7 @@ impl RuntimeLineHandleLedger {
             if !lease.admits_line_registry() {
                 return Err(LineRuntimeError::ReleasedHandle);
             }
-            let crosses_issuer = matches!(expected, RuntimeHandleOwnerSlot::ParentFiber(_));
+            let crosses_issuer = matches!(expected, RuntimeHandleOwnerSlot::ParentFiber { .. });
             if receiver.artifact() != token.activation().artifact()
                 || (receiver != token.activation()) != crosses_issuer
                 || key.scope() != &arcweft_id::LifetimeScopeKind::Line
@@ -4325,7 +4357,7 @@ fn owner_transition_is_legal(
             source,
             RuntimeHandleOwnerSlot::ActivationLocal(_)
                 | RuntimeHandleOwnerSlot::ChildScope(_)
-                | RuntimeHandleOwnerSlot::ParentFiber(_)
+                | RuntimeHandleOwnerSlot::ParentFiber { .. }
         );
     }
     if let RuntimeHandleOwnerSlot::ScopedDefer(id) = source {
@@ -4353,11 +4385,11 @@ fn owner_transition_is_legal(
                 | RuntimeHandleOwnerSlot::ScopedDefer(_)
         ) | (
             RuntimeHandleOwnerSlot::DialogueResult(_)
-                | RuntimeHandleOwnerSlot::ParentFiber(_)
+                | RuntimeHandleOwnerSlot::ParentFiber { .. }
                 | RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. },
-            RuntimeHandleOwnerSlot::ParentFiber(_)
+            RuntimeHandleOwnerSlot::ParentFiber { .. }
         ) | (
-            RuntimeHandleOwnerSlot::ParentFiber(_),
+            RuntimeHandleOwnerSlot::ParentFiber { .. },
             RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
         )
     )
@@ -5925,7 +5957,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         match &self.result {
             RuntimeDialogueResultState::Uncommitted => {
                 if self.ledger.leases().values().any(|lease| {
-                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
                         || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
                             && !result_lease_was_retired(lease.state()))
                 }) {
@@ -5968,18 +6000,15 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                     &self.result,
                     RuntimeDialogueResultState::Committed { .. }
                         | RuntimeDialogueResultState::Selected { .. }
-                ) && self
-                    .ledger
-                    .leases()
-                    .values()
-                    .any(|lease| matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_)))
-                {
+                ) && self.ledger.leases().values().any(|lease| {
+                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
+                }) {
                     return Err(LineRuntimeError::InvalidRestoredResultState);
                 }
             }
             RuntimeDialogueResultState::Abandoned => {
                 if self.ledger.leases().values().any(|lease| {
-                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber { .. })
                         || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
                             && !result_lease_was_retired(lease.state()))
                 }) {

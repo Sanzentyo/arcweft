@@ -145,7 +145,7 @@ pub(crate) fn issued_program_handle_with_prefix(prefix: bool) -> IssuedProgramHa
             RuntimeHandleResource::StageActor(RuntimeStageActorLease::new(
                 arcweft_character::id::CharacterId::try_new("character.fixture").unwrap(),
             )),
-            RuntimeHandleOwnerSlot::ParentFiber(source),
+            RuntimeHandleOwnerSlot::parent_fiber(source.execution(), source),
         )
         .unwrap();
     let value = RuntimeValue::Opaque(value);
@@ -269,7 +269,7 @@ pub(crate) fn publish_program_handle(
         .transfer(
             &token,
             &source,
-            RuntimeHandleOwnerSlot::ParentFiber(destination),
+            RuntimeHandleOwnerSlot::parent_fiber(destination.execution(), destination),
         )
         .unwrap();
     let activation = token.activation().clone();

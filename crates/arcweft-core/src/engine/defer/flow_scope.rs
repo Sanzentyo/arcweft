@@ -44,12 +44,7 @@ impl Engine {
             .flow_defer_frontier
             .prepare()
             .ok_or(LineRuntimeError::DeferRegistrationIdentityExhausted)?;
-        let values = inspect_defer_captures(&self.plan, &self.fiber.frame.env, *site, captures)?;
-        for value in values {
-            if !super::super::dialogue::unique_affine_line_handles(value)?.is_empty() {
-                return Err(LineRuntimeError::WrongOwner.into());
-            }
-        }
+        inspect_defer_captures(&self.plan, &self.fiber.frame.env, *site, captures)?;
         let values = take_defer_captures(&mut self.fiber.frame.env, captures);
         let id = self.flow_defer_frontier.commit(identity);
         defers.deferred.push(NativeLexicalDeferred {

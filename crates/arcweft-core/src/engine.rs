@@ -869,6 +869,33 @@ fn flow_fiber_line_handle_owners(
         }
     }
     for (frame_index, entry) in fiber.frame.control_stack.iter().enumerate() {
+        if fiber.owner.owns_flow_defers()
+            && let FlowControlStackEntryKind::Scope { defers, .. } = &entry.kind
+        {
+            for registration in &defers.deferred {
+                for (ordinal, value) in registration.packet.captures().iter().enumerate() {
+                    let ordinal = u32::try_from(ordinal)
+                        .map_err(|_| crate::line_task::LineRuntimeError::OwnedSlotOverflow)?;
+                    let owner = crate::value::ownership::RuntimeOwnedSlotId::NativeDeferCapture {
+                        execution: fiber.execution,
+                        fiber: fiber.persistent_id,
+                        registration: registration.packet.id(),
+                        ordinal,
+                    };
+                    for handle in value
+                        .view()
+                        .line_handle_projection()
+                        .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
+                    {
+                        if owners.insert(handle.token().clone(), owner).is_some() {
+                            return Err(
+                                crate::line_task::LineRuntimeError::DuplicateHandleOccurrence,
+                            );
+                        }
+                    }
+                }
+            }
+        }
         let FlowControlStackEntryKind::FormatAttempt(frame) = &entry.kind else {
             continue;
         };
@@ -3509,7 +3536,7 @@ impl Engine {
             &mut Option<crate::effect::RuntimeDropPolicy>,
         ) -> usize,
     ) -> usize {
-        let before = match self.main_fiber_line_handle_owners() {
+        let before = match self.published_line_handle_owners(None) {
             Ok(owners) => owners,
             Err(error) => {
                 self.fail_eval(error, output);
@@ -3550,7 +3577,7 @@ impl Engine {
             self.fail_eval(error, output);
             return 1;
         }
-        let after = match candidate.main_fiber_line_handle_owners() {
+        let after = match candidate.published_line_handle_owners(None) {
             Ok(owners) => owners,
             Err(error) => {
                 drop(candidate);
@@ -3564,7 +3591,7 @@ impl Engine {
             }
         };
         let receipt = match candidate.dialogue_activations.reconcile_parent_fiber(
-            candidate.fiber.execution,
+            candidate.published_receiver_execution(),
             &before,
             &after,
             &drops,
@@ -4565,6 +4592,11 @@ impl Engine {
         let Some(index) = self.next_child_fiber_index() else {
             return Ok(false);
         };
+        let published_before = self.child_fibers[index]
+            .owner
+            .owns_flow_defers()
+            .then(|| self.published_line_handle_owners(None))
+            .transpose()?;
         let mut child = self
             .child_fibers
             .remove(index)
@@ -4625,6 +4657,19 @@ impl Engine {
             .transpose()?;
         let mut drops = child.frame.env.take_assignment_discard_authorization();
         drops.set_boundary(drop_policy)?;
+        if let Some(before) = published_before {
+            let after = self.published_line_handle_owners(Some(&child))?;
+            let receipt = self.dialogue_activations.reconcile_parent_fiber(
+                self.published_receiver_execution(),
+                &before,
+                &after,
+                &drops,
+            )?;
+            output
+                .requests
+                .line_commands
+                .extend(receipt.into_commands());
+        }
         if let FlowFiberOwner::RootReducer { entry } = &owner {
             let failure = match &child.frame.status {
                 FlowFiberStatus::Failed(message) => Some(message.clone()),

@@ -1,5 +1,7 @@
 #[path = "evaluated_effects/lifetime_scopes.rs"]
 mod lifetime_scopes;
+#[path = "evaluated_effects/ordinary_defer.rs"]
+mod ordinary_defer;
 #[path = "support/slot_declarations.rs"]
 mod slot_declarations;
 
@@ -4429,6 +4431,7 @@ fn execute_nested_line_handle_transfer(
     for tick in 0..512 {
         input.tick = TickId(tick);
         let result = step(std::mem::take(&mut input), RuntimeStepOptions::default());
+        assert!(result.stats.executed_ops <= 1);
         assert!(
             result.output.diagnostics.is_empty(),
             "tick {tick}: {:?}",
@@ -5102,7 +5105,18 @@ fn native_line_handle_execution(
         expect_look,
         cancel_last,
         expected_logs,
-        |input, options| native.step_with_pure_backend(input, options, &mut backend),
+        |input, options| {
+            let result = native.step_with_pure_backend(input, options, &mut backend);
+            assert!(
+                !matches!(
+                    native.fiber().frame.status,
+                    arcweft_core::engine::FlowFiberStatus::Failed(_)
+                ),
+                "native line handle frame failed: {:?}",
+                native.fiber().frame.status
+            );
+            result
+        },
     );
 }
 
@@ -5230,10 +5244,29 @@ fn decoded_awbc_nested_line_handle_transfer(source: &str, expected_lines: usize)
             let error = serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(forged.clone())
                 .expect_err("the lease key must agree with the typed token");
             assert!(error.to_string().contains("identity differs"), "{error}");
+            let mut wrong_receiver = save.clone();
+            let root = &mut wrong_receiver["dialogues"]["entries"][index]["PublishedHandles"]["handles"]
+                ["ledger"]["leases"][&key]["owner"]["ParentFiber"]["receiver_execution"];
+            *root = (root.as_str().unwrap().parse::<u64>().unwrap() + 1)
+                .to_string()
+                .into();
+            let bad: AwbcProductExecutorSaveSnapshot =
+                serde_json::from_value(wrong_receiver).unwrap();
+            let bad = executor.bind_product_save_snapshot(bad).unwrap();
+            let Err(rejected) =
+                executor.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bad))
+            else {
+                panic!("a published handle cannot name a different receiving execution");
+            };
+            let (executor, error) = rejected.into_parts();
+            assert!(
+                error.to_string().contains("owned by another runtime slot"),
+                "{error}"
+            );
             let leases = forged["dialogues"]["entries"][index]["PublishedHandles"]["handles"]
                 ["ledger"]["leases"].as_object_mut().unwrap();
             leases.remove("other");
-            let slot = &mut lease["owner"]["ParentFiber"];
+            let slot = &mut lease["owner"]["ParentFiber"]["slot"];
             assert_eq!(slot["kind"], "awbc_register");
             slot["register"] = (slot["register"].as_u64().unwrap() + 1).into();
             leases.insert(key, lease);

@@ -80,7 +80,7 @@ fn pending_flow_transfer_line_handle_has_one_real_slot_in_live_and_saved_storage
             kind,
             &opaque_owner,
             RuntimeHandleResource::Cue(RuntimeCueLease::new(RuntimeCueOrigin::StageLook)),
-            RuntimeHandleOwnerSlot::ParentFiber(old_slot),
+            RuntimeHandleOwnerSlot::parent_fiber(execution, old_slot),
         )
         .unwrap();
     let token = ledger.leases().keys().next().unwrap().clone();
@@ -164,12 +164,12 @@ fn pending_flow_transfer_line_handle_has_one_real_slot_in_live_and_saved_storage
     ledger
         .transfer(
             &token,
-            &RuntimeHandleOwnerSlot::ParentFiber(old_slot),
-            RuntimeHandleOwnerSlot::ParentFiber(new_slot),
+            &RuntimeHandleOwnerSlot::parent_fiber(execution, old_slot),
+            RuntimeHandleOwnerSlot::parent_fiber(execution, new_slot),
         )
         .unwrap();
     assert_eq!(
         ledger.lease(&token).unwrap().owner(),
-        &RuntimeHandleOwnerSlot::ParentFiber(new_slot)
+        &RuntimeHandleOwnerSlot::parent_fiber(execution, new_slot)
     );
 }
