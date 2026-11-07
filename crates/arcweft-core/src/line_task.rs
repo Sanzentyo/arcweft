@@ -19,7 +19,8 @@ mod result_selection_tests;
 pub(crate) mod semantic;
 pub use semantic::LinePlanSemanticDigest;
 
-pub use defer::{RuntimeDeferOutcomeFilter, RuntimeLineDeferredRegistration};
+pub use crate::scope::{RuntimeDeferOutcomeFilter, ScopeExit};
+pub use defer::RuntimeLineDeferredRegistration;
 pub(crate) use defer::{RuntimeDeferUnwindStep, RuntimeScopedDeferDecision};
 pub(crate) use drop_authorization::RuntimeHandleDropAuthorization;
 
@@ -36,10 +37,9 @@ pub(crate) use defer::AwbcRuntimeDeferredRegistrationSnapshot;
 pub(crate) use handle::{
     AwbcRuntimeDialogueActivationSnapshot, AwbcRuntimePublishedDialogueHandlesSnapshot,
     RuntimeDialogueCommitReceipt, RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt,
-    RuntimePreparedDeferredRegistration, RuntimePreparedLineCommands,
-    RuntimePreparedScheduledPacketTake, RuntimePreparedScopedDeferUnwind,
-    RuntimePublishedDialogueHandles, RuntimeScheduledChildAdmissionProof,
-    RuntimeScheduledCompletionStage,
+    RuntimePreparedLineCommands, RuntimePreparedScheduledPacketTake,
+    RuntimePreparedScopedDeferUnwind, RuntimePublishedDialogueHandles,
+    RuntimeScheduledChildAdmissionProof, RuntimeScheduledCompletionStage,
 };
 
 pub use handle::{
@@ -50,16 +50,6 @@ pub use handle::{
     RuntimeLineHandleSiteKind, RuntimeScheduledLineTask, RuntimeScheduledState,
     RuntimeStageActorLease, RuntimeVoiceLease,
 };
-
-#[derive(
-    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
-)]
-pub enum ScopeExit {
-    #[default]
-    Completed,
-    Cancelled,
-    Failed,
-}
 
 /// Sealed, plan-owned task graph activated with one dialogue content plan.
 ///

@@ -1,30 +1,7 @@
-use super::ScopeExit;
 use crate::runtime_id::{RuntimeDeferRegistrationId, RuntimeDeferSiteId};
+use crate::scope::{RuntimeDeferOutcomeFilter, ScopeExit};
 use crate::value::RuntimeValue;
 use serde::{Deserialize, Serialize};
-
-/// Exit condition that admits one deferred callback.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeDeferOutcomeFilter {
-    Always,
-    Completed,
-    Cancelled,
-    Failed,
-}
-
-impl RuntimeDeferOutcomeFilter {
-    #[must_use]
-    pub const fn matches(self, exit: ScopeExit) -> bool {
-        matches!(
-            (self, exit),
-            (Self::Always, _)
-                | (Self::Completed, ScopeExit::Completed)
-                | (Self::Cancelled, ScopeExit::Cancelled)
-                | (Self::Failed, ScopeExit::Failed)
-        )
-    }
-}
 
 /// One dynamic defer registration retained by its dialogue activation.
 ///

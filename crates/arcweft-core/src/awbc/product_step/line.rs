@@ -108,7 +108,7 @@ impl ScopedDeferCaptureOwner<'_> {
 struct PreparedScopedDeferRegistration {
     owner: crate::awbc::fiber::AwbcFiberLexicalScopeId,
     instruction: crate::awbc::fiber::PreparedYieldedInstruction,
-    registration: crate::line_task::RuntimePreparedDeferredRegistration,
+    registration: crate::scope::RuntimePreparedDeferredRegistration,
     registers: Vec<crate::awbc::schema::AwbcRegisterId>,
     tokens: BTreeSet<RuntimeLineHandleToken>,
 }

@@ -3,6 +3,13 @@
 use arcweft_id::DeclarationName;
 use serde::{Deserialize, Serialize};
 
+mod defer;
+pub use defer::{RuntimeDeferOutcomeFilter, ScopeExit};
+pub(crate) use defer::{
+    RuntimeDeferRegistrationFrontier, RuntimePreparedDeferredRegistration,
+    defer_registration_stack_is_ordered,
+};
+
 /// Namespace contribution of one lexical scope. Static executable coordinates,
 /// rather than this optional name, distinguish separate scopes with the same name.
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

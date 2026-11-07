@@ -692,6 +692,11 @@ impl<V, G> FiberScope<V, G> {
             .scopes
             .get(self.id.index())
             .ok_or(FiberStateError::InvalidFrame)?;
+        let started = match (self.defer_inflight, self.defer_releasing.as_slice()) {
+            (running, []) => running.map(|row| row.registration),
+            (None, [releasing]) => Some(releasing.registration),
+            _ => return Err(FiberStateError::InvalidFrame),
+        };
         if self.depth as usize != ordinal
             || ordinal >= frame.layout.max_scope_depth as usize
             || definition.parent != parent
@@ -699,6 +704,10 @@ impl<V, G> FiberScope<V, G> {
                 && (self.defer_inflight.is_some()
                     || self.defer_failure.is_some()
                     || !self.defer_releasing.is_empty()))
+            || !crate::scope::defer_registration_stack_is_ordered(
+                self.defers.iter().map(|row| row.id),
+                started,
+            )
         {
             return Err(FiberStateError::InvalidFrame);
         }

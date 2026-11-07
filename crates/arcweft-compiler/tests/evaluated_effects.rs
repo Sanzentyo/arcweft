@@ -2989,6 +2989,11 @@ entry cli @entry.main { goto @flow.main }
 
 #[test]
 fn awbc_mark_scope_defer_resumes_before_publishing_the_selected_result() {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        executor::ArcweftRuntimeExecutorSnapshot,
+    };
+
     let (compiled, awbc) = compile_nested_awbc(
         r#"
 pub character alice { display = "Alice" }
@@ -3014,6 +3019,7 @@ entry cli @entry.main { goto @flow.main }
     );
     let mut awbc = Some(awbc);
     let mut saved_live_cleanup = false;
+    let mut rejected_reordered_cleanup = false;
     let (logs, completed) = execute_dialogue_result_with_mark(
         |input, options| {
             let mut current = awbc.take().unwrap();
@@ -3024,6 +3030,28 @@ entry cli @entry.main { goto @flow.main }
                     .unwrap()
                     .iter()
                     .any(|child| child["owner"].get("ScopedDeferred").is_some());
+                if rejected_reordered_cleanup {
+                    return executor;
+                }
+                let mut tampered: AwbcProductExecutorSaveSnapshot =
+                    serde_json::from_value(saved.clone()).unwrap();
+                let Some(scope) = tampered
+                    .child_fibers
+                    .iter_mut()
+                    .flat_map(|child| &mut child.fiber.frames)
+                    .flat_map(|frame| &mut frame.scopes)
+                    .find(|scope| scope.defers.len() == 3)
+                else {
+                    return executor;
+                };
+                scope.defers.swap(0, 2);
+                let tampered = executor.bind_product_save_snapshot(tampered).unwrap();
+                let rejection = executor
+                    .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(tampered))
+                    .err()
+                    .expect("restore rejects a defer stack whose registration order was changed");
+                let (executor, _) = rejection.into_parts();
+                rejected_reordered_cleanup = true;
                 executor
             });
             awbc = Some(restored);
@@ -3034,6 +3062,7 @@ entry cli @entry.main { goto @flow.main }
     );
     assert!(completed);
     assert!(saved_live_cleanup);
+    assert!(rejected_reordered_cleanup);
     assert_eq!(
         logs,
         [

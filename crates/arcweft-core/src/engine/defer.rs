@@ -318,21 +318,16 @@ impl<V: RuntimeStoredValue> NativeLexicalDeferScope<V> {
         let invalid = || AwbcRuntimeValueSnapshotError::Message {
             message: "native lexical defer differs from its original scope and registration".into(),
         };
+        admission.validate_metadata(&(self.exit, &self.failure))?;
+        admission.validate_metadata_collection(self.deferred.len())?;
         if self.exit.is_none() && (self.inflight.is_some() || self.failure.is_some())
-            || self
-                .deferred
-                .windows(2)
-                .any(|rows| rows[0].packet.id() >= rows[1].packet.id())
-            || self.inflight.as_ref().is_some_and(|inflight| {
-                self.deferred
-                    .last()
-                    .is_some_and(|row| row.packet.id() >= inflight.id)
-            })
+            || !crate::scope::defer_registration_stack_is_ordered(
+                self.deferred.iter().map(|row| row.packet.id()),
+                self.inflight.as_ref().map(|row| row.id),
+            )
         {
             return Err(invalid());
         }
-        admission.validate_metadata(&(self.exit, &self.failure))?;
-        admission.validate_metadata_collection(self.deferred.len())?;
         for registration in &self.deferred {
             registration.source.admit(
                 admission,

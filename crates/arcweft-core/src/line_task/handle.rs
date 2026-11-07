@@ -14,6 +14,10 @@ use crate::runtime_id::{
     DialogueActivationId, RuntimeDeferRegistrationId, RuntimeDeferSiteId, RuntimeLineHandleSiteId,
     RuntimeLineHandleToken, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId,
 };
+use crate::scope::{
+    RuntimeDeferOutcomeFilter, RuntimeDeferRegistrationFrontier,
+    RuntimePreparedDeferredRegistration, defer_registration_stack_is_ordered,
+};
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::ownership::{RuntimeOwnedSlotId, RuntimeValuePath};
@@ -543,7 +547,7 @@ pub struct RuntimeDialogueActivationState<T, V = RuntimeValue> {
     resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
     scheduled: Vec<RuntimeScheduledLineTask<V>>,
     deferred: Vec<RuntimeLineDeferredRegistration<V>>,
-    next_defer_registration: u64,
+    next_defer_registration: RuntimeDeferRegistrationFrontier,
     defer_unwind: Option<RuntimeDeferUnwindState>,
     result: RuntimeDialogueResultState<T, V>,
     frame_released: bool,
@@ -651,12 +655,6 @@ pub(crate) struct RuntimePreparedNextDeferred {
     commands: Option<RuntimeDialogueOutcomeStage>,
 }
 
-#[derive(Debug)]
-pub(crate) struct RuntimePreparedDeferredRegistration {
-    id: RuntimeDeferRegistrationId,
-    next: u64,
-}
-
 pub(crate) enum RuntimePreparedScopedDeferUnwind {
     Run(RuntimeLineHandleLedger),
     Skip(RuntimePreparedLineCommands),
@@ -714,12 +712,6 @@ impl RuntimeScheduledCompletionStage {
 
     pub(crate) fn ledger_mut(&mut self) -> &mut RuntimeLineHandleLedger {
         &mut self.ledger
-    }
-}
-
-impl RuntimePreparedDeferredRegistration {
-    pub(crate) const fn id(&self) -> RuntimeDeferRegistrationId {
-        self.id
     }
 }
 
@@ -914,7 +906,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             resolved_commands: std::collections::BTreeSet::new(),
             scheduled: Vec::new(),
             deferred: Vec::new(),
-            next_defer_registration: 1,
+            next_defer_registration: RuntimeDeferRegistrationFrontier::initial(),
             defer_unwind: None,
             result: RuntimeDialogueResultState::Uncommitted,
             frame_released: false,
@@ -942,16 +934,21 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
 
     /// Checks the sole lifecycle condition before moving captured affine values.
     pub(crate) fn can_register_deferred(&self) -> Result<(), LineRuntimeError> {
+        self.prepare_deferred_identity().map(|_| ())
+    }
+
+    fn prepare_deferred_identity(
+        &self,
+    ) -> Result<RuntimePreparedDeferredRegistration, LineRuntimeError> {
         if self.frame_released {
             return Err(LineRuntimeError::ActivationFrameReleased);
         }
         if self.defer_unwind.is_some() {
             return Err(LineRuntimeError::InvalidDeferredTransition);
         }
-        if self.next_defer_registration == 0 || self.next_defer_registration == u64::MAX {
-            return Err(LineRuntimeError::DeferRegistrationIdentityExhausted);
-        }
-        Ok(())
+        self.next_defer_registration
+            .prepare()
+            .ok_or(LineRuntimeError::DeferRegistrationIdentityExhausted)
     }
 
     /// Pushes one dynamic registration onto this activation's line-root stack.
@@ -959,7 +956,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub fn register_deferred(
         &mut self,
         site: RuntimeDeferSiteId,
-        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        outcome_filter: RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
     ) -> Result<RuntimeDeferRegistrationId, LineRuntimeError> {
         let prepared = self.inspect_deferred_registration(&captures)?;
@@ -969,7 +966,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn register_deferred_prepared(
         &mut self,
         site: RuntimeDeferSiteId,
-        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        outcome_filter: RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
         prepared: RuntimePreparedDeferredRegistration,
     ) -> RuntimeDeferRegistrationId {
@@ -993,7 +990,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self,
         captures: &[&RuntimeValue],
     ) -> Result<RuntimePreparedDeferredRegistration, LineRuntimeError> {
-        self.can_register_deferred()?;
+        let prepared = self.prepare_deferred_identity()?;
         let mut tokens = std::collections::BTreeSet::new();
         for capture in captures {
             for handle in capture
@@ -1017,30 +1014,19 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 }
             }
         }
-        Ok(RuntimePreparedDeferredRegistration {
-            id: RuntimeDeferRegistrationId::from_allocated(
-                NonZeroU64::new(self.next_defer_registration)
-                    .expect("checked defer registration ID is nonzero"),
-            ),
-            next: self.next_defer_registration + 1,
-        })
+        Ok(prepared)
     }
 
     /// Commits the checked registration after its sole capture packet moves.
     pub(crate) fn commit_deferred_registration(
         &mut self,
         site: RuntimeDeferSiteId,
-        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        outcome_filter: RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
         prepared: RuntimePreparedDeferredRegistration,
     ) -> RuntimeLineDeferredRegistration {
-        assert_eq!(
-            self.next_defer_registration + 1,
-            prepared.next,
-            "deferred registration proof must match the current activation"
-        );
-        self.next_defer_registration = prepared.next;
-        RuntimeLineDeferredRegistration::new(prepared.id, site, outcome_filter, captures)
+        let id = self.next_defer_registration.commit(prepared);
+        RuntimeLineDeferredRegistration::new(id, site, outcome_filter, captures)
     }
 
     /// Allocates a distinct registration for an activation-local lexical scope.
@@ -1049,7 +1035,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn allocate_deferred_registration(
         &mut self,
         site: RuntimeDeferSiteId,
-        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        outcome_filter: RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
     ) -> Result<RuntimeLineDeferredRegistration, LineRuntimeError> {
         let prepared = self.inspect_deferred_registration(&captures)?;
@@ -1215,7 +1201,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &mut self,
         activation: &DialogueActivationId,
         id: RuntimeDeferRegistrationId,
-        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        outcome_filter: RuntimeDeferOutcomeFilter,
         captures: &[RuntimeValue],
         exit: ScopeExit,
     ) -> Result<RuntimePreparedScopedDeferUnwind, LineRuntimeError> {
@@ -1255,7 +1241,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self,
         activation: &DialogueActivationId,
         id: RuntimeDeferRegistrationId,
-        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        outcome_filter: RuntimeDeferOutcomeFilter,
         captures: &[RuntimeValue],
         exit: ScopeExit,
         owner: RuntimeHandleOwnerSlot,
@@ -5653,7 +5639,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
     }
 
     fn allocated_defer_registration(&self, id: RuntimeDeferRegistrationId) -> bool {
-        id.get().get() < self.next_defer_registration
+        self.next_defer_registration.contains(id)
     }
 
     /// Lexical scopes own their packets, but registration numbers come from
@@ -5718,15 +5704,16 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         if self.frame_released && self.has_pending_deferred_work() {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
-        if self.next_defer_registration == 0
-            || self
-                .deferred
-                .windows(2)
-                .any(|rows| rows[0].id() >= rows[1].id())
+        let inflight = self.deferred_inflight();
+        if !defer_registration_stack_is_ordered(
+            self.deferred.iter().map(RuntimeLineDeferredRegistration::id),
+            inflight.map(|(id, _)| id),
+        )
             || self
                 .deferred
                 .last()
                 .is_some_and(|registration| !self.allocated_defer_registration(registration.id()))
+            || inflight.is_some_and(|(id, _)| !self.allocated_defer_registration(id))
             || self.ledger.leases().values().any(|lease| {
                 matches!(
                     lease.owner(),
@@ -5737,21 +5724,9 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
-        if let Some(inflight) = self
-            .defer_unwind
-            .as_ref()
-            .and_then(|unwind| unwind.inflight)
-            && (!self.allocated_defer_registration(inflight.id)
-                || self
-                    .deferred
-                    .last()
-                    .is_some_and(|pending| pending.id() >= inflight.id))
-        {
-            return Err(LineRuntimeError::InvalidRestoredDeferredState);
-        }
         // An activation-only snapshot supplies None. Product restore supplies
         // the exact child owner it authenticated from its fiber snapshot.
-        if self.deferred_inflight() != expected_child {
+        if inflight != expected_child {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
         validate_restored_ledger(activation, &self.ledger)?;
@@ -6586,7 +6561,10 @@ mod tests {
             .expect("register same site with a distinct capture");
         assert_eq!(first.get().get(), 1);
         assert_eq!(second.get().get(), 2);
-        assert_eq!(state.next_defer_registration, 3);
+        assert_eq!(
+            serde_json::to_value(state.next_defer_registration).unwrap(),
+            serde_json::json!(3)
+        );
         state
             .restore_admit(&activation)
             .expect("admit pending defer stack");
@@ -6604,7 +6582,10 @@ mod tests {
             .expect("admit restored defer stack");
 
         assert_eq!(restored.deferred, state.deferred);
-        assert_eq!(restored.next_defer_registration, 3);
+        assert_eq!(
+            restored.next_defer_registration,
+            state.next_defer_registration
+        );
         let third = restored
             .register_deferred(
                 defer_site(0),
@@ -6732,7 +6713,8 @@ mod tests {
                 deferred("capture"),
             )
             .expect("register independent callback");
-        bad_counter.next_defer_registration = 1;
+        bad_counter.next_defer_registration =
+            crate::scope::RuntimeDeferRegistrationFrontier::initial();
         assert_eq!(
             bad_counter.restore_admit(&activation),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
