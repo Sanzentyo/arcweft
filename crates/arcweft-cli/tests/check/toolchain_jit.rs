@@ -2683,6 +2683,9 @@ fn score(base: i64, bonus: i64, unused: i64) -> i64 effects {} {
 entry cli @entry.cli.scalar_join { goto @flow.root }
 flow root() -> String effects { control.spawn } {
     let linear_prefix = 1i64
+    goto @flow.linear
+}
+flow linear() -> String effects { control.spawn } {
     thread first {
         let value0 = 0i64
         let value1 = value0 + 1i64
@@ -2697,9 +2700,6 @@ flow root() -> String effects { control.spawn } {
         let value10 = value9 + 1i64
         let value11 = value10 + 1i64
     }
-    goto @flow.linear
-}
-flow linear() -> String effects {} {
     let scored = score(3i64, 4i64, 77i64)
     if scored != 18i64 { return "wrong" }
     return "done"
@@ -2738,6 +2738,16 @@ flow linear() -> String effects {} {
                     .iter()
                     .any(|step| step["stats"]["child_fibers"].as_u64().unwrap() > 0),
                 "the actual source must publish and schedule its joined child: {observed}"
+            );
+            let scalar_step = observed["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|step| step["stats"]["pure"]["pure_calls"].as_u64() == Some(1))
+                .expect("the OneOp probe observes the actual scalar call");
+            assert!(
+                scalar_step["stats"]["child_fibers"].as_u64().unwrap() > 0,
+                "the scalar call itself must retain joined source work: {observed}"
             );
             let mut returned = false;
             for step in observed["steps"].as_array().unwrap() {
