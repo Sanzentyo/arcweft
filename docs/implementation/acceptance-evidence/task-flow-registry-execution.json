@@ -32431,5 +32431,1288 @@
         }
       ]
     }
+  },
+  "ordinaryFlowLineCaptures": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": {
+      "version": 1,
+      "commit": "ddd7307237fb1697e15cc5cadf6efe00426ea07c",
+      "parent": "dd660b04600c527d9bc99b1e8d2227ea22931d8d",
+      "tree": "66d4459ae795da1abaa5645cef55cc60073bcfc8",
+      "remote": "ddd7307237fb1697e15cc5cadf6efe00426ea07c",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "bc25b1a3f0bd7f00a225227a6436271d2c0bfb4f"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "2573639552d76fe23902817a63385a445ef008e8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "03572a878020218f68b3efc79ab9e4dfcdb1e644"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "fe882283fff0045fc582be28c435a9a97e3581c2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "e9f66f2d515f3aca89d6208e9289a1c316d4affa"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/flow_transfer.rs",
+          "blob": "53d4fbe15b39864dedab93352b28b7d916687c89"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "dd2ab47fa50504ca26242eee84fac3fac7bd40b6"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/flow_scope.rs",
+          "blob": "45a4c0d3932083d6c4f3b8f6d2e510abbe643db7"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "blob": "4ff2555d0325260168a6ecef53bb352a936ae62b"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "blob": "3b2c513193396866d1acade1d7a35625a8df9e76"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "blob": "3f3258aceb58a9ea0c1ad78fcd1bd681c3b63bd9"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/program.rs",
+          "blob": "99e590c5b343f7c9d112e8da155fcd39fb54553f"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "3f6e7fa15324a972373ce158586112ded2844bb1"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "blob": "578f55d57499b92a793233c53442748b7091119b"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/defer.rs",
+          "blob": "c79f827913a2b0596441604816f42c8e8353b12f"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "blob": "8c10d0283b717c3b94549fe2c2cb76918038f378"
+        },
+        {
+          "path": "crates/arcweft-core/src/tests/program_custody.rs",
+          "blob": "ea0d566d4823135a26c094a1188aab598700db01"
+        },
+        {
+          "path": "docs/02-runtime/control-flow-runtime.md",
+          "blob": "b342bbfbb5ff2f0693a617d8e0166030f68cef10"
+        },
+        {
+          "path": "docs/02-runtime/save-replay.md",
+          "blob": "7730d840789b8f2cadf04a11953609ef97d5af9c"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "daf72e0699646e077e70efc9254cfe390337c643a90a095024bfc9ddfb21872e",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T15:42:04.0166932Z"
+    },
+    "slotFoundation": {
+      "version": 1,
+      "commit": "dd660b04600c527d9bc99b1e8d2227ea22931d8d",
+      "parent": "f368c60d42f5daa74f89b0edd0da42325518698b",
+      "tree": "b0cd8adb080b8772db3f8c72b7c2200e304a986a",
+      "remote": "dd660b04600c527d9bc99b1e8d2227ea22931d8d",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/value/ownership/binary.rs",
+          "blob": "c762525957291dcae766bcf6356a712524f4a683"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+          "blob": "2119813dc70370daf3f14a944a7b0879de2d07be"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "944a219452d81a83cf7fa5518a99a1c9935d658fddae5600647a1d9f783b33fe",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "sha256": "e6cbfb85b574c622875770d17e62f30f8c73068fe6d83c6db4996e8902b01d87"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "sha256": "70cd3bb257a9d15f7aee401a66dfe9d45ff41b3c5cb3af3e240eae103d1ed3b9"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-11-07T14:41:16.9515689Z"
+    },
+    "contract": [
+      "The actual Native packet owns each capture at its execution/fiber/registration/ordinal slot until a prepared child takes it.",
+      "Published ParentFiber custody authenticates the receiving root separately from physical child execution/local namespaces. Strict version 1 owner shape replaces the old tuple; no legacy reader.",
+      "Live and inert capture admission allows owned affine storage while retaining original ABI/type/resource checks and the actual issuer-ledger contour.",
+      "An admitted owning pattern proof commits once; only the exact ignored Line handle graph receives Default cleanup authorization."
+    ],
+    "actual": {
+      "nativeCaptureCases": [
+        "direct returned Actor capture",
+        "Actor inside tuple capture",
+        "outcome-filter skip releases capture"
+      ],
+      "integration": {
+        "run": 10,
+        "passed": 7,
+        "failed": 3,
+        "skipped": 89,
+        "receipt": {
+          "sourceBase": "dd660b04600c527d9bc99b1e8d2227ea22931d8d",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(ordinary_defer::) | test(nested_line_handle_)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "startedAt": "2026-11-07T15:34:29.2610505Z",
+          "endedAt": "2026-11-07T15:34:44.400905Z"
+        }
+      },
+      "integrationPassed": [
+        "three new Native capture cases",
+        "two existing Native nested Line transfers",
+        "two existing saved AWBC nested Line transfers, including root and register tampering rejection"
+      ],
+      "scopedDeferRun": {
+        "run": 38,
+        "passed": 35,
+        "failed": 3,
+        "scopedDeferPassed": 30,
+        "note": "Initial combined run. Two failures were the new root-forgery test incorrectly treating canonical decimal-string identity as a JSON number; corrected and rerun in the final integration. The third is the newly exposed nested-Line capture-context failure."
+      },
+      "coreOwner": {
+        "run": 2323,
+        "passed": 2323,
+        "failed": 0,
+        "sourceDrift": 0
+      },
+      "coreDoctest": {
+        "run": 80,
+        "passed": 80,
+        "failed": 0
+      },
+      "operationBound": 1,
+      "tickBound": 512,
+      "realStageAcquireAndRelease": 1,
+      "quality": {
+        "catalog": {
+          "arguments": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--message-format",
+            "json"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 17,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T15:35:42.7385231Z",
+          "endedAt": "2026-11-07T15:38:01.6742711Z"
+        },
+        "runtime": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "--status-level",
+            "all",
+            "--final-status-level",
+            "all"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 17,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T15:38:01.8700021Z",
+          "endedAt": "2026-11-07T15:38:20.0198165Z"
+        },
+        "clippy": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-compiler",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 17,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T15:38:20.0408743Z",
+          "endedAt": "2026-11-07T15:40:27.733951Z"
+        },
+        "structure": {
+          "command": "just structure-audit-gate",
+          "exitCode": 0,
+          "sourceInputs": 17,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T15:40:27.754156Z",
+          "endedAt": "2026-11-07T15:40:31.6872344Z"
+        },
+        "fmt": {
+          "command": "rustfmt --check --edition 2024 --config skip_children=true",
+          "exitCode": 0,
+          "paths": [
+            "crates/arcweft-compiler/tests/evaluated_effects.rs",
+            "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+            "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+            "crates/arcweft-core/src/awbc/product_step/line.rs",
+            "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+            "crates/arcweft-core/src/awbc/product_step/tests/flow_transfer.rs",
+            "crates/arcweft-core/src/engine.rs",
+            "crates/arcweft-core/src/engine/defer/flow_scope.rs",
+            "crates/arcweft-core/src/engine/dialogue.rs",
+            "crates/arcweft-core/src/engine/dialogue/store.rs",
+            "crates/arcweft-core/src/engine/eval.rs",
+            "crates/arcweft-core/src/engine/program.rs",
+            "crates/arcweft-core/src/engine/rollback.rs",
+            "crates/arcweft-core/src/line_task/activation.rs",
+            "crates/arcweft-core/src/line_task/defer.rs",
+            "crates/arcweft-core/src/line_task/handle.rs",
+            "crates/arcweft-core/src/tests/program_custody.rs"
+          ],
+          "sourceDrift": 0
+        },
+        "doctest": {
+          "sourceBase": "ddd7307237fb1697e15cc5cadf6efe00426ea07c",
+          "arguments": [
+            "test",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--doc"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T15:43:10.7826804Z",
+          "endedAt": "2026-11-07T15:44:28.6567517Z"
+        }
+      },
+      "sourceInputs": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "sha256": "B67D29E5A3BA531080A9D59E5008A7FAA1630B529CBFAA13334C63196A00C4E7"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "sha256": "051BF7E669397B4DDDA722E78638BA39E3FB02D08AF246E018CE5EF8E2F473A4"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "sha256": "48104CECEE70C4DEDF04C3DDAF0B7C851E0A34251A36661243E2F9F9ADFA356E"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "sha256": "D9E80D0A0B4754DF193B9D09FF789D3D72DDC3C45FCD3D8A46097511EBADC8FB"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "sha256": "3EEB14ABCBCC32FD66DC3266BE74CA348168A2CAEF8586C8F15FDB3FCCC01B73"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/flow_transfer.rs",
+          "sha256": "C21B47BCC74B0CA4E1AB07EF90C58F0399A65307710D42CC6D42F984FBB52AAF"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "sha256": "C7F5C4EB0693A145C2B71753B50EB591BAB03D57933672D997168341F3304DB5"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/flow_scope.rs",
+          "sha256": "CFC36510B2506D140E4F530628EEADCF61FF06D4AA13788C857436EC12875961"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "sha256": "D6F45B273EAE7192D3E58708EDC9325AEA64EA82208DCD9EA68CC3D854F07518"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "sha256": "B3ECEF3F925C8807C9F715E4BC7E93DF4F409E9F7905003D74EA002650A829D4"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "sha256": "B670175AEE6F45B637F0BAF68058D4AFF1FD5A97A711BDC00240647A64F7ED06"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/program.rs",
+          "sha256": "6F17D12D590B54D12EBEF722951BECFE9BA93A1923FF84C5EEBB21D0632E7DD9"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "sha256": "2936F41DFC5013E8FE2E69CBA79FC2F13BBEB4D97053ACC35A75366FEA5F058A"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "sha256": "F251C0BCAFCC3FBE26641B766B6A8ADB3C2BBD1B38364342A57DBFA31DAFAD5F"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/defer.rs",
+          "sha256": "3AB485DFBD88F231B7D80927EFF44BCF2DC9BBC5F137BD2DBF991C6010E373D9"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "sha256": "2506BC8BEA24A6367E2E5503C00897678E25CF2031AE2B9A93249A00ABECA6DE"
+        },
+        {
+          "path": "crates/arcweft-core/src/tests/program_custody.rs",
+          "sha256": "263081B8F4C2E3CF6D447A30784DBD38FD7B5F3A0C615BD15EDA3EB0057C2988"
+        }
+      ]
+    },
+    "failuresAndRepairs": [
+      "The initial actor |> drop fixture was invalid semantic input; replacing it with a valid ignored owning pattern is a fixture correction, not runtime regression evidence.",
+      "Valid returned Actor capture reproduced Native WrongOwner and saved AWBC invalid ordinary deferred scope transition. Direct out acquisition separately reproduced RuntimePlanLower rejection.",
+      "Slot-model development builds exposed E0282 and E0283 in new Serde tests; explicit identity types repaired them. Final ownership-slot subset: 21 PASS.",
+      "Native registration passed after physical packet/root custody integration, but hit the unchanged 512-step bound. Internal frame inspection found unrestricted snapshot rejection for an affine owned capture; packet admission now uses Owned.",
+      "After Owned admission, the same bound remained. A direct frame-failure assertion exposed an unjournaled handle drop from a successful ignored pattern; the owning pattern commit now journals that exact graph. Direct, aggregate and skipped-filter cases pass.",
+      "The root-forgery test initially used as_u64 on the canonical identity string. Corrected to the actual canonical string encoding; both saved AWBC nested tests pass."
+    ],
+    "outstandingEvidence": [
+      {
+        "test": "ordinary_defer::native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line",
+        "actual": "line ownership references unknown runtime local declaration 4",
+        "owner": "RuntimePlan Line capture emission still uses the enclosing local rather than the deferred executable input frame."
+      },
+      {
+        "test": "ordinary_defer::saved_awbc_ordinary_flow_defer_keeps_returned_line_actor_until_its_cleanup",
+        "actual": "invalid ordinary deferred scope transition at tick 15",
+        "owner": "AWBC ordinary defer still rejects affine Line captures; packet/future-child physical custody and reconciliation remain to integrate."
+      },
+      {
+        "test": "ordinary_defer::line_result_direct_acquisition_uses_its_owning_line_plan",
+        "actual": "line capability call ExprId slot 18 must be consumed by typed line-plan lowering",
+        "owner": "Line out currently bypasses the owning Line operation producer."
+      }
+    ],
+    "limits": [
+      "These three newly reproduced conditions do not reopen previously accepted Native bounded behavior, Line/init, or Generic Match.",
+      "AWBC cancellation and pre-construction aggregate/count admission remain separate required boundaries.",
+      "No fresh Core53 matrix or workspace-wide all-target/all-feature check/Clippy was run for this checkpoint. The b6df matrix remains historical Source evidence, not a run of this new source.",
+      "Core/Compiler Clippy and structural gate exit 0 include warnings/review triggers, not a warning-free result.",
+      "Native public save/restore and final Native/Web visual acceptance are not established by the internal rollback and saved AWBC tests."
+    ],
+    "ownershipReview": {
+      "base": "dd660b04600c527d9bc99b1e8d2227ea22931d8d",
+      "workingTree": [
+        " M crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+        " M crates/arcweft-cli/tests/check/agent_script_debug.rs",
+        " M crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+        "M  crates/arcweft-compiler/tests/evaluated_effects.rs",
+        "A  crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+        "M  crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "M  crates/arcweft-core/src/awbc/product_step/line.rs",
+        "M  crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "M  crates/arcweft-core/src/awbc/product_step/tests/flow_transfer.rs",
+        "M  crates/arcweft-core/src/engine.rs",
+        "M  crates/arcweft-core/src/engine/defer/flow_scope.rs",
+        "M  crates/arcweft-core/src/engine/dialogue.rs",
+        "M  crates/arcweft-core/src/engine/dialogue/store.rs",
+        "M  crates/arcweft-core/src/engine/eval.rs",
+        "M  crates/arcweft-core/src/engine/program.rs",
+        "M  crates/arcweft-core/src/engine/rollback.rs",
+        "M  crates/arcweft-core/src/line_task/activation.rs",
+        "M  crates/arcweft-core/src/line_task/defer.rs",
+        "M  crates/arcweft-core/src/line_task/handle.rs",
+        "M  crates/arcweft-core/src/tests/program_custody.rs",
+        " M crates/arcweft-runtime-host/src/native_task.rs",
+        "M  docs/02-runtime/control-flow-runtime.md",
+        "M  docs/02-runtime/save-replay.md",
+        " M samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+        " M samples/agent-script/cli-read-resource-smoke.awfagent",
+        " M samples/agent-script/cli-read-resource-value-smoke.awfagent",
+        " M samples/agent-script/native-choice-dispatch.arcw",
+        " M samples/agent-script/native-project-graph-relations.arcw",
+        " M samples/agent-script/native-visual-regression.arcw",
+        " M samples/rich-text-full-grammar.arcw",
+        " M samples/rich-text-windows-fonts.arcw",
+        "?? %SystemDrive%/ProgramData/Microsoft/Windows/Caches/cversions.2.db",
+        "?? %SystemDrive%/ProgramData/Microsoft/Windows/Caches/{1E4C1AA0-BDDF-4BED-9D46-82216ABE6FC9}.2.ver0x0000000000000001.db",
+        "?? %SystemDrive%/ProgramData/Microsoft/Windows/Caches/{6AF0698E-D558-4F6E-9B3C-3716689AF493}.2.ver0x0000000000000001.db",
+        "?? %SystemDrive%/ProgramData/Microsoft/Windows/Caches/{DDF571F2-BE98-426D-8288-1A9A39C3FDA2}.2.ver0x0000000000000001.db",
+        "?? docs/implementation/2026-10-09-cli-bench-repair.md",
+        "?? docs/implementation/2026-10-09-cli-observe-repair.md"
+      ],
+      "measurementOnly": true,
+      "sourcePlacementIsNotAcceptanceGate": true,
+      "metadataSource": "function-scope-20261107.metadata-all.json",
+      "graphUnchanged": "No manifest, lockfile, feature, export or crate dependency changes in this cut.",
+      "fullCoreReverseClosure": 53,
+      "fullReverseRun": "pending remaining producer/AWBC integration",
+      "rows": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 245425,
+          "physicalLines": 6529,
+          "basePhysicalLines": 6496,
+          "growth": 33,
+          "classification": "test",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+            "fanOut": 40,
+            "fanIn": 5
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Shared compiled Source / real Actor ACK / Native and public-save Product acceptance helpers."
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 3286,
+          "physicalLines": 102,
+          "basePhysicalLines": 0,
+          "growth": 102,
+          "classification": "test",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0",
+            "fanOut": 40,
+            "fanIn": 5
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Behavioral tests or fixtures for the same typed storage/lease boundary."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "owner": "arcweft-core",
+          "bytes": 32589,
+          "physicalLines": 834,
+          "basePhysicalLines": 832,
+          "growth": 2,
+          "classification": "production",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Product dialogue store forwards to the common registry."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "owner": "arcweft-core",
+          "bytes": 207099,
+          "physicalLines": 4880,
+          "basePhysicalLines": 4878,
+          "growth": 2,
+          "classification": "production",
+          "embeddedTestLines": 74,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Product Line ownership/publication consumers migrate to the final qualified owner."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "owner": "arcweft-core",
+          "bytes": 193014,
+          "physicalLines": 4545,
+          "basePhysicalLines": 4541,
+          "growth": 4,
+          "classification": "production",
+          "embeddedTestLines": 182,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Product snapshot admission authenticates the published root with its real fiber graph."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/flow_transfer.rs",
+          "owner": "arcweft-core",
+          "bytes": 6506,
+          "physicalLines": 175,
+          "basePhysicalLines": 175,
+          "growth": 0,
+          "classification": "test",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Behavioral tests or fixtures for the same typed storage/lease boundary."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "owner": "arcweft-core",
+          "bytes": 260369,
+          "physicalLines": 6454,
+          "basePhysicalLines": 6409,
+          "growth": 45,
+          "classification": "production",
+          "embeddedTestLines": 887,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Native frame storage, scheduling and ownership reconciliation over actual retained fibers."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/flow_scope.rs",
+          "owner": "arcweft-core",
+          "bytes": 8322,
+          "physicalLines": 208,
+          "basePhysicalLines": 213,
+          "growth": -5,
+          "classification": "production",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Native ordinary lexical defer registration and budgeted unwind."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "owner": "arcweft-core",
+          "bytes": 192482,
+          "physicalLines": 4494,
+          "basePhysicalLines": 4484,
+          "growth": 10,
+          "classification": "production",
+          "embeddedTestLines": 1114,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Native dialogue activation/publication authenticates the root and the actual physical slot separately."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "owner": "arcweft-core",
+          "bytes": 106792,
+          "physicalLines": 2789,
+          "basePhysicalLines": 2765,
+          "growth": 24,
+          "classification": "production",
+          "embeddedTestLines": 993,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Native dialogue transactions and inert specialization forward to the common registry."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "owner": "arcweft-core",
+          "bytes": 68798,
+          "physicalLines": 1714,
+          "basePhysicalLines": 1696,
+          "growth": 18,
+          "classification": "production",
+          "embeddedTestLines": 124,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Native expression and owning pattern evaluation; consumes the existing pattern proof and journals exact ignored handles."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/program.rs",
+          "owner": "arcweft-core",
+          "bytes": 16597,
+          "physicalLines": 428,
+          "basePhysicalLines": 414,
+          "growth": 14,
+          "classification": "production",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Program activation and published parent storage inventory; no new value storage or fallback resolver."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "owner": "arcweft-core",
+          "bytes": 70490,
+          "physicalLines": 1696,
+          "basePhysicalLines": 1667,
+          "growth": 29,
+          "classification": "production",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "One borrowed native live/inert admission contour; original ledger and storage identities stay authoritative."
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "owner": "arcweft-core",
+          "bytes": 79905,
+          "physicalLines": 2005,
+          "basePhysicalLines": 1976,
+          "growth": 29,
+          "classification": "production",
+          "embeddedTestLines": 82,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Backend-neutral activation registry and atomic issuer-ledger reconciliation."
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/defer.rs",
+          "owner": "arcweft-core",
+          "bytes": 9228,
+          "physicalLines": 260,
+          "basePhysicalLines": 260,
+          "growth": 0,
+          "classification": "production",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "One live/inert owning deferred capture packet and original ABI admission."
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "owner": "arcweft-core",
+          "bytes": 278000,
+          "physicalLines": 7127,
+          "basePhysicalLines": 7098,
+          "growth": 29,
+          "classification": "production",
+          "embeddedTestLines": 973,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Affine Line lease state machine and owner grammar, evolved in place at version 1."
+        },
+        {
+          "path": "crates/arcweft-core/src/tests/program_custody.rs",
+          "owner": "arcweft-core",
+          "bytes": 25470,
+          "physicalLines": 687,
+          "basePhysicalLines": 687,
+          "growth": 0,
+          "classification": "test",
+          "embeddedTestLines": 0,
+          "ownerGraph": {
+            "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+            "fanOut": 22,
+            "fanIn": 35
+          },
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Behavioral tests or fixtures for the same typed storage/lease boundary."
+        }
+      ]
+    },
+    "cargoClean": {
+      "command": "cargo clean",
+      "head": "dd660b04600c527d9bc99b1e8d2227ea22931d8d",
+      "target": "D:\\git\\arcweft\\target",
+      "exitCode": 0,
+      "startedAt": "2026-11-07T15:14:11.6072943Z",
+      "finishedAt": "2026-11-07T15:15:10.01298Z",
+      "freeBefore": 297500033024,
+      "freeAfter": 488293679104,
+      "freeChange": 190793646080,
+      "targetPresent": false,
+      "preservedFiles": 33,
+      "filesUnchanged": true,
+      "gitStatusUnchanged": true,
+      "headUnchanged": true
+    },
+    "raw": {
+      "path": "task-ordinary-flow-line-captures.raw.zip",
+      "sha256": "f0007e29e896ecfec7afac48f731fef3c2cf13b819051aedf94cebb5b032636f",
+      "entries": [
+        {
+          "entry": "measure-native-capture-cut-20261108.ps1",
+          "bytes": 5838,
+          "sha256": "086a01437d139a1bdf879814785e799fbd3ef97ad449b77fd174978729e17cd1"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.fixture-discard.list.json",
+          "bytes": 16506,
+          "sha256": "52dcce3ec2d8f7bbedf55605a44e11f3c83acf50204467a83e319a3309d8671b"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.fixture-discard.list.receipt.json",
+          "bytes": 297,
+          "sha256": "c3a7c84b6acd3a8673de0152178e4a7009cf8245505af5a6f4b27b29dbf7f51d"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.fixture-discard.list.stderr.log",
+          "bytes": 87785,
+          "sha256": "55c1908df55e5c0af297463326fe231bc265ce912befebe7d78ceab1f452f212"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.fixture-discard.log",
+          "bytes": 91043,
+          "sha256": "c20c468f5e015aaf725d1be07feabf3aa31d5b860515004232b663ecc7793a15"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.fixture-discard.receipt.json",
+          "bytes": 557,
+          "sha256": "d22fdb7348ae5f97e127c2d3e186bf8ff621ab76a51a1a1296492043d049e7a8"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-check.log",
+          "bytes": 84062,
+          "sha256": "0cd423b953f127b713bcd3c2b6a313b51a9df1316a80ba7cd53f0fe91b3766d6"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-check.receipt.json",
+          "bytes": 326,
+          "sha256": "d626c0b92bb38528c91574f2898a51e0ca9cf9d8ac90c922e89e7d230960d6d1"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-owner.list.json",
+          "bytes": 16863,
+          "sha256": "5cc4039a9594bb34c815b2f5a684a0f11af5008d9627fc9f61ca8135839e3b41"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-owner.list.receipt.json",
+          "bytes": 287,
+          "sha256": "1da2c15dafff9148322ae8d4a0effcdc4a851e020abc47be7198295f304b541c"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-owner.list.stderr.log",
+          "bytes": 89399,
+          "sha256": "26a73180a593f67f7a3d0b11d9b9f89c63b6d3215cf9df15c0f0e6f6c63b23c3"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-owner.log",
+          "bytes": 89088,
+          "sha256": "5444f58461adc5cda6e52187becee534a30d67135f1832f0a2717c5c10a1c508"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-owner.receipt.json",
+          "bytes": 460,
+          "sha256": "0822d7907810a38ef9299092b1865de8c8d5365916e2b4a54a469aebeeecb2fa"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-trace.log",
+          "bytes": 140250,
+          "sha256": "d79b6c1641c64dd25ad19f1ca2799a895eb4409cf558bf67d6d3761e3e7ed843"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-integration-trace.receipt.json",
+          "bytes": 482,
+          "sha256": "a4442809023b88ae598cd96beb95b8bee4e3404bd2391f73747fbd548f49b729"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-state-trace.log",
+          "bytes": 1716556,
+          "sha256": "f97ef05e25cfee7b07875eca82d7eb37ee4d8a065402e588494d67b1b84722f1"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.native-state-trace.receipt.json",
+          "bytes": 482,
+          "sha256": "c42c5bcf3ea97f489c1c4d9a173171e9594ef28ec1952963d966971e7a260584"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.receiver-model-check.log",
+          "bytes": 83980,
+          "sha256": "960d2c4175f5b26c574a41934de1878f43c180b3be0f345f3694fd6cf19cc1a7"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.receiver-model-check.receipt.json",
+          "bytes": 326,
+          "sha256": "a9ed834cbc8c7a54a62cf3948e1d290e8e0b8823410f3a2e947b6c10441a5e4c"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.repro.list.json",
+          "bytes": 16506,
+          "sha256": "52dcce3ec2d8f7bbedf55605a44e11f3c83acf50204467a83e319a3309d8671b"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.repro.list.receipt.json",
+          "bytes": 391,
+          "sha256": "2d89957c4321222f7ec2ac41922b955b3be5b027bffc9f6794663a422b8ae95c"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.repro.list.stderr.log",
+          "bytes": 87785,
+          "sha256": "fe5a56a2bbbbe799c6038b1be06e852e7dee843cd08d37fbec565d7cd62e37eb"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.repro.log",
+          "bytes": 90195,
+          "sha256": "b8f4bf00e20f63456064728bafdb2dab8d0ad81705d358b259fc50e9098c8d71"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.repro.receipt.json",
+          "bytes": 585,
+          "sha256": "3bd7c1afb6db109ef6e8cf83ba158acaddb9a22f6914eed5756bf9e336bab009"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.repro.source.json",
+          "bytes": 453,
+          "sha256": "e548b3f85a387de1cb8cdd238a4d328c51115483e4e0035d952f71eacd09d681"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.separate-backends.list.json",
+          "bytes": 16817,
+          "sha256": "ef2a1d82ff2938b4c43653eefa2a6dc1594b7230b2d3ce4a22f60711ed969e48"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.separate-backends.list.receipt.json",
+          "bytes": 320,
+          "sha256": "6d240b72ce3740a6df5c69f333913e1114c31661f7629ea88fa32e560e499d84"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.separate-backends.list.stderr.log",
+          "bytes": 87785,
+          "sha256": "5afa773f48472066982fbd8282ed6e26812e73314f164f285f414fc70c51a451"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.separate-backends.log",
+          "bytes": 93245,
+          "sha256": "6df1025cd465980408237f6416225e1fc5ffeec40076e4a43a091befed85056b"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.separate-backends.receipt.json",
+          "bytes": 493,
+          "sha256": "b98078df12b2e1e6f917815078d10ed4912f36acb41b34bf7cc9ef3eee9a7263"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-quality.clippy.log",
+          "bytes": 4930903,
+          "sha256": "235bfcea2259d6462cd58314c8a7fce6b9a79baed81b0cef3342b015e87f0273"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-quality.clippy.receipt.json",
+          "bytes": 699,
+          "sha256": "679416122f6f157734e586c6f2f9e0306afe5c7716c383bf179f69b4b3198a93"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-quality.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-quality.fmt.receipt.json",
+          "bytes": 391,
+          "sha256": "f32d77c3f2882ea837249bb448fb3523bbe6112688e05a71f1222f58b3186a1d"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-quality.ownership-review.json",
+          "bytes": 1230,
+          "sha256": "808d7849ee9d34faf3b540aded2df1f70066977bb6f4f3b64d9595131bcd83a0"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-quality.structure.log",
+          "bytes": 65874,
+          "sha256": "876d668e948120db67ea21e76876dded139ee02574e523bd4fbdc0095aa715bd"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-quality.structure.receipt.json",
+          "bytes": 182,
+          "sha256": "831af4498f1fa601904c44b8da0388a2066dcaeb0f0d4c62920ebfc2d13745e1"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r1.list.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r1.list.receipt.json",
+          "bytes": 239,
+          "sha256": "c31bd1b5a957fb2ad9c340edb355df94b249f356930767df49143d24963245b3"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r1.list.stderr.log",
+          "bytes": 14168,
+          "sha256": "cb88ccae99d97cdb8ee1586664f0e9d8b9bca529cc6b14ed6b95b82c2ae88730"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r2.list.json",
+          "bytes": 454990,
+          "sha256": "182d4727b4e876e2a6a62e6fc1fe45f86a67a208b67500af27a2f8924e27475d"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r2.list.receipt.json",
+          "bytes": 237,
+          "sha256": "0d69ff0aa2ba3ebde3af501855fe30a928550952a24a26b8d331c01674051668"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r2.list.stderr.log",
+          "bytes": 34774,
+          "sha256": "19dfa8a1ad3a39b6d9e7548e75f1dea20440f2fbc39b0a707299c19b72a983df"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r2.log",
+          "bytes": 37762,
+          "sha256": "deabc5841a57c73ac51955ef7211b5af9880e6cb8094a24303b05aea6e664e6f"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-r2.receipt.json",
+          "bytes": 408,
+          "sha256": "edaedafe65c7d276252e6119c1036b4aa63384261f33458fad2145f332cb7171"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-source.message.txt",
+          "bytes": 636,
+          "sha256": "c12a5f6b7872a54a9be8060d0ce6f828e898ea53d1d8731b8807a8ed4f679626"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-source.other.txt",
+          "bytes": 117,
+          "sha256": "98ae85f83f835be4208be0c42a26fa44a645b2715e91c426c9ebd5f8992ab49a"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-source.owned.txt",
+          "bytes": 98,
+          "sha256": "beaa45275f6c32a0719d5d9b27a16617895f89fcd631c074d37092618f0b284d"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-source.pathspec",
+          "bytes": 98,
+          "sha256": "979460116572bdcaf9b5df574371a3e282fd0679f4021b14021c4feda9fd8dd2"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-source.prepared.json",
+          "bytes": 1783,
+          "sha256": "3a0ed34279950fb6151cee45e917924c5816fb3d437181d8a897ac0a19a1b53e"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-source.reviewed.patch",
+          "bytes": 18250,
+          "sha256": "944a219452d81a83cf7fa5518a99a1c9935d658fddae5600647a1d9f783b33fe"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model-source.verified.json",
+          "bytes": 1185,
+          "sha256": "da0c439a70eec4608d58d263319d061ddddb859bec3b258aeac0dcf072e461f5"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model.list.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model.list.receipt.json",
+          "bytes": 239,
+          "sha256": "c31bd1b5a957fb2ad9c340edb355df94b249f356930767df49143d24963245b3"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.slot-model.list.stderr.log",
+          "bytes": 13187,
+          "sha256": "2c00382a06e74ca60781b1c49c0bb45734394ed682767a4692ff550abe2539a4"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.valid-producers.list.json",
+          "bytes": 16649,
+          "sha256": "8b1190afa910cae6bc55b2b12cf15d6bc34ced861b1ca3f4101e775d1d033b74"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.valid-producers.list.receipt.json",
+          "bytes": 320,
+          "sha256": "6d240b72ce3740a6df5c69f333913e1114c31661f7629ea88fa32e560e499d84"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.valid-producers.list.stderr.log",
+          "bytes": 87785,
+          "sha256": "fab3891bc6ff331ecba693f249333ebf2b30145d37ea81fc6c8e1269e66c7984"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.valid-producers.log",
+          "bytes": 92080,
+          "sha256": "80660c993ae00318d20c5e408d797b729e213fae8ef8da05360062bab0acbf64"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261107.valid-producers.receipt.json",
+          "bytes": 493,
+          "sha256": "fa97ed005d44c385c6a5bf981589b76f4b453ae3281e29608987776058848121"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.integration-boundary.log",
+          "bytes": 94337,
+          "sha256": "0f4b7398d091359ac2b2fd7edf7efa6d5dc9f5c1f67a8cd4953e7fb49ead5024"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.integration-boundary.receipt.json",
+          "bytes": 450,
+          "sha256": "2187bd3b9331f1ae49ac5dd8c178c95a8d6678274f5f85b9b796f5a220d4b081"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-cut.catalog.inventory.json",
+          "bytes": 6795,
+          "sha256": "a629911d28c9c7c5e3cbd66c129ac24bd5faf0f8ab839b285180bcf24617df45"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-cut.catalog.log",
+          "bytes": 111126,
+          "sha256": "2e1d5c1c525876831bbe914aad2b68996e5f1ebc6860f9d1d051026808e208f2"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-cut.catalog.receipt.json",
+          "bytes": 482,
+          "sha256": "eb22af29f43e209e062fbf836da5c0bf14ec831779d386e73ba25afb5f880274"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-cut.owned.txt",
+          "bytes": 842,
+          "sha256": "1cd343a1440cf28cab5e0b7f853e2f6ec81aba18bcf7eac037be136b40caec5e"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-cut.runtime.log",
+          "bytes": 127665,
+          "sha256": "816074d7f7597d8d39bcbc15a614a29838a4ed2f58e4a58cf810bf95b0884dca"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-cut.runtime.receipt.json",
+          "bytes": 576,
+          "sha256": "e2c7cc0fad75a28fd4cede0b4bfa2db9aa2867ea961f2a6129cd8d39d7c4f8c2"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-cut.source.json",
+          "bytes": 2893,
+          "sha256": "183499e70e1ba41b9aa3bf0e7eb4918b0f7c0babc81d6a9a43e3a72d2131ad91"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-doc.log",
+          "bytes": 83475,
+          "sha256": "434d41179ea9271c9ee2dee612e5819cbeecbbf1d9e6ee8e95fb3b90674c4582"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-doc.receipt.json",
+          "bytes": 277,
+          "sha256": "11782438f50f150f18cac8cfaedd0e6456b565882a31add942b36f64a5e9a4c3"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-frame-failure.log",
+          "bytes": 89256,
+          "sha256": "a2e05833aa6be51d60c60d621c678296bd0479227fdef0216b66b133222bad3c"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-frame-failure.receipt.json",
+          "bytes": 476,
+          "sha256": "748657b39e928866604d99a6f7b6a07c1d9fc880f80e5838fa92296a5f44de76"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-nested-local.log",
+          "bytes": 94484,
+          "sha256": "7478b29a6b9044a3922f15bca977720c3187607d2a1609277cce186cd3050e20"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-nested-local.receipt.json",
+          "bytes": 484,
+          "sha256": "d4c404c81e2169a2db34916f1d6f07be737216b8ea32fee8a796b40b569badcd"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-owned-admission.log",
+          "bytes": 99695,
+          "sha256": "4ebba11881bec68896f9ec4a5585e60e3511ba8956b42d4197bd9b3a04e7d8f3"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-owned-admission.receipt.json",
+          "bytes": 476,
+          "sha256": "136dc22d4f7891c5358537f29ebb126640f09be2ebe56e8c7e24cb87e7670f64"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-pattern-discard.log",
+          "bytes": 89829,
+          "sha256": "d3d6037962391713e965c705abb15024f6b212ee719de015d53ef7c44d14e650"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-pattern-discard.receipt.json",
+          "bytes": 474,
+          "sha256": "ad96eceb86655f566091a3c114bb713820d5ccf6891a2d2dfbb9b60181cfc2dd"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.catalog.inventory.json",
+          "bytes": 558948,
+          "sha256": "d851bb31da32fc37a788798c583a84d9cf96e7b7a08d567aba561705d2311ca7"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.catalog.log",
+          "bytes": 439556,
+          "sha256": "67b173d392df3f64048ce4e48c81c022a1f7899eb80bd143e6cdbf31299c3732"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.catalog.receipt.json",
+          "bytes": 314,
+          "sha256": "782abd4c2af5f415fe7279f34ae80b373567a025735159d038aee8363c1ee85a"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.clippy.log",
+          "bytes": 7721908,
+          "sha256": "7254a4df9dc7a388a425cb291c91a6098f2d2f403bc48440ada12ea77919f3bc"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.clippy.receipt.json",
+          "bytes": 329,
+          "sha256": "8bc90e3a39d271b1a76a28857e042f632eb9bb9c355501a04ddfd7b1dc302b15"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.fmt.receipt.json",
+          "bytes": 1100,
+          "sha256": "cbdeaf5688a9cbb88c29c89664cd8dc964143127eebf3846203360d2959a9465"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.ownership-review.json",
+          "bytes": 13009,
+          "sha256": "4993c52656a3d51f9845d2ddd319ab2e0ff9d3811a0f5ea7681b06836bdd3a19"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.runtime.log",
+          "bytes": 748693,
+          "sha256": "1c87c1ece97dc65b6ecf1b7cdb81ca9605c77a106624c09b20a6a674cf0fad15"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.runtime.receipt.json",
+          "bytes": 406,
+          "sha256": "4ce47a2af465bed65e6f62c26c176401eddb89fd7a7ce62194be20ec615cfdaf"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.source.json",
+          "bytes": 2893,
+          "sha256": "239134b8a3b14f39833b94a1ba18320e0a642667d203aad68ddcefce496cf9f2"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.structure.log",
+          "bytes": 65874,
+          "sha256": "063d3b076d7b988232a5f50073e4bc47007e78f408c36fa723e9526b843dfc47"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-quality.structure.receipt.json",
+          "bytes": 204,
+          "sha256": "2f44868b685c4ed6ebea3be56224e0504ea4b8a3ab58fa651e1c16d8d3b0c68f"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-source.message.txt",
+          "bytes": 728,
+          "sha256": "1c19452b52a8a2286221ab65971c54b76c2a01d168e268ea798fdf1cf2ec3e33"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-source.owned.txt",
+          "bytes": 915,
+          "sha256": "a6ffb245cfb0164584d077b05dd8758da2e94cfb91f28b3879922f3f70f0a3a4"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-source.pathspec",
+          "bytes": 896,
+          "sha256": "a12c8ffc05cd6c2a129fb3da0d79fd5c225e400a7c6bbd9a79fdcdbca518350a"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-source.prepared.json",
+          "bytes": 3774,
+          "sha256": "d973088746190c1aa2d213822c0793bb4a9e875b082472c2db8cc03c039f12f6"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-source.reviewed.patch",
+          "bytes": 63248,
+          "sha256": "daf72e0699646e077e70efc9254cfe390337c643a90a095024bfc9ddfb21872e"
+        },
+        {
+          "entry": "ordinary-defer-line-captures-20261108.native-source.verified.json",
+          "bytes": 3176,
+          "sha256": "48f13d08adc5eb044cc5f6b63b3ba532874baee5a2b0c54cd58ffc1dde099463"
+        },
+        {
+          "entry": "record-native-captures-20261108.ps1",
+          "bytes": 13599,
+          "sha256": "e1f51e89bf726548e9055895fc1c99dd3cadf954cd67594f425dfb8037002190"
+        },
+        {
+          "entry": "run-native-capture-cut-20261108.ps1",
+          "bytes": 2810,
+          "sha256": "69c72a526701f791953f765ce8e9f6780c9df1df3d51547e60cda569c2519c89"
+        },
+        {
+          "entry": "run-native-capture-quality-20261108.ps1",
+          "bytes": 3693,
+          "sha256": "b42dd3e83139313a061a79f25ae0e41658b6f3e13f92884f377404ec056b7dd9"
+        },
+        {
+          "entry": "run-user-whole-clean-20261108.ps1",
+          "bytes": 2867,
+          "sha256": "4e79b28676e5a661d474ccabb86c96f6ea1ec8399d6498f47a56efcb33324d3a"
+        },
+        {
+          "entry": "user-whole-clean-20261108.before.json",
+          "bytes": 8203,
+          "sha256": "09648eaed4cc9192409e424134ca032ec99becb6f817e80dc4b4fcba32e320dc"
+        },
+        {
+          "entry": "user-whole-clean-20261108.log",
+          "bytes": 43,
+          "sha256": "4460675a67ff88fb4a22711041f5d2e51fdd0941ae38eda61c09f90e51d54ed4"
+        },
+        {
+          "entry": "user-whole-clean-20261108.receipt.json",
+          "bytes": 473,
+          "sha256": "7f752c0f938d2fa883fddd6f29b818960a85dce0c99f406607ec570f99c8a667"
+        }
+      ]
+    }
   }
 }
