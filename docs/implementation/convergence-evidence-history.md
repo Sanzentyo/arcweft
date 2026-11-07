@@ -15419,3 +15419,11 @@ Source **9a99f1d42d9fd3ecbe13e544a31850b833199446** と受信元修正 **e5b5307
 追加テスト Source **02d1edb454e2996078a57d25f67570a102b0b14f** を既存 main へ通常 commit/push し、親・tree・全 blob・完全差分を照合した。production は変更せず、同じ Actor 再返却のAWBC公開保存で実待機 packet と実 activation の両方を観測した。packet の execution／fiber／frame／content／入力 ordinal、その入力 packet の削除、activation の execution／fiber／frame／register の計10改変を拒否。拒否ごとに元 snapshot の同一性を確認し、その executor の元入力は1-op／512-step、2 reveal、取得・解放各1回と元log順で完走した。追加1件は **1 PASS／116 SKIP**。先行146 PASSと合成して全147件runとはしない。
 
 初回の **0 PASS／1 FAIL／116 SKIP** は、packet欠落をbind時だけに拒否するというテスト期待の誤りだった。実際にはowned restoreで拒否される。修正後は両admission段階の拒否を認め、元状態保全と元実行の成功を確認した。初回ログ・修正後ログ・全SHAを保持する。既受入を戻す新規不具合とは扱わない。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIP は14 entries、SHA-256 dd1063772ef23cec32cded850d7824baab372489d59013168dd3fb51e197110f。
+
+## 2026-11-08 — 初期 Line 入力の4 owner終端と旧期待の訂正
+
+CLI Source **85021db282dcb038e0041a23ea41a354706b85bf** は残存していた captures API 利用を initial_inputs／shared_inputs へ移行し、公開CLIで2初期／1共有を確認した（1 PASS／10 SKIP）。全workspace・全target／全feature check／Clippyは終了0。旧E0599の初回失敗も保持する。テスト修正 Source **db3b5e7655a78394c1fafd951fdd735a6571dfef** は、既に正常loweringされるaffine初期入力を拒否するとした旧分岐を削除した。Copy／Moveの実ABI・元出自・定義identityをcanonical AWBC往復で照合し、初回Compiler unit190 PASS／1 FAILから修正後の全191 PASSを確認した。productionの巻戻しやassertion削減ではない。
+
+4 ownerのpackage／target別・各package全feature検証は、Core13 target **2380 PASS**、RuntimePlan5 target **165 PASS／既存generator1 SKIP**、Sema5 target **1413 PASS**、Compiler30 target **923 PASS**。計53 target／4881 PASS／1 SKIPであり、Core逆依存53 package全体とは別である。Core／RuntimePlan／Semaの入力はcfg(test)内のCompiler helper訂正で変わらず、その通過記録を再利用した。Compilerの新117 evaluated_effectsと30 scoped_deferは923件の内数。初期4条件のNative／保存AWBCと保存slot改変拒否もこの117件でPASSした。新旧runを合成した再実行とはしない。
+
+workspace一体の全feature catalogは2回ともOS1455／メモリ確保不足でテスト開始前に停止した。続く8 targetの個別list／build終了0をテストPASSには数えない。分割wrapperの引数結合ミスとWindows separator照合ミスも原本へ保持する。分割結果だけでworkspace feature統合の受入へ拡張せず、残るCore53／全CLI checkと合わせて継続する。旧7958 PASS／4 FAIL／41 SKIPと全SHAは変更せず履歴へ保持し、現状の古いCore2323・Copy専用拒否の重複説明をこの実測で置換した。Generic Match等の既受入は維持する。[各入力・終端・訂正・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは406 entries、SHA-256 5c901d56d0331511be110bab6a1172101b845b2632e88cb7f2683ac4257ec7f7。
