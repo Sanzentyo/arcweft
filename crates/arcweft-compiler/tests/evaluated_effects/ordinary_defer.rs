@@ -307,6 +307,44 @@ fn saved_awbc_initial_line_root_defer_rejects_forged_capture_custody() {
 }
 
 #[test]
+fn native_initial_owned_line_input_moves_into_an_init_defer() {
+    native_line_handle_execution(
+        &initial_owned_line_init_defer_source(),
+        2,
+        false,
+        false,
+        &["body", "init cleanup", "cleanup"],
+    );
+}
+
+#[test]
+fn saved_awbc_initial_owned_line_input_moves_into_an_init_defer() {
+    with_saved_awbc_steps(&initial_owned_line_init_defer_source(), |step| {
+        execute_nested_line_handle_transfer(
+            2,
+            false,
+            false,
+            &["body", "init cleanup", "cleanup"],
+            step,
+        );
+    });
+}
+
+fn initial_owned_line_init_defer_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE.replace(
+        "defer { let _ = actor; log.info(\"cleanup\") }",
+        r#"defer {
+            let _ = alice()[Cleanup[p]] with {
+                init {
+                    defer { let _ = actor; log.info("init cleanup") }
+                }
+            }
+            log.info("cleanup")
+        }"#,
+    )
+}
+
+#[test]
 fn native_nested_deferred_line_uses_the_innermost_capture_frame() {
     native_line_handle_execution(
         &nested_deferred_line_source(),
