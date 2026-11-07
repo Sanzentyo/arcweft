@@ -1851,7 +1851,7 @@ fn assignment_and_read_share_the_selected_local_field_place() {
 
 #[test]
 fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatch() {
-    let parser_rejected_cases = [
+    let cases = [
         ("bare-local", "fn invalid(value: i64) { value = 1i64 }\n"),
         (
             "index-place",
@@ -1861,44 +1861,33 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
             "dereference-place",
             "fn invalid(value: &mut i64) { *value = 1i64 }\n",
         ),
-    ];
-    for (label, source) in parser_rejected_cases {
-        let fixture = fixture(source, None);
-        assert!(
-            fixture.project.analysis_view().is_err(),
-            "{label} must be rejected before final semantic publication",
-        );
-    }
-
-    let semantic_cases = [
         (
             "entity-field",
             concat!(
                 "fn controller() -> Result<Unit, AgentError> effects {} { Ok(()) }\n",
                 "entry agent @entry.agent.main { controller = controller }\n",
-                "fn invalid() { @entry.agent.main.name = \"changed\" }\n",
+                "fn invalid() { (@entry.agent.main).name = \"changed\" }\n",
             ),
         ),
         (
             "rhs-type-mismatch",
             concat!(
                 "struct Point { x: i64 }\n",
-                "fn invalid(point: Point) { point.x = true }\n",
+                "fn invalid(point: Point) { let mut owned = point; owned.x = true }\n",
             ),
         ),
     ];
 
-    for (label, source) in semantic_cases {
+    for (label, source) in cases {
         let fixture = fixture(source, None);
-        if fixture.project.analysis_view().is_err() {
-            continue;
-        }
+        fixture
+            .project
+            .analysis_view()
+            .unwrap_or_else(|error| panic!("{label} must reach the semantic authority: {error:?}"));
+        let result = analyze(&fixture);
         assert!(
-            matches!(
-                analyze(&fixture),
-                Err(FinalSemanticAnalysisError::WrongPayloadFamily)
-            ),
-            "{label} must be rejected by the checked assignment authority",
+            matches!(result, Err(FinalSemanticAnalysisError::WrongPayloadFamily)),
+            "{label} must be rejected by the checked assignment authority: {result:?}",
         );
     }
 }
