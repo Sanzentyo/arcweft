@@ -15188,3 +15188,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 公開ソース `7332612534866dfcb334ab790a9eb4948e4dbaa8`。修正前の同じ入力でデコード済み AWBC は毎ステップ保存・復元して通過し、Native はスコープ終了マーカーの対応が崩れて停止した。Native は元の制御命令、移譲先のループ、評価済みの `break` 値をスコープ終了処理に保持する。cleanup が終わってから反復継続を消費するため、内側から外側へ順に終了できる。既存の Native のループ移譲も同じ処理に集約した。
 - Compiler の最初の通過実行は evaluated_effects と callable_execution の計413件。追加検証後の evaluated_effects 93件と Core 2,297件もすべて通過した。cleanup 中の入力取消しで保留中の結果を破棄し、内側から外側へ終了した。Native の保持データは正規の値を復元し、移譲先を内側ループへ付け替えた場合と Unit を Bool へ差し替えた場合を拒否した。初回の Core 型検査は Unit の値ビューの指定誤りで停止し、scalar variant に訂正した。構造監査のブロッキング違反は0件だった。[コマンド・実測・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
 - Runtime Driver／Runtime Host／Save の260件がすべて通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0。最終実行で照合した3,640入力の差分は0件だった。検証時に含めた既存の未コミット12パスを分けて保持し、公開した8ファイルの Git blob と検証した差分の一致を確認した。[原本・実行条件・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Scoped defer registration order at restore
+
+- 公開ソース `37f23f9bb07f99b123b25c72706cd02f64350898`。修正前の AWBC は、マークハンドラーの公開保存で保留中の登録3件のうち先頭と末尾を入れ替えても復元を受理した。修正後は同じ入力を拒否し、元の実行器から正規の順序で cleanup と結果公開まで完了した。登録 ID の割当て、終了条件、保留中と実行中の順序検査を共通のスコープ処理に移し、Line の割当て範囲と照合する。version 1 の登録カウンターは従来の整数形式を使う。
+- Compiler の対象93件と Core／RuntimePlan の2,432件が通過し、既存1件をスキップした。新しい Core テストは割当ての上限での停止と、発行済み ID の照合を確認した。再現テストの初回ビルドと Core の初回テストビルドは型の参照不足で停止し、参照を訂正して再実行した。構造監査のブロッキング違反は0件だった。[各試行・公開差分・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- Runtime Driver／Runtime Host／Save の260件が通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0。固定した3,641入力の差分は0件だった。検証入力に含めた既存の未コミット12パスを分けて保持し、公開した9ファイルの Git blob と検証差分の一致を確認した。[実行条件・原本・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
