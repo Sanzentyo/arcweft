@@ -113,6 +113,175 @@ fn saved_awbc_generic_deferred_line_uses_each_closed_capture_frame() {
     );
 }
 
+#[test]
+fn deferred_dialogue_keeps_an_actor_in_another_waiting_cleanup_packet() {
+    let source = deferred_dialogue_with_waiting_actor_source();
+    let expected = &["body", "message", "released"];
+    native_line_handle_execution(&source, 2, false, false, expected);
+    with_saved_awbc_steps(&source, |step| {
+        let mut reveals = 0;
+        execute_nested_line_handle_transfer(2, false, false, expected, |input, options| {
+            let result = step(input, options);
+            for event in &result.output.flow_events {
+                if let arcweft_core::plan::FlowEvent::DialogueLine { activation, .. } = event {
+                    reveals += 1;
+                    if reveals == 2 {
+                        assert!(
+                            matches!(
+                                &result.fiber_status,
+                                arcweft_core::engine::FlowFiberStatus::Dialogue(status)
+                                    if status.waiting_presentation_activation() == Some(activation)
+                            ),
+                            "{:?}",
+                            result.fiber_status
+                        );
+                    }
+                }
+            }
+            result
+        });
+        assert_eq!(reveals, 2);
+    });
+}
+
+#[test]
+fn native_deferred_dialogue_cancellation_returns_to_the_owning_cleanup() {
+    native_line_handle_execution(
+        &deferred_dialogue_cancellation_source(),
+        2,
+        false,
+        true,
+        &["body", "cancelled", "released"],
+    );
+}
+
+#[test]
+fn saved_awbc_deferred_dialogue_cancellation_returns_to_the_owning_cleanup() {
+    with_saved_awbc_steps(&deferred_dialogue_cancellation_source(), |step| {
+        execute_nested_line_handle_transfer(
+            2,
+            false,
+            true,
+            &["body", "cancelled", "released"],
+            step,
+        );
+    });
+}
+
+#[test]
+fn saved_awbc_deferred_dialogue_rejects_missing_or_replaced_receiver() {
+    let mut checked = false;
+    assert_saved_awbc_checking(
+        &deferred_dialogue_with_waiting_actor_source(),
+        2,
+        &["body", "message", "released"],
+        |executor, save| {
+            if checked {
+                return executor;
+            }
+            let Some((index, _)) = save["child_fibers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .find(|(_, child)| {
+                    child
+                        .pointer("/fiber/suspension/reason/DialogueActive")
+                        .is_some()
+                })
+            else {
+                return executor;
+            };
+            for replace in [false, true] {
+                let before = executor.snapshot().unwrap();
+                let mut forged = save.clone();
+                let fiber = &mut forged["child_fibers"][index]["fiber"];
+                if replace {
+                    let occurrence = &mut fiber["suspension"]["reason"]["DialogueActive"]["activation"]
+                        ["occurrence"];
+                    *occurrence = (occurrence.as_u64().unwrap() + 1).into();
+                } else {
+                    fiber["suspension"] = serde_json::Value::Null;
+                    fiber["status"] = "Running".into();
+                }
+                let forged = serde_json::from_value(forged).unwrap();
+                let error = executor.bind_product_save_snapshot(forged).unwrap_err();
+                assert!(error.to_string().contains("matching receiver"), "{error}");
+                assert_eq!(executor.snapshot().unwrap(), before);
+            }
+            checked = true;
+            executor
+        },
+    );
+    assert!(checked);
+}
+
+fn deferred_dialogue_with_waiting_actor_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE.replace(
+        "defer { let _ = actor; log.info(\"cleanup\") }",
+        r#"defer {
+            defer { let _ = actor; log.info("released") }
+            let received = alice()[Cleanup[p]] with { out "message" }
+            log.info(received)
+        }"#,
+    )
+}
+
+fn deferred_dialogue_cancellation_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE.replace(
+        "defer { let _ = actor; log.info(\"cleanup\") }",
+        r#"defer {
+            defer { let _ = actor; log.info("released") }
+            let received = alice()[Cleanup[mark @.later][p]] with {
+                on mark(@.later) { out "wrong" }
+                cancel on input(.SkipLine) { out "cancelled" }
+            }
+            log.info(received)
+        }"#,
+    )
+}
+
+#[test]
+fn failed_deferred_dialogue_drains_child_and_caller_cleanup() {
+    let source = r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { log.write } {
+    defer on failed { log.info("outer failed") }
+    scope region {
+        defer {
+            defer { log.info("child cleanup") }
+            let _ = alice()[Cleanup[p]] with {
+                let zero = 0i64
+                log.info(1i64 / zero)
+                out "wrong"
+            }
+            log.info("wrong callback continuation")
+        }
+        log.info("body")
+    }
+    log.info("wrong caller continuation")
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    with_saved_awbc_steps(source, |step| {
+        let mut logs = Vec::new();
+        let mut diagnosed = false;
+        for _ in 0..512 {
+            let result = step(Default::default(), Default::default());
+            assert!(result.stats.executed_ops <= 1);
+            diagnosed |= !result.output.diagnostics.is_empty();
+            logs.extend(log_messages(&result.output.effects.line));
+            if let arcweft_core::engine::FlowFiberStatus::Failed(message) = result.fiber_status {
+                assert!(message.contains("division by zero"), "{message}");
+                assert!(diagnosed);
+                assert_eq!(logs, ["body", "child cleanup", "outer failed"]);
+                return;
+            }
+        }
+        panic!("failed deferred dialogue did not drain its actual owners: {logs:?}");
+    });
+}
+
 fn generic_deferred_line_source() -> String {
     FLOW_ACTOR_DEFER_SOURCE
         .replace(
@@ -334,11 +503,41 @@ fn assert_saved_awbc_checking(
     source: &str,
     reveals: usize,
     expected: &[&str],
-    mut check: impl FnMut(
+    check: impl FnMut(
         arcweft_core::executor::ArcweftRuntimeExecutor,
         &serde_json::Value,
     ) -> arcweft_core::executor::ArcweftRuntimeExecutor,
 ) {
+    with_saved_awbc_steps_checking(source, check, |step| {
+        execute_nested_line_handle_transfer(reveals, false, false, expected, step);
+    });
+}
+
+fn with_saved_awbc_steps<R>(
+    source: &str,
+    run: impl FnOnce(
+        &mut dyn FnMut(
+            arcweft_core::step::RuntimeStepInput,
+            arcweft_core::step::RuntimeStepOptions,
+        ) -> arcweft_core::step::RuntimeStepResult,
+    ) -> R,
+) -> R {
+    with_saved_awbc_steps_checking(source, |executor, _| executor, run)
+}
+
+fn with_saved_awbc_steps_checking<R>(
+    source: &str,
+    mut check: impl FnMut(
+        arcweft_core::executor::ArcweftRuntimeExecutor,
+        &serde_json::Value,
+    ) -> arcweft_core::executor::ArcweftRuntimeExecutor,
+    run: impl FnOnce(
+        &mut dyn FnMut(
+            arcweft_core::step::RuntimeStepInput,
+            arcweft_core::step::RuntimeStepOptions,
+        ) -> arcweft_core::step::RuntimeStepResult,
+    ) -> R,
+) -> R {
     let (compiled, awbc) = nested_awbc_from_compiled(
         with_attached_dialogue_project_and_visual(
             source,
@@ -352,10 +551,10 @@ fn assert_saved_awbc_checking(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
     let mut awbc = Some(awbc);
-    execute_nested_line_handle_transfer(reveals, false, false, expected, |input, options| {
+    run(&mut |input, options| {
         let mut current = awbc.take().unwrap();
         let result = current.step_with_pure_backend(input, options, &mut backend);
         awbc = Some(roundtrip_nested_awbc_checking(current, &mut check).0);
         result
-    });
+    })
 }

@@ -1,4 +1,4 @@
-use super::{ActiveDialogue, AwbcProductStepExecutor, ProductStepError};
+use super::{ActiveDialogue, AwbcProductStepExecutor, ProductChildFiber, ProductStepError};
 use crate::awbc::fiber::{FiberState, FiberStateError, FiberSuspensionReason};
 use crate::awbc::schema::{AwbcResumePointId, AwbcTypeId};
 use crate::effect::{RuntimeRegistryOwner, RuntimeScopeRegistry};
@@ -9,13 +9,13 @@ use crate::line_task::{
     RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
     RuntimeDialogueRegistryCommitReceipt, RuntimeLineHandleLedger,
 };
-use crate::runtime_id::{DialogueActivationId, RuntimeLineHandleToken};
+use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeLineHandleToken};
 use crate::step::RuntimeDialogueContentEvent;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::{RuntimeValue, RuntimeValueView, ownership::RuntimeOwnedSlotId};
 use arcweft_character::id::CharacterId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 mod receiver;
 pub(super) use receiver::ProductDialogueReceivers;
@@ -34,8 +34,50 @@ pub(super) type ProductDialogueTransaction =
 
 #[derive(Clone, Copy)]
 pub(super) enum ProductDialogueReceiver {
-    Main,
+    Fiber(RuntimeFiberInstanceId),
     Activation(DialogueActivationId),
+}
+
+impl ProductDialogueReceiver {
+    pub(super) fn flow_fiber<'a>(
+        self,
+        main: &'a FiberState,
+        children: &'a VecDeque<ProductChildFiber>,
+    ) -> Option<&'a FiberState> {
+        let Self::Fiber(instance) = self else {
+            return None;
+        };
+        if main.instance == instance {
+            Some(main)
+        } else {
+            children
+                .iter()
+                .find(|child| {
+                    child.fiber.instance == instance && child.owner.line_activation().is_none()
+                })
+                .map(|child| &child.fiber)
+        }
+    }
+
+    pub(super) fn flow_fiber_mut<'a>(
+        self,
+        main: &'a mut FiberState,
+        children: &'a mut VecDeque<ProductChildFiber>,
+    ) -> Option<&'a mut FiberState> {
+        let Self::Fiber(instance) = self else {
+            return None;
+        };
+        if main.instance == instance {
+            Some(main)
+        } else {
+            children
+                .iter_mut()
+                .find(|child| {
+                    child.fiber.instance == instance && child.owner.line_activation().is_none()
+                })
+                .map(|child| &mut child.fiber)
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +92,7 @@ pub(super) enum ProductDialogueDispatch {
 impl ProductDialogueDispatch {
     pub(super) fn foreground(self) -> Option<DialogueActivationId> {
         match self {
-            Self::Start(ProductDialogueReceiver::Main) => None,
+            Self::Start(ProductDialogueReceiver::Fiber(_)) => None,
             Self::Start(ProductDialogueReceiver::Activation(activation))
             | Self::Resume { activation, .. } => Some(activation),
         }
@@ -61,8 +103,24 @@ impl AwbcProductStepExecutor {
     pub(super) fn dialogue_dispatch(
         &self,
     ) -> Result<Option<ProductDialogueDispatch>, FiberStateError> {
-        let mut owner = ProductDialogueReceiver::Main;
-        let mut receiver = &self.fiber;
+        for receiver in std::iter::once(&self.fiber).chain(
+            self.child_fibers
+                .iter()
+                .filter(|child| child.owner.line_activation().is_none())
+                .map(|child| &child.fiber),
+        ) {
+            if let Some(dispatch) = self.dispatch_dialogue_receiver(receiver)? {
+                return Ok(Some(dispatch));
+            }
+        }
+        Ok(None)
+    }
+
+    fn dispatch_dialogue_receiver<'a>(
+        &'a self,
+        mut receiver: &'a FiberState,
+    ) -> Result<Option<ProductDialogueDispatch>, FiberStateError> {
+        let mut owner = ProductDialogueReceiver::Fiber(receiver.instance);
         loop {
             let Some(suspension) = receiver.suspension.as_ref() else {
                 return Ok(None);
@@ -112,8 +170,17 @@ impl AwbcProductStepExecutor {
         &self,
         child: DialogueActivationId,
     ) -> Result<ProductDialogueReceiver, FiberStateError> {
-        if self.fiber.dialogue_receiver() == Some(child) {
-            return Ok(ProductDialogueReceiver::Main);
+        for fiber in std::iter::once(&self.fiber).chain(
+            self.child_fibers
+                .iter()
+                .filter(|child| child.owner.line_activation().is_none())
+                .map(|child| &child.fiber),
+        ) {
+            if fiber.dialogue_receiver() == Some(child)
+                && fiber.instance.get().get() == child.owner_fiber().get()
+            {
+                return Ok(ProductDialogueReceiver::Fiber(fiber.instance));
+            }
         }
         self.dialogues
             .active_frames()
@@ -131,9 +198,67 @@ impl AwbcProductStepExecutor {
         receiver: ProductDialogueReceiver,
     ) -> Option<&FiberState> {
         match receiver {
-            ProductDialogueReceiver::Main => Some(&self.fiber),
+            ProductDialogueReceiver::Fiber(_) => {
+                receiver.flow_fiber(&self.fiber, &self.child_fibers)
+            }
             ProductDialogueReceiver::Activation(id) => {
                 self.dialogues.active_frame_for(&id)?.receiving_fiber()
+            }
+        }
+    }
+
+    pub(super) fn fail_flow_dialogue_receiver(
+        &mut self,
+        receiver: ProductDialogueReceiver,
+        error: ProductStepError,
+        output: &mut crate::step::RuntimeStepOutput,
+    ) {
+        let checkpoint = match super::checkpoint::ProductSessionCheckpoint::capture(self) {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => {
+                self.record_error(error, output);
+                return;
+            }
+        };
+        let trapped = (|| {
+            let before = self.published_flow_handle_owners(None)?;
+            let fiber = receiver
+                .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let step = self.program.trap_fiber(
+                fiber,
+                &mut self.presentation,
+                crate::awbc::fiber::FiberTrap {
+                    code: error.trap_code(),
+                    message: Some(error.to_string()),
+                    source_map: None,
+                },
+            )?;
+            let (mut drops, observations) = super::partition_drop_observation(step.observations)?;
+            drops.set_boundary(Some(crate::effect::RuntimeDropPolicy::Default))?;
+            let after = self.published_flow_handle_owners(None)?;
+            let receipt = self.dialogues.reconcile_parent_fiber(
+                self.facade_fiber.execution,
+                &before,
+                &after,
+                &drops,
+            )?;
+            Ok::<_, ProductStepError>((observations, receipt))
+        })();
+        match trapped {
+            Ok((observations, receipt)) => {
+                output
+                    .requests
+                    .line_commands
+                    .extend(receipt.into_commands());
+                self.consume_observations(observations, output);
+            }
+            Err(error) => {
+                if let Err(restore) = checkpoint.restore(self) {
+                    self.record_error(restore, output);
+                } else {
+                    self.record_error(error, output);
+                }
             }
         }
     }

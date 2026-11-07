@@ -1151,29 +1151,40 @@ impl super::AwbcProductStepExecutor {
             .enumerate()
             .map(|(index, cancel)| (cancel.instance, index))
             .collect::<BTreeMap<_, _>>();
-        let mut cancelled = self
-            .child_fibers
-            .iter_mut()
-            .filter(|child| {
-                matches!(
-                    prepared.executor_actions.get(&child.fiber.instance),
-                    Some(
-                        ProductExistingChildAction::CancelAndJoin
-                            | ProductExistingChildAction::UnwindAndJoin
-                    )
+        let receiver_instance = match &prepared.commit {
+            ProductLineTaskCommit::Publication(PreparedDialoguePublication {
+                receiver: super::dialogue::ProductDialogueReceiver::Fiber(instance),
+                ..
+            }) => Some(*instance),
+            _ => None,
+        };
+        let mut ordinary_child_receiver = None;
+        let mut cancelled = Vec::new();
+        for child in &mut self.child_fibers {
+            if Some(child.fiber.instance) == receiver_instance {
+                assert!(child.owner.line_activation().is_none());
+                ordinary_child_receiver = Some(&mut child.fiber);
+            } else if matches!(
+                prepared.executor_actions.get(&child.fiber.instance),
+                Some(
+                    ProductExistingChildAction::CancelAndJoin
+                        | ProductExistingChildAction::UnwindAndJoin
                 )
-            })
-            .chain(batch.child_fibers.iter_mut().filter(|child| {
-                matches!(
-                    prepared.batch_actions.get(&child.fiber.instance),
-                    Some(
-                        ProductExistingChildAction::CancelAndJoin
-                            | ProductExistingChildAction::UnwindAndJoin
-                    )
+            ) {
+                cancelled.push(&mut child.fiber);
+            }
+        }
+        for child in &mut batch.child_fibers {
+            if matches!(
+                prepared.batch_actions.get(&child.fiber.instance),
+                Some(
+                    ProductExistingChildAction::CancelAndJoin
+                        | ProductExistingChildAction::UnwindAndJoin
                 )
-            }))
-            .map(|child| &mut child.fiber)
-            .collect::<Vec<_>>();
+            ) {
+                cancelled.push(&mut child.fiber);
+            }
+        }
         // Stable ordering also preserves the later commit queue's order for
         // actions already staged before this command sequence.
         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
@@ -1197,7 +1208,10 @@ impl super::AwbcProductStepExecutor {
                     .frame_mut()
                     .receiving_fiber_mut()
                     .expect("preflighted publication receiver"),
-                None => &mut self.fiber,
+                None if receiver_instance == Some(self.fiber.instance) => &mut self.fiber,
+                None => ordinary_child_receiver
+                    .take()
+                    .expect("preflighted ordinary publication receiver"),
             };
             let instance = parent.instance;
             let receipt = &publication.presentation;
@@ -1350,7 +1364,10 @@ impl super::AwbcProductStepExecutor {
                     .frame_mut()
                     .receiving_fiber_mut()
                     .expect("preflighted publication receiver"),
-                None => &mut self.fiber,
+                None => publication
+                    .receiver
+                    .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
+                    .expect("preflighted ordinary publication receiver"),
             };
             transaction
                 .line_mut()

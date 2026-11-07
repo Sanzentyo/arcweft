@@ -1588,6 +1588,17 @@ impl AwbcProductStepExecutor {
         let Some(suspension) = child.fiber.suspension.as_ref() else {
             return Ok(());
         };
+        if child.owner.line_activation().is_none()
+            && matches!(
+                suspension.reason,
+                FiberSuspensionReason::Dialogue { .. }
+                    | FiberSuspensionReason::DialogueActive { .. }
+            )
+        {
+            // The Product dispatcher owns the reached dialogue packet and its
+            // continuation; this child stays parked until that owner resumes it.
+            return Ok(());
+        }
         let dispatch = DeferredSuspensionDispatch::from_reason(&suspension.reason);
         if let DeferredSuspensionDispatch::AwaitNeed {
             correlation: id, ..
@@ -1674,6 +1685,15 @@ impl AwbcProductStepExecutor {
         let Some(suspension) = child.fiber.suspension.as_ref() else {
             return Ok(false);
         };
+        if child.owner.line_activation().is_none()
+            && matches!(
+                suspension.reason,
+                FiberSuspensionReason::Dialogue { .. }
+                    | FiberSuspensionReason::DialogueActive { .. }
+            )
+        {
+            return Ok(false);
+        }
         let resume = suspension.declared_resume();
         let dispatch = DeferredSuspensionDispatch::from_reason(&suspension.reason);
         let Some(resume) = resume else {

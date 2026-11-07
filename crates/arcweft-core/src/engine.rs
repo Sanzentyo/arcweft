@@ -5086,10 +5086,13 @@ impl Engine {
             .line_task_groups()
             .get(group_id.index())
             .ok_or(crate::line_task::LineRuntimeError::UnknownTaskGroup)?;
-        match &self.fiber.frame.status {
-            FlowFiberStatus::Dialogue(activation)
-                if activation.activation() == tag.activation_id() => {}
-            _ => return Err(crate::line_task::LineRuntimeError::StaleCommandOutcome.into()),
+        if !self.session_fibers().any(|fiber| {
+            fiber.persistent_id == tag.activation_id().owner_fiber()
+                && matches!(&fiber.frame.status,
+                    FlowFiberStatus::Dialogue(activation)
+                        if activation.activation() == tag.activation_id())
+        }) {
+            return Err(crate::line_task::LineRuntimeError::StaleCommandOutcome.into());
         }
         let mut transaction = self
             .dialogue_activations

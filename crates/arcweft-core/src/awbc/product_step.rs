@@ -2743,17 +2743,17 @@ impl AwbcProductStepExecutor {
                 }
                 continue;
             }
-            if self.fiber.has_pending_deferred_cleanup() {
-                if !self.step_next_child(output, pure_backend, input, need_states) {
+            let has_dialogue = match self.dialogue_dispatch() {
+                Ok(dispatch) => dispatch.is_some(),
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
                     break;
                 }
-                executed_ops = executed_ops.saturating_add(1);
-                if self.should_return_to_host(options.mode, output, executed_ops) {
-                    break;
-                }
-                continue;
-            }
-            if self.fiber.status == FiberStatus::Suspended {
+            };
+            if has_dialogue
+                || (self.fiber.status == FiberStatus::Suspended
+                    && !self.fiber.has_pending_deferred_cleanup())
+            {
                 let progress =
                     self.resume_main_suspension(input, need_states, output, pure_backend, budgets);
                 executed_ops = executed_ops.saturating_add(progress.executed_ops);
@@ -2763,6 +2763,16 @@ impl AwbcProductStepExecutor {
                     }
                     executed_ops = executed_ops.saturating_add(1);
                 }
+                if self.should_return_to_host(options.mode, output, executed_ops) {
+                    break;
+                }
+                continue;
+            }
+            if self.fiber.has_pending_deferred_cleanup() {
+                if !self.step_next_child(output, pure_backend, input, need_states) {
+                    break;
+                }
+                executed_ops = executed_ops.saturating_add(1);
                 if self.should_return_to_host(options.mode, output, executed_ops) {
                     break;
                 }
@@ -5079,7 +5089,9 @@ impl AwbcProductStepExecutor {
     }
 
     fn start_dialogue(&mut self) -> Result<DialogueActivationId, ProductStepError> {
-        self.start_dialogue_for(dialogue::ProductDialogueReceiver::Main)
+        self.start_dialogue_for(dialogue::ProductDialogueReceiver::Fiber(
+            self.fiber.instance,
+        ))
     }
 
     fn start_dialogue_for(
@@ -5112,13 +5124,17 @@ impl AwbcProductStepExecutor {
         let checkpoint = checkpoint::ProductSessionCheckpoint::capture(self)?;
         let started = (|| {
             let mut parent = match receiver {
-                dialogue::ProductDialogueReceiver::Main => None,
+                dialogue::ProductDialogueReceiver::Fiber(_) => None,
                 dialogue::ProductDialogueReceiver::Activation(id) => {
                     Some(self.dialogues.begin_transaction(&id)?)
                 }
             };
             let suspension = match &mut parent {
-                None => self.fiber.suspension.take(),
+                None => receiver
+                    .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
+                    .ok_or(invalid.clone())?
+                    .suspension
+                    .take(),
                 Some(parent) => parent
                     .frame_mut()
                     .receiving_fiber_mut()
@@ -5130,7 +5146,9 @@ impl AwbcProductStepExecutor {
             let activation =
                 self.present_dialogue(owner, quantum, parent.as_ref(), suspension.reason)?;
             let fiber = match &mut parent {
-                None => &mut self.fiber,
+                None => receiver
+                    .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
+                    .expect("admitted ordinary dialogue receiver"),
                 Some(parent) => parent
                     .frame_mut()
                     .receiving_fiber_mut()
@@ -5159,7 +5177,17 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
     ) {
         match receiver {
-            dialogue::ProductDialogueReceiver::Main => self.fail_with_error(error, output),
+            dialogue::ProductDialogueReceiver::Fiber(instance)
+                if instance == self.fiber.instance =>
+            {
+                self.fail_with_error(error, output)
+            }
+            dialogue::ProductDialogueReceiver::Fiber(_) if error.is_execution_refusal() => {
+                self.record_error(error, output);
+            }
+            dialogue::ProductDialogueReceiver::Fiber(_) => {
+                self.fail_flow_dialogue_receiver(receiver, error, output);
+            }
             dialogue::ProductDialogueReceiver::Activation(_) if error.is_execution_refusal() => {
                 self.record_error(error, output);
             }
@@ -6213,7 +6241,9 @@ impl AwbcProductStepExecutor {
             && !batch.has_joined_dialogue_work(&activation, &self.child_fibers, &prepared);
         if terminal {
             let receiver = if self.fiber.instance.get().get() == activation.owner_fiber().get() {
-                Ok(dialogue::ProductDialogueReceiver::Main)
+                Ok(dialogue::ProductDialogueReceiver::Fiber(
+                    self.fiber.instance,
+                ))
             } else {
                 self.dialogue_receiver(activation)
             };
@@ -6221,6 +6251,17 @@ impl AwbcProductStepExecutor {
                 .map_err(ProductStepError::from)
                 .and_then(|receiver| {
                     self.dialogues.preflight_receiver_edit(receiver)?;
+                    if matches!(receiver, dialogue::ProductDialogueReceiver::Fiber(instance)
+                        if instance != self.fiber.instance)
+                    {
+                        let fiber = self
+                            .dialogue_receiver_fiber(receiver)
+                            .ok_or(FiberStateError::InvalidFrame)?;
+                        self.program.preflight_fiber_unwinds(
+                            self.presentation.as_ref(),
+                            std::iter::once(fiber),
+                        )?;
+                    }
                     Ok(receiver)
                 }) {
                 Ok(receiver) => receiver,
@@ -6271,8 +6312,23 @@ impl AwbcProductStepExecutor {
             let commands = receipt.into_line().into_commands();
             output.requests.line_commands.extend(commands);
             match receiver {
-                dialogue::ProductDialogueReceiver::Main => {
+                dialogue::ProductDialogueReceiver::Fiber(instance)
+                    if instance == self.fiber.instance =>
+                {
                     self.terminate_with_trap(failure, output)
+                }
+                dialogue::ProductDialogueReceiver::Fiber(_) => {
+                    let fiber = receiver
+                        .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
+                        .expect("admitted ordinary dialogue receiver");
+                    assert_eq!(fiber.dialogue_receiver(), Some(activation));
+                    fiber.suspension = None;
+                    fiber.status = FiberStatus::Running;
+                    self.fail_flow_dialogue_receiver(
+                        receiver,
+                        ProductStepError::ActivationTrap(failure),
+                        output,
+                    );
                 }
                 dialogue::ProductDialogueReceiver::Activation(id) => {
                     let mut parent = self
