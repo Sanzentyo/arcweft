@@ -203,10 +203,7 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
             "dialogue application {owner:?} has no checked runtime projection"
         ))
     })?;
-    let locals = context.executable_locals(scope.scope())?;
-    let control = context.executable_control_locals(scope.scope())?;
-    let specialized_operand_locals =
-        context.executable_specialized_operand_locals(scope.scope())?;
+    let frame = context.emission_frames.frame(context, scope, owner)?;
     let mut lowerer = LinePlanLowerer {
         module,
         flow: FinalFlowLowerer::new(
@@ -214,7 +211,12 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
             context,
             RuntimeAssertionOwner::Line(application.content().line().clone()),
         )
-        .with_executable_scope(scope, control, locals, specialized_operand_locals),
+        .with_executable_scope(
+            scope,
+            frame.control,
+            frame.locals,
+            frame.specialized_operands,
+        ),
         closure_locals: context.closure_locals,
         content_plan,
         template,

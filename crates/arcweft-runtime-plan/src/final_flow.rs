@@ -14,6 +14,8 @@ mod action_receive;
 mod control_locals;
 #[path = "final_flow/defer.rs"]
 mod defer;
+#[path = "final_flow/emission_frame.rs"]
+mod emission_frame;
 #[path = "final_flow/flow_functions.rs"]
 mod flow_functions;
 #[path = "final_flow/format_attempt.rs"]
@@ -613,6 +615,7 @@ struct FinalLoweringContext<'project, 'data> {
     trait_method_locals: &'data BTreeMap<RuntimeTraitMethodInstanceKey, ProjectFunctionFrameLocals>,
     function_sites: &'data BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
     defer_sites: &'data BTreeMap<defer::DeferSiteKey, RuntimeDeferSiteId>,
+    emission_frames: &'data emission_frame::ExecutableEmissionFrames<'data>,
     dialogue_effect_sites:
         &'data BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     dialogue_value_capture_input_locals:
@@ -1751,6 +1754,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     );
     let empty_dialogue_effect_sites = BTreeMap::new();
     let empty_defer_sites = BTreeMap::new();
+    let empty_emission_frames = emission_frame::ExecutableEmissionFrames::empty();
     let empty_dialogue_value_capture_input_locals = BTreeMap::new();
     let empty_dialogue_value_result_locals = BTreeMap::new();
     let empty_dialogue_value_project_source_locals = BTreeMap::new();
@@ -1787,6 +1791,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         trait_method_locals: &trait_method_locals,
         function_sites: &function_sites,
         defer_sites: &empty_defer_sites,
+        emission_frames: &empty_emission_frames,
         dialogue_effect_sites: &empty_dialogue_effect_sites,
         dialogue_value_capture_input_locals: &empty_dialogue_value_capture_input_locals,
         dialogue_value_result_locals: &empty_dialogue_value_result_locals,
@@ -1948,8 +1953,12 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     };
     let (defer_sites, defer_definitions) =
         defer::reserve_defer_sites(&context, &mut builder, &mut errors);
+    let emission_frames =
+        emission_frame::ExecutableEmissionFrames::admit(project, facts, &defer_definitions)
+            .map_err(|error| vec![error])?;
     let context = FinalLoweringContext {
         defer_sites: &defer_sites,
+        emission_frames: &emission_frames,
         ..context
     };
     let (dialogue_content, mut dialogue_assertion_sites, plain_text_context_template) =
@@ -5038,13 +5047,14 @@ fn lower_dialogue_application<'facts>(
         )));
         return None;
     }
-    let locals = match context.executable_locals(scope.scope()) {
+    let frame = match context.emission_frames.frame(context, scope, owner) {
         Ok(locals) => locals,
         Err(error) => {
             errors.push(error);
             return None;
         }
     };
+    let locals = frame.locals;
     let mut invalid = false;
     let mut values = Vec::new();
     let mut value_definitions = Vec::new();

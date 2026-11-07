@@ -7117,6 +7117,21 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         }
     }
 
+    pub(crate) fn visit_expression_owners(self, visitor: &mut impl FnMut(ExprId)) {
+        match self {
+            Self::Global(facts) => {
+                for owner in facts.expression_children.keys() {
+                    visitor(*owner);
+                }
+            }
+            Self::ProjectInstance(facts) => {
+                for expression in facts.expressions() {
+                    visitor(expression.owner());
+                }
+            }
+        }
+    }
+
     pub(crate) fn visit_runtime_expression_types(
         self,
         visitor: &mut impl FnMut(ExprId, &'facts RuntimeNormalizedType),
@@ -11206,6 +11221,39 @@ impl RuntimePlanSemanticFacts {
                 .map(|(program, semantics)| (*program, semantics)),
         ) {
             semantics.visit_callable_values(visitor);
+        }
+    }
+
+    /// Visits selected expression owners under their exact closed catalog.
+    /// Construction frame selection uses the same accepted child relation.
+    pub(crate) fn visit_scoped_expression_owners<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(RuntimeScopedExecutableSemanticFactView<'facts>, ExprId),
+    ) {
+        let global = RuntimeScopedExecutableSemanticFactView::global(self);
+        global
+            .facts()
+            .visit_expression_owners(&mut |owner| visitor(global, owner));
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+            self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
+        ) {
+            scope
+                .facts()
+                .visit_expression_owners(&mut |owner| visitor(scope, owner));
+            semantics.visit_closure_instances(&mut |closure| {
+                let nested = RuntimeScopedExecutableSemanticFactView::closure(
+                    closure.key(),
+                    closure.semantics(),
+                );
+                nested
+                    .facts()
+                    .visit_expression_owners(&mut |owner| visitor(nested, owner));
+            });
         }
     }
 

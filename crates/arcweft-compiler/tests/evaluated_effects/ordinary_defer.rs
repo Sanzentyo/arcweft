@@ -59,6 +59,82 @@ fn native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line() {
 }
 
 #[test]
+fn native_nested_deferred_line_uses_the_innermost_capture_frame() {
+    native_line_handle_execution(
+        &nested_deferred_line_source(),
+        2,
+        false,
+        false,
+        &["body", "cleanup", "captured"],
+    );
+}
+
+#[test]
+fn saved_awbc_nested_deferred_line_uses_the_innermost_capture_frame() {
+    assert_saved_awbc_with_reveals(
+        &nested_deferred_line_source(),
+        2,
+        &["body", "cleanup", "captured"],
+    );
+}
+
+fn nested_deferred_line_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE.replace(
+        "defer { let _ = actor; log.info(\"cleanup\") }",
+        r#"let _ = actor
+        let message = "captured"
+        defer {
+            defer {
+                let received = alice()[Cleanup[p]] with { out message }
+                log.info(received)
+            }
+            log.info("cleanup")
+        }"#,
+    )
+}
+
+#[test]
+fn native_generic_deferred_line_uses_each_closed_capture_frame() {
+    native_line_handle_execution(
+        &generic_deferred_line_source(),
+        3,
+        false,
+        false,
+        &["number", "text", "body"],
+    );
+}
+
+#[test]
+fn saved_awbc_generic_deferred_line_uses_each_closed_capture_frame() {
+    assert_saved_awbc_with_reveals(
+        &generic_deferred_line_source(),
+        3,
+        &["number", "text", "body"],
+    );
+}
+
+fn generic_deferred_line_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE
+        .replace(
+            "flow main()",
+            r"fn cleanup<T>(value: T, message: String) -> Unit effects { log.write } {
+                defer {
+                    let _ = value
+                    let received = alice()[Cleanup[p]] with { out message }
+                    log.info(received)
+                }
+            }
+            flow main()",
+        )
+        .replace(
+            "defer { let _ = actor; log.info(\"cleanup\") }",
+            r#"let _ = actor
+            cleanup(7, "number")
+            cleanup("value", "text")"#,
+        )
+}
+
+#[test]
 fn saved_awbc_ordinary_flow_defer_keeps_returned_line_actor_until_its_cleanup() {
     assert_saved_awbc(FLOW_ACTOR_DEFER_SOURCE, &["body", "cleanup"]);
 }
@@ -101,6 +177,10 @@ entry cli @entry.main { goto @flow.main }
 }
 
 fn assert_saved_awbc(source: &str, expected: &[&str]) {
+    assert_saved_awbc_with_reveals(source, 1, expected);
+}
+
+fn assert_saved_awbc_with_reveals(source: &str, reveals: usize, expected: &[&str]) {
     let (compiled, awbc) = nested_awbc_from_compiled(
         with_attached_dialogue_project_and_visual(
             source,
@@ -114,7 +194,7 @@ fn assert_saved_awbc(source: &str, expected: &[&str]) {
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
     let mut awbc = Some(awbc);
-    execute_nested_line_handle_transfer(1, false, false, expected, |input, options| {
+    execute_nested_line_handle_transfer(reveals, false, false, expected, |input, options| {
         let mut current = awbc.take().unwrap();
         let result = current.step_with_pure_backend(input, options, &mut backend);
         awbc = Some(roundtrip_nested_awbc(current).0);

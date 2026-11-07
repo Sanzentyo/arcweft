@@ -29,6 +29,22 @@ pub(super) struct ReservedDeferDefinition<'facts> {
     locals: ProjectFunctionFrameLocals,
 }
 
+impl<'facts> ReservedDeferDefinition<'facts> {
+    pub(super) const fn emission_root(
+        &self,
+    ) -> (RuntimeScopedExecutableSemanticFactView<'facts>, ExprId) {
+        (self.scope, self.body)
+    }
+
+    pub(super) fn emission_frame(&self) -> emission_frame::ExecutableFrameLocals<'_> {
+        emission_frame::ExecutableFrameLocals {
+            control: &self.locals.control,
+            locals: &self.locals.hir,
+            specialized_operands: &self.locals.specialized_operands,
+        }
+    }
+}
+
 pub(super) fn reserve_defer_sites<'facts>(
     context: &FinalLoweringContext<'_, 'facts>,
     builder: &mut RuntimePlanBuilder,
@@ -230,6 +246,10 @@ pub(super) fn define_defer_sites<'facts>(
                     definition.statement
                 )));
             };
+            let frame =
+                context
+                    .emission_frames
+                    .frame(context, definition.scope, definition.body)?;
             let mut lowerer = FinalFlowLowerer::new(
                 module,
                 context,
@@ -237,9 +257,9 @@ pub(super) fn define_defer_sites<'facts>(
             )
             .with_executable_scope(
                 definition.scope,
-                &definition.locals.control,
-                &definition.locals.hir,
-                &definition.locals.specialized_operands,
+                frame.control,
+                frame.locals,
+                frame.specialized_operands,
             );
             let ops = lowerer.lower_statement_ids_with_tail(
                 block.statements(),
