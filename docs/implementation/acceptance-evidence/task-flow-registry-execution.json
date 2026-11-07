@@ -21337,5 +21337,308 @@
         }
       ]
     }
+  },
+  "nativeMarkScopedDefer": {
+    "source": "88e8898a642697e5e25eb85e73a2db90b8baa1a2",
+    "base": "6d93c15050caf32daad90c46dbea9079ede70d4a",
+    "published": {
+      "version": 1,
+      "commit": "88e8898a642697e5e25eb85e73a2db90b8baa1a2",
+      "parent": "6d93c15050caf32daad90c46dbea9079ede70d4a",
+      "tree": "0ada90f5e7d19e2211347f843cccc84ef53c52c8",
+      "remote": "88e8898a642697e5e25eb85e73a2db90b8baa1a2",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "c9b7b45fb34cc1aa4b6dfa4472e2b41d14e34552"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "d2ddc9dd50f13378a057d53d5eb06181641e33e5"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "e72f3a79c7711555114fde363b9ffdceddbe87fe"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer.rs",
+          "blob": "1d5e5969ea7cdd9fd14e6848a73ade47ff47b7c1"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "blob": "e4ec76b7a704ebb6d82ba79457a638996ae1ee54"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "blob": "465b7c8a47b7d9e4f72954a419009f5ec9f9110d"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store/admission.rs",
+          "blob": "0acda921a198412fcc8c3d32fe94a566249d2cf9"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "blob": "ed9748f29cd3c00ab9c3d12190693d27847d44d4"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "a25ef022243fb8e01bc405cbfaa1a92580f8dc21"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow/resume.rs",
+          "blob": "07589a9e5f53633f59a5a04ef78ad836d3d045ae"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/frame_progress.rs",
+          "blob": "846b666a252727227babe9932564845a2a1025d1"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/line.rs",
+          "blob": "3f04eb5c6d7c8b8cd8478b752137d934b45302be"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/registry.rs",
+          "blob": "ff80dfe2d515ddf8fcaed1cad3861c59ed4797e6"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "06e81711a22104a8096bffef60561974834cec67"
+        },
+        {
+          "path": "crates/arcweft-core/src/scope.rs",
+          "blob": "38933ba27a4d2ea738c7c4ddc40503d245389bf8"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "blob": "a363887efc75a379b503361204295f370ac70831"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "ec2504fa00da5ebb7795b899b2f851c10d4d12f7"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "8807d56e7cbd7c7e8307ed1a1cfbeb3821157027302563c926da4154fb77c515",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T00:27:39.6414894Z"
+    },
+    "sourceInputs": 3639,
+    "compiler": {
+      "passed": 90,
+      "failed": 0,
+      "skipped": 0,
+      "exactCases": [
+        "native_mark_defer_runs_on_lexical_and_result_exit",
+        "native_failed_mark_unwinds_its_lexical_defer_before_reporting_failure",
+        "native_cancelled_mark_joins_after_its_lexical_defer"
+      ],
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail"
+      ]
+    },
+    "acceptance": [
+      {
+        "version": 1,
+        "name": "owners",
+        "head": "6d93c15050caf32daad90c46dbea9079ede70d4a",
+        "sourceInputs": 3639,
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-runtime-plan",
+          "--lib",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 36s",
+          "Summary [  68.002s] 2430 tests run: 2430 passed, 1 skipped"
+        ],
+        "startedAt": "2026-11-07T00:21:46.1505286Z",
+        "finishedAt": "2026-11-07T00:26:33.5523575Z"
+      },
+      {
+        "version": 1,
+        "name": "consumers",
+        "head": "6d93c15050caf32daad90c46dbea9079ede70d4a",
+        "sourceInputs": 3639,
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-save",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 6m 01s",
+          "Summary [ 122.224s] 260 tests run: 260 passed (1 slow), 0 skipped"
+        ],
+        "startedAt": "2026-11-07T00:26:34.1581353Z",
+        "finishedAt": "2026-11-07T00:34:46.9893409Z"
+      },
+      {
+        "version": 1,
+        "name": "workspace-check",
+        "head": "6d93c15050caf32daad90c46dbea9079ede70d4a",
+        "sourceInputs": 3639,
+        "command": [
+          "cargo",
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 4m 17s"
+        ],
+        "startedAt": "2026-11-07T00:34:47.6193409Z",
+        "finishedAt": "2026-11-07T00:39:06.7481989Z"
+      },
+      {
+        "version": 1,
+        "name": "workspace-clippy",
+        "head": "6d93c15050caf32daad90c46dbea9079ede70d4a",
+        "sourceInputs": 3639,
+        "command": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 50s"
+        ],
+        "startedAt": "2026-11-07T00:39:07.2298888Z",
+        "finishedAt": "2026-11-07T00:41:59.8686653Z"
+      }
+    ],
+    "remaining": [
+      "native control transfers that pop a scope synchronously",
+      "ordinary Flow scoped defer",
+      "public Native save/restore"
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-native-mark.raw.zip",
+      "sha256": "5858af476b5930163a9626b6bfcd7bd42db6a87077220373178bf714eff7a968",
+      "entries": [
+        {
+          "entry": "checkpoint-native-mark-scope-20261107.verified.json",
+          "bytes": 2852,
+          "sha256": "2b5096d03dca23298c6904d984cea7ee7ccfb9f30b265ba199d4bcf0af39f5ec"
+        },
+        {
+          "entry": "checkpoint-native-mark-scope-20261107.reviewed.patch",
+          "bytes": 115176,
+          "sha256": "8807d56e7cbd7c7e8307ed1a1cfbeb3821157027302563c926da4154fb77c515"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.source-freeze.json",
+          "bytes": 629793,
+          "sha256": "32c633f0eecc8ec6e4c52e6ee1d7ff8d696c91ad2a3ddd2968b2184aa7339bd2"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.check.log",
+          "bytes": 92267,
+          "sha256": "1d1d9e851b7c99ebcb2cb40cd5e735228da68ba06de6d09b8aac5100a69473e2"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.runtime.log",
+          "bytes": 111458,
+          "sha256": "756f7e71ad1aa051fbd569b96914cafe3a532d93f3b4711593cd78e05d60ff3b"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.structure.log",
+          "bytes": 65784,
+          "sha256": "1ae185213d6d129be6a8bef88aaa591488f390aad6248428ae7c53fc35bc53ac"
+        },
+        {
+          "entry": "native-mark-scope-20261107.first.check.log",
+          "bytes": 16247,
+          "sha256": "e6d26861558fc67c7226c8aef9b09726b3d6b25a961c6d60b34c88c590093944"
+        },
+        {
+          "entry": "native-mark-scope-20261107.first.runtime.log",
+          "bytes": 116314,
+          "sha256": "3f108c65335f8521fcab5d0a904cd161d135438ae0146ad8da765c43a10a62eb"
+        },
+        {
+          "entry": "native-mark-scope-20261107.workspace-reverse.txt",
+          "bytes": 1080,
+          "sha256": "9020403b711f9561572d5d727475b7ecc6d02586bbc04e5ae87fd49afa2e941b"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.owners.receipt.json",
+          "bytes": 625,
+          "sha256": "29a73c7ee57a9d9908368985f94b90cd3ad29b60c77b4844923656eedf2635ae"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.owners.log",
+          "bytes": 477143,
+          "sha256": "792406ab4c31b407f2c79ce17754f8b3af21b2f0582dd1cb190814e07745c818"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.consumers.receipt.json",
+          "bytes": 663,
+          "sha256": "a02a62a63f69ef70d147b2699e028e3b150004e66b1c37bf0abf0d967c216033"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.consumers.log",
+          "bytes": 137691,
+          "sha256": "1be3b4a032bd09853cb07b677e8aa215a918091bc3447b4b8c9ce68098cedaec"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.workspace-check.receipt.json",
+          "bytes": 476,
+          "sha256": "8118597c0f15506f12601cef1a53c29231fa66f37a058f80df1d23e52082a830"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.workspace-check.log",
+          "bytes": 134300,
+          "sha256": "dff5260d8b668faf926623f124d5ee3d82b5d43530ea934dfff43d8b32e1847b"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.workspace-clippy.receipt.json",
+          "bytes": 478,
+          "sha256": "769ee8072d7826d9e2ddff29bcd73d2aad3155c315c4244075c510eed46656a0"
+        },
+        {
+          "entry": "native-mark-scope-20261107.after-clean.workspace-clippy.log",
+          "bytes": 9068619,
+          "sha256": "50e9cc391e556d07c2988dc75fdd0313da0eac66f11042e31d0fff0f37e33f1f"
+        }
+      ]
+    }
   }
 }

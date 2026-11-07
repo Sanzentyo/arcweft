@@ -15175,3 +15175,10 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Workspace clean during Native scoped defer work
 
 - 基点 `2bc93e9f1188c574a60264ea5a4f5f8a61f0034f` の `main` で、Native の実装中の差分と先行作業の未コミット差分がある状態で実行した。Cargo が示すワークスペースの出力先を確認し、ユーザーの指定で `cargo clean` を実行した。終了コード0で66,672ファイル、81.0 GiBを削除した。直後に出力先が消え、D: の空きは448,671,453,184バイトから532,306,432,000バイトに増えた。
+
+## 2026-11-07 — Scoped defer execution in Native mark handlers
+
+- 公開ソース `88e8898a642697e5e25eb85e73a2db90b8baa1a2`。Native は実行中の lexical scope に元の登録命令、捕捉値、終了条件、実行中の cleanup 子を保持する。init とマークハンドラーは登録・子の起動を共用する。子の実行、台帳変更、外部出力は既存の Native ロールバック境界でまとめて確定する。RuntimePlan はハンドラー直下と内側の文の両方で、意味解析が選んだスコープ所有の登録を生成する。
+- 最初の Core 型検査はエラー型の変換と、ライブ値を含む型への `Clone` の派生で停止した。修正後の初回の Compiler 対象実行は2件通過、1件失敗だった。追加した `if` 内の defer が RuntimePlan に拒否されたため、ハンドラー直下専用の登録を共通の文 lowering に移した。修正後の Compiler の対象90件、Core の2,296件、RuntimePlan の134件はすべて通過した。RuntimePlan の既存1件はスキップ。構造監査のブロッキング違反は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- Runtime Driver／Runtime Host／Save は260件が通過した。Save の廃止済み JSON デコーダーを外部クレートから呼ぶ compile-fail テストは、clean 後の試験用依存関係のビルドを含め120.300秒で通過した。Cargo の解決済みグラフで変更クレートを含む53 workspace パッケージを特定した。[コマンド・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0だった。Core の `engine/defer.rs` は Native の登録・スコープ終了・保持値の検証を受け持つ新しい所有モジュールで、788行。呼出し側の `engine.rs` は6,108行から6,288行に増え、既存の scheduler と候補トランザクションでその所有状態を進める。固定した3,639入力の差分は0件で、既存の未コミット12パスを検証入力に含めた。公開した17ファイルの Git blob と検証差分は一致した。[公開差分・各コマンド・原本](acceptance-evidence/task-flow-registry-execution.json)。
