@@ -28053,5 +28053,909 @@
       ],
       "sha256": "34877a19f32cbbfe9895be72fda458d218162fa7f4384b5e8fd10f38735efc92"
     }
+  },
+  "ordinaryFlowDeferredRegistry": {
+    "version": 1,
+    "date": "2026-11-07",
+    "source": {
+      "version": 1,
+      "commit": "36c1d21780f5d1e93b1dad15ee905d77e8c4dfa5",
+      "parent": "287e6856c3ef234cd6095ca5a192ddd81dfba997",
+      "tree": "fb2bd5c425ecfbfc618493af35bda8b9060d98b5",
+      "remote": "36c1d21780f5d1e93b1dad15ee905d77e8c4dfa5",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "blob": "b5881894a42880795fe9031358385e6571862ee4"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "6635b17180ec7766cc9d06cace62aedbbd300de9"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "f76c74c7ca1947a73a25721e6db386ca0db5b442"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "43dd046a2c1d008c68ed4774cca1352b319eb0be"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/registry.rs",
+          "blob": "7e0c2b21ac3387071f8a585afa3a0fbe4061e082"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "5b0cdfd5d5446e3370686598fb83b2bfd437d439"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs",
+          "blob": "36791013301d223149f0d42efe63a22007823944"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+          "blob": "857e77ebd6f78b36f759e9e4e76f7dfd69964c34"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "310f95d4fa3fb2237b29e2e24dc9f1296aa21174"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "blob": "c2dd0519e0e45a4471763a6d5d3706a1345f1aec"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources/tests.rs",
+          "blob": "80d408f95bead10066ff3504b26960b80884a937"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/effect_row.rs",
+          "blob": "c9224d77051f75dc02abf70641bd61c6bb8fec01"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+          "blob": "e1ef835d5099605b218d4cfe78837650bbde79ab"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "54fe40bbad6f90242553f095fbd1c82d66431dcd534579023fd2fa4425ec0bbf",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T10:23:34.5563213Z"
+    },
+    "regressionBase": "287e6856c3ef234cd6095ca5a192ddd81dfba997",
+    "behavior": "One ProductRegistryOrigin resolves actual Dialogue or Deferred custody to the reached Flow registry. Ordinary cleanup validates its active lexical owner and inflight marker, then follows real child/activation parent edges. It uses the same authenticated prepare/commit mutation boundary as Dialogue. No fake Line, copied owner table, fallback registry, new opcode, contract version or persisted authority is added.",
+    "semanticRepairs": {
+      "scopedCapability": "Closed EffectRow subset checks now use the existing EffectId scoped coverage rule, matching permission checks. The maintained state.write(scope) grant covers child keys; preserve the broad authored grant rather than narrowing fixtures to bypass the bug. Open/symbolic inference is unchanged.",
+      "dropTail": "Registry drop state.write is collected from the final checked operation for every expression position, including a Unit body tail. Remove the statement-only augmentation so callback invocation metadata retains the same permission."
+    },
+    "initialReproduction": {
+      "failed": 3,
+      "passed": 0,
+      "scope": "Three added cases before the fixes; two reach AWBC RegistryContextRequired after Native, while the function case is rejected at Source effect-bound checking.",
+      "correction": "An intermediate commentary incorrectly said all three first passed Native. This record corrects that claim; the original log and diagnostics are preserved."
+    },
+    "intermediateOwner": {
+      "failed": 3,
+      "passed": 20,
+      "receipt": {
+        "version": 1,
+        "sourceBase": "287e6856c3ef234cd6095ca5a192ddd81dfba997",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "--workspace",
+          "--test",
+          "scoped_defer",
+          "-E",
+          "package(=arcweft-compiler) & binary(=scoped_defer)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 100,
+        "startedAt": "2026-11-07T10:01:02.43669Z",
+        "endedAt": "2026-11-07T10:04:25.134272Z"
+      },
+      "cause": "Two scoped-effect upper-bound checks and Native callback drop authorization."
+    },
+    "finalOwner": {
+      "failed": 0,
+      "note": "The --workspace --test scoped_defer owner run has a different dependency artifact composition from --workspace --lib --tests. It is not relabeled as the broad matrix.",
+      "passed": 23,
+      "receipt": {
+        "version": 1,
+        "sourceBase": "287e6856c3ef234cd6095ca5a192ddd81dfba997",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "--workspace",
+          "--test",
+          "scoped_defer",
+          "-E",
+          "package(=arcweft-compiler) & binary(=scoped_defer)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T10:14:51.1320993Z",
+        "endedAt": "2026-11-07T10:15:23.3059387Z"
+      },
+      "composition": {
+        "version": 1,
+        "at": "2026-11-07T10:02:08.3368202Z",
+        "targetSelection": "--workspace --test scoped_defer",
+        "observedCompilers": [
+          {
+            "id": 55836,
+            "crate": "arcweft_core",
+            "extra": "-6c661593c6d38ba1",
+            "features": [
+              "--cfg feature=\\\"default\\\""
+            ]
+          },
+          {
+            "id": 55636,
+            "crate": "arcweft_view",
+            "extra": "-ae3f5d2d1247ff9d",
+            "features": []
+          },
+          {
+            "id": 60568,
+            "crate": "arcweft_project",
+            "extra": "-b89e542526e5ef02",
+            "features": []
+          },
+          {
+            "id": 67260,
+            "crate": "arcweft_resource_manifest",
+            "extra": "-29ce30ff87533d47",
+            "features": []
+          }
+        ],
+        "note": "The target-specific owner slice rebuilds Core/HIR; treat its composition as a distinct owner validation. Full workspace --lib --tests acceptance remains required, with the earlier paging failure retained."
+      }
+    },
+    "tests": {
+      "conditions": "Both Native and canonical-decoded AWBC; each Product step public-save/cold-restore, one operation budget, exact logs, original capture types, sibling key retention and runtime write/read/drop. The Sema unit checks positive scoped coverage, negative sibling/foreign scopes and unchanged substitutions.",
+      "registry": [
+        "scoped_defer_writes_the_reached_flow_registry_before_resuming_parent",
+        "function_defer_writes_its_callers_flow_registry",
+        "scoped_defer_reads_and_drops_only_its_reached_flow_registry_key",
+        "nested_defer_reaches_flow_registry_through_its_real_cleanup_parent",
+        "generic_defer_keeps_registry_values_bound_to_each_original_capture_type"
+      ],
+      "semantics": "closed_subset_uses_the_same_scoped_capability_coverage_as_permission_checks"
+    },
+    "buildFailures": {
+      "reverse": {
+        "version": 1,
+        "sourceBase": "287e6856c3ef234cd6095ca5a192ddd81dfba997",
+        "publishedSource": "36c1d21780f5d1e93b1dad15ee905d77e8c4dfa5",
+        "listArguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--message-format",
+          "json"
+        ],
+        "exitCode": 101,
+        "phase": "Build/list; no tests executed",
+        "cause": "Windows 1455 mmap/paging shortage; dependent import ICEs retained in raw stderr",
+        "failedTargets": [
+          "error: could not compile `arcweft-bundle` (test \"resource_type_manifest_section\")",
+          "error: could not compile `arcweft-bundle` (test \"style_cross_section_refs\") due to 1 previous error",
+          "error: could not compile `arcweft-player-scene` (test \"scroll_regions\") due to 1 previous error"
+        ]
+      },
+      "owner": {
+        "version": 1,
+        "arguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "package(=arcweft-compiler) & binary(=scoped_defer)",
+          "--message-format",
+          "json"
+        ],
+        "exitCode": 101,
+        "phase": "Cargo build before list/test execution",
+        "cause": "Windows os error 1455: paging file too small while mmap of core/bundle rlib; complete stderr retained."
+      },
+      "recovery": "Windows paging error 1455 stopped both broad lists before tests. Retain both failures; retry the identical workspace/default-feature/library-and-integration selection against unchanged source using successful cached build units. No cargo jobs, profile or feature setting was changed."
+    },
+    "graph": {
+      "version": 1,
+      "sourceBase": "287e6856c3ef234cd6095ca5a192ddd81dfba997",
+      "metadata": "function-scope-20261107.metadata-all.json",
+      "cargoInputs": 100,
+      "cargoDrift": 0,
+      "resolvedReversePackages": 53,
+      "packages": [
+        {
+          "name": "arcweft-adapter-desktop",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp-client",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-policy",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-protocol",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-repl",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-runner",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+        },
+        {
+          "name": "arcweft-browser-bench",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle-assets",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+        },
+        {
+          "name": "arcweft-character-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+        },
+        {
+          "name": "arcweft-cli",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+        },
+        {
+          "name": "arcweft-compiler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+        },
+        {
+          "name": "arcweft-core",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-sqlite",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+        },
+        {
+          "name": "arcweft-dialogue",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+        },
+        {
+          "name": "arcweft-glyphon",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+        },
+        {
+          "name": "arcweft-host-adapter",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-jit-cranelift",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-launch",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+        },
+        {
+          "name": "arcweft-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-player-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+        },
+        {
+          "name": "arcweft-player-scene",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+        },
+        {
+          "name": "arcweft-player-text-input",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+        },
+        {
+          "name": "arcweft-player-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+        },
+        {
+          "name": "arcweft-project-loader",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+        },
+        {
+          "name": "arcweft-project",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+        },
+        {
+          "name": "arcweft-rag",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+        },
+        {
+          "name": "arcweft-render-text",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+        },
+        {
+          "name": "arcweft-render-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+        },
+        {
+          "name": "arcweft-render-wgpu",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-manifest",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-accelerator",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-codegen",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-driver",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-host",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-plan",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-scheduler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0"
+        },
+        {
+          "name": "arcweft-save",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0"
+        },
+        {
+          "name": "arcweft-test",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+        },
+        {
+          "name": "arcweft-text-layout",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+        },
+        {
+          "name": "arcweft-text-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+        },
+        {
+          "name": "arcweft-tooling",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-oxiz",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-z3",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+        },
+        {
+          "name": "arcweft-verify",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+        },
+        {
+          "name": "arcweft-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+        },
+        {
+          "name": "arcweft",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+        }
+      ]
+    },
+    "matrix": {
+      "version": 1,
+      "source": "36c1d21780f5d1e93b1dad15ee905d77e8c4dfa5",
+      "filter": "rdeps(=arcweft-core)",
+      "listArguments": [
+        "nextest",
+        "list",
+        "--locked",
+        "--workspace",
+        "--lib",
+        "--tests",
+        "-E",
+        "rdeps(=arcweft-core)",
+        "--message-format",
+        "json"
+      ],
+      "arguments": [
+        "nextest",
+        "run",
+        "--locked",
+        "--workspace",
+        "--lib",
+        "--tests",
+        "-E",
+        "rdeps(=arcweft-core)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ],
+      "listExitCode": 0,
+      "filterMatchedTests": 7948,
+      "exitCode": 100,
+      "sourceInputs": 3829,
+      "sourceDrift": 0,
+      "summary": [
+        "     Summary [1228.940s] 7948 tests run: 7944 passed (62 slow), 4 failed, 41 skipped"
+      ],
+      "startedAt": "2026-11-07T10:24:30.9651819Z",
+      "endedAt": "2026-11-07T10:53:38.9953368Z"
+    },
+    "counts": {
+      "run": 7948,
+      "passed": 7944,
+      "failed": 4,
+      "skipped": 41
+    },
+    "actualPackages": 50,
+    "cli": {
+      "failed": 4,
+      "passed": 706,
+      "remaining": [
+        {
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ],
+      "run": 710
+    },
+    "nonCliPassed": 7238,
+    "quality": {
+      "workspace-check": {
+        "version": 1,
+        "arguments": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T10:17:04.4825927Z",
+        "endedAt": "2026-11-07T10:18:55.272479Z"
+      },
+      "workspace-clippy": {
+        "version": 1,
+        "arguments": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T10:18:55.2769163Z",
+        "endedAt": "2026-11-07T10:20:58.9195801Z"
+      },
+      "structure": {
+        "version": 1,
+        "arguments": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T10:20:58.9217685Z",
+        "endedAt": "2026-11-07T10:21:03.0459892Z"
+      },
+      "fmt": {
+        "version": 1,
+        "arguments": [
+          "--edition",
+          "2024",
+          "--config",
+          "skip_children=true",
+          "--check",
+          "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/registry.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "crates/arcweft-core/src/awbc/vm/resources/tests.rs",
+          "crates/arcweft-lang-sema/src/effect_row.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs"
+        ],
+        "exitCode": 0
+      }
+    },
+    "inputIdentity": {
+      "sourceDrift": 0,
+      "originalUntrackedFiles": 6,
+      "rootFixtures": 180,
+      "originalTrackedWip": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "cargoInputs": 100,
+      "cargoDrift": 0,
+      "preRunInputs": 3829,
+      "untrackedDrift": 0
+    },
+    "ownerMetrics": [
+      {
+        "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+        "bytes": 22744,
+        "loc": 714
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "bytes": 277107,
+        "loc": 6776
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "bytes": 32496,
+        "loc": 832
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "bytes": 209262,
+        "loc": 4943
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/registry.rs",
+        "bytes": 8407,
+        "loc": 214
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "bytes": 323464,
+        "loc": 8229
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs",
+        "bytes": 15584,
+        "loc": 445
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+        "bytes": 25324,
+        "loc": 727
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "bytes": 249108,
+        "loc": 6185
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "bytes": 37330,
+        "loc": 936
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources/tests.rs",
+        "bytes": 9839,
+        "loc": 261
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/effect_row.rs",
+        "bytes": 55689,
+        "loc": 1590
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+        "bytes": 80227,
+        "loc": 2049
+      }
+    ],
+    "ownershipReview": "Registry custody resolution and prepared row admission belong to one private Product owner shared by Line and ordinary cleanup. Delete the old dialogue-only resolver and migrate every VM resource producer/test directly. The new 214-LOC module is one owner algorithm, not an alternate registry authority. EffectRow owns closed capability coverage; checked expression effects own intrinsic registry drop effects. Existing large files retain their responsibility; no new dependency or public API.",
+    "correction": "Supersedes the current-status claim that admitted ordinary-defer Flow registry access still lacks AWBC context. Explicit semicolon/Unit-tail sources execute. Optional reads intentionally observe dynamic callback writes; a required read still needs its separate static reaching-presence proof. HIR recovery for an unterminated trailing write is a distinct syntax condition and is not used to reopen accepted runtime boundaries. Remove repeated old matrix/partition counts from the two accepted registry feature rows; retain their full SHAs and all measurements in prior JSON/history sections, with the latest broad matrix stated once.",
+    "limits": "This cut does not accept promotion/MustDrop formal proofs, mandatory VoiceHandle execution, ordinary-defer goto/Choice, direct AWBC return from open scopes, cancellation/Line-affine capture, aggregate registration/spawn preflight, other-platform/Tier2 execution or Native public-save support. Generic Match and accepted Native boundaries remain accepted. An unused import in dialogue.rs is retained in these frozen tested bytes; its warning is preserved.",
+    "raw": {
+      "entries": [
+        {
+          "entry": "flow-defer-registry-20261107.core-check.log",
+          "bytes": 83491,
+          "sha256": "fa72c510f34a49575b3ffbe23e5c5bb9e6fe22664bf2a41ace5c0c231b7e661c"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.core-check.receipt.json",
+          "bytes": 238,
+          "sha256": "0416366554336833df5ec6e1cd0938c5e896f07119687b2640f95b5a12f051b8"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.fmt.receipt.json",
+          "bytes": 943,
+          "sha256": "45f565f47cd68f59156fd2f3e71e41528cea180d0eb1990faaf33462a36318a4"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.graph.json",
+          "bytes": 7013,
+          "sha256": "f7c4caf806e64e5914e6c2a4934697f6691156e673658dd0f7beac625ff1e768"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-build-failure.receipt.json",
+          "bytes": 441,
+          "sha256": "d7c47bf62986149193e03ae257a58b0da008a279613ea14eab257c08178b48cd"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-fixed.list.json",
+          "bytes": 4231,
+          "sha256": "a3a24e161e11ba27814e3ac7da286ef67e43e405728c5d741c1710a56173b9c1"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-fixed.list.stderr",
+          "bytes": 87626,
+          "sha256": "6b95a486c72e0ad0784f7f2bb2ed4813e84c7156a853e53c71e5319d733c7580"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-fixed.log",
+          "bytes": 90436,
+          "sha256": "b042a2337063aa5b1e97c24800188ba0fdc7920284dea85556704a293a69667e"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-fixed.receipt.json",
+          "bytes": 444,
+          "sha256": "1e5436bc9190ed7fc032e0f906a740784a64a959b88ee6246ad308718657fae1"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-metrics.json",
+          "bytes": 1530,
+          "sha256": "3bdc001823680ac29af100cdbf9fcbd3105d8df36748c0f2e6bfe995afb7dd1e"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-target.composition.json",
+          "bytes": 939,
+          "sha256": "32c6f2a997ec6fa1a384a7ebaf587fe42a745020eebf43aab94dcbdda609af50"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-target.list.json",
+          "bytes": 4231,
+          "sha256": "a3a24e161e11ba27814e3ac7da286ef67e43e405728c5d741c1710a56173b9c1"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-target.list.stderr",
+          "bytes": 89435,
+          "sha256": "4ea5f692b9e297fc7fccdb4855f58e6363a56defcaf30509ddb185ac2e1738c2"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-target.log",
+          "bytes": 97935,
+          "sha256": "2306ef45c63185cc6e7d8a708ef11549a6bb5ff1f2184c07f48b85a8c66db688"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner-target.receipt.json",
+          "bytes": 446,
+          "sha256": "78bb09a2863af1b1aefa15ae07a13147faa068d22ea06c3be13768e252cd8ed9"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner.list.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.owner.list.stderr",
+          "bytes": 111066,
+          "sha256": "4bcfdbf803067b85b93b242472e3a70f7fe7f8cc50aca52ea1d81f844beec5ec"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.repro.list.json",
+          "bytes": 152540,
+          "sha256": "c9ccd54a0491ff3259ab9a45d789c06276f316b7032c7172fd3095f104ca64fe"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.repro.list.stderr",
+          "bytes": 107711,
+          "sha256": "52f44aea3519006a5dbd4ee59af23b9ba02b55cc48735d330ff8257a65f8da45"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.repro.log",
+          "bytes": 113359,
+          "sha256": "4e4535168f0521de6b814d7f1180c810d0023ab6ef0053c7317c5e4254aa76cb"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.repro.receipt.json",
+          "bytes": 368,
+          "sha256": "0047e068bdbcac4c7a8614f34db6e91c4c37efa9ba2eb9c20275d71ebe0feb1c"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse-build-failure.receipt.json",
+          "bytes": 845,
+          "sha256": "90dfe1ece5363c3326e66c8d4c1273420b647a1745f9421f4bfcb0d8b1fae73c"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse-retry.list.json",
+          "bytes": 1411025,
+          "sha256": "122725a7b686981b6293b05b18f5f3132587c6e2f7705ce2583009787c52bf0d"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse-retry.list.stderr.log",
+          "bytes": 109988,
+          "sha256": "26c10df0f81ba0a29a9b7ef9e634af8a00e2d0da8df580431b508f6dce971903"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse-retry.log",
+          "bytes": 1310048,
+          "sha256": "54be33d7c285c1bdb49dc814a45ae2b1e7e7eabb42bc48f91120b11121a66375"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse-retry.receipt.json",
+          "bytes": 857,
+          "sha256": "be5ac7ab2bb2955f1f3fa0495a596c6b80fd54348974cfd2b1f3e67066c5c356"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse-retry.selection.json",
+          "bytes": 1455984,
+          "sha256": "0dac167a22e68bb0d4b7add26df324f749000ae454a95e0833d6db9357e28cfe"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse.list.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse.list.stderr.log",
+          "bytes": 149611,
+          "sha256": "5453c279c2c898ae10e9647b0ab2500f29c5951c3d6472dc0b18b0da3484cce1"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.reverse.tree.log",
+          "bytes": 25372,
+          "sha256": "ab3a36615f5e7fa83c6e308c3520c003dbf356839dc635fd649f0d460631fe57"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.sema-check.log",
+          "bytes": 88543,
+          "sha256": "e239c059021f1fe6fdcecca837a1c5e913fd15a530d956407d87582397ac5a89"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.sema-check.receipt.json",
+          "bytes": 243,
+          "sha256": "2e88680fdd7b2f9378f0d19e6b539ade1fce7bf744a4d12f030f4706beff462a"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.source-freeze.json",
+          "bytes": 750437,
+          "sha256": "7a132643f5eb0bfa8920d68b95f2f4dbe6a3cb66a97732b64ac5f21abb76d6ad"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.source.prepared.json",
+          "bytes": 3017,
+          "sha256": "a34d9fdc6b8078449eb6d7459b8e22adccbbedbf5ae01108ffebbea744f103b3"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.source.reviewed.patch",
+          "bytes": 46352,
+          "sha256": "54fe40bbad6f90242553f095fbd1c82d66431dcd534579023fd2fa4425ec0bbf"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.source.verified.json",
+          "bytes": 2419,
+          "sha256": "7dc00cce0d3f2b68c6a369771dd9c2c5b4a4bdc01f7f0f59f1b71707f4fc0464"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.structure.log",
+          "bytes": 65874,
+          "sha256": "23b113d4127d768a5730c0bf5acc3078c64beb537754c5824d3009b62285b9c3"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.structure.receipt.json",
+          "bytes": 276,
+          "sha256": "f594ed36ba75dd9e433fe958881db324e5aabc8803eaaa86553a47b1df41a9b6"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.workspace-check.log",
+          "bytes": 112521,
+          "sha256": "784f66b0a4d76a9049fea94a7f9fea10bc6741b551af962625190cb48230e7de"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.workspace-check.receipt.json",
+          "bytes": 253,
+          "sha256": "ec74f07b3848ed492228d7e5997fc3a98105005d4dbc960e17a8d49c094133eb"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.workspace-clippy.log",
+          "bytes": 9117917,
+          "sha256": "fd9166ba187a22213446a5a9e1918c419a7f479d817a19934428a2f673369776"
+        },
+        {
+          "entry": "flow-defer-registry-20261107.workspace-clippy.receipt.json",
+          "bytes": 254,
+          "sha256": "54a3815407e89d7ccfccfd9cef64d65ddf6b0199440d211cde911684ae630ca9"
+        },
+        {
+          "entry": "function-scope-20261107.metadata-all.json",
+          "bytes": 4293339,
+          "sha256": "121ed3fb126ba5868048c8c69fb3ddaa29528ddb7f1d174b7e5da348681d8c60"
+        },
+        {
+          "entry": "record-flow-defer-registry.ps1",
+          "bytes": 19144,
+          "sha256": "2132504f2c99d044720fd1c30366b70cf2bbb583487484a3f31f56ca75431f7f"
+        },
+        {
+          "entry": "run-flow-defer-registry-retry.ps1",
+          "bytes": 2674,
+          "sha256": "9f1555eaa32b984553321c39468940517e67fa7394a99b6481f1c4653cd303f2"
+        },
+        {
+          "entry": "run-flow-defer-registry-validation.ps1",
+          "bytes": 5145,
+          "sha256": "f56a011fda3115be81407c5cb7a37dec22d38d829df53d114a8f3453437930c0"
+        }
+      ],
+      "sha256": "c26bbffce95d75036dba236608565fa057249e656c50c47af69a4e5937bc4bfc",
+      "path": "task-flow-defer-registry.raw.zip"
+    }
   }
 }

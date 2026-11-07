@@ -15325,3 +15325,12 @@ Source **19f08e319088d8f1ae3f0f7ff57414e8af19ca80**、parent **2065064bbc5dcadaf
 RuntimePlan を含む全16推移的逆依存を workspace 既定 feature で選択し、2617 件中 2613 PASS／4 FAIL／24 SKIP。非CLI 1907 件は全通過、CLI 710 件は 706 PASS／4 FAIL。従来7件のうち監査一覧・不正監査 fixture・取消し cleanup の3件はこの同じ run でPASS。残る4件は元の失敗IDと全出力を保持した。全 target／全 feature の workspace check／Clippy、fmt、構造ゲートは終了0。先行15件をこの件数へ加算しない。
 開始前の3,648入力は drift 0。root fixture 180 file は run 中に追加捕捉したことを明記し、保存から公開時まで drift 0 を照合した。通常 defer の Flow registry probe は、末尾の書込みに `;` がないとHIR recovery、読取りは到達解析で停止した。`;` またはUnit tailを与えた書込みはcompileを通過し、同じsemicolon SourceはNativeでDone、AWBCで7 op後に所有実行context不足で失敗した。これらを別の未達条件として保持し、全体 goal や未受入入力を理由に Generic Match や既存 Native の受入境界を戻さない。
 [失敗原本・訂正理由・全選択・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Ordinary cleanup registry custody and scoped effect coverage
+
+Source **36c1d21780f5d1e93b1dad15ee905d77e8c4dfa5**、parent **287e6856c3ef234cd6095ca5a192ddd81dfba997** を既存 main へ通常 commit/push し、13 path の tree／blob／完全差分を照合した。既存 tracked 12 path と untracked 6 file は保持した。
+通常 defer は実際の lexical owner と実行中登録を認証し、元の child／activation の親をたどって到達した Flow registry を操作する。Line と同じ一つの prepare／commit 境界へ統合し、旧対話専用 resolver を削除した。仮 Line、親の複製表、fallback、命令・保存versionは追加しない。
+最初の3件は2件がAWBCのcontext不足、1件がSourceのeffect上限で失敗した。「全3件が先にNativeを通過」とした途中説明を訂正する。次の対象runは20 PASS／3 FAIL。現行契約どおり scope root の権限が子キーを覆うようclosed EffectRowのsubset判定を共通規則へ揃え、Unit末尾のregistry dropも型付き式の効果へ集めた。広い権限のfixtureを狭めて回避しない。最終対象23件は全通過した。
+対象専用の --workspace --test scoped_defer はCore依存artifactが広域構成と異なることを実測しており、同じ構成との説明は訂正した。広域listの2回のWindows1455はテスト未実行として原本に保持。入力・feature・対象を変えずキャッシュを再利用した全Core逆依存53パッケージのrunは、7948件中 7944 PASS／4 FAIL／41 SKIP。実テストがあるのは50パッケージ。CLIは710件中706 PASS／4 FAIL、非CLI 7238件は全通過。5件の新registry回帰とSemaのscope権限回帰もこのrunでPASS。先行23件は合算しない。
+workspace全target／全feature check／Clippy、変更13 Rust pathのfmt、構造gateは終了0。開始前にroot fixture180件を含む3,829入力を固定し、Cargo100入力を含めdrift0。旧「AWBC通常deferのFlow registryがcontext不足」という現状説明はこの実測で置換する。必須読取りの静的存在証明と、semicolonなし末尾書込みの構文条件は別境界であり、runtime受入を未完了へ戻す根拠にしない。Generic Matchと従来のNative受入を保持する。
+[初回失敗・訂正理由・全コマンド・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
