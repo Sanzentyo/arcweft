@@ -46,6 +46,10 @@ pub flow title(state: GameState) -> Result<FlowExit, FlowError> {
 
 `out expr` exports a value from a line plan, cue block, or content scope. It does not return from the enclosing flow.
 
+In a Line plan, a direct Line capability call uses the same typed operation
+producer as a binding before its value moves to the result. Other result
+expressions retain their normal evaluation order and budgeted value continuation.
+
 ```arcw
 let (actor, voice) = alice()[おはよう。[p]]
 with:

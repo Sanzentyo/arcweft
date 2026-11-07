@@ -23,7 +23,7 @@ use arcweft_core::plan::{
     RuntimeScheduledCaptureSeed,
 };
 use arcweft_core::runtime_id::RuntimeLineHandleSiteId;
-use arcweft_core::value::RuntimeValue;
+use arcweft_core::value::{RuntimeLocalReadMode, RuntimeValue};
 use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
 use arcweft_lang_hir::expr::HirExprKind;
 use arcweft_lang_hir::identity::{ExprId, LocalId, PatternId, StmtId};
@@ -33,7 +33,8 @@ use arcweft_lang_hir::stmt::{
 };
 
 use super::{
-    ClosureFrameLocals, FinalFlowLowerer, FinalLoweringContext, RuntimeAssertionOwner, module_by_id,
+    ClosureFrameLocals, FinalFlowLowerer, FinalLoweringContext, RuntimeAssertionOwner,
+    RuntimeFlowValueContinuation, bind_seed, local_seed, module_by_id,
 };
 
 fn default_actor_look_crossfade_type() -> RuntimeNormalizedType {
@@ -377,15 +378,32 @@ impl LinePlanLowerer<'_, '_> {
                         self.owner
                     )));
                 }
-                self.activation_ops.push(FlowDraft::Flow(
-                    RuntimeFlowOpSeed::CommitDialogueResult {
-                        value: self
-                            .flow
-                            .expr_lowerer()
-                            .lower(value)
-                            .map_err(RuntimePlanLowerError::new)?,
-                    },
-                ));
+                let continuation = RuntimeFlowValueContinuation::CommitDialogueResult;
+                let operations = if self.line_call(value)?.is_some() {
+                    let ty = self.flow.expression_type(value)?.clone();
+                    let local = self
+                        .flow
+                        .control
+                        .expression_values
+                        .get(&value)
+                        .cloned()
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "Line result {value:?} has no admitted result local"
+                            ))
+                        })?;
+                    let operation =
+                        self.lower_line_call(value, Some(bind_seed(&ty, local.clone())))?;
+                    self.activation_ops.push(operation);
+                    self.flow.apply_value_continuation(
+                        local_seed(&ty, local, RuntimeLocalReadMode::Move),
+                        continuation,
+                    )?
+                } else {
+                    self.flow.lower_flow_value(value, continuation)?
+                };
+                self.activation_ops
+                    .extend(operations.into_iter().map(FlowDraft::Flow));
                 self.committed_result = true;
             }
             LinePlanStatementProjection::Expression { expression } => {

@@ -79,6 +79,27 @@ entry cli @entry.main { goto @flow.main }
     assert_saved_awbc(source, &["body"]);
 }
 
+#[test]
+fn line_result_effectful_call_keeps_its_value_continuation_and_source_order() {
+    let source = r#"
+pub character alice { display = "Alice" }
+fn result_text() -> String effects { log.write } {
+    log.info("value")
+    return "result"
+}
+flow main() -> Unit effects { log.write } {
+    let _ = alice()[Outer[p]] with {
+        let _ = alice.stage.acquire(scope=line)
+        out result_text()
+    }
+    log.info("body")
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    native_line_handle_execution(source, 1, false, false, &["value", "body"]);
+    assert_saved_awbc(source, &["value", "body"]);
+}
+
 fn assert_saved_awbc(source: &str, expected: &[&str]) {
     let (compiled, awbc) = nested_awbc_from_compiled(
         with_attached_dialogue_project_and_visual(

@@ -5906,6 +5906,7 @@ enum RuntimeFlowValueContinuation {
         statement: StmtId,
     },
     Return,
+    CommitDialogueResult,
     ExitScope {
         owner: ExprId,
         outer: Box<Self>,
@@ -8921,6 +8922,9 @@ impl<'a> FinalFlowLowerer<'a> {
                     Some(publication) => publication.publish(value),
                     None => value,
                 })]
+            }
+            RuntimeFlowValueContinuation::CommitDialogueResult => {
+                vec![RuntimeFlowOpSeed::CommitDialogueResult { value }]
             }
             RuntimeFlowValueContinuation::ScopeSuccess { owner } => {
                 return self.complete_scope_success(owner, value);
