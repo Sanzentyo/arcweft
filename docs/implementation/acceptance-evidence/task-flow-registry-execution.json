@@ -34728,5 +34728,829 @@
         }
       ]
     }
+  },
+  "awbcOrdinaryDeferCustody": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": {
+      "version": 1,
+      "commit": "55c8864797761f9f67d092978feb7b40bf1618ce",
+      "parent": "a1c39df8d13300c59aae8f9e54eddaa38a34809d",
+      "tree": "24b09ed1a2a09821e72b6bb73d13d7c0b0bf4dc8",
+      "remote": "55c8864797761f9f67d092978feb7b40bf1618ce",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "b98a0b7b1631201bb5fc064c3bcc2f5a9790ebd0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "61cc0e6a4e6931c2b4fdab80b70607b1bd187f76"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "blob": "222964aff94defdc5cbe0aac4c9f9a4087f337f3"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "208e27c693a3973afbe2838e98471912c8d7d2a7"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+          "blob": "304aa08d4b46b6924e4736347f04b988899e5d27"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "e4edc6124e476cea6050beda1a05ffc4c54d2a64"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "blob": "86045622ff7f697c3f23976d1d8caa99a0984625"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "7ea9265ae58671859eb385e183e7aaf8f12b4cd1"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "blob": "fe3be37047c81f6e17c0d09c4bc50f1090530a81"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+          "blob": "3d114b6aa9ff03a404bc5ac504abef54e1df3a20"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "f12168532ddb4f831cc4472b76878607f731af9185ed66eb49e490fae1a8b72f",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T17:06:53.9068626Z"
+    },
+    "behavior": [
+      "A prepared function fiber owns its actual allocated root frame and exact positional input destinations before captures leave their packet.",
+      "Ordinary deferred registration, unwind, filtered skip and child instructions reconcile the complete ordinary-fiber custody graph with the published issuers. Filtered skips authorize only removed capture tokens.",
+      "One physical collector includes root and lexical deferred packets. Live reconciliation and inert restore use the same slot projection; saved admission checks every published receiver lease against actual ordinary and foreign receiving storage.",
+      "Line callbacks, Program task and fanout share the prepared function-frame owner. The duplicate owned-task wrapper, old tuple allocator, unused identity getter and partial AWBC-fiber classifier are removed. Public save and slot grammar remain version 1."
+    ],
+    "actual": {
+      "core": {
+        "run": 2323,
+        "passed": 2323,
+        "failed": 0,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:53:14.4310214Z",
+          "endedAt": "2026-11-07T16:55:16.5545407Z"
+        }
+      },
+      "compiler": {
+        "run": 108,
+        "passed": 105,
+        "failed": 3,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:55:16.942654Z",
+          "endedAt": "2026-11-07T16:55:26.3226569Z"
+        }
+      },
+      "scopedDefer": {
+        "run": 30,
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scoped_defer",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:55:26.7343707Z",
+          "endedAt": "2026-11-07T16:55:47.6210336Z"
+        }
+      },
+      "fanout": {
+        "run": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 162,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "-E",
+            "test(program_fanout)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:55:48.0208337Z",
+          "endedAt": "2026-11-07T16:59:25.5360228Z"
+        },
+        "note": "Exact program_fanout filter across the RuntimePlan catalog; the 162 skipped cases include unselected cases and the existing ignored generator. Not a fresh complete RuntimePlan run."
+      },
+      "coreDocs": {
+        "passed": 80,
+        "failed": 0,
+        "receipt": {
+          "arguments": [
+            "test",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--doc"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:59:25.9178333Z",
+          "endedAt": "2026-11-07T17:00:51.2697064Z"
+        }
+      },
+      "captureCases": {
+        "run": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 103,
+        "receipt": {
+          "sourceBase": "a1c39df8d13300c59aae8f9e54eddaa38a34809d",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(saved_awbc_ordinary_flow_defer_)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T16:50:21.9912103Z",
+          "endedAt": "2026-11-07T16:52:33.0666329Z"
+        },
+        "operationBound": 1,
+        "tickBound": 512,
+        "stageAcquireAndRelease": 1,
+        "conditions": [
+          "direct returned Actor",
+          "Actor inside a tuple",
+          "outcome filter skips cleanup and releases the Actor",
+          "nested ordinary registration transfers the same Actor",
+          "public restore rejects packet/child coordinate forgeries and a missing capture packet, then the original execution still completes"
+        ]
+      },
+      "quality": {
+        "core": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:53:14.4310214Z",
+          "endedAt": "2026-11-07T16:55:16.5545407Z"
+        },
+        "compiler": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:55:16.942654Z",
+          "endedAt": "2026-11-07T16:55:26.3226569Z"
+        },
+        "scoped": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scoped_defer",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:55:26.7343707Z",
+          "endedAt": "2026-11-07T16:55:47.6210336Z"
+        },
+        "fanout": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "-E",
+            "test(program_fanout)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:55:48.0208337Z",
+          "endedAt": "2026-11-07T16:59:25.5360228Z"
+        },
+        "docs": {
+          "arguments": [
+            "test",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--doc"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T16:59:25.9178333Z",
+          "endedAt": "2026-11-07T17:00:51.2697064Z"
+        },
+        "clippy": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-compiler",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:00:51.7115588Z",
+          "endedAt": "2026-11-07T17:02:27.8944339Z"
+        },
+        "structure": {
+          "command": "just structure-audit-gate",
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0
+        },
+        "fmt": {
+          "command": "rustfmt --check --edition 2024 --config skip_children=true",
+          "exitCode": 0,
+          "paths": [
+            "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+            "crates/arcweft-core/src/awbc/fiber.rs",
+            "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+            "crates/arcweft-core/src/awbc/product_step.rs",
+            "crates/arcweft-core/src/awbc/product_step/defer.rs",
+            "crates/arcweft-core/src/awbc/product_step/line.rs",
+            "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+            "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+            "crates/arcweft-core/src/line_task/activation.rs",
+            "crates/arcweft-core/src/value/ownership/slot.rs"
+          ],
+          "sourceDrift": 0
+        }
+      },
+      "finalCleanup": {
+        "source": {
+          "sourceBase": "a1c39df8d13300c59aae8f9e54eddaa38a34809d",
+          "paths": [
+            {
+              "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+              "sha256": "ff85e4ae958ca623cbf3370d16d550ba26022b2fc064801ffbd050547a504b90"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/fiber.rs",
+              "sha256": "630c2252941ca887ade75f1dcac50b751cff6fbd1655d7cc256ef558319a299f"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+              "sha256": "3d658c8140d17fdfcff45f4fceb3cb181d30b309e736243f1a1215395067aee1"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step.rs",
+              "sha256": "efbc0feb317f7b274e84f7163294781b638f44fd23ae77d3bcb764609ea90aa0"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+              "sha256": "5a721af98885516cbc36842a9f55fb38a6c83e54a228f84cd29c80625a205e8e"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+              "sha256": "8344fafffc00df3b6b274a12011ad8ccee3f5670b308e3d641c0e316a765b40d"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+              "sha256": "50c94fed5e7f7dc83026c86bce02d3abe07c568fc647ba29d05600ea83a6990c"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+              "sha256": "640e6f740d813b7e8d233067a71d22e4c5d5d0cbd337732c4dd5072993782f3b"
+            },
+            {
+              "path": "crates/arcweft-core/src/line_task/activation.rs",
+              "sha256": "319d8aa969003468f17eb5099f53c570eae63dcb3279c956e0cb953c276f1a59"
+            },
+            {
+              "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+              "sha256": "dab30c006da0dbcc0086714ae7ea53ad202e746fe2da3858f259aeeb5d3f4b20"
+            }
+          ],
+          "change": "Only delete the now-unused private PreparedFunctionInputBinding::function getter",
+          "priorFreezeChanged": 1,
+          "exactDeletionVerified": true
+        },
+        "receipt": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "paths": [
+            {
+              "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+              "sha256": "ff85e4ae958ca623cbf3370d16d550ba26022b2fc064801ffbd050547a504b90"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/fiber.rs",
+              "sha256": "630c2252941ca887ade75f1dcac50b751cff6fbd1655d7cc256ef558319a299f"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+              "sha256": "3d658c8140d17fdfcff45f4fceb3cb181d30b309e736243f1a1215395067aee1"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step.rs",
+              "sha256": "efbc0feb317f7b274e84f7163294781b638f44fd23ae77d3bcb764609ea90aa0"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+              "sha256": "5a721af98885516cbc36842a9f55fb38a6c83e54a228f84cd29c80625a205e8e"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+              "sha256": "8344fafffc00df3b6b274a12011ad8ccee3f5670b308e3d641c0e316a765b40d"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+              "sha256": "50c94fed5e7f7dc83026c86bce02d3abe07c568fc647ba29d05600ea83a6990c"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+              "sha256": "640e6f740d813b7e8d233067a71d22e4c5d5d0cbd337732c4dd5072993782f3b"
+            },
+            {
+              "path": "crates/arcweft-core/src/line_task/activation.rs",
+              "sha256": "319d8aa969003468f17eb5099f53c570eae63dcb3279c956e0cb953c276f1a59"
+            },
+            {
+              "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+              "sha256": "dab30c006da0dbcc0086714ae7ea53ad202e746fe2da3858f259aeeb5d3f4b20"
+            }
+          ],
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:04:31.7573442Z",
+          "endedAt": "2026-11-07T17:06:22.6259574Z"
+        },
+        "fmt": {
+          "command": "rustfmt --check --edition 2024 --config skip_children=true",
+          "exitCode": 0,
+          "paths": [
+            "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+            "crates/arcweft-core/src/awbc/fiber.rs",
+            "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+            "crates/arcweft-core/src/awbc/product_step.rs",
+            "crates/arcweft-core/src/awbc/product_step/defer.rs",
+            "crates/arcweft-core/src/awbc/product_step/line.rs",
+            "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+            "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+            "crates/arcweft-core/src/line_task/activation.rs",
+            "crates/arcweft-core/src/value/ownership/slot.rs"
+          ],
+          "note": "After exact unused-getter deletion; all other behavior-source inputs unchanged"
+        },
+        "reuse": "The runtime tests, doctests and full Core/Compiler lint ran before deleting the now-unused private identity getter. The exact four-line deletion was verified, all other frozen behavior inputs stayed unchanged, and final Core all-target/all-feature Clippy plus 10-path fmt passed. These runtime results are reused for their unchanged behavior, not reported as new runs of the final bytes."
+      }
+    },
+    "developmentFailures": [
+      {
+        "receipt": "awbc-defer-custody-20261108.first.receipt.json",
+        "failure": "E0599 at two Program task consumers of the removed tuple allocator",
+        "resolution": "Migrate both consumers and fanout onto the same prepared function-frame owner; remove the duplicate task wrapper."
+      },
+      {
+        "receipt": "awbc-defer-custody-20261108.r2.receipt.json",
+        "failure": "E0599: active_frame was only defined for live FiberState",
+        "resolution": "Generalize the existing owning accessor to live and inert fiber parameters, rather than reconstructing a frame at the consumer."
+      }
+    ],
+    "remainingFailures": [
+      "ordinary_defer::native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line: AffineGroupCapture; initial owned Line inputs and post-reveal shared inputs are not separated",
+      "ordinary_defer::saved_awbc_nested_deferred_line_uses_the_innermost_capture_frame: ordinary deferred child has no product dialogue dispatch",
+      "ordinary_defer::saved_awbc_generic_deferred_line_uses_each_closed_capture_frame: same product dialogue dispatch boundary"
+    ],
+    "corrections": [
+      "Delete the current AWBC ordinary-defer handle-registration rejection clause because its original input and four additional capture/rejection cases now pass through each-step public save/cold restore.",
+      "Retain the original 104-case 100 PASS/4 FAIL run and the initial invalid-transition reproduction as history. The new 108-case run is 105 PASS/3 FAIL; do not rewrite or combine the earlier counts.",
+      "Previously accepted Generic Match, Line/init and bounded Native features remain accepted. Remaining work is limited to concrete failing boundaries and the still-unmet wider acceptance conditions."
+    ],
+    "ownershipReview": {
+      "base": "a1c39df8d13300c59aae8f9e54eddaa38a34809d",
+      "rows": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "owner": "arcweft-compiler",
+          "classification": "integration-test",
+          "bytes": 12982,
+          "physicalLines": 361,
+          "basePhysicalLines": 203,
+          "growth": 158,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Execute actual affine capture transfer, filter release, nested registration and saved packet/child forgery rejection. Preserve 1-op/512-step bounds and exact stage acquire/release counts."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 307922,
+          "physicalLines": 8057,
+          "basePhysicalLines": 8022,
+          "growth": 35,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The owning fiber constructs one actual admitted function frame and positional destinations. Live and inert readers use the same actual active-frame accessor; the replacement leaves no old allocation tuple or unused identity getter."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 5117,
+          "physicalLines": 136,
+          "basePhysicalLines": 154,
+          "growth": -18,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Program-owned input binding uses the same prepared function-frame owner; the duplicate PreparedOwnedProgramTaskFiber is removed. Mixed Copy/Move task preflight keeps its existing distinct receipt protocol."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 276781,
+          "physicalLines": 6778,
+          "basePhysicalLines": 6719,
+          "growth": 59,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The executor coordinates complete ordinary-fiber custody graphs and commits packet or child transfer only after issuer admission. This remains the existing instruction/rollback owner."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 16926,
+          "physicalLines": 434,
+          "basePhysicalLines": 330,
+          "growth": 104,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The typed deferred transition projects its actual future packet or preallocated child slots. Filtered skips authorize only exact removed capture tokens; no blanket ownership exception."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 208011,
+          "physicalLines": 4897,
+          "basePhysicalLines": 4880,
+          "growth": 17,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "One physical collector covers root/lexical deferred packets and is shared by live reconciliation and inert restoration. All line child constructors consume actual prepared frames."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 18212,
+          "physicalLines": 442,
+          "basePhysicalLines": 442,
+          "growth": 0,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing Program fanout owner consumes the shared prepared frame instead of the deleted duplicate wrapper."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 193977,
+          "physicalLines": 4564,
+          "basePhysicalLines": 4545,
+          "growth": 19,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The public restore owner collects actual ordinary and foreign receiving slots, then checks the complete published lease graph. No selective-fiber bypass remains."
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 79642,
+          "physicalLines": 1999,
+          "basePhysicalLines": 2005,
+          "growth": -6,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing published registry authority checks every receiver lease against the actual slot graph. Shape and contract version remain unchanged."
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 58417,
+          "physicalLines": 1814,
+          "basePhysicalLines": 1832,
+          "growth": -18,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Remove the now-obsolete partial AWBC-fiber classifier. Canonical slot variants, wire tags, ordering and strict codec tests remain unchanged."
+        }
+      ],
+      "boundaries": "No new dependency edge, public wire shape, runtime frame identity convention, unsafe or host I/O. Active-frame inspection is generalized on its existing owner.",
+      "structureGate": "awbc-defer-custody-20261108.quality.structure.receipt.json",
+      "warnings": "Clippy warnings remain in the raw evidence, including the prepared transition enum size warning. No performance improvement is claimed.",
+      "reverseGraph": "Core53 from the unchanged resolved Cargo graph in the retained convergence evidence; no fresh Core53 matrix claimed."
+    },
+    "limits": [
+      "No fresh complete Core53 reverse-closure or workspace-wide check/Clippy matrix is claimed. The resolved Cargo graph and manifests remain unchanged.",
+      "Native initial owned Line inputs and ordinary AWBC deferred-dialogue dispatch remain open; the 5 capture cases do not establish these separate capabilities.",
+      "AWBC cancellation and aggregate registration/child preconstruction limits, final Native public save and Native/Web visual acceptance remain wider convergence conditions.",
+      "Warnings, including the prepared transition enum size review, remain in the raw lint evidence. No performance improvement is claimed."
+    ],
+    "raw": {
+      "path": "task-awbc-ordinary-defer-custody.raw.zip",
+      "sha256": "39a6b0ee459c1e9fb692e2915b2160f6e083105adcb2b2227ab19b9f5295e3fc",
+      "entries": [
+        {
+          "entry": "awbc-defer-custody-20261108.cleanup.fmt.receipt.json",
+          "bytes": 802,
+          "sha256": "260cbd7126c70c4f47f399a4689e7a786ab59523a127d332855b916ae2a1d55a"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.cleanup.log",
+          "bytes": 4940014,
+          "sha256": "43dec97cf50027743dd056025fbf0273c109dc5809606b3aedd855c8534140b0"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.cleanup.receipt.json",
+          "bytes": 1970,
+          "sha256": "8565f7c593267a93a17725c04fb5c7ab7c1b7e49ff72706d3fd5c2888ea1a378"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.cleanup.source.json",
+          "bytes": 1925,
+          "sha256": "53f3967b842d5836ffb3c0f443c70059cc217f88568dd94709e30f3ac25f71f7"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.first.log",
+          "bytes": 14966,
+          "sha256": "af02d5219893e6300d068090a46a0c4c00a8aefd80737923e589a5160074016c"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.first.receipt.json",
+          "bytes": 443,
+          "sha256": "685b0713efe9d8d677eae4e7e3dfcae3bef952ae3f5382e28aa47d7f4433150c"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.ownership-review.json",
+          "bytes": 5697,
+          "sha256": "626a4978fd814bcda24b16d3f047dc5af4fdb713079f0c0182624328e2990472"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.clippy.log",
+          "bytes": 7720173,
+          "sha256": "010f8adf8073d580402a95fca9d1953fed6d0a8da2c09ed344e0a5de8eaf994a"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.clippy.receipt.json",
+          "bytes": 331,
+          "sha256": "ef64ce6709f0d7f0298d8b88ff0f04987776581ded0feddc351ca0429cd07c3e"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.compiler.log",
+          "bytes": 106817,
+          "sha256": "149e8b654354f7bd8ce5a5a30a8d59d1f14d8da5a46653a29ff36002ca446b93"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.compiler.receipt.json",
+          "bytes": 365,
+          "sha256": "2046289e7cc9952825dec80085e9291b0da08ee5c90d320bf650d276d5b9cc75"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.core.log",
+          "bytes": 392246,
+          "sha256": "cb1b35aad0dff069e771c3b593d6ae287d6e6fa87d8eb06f09c5ea11ff455e62"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.core.receipt.json",
+          "bytes": 332,
+          "sha256": "2f1540c854f6f24434ef0f6baa36703c866bdde32027fbf700932bb947de11c3"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.docs.log",
+          "bytes": 83798,
+          "sha256": "fbb2462f5a313394527242f6c24565fec5103bfc9e5398e4eab9da095e276e30"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.docs.receipt.json",
+          "bytes": 262,
+          "sha256": "43b1efea295be23d05a64c49ba66596f9fcc9fb66cbe745c201551f88800939c"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.fanout.log",
+          "bytes": 89918,
+          "sha256": "841751c8d982e763355b378212004bd18061963dedcf2f7adf3e00850f6b0388"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.fanout.receipt.json",
+          "bytes": 366,
+          "sha256": "aaac7fd47474d11349baecd9333605cca1ea17afadf2623c2a440698c800f2bb"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.fmt.receipt.json",
+          "bytes": 730,
+          "sha256": "7a74e8096d8f16a0516d509054c6cbda72e15163d8e88adbfa3b6671b04ecdcf"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.scoped.log",
+          "bytes": 92319,
+          "sha256": "ba5c8209a535944b9c7d154218f13487b4cfcea948397c9ca406378fd7488608"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.scoped.receipt.json",
+          "bytes": 358,
+          "sha256": "860c76f94b8b735b11ab530b3f74a11d9fbf4570a8dcf8f52f1ec0fef3e8b86f"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.source.json",
+          "bytes": 605889,
+          "sha256": "1af3abd40ad3f5fbe247c3520d126aaa814dd825a3ac2dab330f3bd963a89cc9"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.structure.log",
+          "bytes": 65874,
+          "sha256": "61b551bdc5fd7032dcc78222158279c3e0e4cfb7eda1ab314a8111a4eb3dff89"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.quality.structure.receipt.json",
+          "bytes": 112,
+          "sha256": "0492917c91b2c78f60933c75205f9d1673aee1cd02a401cf1ce97a6486667dc3"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.r1.log",
+          "bytes": 90158,
+          "sha256": "e7b7c85d9ec83ae8e61b1c4096cd98dd0f5e2eeb8f3790dd700f8e2b06d27b49"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.r1.receipt.json",
+          "bytes": 441,
+          "sha256": "519196abe232c023b4abc1f08e8d3e31a4b08aaaa9729bf70429286bbf543a0b"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.r2.log",
+          "bytes": 14057,
+          "sha256": "a286ca01ac1d3ec2c45d623cafae35211b520bbed265d49b5715508aab793d73"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.r2.receipt.json",
+          "bytes": 437,
+          "sha256": "0516b392f2457b89445ccc7ff19c544aa552dc1942e14b203b5cc01aab3856a1"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.r3.log",
+          "bytes": 90783,
+          "sha256": "84f131e38477aed14aa7991728f9b55f0b9ca5b46419476a24d1ca69fb797d31"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.r3.receipt.json",
+          "bytes": 435,
+          "sha256": "9a372d9a1d5450bd8d529d4504e9b485788955cdb769a680e6d0fbfed0c348a6"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.source.message.txt",
+          "bytes": 486,
+          "sha256": "95d9c98513c9768f603b740ad5b389521195b1f06c1e0d21245428a18139567e"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.source.owned.txt",
+          "bytes": 511,
+          "sha256": "ec5df14e2da7ebff9136c665dafb06843d36bcd1e02ca6d5e8d2d9d25ad00b17"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.source.pathspec",
+          "bytes": 511,
+          "sha256": "5454b15d7772ea75cf2733d3b00e5eaf209d67574c344454a130b07b60b82371"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.source.prepared.json",
+          "bytes": 2570,
+          "sha256": "148f041a5a9ed1dc667b186622657b6b18a4c3d9503eb39a00cdaad2eca3485c"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.source.reviewed.patch",
+          "bytes": 50162,
+          "sha256": "f12168532ddb4f831cc4472b76878607f731af9185ed66eb49e490fae1a8b72f"
+        },
+        {
+          "entry": "awbc-defer-custody-20261108.source.verified.json",
+          "bytes": 1972,
+          "sha256": "3f95def952adc5ba378e8f089e7968defc1391eb64bf4c1b4599a78245aae506"
+        },
+        {
+          "entry": "record-awbc-defer-custody-20261108.ps1",
+          "bytes": 14144,
+          "sha256": "e6f881f36e898ee6585801a04378097d26bb2ccab2e6c42a895cdc72e46b85c0"
+        },
+        {
+          "entry": "run-awbc-defer-custody-quality-20261108.ps1",
+          "bytes": 2981,
+          "sha256": "3b2feb569751e7c5db2eec9b1d941af0e1f79cee1cbfc45262edb79befe980d0"
+        }
+      ]
+    }
   }
 }
