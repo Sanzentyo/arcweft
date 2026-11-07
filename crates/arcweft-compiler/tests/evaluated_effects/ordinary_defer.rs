@@ -41,21 +41,33 @@ fn native_ordinary_flow_defer_releases_an_actor_when_its_filter_skips_cleanup() 
 
 #[test]
 fn native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line() {
-    let source = FLOW_ACTOR_DEFER_SOURCE.replace(
+    native_line_handle_execution(
+        &owned_deferred_line_source(),
+        2,
+        false,
+        false,
+        &["body", "cleanup", "nested cleanup"],
+    );
+}
+
+#[test]
+fn saved_awbc_ordinary_flow_defer_reexports_an_actor_through_its_nested_line() {
+    assert_saved_awbc_with_reveals(
+        &owned_deferred_line_source(),
+        2,
+        &["body", "cleanup", "nested cleanup"],
+    );
+}
+
+fn owned_deferred_line_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE.replace(
         "defer { let _ = actor; log.info(\"cleanup\") }",
         r#"defer {
             let received = alice()[Cleanup[p]] with { out actor }
             defer { let _ = received; log.info("nested cleanup") }
             log.info("cleanup")
         }"#,
-    );
-    native_line_handle_execution(
-        &source,
-        2,
-        false,
-        false,
-        &["body", "cleanup", "nested cleanup"],
-    );
+    )
 }
 
 #[test]
