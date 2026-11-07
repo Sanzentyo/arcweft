@@ -24739,5 +24739,173 @@
       "path": "task-native-function-body-scopes.raw.zip",
       "sha256": "791b6e0ab1221f0bed26918232d5b8a0d8037f8b62529de0adaac10ca4ee3cb1"
     }
+  },
+
+  "awbcBodyStorageDevelopment": {
+    "version": 1,
+    "baseCommit": "1b2dbbbde9a970b136dbf9bc177833865d3e54a0",
+    "maturity": "Unpublished working-tree development; ordinary Flow AWBC defer is not accepted or published.",
+    "workingPatchSha256": "98dd02d41288b5759ca16d8e90aec180f329a7e9b190e8473e79b83e11f1e2c6",
+    "workingPaths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber.rs",
+        "bytes": 308710,
+        "sha256": "be09b5e5cfb5eb691640958c0e47bc4dc3fbedc584e3a3a225a930fbc48e470e"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+        "bytes": 24913,
+        "sha256": "0f632864e715de09e2e84891e2bfbbee6b1eef73b6900b04a838f4babedbe7d0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+        "bytes": 39087,
+        "sha256": "abea8d9d1a21b9b7e69ad8cc9d608914a88c7708d28071e16dbcf241ca857b4f"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/scope/tests.rs",
+        "bytes": 25714,
+        "sha256": "e6f6a15fb29a3b3c7d63528c0a8aff59d03948de0a78ce9cd2017708c165b50c"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "bytes": 268051,
+        "sha256": "483e88669eeefedeb5927c693db93f682507cd6280f7c356ae995bf316c24292"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "bytes": 209452,
+        "sha256": "9ba7ed8812ff47ed158154e07a325e6b31f308a7a6c40c6cb7727aa1e8d7f376"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "bytes": 190424,
+        "sha256": "7ad2b3dfc0fb79028eb431687423f5aadd0973de0e891c9726b434e27f380fbf"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "bytes": 323473,
+        "sha256": "693c2a4eab70e17e03dd4354d7cc19b2d7423f0c8c2c36b519354f505aab4c17"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "bytes": 248199,
+        "sha256": "ac0ea05b90b66fcdc54886eb34be5e4074a1f46bd18ce6ee78bad6a0d47deb94"
+      },
+      {
+        "path": "crates/arcweft-core/tests/direct_suspension.rs",
+        "bytes": 37330,
+        "sha256": "f681405c23fe4cc7230d0222d0f1ae7363d74bbb751d669fd9814b86268c91d6"
+      }
+    ],
+    "storage": "FiberDeferredScope is shared by FiberScope.deferred and FiberFrame.root_deferred. Scope/frame admission shares the existing resource bank and verifies the original registration cursor and lexical stack. The inert codec evolves in place at version 1; no legacy reader is retained.",
+    "validation": [
+      {
+        "exitCode": 101,
+        "result": "Three consumers lacked the new root storage argument; repaired.",
+        "log": "awbc-function-root-defer-20261107.first-check.log",
+        "command": "cargo check --locked -p arcweft-core --lib --tests"
+      },
+      {
+        "exitCode": 101,
+        "result": "The direct_suspension integration fixture still initialized removed fields; migrated to the shared storage.",
+        "log": "awbc-function-root-defer-20261107.shared-state-check.log",
+        "command": "cargo check --locked -p arcweft-core --lib --tests"
+      },
+      {
+        "skipped": 2303,
+        "command": "cargo nextest run --locked -p arcweft-core --lib -E 'test(awbc::fiber::scope::tests)' --no-tests fail --no-fail-fast",
+        "exitCode": 0,
+        "failed": 0,
+        "log": "awbc-function-root-defer-20261107.shared-state-scope-tests.log",
+        "passed": 9
+      },
+      {
+        "skipped": 0,
+        "command": "cargo nextest run --locked -p arcweft-core --lib --test direct_suspension --no-tests fail --no-fail-fast",
+        "exitCode": 100,
+        "failed": 1,
+        "log": "awbc-function-root-defer-20261107.shared-state-core.log",
+        "passed": 2320,
+        "failure": "New root ownership test used a packet-only fixture without complete executable ingress/effect/return declarations."
+      },
+      {
+        "result": "Test referenced a private helper; replaced with its own typed input identity without widening production visibility.",
+        "log": "awbc-function-root-defer-20261107.root-storage-proof.log",
+        "exitCode": 101
+      },
+      {
+        "exitCode": 100,
+        "skipped": 2312,
+        "failed": 1,
+        "log": "awbc-function-root-defer-20261107.root-storage-proof-retry.log",
+        "passed": 0,
+        "failure": "Fixture retained an unused malformed Log payload. Replaced only that fixture body with its actual root registration and typed Unit return."
+      },
+      {
+        "skipped": 2312,
+        "command": "cargo nextest run --locked -p arcweft-core --lib -E 'test(invocation_body_defer_keeps_original_root_scope_and_capture_grammar)' --no-tests fail --no-fail-fast",
+        "exitCode": 0,
+        "failed": 0,
+        "log": "awbc-function-root-defer-20261107.root-storage-proof-final.log",
+        "passed": 1,
+        "coverage": "Inert root packet codec and source/capture admission; rejects moving the packet into a different lexical scope or function."
+      }
+    ],
+    "resultPolicy": "These are separate development runs, not one 2321-pass final acceptance. Production storage bytes did not change after the 2320-pass run; the new fixture alone was repaired. Full inverse-consumer and workspace validation remains pending.",
+    "remaining": "Connect invocation-root scope identity, ordinary Flow registration and unwind scheduling, allocation frontier and public restore custody before source defer publication.",
+    "originalTrackedWipPaths": 12,
+    "originalUntrackedFiles": 6,
+    "raw": {
+      "path": "task-awbc-body-storage-development.raw.zip",
+      "sha256": "12f39f1a00d00f47a277b87991481426157e10b6e24c6cae41e5d1ba514c8793",
+      "entries": [
+        {
+          "entry": "awbc-function-root-defer-20261107.first-check.log",
+          "bytes": 20313,
+          "sha256": "9af3e626fb353095d0e751e24e7fbf7ff00954250807e832435489556d7f07d5"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.shared-state-check.log",
+          "bytes": 85140,
+          "sha256": "97bb60482a7bdf60c5be09254f57b039e0dd7cb5b4237be015d69ea170f3b0ad"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.shared-state-scope-tests.log",
+          "bytes": 35520,
+          "sha256": "1da54a012c8420ca6137ed0230f5a61a08222c80889a00ea56766c0982342126"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.shared-state-core.log",
+          "bytes": 441067,
+          "sha256": "c193f7cf89f1006f3ebb1e4ead727b6439c10a230116687ba985244aef6c8ed9"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.root-storage-proof.log",
+          "bytes": 11991,
+          "sha256": "df8fee1473d92ed84bae719682f4eb583ab0195e75edba08b0495183029a79e1"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.root-storage-proof-retry.log",
+          "bytes": 35420,
+          "sha256": "9a56249bce344c80da03709886344e7736e3c4b5d9d423e908dbf9177abfe801"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.root-storage-proof-final.log",
+          "bytes": 34381,
+          "sha256": "82669ccb6261190e6889f1d95d089b086a2f6de468573296c843f5f0007d4401"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.storage.patch",
+          "bytes": 41432,
+          "sha256": "98dd02d41288b5759ca16d8e90aec180f329a7e9b190e8473e79b83e11f1e2c6"
+        },
+        {
+          "entry": "awbc-function-root-defer-20261107.storage.receipt.json",
+          "bytes": 2572,
+          "sha256": "69fb65916bb8bcb83dce8d54a936e3819345bc3216776efbccd900b883bdf3fb"
+        }
+      ]
+    }
   }
 }

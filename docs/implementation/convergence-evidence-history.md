@@ -15243,3 +15243,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 未公開の通常 Flow source defer lowering と Compiler fixture を用いた開発検査は、Native が1件通過、AWBC が1件失敗だった。AWBC は関数本体直下の CurrentScope 登録で active lexical scope がなく停止する。元の関数フレームを所有者とする AWBC 登録・終了・保存の統合が必要であり、Native の基盤公開を通常 Flow defer 全体の受入へ拡張しない。Source実験は既存 main の公開 Core と未公開3パスを組み合わせた入力である。
 - Cargo の全 feature metadata／reverse treeで Core を含む53 workspace packageを再確認した。この区切りは Native owner の途中公開で、全逆依存・workspace全 target／全 feature check／Clippy・Tier2は未実行。前 Source の広域通過を後続変更の通過と扱わない。Core fmt と構造ゲートは終了0。関数本体の owner は81 production LOC、対応テスト316 LOC。既存の lexical defer storage を共有し、依存方向・Sans I/O・version 1を維持し、別 catalogやreaderを追加していない。
 - ユーザー指定の `cargo clean` は終了0、105,784ファイル／127.1 GiBを削除した。直後の target 不在と D: 空き約484.9 GiBを確認し、その後に上記の cold buildを実行した。現状は current-status.md の該当行だけを更新し、Generic Match と既存完了 cut を未完了へ戻していない。[実測・失敗原本・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — AWBC invocation body storage development
+
+- 基点 `1b2dbbbde9a970b136dbf9bc177833865d3e54a0` に対する未公開10パスの作業差分。登録・終了条件・実行中・解放待ち・失敗を `FiberDeferredScope` へ集約し、明示スコープと元の関数フレームの本体が同じ保持文法を使う。保存は version 1 のまま更新し、古い平坦なフィールドと reader を残さない。値の事前検査・訪問・退役可能条件に本体の保持値を接続した。
+- 既存の scope／codec／資源境界9件が通過した。Core lib と direct_suspension の全件は2,321件中2,320 PASS／1 FAIL／スキップ0件。失敗した新しい検査は、局所 packet 検査用 fixture を完全な実行成果物の検証へ流用していた。入力・効果・Unit return を現行の typed 宣言へ修復し、対象1件は通過した。根拠の異なる run を一回の2,321件通過と合算しない。初回の引数欠落、旧 integration fixture、非公開 helper 参照、無効な Log payload の失敗を原本に保持した。
+- 本体のパケットは元の登録位置・捕捉 ABI・lexical stack に照合され、別スコープや別関数への付け替えを拒否する。通常 Flow AWBC の関数本体 owner identity、登録・終了 scheduler、ID 発行範囲と公開復元の custody 接続は未完了であり、この開発検査を実行機能の受入へ拡張しない。公開 Native 基盤と Generic Match の受入は維持する。[実測・未公開差分・各失敗原本](acceptance-evidence/task-flow-registry-execution.json)。
