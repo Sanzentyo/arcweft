@@ -3416,7 +3416,14 @@ impl AwbcProductStepExecutor {
         let pending_host_call_before = front.pending_host_call.clone();
         let mut resume_journal = DeferredChildResumeJournal::capture(self);
         let mut staged_resume_output = RuntimeStepOutput::default();
-        let before_flow_owners = if registry_activation.is_none() {
+        let before_flow_owners = if registry_activation.is_none()
+            || !matches!(
+                front.fiber.suspension.as_ref(),
+                Some(crate::awbc::fiber::FiberSuspension {
+                    reason: crate::awbc::fiber::FiberSuspensionReason::Dialogue { .. },
+                    ..
+                })
+            ) {
             match self.published_flow_handle_owners(None) {
                 Ok(owners) => Some(owners),
                 Err(error) => {
@@ -3431,46 +3438,55 @@ impl AwbcProductStepExecutor {
             return false;
         };
         let owner = child.owner.clone();
-        let before_handles = match &owner {
-            ProductChildFiberOwner::LineTask { .. }
-            | ProductChildFiberOwner::Deferred { .. }
-            | ProductChildFiberOwner::ScopedDeferred { .. } => {
-                match line::product_fiber_handle_tokens(self.facade_fiber.execution, &child.fiber) {
-                    Ok(handles) => Some(handles),
-                    Err(error) => {
-                        if !self.rollback_selected_child_step(
-                            child,
-                            checkpoint,
-                            pending_host_call_before,
-                            resume_journal,
-                            need_states,
-                            output,
-                        ) {
-                            return true;
+        let before_handles: Option<BTreeSet<crate::runtime_id::RuntimeLineHandleToken>> =
+            match &owner {
+                ProductChildFiberOwner::LineTask { .. }
+                | ProductChildFiberOwner::Deferred { .. }
+                | ProductChildFiberOwner::ScopedDeferred { .. } => {
+                    match line::product_fiber_handle_tokens(
+                        self.facade_fiber.execution,
+                        &child.fiber,
+                    ) {
+                        Ok(handles) => Some(
+                            handles
+                                .into_iter()
+                                .filter(|token| Some(*token.activation()) == registry_activation)
+                                .collect(),
+                        ),
+                        Err(error) => {
+                            if !self.rollback_selected_child_step(
+                                child,
+                                checkpoint,
+                                pending_host_call_before,
+                                resume_journal,
+                                need_states,
+                                output,
+                            ) {
+                                return true;
+                            }
+                            return match &owner {
+                                ProductChildFiberOwner::LineTask { tag, .. } => {
+                                    self.begin_product_line_task_child_failure(&tag, error, output)
+                                }
+                                ProductChildFiberOwner::Deferred { .. } => {
+                                    self.fail_with_error(error.into(), output);
+                                    true
+                                }
+                                ProductChildFiberOwner::ScopedDeferred { .. } => {
+                                    self.fail_with_error(error.into(), output);
+                                    true
+                                }
+                                ProductChildFiberOwner::Independent
+                                | ProductChildFiberOwner::Program { .. }
+                                | ProductChildFiberOwner::FlowDeferred { .. } => unreachable!(),
+                            };
                         }
-                        return match &owner {
-                            ProductChildFiberOwner::LineTask { tag, .. } => {
-                                self.begin_product_line_task_child_failure(&tag, error, output)
-                            }
-                            ProductChildFiberOwner::Deferred { .. } => {
-                                self.fail_with_error(error.into(), output);
-                                true
-                            }
-                            ProductChildFiberOwner::ScopedDeferred { .. } => {
-                                self.fail_with_error(error.into(), output);
-                                true
-                            }
-                            ProductChildFiberOwner::Independent
-                            | ProductChildFiberOwner::Program { .. }
-                            | ProductChildFiberOwner::FlowDeferred { .. } => unreachable!(),
-                        };
                     }
                 }
-            }
-            ProductChildFiberOwner::Independent
-            | ProductChildFiberOwner::Program { .. }
-            | ProductChildFiberOwner::FlowDeferred { .. } => None,
-        };
+                ProductChildFiberOwner::Independent
+                | ProductChildFiberOwner::Program { .. }
+                | ProductChildFiberOwner::FlowDeferred { .. } => None,
+            };
         let mut skip_vm_instruction = false;
         if child.fiber.status == FiberStatus::Suspended {
             let request_count = output.requests.host_calls.len()
@@ -3943,25 +3959,28 @@ impl AwbcProductStepExecutor {
             }
             return true;
         }
-        if owner.line_activation().is_none() {
+        if let Some(before_flow_owners) = before_flow_owners.as_ref() {
             let mut batch = line::empty_activation_batch(self);
-            let prepared =
-                match self.prepare_flow_defer_step(&child.fiber, &mut observations, &batch) {
-                    Ok(prepared) => prepared,
-                    Err(error) => {
-                        if self.rollback_selected_child_step(
-                            child,
-                            checkpoint,
-                            pending_host_call_before,
-                            resume_journal,
-                            need_states,
-                            output,
-                        ) {
-                            self.record_error(error, output);
-                        }
-                        return true;
+            let prepared = match if owner.line_activation().is_none() {
+                self.prepare_flow_defer_step(&child.fiber, &mut observations, &batch)
+            } else {
+                Ok(None)
+            } {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    if self.rollback_selected_child_step(
+                        child,
+                        checkpoint,
+                        pending_host_call_before,
+                        resume_journal,
+                        need_states,
+                        output,
+                    ) {
+                        self.record_error(error, output);
                     }
-                };
+                    return true;
+                }
+            };
             let custody = (|| {
                 let mut after = self.published_flow_handle_owners(Some(&child.fiber))?;
                 if let Some(prepared) = &prepared {
@@ -3975,11 +3994,13 @@ impl AwbcProductStepExecutor {
                 self.dialogues
                     .inspect_parent_fiber_reconciliation(
                         self.facade_fiber.execution,
-                        before_flow_owners
-                            .as_ref()
-                            .expect("ordinary child retained its original complete custody graph"),
+                        before_flow_owners,
                         &after,
-                        &drop_policy,
+                        &drop_policy.for_tokens(|token| {
+                            owner
+                                .line_activation()
+                                .is_none_or(|activation| token.activation() != &activation)
+                        }),
                     )
                     .map_err(ProductStepError::from)
             })();
@@ -4173,7 +4194,10 @@ impl AwbcProductStepExecutor {
         };
         let after_handles =
             match line::product_fiber_handle_tokens(self.facade_fiber.execution, &child.fiber) {
-                Ok(handles) => handles,
+                Ok(handles) => handles
+                    .into_iter()
+                    .filter(|token| token.activation() == tag.activation_id())
+                    .collect(),
                 Err(error) => {
                     if !self.rollback_selected_child_step(
                         child,

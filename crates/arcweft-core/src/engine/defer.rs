@@ -952,6 +952,7 @@ impl super::Engine {
         else {
             return Err(LineRuntimeError::InvalidActivationOperation.into());
         };
+        let source_slots = defer_source_slots(child.execution, &child.frame, captures)?;
         let Some(defers) = child
             .frame
             .control_stack
@@ -975,6 +976,13 @@ impl super::Engine {
             *outcome,
             captures,
             NativeDeferCaptureOwner::Child(tag),
+            |handle, ordinal| {
+                self.dialogue_activations.inspect_received_defer_capture(
+                    self.published_receiver_execution(),
+                    handle,
+                    source_slots[ordinal],
+                )
+            },
         )?
         .expect("child defer always registers in a lexical scope");
         let mut captured = std::collections::BTreeSet::new();
@@ -1145,6 +1153,22 @@ fn take_defer_captures(
 
 /// Admits every capture and ledger transfer before taking any local. The
 /// actual lexical scope or line root receives the sole checked packet.
+pub(super) fn defer_source_slots(
+    execution: crate::runtime_id::ExecutionInstanceId,
+    frame: &super::NativeFlowExecutionFrame,
+    captures: &[crate::value::RuntimeExpr],
+) -> Result<Vec<crate::value::ownership::RuntimeOwnedSlotId>, crate::line_task::LineRuntimeError> {
+    captures
+        .iter()
+        .map(|capture| {
+            let crate::value::RuntimeExprKind::Local(read) = capture.kind() else {
+                return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation);
+            };
+            Ok(frame.owned_local_slot(execution, read.local()))
+        })
+        .collect()
+}
+
 pub(super) fn register_line_defer(
     plan: &crate::plan::RuntimePlan,
     env: &mut crate::value::RuntimeEnv,
@@ -1155,6 +1179,10 @@ pub(super) fn register_line_defer(
     outcome: crate::line_task::RuntimeDeferOutcomeFilter,
     captures: &[crate::value::RuntimeExpr],
     owner: NativeDeferCaptureOwner<'_>,
+    inspect_received: impl FnMut(
+        &crate::value::ownership::RuntimeAffineLineHandle,
+        usize,
+    ) -> Result<(), crate::line_task::LineRuntimeError>,
 ) -> Result<Option<RuntimeLineDeferredRegistration>, super::dialogue::DialogueExecutionError> {
     use super::dialogue::unique_affine_line_handles;
     use crate::line_task::{LineRuntimeError, RuntimeHandleOwnerSlot};
@@ -1175,9 +1203,11 @@ pub(super) fn register_line_defer(
             if !captured_handles.insert(handle.token().clone()) {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
-            let lease = ledger
-                .lease(handle.token())
-                .ok_or(LineRuntimeError::UnknownHandle)?;
+            let Some(lease) = ledger.lease(handle.token()) else {
+                // The registration preflight below authenticates received
+                // handles through their issuer and original capture slot.
+                continue;
+            };
             if lease.resource().kind() != handle.kind() {
                 return Err(LineRuntimeError::WrongOpaqueProducer.into());
             }
@@ -1213,7 +1243,8 @@ pub(super) fn register_line_defer(
             }
         }
     }
-    let prepared = activation.inspect_deferred_registration_refs(&capture_refs)?;
+    let prepared =
+        activation.inspect_deferred_registration_with(&capture_refs, inspect_received)?;
     drop(capture_refs);
     for (token, source) in &scoped_transfers {
         ledger.transfer(

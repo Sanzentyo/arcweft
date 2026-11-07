@@ -265,12 +265,26 @@ impl AwbcProductStepExecutor {
 }
 
 impl ProductDialogueStore {
+    pub(super) fn inspect_received_defer_capture(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        slot: RuntimeOwnedSlotId,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry
+            .inspect_received_defer_capture(execution, handle, slot)
+    }
     pub(super) fn extend_received_frame_handle_owners(
         &self,
         execution: crate::runtime_id::ExecutionInstanceId,
         owners: &mut BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
     ) -> Result<(), ProductStepError> {
-        self.registry.try_visit_active(|activation, active, _| {
+        self.registry.try_visit_active(|activation, active, line| {
+            for (token, slot) in line.received_defer_slots(execution, activation)? {
+                if owners.insert(token, slot).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                }
+            }
             if let Some(fiber) = active.receiving_fiber() {
                 for (token, slot) in super::line::product_fiber_handle_owners(execution, fiber)? {
                     if token.activation() != activation && owners.insert(token, slot).is_some() {

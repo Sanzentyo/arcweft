@@ -20,6 +20,12 @@ use std::{cmp::Ordering, fmt};
 /// This enum is evidence only. Storage remains in each owning runtime domain.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RuntimeOwnedSlotId {
+    LineDeferCapture {
+        execution: ExecutionInstanceId,
+        activation: crate::runtime_id::DialogueActivationId,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
     NativeDialogueLocal {
         execution: ExecutionInstanceId,
         activation: crate::runtime_id::DialogueActivationId,
@@ -210,6 +216,7 @@ impl RuntimeOwnedSlotId {
     #[must_use]
     pub const fn canonical_tag(self) -> u8 {
         match self {
+            Self::LineDeferCapture { .. } => 22,
             Self::NativeDialogueLocal { .. } => 20,
             Self::AwbcDialogueOperand { .. } => 21,
             Self::EnvironmentLocal { .. } => 0,
@@ -238,7 +245,8 @@ impl RuntimeOwnedSlotId {
     #[must_use]
     pub const fn execution(self) -> ExecutionInstanceId {
         match self {
-            Self::NativeDialogueLocal { execution, .. }
+            Self::LineDeferCapture { execution, .. }
+            | Self::NativeDialogueLocal { execution, .. }
             | Self::AwbcDialogueOperand { execution, .. }
             | Self::EnvironmentLocal { execution, .. }
             | Self::ProgramResult { execution, .. }
@@ -267,6 +275,19 @@ impl RuntimeOwnedSlotId {
     pub fn render_canonical(self) -> String {
         let execution = self.execution().get().get();
         match self {
+            Self::LineDeferCapture {
+                activation,
+                registration,
+                ordinal,
+                ..
+            } => format!(
+                "exec/{execution}/dialogue/{}/{}/{}/{}/defer/{}/capture/{ordinal}",
+                blake3::Hash::from_bytes(*activation.artifact().as_bytes()).to_hex(),
+                activation.owner_fiber().get(),
+                activation.content().get(),
+                activation.occurrence(),
+                registration.get(),
+            ),
             Self::NativeDialogueLocal {
                 activation, local, ..
             } => format!(
@@ -591,6 +612,18 @@ impl Ord for RuntimeOwnedSlotId {
                         operand,
                     } => (execution, fiber, frame, content, operand),
                     _ => unreachable!("the canonical tag selects a dialogue packet operand"),
+                };
+                key(*self).cmp(&key(*other))
+            }
+            22 => {
+                let key = |slot| match slot {
+                    Self::LineDeferCapture {
+                        execution,
+                        activation,
+                        registration,
+                        ordinal,
+                    } => (execution, activation, registration, ordinal),
+                    _ => unreachable!("the canonical tag selects a line defer capture"),
                 };
                 key(*self).cmp(&key(*other))
             }
@@ -1039,6 +1072,12 @@ impl PartialOrd for RuntimeOwnedSlotId {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum HumanOwnedSlot {
+    LineDeferCapture {
+        execution: ExecutionInstanceId,
+        activation: crate::runtime_id::DialogueActivationId,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
     NativeDialogueLocal {
         execution: ExecutionInstanceId,
         activation: crate::runtime_id::DialogueActivationId,
@@ -1176,6 +1215,12 @@ enum HumanOwnedSlot {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HumanOwnedSlotInput {
+    LineDeferCapture {
+        execution: ExecutionInstanceId,
+        activation: crate::runtime_id::DialogueActivationId,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
     NativeDialogueLocal {
         execution: ExecutionInstanceId,
         activation: crate::runtime_id::DialogueActivationId,
@@ -1313,6 +1358,17 @@ enum HumanOwnedSlotInput {
 impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
     fn from(slot: RuntimeOwnedSlotId) -> Self {
         match slot {
+            RuntimeOwnedSlotId::LineDeferCapture {
+                execution,
+                activation,
+                registration,
+                ordinal,
+            } => Self::LineDeferCapture {
+                execution,
+                activation,
+                registration,
+                ordinal,
+            },
             RuntimeOwnedSlotId::NativeDialogueLocal {
                 execution,
                 activation,
@@ -1550,6 +1606,17 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
 impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
     fn from(slot: HumanOwnedSlotInput) -> Self {
         match slot {
+            HumanOwnedSlotInput::LineDeferCapture {
+                execution,
+                activation,
+                registration,
+                ordinal,
+            } => Self::LineDeferCapture {
+                execution,
+                activation,
+                registration,
+                ordinal,
+            },
             HumanOwnedSlotInput::NativeDialogueLocal {
                 execution,
                 activation,

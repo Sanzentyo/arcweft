@@ -31,6 +31,46 @@ pub struct RuntimeLineDeferredRegistration<V = RuntimeValue> {
 }
 
 impl<V> RuntimeLineDeferredRegistration<V> {
+    /// Physical custody of received handles in this sole packet. Local handles
+    /// keep the activation ledger's LineScope/ScopedDefer authority.
+    pub(crate) fn received_handle_slots(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        activation: &crate::runtime_id::DialogueActivationId,
+    ) -> Result<
+        std::collections::BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::value::ownership::RuntimeOwnedSlotId,
+        >,
+        super::LineRuntimeError,
+    >
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        let mut slots = std::collections::BTreeMap::new();
+        for (ordinal, value) in self.captures.iter().enumerate() {
+            let slot = crate::value::ownership::RuntimeOwnedSlotId::LineDeferCapture {
+                execution,
+                activation: *activation,
+                registration: self.id,
+                ordinal: u32::try_from(ordinal)
+                    .map_err(|_| super::LineRuntimeError::OwnedSlotOverflow)?,
+            };
+            for handle in value
+                .borrowed_view()
+                .line_handle_projection()
+                .map_err(|_| super::LineRuntimeError::InvalidHandlePayload)?
+            {
+                if handle.token().activation() != activation
+                    && slots.insert(handle.token().clone(), slot).is_some()
+                {
+                    return Err(super::LineRuntimeError::DuplicateHandleOccurrence);
+                }
+            }
+        }
+        Ok(slots)
+    }
+
     pub(crate) fn admit_retained(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,

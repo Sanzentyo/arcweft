@@ -811,6 +811,15 @@ pub struct DialogueActivationStore {
 }
 
 impl DialogueActivationStore {
+    pub(in crate::engine) fn inspect_received_defer_capture(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        slot: RuntimeOwnedSlotId,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry
+            .inspect_received_defer_capture(execution, handle, slot)
+    }
     pub(in crate::engine) fn extend_received_frame_handle_owners(
         &self,
         execution_for_parent: impl Fn(
@@ -818,9 +827,14 @@ impl DialogueActivationStore {
         ) -> Option<crate::runtime_id::ExecutionInstanceId>,
         owners: &mut BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
     ) -> Result<(), LineRuntimeError> {
-        self.registry.try_visit_active(|activation, active, _| {
+        self.registry.try_visit_active(|activation, active, line| {
             let execution = execution_for_parent(active.frame.parent)
                 .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            for (token, slot) in line.received_defer_slots(execution, activation)? {
+                if owners.insert(token, slot).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                }
+            }
             for (local, value) in active.frame.execution.env.bindings() {
                 let slot = active.frame.execution.owned_local_slot(execution, local);
                 for handle in value

@@ -183,9 +183,15 @@ impl Engine {
             .chain(self.child_fibers.iter())
             .chain(self.parked_main.iter())
             .chain(detached)
-            .filter(|fiber| fiber.owner.owns_flow_defers())
         {
             for (token, owner) in super::flow_fiber_line_handle_owners(fiber)? {
+                if fiber
+                    .owner
+                    .dialogue_activation()
+                    .is_some_and(|activation| token.activation() == activation)
+                {
+                    continue;
+                }
                 if owners.insert(token, owner).is_some() {
                     return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
                 }

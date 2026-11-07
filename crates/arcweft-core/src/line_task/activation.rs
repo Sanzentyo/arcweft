@@ -103,6 +103,23 @@ impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
         }
     }
 
+    pub(crate) fn inspect_received_defer_capture(
+        &self,
+        execution: ExecutionInstanceId,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        slot: RuntimeOwnedSlotId,
+    ) -> Result<(), LineRuntimeError> {
+        self.published_lease(handle.token())
+            .ok_or(LineRuntimeError::UnknownHandle)?
+            .validate_deferred_capture(
+                handle,
+                &RuntimeHandleOwnerSlot::ParentFiber {
+                    receiver_execution: execution,
+                    slot,
+                },
+            )
+    }
+
     pub(crate) fn try_visit_active<'a, E>(
         &'a self,
         mut visit: impl FnMut(
@@ -968,6 +985,17 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
                                 })
                                 && matched_received_results.insert(handle.token().clone())
                         },
+                        |handle, registration, ordinal| {
+                            published.get(handle.token().activation())
+                                .and_then(|issuer| issuer.lease(handle.token()))
+                                .is_some_and(|lease| {
+                                    let RuntimeHandleOwnerSlot::ParentFiber { slot, .. } = lease.owner() else { return false; };
+                                    matches!(slot, RuntimeOwnedSlotId::LineDeferCapture {
+                                        activation: receiver, registration: id, ordinal: position, ..
+                                    } if receiver == activation && *id == registration && *position == ordinal)
+                                        && lease.validate_deferred_capture(handle, lease.owner()).is_ok()
+                                })
+                        },
                     )?;
                     line.admit_result_discards(
                         |handle| {
@@ -1814,9 +1842,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         change: Option<&crate::effect::RuntimeRegistryLineChange<'_>>,
     ) -> Result<(), LineRuntimeError> {
         let Some(change) = change else {
+            let drops = drops.for_tokens(|token| token.activation() == tag.activation_id());
             return transaction
                 .line_mut()
-                .reconcile_child_scope_step(tag, before, after, drops);
+                .reconcile_child_scope_step(tag, before, after, &drops);
         };
         let activation = *transaction.activation();
         if tag.activation_id() != &activation

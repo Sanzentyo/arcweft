@@ -511,6 +511,13 @@ impl Engine {
             return Ok(None);
         }
         loop {
+            let before = transaction
+                .line()
+                .deferred_registrations()
+                .last()
+                .map(|packet| packet.received_handle_slots(self.fiber.execution, &activation_id))
+                .transpose()?
+                .unwrap_or_default();
             let prepared = transaction
                 .line()
                 .deferred_registrations()
@@ -518,20 +525,67 @@ impl Engine {
                 .filter(|registration| registration.outcome_filter().matches(fixed_exit))
                 .map(|registration| self.inspect_deferred_line_child(registration))
                 .transpose()?;
-            match transaction
-                .line_mut()
-                .prepare_next_deferred(&activation_id)?
-            {
+            let unwind = transaction.line_mut().inspect_next_deferred_with(
+                &activation_id,
+                fixed_exit,
+                |handle, registration, ordinal| {
+                    self.dialogue_activations.inspect_received_defer_capture(
+                        self.published_receiver_execution(),
+                        handle,
+                        RuntimeOwnedSlotId::LineDeferCapture {
+                            execution: self.fiber.execution,
+                            activation: activation_id,
+                            registration,
+                            ordinal,
+                        },
+                    )
+                },
+            )?;
+            match transaction.line_mut().commit_next_deferred_prepared(unwind) {
                 Some(RuntimeDeferUnwindStep::Run(registration)) => {
-                    return Ok(Some(self.commit_prepared_deferred_line_child(
+                    let batch = self.commit_prepared_deferred_line_child(
                         transaction.frame().parent,
                         &activation_id,
                         registration,
                         prepared.expect("matching defer was preflighted before moving captures"),
                         super::defer::NativeDeferParent::Root,
-                    )));
+                    );
+                    if !before.is_empty() {
+                        let mut after = std::collections::BTreeMap::new();
+                        for child in &batch.child_fibers {
+                            for (token, slot) in super::flow_fiber_line_handle_owners(child)? {
+                                if token.activation() != &activation_id {
+                                    after.insert(token, slot);
+                                }
+                            }
+                        }
+                        let received = self
+                            .dialogue_activations
+                            .inspect_parent_fiber_reconciliation(
+                                self.published_receiver_execution(),
+                                &before,
+                                &after,
+                                &crate::line_task::RuntimeHandleDropAuthorization::default(),
+                            )?;
+                        transaction.stage_received_handles(Some(received));
+                    }
+                    return Ok(Some(batch));
                 }
                 Some(RuntimeDeferUnwindStep::Skipped(id)) => {
+                    if !before.is_empty() {
+                        let mut drops = crate::line_task::RuntimeHandleDropAuthorization::default();
+                        drops.authorize_tokens(before.keys().cloned())?;
+                        let received = self
+                            .dialogue_activations
+                            .inspect_parent_fiber_reconciliation(
+                                self.published_receiver_execution(),
+                                &before,
+                                &std::collections::BTreeMap::new(),
+                                &drops,
+                            )?;
+                        transaction.stage_received_handles(Some(received));
+                        return Ok(None);
+                    }
                     if transaction
                         .line()
                         .deferred_registrations()
@@ -1156,7 +1210,7 @@ impl Engine {
                     pure_backend,
                 );
             }
-            let before = self.activation_local_handle_owners(&activation_id, frame)?;
+            let before = self.activation_local_handle_owners(&activation_id, frame, activation)?;
             let staged =
                 self.step_dialogue_execution(slot, None, input, events, pure_backend, None)?;
             let arrivals = slot.transaction_mut().take_result_arrivals();
@@ -1265,7 +1319,8 @@ impl Engine {
                 pure_backend,
             );
         }
-        let assignment_before = self.activation_local_handle_owners(&activation_id, frame)?;
+        let assignment_before =
+            self.activation_local_handle_owners(&activation_id, frame, activation)?;
         match operation {
             FlowOp::EnterScope { identity } => {
                 frame
@@ -1550,11 +1605,39 @@ impl Engine {
         &self,
         activation: &DialogueActivationId,
         frame: &DialogueActivationFrame,
+        line: &NativeDialogueActivationState,
     ) -> Result<
         std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
         DialogueExecutionError,
     > {
         let mut owners = std::collections::BTreeMap::new();
+        for (token, slot) in line.received_defer_slots(self.fiber.execution, activation)? {
+            owners.insert(
+                token,
+                RuntimeHandleOwnerSlot::parent_fiber(self.published_receiver_execution(), slot),
+            );
+        }
+        for scope in &frame.scopes {
+            for registration in &scope.deferred {
+                for (token, slot) in registration
+                    .packet
+                    .received_handle_slots(self.fiber.execution, activation)?
+                {
+                    if owners
+                        .insert(
+                            token,
+                            RuntimeHandleOwnerSlot::parent_fiber(
+                                self.published_receiver_execution(),
+                                slot,
+                            ),
+                        )
+                        .is_some()
+                    {
+                        return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                    }
+                }
+            }
+        }
         for (local, value) in frame.execution.env.bindings() {
             let slot = frame
                 .execution
@@ -1600,7 +1683,7 @@ impl Engine {
         DialogueExecutionError,
     > {
         let mut drops = frame.execution.env.take_assignment_discard_authorization();
-        let mut after = self.activation_local_handle_owners(activation_id, frame)?;
+        let mut after = self.activation_local_handle_owners(activation_id, frame, activation)?;
         if !drops.has_displaced_values() && before == &after && transition.is_none() {
             return Ok(None);
         }
@@ -1706,6 +1789,8 @@ impl Engine {
             RuntimeDeferOwner::LineRoot if frame.scopes.is_empty() => {}
             _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
         }
+        let source_slots =
+            super::defer::defer_source_slots(self.fiber.execution, &frame.execution, captures)?;
         let scoped_registration = super::defer::register_line_defer(
             &self.plan,
             &mut frame.execution.env,
@@ -1714,6 +1799,13 @@ impl Engine {
             outcome,
             captures,
             super::defer::NativeDeferCaptureOwner::Activation(owner_kind),
+            |handle, ordinal| {
+                self.dialogue_activations.inspect_received_defer_capture(
+                    self.published_receiver_execution(),
+                    handle,
+                    source_slots[ordinal],
+                )
+            },
         )?;
         if let Some(registration) = scoped_registration {
             frame
@@ -2968,7 +3060,8 @@ impl Engine {
 
         let id = *transaction.activation();
         let binding = transaction.frame().execution.env.source_function_context();
-        let before = self.activation_local_handle_owners(&id, transaction.frame())?;
+        let before =
+            self.activation_local_handle_owners(&id, transaction.frame(), transaction.line())?;
         let (image, mut admission) = self
             .inert_rollback_image_with_dialogue(
                 Some(transaction),
@@ -3061,7 +3154,11 @@ impl Engine {
         let transaction = slot.transaction();
         let activation = *transaction.activation();
         let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
-        let before = self.activation_local_handle_owners(&activation, transaction.frame())?;
+        let before = self.activation_local_handle_owners(
+            &activation,
+            transaction.frame(),
+            transaction.line(),
+        )?;
         let (image, mut admission) = self
             .inert_rollback_image_with_dialogue(
                 Some(transaction),
@@ -4450,7 +4547,9 @@ mod tests {
                 crate::value::RuntimeLocalReadMode::Move,
             )),
         );
-        let before = engine.activation_local_handle_owners(&id, frame).unwrap();
+        let before = engine
+            .activation_local_handle_owners(&id, frame, line)
+            .unwrap();
         let value = engine
             .evaluate_dialogue_expr(
                 &mut slot,

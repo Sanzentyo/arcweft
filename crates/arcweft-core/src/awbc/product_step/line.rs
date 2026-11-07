@@ -1409,6 +1409,8 @@ impl super::AwbcProductStepExecutor {
             return Ok(false);
         }
         let effective_exit = transaction.line().deferred_exit().unwrap_or(exit);
+        let mut received_before = BTreeMap::new();
+        let mut received_after = BTreeMap::new();
         let prepared_spawn = transaction
             .line()
             .deferred_registrations()
@@ -1431,9 +1433,58 @@ impl super::AwbcProductStepExecutor {
                 )
             })
             .transpose()?;
-        let prepared = transaction
-            .line_mut()
-            .inspect_next_deferred(&activation, exit)?;
+        if let Some(packet) = transaction.line().deferred_registrations().last() {
+            received_before =
+                packet.received_handle_slots(self.facade_fiber.execution, &activation)?;
+            if let Some(spawn) = &prepared_spawn {
+                for (value, slot) in packet
+                    .captures()
+                    .iter()
+                    .zip(spawn.capture_slots(self.facade_fiber.execution))
+                {
+                    for handle in unique_line_handles(value)? {
+                        if handle.token().activation() != &activation
+                            && received_after
+                                .insert(handle.token().clone(), slot)
+                                .is_some()
+                        {
+                            return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                        }
+                    }
+                }
+            }
+        }
+        let mut received_drops = crate::line_task::RuntimeHandleDropAuthorization::default();
+        if prepared_spawn.is_none() {
+            received_drops.authorize_tokens(received_before.keys().cloned())?;
+        }
+        let received = (!received_before.is_empty())
+            .then(|| {
+                self.dialogues.inspect_parent_fiber_reconciliation(
+                    self.facade_fiber.execution,
+                    &received_before,
+                    &received_after,
+                    &received_drops,
+                )
+            })
+            .transpose()?;
+        let prepared = transaction.line_mut().inspect_next_deferred_with(
+            &activation,
+            exit,
+            |handle, registration, ordinal| {
+                self.dialogues.inspect_received_defer_capture(
+                    self.facade_fiber.execution,
+                    handle,
+                    RuntimeOwnedSlotId::LineDeferCapture {
+                        execution: self.facade_fiber.execution,
+                        activation,
+                        registration,
+                        ordinal,
+                    },
+                )
+            },
+        )?;
+        transaction.stage_received_handles(received);
         let Some(step) = transaction
             .line_mut()
             .commit_next_deferred_prepared(prepared)
@@ -1683,8 +1734,12 @@ impl super::AwbcProductStepExecutor {
                 host_result_take: None,
             });
         }
-        let before_owners =
-            activation_fiber_handle_owners(self.facade_fiber.execution, &activation, before)?;
+        let before_owners = activation_fiber_handle_owners(
+            self.facade_fiber.execution,
+            &activation,
+            before,
+            transaction.line(),
+        )?;
         let receives_handles = before_owners
             .values()
             .any(|owner| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber { .. }));
@@ -3033,13 +3088,19 @@ impl super::AwbcProductStepExecutor {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
             for handle in unique_line_handles(value)? {
-                if handle.token().activation() != activation
-                    || !deferred_tokens.insert(handle.token().clone())
-                {
+                if !deferred_tokens.insert(handle.token().clone()) {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
                 let owner =
                     activation_register_owner(self.facade_fiber.execution, fiber, *register)?;
+                if handle.token().activation() != activation {
+                    self.dialogues.inspect_received_defer_capture(
+                        self.facade_fiber.execution,
+                        &handle,
+                        owner,
+                    )?;
+                    continue;
+                }
                 let lease = line
                     .ledger()
                     .lease(handle.token())
@@ -3050,7 +3111,20 @@ impl super::AwbcProductStepExecutor {
             }
         }
         let capture_values = captures.iter().map(|(_, value)| value).collect::<Vec<_>>();
-        let prepared = line.inspect_deferred_registration_refs(&capture_values)?;
+        let prepared =
+            line.inspect_deferred_registration_with(&capture_values, |handle, ordinal| {
+                let slot = activation_register_owner(
+                    self.facade_fiber.execution,
+                    fiber,
+                    captures[ordinal].0,
+                )
+                .map_err(|_| LineRuntimeError::InvalidActivationOperation)?;
+                self.dialogues.inspect_received_defer_capture(
+                    self.facade_fiber.execution,
+                    handle,
+                    slot,
+                )
+            })?;
         let yielded = fiber.validate_yielded_instruction(cursor)?;
         fiber.commit_yielded_instruction_prepared(yielded);
         line.register_deferred_prepared(
@@ -3760,8 +3834,12 @@ impl super::AwbcProductStepExecutor {
         }
         if let Some(scope) = fiber.active_frame()?.scopes.last() {
             let scope_id = scope.id;
-            let before_owners =
-                activation_fiber_handle_owners(self.facade_fiber.execution, &activation, fiber)?;
+            let before_owners = activation_fiber_handle_owners(
+                self.facade_fiber.execution,
+                &activation,
+                fiber,
+                line,
+            )?;
             if !scope.deferred.defers.is_empty() {
                 let mut batch = empty_activation_batch(self);
                 let cursor = fiber.cursor;
@@ -3869,7 +3947,7 @@ impl super::AwbcProductStepExecutor {
         };
         let scope_id = scope.id;
         let before_owners =
-            activation_fiber_handle_owners(self.facade_fiber.execution, &activation, fiber)?;
+            activation_fiber_handle_owners(self.facade_fiber.execution, &activation, fiber, line)?;
         if scope.deferred.defer_inflight.is_some() {
             return Ok((true, None));
         }
@@ -4078,7 +4156,7 @@ impl super::AwbcProductStepExecutor {
         registry_change: Option<&crate::effect::RuntimeRegistryLineChange<'_>>,
     ) -> Result<PreparedActivationFiberReconciliation, ProductStepError> {
         let mut after =
-            activation_fiber_handle_owners(self.facade_fiber.execution, activation, fiber)?;
+            activation_fiber_handle_owners(self.facade_fiber.execution, activation, fiber, line)?;
         if let Some(VmObservation::LineOperation { cursor, args, .. }) = observation {
             let frame = fiber.active_frame()?.instance;
             for (ordinal, argument) in args.iter().enumerate() {
@@ -4523,8 +4601,9 @@ fn activation_fiber_handle_owners(
     execution: crate::runtime_id::ExecutionInstanceId,
     activation: &DialogueActivationId,
     fiber: &FiberState,
+    line: &RuntimeDialogueActivationState<AwbcTypeId>,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>, ProductStepError> {
-    Ok(physical_fiber_line_handle_slots(execution, fiber)?
+    let mut owners = physical_fiber_line_handle_slots(execution, fiber)?
         .into_iter()
         .map(|(token, slot)| {
             let owner = match slot {
@@ -4537,7 +4616,16 @@ fn activation_fiber_handle_owners(
             };
             (token, owner)
         })
-        .collect::<BTreeMap<_, _>>())
+        .collect::<BTreeMap<_, _>>();
+    for (token, slot) in line.received_defer_slots(execution, activation)? {
+        if owners
+            .insert(token, RuntimeHandleOwnerSlot::parent_fiber(execution, slot))
+            .is_some()
+        {
+            return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+        }
+    }
+    Ok(owners)
 }
 
 /// The same physical slots back live reconciliation and inert admission.

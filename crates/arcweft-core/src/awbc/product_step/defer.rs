@@ -113,15 +113,14 @@ impl AwbcProductStepExecutor {
     > {
         let mut owners = BTreeMap::new();
         for fiber in std::iter::once(&self.fiber)
-            .chain(
-                self.child_fibers
-                    .iter()
-                    .filter(|child| child.owner.line_activation().is_none())
-                    .map(|child| &child.fiber),
-            )
+            .chain(self.child_fibers.iter().map(|child| &child.fiber))
             .chain(detached)
         {
             for (token, slot) in line::product_fiber_handle_owners(PRODUCT_EXECUTION_ID, fiber)? {
+                if matches!(fiber.presentation_bank(), crate::runtime_id::RuntimePresentationBankId::Dialogue { activation } if token.activation() == &activation)
+                {
+                    continue;
+                }
                 if owners.insert(token, slot).is_some() {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }

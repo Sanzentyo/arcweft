@@ -474,6 +474,25 @@ pub struct RuntimeHandleLease {
 }
 
 impl RuntimeHandleLease {
+    pub(crate) fn validate_deferred_capture(
+        &self,
+        handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        owner: &RuntimeHandleOwnerSlot,
+    ) -> Result<(), LineRuntimeError> {
+        if self.owner() != owner {
+            return Err(LineRuntimeError::WrongOwner);
+        }
+        if self.resource().kind() != handle.kind() {
+            return Err(LineRuntimeError::WrongOpaqueProducer);
+        }
+        if self.state() == RuntimeHandleLeaseState::Released
+            || (matches!(self.resource(), RuntimeHandleResource::StageActor(_))
+                && self.state() == RuntimeHandleLeaseState::Allocating)
+        {
+            return Err(LineRuntimeError::InvalidDeferredTransition);
+        }
+        Ok(())
+    }
     pub(crate) fn validate_active_stage_actor(
         &self,
         character: &CharacterId,
@@ -1009,9 +1028,24 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self,
         captures: &[&RuntimeValue],
     ) -> Result<RuntimePreparedDeferredRegistration, LineRuntimeError> {
+        self.inspect_deferred_registration_with(captures, |_, _| {
+            Err(LineRuntimeError::UnknownHandle)
+        })
+    }
+
+    /// The executor authenticates received captures against their original
+    /// issuer and exact source slot; this activation only owns its own leases.
+    pub(crate) fn inspect_deferred_registration_with(
+        &self,
+        captures: &[&RuntimeValue],
+        mut inspect_received: impl FnMut(
+            &crate::value::ownership::RuntimeAffineLineHandle,
+            usize,
+        ) -> Result<(), LineRuntimeError>,
+    ) -> Result<RuntimePreparedDeferredRegistration, LineRuntimeError> {
         let prepared = self.prepare_deferred_identity()?;
         let mut tokens = std::collections::BTreeSet::new();
-        for capture in captures {
+        for (ordinal, capture) in captures.iter().enumerate() {
             for handle in capture
                 .line_handle_projection()
                 .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
@@ -1019,10 +1053,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 if !tokens.insert(handle.token().clone()) {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence);
                 }
-                let lease = self
-                    .ledger
-                    .lease(handle.token())
-                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                let Some(lease) = self.ledger.lease(handle.token()) else {
+                    inspect_received(&handle, ordinal)?;
+                    continue;
+                };
                 if lease.resource().kind() != handle.kind() {
                     return Err(LineRuntimeError::WrongOpaqueProducer);
                 }
@@ -1105,6 +1139,21 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         activation: &DialogueActivationId,
         exit: ScopeExit,
     ) -> Result<RuntimePreparedNextDeferred, LineRuntimeError> {
+        self.inspect_next_deferred_with(activation, exit, |_, _, _| {
+            Err(LineRuntimeError::WrongActivation)
+        })
+    }
+
+    pub(crate) fn inspect_next_deferred_with(
+        &mut self,
+        activation: &DialogueActivationId,
+        exit: ScopeExit,
+        inspect_received: impl FnMut(
+            &crate::value::ownership::RuntimeAffineLineHandle,
+            RuntimeDeferRegistrationId,
+            u32,
+        ) -> Result<(), LineRuntimeError>,
+    ) -> Result<RuntimePreparedNextDeferred, LineRuntimeError> {
         if self.frame_released {
             return Err(LineRuntimeError::ActivationFrameReleased);
         }
@@ -1129,6 +1178,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             registration.captures(),
             exit,
             RuntimeHandleOwnerSlot::LineScope,
+            inspect_received,
         )?;
         let commands = if let Some(queue) = transition.commands.take() {
             let before = RuntimeDialogueOutcomeJournal::capture(self);
@@ -1235,6 +1285,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             captures,
             exit,
             owner,
+            |_, _, _| Err(LineRuntimeError::WrongActivation),
         )?;
         match stage.commands {
             Some(commands) => self
@@ -1264,18 +1315,31 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         captures: &[RuntimeValue],
         exit: ScopeExit,
         owner: RuntimeHandleOwnerSlot,
+        mut inspect_received: impl FnMut(
+            &crate::value::ownership::RuntimeAffineLineHandle,
+            RuntimeDeferRegistrationId,
+            u32,
+        ) -> Result<(), LineRuntimeError>,
     ) -> Result<RuntimeDeferredRegistrationStage, LineRuntimeError> {
         let mut tokens = std::collections::BTreeSet::new();
-        for capture in captures {
+        let mut local_tokens = std::collections::BTreeSet::new();
+        for (ordinal, capture) in captures.iter().enumerate() {
             for handle in capture
                 .line_handle_projection()
                 .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
             {
-                if handle.token().activation() != activation
-                    || !tokens.insert(handle.token().clone())
-                {
+                if !tokens.insert(handle.token().clone()) {
                     return Err(LineRuntimeError::InvalidDeferredTransition);
                 }
+                if handle.token().activation() != activation {
+                    inspect_received(
+                        &handle,
+                        id,
+                        u32::try_from(ordinal).map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                    )?;
+                    continue;
+                }
+                local_tokens.insert(handle.token().clone());
                 let lease = self
                     .ledger
                     .lease(handle.token())
@@ -1289,7 +1353,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         let (commands, decision) = if outcome_filter.matches(exit) {
             let tag =
                 LineTaskWorkTag::activation(activation.clone(), super::LineTaskWork::Defer(id));
-            for token in &tokens {
+            for token in &local_tokens {
                 ledger.transfer(
                     token,
                     &owner,
@@ -1299,7 +1363,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             (None, RuntimeScopedDeferDecision::Run)
         } else {
             let mut queue = RuntimeCommandQueue::new(activation.clone(), self.command_sequence);
-            for token in &tokens {
+            for token in &local_tokens {
                 ledger.drop_owned(token, &owner, &mut queue)?;
             }
             (Some(queue), RuntimeScopedDeferDecision::Skipped)
@@ -5225,6 +5289,25 @@ pub enum LineRuntimeError {
 }
 
 impl<T, V> RuntimeDialogueActivationState<T, V> {
+    pub(crate) fn received_defer_slots(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        activation: &DialogueActivationId,
+    ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, LineRuntimeError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        let mut slots = BTreeMap::new();
+        for packet in &self.deferred {
+            for (token, slot) in packet.received_handle_slots(execution, activation)? {
+                if slots.insert(token, slot).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                }
+            }
+        }
+        Ok(slots)
+    }
+
     pub(crate) fn retained_registry_line_handles(
         &self,
     ) -> Result<
@@ -5713,7 +5796,13 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
     where
         V: crate::value::RuntimeStoredValue,
     {
-        self.restore_admit_with_deferred_child(activation, None, |_, _, _| false, |_, _| false)
+        self.restore_admit_with_deferred_child(
+            activation,
+            None,
+            |_, _, _| false,
+            |_, _| false,
+            |_, _, _| false,
+        )
     }
 
     pub(crate) fn restore_admit_with_deferred_child(
@@ -5728,6 +5817,11 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         mut validate_received_result: impl FnMut(
             &crate::value::ownership::RuntimeAffineLineHandle,
             bool,
+        ) -> bool,
+        mut validate_received_defer: impl FnMut(
+            &crate::value::ownership::RuntimeAffineLineHandle,
+            RuntimeDeferRegistrationId,
+            u32,
         ) -> bool,
     ) -> Result<(), LineRuntimeError>
     where
@@ -5929,16 +6023,25 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             }
         }
         for registration in &self.deferred {
-            for capture in registration.captures() {
+            for (ordinal, capture) in registration.captures().iter().enumerate() {
                 for handle in capture
                     .borrowed_view()
                     .line_handle_projection()
                     .map_err(|_| LineRuntimeError::InvalidRestoredDeferredState)?
                 {
-                    if handle.token().activation() != activation
-                        || !scheduled_capture_tokens.insert(handle.token().clone())
-                    {
+                    if !scheduled_capture_tokens.insert(handle.token().clone()) {
                         return Err(LineRuntimeError::InvalidRestoredDeferredState);
+                    }
+                    if handle.token().activation() != activation {
+                        if !validate_received_defer(
+                            &handle,
+                            registration.id(),
+                            u32::try_from(ordinal)
+                                .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                        ) {
+                            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+                        }
+                        continue;
                     }
                     let capture_lease = self
                         .ledger
@@ -6406,6 +6509,7 @@ mod tests {
                 Some((newest.id(), defer_site(1))),
                 |_, _, _| false,
                 |_, _| false,
+                |_, _, _| false,
             ),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
@@ -6415,6 +6519,7 @@ mod tests {
                 Some((newest.id(), newest.site())),
                 |_, _, _| false,
                 |_, _| false,
+                |_, _, _| false,
             )
             .expect("the exact saved child owner admits an in-flight activation");
         state

@@ -2243,6 +2243,13 @@ impl AwbcProductExecutorSnapshot {
             .dialogues
             .try_visit_active(|activation, active, shared_line| {
 
+            for (token, slot) in shared_line.received_defer_slots(super::PRODUCT_EXECUTION_ID, activation)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() })? {
+                if received_slots.insert(token, slot).is_some() {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot { message: "received defer capture occurs in multiple slots".into() });
+                }
+            }
+
             active.admit_retained(program, shared_line, admission).map_err(|error| {
                 AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
             })?;
@@ -2258,6 +2265,14 @@ impl AwbcProductExecutorSnapshot {
                 }
             }
             let children = dialogue_children.get(activation).map(Vec::as_slice).unwrap_or_default();
+            for child in children {
+                for (token, slot) in super::line::product_fiber_handle_owners(super::PRODUCT_EXECUTION_ID, &child.fiber)
+                    .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() })? {
+                    if token.activation() != activation && received_slots.insert(token, slot).is_some() {
+                        return Err(AwbcProductStepBuildError::RestoreSnapshot { message: "received handle occurs in multiple line child slots".into() });
+                    }
+                }
+            }
             let reducer = active.line_task();
             let content = program
                 .content_units
@@ -2472,6 +2487,7 @@ impl AwbcProductExecutorSnapshot {
                     .child_scope_affine_line_handle_tokens()
                     .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
                     .into_iter()
+                    .filter(|token| token.activation() == activation)
                     .map(|token| {
                         if !all_child_tokens.insert(token.clone()) {
                             return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -2530,6 +2546,7 @@ impl AwbcProductExecutorSnapshot {
                     .child_scope_affine_line_handle_tokens()
                     .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
                     .into_iter()
+                    .filter(|token| token.activation() == activation)
                     .map(|token| {
                         if !all_child_tokens.insert(token.clone()) {
                             return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -2676,6 +2693,7 @@ impl AwbcProductExecutorSnapshot {
                     .child_scope_affine_line_handle_tokens()
                     .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
                     .into_iter()
+                    .filter(|token| token.activation() == activation)
                     .map(|token| {
                         if !all_child_tokens.insert(token.clone()) {
                             return Err(AwbcProductStepBuildError::RestoreSnapshot {

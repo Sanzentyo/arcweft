@@ -888,18 +888,25 @@ fn flow_fiber_line_handle_owners(
         }
     }
     for (frame_index, entry) in fiber.frame.control_stack.iter().enumerate() {
-        if fiber.owner.owns_flow_defers()
-            && let FlowControlStackEntryKind::Scope { defers, .. } = &entry.kind
-        {
+        if let FlowControlStackEntryKind::Scope { defers, .. } = &entry.kind {
             for registration in &defers.deferred {
                 for (ordinal, value) in registration.packet.captures().iter().enumerate() {
                     let ordinal = u32::try_from(ordinal)
                         .map_err(|_| crate::line_task::LineRuntimeError::OwnedSlotOverflow)?;
-                    let owner = crate::value::ownership::RuntimeOwnedSlotId::NativeDeferCapture {
-                        execution: fiber.execution,
-                        fiber: fiber.persistent_id,
-                        registration: registration.packet.id(),
-                        ordinal,
+                    let owner = if let Some(activation) = fiber.owner.dialogue_activation() {
+                        crate::value::ownership::RuntimeOwnedSlotId::LineDeferCapture {
+                            execution: fiber.execution,
+                            activation: *activation,
+                            registration: registration.packet.id(),
+                            ordinal,
+                        }
+                    } else {
+                        crate::value::ownership::RuntimeOwnedSlotId::NativeDeferCapture {
+                            execution: fiber.execution,
+                            fiber: fiber.persistent_id,
+                            registration: registration.packet.id(),
+                            ordinal,
+                        }
                     };
                     for handle in value
                         .view()
@@ -980,6 +987,31 @@ fn flow_fiber_line_handle_owners(
         }
     }
     Ok(owners)
+}
+
+/// The line's ledger owns only locally issued handles outside pending packets.
+/// Received handles are reconciled through the published issuer inventory.
+fn line_child_owned_tokens(
+    fiber: &FlowFiber,
+) -> Result<BTreeSet<crate::runtime_id::RuntimeLineHandleToken>, crate::line_task::LineRuntimeError>
+{
+    let activation = fiber
+        .owner
+        .dialogue_activation()
+        .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
+    let physical = flow_fiber_line_handle_owners(fiber)?;
+    Ok(flow_fiber_line_handle_tokens(fiber)?
+        .into_iter()
+        .filter(|token| {
+            token.activation() == activation
+                && !physical.get(token).is_some_and(|slot| {
+                    matches!(
+                        slot,
+                        crate::value::ownership::RuntimeOwnedSlotId::LineDeferCapture { .. }
+                    )
+                })
+        })
+        .collect())
 }
 
 /// Opaque control frame retained by the native executor. Its kind and mutation
@@ -4610,11 +4642,10 @@ impl Engine {
         // A suspended Dialogue owns its reconciliation in the activation
         // transaction. Ordinary opcodes (including initial handoff) use the
         // flow transaction; applying both would reconcile the same move twice.
-        let published_before = (self.child_fibers[index].owner.owns_flow_defers()
-            && !matches!(
-                self.child_fibers[index].frame.status,
-                FlowFiberStatus::Dialogue(_)
-            ))
+        let published_before = (!matches!(
+            self.child_fibers[index].frame.status,
+            FlowFiberStatus::Dialogue(_)
+        ))
         .then(|| self.published_line_handle_owners(None))
         .transpose()?;
         let mut child = self
@@ -4628,7 +4659,7 @@ impl Engine {
         }
         let owner = child.owner.clone();
         let mut before_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
-            .then(|| flow_fiber_line_handle_tokens(&child))
+            .then(|| line_child_owned_tokens(&child))
             .transpose()?;
         assert!(self.parked_main.is_none(), "child selection cannot nest");
         self.parked_main = Some(std::mem::replace(&mut self.fiber, child));
@@ -4673,17 +4704,22 @@ impl Engine {
             .expect("selected child retains its main owner");
         let mut child = std::mem::replace(&mut self.fiber, main);
         let mut live_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
-            .then(|| flow_fiber_line_handle_tokens(&child))
+            .then(|| line_child_owned_tokens(&child))
             .transpose()?;
         let mut drops = child.frame.env.take_assignment_discard_authorization();
         drops.set_boundary(drop_policy)?;
         if let Some(before) = published_before {
             let after = self.published_line_handle_owners(Some(&child))?;
+            let published_drops = drops.for_tokens(|token| {
+                owner
+                    .dialogue_activation()
+                    .is_none_or(|activation| token.activation() != activation)
+            });
             let receipt = self.dialogue_activations.reconcile_parent_fiber(
                 self.published_receiver_execution(),
                 &before,
                 &after,
-                &drops,
+                &published_drops,
             )?;
             output
                 .requests
@@ -4743,7 +4779,7 @@ impl Engine {
                         return Err(crate::line_task::LineRuntimeError::WrongOwner.into());
                     }
                 }
-                live_tokens = Some(flow_fiber_line_handle_tokens(&child)?);
+                live_tokens = Some(line_child_owned_tokens(&child)?);
             }
             let change = line_registry_mutation
                 .as_ref()

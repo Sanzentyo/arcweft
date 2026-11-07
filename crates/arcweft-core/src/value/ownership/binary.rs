@@ -49,6 +49,20 @@ pub(super) fn encode_owned_slot(slot: RuntimeOwnedSlotId) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.push(slot.canonical_tag());
     match slot {
+        RuntimeOwnedSlotId::LineDeferCapture {
+            execution,
+            activation,
+            registration,
+            ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            bytes.extend_from_slice(activation.artifact().as_bytes());
+            push_raw_u64(&mut bytes, activation.owner_fiber().get());
+            push_u32(&mut bytes, activation.content().get());
+            push_raw_u64(&mut bytes, activation.occurrence());
+            push_u64(&mut bytes, registration.get());
+            push_raw_u32(&mut bytes, ordinal);
+        }
         RuntimeOwnedSlotId::NativeDialogueLocal {
             execution,
             activation,
@@ -320,11 +334,24 @@ pub(super) fn decode_owned_slot(
 ) -> Result<RuntimeOwnedSlotId, RuntimeOwnershipBinaryError> {
     let mut reader = Reader::new(bytes);
     let tag = reader.u8()?;
-    if tag > 21 {
+    if tag > 22 {
         return Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag });
     }
     let execution = ExecutionInstanceId::from_allocated(reader.nonzero_u64()?);
     let slot = match tag {
+        22 => RuntimeOwnedSlotId::LineDeferCapture {
+            execution,
+            activation: crate::runtime_id::DialogueActivationId::new(
+                crate::effect::RuntimeArtifactFingerprint::try_from_bytes(reader.take()?)?,
+                RuntimePersistentFiberId::from_allocated(reader.u64()?),
+                crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                    reader.nonzero_u32()?,
+                ),
+                reader.u64()?,
+            ),
+            registration: RuntimeDeferRegistrationId::from_allocated(reader.nonzero_u64()?),
+            ordinal: reader.u32()?,
+        },
         20 => RuntimeOwnedSlotId::NativeDialogueLocal {
             execution,
             activation: crate::runtime_id::DialogueActivationId::new(
@@ -701,6 +728,30 @@ mod tests {
             activation,
             local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(5).unwrap()),
         };
+        let deferred = RuntimeOwnedSlotId::LineDeferCapture {
+            execution,
+            activation,
+            registration: RuntimeDeferRegistrationId::from_allocated(NonZeroU64::new(6).unwrap()),
+            ordinal: 7,
+        };
+        let deferred_bytes = encode_owned_slot(deferred);
+        assert_eq!(deferred_bytes.len(), 73);
+        assert_eq!(deferred_bytes[0], 22);
+        assert_eq!(decode_owned_slot(&deferred_bytes).unwrap(), deferred);
+        assert_eq!(
+            serde_json::from_str::<RuntimeOwnedSlotId>(&serde_json::to_string(&deferred).unwrap())
+                .unwrap(),
+            deferred
+        );
+        for end in 0..deferred_bytes.len() {
+            assert!(decode_owned_slot(&deferred_bytes[..end]).is_err());
+        }
+        let mut trailing = deferred_bytes.clone();
+        trailing.push(0);
+        assert!(matches!(
+            decode_owned_slot(&trailing),
+            Err(RuntimeOwnershipBinaryError::TrailingBytes)
+        ));
         let encoded = encode_owned_slot(local);
         assert_eq!(encoded.len(), 69);
         assert_eq!(&encoded[..9], &[20, 1, 0, 0, 0, 0, 0, 0, 0]);
@@ -888,8 +939,8 @@ mod tests {
     #[test]
     fn binary_decoders_reject_unknown_zero_truncated_and_trailing_forms() {
         assert!(matches!(
-            decode_owned_slot(&[22]),
-            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 22 })
+            decode_owned_slot(&[23]),
+            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 23 })
         ));
         let mut invalid_defer_registration = encode_owned_slot(self::json(
             r#"{"kind":"native_defer_capture","execution":"1","fiber":2,"registration":"3","ordinal":4}"#,
