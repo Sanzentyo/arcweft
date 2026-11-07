@@ -15294,3 +15294,15 @@ cold build と公開 API fixture のコンパイルを含む実時間、slow 表
 全 CLI check は未再実行で、旧 Source の705 PASS／7 FAILを今回の225件で解消済みとは判定しない。
 この matrix は通常 defer の残る機能条件を完了扱いせず、Generic Match などの受入済み境界も戻さない。
 [全 filter・feature 比較・実測・入力照合・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Deferred runtime grammar and suspended cleanup
+
+Source **1d60c0bcd12d0142f2eb1cc713115d495bfc5486**、parent **1c1f4fbb10bbceb610f8da4ce5a71d40a4897f64** を既存 main へ通常 commit/push し、tree・14 blob・完全差分の一致を照合した。
+最初の3ケースは0 PASS／3 FAIL。登録済み defer を持つ待機 Flow の AWBC が OneOp を返し、callback の wait は通常関数の Call として解析されて型情報を失っていた。意味解析の独立再現1件の失敗も保持した。
+構文所有者で runtime value grammar を保持し、入れ子の通常 callable／lazy computation は自身の文法に戻す。Sema の型を埋める fallback は追加していない。
+後続の37件では35 PASS／2 FAIL。Native の入れ子 cleanup の待機判定を共通 frame-progress 条件へ揃え、別の新規 fixture に不足した control.suspend の効果宣言を訂正した。効果検査は維持した。
+最終の Source 37件と Syntax 747件は全通過。Source の scoped_defer は従来8件を保持して13件へ拡張し、Native／AWBC で40 ms＋60 msの待機、戻り値の保留、途中の0 op、完了後の再実行なしを確認した。AWBC は各ステップ公開保存から復元した。
+Core の53逆依存と、その外にあった Syntax／HIR の排他的補完を合わせ、全 feature 解決グラフ上の55パッケージを選択した。Windows の workspace 既定 feature 構成で実テスト51パッケージ、合計8,956 PASS／0 FAIL／26 SKIP。単体の37件／747件はこの合計へ再加算しない。
+CLI unit/bin 196件と規定6 integration 29件、Core doctest 80件は全通過。全 target／全 feature の workspace check／Clippy、変更13 Rust path の fmt、構造ゲートは終了0、blocking violation 0。警告とサイズ review trigger は原本へ保持した。
+既存 WIP を含む3,648入力と Cargo 100入力は drift 0。元の tracked 12 path と untracked 6 file を保持した。Generic Match と以前の Native 受入境界を未完了へ戻さず、通常 defer の残る機能条件は current-status.md の一行で追跡する。
+[初回失敗・訂正理由・全コマンド・公開 SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

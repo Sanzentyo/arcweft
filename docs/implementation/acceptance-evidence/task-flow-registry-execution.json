@@ -25933,5 +25933,725 @@
       ],
       "sha256": "5a2fff828d459d4b46adc1324723f8baf4c6a035f7b54b3a8468c084134c9ad3"
     }
+  },
+"ordinaryFlowDeferredSuspension": {
+    "version": 1,
+    "recordedAt": "2026-11-07T08:26:26.8519802Z",
+    "sourceCommit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+    "parent": "1c1f4fbb10bbceb610f8da4ce5a71d40a4897f64",
+    "publication": {
+      "version": 1,
+      "commit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+      "parent": "1c1f4fbb10bbceb610f8da4ce5a71d40a4897f64",
+      "tree": "193469fe0132201e12c4086330e748b45f5e05f4",
+      "remote": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "blob": "9d75b0ab4f6aca85df1c331dc06d18bb03a79ec0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "f12d1cc1e4d8063f2ab80e6621698fde5fdbe89c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "blob": "bc8c6aa0c02a40bc25d8eb65f1d85080dad804ce"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/program_task/retirement.rs",
+          "blob": "3680923ddb3f3e23fb6ffa840a90b847c492a72c"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "62065327efd5576726475507e9005b3dc24543d0"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/frame_progress.rs",
+          "blob": "186cbfd3d44929572e1a2e62fff4e2e1a50bfddb"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs",
+          "blob": "4cb36115bcd242ccd048bea73c09ba21b653f1a2"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/cursor.rs",
+          "blob": "4c9a008d5208d3f5f9b1333ccc92c50d9f8b78ff"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/expression.rs",
+          "blob": "985dec4c5ed9381cd150241159327724c0badd26"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/expression/call_arguments.rs",
+          "blob": "38b4ec28e1ead8b6a057e06d433315546d210aff"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/expression/control.rs",
+          "blob": "85d990465ec29c814bdba537a4583ea4efe5190f"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/predicate_proof_tests.rs",
+          "blob": "3443439812aacfb28c89f568276ee4fcc8de6686"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/statement.rs",
+          "blob": "40849446408096e8e86f09cc7a2d0cf6d412806a"
+        },
+        {
+          "path": "docs/01-language/dialogue-calls-scopes-cancellation.md",
+          "blob": "627e28f822ee8890a4906ac0d8d38667c159d642"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "ab03cfb13333bd3763798bb2f68bce1d498f9ac871952a0f0b2fe083a5e3c8af",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T07:54:31.6218396Z"
+    },
+    "behavior": "Deferred blocks own runtime value grammar, including Duration waits, independently of the outer declaration. Nested ordinary callables and lazy computations keep their own grammar. Registered data is not runnable work. Native and AWBC parents pinned by inflight cleanup are blocked until the real child resumes. Original continuations, return values, deadlines and captures remain with their admitted owners.",
+    "reproductions": [
+      {
+        "failed": 3,
+        "log": "awbc-defer-runnable-20261107.reproduction.log",
+        "passed": 0,
+        "skipped": 8,
+        "finding": "AWBC returned OneOp with zero executed operations for a waiting Flow with a registered defer. Two callback-wait sources failed final typing."
+      },
+      {
+        "failed": 1,
+        "log": "awbc-defer-runnable-20261107.sema-reproduction.log",
+        "passed": 0,
+        "skipped": 1384,
+        "finding": "The missing typed expression was a Call. Deferred blocks selected ordinary-function grammar and parsed wait as a call instead of a Wait statement."
+      },
+      {
+        "failed": 2,
+        "log": "awbc-defer-runnable-20261107.source.log",
+        "passed": 35,
+        "skipped": 0,
+        "finding": "After the grammar repair, the nested callback test exposed Native OneOp while all cleanup descendants were waiting. The other failure was the new relay fixture omitting control.suspend from its declared effect upper bound; that fixture was corrected, with effect checking preserved."
+      }
+    ],
+    "focusedSource": {
+      "receipt": {
+        "version": 1,
+        "command": "cargo nextest run --locked -p arcweft-compiler --test scoped_defer --test flow_wait --test flow_effects --no-tests fail --no-fail-fast",
+        "exitCode": 0,
+        "endedAt": "2026-11-07T07:49:25.621828Z"
+      },
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "summary": "     Summary [   1.339s] 37 tests run: 37 passed, 0 skipped"
+    },
+    "syntax": {
+      "receipt": {
+        "version": 1,
+        "name": "syntax-all",
+        "command": "cargo nextest run --locked -p arcweft-lang-syntax --lib --no-tests fail --no-fail-fast",
+        "exitCode": 0,
+        "startedAt": "2026-11-07T07:50:00.9205875Z",
+        "endedAt": "2026-11-07T07:50:36.0776928Z",
+        "log": "awbc-defer-runnable-20261107.syntax-all.log"
+      },
+      "passed": 747,
+      "failed": 0,
+      "skipped": 0,
+      "summary": "     Summary [  27.948s] 747 tests run: 747 passed, 0 skipped"
+    },
+    "graph": {
+      "cargoInputs": 100,
+      "features": "Windows workspace default test composition; all-feature resolved graph supplies the conservative reverse closure.",
+      "cargoDrift": 0,
+      "resolvedUnionPackages": 55,
+      "coreReversePackages": 53,
+      "syntaxReversePackages": 25,
+      "reusedMetadata": "function-scope-20261107.metadata-all.json",
+      "extraOutsideCore": [
+        {
+          "name": "arcweft-lang-hir",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-hir#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-syntax",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-syntax#0.1.0"
+        }
+      ]
+    },
+    "nonCli": {
+      "failed": 0,
+      "passed": 8956,
+      "syntaxComplement": {
+        "receipt": {
+          "version": 1,
+          "sourceCommit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+          "filter": "rdeps(=arcweft-lang-syntax) & not rdeps(=arcweft-core)",
+          "listCommand": "cargo nextest list --locked --workspace --lib --tests --exclude arcweft-cli -E rdeps(=arcweft-lang-syntax) & not rdeps(=arcweft-core) --message-format json",
+          "listArguments": [
+            "nextest",
+            "list",
+            "--locked",
+            "--workspace",
+            "--lib",
+            "--tests",
+            "--exclude",
+            "arcweft-cli",
+            "-E",
+            "rdeps(=arcweft-lang-syntax) & not rdeps(=arcweft-core)",
+            "--message-format",
+            "json"
+          ],
+          "command": "cargo nextest run --locked --workspace --lib --tests --exclude arcweft-cli -E rdeps(=arcweft-lang-syntax) & not rdeps(=arcweft-core) --no-tests fail --no-fail-fast",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "--workspace",
+            "--lib",
+            "--tests",
+            "--exclude",
+            "arcweft-cli",
+            "-E",
+            "rdeps(=arcweft-lang-syntax) & not rdeps(=arcweft-core)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "listExitCode": 0,
+          "filterMatchedTests": 1729,
+          "ignoredFilterMatches": 0,
+          "exitCode": 0,
+          "sourceInputCount": 3648,
+          "sourceDrift": 0,
+          "summary": [
+            "     Summary [ 176.064s] 1729 tests run: 1729 passed (1 slow), 8 skipped"
+          ],
+          "startedAt": "2026-11-07T08:22:19.5305976Z",
+          "endedAt": "2026-11-07T08:25:29.1224675Z"
+        },
+        "passed": 1729,
+        "failed": 0,
+        "skipped": 8,
+        "summary": "     Summary [ 176.064s] 1729 tests run: 1729 passed (1 slow), 8 skipped"
+      },
+      "actualExecutedPackages": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-character-view",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-hir",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "explanation": "The Core filter and Syntax-minus-Core filter are disjoint under the same workspace Cargo selection. Syntax/HIR were outside the 53-package Core closure, bringing the resolved union to 55. Isolated Source 37, Syntax 747 and Sema diagnosis runs are retained separately and not added to this total.",
+      "skipped": 26,
+      "core": {
+        "receipt": {
+          "version": 1,
+          "sourceCommit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+          "name": "reverse",
+          "command": "cargo nextest run --locked --workspace --lib --tests --exclude arcweft-cli -E rdeps(=arcweft-core) --no-tests fail --no-fail-fast",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "--workspace",
+            "--lib",
+            "--tests",
+            "--exclude",
+            "arcweft-cli",
+            "-E",
+            "rdeps(=arcweft-core)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputCount": 3648,
+          "sourceDrift": 0,
+          "summary": [
+            "     Summary [ 746.816s] 7227 tests run: 7227 passed (9 slow), 18 skipped"
+          ],
+          "startedAt": "2026-11-07T07:54:43.3764061Z",
+          "endedAt": "2026-11-07T08:18:04.0743565Z",
+          "log": "awbc-defer-runnable-20261107.reverse.log"
+        },
+        "passed": 7227,
+        "failed": 0,
+        "skipped": 18,
+        "summary": "     Summary [ 746.816s] 7227 tests run: 7227 passed (9 slow), 18 skipped"
+      }
+    },
+    "cliUnit": {
+      "receipt": {
+        "version": 1,
+        "sourceCommit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+        "name": "cli-unit",
+        "command": "cargo nextest run --locked -p arcweft-cli --lib --bins --no-tests fail --no-fail-fast",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-cli",
+          "--lib",
+          "--bins",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "sourceInputCount": 3648,
+        "sourceDrift": 0,
+        "summary": [
+          "     Summary [  32.798s] 196 tests run: 196 passed, 0 skipped"
+        ],
+        "startedAt": "2026-11-07T08:18:04.0980007Z",
+        "endedAt": "2026-11-07T08:21:02.9569148Z",
+        "log": "awbc-defer-runnable-20261107.cli-unit.log"
+      },
+      "passed": 196,
+      "failed": 0,
+      "skipped": 0,
+      "summary": "     Summary [  32.798s] 196 tests run: 196 passed, 0 skipped"
+    },
+    "cliPolicy": {
+      "receipt": {
+        "version": 1,
+        "sourceCommit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+        "name": "cli-policy",
+        "command": "cargo nextest run --locked -p arcweft-cli --test runtime_native_options --test check_core_cli --test native_style_parity_sample --test release_trust_json --test arcw_fixtures_check_run --test seq04_8_4_persistent_cache_build_cli_goldens --no-tests fail --no-fail-fast",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-cli",
+          "--test",
+          "runtime_native_options",
+          "--test",
+          "check_core_cli",
+          "--test",
+          "native_style_parity_sample",
+          "--test",
+          "release_trust_json",
+          "--test",
+          "arcw_fixtures_check_run",
+          "--test",
+          "seq04_8_4_persistent_cache_build_cli_goldens",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "sourceInputCount": 3648,
+        "sourceDrift": 0,
+        "summary": [
+          "     Summary [   8.139s] 29 tests run: 29 passed, 0 skipped"
+        ],
+        "startedAt": "2026-11-07T08:21:02.9592948Z",
+        "endedAt": "2026-11-07T08:21:40.8975191Z",
+        "log": "awbc-defer-runnable-20261107.cli-policy.log"
+      },
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0,
+      "summary": "     Summary [   8.139s] 29 tests run: 29 passed, 0 skipped"
+    },
+    "coreDoc": {
+      "receipt": {
+        "version": 1,
+        "sourceCommit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+        "name": "core-doc",
+        "command": "cargo test --locked -p arcweft-core --doc",
+        "arguments": [
+          "test",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--doc"
+        ],
+        "exitCode": 0,
+        "sourceInputCount": 3648,
+        "sourceDrift": 0,
+        "summary": [
+          "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.07s"
+        ],
+        "startedAt": "2026-11-07T08:21:40.8998567Z",
+        "endedAt": "2026-11-07T08:22:13.9335821Z",
+        "log": "awbc-defer-runnable-20261107.core-doc.log"
+      },
+      "failed": 0,
+      "summary": "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.07s",
+      "passed": 80,
+      "ignored": 0
+    },
+    "gates": {
+      "workspaceCheck": {
+        "version": 1,
+        "name": "workspace-check",
+        "command": "cargo check --locked --workspace --all-targets --all-features",
+        "exitCode": 0,
+        "startedAt": "2026-11-07T07:50:36.1101395Z",
+        "endedAt": "2026-11-07T07:52:15.7205845Z",
+        "log": "awbc-defer-runnable-20261107.workspace-check.log"
+      },
+      "structure": {
+        "version": 1,
+        "command": "cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking",
+        "exitCode": 0,
+        "startedAt": "2026-11-07T07:54:14.8460976Z",
+        "endedAt": "2026-11-07T07:54:19.546484Z"
+      },
+      "fmt": {
+        "version": 1,
+        "sourceInputCount": 3648,
+        "sourceDrift": 0,
+        "fmtPaths": 13,
+        "fmtExitCode": 0
+      },
+      "workspaceClippy": {
+        "version": 1,
+        "name": "workspace-clippy",
+        "command": "cargo clippy --locked --workspace --all-targets --all-features",
+        "exitCode": 0,
+        "startedAt": "2026-11-07T07:52:15.7365651Z",
+        "endedAt": "2026-11-07T07:54:05.6584838Z",
+        "log": "awbc-defer-runnable-20261107.workspace-clippy.log"
+      }
+    },
+    "ownershipReview": {
+      "disposition": "The existing parser cursor/Pratt/control/statement owners share one scoped grammar selector; no HIR reconstruction or semantic fallback was added. Independent callable and lazy-body boundaries reset that selector. Existing Native frame-progress and AWBC retained-scope queries own runnable-state admission; the changed call sites project those same real owners, including terminal-child retirement. No new public boundary, serialized field, dependency, unsafe block or I/O was introduced. Large existing parser/engine owners remain cohesive for these grammar and scheduling projections; unrelated state was not added and no visibility was widened merely for file splitting. Source regressions belong to the public compiler/runtime/save boundary.",
+      "metrics": "awbc-defer-runnable-20261107.owner-metrics.json"
+    },
+    "verification": {
+      "version": 1,
+      "sourceCommit": "1d60c0bcd12d0142f2eb1cc713115d495bfc5486",
+      "sourceInputs": 3648,
+      "sourceDrift": 0,
+      "cargoInputs": 100,
+      "cargoDrift": 0,
+      "resolvedUnionPackages": 55,
+      "actualNonCliExecutedPackages": 51,
+      "packages": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-character-view",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-hir",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "nonCliPassed": 8956,
+      "nonCliSkipped": 26,
+      "originalTrackedWip": 12,
+      "originalTrackedWipSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "originalUntrackedFiles": 6,
+      "originalUntrackedDrift": 0,
+      "at": "2026-11-07T08:26:26.4592691Z"
+    },
+    "acceptance": "Adds the deferred-wait conditions and preserves the previously accepted Native/Source subset. The original eight Source cases remain accepted; five wait cases extend them to thirteen. Generic Match remains accepted. Ordinary AWBC registry access, goto/Choice/open-scope return, cancellation/Line affine captures and aggregate resource preflight remain the separately listed conditions.",
+    "limitations": "The full CLI check target, ignored Tier2 and other-platform runtime checks were not run here. Earlier 705 PASS / 7 FAIL at 6b72d7ca42beb3661a7025598cf74a341d61fc21 is retained and is not resolved by the 225 CLI policy passes. Clippy warnings and structure review triggers are preserved in the raw logs; blocking violations are zero.",
+    "raw": {
+      "sha256": "3f88f86a0476068fba26aa2bdaab51ca6c636343e048c2a0800d14c2504efd3d",
+      "path": "task-ordinary-flow-defer-wait.raw.zip",
+      "entries": [
+        {
+          "entry": "awbc-defer-runnable-20261107.reproduction.log",
+          "bytes": 92076,
+          "sha256": "98d875921a4631a8ce4ec199faae47a8d812033450620863e0472e0111dec75f"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.registered-fixed.log",
+          "bytes": 88728,
+          "sha256": "013716f35153b9c9313e4adf0cacb68dc56e27df1835177cc79f1ac68a00514b"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.sema-reproduction.log",
+          "bytes": 84767,
+          "sha256": "85f0dbc258aa8560098cfc7334da67579f63b89323aa6dfef63f9cb1226e4529"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.sema-fixed.log",
+          "bytes": 81172,
+          "sha256": "c0e9be61dd9fc6f79fa7cdc4f6ce125b04fbc778649407c8da2cc6d87bd91a42"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.syntax.log",
+          "bytes": 3395,
+          "sha256": "eb7b8882bad94a2b35fdac5bf09e3c831322f6fbfc2bc20435681a93973374d4"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source.log",
+          "bytes": 97600,
+          "sha256": "667b2d6d186e6551f7c84b2b8f9121cee59ac486a5750d4cab0f78c784f21f03"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source.receipt.json",
+          "bytes": 240,
+          "sha256": "48d363c425c48be822526d264cd97dce4864aff95193609860820c10a69cf9d4"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source-freeze.json",
+          "bytes": 711733,
+          "sha256": "69c2a1af0d1988d7bc3494c3b8e09cf1569ed061d2c1f86b200042c8f9ed9680"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source-fixed.log",
+          "bytes": 93359,
+          "sha256": "8d3cf2d48a6a92f6fffb836a6b27206e46ff50fe5516c36944f2c07abb7a24b7"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source-fixed.receipt.json",
+          "bytes": 238,
+          "sha256": "fad28889b9e4ba229deeb28d9f13ebbdf931ae69dcac953e31ba3cdcab5663f3"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.final.source-freeze.json",
+          "bytes": 711733,
+          "sha256": "0ed3648caae871764376a9b3fafa358690780a0f2616ba5952456a10ce00e55b"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.syntax-all.log",
+          "bytes": 112217,
+          "sha256": "fb2cc7248cb716086ca3b599b3c7031bb2c0b6604d4d64163215982332f275e5"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.syntax-all.receipt.json",
+          "bytes": 320,
+          "sha256": "572e1bf711219a22f390e9573d7a83f7e5b8c7ed3ddcc011b32b726d07d22e78"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.workspace-check.log",
+          "bytes": 112151,
+          "sha256": "88b73b9354f79879a12b429afaee38baf46e09c45196450c38109c1c6a456c1f"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.workspace-check.receipt.json",
+          "bytes": 305,
+          "sha256": "c4d4f3f99ecebddae5ca032e7d9e9b97b0d2b1644ed7849faa631b1f79e42c9d"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.workspace-clippy.log",
+          "bytes": 9116253,
+          "sha256": "3836170e88b8a5aa527dca1972bcf812240a7360fdbb33b56f94a1927fb05846"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.workspace-clippy.receipt.json",
+          "bytes": 308,
+          "sha256": "5b8f3fc56efa13d284487b042c0331a974de740df3edaf41a09755850b11c24d"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.structure.log",
+          "bytes": 65874,
+          "sha256": "fe8b3bde0838554610d4c631a9b2c58cdeeb74e2e754817f395f5834c8de48e9"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.structure.receipt.json",
+          "bytes": 228,
+          "sha256": "a54b962ee3c45aecae4fa1b013a28e9b169915f6060584f310f3200bbcf4b1b3"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.input-fmt.json",
+          "bytes": 112,
+          "sha256": "a3e95b0da9657f7ee2cc37180367bfcf82b9399a96ec05b4ece0dbf299034951"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.owner-metrics.json",
+          "bytes": 2820,
+          "sha256": "2de5c0c265ed5b6a5b20921e2179af8f4454b6e90b31ddaeeba8f44bdc6f7836"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.wip.json",
+          "bytes": 234,
+          "sha256": "92e19edb5356f8e38f24174ff5b2fe498cffb7feb1655e918f89cc69400e2162"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source.reviewed.patch",
+          "bytes": 27506,
+          "sha256": "ab03cfb13333bd3763798bb2f68bce1d498f9ac871952a0f0b2fe083a5e3c8af"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source.prepared.json",
+          "bytes": 3190,
+          "sha256": "0f90ad2a51f11c1330e1125c135cc4f2bdc19588ba20d64769756544468486a8"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.source.verified.json",
+          "bytes": 2592,
+          "sha256": "d0b0ee5e7cdfd130fa02bed508d8aad23acf6c708e5add032cea0967091fcc4e"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.delta.json",
+          "bytes": 1324,
+          "sha256": "a13bb4317e015b64a07e956ed6ecfac184f5eed39da9107bc26a538e74a621d7"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.metadata-reverse-union.json",
+          "bytes": 10829,
+          "sha256": "210b97f651b467a0c8cc04676cfbbaec50a28b4608b8b7c2fb96020307f7f521"
+        },
+        {
+          "entry": "function-scope-20261107.metadata-all.json",
+          "bytes": 4293339,
+          "sha256": "121ed3fb126ba5868048c8c69fb3ddaa29528ddb7f1d174b7e5da348681d8c60"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.reverse.log",
+          "bytes": 1177214,
+          "sha256": "1fd1197f55772956c56b6eb23d668fbb8bdb50bc7bfef1ae9e3377f9e149250a"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.reverse.receipt.json",
+          "bytes": 824,
+          "sha256": "9d69228f8cd5f4c68099bb574805fe037ecdd97e0782f1a48590a4868c30c965"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.syntax-complement.log",
+          "bytes": 369783,
+          "sha256": "cdbfad85288a625b52aba272b801809dd3fb18c3d35459fc9a860b2283068d31"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.syntax-complement.receipt.json",
+          "bytes": 1419,
+          "sha256": "e4b41852982db4845e1fbc3d8374a2eacbc53e76605925af9e1409f08e5c9efe"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.syntax-complement.selection.json",
+          "bytes": 376862,
+          "sha256": "c056f83ca6cd353722e99cc9226247b029a0e65f933349cfaf5d66f1a89e3b8c"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.syntax-complement.list.stderr.log",
+          "bytes": 106714,
+          "sha256": "498536f5a41d790c73367a74982f137c50ca17cbdefc43c103aacfc3485a0faa"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.cli-unit.log",
+          "bytes": 121583,
+          "sha256": "e7918c63ba2567804340cf208111525aac03202d46651cdc5b1ae693b93334fc"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.cli-unit.receipt.json",
+          "bytes": 702,
+          "sha256": "5263038812da23f45ee540d8444413ed3c0ee34c33163694474da46f04d54679"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.cli-policy.log",
+          "bytes": 93258,
+          "sha256": "13be1c921242860e762d1d610b221e9c839668a912b2b5bb280de494eb1a7c74"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.cli-policy.receipt.json",
+          "bytes": 1148,
+          "sha256": "f6e581a95cd1628a36e498c601eea9114fc8fb800882312d9834f64be8fd8fe8"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.core-doc.log",
+          "bytes": 82411,
+          "sha256": "95c0f41444a57887ec38c5bd7fc26131bfd06f4b5e441f02b3d3e950f3e3f6e5"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.core-doc.receipt.json",
+          "bytes": 607,
+          "sha256": "37330b096aaa3b5bbcf1bf090a38fc020747408ca0d08a5ee40b18b619529132"
+        },
+        {
+          "entry": "awbc-defer-runnable-20261107.final.verified.json",
+          "bytes": 1960,
+          "sha256": "2a7b128f6aeb5c3859399eee789e9254cd00c5ca4c3806018044e89dfd803fea"
+        }
+      ]
+    }
   }
 }
