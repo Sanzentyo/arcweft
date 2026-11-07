@@ -452,7 +452,7 @@ fn parse_prefix(
                 composite::emit_thread_expression(parser, end, role)
             }),
         "seq" | "stream" if composite::has_braced_body(parser, end) => parser
-            .with_expression_context(ExpressionContext::Ordinary, |parser| {
+            .with_expression_context(parser.expression_context().lazy_body(), |parser| {
                 composite::emit_computation_block(parser, end, role)
             }),
         "result" | "option" if composite::has_braced_body(parser, end) => {

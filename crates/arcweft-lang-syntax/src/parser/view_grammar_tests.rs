@@ -110,6 +110,37 @@ fn transparent_groups_keep_view_context_in_if_and_match_branches() {
 }
 
 #[test]
+fn lazy_computations_keep_their_enclosing_view_value_grammar() {
+    for kind in ["seq", "stream"] {
+        let source = format!(
+            "view Main() {{\n {kind} {{ Panel {{ Text(\"child\") }} }}\n Column {{ Text(\"sibling\") }}\n}}\nfn ordinary() {{ {kind} {{ Settings {{ opacity = 0.5 }} }} }}\n"
+        );
+        let built = parse(&source);
+        assert!(
+            built.diagnostics().is_empty(),
+            "{kind}: {:?}",
+            built.diagnostics()
+        );
+        assert_eq!(
+            count_kind(&built, SyntaxKind::ViewBodyApplicationExpression),
+            2,
+            "{kind}"
+        );
+        assert_eq!(
+            count_kind(&built, SyntaxKind::RecordExpression),
+            1,
+            "{kind}"
+        );
+        assert_eq!(
+            count_kind(&built, SyntaxKind::ClosureExpression),
+            0,
+            "{kind}"
+        );
+        assert_eq!(built.green().to_string(), source);
+    }
+}
+
+#[test]
 fn member_chains_continue_across_newlines_in_root_and_nested_view_regions() {
     for ending in ["\n", "\r\n"] {
         let source = concat!(

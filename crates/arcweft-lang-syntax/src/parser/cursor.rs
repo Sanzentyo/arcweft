@@ -274,6 +274,15 @@ impl ExpressionContext {
         }
     }
 
+    /// A lazy computation owns its statement grammar while retaining the
+    /// enclosing value syntax, including immediate View child regions.
+    pub(super) const fn lazy_body(self) -> Self {
+        match self {
+            Self::RuntimeValue => Self::Ordinary,
+            Self::Ordinary | Self::ViewValue => self,
+        }
+    }
+
     pub(super) const fn block_item_kind(self) -> SyntaxKind {
         match self {
             Self::Ordinary | Self::ViewValue => SyntaxKind::FunctionItem,
