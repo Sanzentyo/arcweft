@@ -6,9 +6,10 @@ use crate::{
     runtime_id::{
         ExecutionInstanceId, RuntimeCaptureSlotId, RuntimeChildInstanceId, RuntimeChildPacketId,
         RuntimeCleanupScopeId, RuntimeCleanupSlotId, RuntimeClosureInstanceId,
-        RuntimeFiberInstanceId, RuntimeFormatAttemptId, RuntimeFrameInstanceId,
-        RuntimeFrameLocalId, RuntimeLocalSlotId, RuntimeMailboxInstanceId, RuntimeMailboxLaneId,
-        RuntimePersistentFiberId, RuntimeTransferInstanceId, RuntimeTransferPacketId,
+        RuntimeDeferRegistrationId, RuntimeFiberInstanceId, RuntimeFormatAttemptId,
+        RuntimeFrameInstanceId, RuntimeFrameLocalId, RuntimeLocalSlotId, RuntimeMailboxInstanceId,
+        RuntimeMailboxLaneId, RuntimePersistentFiberId, RuntimeTransferInstanceId,
+        RuntimeTransferPacketId,
     },
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -19,6 +20,20 @@ use std::{cmp::Ordering, fmt};
 /// This enum is evidence only. Storage remains in each owning runtime domain.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RuntimeOwnedSlotId {
+    NativeDeferCapture {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
+    AwbcDeferCapture {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        scope: Option<AwbcScopeId>,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
     ProgramResult {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
@@ -134,6 +149,7 @@ impl RuntimeOwnedSlotId {
             | Self::AwbcFrameLocal { fiber, .. }
             | Self::AwbcFormatOperand { fiber, .. }
             | Self::AwbcCleanupArg { fiber, .. }
+            | Self::AwbcDeferCapture { fiber, .. }
             | Self::AwbcAwaitManyResult { fiber, .. }
             | Self::AwbcAwaitManyItem { fiber, .. }
             | Self::AwbcLineObservationArg { fiber, .. }
@@ -175,6 +191,8 @@ impl RuntimeOwnedSlotId {
             Self::AwbcEffectObservationArg { .. } => 15,
             Self::ProgramResult { .. } => 16,
             Self::NativePendingReturn { .. } => 17,
+            Self::NativeDeferCapture { .. } => 18,
+            Self::AwbcDeferCapture { .. } => 19,
         }
     }
 
@@ -184,6 +202,8 @@ impl RuntimeOwnedSlotId {
             Self::EnvironmentLocal { execution, .. }
             | Self::ProgramResult { execution, .. }
             | Self::NativePendingReturn { execution, .. }
+            | Self::NativeDeferCapture { execution, .. }
+            | Self::AwbcDeferCapture { execution, .. }
             | Self::ClosureCapture { execution, .. }
             | Self::AwbcRegister { execution, .. }
             | Self::AwbcFrameLocal { execution, .. }
@@ -206,6 +226,30 @@ impl RuntimeOwnedSlotId {
     pub fn render_canonical(self) -> String {
         let execution = self.execution().get().get();
         match self {
+            Self::NativeDeferCapture {
+                fiber,
+                registration,
+                ordinal,
+                ..
+            } => format!(
+                "exec/{execution}/fiber/{}/defer/{}/capture/{ordinal}",
+                fiber.get(),
+                registration.get(),
+            ),
+            Self::AwbcDeferCapture {
+                fiber,
+                frame,
+                scope,
+                registration,
+                ordinal,
+                ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/defer/{}/registration/{}/capture/{ordinal}",
+                fiber.get(),
+                frame.get(),
+                scope.map_or_else(|| "root".to_owned(), |scope| format!("scope/{}", scope.0)),
+                registration.get(),
+            ),
             Self::ProgramResult { fiber, .. } => {
                 format!("exec/{execution}/fiber/{}/program-result", fiber.get())
             }
@@ -435,6 +479,32 @@ impl Ord for RuntimeOwnedSlotId {
                     unreachable!("equal canonical tags select the same variant")
                 };
                 (left_execution, left_fiber).cmp(&(right_execution, right_fiber))
+            }
+            18 => {
+                let key = |slot| match slot {
+                    Self::NativeDeferCapture {
+                        execution,
+                        fiber,
+                        registration,
+                        ordinal,
+                    } => (execution, fiber, registration, ordinal),
+                    _ => unreachable!("the canonical tag selects native defer custody"),
+                };
+                key(*self).cmp(&key(*other))
+            }
+            19 => {
+                let key = |slot| match slot {
+                    Self::AwbcDeferCapture {
+                        execution,
+                        fiber,
+                        frame,
+                        scope,
+                        registration,
+                        ordinal,
+                    } => (execution, fiber, frame, scope, registration, ordinal),
+                    _ => unreachable!("the canonical tag selects AWBC defer custody"),
+                };
+                key(*self).cmp(&key(*other))
             }
             _ => unreachable!("canonical owned-slot tags are exhaustive"),
         }
@@ -881,6 +951,20 @@ impl PartialOrd for RuntimeOwnedSlotId {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum HumanOwnedSlot {
+    NativeDeferCapture {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
+    AwbcDeferCapture {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        scope: Option<AwbcScopeId>,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
     ProgramResult {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
@@ -992,6 +1076,20 @@ enum HumanOwnedSlot {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HumanOwnedSlotInput {
+    NativeDeferCapture {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
+    AwbcDeferCapture {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        scope: Option<AwbcScopeId>,
+        registration: RuntimeDeferRegistrationId,
+        ordinal: u32,
+    },
     ProgramResult {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
@@ -1103,6 +1201,32 @@ enum HumanOwnedSlotInput {
 impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
     fn from(slot: RuntimeOwnedSlotId) -> Self {
         match slot {
+            RuntimeOwnedSlotId::NativeDeferCapture {
+                execution,
+                fiber,
+                registration,
+                ordinal,
+            } => Self::NativeDeferCapture {
+                execution,
+                fiber,
+                registration,
+                ordinal,
+            },
+            RuntimeOwnedSlotId::AwbcDeferCapture {
+                execution,
+                fiber,
+                frame,
+                scope,
+                registration,
+                ordinal,
+            } => Self::AwbcDeferCapture {
+                execution,
+                fiber,
+                frame,
+                scope,
+                registration,
+                ordinal,
+            },
             RuntimeOwnedSlotId::ProgramResult { execution, fiber } => {
                 Self::ProgramResult { execution, fiber }
             }
@@ -1292,6 +1416,32 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
 impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
     fn from(slot: HumanOwnedSlotInput) -> Self {
         match slot {
+            HumanOwnedSlotInput::NativeDeferCapture {
+                execution,
+                fiber,
+                registration,
+                ordinal,
+            } => Self::NativeDeferCapture {
+                execution,
+                fiber,
+                registration,
+                ordinal,
+            },
+            HumanOwnedSlotInput::AwbcDeferCapture {
+                execution,
+                fiber,
+                frame,
+                scope,
+                registration,
+                ordinal,
+            } => Self::AwbcDeferCapture {
+                execution,
+                fiber,
+                frame,
+                scope,
+                registration,
+                ordinal,
+            },
             HumanOwnedSlotInput::ProgramResult { execution, fiber } => {
                 Self::ProgramResult { execution, fiber }
             }
@@ -1571,6 +1721,44 @@ mod tests {
             slots.map(RuntimeOwnedSlotId::canonical_tag),
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         );
+    }
+
+    #[test]
+    fn deferred_capture_slots_keep_backend_packet_scope_and_ordinal_identity() {
+        let native: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"native_defer_capture","execution":"1","fiber":2,"registration":"3","ordinal":4}"#,
+        );
+        let root: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":null,"registration":"4","ordinal":5}"#,
+        );
+        let lexical: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":6,"registration":"4","ordinal":5}"#,
+        );
+        let next_capture: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":6,"registration":"4","ordinal":6}"#,
+        );
+        assert!(native < root && root < lexical && lexical < next_capture);
+        assert_eq!(native.awbc_fiber(), None);
+        assert_eq!(root.awbc_fiber(), lexical.awbc_fiber());
+        assert_eq!(
+            native.render_canonical(),
+            "exec/1/fiber/2/defer/3/capture/4"
+        );
+        assert_eq!(
+            root.render_canonical(),
+            "exec/1/awbc/fiber/2/frame/3/defer/root/registration/4/capture/5"
+        );
+        for slot in [native, root, lexical, next_capture] {
+            let json = serde_json::to_string(&slot).unwrap();
+            assert_eq!(from_json::<RuntimeOwnedSlotId>(&json), slot);
+        }
+        for invalid in [
+            r#"{"kind":"native_defer_capture","execution":"1","fiber":2,"registration":"0","ordinal":4}"#,
+            r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":null,"registration":"04","ordinal":5}"#,
+            r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":null,"registration":"4","ordinal":5,"extra":true}"#,
+        ] {
+            assert!(serde_json::from_str::<RuntimeOwnedSlotId>(invalid).is_err());
+        }
     }
 
     #[test]

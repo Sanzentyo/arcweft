@@ -9,9 +9,10 @@ use crate::{
     runtime_id::{
         ExecutionInstanceId, RuntimeCaptureSlotId, RuntimeChildInstanceId, RuntimeChildPacketId,
         RuntimeCleanupScopeId, RuntimeCleanupSlotId, RuntimeClosureInstanceId,
-        RuntimeFiberInstanceId, RuntimeFormatAttemptId, RuntimeFrameInstanceId,
-        RuntimeFrameLocalId, RuntimeLocalSlotId, RuntimeMailboxInstanceId, RuntimeMailboxLaneId,
-        RuntimePersistentFiberId, RuntimeTransferInstanceId, RuntimeTransferPacketId,
+        RuntimeDeferRegistrationId, RuntimeFiberInstanceId, RuntimeFormatAttemptId,
+        RuntimeFrameInstanceId, RuntimeFrameLocalId, RuntimeLocalSlotId, RuntimeMailboxInstanceId,
+        RuntimeMailboxLaneId, RuntimePersistentFiberId, RuntimeTransferInstanceId,
+        RuntimeTransferPacketId,
         binary::{RuntimeIdentityBinaryError, decode_nonzero_u32, decode_nonzero_u64},
     },
     value::RuntimeRecordFieldId,
@@ -41,6 +42,38 @@ pub(super) fn encode_owned_slot(slot: RuntimeOwnedSlotId) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.push(slot.canonical_tag());
     match slot {
+        RuntimeOwnedSlotId::NativeDeferCapture {
+            execution,
+            fiber,
+            registration,
+            ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            bytes.extend_from_slice(&fiber.get().to_le_bytes());
+            push_u64(&mut bytes, registration.get());
+            push_raw_u32(&mut bytes, ordinal);
+        }
+        RuntimeOwnedSlotId::AwbcDeferCapture {
+            execution,
+            fiber,
+            frame,
+            scope,
+            registration,
+            ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            match scope {
+                None => bytes.push(0),
+                Some(scope) => {
+                    bytes.push(1);
+                    push_raw_u32(&mut bytes, scope.0);
+                }
+            }
+            push_u64(&mut bytes, registration.get());
+            push_raw_u32(&mut bytes, ordinal);
+        }
         RuntimeOwnedSlotId::ProgramResult { execution, fiber }
         | RuntimeOwnedSlotId::NativePendingReturn { execution, fiber } => {
             push_u64(&mut bytes, execution.get());
@@ -240,11 +273,29 @@ pub(super) fn decode_owned_slot(
 ) -> Result<RuntimeOwnedSlotId, RuntimeOwnershipBinaryError> {
     let mut reader = Reader::new(bytes);
     let tag = reader.u8()?;
-    if tag > 17 {
+    if tag > 19 {
         return Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag });
     }
     let execution = ExecutionInstanceId::from_allocated(reader.nonzero_u64()?);
     let slot = match tag {
+        18 => RuntimeOwnedSlotId::NativeDeferCapture {
+            execution,
+            fiber: RuntimePersistentFiberId::from_allocated(reader.u64()?),
+            registration: RuntimeDeferRegistrationId::from_allocated(reader.nonzero_u64()?),
+            ordinal: reader.u32()?,
+        },
+        19 => RuntimeOwnedSlotId::AwbcDeferCapture {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            scope: match reader.u8()? {
+                0 => None,
+                1 => Some(AwbcScopeId(reader.u32()?)),
+                tag => return Err(RuntimeOwnershipBinaryError::InvalidCleanupScopeTag { tag }),
+            },
+            registration: RuntimeDeferRegistrationId::from_allocated(reader.nonzero_u64()?),
+            ordinal: reader.u32()?,
+        },
         16 => RuntimeOwnedSlotId::ProgramResult {
             execution,
             fiber: RuntimePersistentFiberId::from_allocated(reader.u64()?),
@@ -555,6 +606,18 @@ mod tests {
     fn owned_slot_binary_goldens_round_trip() {
         let goldens = [
             (
+                r#"{"kind":"native_defer_capture","execution":"1","fiber":2,"registration":"3","ordinal":4}"#,
+                "1201000000000000000200000000000000030000000000000004000000",
+            ),
+            (
+                r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":null,"registration":"4","ordinal":5}"#,
+                "1301000000000000000200000000000000030000000000000000040000000000000005000000",
+            ),
+            (
+                r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":6,"registration":"4","ordinal":5}"#,
+                "130100000000000000020000000000000003000000000000000106000000040000000000000005000000",
+            ),
+            (
                 r#"{"kind":"environment_local","execution":"1","local":"2"}"#,
                 "0001000000000000000200000000000000",
             ),
@@ -673,8 +736,24 @@ mod tests {
     #[test]
     fn binary_decoders_reject_unknown_zero_truncated_and_trailing_forms() {
         assert!(matches!(
-            decode_owned_slot(&[18]),
-            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 18 })
+            decode_owned_slot(&[20]),
+            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 20 })
+        ));
+        let mut invalid_defer_registration = encode_owned_slot(self::json(
+            r#"{"kind":"native_defer_capture","execution":"1","fiber":2,"registration":"3","ordinal":4}"#,
+        ));
+        invalid_defer_registration[17..25].fill(0);
+        assert!(matches!(
+            decode_owned_slot(&invalid_defer_registration),
+            Err(RuntimeOwnershipBinaryError::Identity(_))
+        ));
+        let mut invalid_defer_scope = encode_owned_slot(self::json(
+            r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":null,"registration":"4","ordinal":5}"#,
+        ));
+        invalid_defer_scope[25] = 2;
+        assert!(matches!(
+            decode_owned_slot(&invalid_defer_scope),
+            Err(RuntimeOwnershipBinaryError::InvalidCleanupScopeTag { tag: 2 })
         ));
         let mut invalid_cleanup_scope = encode_owned_slot(self::json(
             r#"{"kind":"awbc_cleanup_arg","execution":"1","fiber":"2","frame":"3","scope":null,"cleanup_ordinal":4,"arg_ordinal":5}"#,
