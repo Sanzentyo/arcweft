@@ -4,33 +4,13 @@
 use super::*;
 use crate::value::RuntimeLocalReadMode;
 
-pub(crate) struct PreparedOwnedProgramTaskFiber {
-    fiber: FiberState,
-    parameters: Box<[AwbcRegisterId]>,
-}
-
-impl PreparedOwnedProgramTaskFiber {
-    pub(crate) fn bind(mut self, values: Vec<RuntimeValue>) -> FiberState {
-        assert_eq!(values.len(), self.parameters.len());
-        for (value, register) in values.into_iter().zip(self.parameters) {
-            assert!(
-                self.fiber.frames[0].registers[register.index()]
-                    .as_ref()
-                    .is_none()
-            );
-            self.fiber.frames[0].registers[register.index()] = value.into();
-        }
-        self.fiber
-    }
-}
-
 impl PreparedFunctionInputBinding {
     pub(crate) fn prepare_owned_program_task_fiber(
         self,
         program: &AwbcProgram,
         task: crate::awbc::schema::AwbcTaskPlanId,
         creation: FiberCreationContext,
-    ) -> Result<PreparedOwnedProgramTaskFiber, FiberStateError> {
+    ) -> Result<PreparedFunctionFiber, FiberStateError> {
         let Some(crate::awbc::schema::AwbcTaskPlanExecution::Program(body)) = program
             .task_plans
             .get(task.index())
@@ -41,8 +21,7 @@ impl PreparedFunctionInputBinding {
         if self.function != body.kernel {
             return Err(FiberStateError::InvalidFrame);
         }
-        let (fiber, parameters) = self.allocate_fiber(program, AwbcFiberRoot::Task(task), creation);
-        Ok(PreparedOwnedProgramTaskFiber { fiber, parameters })
+        Ok(self.prepare_fiber(program, AwbcFiberRoot::Task(task), creation))
     }
 }
 
@@ -121,7 +100,10 @@ impl FiberState {
                 _ => {}
             }
         }
-        let (mut child, parameters) = inputs.allocate_fiber(
+        let PreparedFunctionFiber {
+            fiber: mut child,
+            parameters,
+        } = inputs.prepare_fiber(
             program,
             AwbcFiberRoot::Task(task),
             FiberCreationContext::new(

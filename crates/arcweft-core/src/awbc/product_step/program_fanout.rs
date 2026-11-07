@@ -220,7 +220,7 @@ impl AwbcProductStepExecutor {
                 launch,
                 parent: parent.instance,
             },
-            fiber: child.bind(arguments),
+            fiber: child.commit(arguments),
             runtime_generation: generation,
             pending_host_call: None,
         });

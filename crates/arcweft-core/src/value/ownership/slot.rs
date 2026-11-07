@@ -143,22 +143,6 @@ pub enum RuntimeOwnedSlotId {
 }
 
 impl RuntimeOwnedSlotId {
-    pub(crate) const fn awbc_fiber(self) -> Option<RuntimeFiberInstanceId> {
-        match self {
-            Self::AwbcRegister { fiber, .. }
-            | Self::AwbcFrameLocal { fiber, .. }
-            | Self::AwbcFormatOperand { fiber, .. }
-            | Self::AwbcCleanupArg { fiber, .. }
-            | Self::AwbcDeferCapture { fiber, .. }
-            | Self::AwbcAwaitManyResult { fiber, .. }
-            | Self::AwbcAwaitManyItem { fiber, .. }
-            | Self::AwbcLineObservationArg { fiber, .. }
-            | Self::AwbcDialogueResultObservation { fiber, .. }
-            | Self::AwbcEffectObservationArg { fiber, .. } => Some(fiber),
-            _ => None,
-        }
-    }
-
     #[must_use]
     pub fn environment_local(
         execution: ExecutionInstanceId,
@@ -1738,8 +1722,6 @@ mod tests {
             r#"{"kind":"awbc_defer_capture","execution":"1","fiber":"2","frame":"3","scope":6,"registration":"4","ordinal":6}"#,
         );
         assert!(native < root && root < lexical && lexical < next_capture);
-        assert_eq!(native.awbc_fiber(), None);
-        assert_eq!(root.awbc_fiber(), lexical.awbc_fiber());
         assert_eq!(
             native.render_canonical(),
             "exec/1/fiber/2/defer/3/capture/4"

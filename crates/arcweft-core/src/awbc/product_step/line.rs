@@ -178,8 +178,16 @@ pub(super) struct PreparedLineChildSpawn {
     child_generation: u64,
     next_generation: u64,
     next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
-    fiber_instance: crate::runtime_id::RuntimeFiberInstanceId,
-    inputs: crate::awbc::fiber::PreparedFunctionInputBinding,
+    fiber: crate::awbc::fiber::PreparedFunctionFiber,
+}
+
+impl PreparedLineChildSpawn {
+    pub(super) fn capture_slots(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+    ) -> impl ExactSizeIterator<Item = RuntimeOwnedSlotId> + '_ {
+        self.fiber.input_slots(execution)
+    }
 }
 
 pub(super) struct PreparedScopedDeferUnwind {
@@ -237,7 +245,7 @@ impl PreparedLineRun {
             child_generation: self.spawn.child_generation,
             next_generation: self.spawn.next_generation,
             next_fiber_instance: self.spawn.next_fiber_instance,
-            fiber_instance: self.spawn.fiber_instance,
+            fiber_instance: self.spawn.fiber.instance(),
         }
     }
 }
@@ -822,8 +830,18 @@ impl super::AwbcProductStepExecutor {
                             child_generation: identity.child_generation,
                             next_generation: identity.next_generation,
                             next_fiber_instance: identity.next_fiber_instance,
-                            fiber_instance: identity.fiber_instance,
-                            inputs,
+                            fiber: inputs.prepare_fiber(
+                                &self.program,
+                                crate::awbc::fiber::AwbcFiberRoot::Function(function),
+                                crate::awbc::fiber::FiberCreationContext::new(
+                                    identity.fiber_instance,
+                                    identity.child_generation,
+                                    self.fiber.budget.quantum.max(1),
+                                    crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                                        activation: transaction.frame().activation,
+                                    },
+                                ),
+                            ),
                         },
                         cancelled_before_start: false,
                     });
@@ -1279,20 +1297,7 @@ impl super::AwbcProductStepExecutor {
                     .map(|binding| binding.value)
                     .collect(),
             };
-            let child = FiberState::for_function_with_arguments_prepared(
-                &self.program,
-                crate::awbc::fiber::AwbcFiberRoot::Function(run.spawn.inputs.function()),
-                args,
-                run.spawn.inputs,
-                crate::awbc::fiber::FiberCreationContext::new(
-                    run.spawn.fiber_instance,
-                    run.spawn.child_generation,
-                    self.fiber.budget.quantum.max(1),
-                    crate::runtime_id::RuntimePresentationBankId::Dialogue {
-                        activation: transaction.frame().activation,
-                    },
-                ),
-            );
+            let child = run.spawn.fiber.commit(args);
             batch.child_fibers.push_back(super::ProductChildFiber {
                 owner: run.owner,
                 fiber: child,
@@ -1401,7 +1406,12 @@ impl super::AwbcProductStepExecutor {
                     .ok_or(LineRuntimeError::UnknownDeferredSite {
                         site: registration.site(),
                     })?;
-                batch.prepare_spawn(self, function, registration.captures())
+                batch.prepare_spawn(
+                    self,
+                    function,
+                    crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
+                    registration.captures(),
+                )
             })
             .transpose()?;
         let prepared = transaction
@@ -1425,7 +1435,6 @@ impl super::AwbcProductStepExecutor {
                 let content = transaction.frame().content;
                 batch.spawn_prepared(
                     self,
-                    crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
                     super::ProductChildFiberOwner::Deferred {
                         content,
                         activation,
@@ -3285,7 +3294,14 @@ impl super::AwbcProductStepExecutor {
                 .ok_or(LineRuntimeError::UnknownDeferredSite {
                     site: deferred.site,
                 })?;
-            Some(batch.prepare_spawn(self, function, &deferred.captures)?)
+            Some(batch.prepare_spawn(
+                self,
+                function,
+                crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                    activation: *activation,
+                },
+                &deferred.captures,
+            )?)
         } else {
             None
         };
@@ -3352,7 +3368,6 @@ impl super::AwbcProductStepExecutor {
             RuntimeScopedDeferDecision::Run => {
                 batch.spawn_prepared(
                     self,
-                    crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
                     super::ProductChildFiberOwner::ScopedDeferred {
                         content,
                         activation,
@@ -4230,6 +4245,7 @@ impl super::ProductLineTaskExecutionBatch {
         &self,
         executor: &super::AwbcProductStepExecutor,
         function: crate::awbc::schema::AwbcFunctionId,
+        bank: crate::runtime_id::RuntimePresentationBankId,
         args: &[RuntimeValue],
     ) -> Result<PreparedLineChildSpawn, ProductStepError> {
         let next_generation = self
@@ -4250,31 +4266,27 @@ impl super::ProductLineTaskExecutionBatch {
             child_generation: self.next_generation,
             next_generation,
             next_fiber_instance,
-            fiber_instance,
-            inputs,
+            fiber: inputs.prepare_fiber(
+                &executor.program,
+                crate::awbc::fiber::AwbcFiberRoot::Function(function),
+                crate::awbc::fiber::FiberCreationContext::new(
+                    fiber_instance,
+                    self.next_generation,
+                    executor.fiber.budget.quantum.max(1),
+                    bank,
+                ),
+            ),
         })
     }
 
     pub(super) fn spawn_prepared(
         &mut self,
         executor: &super::AwbcProductStepExecutor,
-        bank: crate::runtime_id::RuntimePresentationBankId,
         owner: super::ProductChildFiberOwner,
         args: Vec<RuntimeValue>,
         prepared: PreparedLineChildSpawn,
     ) {
-        let child = FiberState::for_function_with_arguments_prepared(
-            &executor.program,
-            crate::awbc::fiber::AwbcFiberRoot::Function(prepared.inputs.function()),
-            args,
-            prepared.inputs,
-            crate::awbc::fiber::FiberCreationContext::new(
-                prepared.fiber_instance,
-                prepared.child_generation,
-                executor.fiber.budget.quantum.max(1),
-                bank,
-            ),
-        );
+        let child = prepared.fiber.commit(args);
         self.next_generation = prepared.next_generation;
         self.next_fiber_instance = prepared.next_fiber_instance;
         self.child_fibers.push_back(super::ProductChildFiber {
@@ -4497,35 +4509,20 @@ fn activation_fiber_handle_owners(
     activation: &DialogueActivationId,
     fiber: &FiberState,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>, ProductStepError> {
-    let mut owners = physical_fiber_line_handle_slots(execution, fiber)?
+    Ok(physical_fiber_line_handle_slots(execution, fiber)?
         .into_iter()
         .map(|(token, slot)| {
-            let owner =
-                RuntimeHandleOwnerSlot::in_dialogue_fiber(execution, activation, &token, slot);
+            let owner = match slot {
+                RuntimeOwnedSlotId::AwbcDeferCapture { registration, .. }
+                    if token.activation() == activation =>
+                {
+                    RuntimeHandleOwnerSlot::ScopedDefer(registration)
+                }
+                _ => RuntimeHandleOwnerSlot::in_dialogue_fiber(execution, activation, &token, slot),
+            };
             (token, owner)
         })
-        .collect::<BTreeMap<_, _>>();
-    for frame in &fiber.frames {
-        for scope in &frame.scopes {
-            for deferred in &scope.deferred.defers {
-                for capture in &deferred.captures {
-                    for handle in unique_line_handles(capture)? {
-                        if handle.token().activation() != activation
-                            || owners
-                                .insert(
-                                    handle.token().clone(),
-                                    RuntimeHandleOwnerSlot::ScopedDefer(deferred.id),
-                                )
-                                .is_some()
-                        {
-                            return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(owners)
+        .collect::<BTreeMap<_, _>>())
 }
 
 /// The same physical slots back live reconciliation and inert admission.
@@ -4561,13 +4558,33 @@ pub(super) fn physical_fiber_line_handle_slots<V: RuntimeStoredValue, O, N, B, R
                 return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
             }
         }
+        for (scope, deferred) in frame.deferred_scopes() {
+            for packet in &deferred.defers {
+                for (ordinal, capture) in packet.captures.iter().enumerate() {
+                    let owner = RuntimeOwnedSlotId::AwbcDeferCapture {
+                        execution,
+                        fiber: fiber.instance,
+                        frame: frame.instance,
+                        scope,
+                        registration: packet.id,
+                        ordinal: u32::try_from(ordinal)
+                            .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                    };
+                    for handle in unique_line_handles_in_view(capture.borrowed_view())? {
+                        if owners.insert(handle.token().clone(), owner).is_some() {
+                            return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                        }
+                    }
+                }
+            }
+        }
     }
     Ok(owners)
 }
 
-pub(super) fn product_fiber_handle_owners(
+pub(super) fn product_fiber_handle_owners<V: RuntimeStoredValue, O, N, B, R, G>(
     execution: crate::runtime_id::ExecutionInstanceId,
-    fiber: &FiberState,
+    fiber: &FiberState<V, O, N, B, R, G>,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
     let mut owners = physical_fiber_line_handle_slots(execution, fiber)?;
     if let Some(FiberTerminalValue::Returned(Some(value))) = &fiber.terminal
@@ -4579,7 +4596,7 @@ pub(super) fn product_fiber_handle_owners(
                 fiber.instance.get().get(),
             ),
         };
-        for handle in unique_line_handles(value)? {
+        for handle in unique_line_handles_in_view(value.borrowed_view())? {
             if owners.insert(handle.token().clone(), owner).is_some() {
                 return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
             }
@@ -4613,9 +4630,9 @@ pub(super) fn without_await_many_slots(
     after
 }
 
-fn awbc_await_many_handle_owners(
+fn awbc_await_many_handle_owners<V: RuntimeStoredValue, O, N, B, R, G>(
     execution: crate::runtime_id::ExecutionInstanceId,
-    fiber: &FiberState,
+    fiber: &FiberState<V, O, N, B, R, G>,
 ) -> Result<Vec<(RuntimeLineHandleToken, RuntimeOwnedSlotId)>, ProductStepError> {
     let Some(reason) = fiber
         .suspension
@@ -4655,7 +4672,7 @@ fn awbc_await_many_handle_owners(
             index,
         };
         owners.extend(
-            unique_line_handles(value)?
+            unique_line_handles_in_view(value.borrowed_view())?
                 .into_iter()
                 .map(|handle| (handle.token().clone(), owner)),
         );
@@ -4673,7 +4690,7 @@ fn awbc_await_many_handle_owners(
             index,
         };
         owners.extend(
-            unique_line_handles(value)?
+            unique_line_handles_in_view(value.borrowed_view())?
                 .into_iter()
                 .map(|handle| (handle.token().clone(), owner)),
         );

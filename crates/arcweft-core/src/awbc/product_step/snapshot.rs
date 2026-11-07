@@ -2263,8 +2263,32 @@ impl AwbcProductExecutorSnapshot {
                 .push(child);
         }
         let mut all_child_tokens = BTreeSet::new();
-        let mut receiver_fibers = BTreeSet::new();
         let mut received_slots = BTreeMap::new();
+        for fiber in std::iter::once(&snapshot.fiber).chain(
+            snapshot.child_fibers.iter().filter_map(|child| {
+                matches!(
+                    child.owner,
+                    AwbcProductChildFiberOwnerSnapshot::Independent
+                        | AwbcProductChildFiberOwnerSnapshot::Program { .. }
+                        | AwbcProductChildFiberOwnerSnapshot::FlowDeferred { .. }
+                )
+                .then_some(&child.fiber)
+            }),
+        ) {
+            let slots =
+                super::line::product_fiber_handle_owners(super::PRODUCT_EXECUTION_ID, fiber)
+                    .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: error.to_string(),
+                    })?;
+            for (token, slot) in slots {
+                if received_slots.insert(token, slot).is_some() {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "published line handle occurs in multiple ordinary fiber slots"
+                            .into(),
+                    });
+                }
+            }
+        }
         snapshot
             .dialogues
             .try_visit_active(|activation, active, shared_line| {
@@ -2273,8 +2297,7 @@ impl AwbcProductExecutorSnapshot {
                 AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
             })?;
             if let Some(fiber) = active.activation_fiber() {
-                receiver_fibers.insert(fiber.instance);
-                let slots = super::line::physical_fiber_line_handle_slots(super::PRODUCT_EXECUTION_ID, fiber)
+                let slots = super::line::product_fiber_handle_owners(super::PRODUCT_EXECUTION_ID, fiber)
                     .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() })?;
                 for (token, slot) in slots {
                     if token.activation() != activation && received_slots.insert(token, slot).is_some() {
@@ -2805,11 +2828,7 @@ impl AwbcProductExecutorSnapshot {
         })?;
         snapshot
             .dialogues
-            .validate_awbc_dialogue_receivers(
-                super::PRODUCT_EXECUTION_ID,
-                &receiver_fibers,
-                &received_slots,
-            )
+            .validate_published_receiver_slots(super::PRODUCT_EXECUTION_ID, &received_slots)
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;

@@ -364,6 +364,11 @@ pub struct FiberState<
 }
 
 impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
+    /// The innermost actual invocation frame, for live and inert inspection.
+    pub fn active_frame(&self) -> Result<&FiberFrame<V, B, R, G>, FiberStateError> {
+        self.frames.last().ok_or(FiberStateError::MissingFrame)
+    }
+
     /// The execution bank is independent of both the dynamic fiber number and
     /// a callable's declaration. Nested calls keep this reached context.
     pub const fn presentation_bank(&self) -> crate::runtime_id::RuntimePresentationBankId {
@@ -487,6 +492,47 @@ pub(crate) struct PreparedFunctionInputBinding {
     parameter_registers: Box<[AwbcRegisterId]>,
 }
 
+/// The actual allocated child frame and its admitted positional destinations.
+/// Input values remain with their source until this frame is committed.
+pub(crate) struct PreparedFunctionFiber {
+    fiber: FiberState,
+    parameters: Box<[AwbcRegisterId]>,
+}
+
+impl PreparedFunctionFiber {
+    pub(crate) const fn instance(&self) -> RuntimeFiberInstanceId {
+        self.fiber.instance
+    }
+
+    pub(crate) fn input_slots(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+    ) -> impl ExactSizeIterator<Item = crate::value::ownership::RuntimeOwnedSlotId> + '_ {
+        self.parameters.iter().map(move |register| {
+            crate::value::ownership::RuntimeOwnedSlotId::AwbcRegister {
+                execution,
+                fiber: self.fiber.instance,
+                frame: self.fiber.frames[0].instance,
+                register: *register,
+            }
+        })
+    }
+
+    pub(crate) fn commit(mut self, args: Vec<RuntimeValue>) -> FiberState {
+        assert_eq!(self.parameters.len(), args.len());
+        let registers = &mut self.fiber.frames[0].registers;
+        assert!(
+            self.parameters
+                .iter()
+                .all(|register| registers[register.index()].is_vacant())
+        );
+        for (register, value) in self.parameters.into_iter().zip(args) {
+            registers[register.index()] = value.into();
+        }
+        self.fiber
+    }
+}
+
 /// An admitted initial Flow frame allocated from its existing fiber's cursor.
 pub(crate) struct PreparedInitialFlow {
     owner: RuntimeFiberInstanceId,
@@ -526,20 +572,19 @@ impl PreparedInitialFlow {
 }
 
 impl PreparedFunctionInputBinding {
-    pub(crate) const fn function(&self) -> AwbcFunctionId {
-        self.function
-    }
-
-    fn allocate_fiber(
+    pub(crate) fn prepare_fiber(
         self,
         program: &AwbcProgram,
         root: AwbcFiberRoot,
         creation: FiberCreationContext,
-    ) -> (FiberState, Box<[AwbcRegisterId]>) {
+    ) -> PreparedFunctionFiber {
         let mut fiber = FiberState::allocate_function_frame(program, root, self.function, creation)
             .expect("prepared function input binding validated the AWBC frame");
         fiber.frames[0].type_instantiation = self.type_instantiation.map(std::sync::Arc::new);
-        (fiber, self.parameter_registers)
+        PreparedFunctionFiber {
+            fiber,
+            parameters: self.parameter_registers,
+        }
     }
 }
 
@@ -2602,13 +2647,7 @@ impl FiberState {
         prepared: PreparedFunctionInputBinding,
         creation: FiberCreationContext,
     ) -> Self {
-        debug_assert_eq!(prepared.parameter_registers.len(), args.len());
-        let (mut fiber, parameters) = prepared.allocate_fiber(program, root, creation);
-        let registers = &mut fiber.frames[0].registers;
-        for (register, value) in parameters.into_iter().zip(args) {
-            registers[register.index()] = value.into();
-        }
-        fiber
+        prepared.prepare_fiber(program, root, creation).commit(args)
     }
 
     /// Creates an internal callback fiber from a fully preflighted zero-arg
@@ -3050,10 +3089,6 @@ impl FiberState {
             RuntimeValue::view,
         )?;
         Ok(())
-    }
-
-    pub fn active_frame(&self) -> Result<&FiberFrame, FiberStateError> {
-        self.frames.last().ok_or(FiberStateError::MissingFrame)
     }
 
     pub fn active_frame_mut(&mut self) -> Result<&mut FiberFrame, FiberStateError> {

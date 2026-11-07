@@ -5,6 +5,7 @@ use crate::awbc::fiber::{
     AwbcFiberLexicalScopeId, FiberDeferredInFlight, FiberDeferredRegistration,
 };
 use crate::scope::RuntimePreparedDeferredRegistration;
+use crate::value::ownership::RuntimeOwnedSlotId;
 
 pub(super) enum PreparedFlowDefer {
     Register {
@@ -22,7 +23,113 @@ pub(super) enum PreparedFlowDefer {
     },
 }
 
+impl PreparedFlowDefer {
+    /// Projects custody onto the exact packet or already allocated child frame.
+    /// The source values stay in their original owner until all issuers admit it.
+    pub(super) fn project_custody(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        fiber: &FiberState,
+        after: &mut BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        drops: &mut crate::line_task::RuntimeHandleDropAuthorization,
+    ) -> Result<(), ProductStepError> {
+        match self {
+            Self::Register {
+                owner,
+                registration,
+                captures,
+                ..
+            } => {
+                for (ordinal, (_, capture)) in captures.iter().enumerate() {
+                    let slot = RuntimeOwnedSlotId::AwbcDeferCapture {
+                        execution,
+                        fiber: owner.fiber,
+                        frame: owner.frame,
+                        scope: owner.scope,
+                        registration: registration.id(),
+                        ordinal: u32::try_from(ordinal)
+                            .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                    };
+                    for handle in line::unique_line_handles(capture)? {
+                        if after.insert(handle.token().clone(), slot).is_some() {
+                            return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                        }
+                    }
+                }
+            }
+            Self::Unwind { owner, spawn, .. } => {
+                let packet = owner
+                    .active_scope(fiber)
+                    .and_then(|scope| scope.defers.last())
+                    .ok_or(LineRuntimeError::InvalidDeferredTransition)?;
+                let mut destinations = spawn.as_ref().map(|spawn| spawn.capture_slots(execution));
+                for (ordinal, capture) in packet.captures.iter().enumerate() {
+                    let source = RuntimeOwnedSlotId::AwbcDeferCapture {
+                        execution,
+                        fiber: owner.fiber,
+                        frame: owner.frame,
+                        scope: owner.scope,
+                        registration: packet.id,
+                        ordinal: u32::try_from(ordinal)
+                            .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                    };
+                    let destination = destinations
+                        .as_mut()
+                        .map(|slots| {
+                            slots
+                                .next()
+                                .ok_or(LineRuntimeError::InvalidDeferredTransition)
+                        })
+                        .transpose()?;
+                    let handles = line::unique_line_handles(capture)?;
+                    for handle in &handles {
+                        if after.remove(handle.token()) != Some(source) {
+                            return Err(LineRuntimeError::WrongOwner.into());
+                        }
+                        if let Some(destination) = destination {
+                            after.insert(handle.token().clone(), destination);
+                        }
+                    }
+                    if destination.is_none() {
+                        drops.authorize_handles(handles)?;
+                    }
+                }
+                if destinations.is_some_and(|mut slots| slots.next().is_some()) {
+                    return Err(LineRuntimeError::InvalidDeferredTransition.into());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl AwbcProductStepExecutor {
+    pub(super) fn published_flow_handle_owners(
+        &self,
+        detached: Option<&FiberState>,
+    ) -> Result<
+        BTreeMap<crate::runtime_id::RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        ProductStepError,
+    > {
+        let mut owners = BTreeMap::new();
+        for fiber in std::iter::once(&self.fiber)
+            .chain(
+                self.child_fibers
+                    .iter()
+                    .filter(|child| child.owner.line_activation().is_none())
+                    .map(|child| &child.fiber),
+            )
+            .chain(detached)
+        {
+            for (token, slot) in line::product_fiber_handle_owners(PRODUCT_EXECUTION_ID, fiber)? {
+                if owners.insert(token, slot).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                }
+            }
+        }
+        Ok(owners)
+    }
+
     pub(super) fn prepare_flow_defer_step(
         &self,
         fiber: &FiberState,
@@ -77,16 +184,11 @@ impl AwbcProductStepExecutor {
                     *outcome,
                     captures,
                 )?;
-                for (register, value) in captures {
+                for (register, _) in captures {
                     if !frame
                         .registers
                         .get(register.index())
                         .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
-                        || !value
-                            .view()
-                            .line_handle_projection()
-                            .map_err(|error| ProductStepError::Type(error.to_string()))?
-                            .is_empty()
                     {
                         return Err(invalid());
                     }
@@ -124,7 +226,12 @@ impl AwbcProductStepExecutor {
                         .defer_sites
                         .get(packet.site.index())
                         .ok_or_else(invalid)?;
-                    Some(batch.prepare_spawn(self, function, &packet.captures)?)
+                    Some(batch.prepare_spawn(
+                        self,
+                        function,
+                        fiber.presentation_bank(),
+                        &packet.captures,
+                    )?)
                 } else {
                     None
                 };
@@ -170,7 +277,6 @@ impl AwbcProductStepExecutor {
                 None
             }
             PreparedFlowDefer::Unwind { owner, exit, spawn } => {
-                let bank = fiber.presentation_bank;
                 let scope = owner
                     .active_scope_mut(fiber)
                     .expect("unwind owner was admitted");
@@ -182,7 +288,6 @@ impl AwbcProductStepExecutor {
                         site: packet.site,
                     });
                     Some(PreparedFlowDeferSpawn {
-                        bank,
                         owner: ProductChildFiberOwner::FlowDeferred {
                             owner,
                             registration: packet.id,
@@ -237,7 +342,6 @@ impl AwbcProductStepExecutor {
 }
 
 pub(super) struct PreparedFlowDeferSpawn {
-    bank: crate::runtime_id::RuntimePresentationBankId,
     owner: ProductChildFiberOwner,
     captures: Vec<RuntimeValue>,
     spawn: line::PreparedLineChildSpawn,
@@ -249,7 +353,7 @@ impl PreparedFlowDeferSpawn {
         executor: &AwbcProductStepExecutor,
         batch: &mut ProductLineTaskExecutionBatch,
     ) {
-        batch.spawn_prepared(executor, self.bank, self.owner, self.captures, self.spawn);
+        batch.spawn_prepared(executor, self.owner, self.captures, self.spawn);
     }
 }
 

@@ -2869,14 +2869,13 @@ impl AwbcProductStepExecutor {
         pure_backend: &mut impl RuntimeCallBackend,
         replenish_budget: bool,
     ) -> usize {
-        let before_owners =
-            match line::product_fiber_handle_owners(self.facade_fiber.execution, &self.fiber) {
-                Ok(owners) => owners,
-                Err(error) => {
-                    self.fail_with_error(error, output);
-                    return 1;
-                }
-            };
+        let before_owners = match self.published_flow_handle_owners(None) {
+            Ok(owners) => owners,
+            Err(error) => {
+                self.fail_with_error(error, output);
+                return 1;
+            }
+        };
         let checkpoint = match self.execution_checkpoint(ProductCheckpointTarget::Main) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
@@ -2938,7 +2937,7 @@ impl AwbcProductStepExecutor {
                         self.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
                     }
                 }
-                let (drop_policy, mut observations) =
+                let (mut drop_policy, mut observations) =
                     match partition_drop_observation(vm_output.observations) {
                         Ok(parts) => parts,
                         Err(error) => {
@@ -2966,10 +2965,7 @@ impl AwbcProductStepExecutor {
                         );
                     }
                 };
-                let after_owners = match line::product_fiber_handle_owners(
-                    self.facade_fiber.execution,
-                    &self.fiber,
-                ) {
+                let mut after_owners = match self.published_flow_handle_owners(None) {
                     Ok(owners) => owners,
                     Err(error) => {
                         return self.fail_main_vm_step(
@@ -2980,6 +2976,16 @@ impl AwbcProductStepExecutor {
                         );
                     }
                 };
+                if let Some(prepared) = &prepared_defer
+                    && let Err(error) = prepared.project_custody(
+                        self.facade_fiber.execution,
+                        &self.fiber,
+                        &mut after_owners,
+                        &mut drop_policy,
+                    )
+                {
+                    return self.fail_main_vm_step(checkpoint, error, output, vm_output.executed);
+                }
                 let drop_receipt = match self.dialogues.reconcile_parent_fiber(
                     self.facade_fiber.execution,
                     &before_owners,
@@ -3402,6 +3408,17 @@ impl AwbcProductStepExecutor {
         let pending_host_call_before = front.pending_host_call.clone();
         let mut resume_journal = DeferredChildResumeJournal::capture(self);
         let mut staged_resume_output = RuntimeStepOutput::default();
+        let before_flow_owners = if registry_activation.is_none() {
+            match self.published_flow_handle_owners(None) {
+                Ok(owners) => Some(owners),
+                Err(error) => {
+                    self.fail_with_error(error, output);
+                    return true;
+                }
+            }
+        } else {
+            None
+        };
         let Some(mut child) = self.child_fibers.pop_front() else {
             return false;
         };
@@ -3880,7 +3897,7 @@ impl AwbcProductStepExecutor {
                     }
                 },
             };
-        let drop_policy = match resume_journal.merge_drop_authorization(drop_policy) {
+        let mut drop_policy = match resume_journal.merge_drop_authorization(drop_policy) {
             Ok(policy) => policy,
             Err(error) => {
                 if !self.rollback_selected_child_step(
@@ -3937,6 +3954,43 @@ impl AwbcProductStepExecutor {
                         return true;
                     }
                 };
+            let custody = (|| {
+                let mut after = self.published_flow_handle_owners(Some(&child.fiber))?;
+                if let Some(prepared) = &prepared {
+                    prepared.project_custody(
+                        self.facade_fiber.execution,
+                        &child.fiber,
+                        &mut after,
+                        &mut drop_policy,
+                    )?;
+                }
+                self.dialogues
+                    .inspect_parent_fiber_reconciliation(
+                        self.facade_fiber.execution,
+                        before_flow_owners
+                            .as_ref()
+                            .expect("ordinary child retained its original complete custody graph"),
+                        &after,
+                        &drop_policy,
+                    )
+                    .map_err(ProductStepError::from)
+            })();
+            let custody = match custody {
+                Ok(custody) => custody,
+                Err(error) => {
+                    if self.rollback_selected_child_step(
+                        child,
+                        checkpoint,
+                        pending_host_call_before,
+                        resume_journal,
+                        need_states,
+                        output,
+                    ) {
+                        self.record_error(error, output);
+                    }
+                    return true;
+                }
+            };
             if let Some(prepared) = prepared {
                 if let Some(spawn) = Self::commit_flow_defer_step(
                     &mut child.fiber,
@@ -3946,6 +4000,11 @@ impl AwbcProductStepExecutor {
                     spawn.commit(self, &mut batch);
                 }
             }
+            staged_resume_output.requests.line_commands.extend(
+                self.dialogues
+                    .commit_parent_fiber_reconciliation(custody)
+                    .into_commands(),
+            );
             self.commit_line_task_commands(batch, output);
         }
         if matches!(&owner, ProductChildFiberOwner::FlowDeferred { .. }) {

@@ -267,10 +267,9 @@ impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
         })
     }
 
-    pub(crate) fn validate_awbc_dialogue_receivers(
+    pub(crate) fn validate_published_receiver_slots(
         &self,
         execution: ExecutionInstanceId,
-        fibers: &std::collections::BTreeSet<crate::runtime_id::RuntimeFiberInstanceId>,
         actual: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
     ) -> Result<(), LineRuntimeError> {
         let mut matched = 0;
@@ -282,15 +281,10 @@ impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
                 if receiver_execution != execution {
                     return Err(LineRuntimeError::WrongOwner);
                 }
-                if slot
-                    .awbc_fiber()
-                    .is_some_and(|fiber| fibers.contains(&fiber))
-                {
-                    if actual.get(token) != Some(&slot) {
-                        return Err(LineRuntimeError::WrongOwner);
-                    }
-                    matched += 1;
+                if actual.get(token) != Some(&slot) {
+                    return Err(LineRuntimeError::WrongOwner);
                 }
+                matched += 1;
             }
         }
         if matched != actual.len() {
