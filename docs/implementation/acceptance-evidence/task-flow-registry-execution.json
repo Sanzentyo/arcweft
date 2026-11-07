@@ -28715,7 +28715,7 @@
     ],
     "ownershipReview": "Registry custody resolution and prepared row admission belong to one private Product owner shared by Line and ordinary cleanup. Delete the old dialogue-only resolver and migrate every VM resource producer/test directly. The new 214-LOC module is one owner algorithm, not an alternate registry authority. EffectRow owns closed capability coverage; checked expression effects own intrinsic registry drop effects. Existing large files retain their responsibility; no new dependency or public API.",
     "correction": "Supersedes the current-status claim that admitted ordinary-defer Flow registry access still lacks AWBC context. Explicit semicolon/Unit-tail sources execute. Optional reads intentionally observe dynamic callback writes; a required read still needs its separate static reaching-presence proof. HIR recovery for an unterminated trailing write is a distinct syntax condition and is not used to reopen accepted runtime boundaries. Remove repeated old matrix/partition counts from the two accepted registry feature rows; retain their full SHAs and all measurements in prior JSON/history sections, with the latest broad matrix stated once.",
-    "limits": "This cut does not accept promotion/MustDrop formal proofs, mandatory VoiceHandle execution, ordinary-defer goto/Choice, direct AWBC return from open scopes, cancellation/Line-affine capture, aggregate registration/spawn preflight, other-platform/Tier2 execution or Native public-save support. Generic Match and accepted Native boundaries remain accepted. An unused import in dialogue.rs is retained in these frozen tested bytes; its warning is preserved.",
+    "limits": "This cut does not accept promotion/MustDrop formal proofs, mandatory VoiceHandle execution, ordinary-defer goto/Choice, cancellation/Line-affine capture, aggregate registration/spawn preflight, other-platform/Tier2 execution or Native public-save support. Generic Match and accepted Native boundaries remain accepted. An unused import in dialogue.rs is retained in these frozen tested bytes; its warning is preserved.",
     "raw": {
       "entries": [
         {
@@ -30037,7 +30037,7 @@
       },
       "interpretation": "Exact binary identities are retained. The initial CLI predates this parser cut and is not relabeled; all six probes were also rerun with the rebuilt Source24 CLI. All zero exit codes and Done statuses are insufficient: AWBC loses root cleanup for static/dynamic goto and both function/caller cleanup for goto from a function. Native retains all three exact sequences. These are concrete pending AWBC conditions; do not reopen Native acceptance."
     },
-    "limits": "The broad matrix has five failures: four CLI and one stale Sema fixture. The Sema fixture is subsequently repaired and its one exact test passes; do not relabel the full matrix as four failures or combine the runs into a synthetic aggregate. This cut does not accept AWBC goto/Choice, direct AWBC return from open scopes, Line-affine cleanup captures, aggregate spawn preflight, promotion/MustDrop proofs, Native public saves, other-platform or ignored Tier2 execution. Prior Core53 results retain Source36 identity.",
+    "limits": "The broad matrix has five failures: four CLI and one stale Sema fixture. The Sema fixture is subsequently repaired and its one exact test passes; do not relabel the full matrix as four failures or combine the runs into a synthetic aggregate. This cut does not accept AWBC goto/Choice, Line-affine cleanup captures, aggregate spawn preflight, promotion/MustDrop proofs, Native public saves, other-platform or ignored Tier2 execution. Prior Core53 results retain Source36 identity.",
     "raw": {
       "sha256": "a0b2786520c8b4b7d59ccc017679b562eb6b5d9071e147970b5d28b5adfdd40e",
       "path": "task-value-block-trailing-write.raw.zip",
@@ -31170,7 +31170,7 @@
         }
       ]
     },
-    "limits": "The four existing CLI failures remain. Do not synthesize a clean full-workspace result, add owner counts to the matrix, or relabel earlier Source24 Syntax25 five-failure evidence. This cut does not accept direct raw AWBC return from open scopes, additional AWBC cancellation/Line-affine capture cases, aggregate registration/child-construction resource admission, MustDrop/promotion proofs, Native public saves, other platforms or ignored Tier2 execution.",
+    "limits": "The four existing CLI failures remain. Do not synthesize a clean full-workspace result, add owner counts to the matrix, or relabel earlier Source24 Syntax25 five-failure evidence. This cut does not accept additional AWBC cancellation/Line-affine capture cases, aggregate registration/child-construction resource admission, MustDrop/promotion proofs, Native public saves, other platforms or ignored Tier2 execution.",
     "raw": {
       "path": "task-awbc-flow-transfer.raw.zip",
       "sha256": "0d2ec847849449dbee0195da94e34ec6b6a55e87025638fd9c2c3a5835824e57",
@@ -32209,6 +32209,225 @@
           "entry": "run-flow-transfer-custody-validation.ps1",
           "bytes": 5715,
           "sha256": "061cd3d1e4596e2fdc0bb9137d4beec4701b96e88735c8452a0ff5fc2affa821"
+        }
+      ]
+    }
+  },
+  "awbcLexicalTerminationAdmission": {
+    "version": 1,
+    "date": "2026-11-07",
+    "source": {
+      "version": 1,
+      "commit": "ba07405840d4b34143fa586809d7877ea50d58a0",
+      "parent": "db8f2dfece59fe4a434f0a419391bfa2dace49c8",
+      "tree": "aefae867b91dc6a2235cb63c1f95c198a06c1f6c",
+      "remote": "ba07405840d4b34143fa586809d7877ea50d58a0",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/tests.rs",
+          "blob": "ee244bb788851207d373d1d1eda18023d2fe07d8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/scope_termination.rs",
+          "blob": "b2a0a80d6f8103993da41f30e89d5e4e71c9d702"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "68cc80d7eef109609b4c3df56e75bbc71ea0b59d9cd76ac2e51671131c5a8bb2",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T14:20:55.6452629Z"
+    },
+    "scope": "Prove the existing lexical termination admission contract; remove an erroneous remaining-work category without changing runtime behavior.",
+    "cases": [
+      "Return and implicit Unit Complete with one or two open emitted scopes are rejected as ScopeDiscipline before execution. Product admission rejects the same artifacts.",
+      "After only the inner of two scopes exits, verification still rejects termination.",
+      "Once every required ExitScope is present, verification, canonical codec roundtrip and Product admission succeed for both terminators."
+    ],
+    "quality": {
+      "owner": {
+        "version": 1,
+        "sourceBase": "db8f2dfece59fe4a434f0a419391bfa2dace49c8",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "-E",
+          "test(/raw_(return|completion)_requires_all_lexical_scopes_to_exit_before_admission/)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3835,
+        "sourceDrift": 0,
+        "selectedTests": [
+          "awbc::tests::scope_termination::raw_completion_requires_all_lexical_scopes_to_exit_before_admission",
+          "awbc::tests::scope_termination::raw_return_requires_all_lexical_scopes_to_exit_before_admission"
+        ],
+        "summary": [
+          "     Summary [   0.029s] 2 tests run: 2 passed, 2320 skipped"
+        ],
+        "startedAt": "2026-11-07T14:17:53.8351495Z",
+        "endedAt": "2026-11-07T14:17:56.2190887Z"
+      },
+      "clippy": {
+        "version": 1,
+        "sourceBase": "db8f2dfece59fe4a434f0a419391bfa2dace49c8",
+        "arguments": [
+          "clippy",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3835,
+        "sourceDrift": 0,
+        "selectedTests": [
+          "awbc::tests::scope_termination::raw_completion_requires_all_lexical_scopes_to_exit_before_admission",
+          "awbc::tests::scope_termination::raw_return_requires_all_lexical_scopes_to_exit_before_admission"
+        ],
+        "summary": [],
+        "startedAt": "2026-11-07T14:17:56.2226701Z",
+        "endedAt": "2026-11-07T14:19:34.2837024Z"
+      },
+      "fmt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/tests.rs",
+          "crates/arcweft-core/src/awbc/tests/scope_termination.rs"
+        ],
+        "exitCode": 0
+      }
+    },
+    "corrections": [
+      "An open-scope raw Return was listed as remaining implementation work. It is invalid IR under the existing verifier contract, not an admitted Source return whose cleanup is missing. No new runtime return state is needed.",
+      "Remove only that erroneous clause from the three earlier evidence limits and the later historical/current enumeration. Keep all actual run results, failures, commit SHAs and immutable raw archives. The earlier limited-run statements are not a current backlog.",
+      "Source-level return cleanup is already exercised by the preceding compiler scoped_defer run of 30 passing cases, including nested return values and a waiting callback, in Native and saved decoded AWBC. These two new tests concern artifact admission and are a separate run.",
+      "Production, fixture and Cargo inputs are unchanged. Reuse the completed 53-package matrix and workspace checks at b6df0c825805b9ac77cad6a9760761a861007679; do not add these two tests to its 7962-case count. Native, Line/init and Generic Match remain accepted."
+    ],
+    "correctedHistoricalLimitFields": [
+      "ordinaryFlowDeferredRegistry.limits",
+      "valueBlockTrailingWriteStatements.limits",
+      "flowTransferInvocationUnwind.limits"
+    ],
+    "reusedEvidence": {
+      "source": "b6df0c825805b9ac77cad6a9760761a861007679",
+      "publication": "db8f2dfece59fe4a434f0a419391bfa2dace49c8",
+      "productionFixtureCargoDrift": 0,
+      "matrix": {
+        "run": 7962,
+        "passed": 7958,
+        "failed": 4,
+        "skipped": 41
+      },
+      "compilerOwner": 30,
+      "coreDoctests": 80
+    },
+    "raw": {
+      "path": "task-awbc-lexical-termination-admission.raw.zip",
+      "sha256": "fe9277cf40dbab8a3422621a1adb16103e6e54be31aa38948e320bccdeb9bd75",
+      "entries": [
+        {
+          "entry": "record-scope-termination-admission.ps1",
+          "bytes": 9399,
+          "sha256": "46cb842ef9f5d96a962727eb7be9cec415f6e04cac30a7c6b547ffedb1ac7e83"
+        },
+        {
+          "entry": "run-scope-termination-admission.ps1",
+          "bytes": 3146,
+          "sha256": "b78fa7fdad9495bcb3f4b465013545f782aac8272c17b1b35736e0c17a3523e9"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.clippy.log",
+          "bytes": 4931522,
+          "sha256": "f997d3a1eacff7556e170ac0bc01405fb21d7860934bd214d9116143e8aa146a"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.clippy.receipt.json",
+          "bytes": 630,
+          "sha256": "917aa0cc093be1fb3a959d6f7c0961f8e80d79f2472205dbbf4d52631a6aa2ce"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.fmt.receipt.json",
+          "bytes": 169,
+          "sha256": "a4bb312538b8daeac6259b7a5355ff3cf1e2aa8fed9aa48c744b1e7badd2471a"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.list.json",
+          "bytes": 455233,
+          "sha256": "ab8d179c80cfb1f2ea31b118e346d3d97f394831a11c3dfdf22b9fb1e6830fdc"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.list.receipt.json",
+          "bytes": 391,
+          "sha256": "c0b6305c333c650eb79b5ef7f39ff578a011dcd9ee7b369c286f9fe6a8260890"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.list.stderr.log",
+          "bytes": 34774,
+          "sha256": "b6b4f1454fe00c7675644afd134fa1ce67ed56b9d411295d3189b4ad03689bdf"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.owner.log",
+          "bytes": 35269,
+          "sha256": "f82e0db94041f1e2f59bc3808ecac0cfd6c11422c4da6ce583226aa0c1f64a34"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.owner.receipt.json",
+          "bytes": 843,
+          "sha256": "876155813e10b5884d5db7d1e0b414aa3875dc18904d9ac78c03fbb1a62e9b5a"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source-freeze.json",
+          "bytes": 751529,
+          "sha256": "4c1b278761ffc1b1157925d4bfbd7b7b29b840b45907811a81e1ae3f380d792a"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source.message.txt",
+          "bytes": 52,
+          "sha256": "02dfd6e92e8a98ad8b496fa5b845c30be9ea9674b5f7140d8d3d2e0e24979a81"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source.owned.txt",
+          "bytes": 94,
+          "sha256": "fbe64b9db74260d0b669c1cd342b2de8207c5e227bfd1cd0f39c1b8032fae153"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source.pathspec",
+          "bytes": 94,
+          "sha256": "d71f310dadcbf20f0fd652246d167879c0de63bb4a03cec685e3ccce8d8be0f7"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source.prepared.json",
+          "bytes": 1425,
+          "sha256": "74782b1194de095d79697150dfcea8295211e515016442f6af3f228892ffa249"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source.reviewed.patch",
+          "bytes": 4488,
+          "sha256": "68cc80d7eef109609b4c3df56e75bbc71ea0b59d9cd76ac2e51671131c5a8bb2"
+        },
+        {
+          "entry": "scope-termination-admission-20261107.source.verified.json",
+          "bytes": 827,
+          "sha256": "fa71a7cbd826cf9dde953dcb9b5684759e9bc9b49937f9018c417c80d8ec701f"
         }
       ]
     }

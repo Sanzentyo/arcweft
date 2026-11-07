@@ -16,6 +16,11 @@ missing-AWBC diagnostic remains a defensive invariant for manually constructed
 bundles, not the normal producer error path. Source/development execution uses
 the admitted `RuntimePlan` through the [shared executor facade](../02-runtime/runtime-step-and-executors.md).
 
+Before `Return` or implicit Unit `Complete`, emitted bytecode closes each open
+lexical scope with `ExitScope`. Verification and Product admission reject a
+terminator that leaves any such scope open. Source-level returns wait for their
+registered cleanup under the [block-scope contract](../01-language/block-scopes.md).
+
 ## Original program Source
 
 Compiler-side AWBC lowering retains the complete original RuntimePlan Source,
