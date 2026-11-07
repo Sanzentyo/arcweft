@@ -8,8 +8,18 @@ use crate::plan::{
 };
 use crate::tests::function_application::returning_function_builder;
 
-fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OrdinaryFlowExit {
+    End,
+    Fail,
+    Return,
+    CallReturn,
+    FailDuringReturn,
+}
+
+fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
     use crate::effect::{LineEffectRequest, RuntimeLog, RuntimeRegistryReadKind};
+    use crate::pattern::RuntimeSemanticTypeId;
     use crate::plan::*;
     use crate::scope::{RuntimeDeferOutcomeFilter as Filter, RuntimeScopeIdentity};
     use crate::value::RuntimeLocalReadMode;
@@ -18,6 +28,7 @@ fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
+    let function_type = RuntimeSemanticTypeId::from_bytes([98; 32]);
     let local_source = crate::engine::manual_local_source(
         "arcweft-core.fixture.engine.defer.flow_scope.parent_binding",
     );
@@ -29,6 +40,14 @@ fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    function_type,
+                    RuntimePlanTypeProjection::Function {
+                        contract: RuntimeFunctionTypeContract::default(),
+                        parameters: Box::new([]),
+                        result: boolean,
+                    },
+                ),
             ],
             [
                 RuntimeLocalDeclarationSeed::new(local_source, boolean),
@@ -38,11 +57,17 @@ fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
                     ),
                     boolean,
                 ),
+                RuntimeLocalDeclarationSeed::new(
+                    crate::engine::manual_local_source(
+                        "arcweft-core.fixture.engine.defer.flow_scope.call_result",
+                    ),
+                    boolean,
+                ),
             ],
         )
         .unwrap();
-    let [local, capture] = locals.local_ids() else {
-        panic!("two admitted bindings")
+    let [local, capture, call_result] = locals.local_ids() else {
+        panic!("three admitted bindings")
     };
     let bind = |local: &RuntimeLocalSeedId| {
         RuntimePatternSeed::new(
@@ -89,16 +114,23 @@ fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
         pattern: bind(local),
         expr: boolean_value(true),
     }];
+    let mut inner_defer = None;
     for (index, (message, outcome)) in [
         ("always cleanup", Filter::Always),
         ("completed cleanup", Filter::Completed),
         ("failed cleanup", Filter::Failed),
+        ("inner cleanup", Filter::Always),
     ]
     .into_iter()
     .enumerate()
     {
         let writes_flow = outcome == Filter::Completed;
         let mut ops = vec![log(message)];
+        if index == 3 && exit == OrdinaryFlowExit::FailDuringReturn {
+            ops.push(RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(
+                LineEffectRequest::Fail("inner cleanup failed".to_owned()),
+            )));
+        }
         let (inputs, callback_effects): (Box<[RuntimeFunctionInputBindingSeed]>, _) = if writes_flow
         {
             ops.push(write(read(capture, RuntimeLocalReadMode::Move)));
@@ -142,7 +174,7 @@ fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
                 }),
             )
             .unwrap();
-        body.push(RuntimeFlowOpSeed::RegisterDefer {
+        let registration = RuntimeFlowOpSeed::RegisterDefer {
             site: builder.reserve_defer_site_seed(&function).unwrap(),
             outcome,
             captures: writes_flow
@@ -150,10 +182,81 @@ fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
                 .into_iter()
                 .collect(),
             owner: RuntimeDeferOwner::CurrentScope,
-        });
+        };
+        if index == 3 {
+            inner_defer = Some(registration);
+        } else {
+            body.push(registration);
+        }
     }
     body.push(log("inside"));
-    if fail {
+    let registry_result = || {
+        RuntimeExprSeed::new(
+            boolean,
+            RuntimeExprSeedKind::RegistryRead {
+                key: key.clone(),
+                kind: RuntimeRegistryReadKind::Required,
+            },
+        )
+    };
+    let nested_return = |value| RuntimeFlowOpSeed::Loop {
+        result: None,
+        body: vec![RuntimeFlowOpSeed::Scope {
+            identity: RuntimeScopeIdentity::Anonymous,
+            body: vec![
+                inner_defer.clone().unwrap(),
+                RuntimeFlowOpSeed::ReturnExpr(value),
+            ],
+        }],
+    };
+    let returned = if exit == OrdinaryFlowExit::CallReturn {
+        let callee = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([97; 32]),
+                role: RuntimeFunctionSemanticRole::Closure,
+                function_type: None,
+                inputs: Box::new([]),
+                result: boolean,
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::empty(),
+            })
+            .unwrap();
+        builder
+            .define_function_site_seed(
+                &callee,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([nested_return(boolean_value(false))]),
+                }),
+            )
+            .unwrap();
+        body.push(RuntimeFlowOpSeed::ApplyFunction {
+            callee: RuntimeExprSeed::new(
+                function_type,
+                RuntimeExprSeedKind::Function {
+                    site: callee,
+                    captures: Box::new([]),
+                },
+            ),
+            args: Box::new([]),
+            result: bind(call_result),
+        });
+        body.push(log("caller resumed"));
+        body.push(RuntimeFlowOpSeed::ReturnExpr(read(
+            call_result,
+            RuntimeLocalReadMode::Move,
+        )));
+        boolean_value(true)
+    } else {
+        registry_result()
+    };
+    if matches!(
+        exit,
+        OrdinaryFlowExit::Return | OrdinaryFlowExit::FailDuringReturn
+    ) {
+        body.push(nested_return(registry_result()));
+    }
+    if exit == OrdinaryFlowExit::Fail {
         body.push(RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(
             LineEffectRequest::Fail("ordinary Flow failed".to_owned()),
         )));
@@ -184,13 +287,7 @@ fn ordinary_flow_defer_engine(fail: bool) -> crate::engine::Engine {
                         body,
                     },
                     log("after"),
-                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                        boolean,
-                        RuntimeExprSeedKind::RegistryRead {
-                            key,
-                            kind: RuntimeRegistryReadKind::Required,
-                        },
-                    )),
+                    RuntimeFlowOpSeed::ReturnExpr(returned),
                 ]),
             },
         ))
@@ -206,7 +303,11 @@ fn ordinary_native_flow_unwinds_defer_and_restores_its_exact_owner() {
     use crate::time::TickId;
 
     for fail in [false, true] {
-        let mut engine = ordinary_flow_defer_engine(fail);
+        let mut engine = ordinary_flow_defer_engine(if fail {
+            OrdinaryFlowExit::Fail
+        } else {
+            OrdinaryFlowExit::End
+        });
         let owner = RuntimeProgramOwner::Plan(engine.program_plan());
         let mut logs = Vec::new();
         let mut restored_inflight = false;
@@ -278,13 +379,191 @@ fn ordinary_native_flow_unwinds_defer_and_restores_its_exact_owner() {
 }
 
 #[test]
+fn ordinary_native_early_return_drains_the_reached_invocation_after_restore() {
+    use crate::effect::LineEffectRequest;
+    use crate::engine::{Engine, FlowEvent, FlowExit, FlowFiberStatus};
+    use crate::step::{RuntimeStepInput, RuntimeStepOptions};
+    use crate::time::TickId;
+
+    for (mode, expected_logs) in [
+        (
+            OrdinaryFlowExit::Return,
+            &[
+                "inside",
+                "inner cleanup",
+                "completed cleanup",
+                "always cleanup",
+            ][..],
+        ),
+        (
+            OrdinaryFlowExit::CallReturn,
+            &[
+                "inside",
+                "inner cleanup",
+                "caller resumed",
+                "completed cleanup",
+                "always cleanup",
+            ][..],
+        ),
+    ] {
+        let mut engine = ordinary_flow_defer_engine(mode);
+        let owner = RuntimeProgramOwner::Plan(engine.program_plan());
+        let mut observed_return = false;
+        let mut complete = false;
+        let mut logs = Vec::new();
+        for tick in 0..80 {
+            let step = engine.step(
+                RuntimeStepInput {
+                    tick: TickId(tick),
+                    ..RuntimeStepInput::default()
+                },
+                RuntimeStepOptions::default(),
+            );
+            assert!(
+                step.output.diagnostics.is_empty(),
+                "{:?}",
+                step.output.diagnostics
+            );
+            logs.extend(
+                step.output
+                    .effects
+                    .line
+                    .into_iter()
+                    .filter_map(|effect| match effect {
+                        LineEffectRequest::Log(row) => Some(row.message),
+                        _ => None,
+                    }),
+            );
+            let image = engine.inert_rollback_image().unwrap();
+            if !observed_return
+                && !image.child_fibers.is_empty()
+                && let Some(NativeLexicalExitAction::Return { result, .. }) = image
+                    .fiber
+                    .frame
+                    .lexical_exit
+                    .as_ref()
+                    .map(|exit| &exit.action)
+            {
+                assert!(
+                    !step
+                        .output
+                        .flow_events
+                        .iter()
+                        .any(|event| matches!(event, FlowEvent::Return { .. }))
+                );
+                let mut wrong_target = image.clone();
+                wrong_target
+                    .fiber
+                    .frame
+                    .lexical_exit
+                    .as_mut()
+                    .unwrap()
+                    .target += 1;
+                assert!(Engine::from_rollback_image(wrong_target, &owner).is_err());
+                if mode == OrdinaryFlowExit::CallReturn {
+                    assert!(matches!(result, NativeReturnResult::Value(_)));
+                    let mut wrong_value = image.clone();
+                    let NativeLexicalExitAction::Return { result, .. } = &mut wrong_value
+                        .fiber
+                        .frame
+                        .lexical_exit
+                        .as_mut()
+                        .unwrap()
+                        .action
+                    else {
+                        unreachable!()
+                    };
+                    *result = NativeReturnResult::Value(
+                        AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
+                            &RuntimeValue::Unit,
+                            &owner,
+                        )
+                        .unwrap(),
+                    );
+                    assert!(Engine::from_rollback_image(wrong_value, &owner).is_err());
+                }
+                observed_return = true;
+            }
+            engine = Engine::from_rollback_image(image, &owner).unwrap();
+            if let FlowFiberStatus::Done(FlowExit::Return(value)) = step.fiber_status {
+                assert_eq!(value, "false");
+                assert_eq!(logs, expected_logs);
+                assert!(
+                    step.output.flow_events.iter().any(
+                        |event| matches!(event, FlowEvent::Return { value } if value == "false")
+                    )
+                );
+                complete = true;
+                break;
+            }
+        }
+        assert!(observed_return && complete, "{logs:?}");
+    }
+}
+
+#[test]
+fn ordinary_native_return_is_discarded_when_inner_cleanup_fails() {
+    use crate::effect::LineEffectRequest;
+    use crate::engine::{Engine, FlowEvent, FlowFiberStatus};
+    use crate::step::{RuntimeStepInput, RuntimeStepOptions};
+    use crate::time::TickId;
+
+    let mut engine = ordinary_flow_defer_engine(OrdinaryFlowExit::FailDuringReturn);
+    let owner = RuntimeProgramOwner::Plan(engine.program_plan());
+    let mut logs = Vec::new();
+    for tick in 0..80 {
+        let step = engine.step(
+            RuntimeStepInput {
+                tick: TickId(tick),
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepOptions::default(),
+        );
+        assert!(
+            !step
+                .output
+                .flow_events
+                .iter()
+                .any(|event| matches!(event, FlowEvent::Return { .. }))
+        );
+        logs.extend(
+            step.output
+                .effects
+                .line
+                .into_iter()
+                .filter_map(|effect| match effect {
+                    LineEffectRequest::Log(row) => Some(row.message),
+                    _ => None,
+                }),
+        );
+        engine =
+            Engine::from_rollback_image(engine.inert_rollback_image().unwrap(), &owner).unwrap();
+        if let FlowFiberStatus::Failed(message) = step.fiber_status {
+            assert_eq!(message, "inner cleanup failed");
+            assert_eq!(
+                logs,
+                [
+                    "inside",
+                    "inner cleanup",
+                    "failed cleanup",
+                    "always cleanup"
+                ]
+            );
+            assert!(engine.fiber.frame.lexical_exit.is_none());
+            return;
+        }
+    }
+    panic!("cleanup failure must discard the pending return: {logs:?}");
+}
+
+#[test]
 fn ordinary_native_flow_reports_cleanup_start_failure_after_draining_scope() {
     use crate::engine::FlowFiberStatus;
     use crate::step::{RuntimeStepInput, RuntimeStepOptions};
     use crate::time::TickId;
     use crate::value::RuntimeEvalError;
 
-    let mut engine = ordinary_flow_defer_engine(false);
+    let mut engine = ordinary_flow_defer_engine(OrdinaryFlowExit::End);
     engine.next_fiber_id = u64::MAX;
     for tick in 0..80 {
         let result = engine.step(

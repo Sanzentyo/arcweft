@@ -822,6 +822,7 @@ fn flow_fiber_line_handle_tokens(
         .frame
         .lexical_exit
         .as_ref()
+        .filter(|exit| exit.action.pending_return_value().is_none())
         .and_then(|exit| exit.action.value())
     {
         for handle in value
@@ -890,11 +891,31 @@ fn flow_fiber_line_handle_owners(
             }
         }
     }
-    if let Some((_, value)) = &fiber.frame.invocation_result {
-        let owner = crate::value::ownership::RuntimeOwnedSlotId::ProgramResult {
-            execution: fiber.execution,
-            fiber: fiber.persistent_id,
-        };
+    use crate::value::ownership::RuntimeOwnedSlotId;
+    let result = fiber.frame.invocation_result.as_ref().map(|(_, value)| {
+        (
+            RuntimeOwnedSlotId::ProgramResult {
+                execution: fiber.execution,
+                fiber: fiber.persistent_id,
+            },
+            value,
+        )
+    });
+    let pending_return = fiber
+        .frame
+        .lexical_exit
+        .as_ref()
+        .and_then(|exit| exit.action.pending_return_value())
+        .map(|value| {
+            (
+                RuntimeOwnedSlotId::NativePendingReturn {
+                    execution: fiber.execution,
+                    fiber: fiber.persistent_id,
+                },
+                value,
+            )
+        });
+    for (owner, value) in result.into_iter().chain(pending_return) {
         for handle in value
             .view()
             .line_handle_projection()

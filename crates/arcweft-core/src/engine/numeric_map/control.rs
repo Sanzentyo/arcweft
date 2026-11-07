@@ -109,6 +109,7 @@ impl Engine {
             || mode != RuntimeStepMode::Drain
             || self.has_executor_work()
             || self.has_joined_work()
+            || self.fiber.frame.scope_defer_exit_pending()
             || !matches!(self.fiber.frame.status, FlowFiberStatus::Running)
             || self.fiber.frame.await_observer.is_some()
         {
@@ -214,13 +215,29 @@ impl Engine {
         };
         let continuation = [continuation];
         self.prepare_native_work(&continuation).ok()?;
+        let sum = match sum {
+            Some(sum) => Some(match sum.target {
+                SumTarget::Bind(pattern) => OwnedSumTarget::Bind(pattern.clone()),
+                SumTarget::Return => {
+                    let body = self
+                        .original_body_range(
+                            &source_operation,
+                            crate::plan::RuntimeFlowBodyRole::Body,
+                        )
+                        .ok()?;
+                    let offset = control
+                        .mapping_body()
+                        .len()
+                        .checked_add(sum.skipped_ops)?
+                        .checked_sub(1)?;
+                    OwnedSumTarget::Return(body.source_operation_at_offset(&owner, offset)?)
+                }
+            }),
+            None => None,
+        };
         let batch = admission.materialize();
         backend.prepare_total_numeric_batch(batch.function(), batch.rows())?;
         let result_pattern = result_pattern.clone();
-        let sum = sum.map(|sum| match sum.target {
-            SumTarget::Bind(pattern) => OwnedSumTarget::Bind(pattern.clone()),
-            SumTarget::Return => OwnedSumTarget::Return,
-        });
         Some(self.with_main_flow_transaction(
             output,
             backend,
@@ -246,23 +263,13 @@ impl Engine {
                             }
                             RuntimeNumericBatchResult::Sum(value) => {
                                 let value = RuntimeValue::i64(value);
-                                match sum
-                                    .as_ref()
-                                    .expect("fused Map retains its original consuming Sum")
-                                {
+                                match sum.expect("fused Map retains its original consuming Sum") {
                                     OwnedSumTarget::Bind(pattern) => {
-                                        candidate.bind_value(pattern, value, staged);
+                                        candidate.bind_value(&pattern, value, staged);
                                     }
-                                    OwnedSumTarget::Return => {
-                                        if let Some(value) =
-                                            candidate.return_typed_value(value, staged, backend)
-                                        {
-                                            candidate.return_value(
-                                                crate::value::runtime_value_label(&value),
-                                                staged,
-                                                backend,
-                                            );
-                                        }
+                                    OwnedSumTarget::Return(source) => {
+                                        candidate
+                                            .return_from_source(source, value, staged, backend);
                                     }
                                 }
                             }

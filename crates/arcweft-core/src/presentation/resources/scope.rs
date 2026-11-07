@@ -99,6 +99,12 @@ pub struct RuntimePresentationScopeSnapshot {
 }
 
 impl RuntimePresentationScopeBinding {
+    pub(crate) fn owns(&self, owner: PresentationScopeOwner) -> bool {
+        self.grants
+            .get(&owner.bank)
+            .is_some_and(|grant| grant.owner == owner)
+    }
+
     pub(crate) fn banks(&self) -> impl Iterator<Item = RuntimePresentationBankId> + '_ {
         self.grants.keys().copied()
     }

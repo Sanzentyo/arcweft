@@ -71,6 +71,16 @@ pub(super) enum NativeLexicalExitAction<V> {
         value: V,
     },
     Transfer(NativeLoopTransfer<V>),
+    Return {
+        source: NativeSourceOperation,
+        result: NativeReturnResult<V>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum NativeReturnResult<V> {
+    FlowLabel(String),
+    Value(V),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -97,6 +107,16 @@ impl<V> NativeLoopTransferKind<V> {
 }
 
 impl<V> NativeLexicalExitAction<V> {
+    pub(super) fn pending_return_value(&self) -> Option<&V> {
+        match self {
+            Self::Return {
+                result: NativeReturnResult::Value(value),
+                ..
+            } => Some(value),
+            _ => None,
+        }
+    }
+
     fn borrowed(&self) -> NativeLexicalExitAction<&V> {
         match self {
             Self::Emitted => NativeLexicalExitAction::Emitted,
@@ -113,6 +133,15 @@ impl<V> NativeLexicalExitAction<V> {
                     NativeLoopTransferKind::Continue => NativeLoopTransferKind::Continue,
                 },
             }),
+            Self::Return { source, result } => NativeLexicalExitAction::Return {
+                source: source.clone(),
+                result: match result {
+                    NativeReturnResult::FlowLabel(label) => {
+                        NativeReturnResult::FlowLabel(label.clone())
+                    }
+                    NativeReturnResult::Value(value) => NativeReturnResult::Value(value),
+                },
+            },
         }
     }
 
@@ -137,12 +166,23 @@ impl<V> NativeLexicalExitAction<V> {
                     NativeLoopTransferKind::Continue => NativeLoopTransferKind::Continue,
                 },
             }),
+            Self::Return { source, result } => NativeLexicalExitAction::Return {
+                source,
+                result: match result {
+                    NativeReturnResult::FlowLabel(label) => NativeReturnResult::FlowLabel(label),
+                    NativeReturnResult::Value(value) => NativeReturnResult::Value(map(value)?),
+                },
+            },
         })
     }
 
     pub(super) fn value(&self) -> Option<&V> {
         match self {
             Self::Bind { value, .. }
+            | Self::Return {
+                result: NativeReturnResult::Value(value),
+                ..
+            }
             | Self::Transfer(NativeLoopTransfer {
                 kind: NativeLoopTransferKind::Break(value),
                 ..
@@ -192,14 +232,15 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let invalid = || AwbcRuntimeValueSnapshotError::Message {
-            message: "native lexical exit differs from its original operation or loop target"
+            message: "native lexical exit differs from its original operation or control target"
                 .into(),
         };
         admission.validate_metadata(&self.target)?;
         let (source, transfer_target) = match &self.action {
             NativeLexicalExitAction::Emitted => return Ok(()),
             NativeLexicalExitAction::Scheduled(token) => return admission.validate_metadata(token),
-            NativeLexicalExitAction::Bind { source, .. } => (source, None),
+            NativeLexicalExitAction::Bind { source, .. }
+            | NativeLexicalExitAction::Return { source, .. } => (source, None),
             NativeLexicalExitAction::Transfer(transfer) => {
                 (&transfer.source, Some(&transfer.target))
             }
@@ -213,6 +254,23 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
         };
         let expected = match (&self.action, source.operation(plan)) {
             (NativeLexicalExitAction::Bind { .. }, Some(FlowOp::ExitScopeBind { expr, .. })) => {
+                Some(expr.ty())
+            }
+            (NativeLexicalExitAction::Return { result, .. }, Some(FlowOp::Return(text))) => {
+                return match result {
+                    NativeReturnResult::FlowLabel(label) if label == text => {
+                        admission.validate_metadata(label)
+                    }
+                    NativeReturnResult::Value(value) if matches!(value.borrowed_view(), crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::String(label)) if label == text) => {
+                        admission.validate_owned_borrowed(value.borrowed_value())
+                    }
+                    _ => Err(invalid()),
+                };
+            }
+            (NativeLexicalExitAction::Return { result, .. }, Some(FlowOp::ReturnExpr(expr))) => {
+                if let NativeReturnResult::FlowLabel(label) = result {
+                    return admission.validate_metadata(label);
+                }
                 Some(expr.ty())
             }
             (NativeLexicalExitAction::Transfer(transfer), Some(FlowOp::Break { depth, value }))
@@ -461,6 +519,55 @@ impl NativeLexicalDeferScopeImage {
 }
 
 impl super::Engine {
+    pub(super) fn return_from_source(
+        &mut self,
+        source: NativeSourceOperation,
+        value: RuntimeValue,
+        output: &mut crate::step::RuntimeStepOutput,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
+    ) {
+        let result = if self.fiber.frame.active_function().is_some()
+            || matches!(self.fiber.launch, super::FlowFiberLaunch::Program(_))
+        {
+            NativeReturnResult::Value(value)
+        } else {
+            NativeReturnResult::FlowLabel(match value {
+                RuntimeValue::String(label) => label,
+                value => crate::value::runtime_value_label(&value),
+            })
+        };
+        if matches!(
+            self.fiber.owner,
+            super::FlowFiberOwner::Executor | super::FlowFiberOwner::FlowDefer { .. }
+        ) && let Some(target) = self.fiber.frame.return_defer_target()
+        {
+            self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
+                target,
+                action: NativeLexicalExitAction::Return { source, result },
+            });
+        } else {
+            self.complete_source_return(result, output, backend);
+        }
+    }
+
+    fn complete_source_return(
+        &mut self,
+        result: NativeReturnResult<RuntimeValue>,
+        output: &mut crate::step::RuntimeStepOutput,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
+    ) {
+        match result {
+            NativeReturnResult::FlowLabel(label) => self.return_value(label, output, backend),
+            NativeReturnResult::Value(value) => {
+                let unhandled = self.return_typed_value(value, output, backend);
+                debug_assert!(
+                    unhandled.is_none(),
+                    "the returning invocation remains active"
+                );
+            }
+        }
+    }
+
     pub(super) fn request_emitted_lexical_exit(
         &mut self,
         action: NativeLexicalExitAction<RuntimeValue>,
@@ -586,6 +693,51 @@ impl super::Engine {
         let closing = self.fiber.owner.requests_scope_close();
         let index = self.fiber.frame.control_stack.len().checked_sub(1);
         if let Some(index) = index {
+            // A typed result stays in the continuation until its receiving
+            // invocation can take it. Relocate only leases owned by this scope.
+            if let Some(NativeLexicalExit {
+                action: NativeLexicalExitAction::Return { .. },
+                ..
+            }) = &self.fiber.frame.lexical_exit
+            {
+                if terminal || failure.is_some() {
+                    let exit = self
+                        .fiber
+                        .frame
+                        .lexical_exit
+                        .take()
+                        .expect("reached return");
+                    if let Some(value) = exit.action.value()
+                        && let Err(error) = self.discard_pending_return_presentation(value)
+                    {
+                        self.fiber.frame.lexical_exit = Some(exit);
+                        return Err(error);
+                    }
+                } else if matches!(
+                    self.fiber.frame.control_stack[index].kind,
+                    super::FlowControlStackEntryKind::Scope { .. }
+                        | super::FlowControlStackEntryKind::FormatAttempt(
+                            super::NativeFormatAttemptFrame {
+                                active: Some(_),
+                                ..
+                            }
+                        )
+                ) {
+                    let exit = self
+                        .fiber
+                        .frame
+                        .lexical_exit
+                        .take()
+                        .expect("reached return");
+                    let transition = exit
+                        .action
+                        .value()
+                        .map(|value| self.preserve_presentation_at_return_scope(value))
+                        .transpose();
+                    self.fiber.frame.lexical_exit = Some(exit);
+                    transition?;
+                }
+            }
             self.unwind_control_entry(output, backend)?;
             if self
                 .fiber
@@ -617,6 +769,9 @@ impl super::Engine {
                         }
                         NativeLexicalExitAction::Transfer(transfer) => {
                             self.resume_loop_transfer(transfer, output, backend);
+                        }
+                        NativeLexicalExitAction::Return { result, .. } => {
+                            self.complete_source_return(result, output, backend);
                         }
                     }
                 }

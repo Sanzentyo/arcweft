@@ -485,26 +485,95 @@ impl Engine {
         detached: bool,
         values: impl IntoIterator<Item = &'value RuntimeValue>,
     ) -> Result<(), RuntimeEvalError> {
-        use crate::presentation::resources::PresentationScopeExit;
-        let escaping =
-            values
-                .into_iter()
-                .try_fold(Vec::new(), |mut escaping, value| {
-                    escaping.extend(value.view().affine_handles()?.into_iter().filter_map(
-                        |handle| match handle {
+        let escaping = Self::presentation_return_tokens(values)?;
+        self.commit_presentation_return(scopes, detached, &escaping)
+    }
+
+    fn presentation_return_tokens<'value>(
+        values: impl IntoIterator<Item = &'value RuntimeValue>,
+    ) -> Result<Vec<crate::runtime_id::RuntimePresentationHandleToken>, RuntimeEvalError> {
+        values
+            .into_iter()
+            .try_fold(Vec::new(), |mut escaping, value| {
+                escaping.extend(
+                    value
+                        .view()
+                        .affine_handles()?
+                        .into_iter()
+                        .filter_map(|handle| match handle {
                             crate::value::ownership::RuntimeAffineHandle::Presentation {
                                 token,
                                 ..
                             } => Some(token),
                             crate::value::ownership::RuntimeAffineHandle::Line(_) => None,
-                        },
-                    ));
-                    Ok::<_, crate::value::ownership::RuntimeAffineHandleError>(escaping)
-                })
-                .map_err(|cause| RuntimeEvalError::UnsupportedPure {
-                    name: "presentation return".into(),
-                    reason: cause.to_string(),
-                })?;
+                        }),
+                );
+                Ok::<_, crate::value::ownership::RuntimeAffineHandleError>(escaping)
+            })
+            .map_err(|cause| RuntimeEvalError::UnsupportedPure {
+                name: "presentation return".into(),
+                reason: cause.to_string(),
+            })
+    }
+
+    pub(super) fn preserve_presentation_at_return_scope(
+        &mut self,
+        value: &RuntimeValue,
+    ) -> Result<(), RuntimeEvalError> {
+        let env = &self.fiber.frame.env;
+        let Some(scope) = env.presentation_scope_binding() else {
+            return Ok(());
+        };
+        let banks = self
+            .presentation
+            .as_ref()
+            .ok_or(RuntimePresentationError::Owner)?;
+        let mut escaping = Vec::new();
+        for token in Self::presentation_return_tokens(std::iter::once(value))? {
+            if banks
+                .handle_scope(
+                    &self.fiber.frame.program,
+                    &token,
+                    env.presentation_scope_bindings(),
+                )?
+                .is_some_and(|owner| scope.owns(owner))
+            {
+                escaping.push(token);
+            }
+        }
+        if escaping.is_empty() {
+            return Ok(());
+        }
+        self.commit_presentation_return(1, false, &escaping)
+    }
+
+    pub(super) fn discard_pending_return_presentation(
+        &mut self,
+        value: &RuntimeValue,
+    ) -> Result<(), RuntimeEvalError> {
+        let tokens = Self::presentation_return_tokens(std::iter::once(value))?;
+        if !tokens.is_empty() {
+            self.presentation
+                .as_mut()
+                .ok_or(RuntimePresentationError::MissingLedger)?
+                .transition_scope_contour(
+                    &self.fiber.frame.program,
+                    Vec::new(),
+                    None,
+                    &[],
+                    &tokens,
+                )?;
+        }
+        Ok(())
+    }
+
+    fn commit_presentation_return(
+        &mut self,
+        scopes: usize,
+        detached: bool,
+        escaping: &[crate::runtime_id::RuntimePresentationHandleToken],
+    ) -> Result<(), RuntimeEvalError> {
+        use crate::presentation::resources::PresentationScopeExit;
         if self.presentation.is_none() && escaping.is_empty() {
             return Ok(());
         }
@@ -534,7 +603,7 @@ impl Engine {
                 fiber,
                 scope,
             }),
-            &escaping,
+            escaping,
             &[],
         )?;
         Ok(())

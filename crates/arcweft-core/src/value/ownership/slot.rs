@@ -23,6 +23,10 @@ pub enum RuntimeOwnedSlotId {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
     },
+    NativePendingReturn {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+    },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
         local: RuntimeLocalSlotId,
@@ -170,6 +174,7 @@ impl RuntimeOwnedSlotId {
             Self::AwbcDialogueResultObservation { .. } => 14,
             Self::AwbcEffectObservationArg { .. } => 15,
             Self::ProgramResult { .. } => 16,
+            Self::NativePendingReturn { .. } => 17,
         }
     }
 
@@ -178,6 +183,7 @@ impl RuntimeOwnedSlotId {
         match self {
             Self::EnvironmentLocal { execution, .. }
             | Self::ProgramResult { execution, .. }
+            | Self::NativePendingReturn { execution, .. }
             | Self::ClosureCapture { execution, .. }
             | Self::AwbcRegister { execution, .. }
             | Self::AwbcFrameLocal { execution, .. }
@@ -202,6 +208,12 @@ impl RuntimeOwnedSlotId {
         match self {
             Self::ProgramResult { fiber, .. } => {
                 format!("exec/{execution}/fiber/{}/program-result", fiber.get())
+            }
+            Self::NativePendingReturn { fiber, .. } => {
+                format!(
+                    "exec/{execution}/fiber/{}/native-pending-return",
+                    fiber.get()
+                )
             }
             Self::EnvironmentLocal { local, .. } => {
                 format!("exec/{execution}/env/{}", local.get())
@@ -400,13 +412,21 @@ impl Ord for RuntimeOwnedSlotId {
             13 => cmp_awbc_line_observation_arg(*self, *other),
             14 => cmp_awbc_dialogue_result_observation(*self, *other),
             15 => cmp_awbc_effect_observation_arg(*self, *other),
-            16 => {
+            16 | 17 => {
                 let (
                     Self::ProgramResult {
                         execution: left_execution,
                         fiber: left_fiber,
+                    }
+                    | Self::NativePendingReturn {
+                        execution: left_execution,
+                        fiber: left_fiber,
                     },
                     Self::ProgramResult {
+                        execution: right_execution,
+                        fiber: right_fiber,
+                    }
+                    | Self::NativePendingReturn {
                         execution: right_execution,
                         fiber: right_fiber,
                     },
@@ -865,6 +885,10 @@ enum HumanOwnedSlot {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
     },
+    NativePendingReturn {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+    },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
         local: RuntimeLocalSlotId,
@@ -969,6 +993,10 @@ enum HumanOwnedSlot {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HumanOwnedSlotInput {
     ProgramResult {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+    },
+    NativePendingReturn {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
     },
@@ -1077,6 +1105,9 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
         match slot {
             RuntimeOwnedSlotId::ProgramResult { execution, fiber } => {
                 Self::ProgramResult { execution, fiber }
+            }
+            RuntimeOwnedSlotId::NativePendingReturn { execution, fiber } => {
+                Self::NativePendingReturn { execution, fiber }
             }
             RuntimeOwnedSlotId::EnvironmentLocal { execution, local } => {
                 Self::EnvironmentLocal { execution, local }
@@ -1263,6 +1294,9 @@ impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
         match slot {
             HumanOwnedSlotInput::ProgramResult { execution, fiber } => {
                 Self::ProgramResult { execution, fiber }
+            }
+            HumanOwnedSlotInput::NativePendingReturn { execution, fiber } => {
+                Self::NativePendingReturn { execution, fiber }
             }
             HumanOwnedSlotInput::EnvironmentLocal { execution, local } => {
                 Self::EnvironmentLocal { execution, local }

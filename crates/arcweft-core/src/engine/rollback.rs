@@ -441,6 +441,24 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         }
     }
 
+    pub(super) fn return_defer_target(&self) -> Option<usize>
+    where
+        C: ScopeControl<O>,
+    {
+        self.control_stack
+            .iter()
+            .enumerate()
+            .rev()
+            .take_while(|(_, entry)| entry.function_context().is_none())
+            .filter_map(|(index, entry)| {
+                entry
+                    .defer_scope()
+                    .filter(|scope| scope.has_work())
+                    .map(|_| index)
+            })
+            .last()
+    }
+
     pub(super) fn admit_owned_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -504,7 +522,23 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             admission.validate_owned_borrowed(value.borrowed_value())?;
         }
         if let Some(exit) = &self.lexical_exit {
-            if self.control_stack.get(exit.target..).is_none_or(|scopes| {
+            if let NativeLexicalExitAction::Return { source, .. } = &exit.action {
+                let function = self
+                    .env
+                    .function_contexts()
+                    .next_back()
+                    .map(|(site, _)| site);
+                if self.return_defer_target() != Some(exit.target)
+                    || function.is_some_and(|site| {
+                        source.owner() != crate::plan::code::RuntimeCodeOwner::Function(site)
+                    })
+                {
+                    return Err(invalid(
+                        "native return does not reach its original invocation and defer scope"
+                            .into(),
+                    ));
+                }
+            } else if self.control_stack.get(exit.target..).is_none_or(|scopes| {
                 scopes.is_empty() || scopes.iter().any(|entry| entry.defer_scope().is_none())
             }) {
                 return Err(invalid("native lexical exit target is absent".into()));
@@ -1203,6 +1237,25 @@ impl<N, P, R, V, FP, O, C, A, S, D>
         let mut flow_registrations = BTreeSet::new();
         let mut scoped_tokens = BTreeSet::new();
         for child in self.session_fibers() {
+            if let Some(super::defer::NativeLexicalExit {
+                action: NativeLexicalExitAction::Return { result, .. },
+                ..
+            }) = &child.frame.lexical_exit
+            {
+                let typed = matches!(child.launch, super::FlowFiberLaunch::Program(_))
+                    || child
+                        .frame
+                        .control_stack
+                        .iter()
+                        .any(|entry| entry.function_context().is_some());
+                if !matches!(
+                    child.owner,
+                    FlowFiberOwner::Executor | FlowFiberOwner::FlowDefer { .. }
+                ) || typed != matches!(result, super::defer::NativeReturnResult::Value(_))
+                {
+                    return Err(invalid());
+                }
+            }
             for (index, entry) in child.frame.control_stack.iter().enumerate() {
                 let Some(scope) = entry.defer_scope().filter(|scope| scope.has_work()) else {
                     continue;

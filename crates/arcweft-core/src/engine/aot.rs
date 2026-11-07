@@ -42,6 +42,7 @@ impl Engine {
             // active function whose exhausted pending body must reject fallthrough.
             if self.has_executor_work()
                 || self.has_active_project_call()
+                || self.fiber.frame.scope_defer_exit_pending()
                 || self.fiber.frame.pending_ops.len() != 1
                 || self.fiber.frame.function_root_position().is_none()
             {
@@ -106,10 +107,24 @@ impl Engine {
                 continue;
             };
             let next_op_index = position + 1;
+            let return_source = matches!(op, AotLinearOp::Return(_) | AotLinearOp::ReturnExpr(_))
+                .then(|| {
+                    cursor
+                        .source_operation(&self.plan)
+                        .expect("selected AOT return retains its original Plan position")
+                });
             let (_, control_ops) = self.with_scalar_operation_budget(
                 options.mode,
                 options.budget.max_ops - executed_ops - 1,
-                |engine| engine.step_aot_linear_op(op, next_op_index, &mut output, pure_backend),
+                |engine| {
+                    engine.step_aot_linear_op(
+                        op,
+                        return_source,
+                        next_op_index,
+                        &mut output,
+                        pure_backend,
+                    )
+                },
             );
             executed_ops += 1 + control_ops;
             aot_fast_path_ops += 1;
@@ -186,6 +201,7 @@ impl Engine {
     fn step_aot_linear_op(
         &mut self,
         op: &AotLinearOp,
+        return_source: Option<super::code_cursor::NativeSourceOperation>,
         next_op_index: usize,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -204,18 +220,20 @@ impl Engine {
                     Err(error) => self.fail_eval(error, output),
                 }
             }
-            AotLinearOp::Return(value) => self.return_value(value.clone(), output, pure_backend),
+            AotLinearOp::Return(value) => self.return_from_source(
+                return_source.expect("selected AOT return source"),
+                crate::value::RuntimeValue::String(value.clone()),
+                output,
+                pure_backend,
+            ),
             AotLinearOp::ReturnExpr(expr) => {
                 match self.evaluate_expr_with_backend(expr, pure_backend) {
-                    Ok(value) => {
-                        if let Some(value) = self.return_typed_value(value, output, pure_backend) {
-                            self.return_value(
-                                super::runtime_value_label(&value),
-                                output,
-                                pure_backend,
-                            );
-                        }
-                    }
+                    Ok(value) => self.return_from_source(
+                        return_source.expect("selected AOT return source"),
+                        value,
+                        output,
+                        pure_backend,
+                    ),
                     Err(error) => self.fail_eval(error, output),
                 }
             }

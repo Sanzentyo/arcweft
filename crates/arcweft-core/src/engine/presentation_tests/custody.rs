@@ -112,6 +112,76 @@ impl Fixture {
 }
 
 #[test]
+fn native_pending_return_reparents_only_the_escaping_presentation_lease() {
+    let mut fixture = Fixture::new();
+    let outer = fixture.register();
+    fixture.bind(0, &outer);
+    fixture
+        .engine
+        .push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
+    let escaping = fixture.register();
+    fixture.bind(1, &escaping);
+    let sibling = fixture.register();
+    let engine = &mut fixture.engine;
+    let outer_owner = engine
+        .presentation
+        .as_ref()
+        .unwrap()
+        .handle_scope(
+            &engine.fiber.frame.program,
+            &outer,
+            engine.fiber.frame.env.presentation_scope_bindings(),
+        )
+        .unwrap()
+        .unwrap();
+    let result = engine.fiber.frame.env.take(fixture.locals[1]).unwrap();
+    engine
+        .preserve_presentation_at_return_scope(&result)
+        .unwrap();
+    engine
+        .exit_emitted_scope(
+            &mut RuntimeStepOutput::default(),
+            &mut crate::pure::VmRuntimePureCallBackend::default(),
+        )
+        .unwrap();
+    let banks = engine.presentation.as_ref().unwrap();
+    assert_eq!(banks.retirements()[0].token, sibling);
+    for token in [&outer, &escaping] {
+        assert_eq!(
+            banks
+                .handle_scope(
+                    &engine.fiber.frame.program,
+                    token,
+                    engine.fiber.frame.env.presentation_scope_bindings()
+                )
+                .unwrap(),
+            Some(outer_owner)
+        );
+    }
+    engine.fiber.frame.env.set(fixture.locals[1], result);
+    let owner = engine.fiber.frame.program.clone();
+    let mut restored =
+        Engine::from_rollback_image(engine.inert_rollback_image().unwrap(), &owner).unwrap();
+    let result = restored.fiber.frame.env.take(fixture.locals[1]).unwrap();
+    restored
+        .discard_pending_return_presentation(&result)
+        .unwrap();
+    let banks = restored.presentation.as_ref().unwrap();
+    assert_eq!(banks.retirements()[1].token, escaping);
+    assert_eq!(
+        banks
+            .handle_scope(
+                &owner,
+                &outer,
+                restored.fiber.frame.env.presentation_scope_bindings()
+            )
+            .unwrap(),
+        Some(outer_owner)
+    );
+    assert!(restored.inert_rollback_image().is_ok());
+}
+
+#[test]
 fn native_presentation_handle_custody_roundtrips_the_actual_frame_and_rejects_duplicate_owners() {
     let mut fixture = Fixture::new();
     let token = fixture.register();

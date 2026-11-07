@@ -30,7 +30,7 @@ struct LoopProjection<'a> {
 }
 enum OwnedSumTarget {
     Bind(RuntimePattern),
-    Return,
+    Return(super::code_cursor::NativeSourceOperation),
 }
 struct ArrayProjection<'a> {
     callable: Local,
@@ -504,6 +504,7 @@ impl Engine {
         if mode != RuntimeStepMode::Drain
             || self.has_executor_work()
             || self.has_joined_work()
+            || self.fiber.frame.scope_defer_exit_pending()
             || !matches!(self.fiber.frame.status, FlowFiberStatus::Running)
             || self.fiber.frame.await_observer.is_some()
         {
@@ -657,6 +658,19 @@ impl Engine {
         if cost > remaining_ops {
             return None;
         }
+        let consumed_ops = calls.checked_add(continuation_ops)?;
+        let sum = match sum.map(|sum| sum.target) {
+            Some(SumTarget::Bind(pattern)) => Some(OwnedSumTarget::Bind(pattern.clone())),
+            Some(SumTarget::Return) => Some(OwnedSumTarget::Return(
+                self.fiber
+                    .frame
+                    .pending_ops
+                    .front()?
+                    .position()?
+                    .source_operation_at_offset(&owner, consumed_ops.checked_sub(1)?)?,
+            )),
+            None => None,
+        };
         // Materialize the borrowed numeric packet only after its complete
         // original schedule fits this caller budget. Backend selection or
         // promotion still follows the actual representation check.
@@ -664,11 +678,8 @@ impl Engine {
         backend.prepare_total_numeric_batch(batch.function(), batch.rows())?;
         let commit = Commit {
             source,
-            consumed_ops: calls + continuation_ops,
-            sum: sum.map(|sum| match sum.target {
-                SumTarget::Bind(pattern) => OwnedSumTarget::Bind(pattern.clone()),
-                SumTarget::Return => OwnedSumTarget::Return,
-            }),
+            consumed_ops,
+            sum,
             cost,
         };
         let executed =
@@ -754,26 +765,14 @@ impl Engine {
                             if let Some(value) = sum_result {
                                 match commit
                                     .sum
-                                    .as_ref()
                                     .expect("fused Sum keeps its actual result continuation")
                                 {
                                     OwnedSumTarget::Bind(pattern) => {
-                                        candidate.bind_value(pattern, value, staged)
+                                        candidate.bind_value(&pattern, value, staged)
                                     }
-                                    OwnedSumTarget::Return => {
-                                        // This is the original ReturnExpr boundary,
-                                        // after its exact span has been consumed. Its
-                                        // existing function/scope/cleanup owner still
-                                        // validates and publishes the returned value.
-                                        if let Some(value) =
-                                            candidate.return_typed_value(value, staged, backend)
-                                        {
-                                            candidate.return_value(
-                                                crate::value::runtime_value_label(&value),
-                                                staged,
-                                                backend,
-                                            );
-                                        }
+                                    OwnedSumTarget::Return(source) => {
+                                        candidate
+                                            .return_from_source(source, value, staged, backend);
                                     }
                                 }
                             }

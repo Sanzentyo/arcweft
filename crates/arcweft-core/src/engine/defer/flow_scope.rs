@@ -107,7 +107,7 @@ impl Engine {
             }
             _ => (requested_exit, None),
         };
-        let mut failure = None;
+        let mut drained = None;
         if let FlowControlStackEntryKind::Scope { defers, .. } =
             &mut self.fiber.frame.control_stack[scope].kind
         {
@@ -151,11 +151,21 @@ impl Engine {
                 self.run_child_next = true;
                 return Ok(true);
             }
-            defers.deferred.clear();
-            failure = defers.failure.take();
-            defers.exit = None;
+            drained = Some(std::mem::replace(
+                defers,
+                super::NativeLexicalDeferScope::new(),
+            ));
         }
-        self.complete_deferred_scope_step(terminal, failure, output, backend)?;
+        let failure = drained.as_ref().and_then(|scope| scope.failure.clone());
+        if let Err(error) = self.complete_deferred_scope_step(terminal, failure, output, backend) {
+            if let Some(drained) = drained
+                && let Some(entry) = self.fiber.frame.control_stack.get_mut(scope)
+                && let FlowControlStackEntryKind::Scope { defers, .. } = &mut entry.kind
+            {
+                *defers = drained;
+            }
+            return Err(error.into());
+        }
         if !self.fiber.frame.scope_defer_exit_pending()
             && matches!(self.fiber.owner, FlowFiberOwner::Executor)
             && let FlowFiberStatus::Failed(message) = &self.fiber.frame.status

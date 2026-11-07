@@ -129,6 +129,18 @@ impl NativeCodeCursor {
         })
     }
 
+    pub(super) fn source_operation_at_offset(
+        &self,
+        plan: &RuntimePlan,
+        offset: usize,
+    ) -> Option<NativeSourceOperation> {
+        let mut position = self.clone();
+        if !position.set_operation(self.operation_index()?.checked_add(offset)?) {
+            return None;
+        }
+        position.source_operation(plan)
+    }
+
     pub(super) fn admit_retained(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
