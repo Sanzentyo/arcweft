@@ -102,6 +102,47 @@ fn saved_awbc_initial_copy_line_input_remains_available_in_its_caller() {
 }
 
 #[test]
+fn native_initial_owned_line_input_moves_into_the_line_root_defer() {
+    for cancel in [false, true] {
+        native_line_handle_execution(
+            &initial_owned_line_root_defer_source(),
+            2,
+            false,
+            cancel,
+            &["body", "line cleanup", "cleanup"],
+        );
+    }
+}
+
+#[test]
+fn saved_awbc_initial_owned_line_input_moves_into_the_line_root_defer() {
+    for cancel in [false, true] {
+        with_saved_awbc_steps(&initial_owned_line_root_defer_source(), |step| {
+            execute_nested_line_handle_transfer(
+                2,
+                false,
+                cancel,
+                &["body", "line cleanup", "cleanup"],
+                step,
+            );
+        });
+    }
+}
+
+fn initial_owned_line_root_defer_source() -> String {
+    FLOW_ACTOR_DEFER_SOURCE.replace(
+        "defer { let _ = actor; log.info(\"cleanup\") }",
+        r#"defer {
+            let _ = alice()[Cleanup[mark @.later][p]] with {
+                defer { let _ = actor; log.info("line cleanup") }
+                cancel on input(.SkipLine) { out () }
+            }
+            log.info("cleanup")
+        }"#,
+    )
+}
+
+#[test]
 fn native_nested_deferred_line_uses_the_innermost_capture_frame() {
     native_line_handle_execution(
         &nested_deferred_line_source(),
