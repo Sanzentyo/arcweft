@@ -24907,5 +24907,342 @@
         }
       ]
     }
+  },
+"ordinaryFlowAwbcSource": {
+    "version": 1,
+    "recordedAt": "2026-11-07T06:30:08.4277526Z",
+    "sourceCommit": "dbd34d860869726765dcb1f2e27be7b8f351054e",
+    "parentCommit": "69d3232ab6cb201487c98432070e0fc8997c2023",
+    "scope": "Ordinary Flow defer Source/Native/AWBC execution checkpoint; broader control-transfer, custody and consumer acceptance remains open.",
+    "behavior": [
+      "Invocation frames own root deferred state using the same FiberDeferredScope storage as explicit lexical scopes; no synthetic scope layout row or source operation is added.",
+      "Ordinary Product callbacks use exact fiber/frame/scope ownership, shared registration frontier, LIFO selection and prepared child spawning. A parent waits for its callback and records cleanup failure before resuming normal code.",
+      "The version-one inert save retains root captures, callback owner and frontier. Live checkpoints and owning restore use the same frontier/child pairing admission. Refused restore preserves the original executor.",
+      "Lowering reserves defer sites under the exact global, project-function, closure, trait or Program semantic catalog. The statement coordinate alone cannot distinguish generic instances."
+    ],
+    "finalSource": {
+      "log": "awbc-flow-defer-20261107.source-eight.log",
+      "failed": 0,
+      "coverage": [
+        "normal invocation and lexical exit",
+        "completed outcome filter",
+        "nested function early return with original result",
+        "two generic capture ABIs",
+        "nested deferred callback",
+        "cleanup failure drains remaining inner and outer callbacks",
+        "version-one save/restore after every AWBC step",
+        "stale frontier, wrong frame, missing child and detached child refusal with original-owner retention"
+      ],
+      "exitCode": 0,
+      "skipped": 0,
+      "command": "cargo nextest run --locked -p arcweft-compiler --test scoped_defer --no-tests fail --no-fail-fast",
+      "passed": 8
+    },
+    "finalCore": {
+      "log": "awbc-flow-defer-20261107.core-owner.log",
+      "failed": 0,
+      "exitCode": 0,
+      "skipped": 0,
+      "command": "cargo nextest run --locked -p arcweft-core --lib --test direct_suspension --no-tests fail --no-fail-fast",
+      "passed": 2321
+    },
+    "development": [
+      {
+        "exitCode": 101,
+        "result": "Option scope migration left two consumers; fixed parity labeling and the explicit scope argument.",
+        "log": "awbc-flow-defer-20261107.scope-identity-check.log"
+      },
+      {
+        "exitCode": 101,
+        "result": "Four exhaustive owner matches were missing FlowDeferred; migrated presentation role and child failure dispatch.",
+        "log": "awbc-flow-defer-20261107.integration-check.log"
+      },
+      {
+        "passed": 2,
+        "exitCode": 0,
+        "failed": 0,
+        "result": "Initial ordinary Flow Native/AWBC save/restore behavior passed.",
+        "log": "awbc-flow-defer-20261107.source-first.log"
+      },
+      {
+        "passed": 3,
+        "exitCode": 100,
+        "failed": 1,
+        "result": "Nested ordinary function had no reserved defer site. Repaired scoped semantic catalog traversal and instance-qualified keys.",
+        "log": "awbc-flow-defer-20261107.source-contour.log"
+      },
+      {
+        "exitCode": 101,
+        "result": "Mechanical edit added Into to an unrelated const constructor. Restored that constructor.",
+        "log": "awbc-flow-defer-20261107.scoped-site-check.log"
+      },
+      {
+        "exitCode": 101,
+        "result": "Terminal unwind changes needed RuntimeProgramOwner and FiberStateError imports; fixed.",
+        "log": "awbc-flow-defer-20261107.scoped-sites.log"
+      },
+      {
+        "passed": 7,
+        "exitCode": 100,
+        "failed": 1,
+        "result": "Rejection fixture incorrectly treated bind as owning restore. The API explicitly retains an untrusted image at bind; moved the assertion to owning restore.",
+        "log": "awbc-flow-defer-20261107.scoped-sites-fixed.log"
+      },
+      {
+        "passed": 7,
+        "exitCode": 100,
+        "failed": 1,
+        "result": "Forged frame fixture used numeric u64, but runtime identities use decimal-string wire encoding. Corrected the fixture without changing production or weakening rejection.",
+        "log": "awbc-flow-defer-20261107.source-normal-final.log"
+      }
+    ],
+    "input": {
+      "version": 1,
+      "sourceCommit": "dbd34d860869726765dcb1f2e27be7b8f351054e",
+      "inputCount": 3648,
+      "executableDrift": 0,
+      "commentOnlyDeltaVerified": true,
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "testInputHash": "92e8e851699dc75a379a665c81eaf1f1ff5d5cac827cd05325317ccd512090cb",
+      "publishedHash": "039271d319c8d057efae16222ba8115b307dc3b96a40f6d652ddf2cd2a1786ae"
+    },
+    "developmentIdentity": "Intermediate attempts lack complete per-attempt source freezes; retain their actual outcomes without treating them as final-source aggregate runs.",
+    "gates": {
+      "structure": "cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking, exit 0, blocking violations 0",
+      "fmt": "explicit 25 Rust paths: rustfmt --edition 2024 --config skip_children=true --check, exit 0"
+    },
+    "ownerReview": "FiberDeferredScope owns inline deferred storage for actual frame and lexical owners. FiberState owns deferred-work projections. Product owns callback scheduling, its registration frontier and the live/inert pairing rule. RuntimePlan uses the existing owned executable semantic scope for site identity and visits checked facts, including nested closures. The existing prepared child construction is reused without fabricating a Dialogue activation. No Cargo dependency or I/O boundary changes.",
+    "remainingAcceptance": [
+      "AWBC deferred Flow registry reach and mutation",
+      "complete AWBC goto and Choice transfer deferral",
+      "cancellation and affine Line capture convergence",
+      "direct AWBC open-scope return contour",
+      "prospective aggregate metadata/resource admission for registration and child construction",
+      "complete transitive reverse dependencies and workspace all-target/all-feature check/Clippy",
+      "public Native executor save boundary tracked separately"
+    ],
+    "existingAcceptedCuts": "Generic Match and previously accepted Native/Line/handler/Choice boundaries remain accepted. This checkpoint is not evidence to reopen those cuts or to declare ordinary defer fully accepted.",
+    "publication": {
+      "version": 1,
+      "commit": "dbd34d860869726765dcb1f2e27be7b8f351054e",
+      "parent": "69d3232ab6cb201487c98432070e0fc8997c2023",
+      "tree": "d2d8c6cfe43d630390cd6a4d590eb23131f4c2fe",
+      "remote": "dbd34d860869726765dcb1f2e27be7b8f351054e",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "blob": "87fa0664a6b9018906ea70b7459a33c879bd6790"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "5be2c59cf09bde7ff2e5a6b8970802e477447201"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+          "blob": "e8eee8eb009fae0514335c0470f791f3444d22a2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "blob": "733c4b5fd1ba45c2e275e6a2c95d0c75026b3b53"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope/tests.rs",
+          "blob": "8cc667647bbec90c5b8d03c92b4cbf4476528df7"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/parity.rs",
+          "blob": "c387e569e3e29eabe5a74ae8f457879641d453c9"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "6d2f53c8fdc96f49e98ac0f0f26b74b5e1152279"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "blob": "7522fa34038114a05973b7a873221b33ae192c24"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+          "blob": "8cd972feb0857825a665d51989ffd9e398ba3e42"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "af42d80fd009aaa29b75466d2a0692ef3476959f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "blob": "4763df95b31f888ce0a6597e4051be8dce67b4cc"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "392c8904ef3542a6c34c39abd6e1c30fb38e4e63"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "blob": "af36d254d9548264ce405f73f09d389135121b01"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "5bfd607ffb93c4c203b858b9dd862e2d449e077c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "blob": "7c23f0a3e6b83469b06a0d83f6b7f4485d4c5798"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "3e39c8af2c54e7224d56d0a9ad2f6bc4815cde87"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "4ac6c8d8286f4a836f5d008c40c83e3bf8c2ff9d"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "blob": "979c3170bc467f61ceadc2bafb3082a7aeb51336"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/execution/tests.rs",
+          "blob": "1bb8ad779a22fd4b0a2217ef7d32859b71870aef"
+        },
+        {
+          "path": "crates/arcweft-core/tests/direct_suspension.rs",
+          "blob": "35c29faf8a19f144e07f23e098e6d547dcf805ce"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "blob": "ca0ce8e7c39505974f046b16d35f490ff942cd24"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/defer.rs",
+          "blob": "9a985c5db1bfcf02fb987965f9b9188d0a1737d6"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "8985f1cdafe7b5cda1dd9d133b399b36e94dbb26"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "blob": "887ecd8344d10c5233b4378e18203697c41058a4"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+          "blob": "b3e4eb415ff9d7c360e895240b6e4c60e6ab7bfb"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "81564377d91e30b119cbae0eb2a8e5b212f8cb6969e74545714173ab8d72a1bf",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T06:28:16.2544375Z"
+    },
+    "originalWip": {
+      "preserved": true,
+      "binaryPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "trackedPaths": 12,
+      "actualUntrackedFiles": 6
+    },
+    "raw": {
+      "entries": [
+        {
+          "entry": "awbc-flow-defer-20261107.scope-identity-check.log",
+          "bytes": 15287,
+          "sha256": "cddbb137b9f8f494f9c658105cd7703c5c650cdb41a76a0412b6494ebd6c2aac"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.integration-check.log",
+          "bytes": 17491,
+          "sha256": "68b387be0be5338acc60b27045fabd724dc3cde566f9cba9846a2669b1d19eed"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.source-first.log",
+          "bytes": 89477,
+          "sha256": "a9ab45b8522bf392e17bfcd3c17fc3112e618b5df2ce52422a4e9695b0c2dbf0"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.source-contour.log",
+          "bytes": 91914,
+          "sha256": "443edfbc7cae3f941eadb1e88579c7ceebbce664da057222e5e2647a7a817d83"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.scoped-site-check.log",
+          "bytes": 89790,
+          "sha256": "a53f19d519c0593f4d6c8a9688fb48aafb0cac443c15538aebb54fc4ea0077b5"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.scoped-sites.log",
+          "bytes": 16792,
+          "sha256": "96e1a6590facde9310c83d4715a099a75580c295c7fbfcf3eba63cba391ae578"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.scoped-sites-fixed.log",
+          "bytes": 90457,
+          "sha256": "a5e18ba7488f37abc8016750c5d4812b6c28286b4486cabf97163fa99dd86523"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.source-normal-final.log",
+          "bytes": 90525,
+          "sha256": "2d70ca6d4240c385d55ff56748b7a99fdffe7d2a21889e8d9bbde99a1b235e60"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.source-eight.log",
+          "bytes": 88052,
+          "sha256": "6d9f50137a71ef25e071eebe72d374c595964b1de720138a9776739230bf3983"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.core-owner.log",
+          "bytes": 439575,
+          "sha256": "51cf4ddc673b4c0559f2eb131bce75db6fae708d7047ba799dd176989c691c2e"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.owner.receipt.json",
+          "bytes": 101,
+          "sha256": "70d5ae601281956313ca0ace8a01cbab8eb5d9cb79fe7474426c78456800e805"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.fmt-check.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.structure.log",
+          "bytes": 65874,
+          "sha256": "d180afb851a5c5a510fd55d31e6b211b36b9c4dbab046e9306e51de982a27b3f"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.structure.receipt.json",
+          "bytes": 103,
+          "sha256": "0e0acfcfeab9ac63d58ca6c7b6651ff90ca239761466e7ab239b8ac479c407b9"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.final.source-freeze.json",
+          "bytes": 711733,
+          "sha256": "ba8bad1601358c95b98753d61794fec3d55e144172e0dd3d7fb64e5e05ef1c10"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.published.source-freeze.json",
+          "bytes": 711733,
+          "sha256": "5c3ccad1142485b191f579ccef19740c192b4beff1e4cc5c73795d178b8ffb48"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.input.receipt.json",
+          "bytes": 410,
+          "sha256": "8cb8004014074fa8be58bd610cccfdf4132e6aae729adfe3ebe59c9f9e4a60ad"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.source.reviewed.patch",
+          "bytes": 137364,
+          "sha256": "81564377d91e30b119cbae0eb2a8e5b212f8cb6969e74545714173ab8d72a1bf"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.source.verified.json",
+          "bytes": 4096,
+          "sha256": "0dbb53b49410ad15ed0fc0ef20f53ebbb52452090b05fcffd23328c027fed055"
+        }
+      ],
+      "sha256": "07cb74ab2cfc2d1234c0098334161be97bbb74a4e5573bb18a257bbe3f99ff18",
+      "path": "task-ordinary-flow-awbc-source.raw.zip"
+    }
   }
 }

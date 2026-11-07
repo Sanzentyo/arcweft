@@ -15249,3 +15249,21 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 基点 `1b2dbbbde9a970b136dbf9bc177833865d3e54a0` に対する未公開10パスの作業差分。登録・終了条件・実行中・解放待ち・失敗を `FiberDeferredScope` へ集約し、明示スコープと元の関数フレームの本体が同じ保持文法を使う。保存は version 1 のまま更新し、古い平坦なフィールドと reader を残さない。値の事前検査・訪問・退役可能条件に本体の保持値を接続した。
 - 既存の scope／codec／資源境界9件が通過した。Core lib と direct_suspension の全件は2,321件中2,320 PASS／1 FAIL／スキップ0件。失敗した新しい検査は、局所 packet 検査用 fixture を完全な実行成果物の検証へ流用していた。入力・効果・Unit return を現行の typed 宣言へ修復し、対象1件は通過した。根拠の異なる run を一回の2,321件通過と合算しない。初回の引数欠落、旧 integration fixture、非公開 helper 参照、無効な Log payload の失敗を原本に保持した。
 - 本体のパケットは元の登録位置・捕捉 ABI・lexical stack に照合され、別スコープや別関数への付け替えを拒否する。通常 Flow AWBC の関数本体 owner identity、登録・終了 scheduler、ID 発行範囲と公開復元の custody 接続は未完了であり、この開発検査を実行機能の受入へ拡張しない。公開 Native 基盤と Generic Match の受入は維持する。[実測・未公開差分・各失敗原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Ordinary Flow defer Source/AWBC checkpoint
+
+Source `dbd34d860869726765dcb1f2e27be7b8f351054e` を既存 main へ通常 push した。
+親は `69d3232ab6cb201487c98432070e0fc8997c2023`。25 Source path を公開し、元の12 tracked／6 untracked WIPは保持した。
+Source 8件と Core unit／直接停止復帰 2,321件が、それぞれ失敗・スキップ0件で通過した。
+Source の AWBC は canonical codec を通し、毎ステップ version 1 の公開保存から owning restore する。
+正常終了・終了条件、通常関数の早期 return、generic capture ABI、callback 内 cleanup、失敗時の残りの実行、改変保存の拒否を含む。
+fmt と構造ゲートは終了0、blocking violation 0。広域逆依存と workspace check／Clippyはこの Source では未実行。
+
+Supersedes: 前記 Native foundation／AWBC storage development の時点における「通常 Flow Source 変換と AWBC 統合は未公開」という現状説明。
+当時の失敗、storage patch、実測件数、full SHA は歴史的事実として保持する。
+通常関数での予約漏れは閉じた executable catalog と statement の組へ修復した。
+保存拒否テストの初期2失敗は、bind と owning restore の契約の取り違え、frame ID の wire 型違いだった。
+いずれも production の拒否条件を弱めず fixture を修正し、元 owner の保持まで確認した。
+検証後の差分は semantic-facts のコメント移動だけで、元ハッシュへ逆変換できることを記録した。
+この cut は通常 defer 全体の完了判定ではない。最新の項目別判定は [現状一覧](current-status.md) にのみ置く。
+[全結果・訂正理由・公開 blob 照合・原本](acceptance-evidence/task-flow-registry-execution.json)。
