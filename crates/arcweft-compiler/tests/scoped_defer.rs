@@ -756,6 +756,7 @@ flow main() effects { log.write } {
     }
     log.info("wrong-after-scope")
 }
+
 entry cli @entry.main { goto @flow.main }
 "#;
     let compiled = compile_source(source).unwrap();
@@ -792,5 +793,138 @@ entry cli @entry.main { goto @flow.main }
             "cleanup failure must prevent normal completion: {logs:?}"
         );
         assert_eq!(logs, ["body", "inner-completed", "outer-failed"]);
+    }
+}
+
+#[test]
+fn selected_choice_drains_nested_and_invocation_cleanup_before_target() {
+    use arcweft_interaction_model::{
+        id::Identifier,
+        input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
+        payload::InteractionPayload,
+    };
+    let source = r#"
+flow main() {
+    defer { log.info("outer") }
+    scope inner {
+        defer { log.info("inner") }
+        choice @.first { @.next "Next" -> @flow.done }
+    }
+    log.info("wrong-after-choice")
+}
+flow done() { log.info("target") }
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_source(source).unwrap();
+    let mut native = Engine::for_flow(compiled.plan.clone(), &compiled.plan.flows()[0].id).unwrap();
+    let mut native_step = |input, options| native.step(input, options);
+    let mut awbc_step = saved_awbc_input_steps(source);
+    for step in [
+        &mut native_step
+            as &mut dyn FnMut(RuntimeStepInput, RuntimeStepOptions) -> RuntimeStepResult,
+        &mut awbc_step,
+    ] {
+        let mut input = RuntimeStepInput::default();
+        let mut logs = Vec::new();
+        let mut selected = false;
+        let mut done = false;
+        for _ in 0..160 {
+            let result = step(std::mem::take(&mut input), Default::default());
+            assert!(result.stats.executed_ops <= 1);
+            assert!(
+                result.output.diagnostics.is_empty(),
+                "{:?}",
+                result.output.diagnostics
+            );
+            logs.extend(
+                result
+                    .output
+                    .effects
+                    .line
+                    .iter()
+                    .filter_map(|effect| match effect {
+                        LineEffectRequest::Log(row) => Some(row.message.clone()),
+                        _ => None,
+                    }),
+            );
+            match result.fiber_status {
+                FlowFiberStatus::Choice(choice) => {
+                    assert!(!selected, "one selected option must suffice");
+                    selected = true;
+                    input.input_events.push(
+                        RoutedInputEvent::new(
+                            InputEpoch::new(0),
+                            InputSequence::new(0),
+                            InteractionTarget::new("choice").unwrap(),
+                            InputEventKind::Custom {
+                                name: Identifier::new(format!("choice:{}", choice.id().unwrap()))
+                                    .unwrap(),
+                            },
+                        )
+                        .with_payload(InteractionPayload::Text(
+                            choice.options()[0].id.clone().unwrap(),
+                        )),
+                    );
+                }
+                FlowFiberStatus::Done(FlowExit::Done) => {
+                    done = true;
+                    break;
+                }
+                FlowFiberStatus::Running => {}
+                status => panic!("unexpected Choice cleanup status: {status:?}"),
+            }
+        }
+        assert!(selected && done);
+        assert_eq!(logs, ["inner", "outer", "target"]);
+    }
+}
+
+#[test]
+fn failed_goto_cleanup_drains_callers_without_entering_original_target() {
+    let source = r#"
+fn transfer() effects { log.write } {
+    defer on completed { log.info("inner-completed") }
+    defer { let zero = 0i64; log.info(1i64 / zero) }
+    goto @flow.done
+}
+flow main() {
+    defer on failed { log.info("outer-failed") }
+    transfer()
+    log.info("wrong-after-call")
+}
+flow done() { log.info("wrong-target") }
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_source(source).unwrap();
+    let mut native = Engine::for_flow(compiled.plan.clone(), &compiled.plan.flows()[0].id).unwrap();
+    let mut native_step = || native.step(Default::default(), Default::default());
+    let mut awbc_step = saved_awbc_steps(source);
+    for step in [
+        &mut native_step as &mut dyn FnMut() -> RuntimeStepResult,
+        &mut awbc_step,
+    ] {
+        let mut logs = Vec::new();
+        let mut failed = false;
+        for _ in 0..160 {
+            let result = step();
+            assert!(result.stats.executed_ops <= 1);
+            logs.extend(
+                result
+                    .output
+                    .effects
+                    .line
+                    .iter()
+                    .filter_map(|effect| match effect {
+                        LineEffectRequest::Log(row) => Some(row.message.clone()),
+                        _ => None,
+                    }),
+            );
+            if matches!(result.fiber_status, FlowFiberStatus::Failed(_)) {
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed, "failed cleanup must prevent the target: {logs:?}");
+        assert_eq!(logs, ["inner-completed", "outer-failed"]);
     }
 }

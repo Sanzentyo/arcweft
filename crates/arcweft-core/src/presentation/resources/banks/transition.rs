@@ -3,6 +3,20 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone, Copy)]
+enum EscapingValues<'a> {
+    All(&'a [RuntimePresentationHandleToken]),
+    ExitingOwners(&'a [RuntimePresentationHandleToken]),
+}
+
+impl<'a> EscapingValues<'a> {
+    fn tokens(self) -> &'a [RuntimePresentationHandleToken] {
+        match self {
+            Self::All(values) | Self::ExitingOwners(values) => values,
+        }
+    }
+}
+
 struct PreparedPresentationTransition {
     owners: BTreeSet<PresentationScopeOwner>,
     moves: Vec<(
@@ -24,8 +38,43 @@ impl<V> PresentationBanks<V> {
         &mut self,
         program: &RuntimeProgramOwner,
         targets: Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
-        mut destination: Option<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+        destination: Option<PresentationScopeExit<PresentationScopeTarget<'_>>>,
         escaping: &[RuntimePresentationHandleToken],
+        discarding: &[RuntimePresentationHandleToken],
+    ) -> Result<(), RuntimePresentationError> {
+        self.transition_scope_values(
+            program,
+            targets,
+            destination,
+            EscapingValues::All(escaping),
+            discarding,
+        )
+    }
+
+    /// A partially unwound stack keeps arguments in their actual issuing
+    /// scope until that scope exits. Unrelated live grants need no spare slot.
+    pub(crate) fn transition_exiting_arguments(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        targets: Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+        destination: Option<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+        escaping: &[RuntimePresentationHandleToken],
+    ) -> Result<(), RuntimePresentationError> {
+        self.transition_scope_values(
+            program,
+            targets,
+            destination,
+            EscapingValues::ExitingOwners(escaping),
+            &[],
+        )
+    }
+
+    fn transition_scope_values(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        targets: Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+        mut destination: Option<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+        escaping: EscapingValues<'_>,
         discarding: &[RuntimePresentationHandleToken],
     ) -> Result<(), RuntimePresentationError> {
         let PreparedPresentationTransition {
@@ -123,8 +172,14 @@ impl<V> PresentationBanks<V> {
         escaping: &[RuntimePresentationHandleToken],
         discarding: &[RuntimePresentationHandleToken],
     ) -> Result<(), RuntimePresentationError> {
-        self.prepare_scope_transition(program, targets, destination, escaping, discarding)
-            .map(|_| ())
+        self.prepare_scope_transition(
+            program,
+            targets,
+            destination,
+            EscapingValues::All(escaping),
+            discarding,
+        )
+        .map(|_| ())
     }
 
     fn prepare_scope_transition(
@@ -132,7 +187,7 @@ impl<V> PresentationBanks<V> {
         program: &RuntimeProgramOwner,
         targets: Vec<PresentationScopeExit<PresentationScopeRef<'_>>>,
         destination: Option<PresentationScopeExit<PresentationScopeRef<'_>>>,
-        escaping: &[RuntimePresentationHandleToken],
+        escaping: EscapingValues<'_>,
         discarding: &[RuntimePresentationHandleToken],
     ) -> Result<PreparedPresentationTransition, RuntimePresentationError> {
         let root = self
@@ -141,6 +196,7 @@ impl<V> PresentationBanks<V> {
             .ok_or(RuntimePresentationError::InvalidState)?;
         root.validate_program(program)?;
         if escaping
+            .tokens()
             .len()
             .checked_add(discarding.len())
             .is_none_or(|count| count > root.limits.handles)
@@ -148,7 +204,7 @@ impl<V> PresentationBanks<V> {
             return Err(RuntimePresentationError::Capacity);
         }
         let mut selected = BTreeSet::new();
-        for token in escaping {
+        for token in escaping.tokens() {
             if !selected.insert(token.clone()) {
                 return Err(RuntimePresentationError::InvalidState);
             }
@@ -195,7 +251,7 @@ impl<V> PresentationBanks<V> {
         };
         let mut moves = Vec::new();
         let mut receiving = BTreeMap::new();
-        for token in escaping {
+        for token in escaping.tokens() {
             let ledger = self
                 .ledgers
                 .get(&token.bank())
@@ -206,6 +262,11 @@ impl<V> PresentationBanks<V> {
                 .get(&token.issuance())
                 .ok_or(RuntimePresentationError::UnknownHandle)?;
             ledger.validate_handle(program, token, lease.owner)?;
+            if matches!(escaping, EscapingValues::ExitingOwners(_))
+                && !lease.owner.is_some_and(|owner| owners.contains(&owner))
+            {
+                continue;
+            }
             // Only the actual receiver's existing grant already owns this
             // receipt. A grant in another execution can end independently.
             if lease

@@ -28,6 +28,13 @@ just as an explicit return waits for cleanup. Cleanup failure prevents normal
 completion and caller resumption. See [scoped cleanup](dialogue-calls-scopes-cancellation.md)
 for outcome filters, capture transfer, and registration order.
 
+A `goto`, including a selected Choice target, leaves the complete active call
+stack. Cleanup runs from the innermost lexical scope through each invocation
+body to its caller before the selected Flow starts. Code after a displaced
+call does not resume. The selected target and its evaluated inputs stay fixed
+while cleanup waits or execution is saved and restored. A cleanup failure
+drains the remaining affected scopes and prevents the target from starting.
+
 ## Local ownership and replacement
 
 Each binding introduces a distinct local declaration and generation. Shadowing

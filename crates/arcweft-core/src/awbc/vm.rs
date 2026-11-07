@@ -8,7 +8,7 @@ use crate::value::runtime_value_views_equal;
 mod resources;
 mod unwind;
 pub(crate) use resources::{VmExecutionResources, VmRegistryAccess};
-use unwind::step_exiting_scope;
+use unwind::{finish_transfer_without_callbacks, step_exiting_scope};
 
 #[cfg(test)]
 mod dense_numeric_tests;
@@ -2713,6 +2713,7 @@ fn execute_instruction(
                     effect: *effect,
                 };
                 fiber.stage_flow_transfer(prepared, Vec::new(), origin);
+                finish_transfer_without_callbacks(program, fiber, execution, observations)?;
                 return Ok(InstructionControl::Transferred);
             }
             if let Some(wait) = wait {
@@ -3839,9 +3840,7 @@ fn execute_goto(
         super::fiber::FiberFlowTransferOrigin::Static { source }
     };
     fiber.stage_flow_transfer(replacement, values, origin);
-    // Even a one-operation slice retains its transfer packet. The next exit
-    // step runs callbacks without re-evaluating the target or its arguments.
-    let _ = (execution, observations);
+    finish_transfer_without_callbacks(program, fiber, execution, observations)?;
     Ok(())
 }
 

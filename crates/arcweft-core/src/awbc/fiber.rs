@@ -2963,6 +2963,9 @@ impl FiberState {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         self.validate_structure(program, &mut resources)?;
+        if let Some(pending) = &self.pending_flow_transfer {
+            pending.validate_retained(program, &mut resources)?;
+        }
         if self.root == AwbcFiberRoot::Empty {
             return Ok(());
         }
@@ -6113,6 +6116,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
 mod tests {
     use super::*;
     mod presentation;
+    mod transfer;
     use crate::awbc::schema::{
         AwbcBlock, AwbcEntry, AwbcEntryKind, AwbcFlowBinding, AwbcFlowExecutable,
         AwbcFormatOperand, AwbcFrameLayout, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,

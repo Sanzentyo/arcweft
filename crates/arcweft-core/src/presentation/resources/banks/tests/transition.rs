@@ -726,3 +726,69 @@ fn invalid_or_overlapping_discard_cannot_follow_an_earlier_escape_move() {
         assert!(receiver.presentation_scope_binding().is_none());
     }
 }
+
+#[test]
+fn partial_unwind_moves_only_exiting_owners_without_a_spare_scope_grant() {
+    let (program, artifact, expected, _) = fixture();
+    let root = RuntimePresentationBankId::Root;
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 2,
+            scopes: 1,
+        },
+    );
+    let mut source = RuntimeEnv::default();
+    let mut unrelated = RuntimeEnv::default();
+    let mut receiver = RuntimeEnv::default();
+    let kept = register(&mut banks, &program, root, &mut source, expected, true);
+    let before = banks.snapshot_admitted().unwrap();
+    banks
+        .transition_exiting_arguments(
+            &program,
+            vec![PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: unrelated.presentation_scope_target().unwrap(),
+            }],
+            Some(PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: receiver.presentation_scope_target().unwrap(),
+            }),
+            std::slice::from_ref(&kept),
+        )
+        .unwrap();
+    assert_eq!(banks.snapshot_admitted().unwrap(), before);
+    assert!(receiver.presentation_scope_binding().is_none());
+    assert!(source.presentation_scope_binding().is_some());
+    banks
+        .transition_exiting_arguments(
+            &program,
+            vec![PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: source.presentation_scope_target().unwrap(),
+            }],
+            Some(PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: receiver.presentation_scope_target().unwrap(),
+            }),
+            std::slice::from_ref(&kept),
+        )
+        .unwrap();
+    assert!(source.presentation_scope_binding().is_none());
+    assert!(receiver.presentation_scope_binding().is_some());
+    assert!(banks.retirements().is_empty());
+    exit(&mut banks, &program, &mut receiver, None, &[]).unwrap();
+    assert_eq!(
+        banks
+            .retirements()
+            .iter()
+            .map(|item| &item.token)
+            .collect::<Vec<_>>(),
+        [&kept]
+    );
+}

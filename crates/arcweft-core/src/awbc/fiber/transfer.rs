@@ -16,19 +16,19 @@ impl AwbcProgram {
     pub(in crate::awbc) fn flow_transfer_effect_target(
         &self,
         effect: super::AwbcEffectPlanId,
-    ) -> Result<super::AwbcFunctionId, FiberStateError> {
+    ) -> Result<super::AwbcFunctionId, crate::awbc::vm::VmError> {
         use crate::awbc::schema::{AwbcConstant, AwbcEffectPayload};
         let Some(AwbcEffectPayload::Goto(args)) = self
             .effect_plans
             .get(effect.index())
             .map(|row| &row.payload)
         else {
-            return Err(FiberStateError::InvalidFrame);
+            return Err(FiberStateError::InvalidFrame.into());
         };
         let Some(AwbcConstant::String(id)) =
             args.first().and_then(|id| self.constants.get(id.index()))
         else {
-            return Err(FiberStateError::InvalidFrame);
+            return Err(FiberStateError::InvalidFrame.into());
         };
         self.resolve_flow_target_value(
             self.strings
@@ -36,7 +36,7 @@ impl AwbcProgram {
                 .ok_or(FiberStateError::InvalidFrame)?,
         )
         .map(|(_, function)| function)
-        .map_err(|_| FiberStateError::InvalidFrame)
+        .map_err(crate::awbc::vm::VmError::DynamicTarget)
     }
 }
 
@@ -90,6 +90,7 @@ impl<V: RuntimeStoredValue, B: Borrow<RuntimeFunctionEffectInstantiation>, R, G>
             &frame.input_order,
             &resources.work(),
         )?;
+        resources.work().collection(frame.registers.len())?;
         let mut arguments = Vec::new();
         for (slot, storage) in layout.slots.iter().zip(&frame.registers) {
             if slot.role == AwbcFrameSlotRole::Parameter {
@@ -218,14 +219,18 @@ impl<V: RuntimeStoredValue, B: Borrow<RuntimeFunctionEffectInstantiation>, R, G>
                 {
                     return Err(invalid().into());
                 }
-                program.flow_transfer_effect_target(*effect)?
+                program
+                    .flow_transfer_effect_target(*effect)
+                    .map_err(|_| invalid())?
             }
             FiberFlowTransferOrigin::ChoiceEffect { option, effect, .. } => {
                 let option = choice_option(*option)?;
                 if !option.effects.contains(effect) && option.out_effect != Some(*effect) {
                     return Err(invalid().into());
                 }
-                program.flow_transfer_effect_target(*effect)?
+                program
+                    .flow_transfer_effect_target(*effect)
+                    .map_err(|_| invalid())?
             }
         };
         if target != frame.function {

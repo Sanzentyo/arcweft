@@ -2,6 +2,36 @@
 
 use super::*;
 
+/// A transfer with no executable callbacks finishes in its producing
+/// operation, preserving the VM's ordinary callback-free goto boundary.
+pub(super) fn finish_transfer_without_callbacks(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    execution: &mut VmExecutionResources<'_>,
+    observations: &mut Vec<VmObservation>,
+) -> Result<(), VmError> {
+    if fiber.has_deferred_work() {
+        return Ok(());
+    }
+    let mut dropped = false;
+    while fiber.pending_flow_transfer.is_some() {
+        let output = step_exiting_scope(program, fiber, execution)?;
+        for observation in output.observations {
+            if matches!(observation, VmObservation::Drop { .. }) {
+                dropped = true;
+            } else {
+                observations.push(observation);
+            }
+        }
+    }
+    if dropped {
+        observations.push(VmObservation::Drop {
+            policy: crate::effect::RuntimeDropPolicy::Default,
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn step_exiting_scope(
     program: &AwbcProgram,
     fiber: &mut FiberState,

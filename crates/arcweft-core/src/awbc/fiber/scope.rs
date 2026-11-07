@@ -269,6 +269,10 @@ impl super::FiberState {
         let fiber =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
         let mut escaping = Vec::new();
+        let final_root = self.frames.len() == 1
+            && self
+                .active_frame()
+                .is_ok_and(|frame| frame.scopes.is_empty());
         if let Some(pending) = &self.pending_flow_transfer {
             for value in pending
                 .destination
@@ -304,17 +308,16 @@ impl super::FiberState {
                     fiber,
                     scope: pending.destination.presentation_scope_target(),
                 });
-        banks.transition_scope_contour(
-            program,
-            vec![PresentationScopeExit {
-                execution,
-                fiber,
-                scope: frame.presentation_scope_target(),
-            }],
-            destination,
-            &escaping,
-            &[],
-        )
+        let targets = vec![PresentationScopeExit {
+            execution,
+            fiber,
+            scope: frame.presentation_scope_target(),
+        }];
+        if destination.is_some() && !final_root {
+            banks.transition_exiting_arguments(program, targets, destination, &escaping)
+        } else {
+            banks.transition_scope_contour(program, targets, destination, &escaping, &[])
+        }
     }
 
     pub(crate) fn bind_presentation_scope<V>(

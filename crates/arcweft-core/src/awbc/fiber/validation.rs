@@ -91,7 +91,7 @@ impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContin
     {
         resources
             .work()
-            .collection(self.frames.len())
+            .collection(self.frames.len() + usize::from(self.pending_flow_transfer.is_some()))
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         for frame in &self.frames {
             resources
@@ -170,8 +170,19 @@ impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContin
         if let Some(pending) = &self.pending_flow_transfer {
             if !matches!(
                 self.status,
-                FiberStatus::Running | FiberStatus::Cancelled | FiberStatus::Trapped
-            ) || self.suspension.is_some()
+                FiberStatus::Running
+                    | FiberStatus::Suspended
+                    | FiberStatus::Cancelled
+                    | FiberStatus::Trapped
+            ) || (self.status == FiberStatus::Suspended
+                && !matches!(
+                    &self.suspension,
+                    Some(super::FiberSuspension {
+                        reason: super::FiberSuspensionReason::BudgetYield,
+                        ..
+                    })
+                ))
+                || (self.status != FiberStatus::Suspended && self.suspension.is_some())
                 || self.frames.is_empty()
                 || !instances.insert(pending.destination.instance)
                 || self
