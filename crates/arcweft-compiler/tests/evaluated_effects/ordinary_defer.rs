@@ -143,6 +143,170 @@ fn initial_owned_line_root_defer_source() -> String {
 }
 
 #[test]
+fn native_initial_owned_line_root_defer_preserves_outcome_filters() {
+    for outcome in ["completed", "cancelled"] {
+        for cancel in [false, true] {
+            let runs = (outcome == "cancelled") == cancel;
+            native_line_handle_execution(
+                &filtered_initial_owned_line_root_defer_source(outcome),
+                2,
+                false,
+                cancel,
+                if runs {
+                    &["body", "line cleanup", "cleanup"]
+                } else {
+                    &["body", "cleanup"]
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn saved_awbc_initial_owned_line_root_defer_preserves_outcome_filters() {
+    for outcome in ["completed", "cancelled"] {
+        for cancel in [false, true] {
+            let runs = (outcome == "cancelled") == cancel;
+            with_saved_awbc_steps(
+                &filtered_initial_owned_line_root_defer_source(outcome),
+                |step| {
+                    execute_nested_line_handle_transfer(
+                        2,
+                        false,
+                        cancel,
+                        if runs {
+                            &["body", "line cleanup", "cleanup"]
+                        } else {
+                            &["body", "cleanup"]
+                        },
+                        step,
+                    );
+                },
+            );
+        }
+    }
+}
+
+fn filtered_initial_owned_line_root_defer_source(outcome: &str) -> String {
+    initial_owned_line_root_defer_source().replace(
+        "defer { let _ = actor; log.info(\"line cleanup\") }",
+        &format!("defer on {outcome} {{ let _ = actor; log.info(\"line cleanup\") }}"),
+    )
+}
+
+#[test]
+fn saved_awbc_initial_line_root_defer_rejects_forged_capture_custody() {
+    use arcweft_core::executor::ArcweftRuntimeExecutorSnapshot;
+    let mut checked = false;
+    assert_saved_awbc_checking(
+        &initial_owned_line_root_defer_source(),
+        2,
+        &["body", "line cleanup", "cleanup"],
+        |mut executor, save| {
+            if checked {
+                return executor;
+            }
+            for (entry_index, entry) in save["dialogues"]["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+            {
+                let Some(leases) = entry
+                    .pointer("/PublishedHandles/handles/ledger/leases")
+                    .and_then(serde_json::Value::as_object)
+                else {
+                    continue;
+                };
+                for (key, lease) in leases {
+                    let Some(slot) = lease
+                        .pointer("/owner/ParentFiber/slot")
+                        .filter(|slot| slot["kind"] == "line_defer_capture")
+                    else {
+                        continue;
+                    };
+                    let before = executor.snapshot().unwrap();
+                    let mut mutations = Vec::new();
+                    for field in [
+                        "execution",
+                        "registration",
+                        "ordinal",
+                        "activation/owner_fiber",
+                        "activation/content",
+                        "activation/occurrence",
+                    ] {
+                        let mut forged = save.clone();
+                        let value = forged["dialogues"]["entries"][entry_index]["PublishedHandles"]
+                            ["handles"]["ledger"]["leases"][key]["owner"]["ParentFiber"]["slot"]
+                            .pointer_mut(&format!("/{field}"))
+                            .unwrap();
+                        *value = if let Some(value) = value.as_str() {
+                            (value.parse::<u64>().unwrap() + 1).to_string().into()
+                        } else {
+                            (value.as_u64().unwrap() + 1).into()
+                        };
+                        mutations.push(forged);
+                    }
+                    for duplicate in [false, true] {
+                        let mut forged = save.clone();
+                        let receiver = forged["dialogues"]["entries"]
+                            .as_array_mut()
+                            .unwrap()
+                            .iter_mut()
+                            .find(|entry| {
+                                entry.pointer("/Active/activation") == Some(&slot["activation"])
+                            })
+                            .unwrap();
+                        let packets = receiver["Active"]["line"]["deferred"]
+                            .as_array_mut()
+                            .unwrap();
+                        let index = packets
+                            .iter()
+                            .position(|packet| packet["id"] == slot["registration"])
+                            .unwrap();
+                        if duplicate {
+                            packets.push(packets[index].clone());
+                        } else {
+                            packets.remove(index);
+                        }
+                        mutations.push(forged);
+                    }
+                    for forged in mutations {
+                        let forged = serde_json::from_value(forged).unwrap();
+                        let error = match executor.bind_product_save_snapshot(forged) {
+                            Err(error) => error.to_string(),
+                            Ok(bound) => {
+                                let Err(rejected) = executor.restore_snapshot(
+                                    ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound),
+                                ) else {
+                                    panic!("forged defer custody must be refused");
+                                };
+                                let (unchanged, error) = rejected.into_parts();
+                                executor = unchanged;
+                                error.to_string()
+                            }
+                        };
+                        assert!(
+                            error.contains("deferred")
+                                || error.contains("owned by another runtime slot"),
+                            "{error}"
+                        );
+                        assert_eq!(executor.snapshot().unwrap(), before);
+                    }
+                    checked = true;
+                    return executor;
+                }
+            }
+            executor
+        },
+    );
+    assert!(
+        checked,
+        "the actual root defer capture was observed in a public save"
+    );
+}
+
+#[test]
 fn native_nested_deferred_line_uses_the_innermost_capture_frame() {
     native_line_handle_execution(
         &nested_deferred_line_source(),

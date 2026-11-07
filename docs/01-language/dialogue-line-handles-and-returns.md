@@ -378,6 +378,12 @@ the line only borrows it or moves one field. Inside the line, the input starts
 initialized in that line's frame and may be borrowed, consumed, or returned with
 `out`. Copy inputs remain available in the caller.
 
+A reached line-root `defer` may take an owned initial input. The registration
+then owns that value until its cleanup starts; cleanup receives the same value
+once, on normal completion or cancellation. Moving a received handle into that
+registration preserves the original issuing line's resource authority. The
+receiving line waits for its cleanup before completing.
+
 Initial inputs and inputs shared after reveal have different lifetimes. Only
 the root values actually used by unscheduled line work are shared at reveal,
 and their complete value graphs must permit Copy. Scheduled children instead
