@@ -1123,6 +1123,17 @@ impl Engine {
                     assert!(context.reached_defer.replace(source_site).is_none());
                     self.advance_if_needed(next_op_index);
                 }
+                (crate::plan::RuntimeDeferOwner::CurrentScope, None)
+                    if matches!(
+                        self.fiber.owner,
+                        super::FlowFiberOwner::Executor | super::FlowFiberOwner::FlowDefer { .. }
+                    ) =>
+                {
+                    match self.register_flow_defer(source_site) {
+                        Ok(()) => self.advance_if_needed(next_op_index),
+                        Err(error) => self.fail_eval(error, output),
+                    }
+                }
                 _ => self.fail_eval(
                     RuntimeEvalError::UnknownDeferredSite { site: *site },
                     output,

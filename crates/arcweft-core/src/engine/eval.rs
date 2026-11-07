@@ -1421,8 +1421,8 @@ impl Engine {
     ) {
         let message = error.to_string();
         self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
-        if !matches!(self.fiber.owner, super::FlowFiberOwner::LineTask(_))
-            || !self.fiber.frame.has_scope_defer_work()
+        if !matches!(self.fiber.owner, super::FlowFiberOwner::FlowDefer { .. })
+            && !self.fiber.frame.has_scope_defer_work()
         {
             output.diagnostics.push(RuntimeDiagnostic::new(message));
         }

@@ -206,15 +206,18 @@ impl Engine {
             .or_else(|| self.fiber.owner.dialogue_activation().copied());
         let (rows, reached_owner) = match key.scope() {
             LifetimeScopeKind::Flow => {
-                let flow = self.fiber.frame.env.flow_registry().or_else(|| {
-                    let activation = activation?;
-                    let parent = match inline {
-                        Some(transaction) => transaction.frame().parent,
-                        None => self.dialogue_activations.active_parent(&activation)?,
-                    };
-                    self.dialogue_parent_flow_registry(parent, activation)
-                        .map(|(_, rows)| rows)
-                });
+                let flow = self
+                    .reached_native_flow_registry()
+                    .map(|(_, rows)| rows)
+                    .or_else(|| {
+                        let activation = activation?;
+                        let parent = match inline {
+                            Some(transaction) => transaction.frame().parent,
+                            None => self.dialogue_activations.active_parent(&activation)?,
+                        };
+                        self.dialogue_parent_flow_registry(parent, activation)
+                            .map(|(_, rows)| rows)
+                    });
                 (flow, RuntimeRegistryOwner::NativeFlow)
             }
             LifetimeScopeKind::Line => {
@@ -243,6 +246,39 @@ impl Engine {
         admission.finish_presentation_custody().map_err(invalid)?;
         rows.read(reached_owner, key, kind, expected, binding, &mut admission)
             .map_err(invalid)
+    }
+
+    /// Cleanup work inherits the registry of the reached Flow. A nested Flow
+    /// invocation still opens and resolves its own local registry first.
+    fn reached_native_flow_registry(
+        &self,
+    ) -> Option<(FlowFiberId, &crate::effect::RuntimeScopeRegistry)> {
+        let mut fiber = &self.fiber;
+        loop {
+            if let Some(rows) = fiber.frame.env.flow_registry() {
+                return Some((fiber.id, rows));
+            }
+            if !matches!(fiber.owner, super::FlowFiberOwner::FlowDefer { .. }) {
+                return None;
+            }
+            let parent = fiber.parent.filter(|parent| parent.0 < fiber.id.0)?;
+            fiber = self.session_fibers().find(|fiber| fiber.id == parent)?;
+        }
+    }
+
+    fn native_flow_registry_mut(
+        &mut self,
+        owner: FlowFiberId,
+    ) -> Option<&mut crate::effect::RuntimeScopeRegistry> {
+        let fiber = if self.fiber.id == owner {
+            &mut self.fiber
+        } else {
+            self.parked_main
+                .iter_mut()
+                .chain(&mut self.child_fibers)
+                .find(|fiber| fiber.id == owner)?
+        };
+        fiber.frame.env.flow_registry_mut()
     }
 
     pub(super) fn dialogue_parent_flow_registry(
@@ -583,12 +619,8 @@ impl Engine {
         if key.scope() != &LifetimeScopeKind::Flow {
             return Err(missing.into());
         }
-        let registry = self
-            .fiber
-            .frame
-            .env
-            .flow_registry()
-            .ok_or(missing.clone())?;
+        let (registry_owner, registry) =
+            self.reached_native_flow_registry().ok_or(missing.clone())?;
         let binding = self.fiber.frame.env.source_function_context();
         let RuntimeScopeFunctionContext::Function { site, .. } = &binding else {
             return Err(missing.into());
@@ -632,7 +664,9 @@ impl Engine {
                 .map(|input| self.evaluate_expr_with_backend(input, backend))
                 .transpose()?;
             let mutation = prepared.finish(value, None)?;
-            let registry = self.fiber.frame.env.flow_registry_mut().ok_or(missing)?;
+            let registry = self
+                .native_flow_registry_mut(registry_owner)
+                .ok_or(missing)?;
             mutation.reserve(registry)?;
             mutation.commit(registry)?;
             Ok::<_, RuntimeEffectExecutionError>(())

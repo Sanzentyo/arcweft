@@ -148,6 +148,7 @@ pub struct Engine<
     child_fibers: VecDeque<FlowFiber<F>>,
     next_fiber_id: u64,
     next_scheduled_scope_sequence: u64,
+    flow_defer_frontier: crate::scope::RuntimeDeferRegistrationFrontier,
     dialogue_occurrences: BTreeMap<
         (
             RuntimePersistentFiberId,
@@ -221,6 +222,7 @@ impl Clone for NativeEngineRollbackImage {
             child_fibers: self.child_fibers.clone(),
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
+            flow_defer_frontier: self.flow_defer_frontier,
             dialogue_occurrences: self.dialogue_occurrences.clone(),
             dialogue_activations: self.dialogue_activations.clone(),
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
@@ -748,6 +750,11 @@ impl FlowFiberId {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub(crate) enum FlowFiberOwner {
     Executor,
+    FlowDefer {
+        scope: usize,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
     RootReducer {
         entry: EntryRuntimeId,
     },
@@ -790,7 +797,7 @@ impl FlowFiberOwner {
         match self {
             Self::LineTask(owner) => Some(owner.tag.activation_id()),
             Self::DialogueEffectCallback { activation, .. } => Some(activation.dialogue()),
-            Self::Executor | Self::RootReducer { .. } => None,
+            Self::Executor | Self::FlowDefer { .. } | Self::RootReducer { .. } => None,
         }
     }
 }
@@ -2282,6 +2289,7 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
+            flow_defer_frontier: self.flow_defer_frontier,
             dialogue_occurrences: self.dialogue_occurrences.clone(),
             dialogue_activations,
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
@@ -2380,6 +2388,7 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             next_fiber_id: image.next_fiber_id,
             next_scheduled_scope_sequence: image.next_scheduled_scope_sequence,
+            flow_defer_frontier: image.flow_defer_frontier,
             dialogue_occurrences: image.dialogue_occurrences,
             dialogue_activations,
             dialogue_effect_callback_activations: image.dialogue_effect_callback_activations,
@@ -2544,6 +2553,7 @@ impl Engine {
             next_fiber_id: 1,
             parked_main: None,
             next_scheduled_scope_sequence: 1,
+            flow_defer_frontier: crate::scope::RuntimeDeferRegistrationFrontier::initial(),
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),
             dialogue_effect_callback_activations: BTreeSet::new(),
@@ -3429,6 +3439,10 @@ impl Engine {
             self.step_next_child_fiber(input, events, output, pure_backend);
             return;
         }
+        if self.fiber.frame.scope_defer_exit_pending() {
+            self.step_main_flow_transaction(output, pure_backend);
+            return;
+        }
         if let Err(error) = self.latch_active_await_observer_publications() {
             self.fail_eval(error, output);
             return;
@@ -3455,7 +3469,11 @@ impl Engine {
             output,
             pure_backend,
             |candidate, staged_output, backend, drop_policy| {
-                candidate.step_flow(staged_output, backend, drop_policy);
+                match candidate.step_flow_defer_scope(staged_output, backend) {
+                    Ok(true) => *drop_policy = Some(crate::effect::RuntimeDropPolicy::Default),
+                    Ok(false) => candidate.step_flow(staged_output, backend, drop_policy),
+                    Err(error) => candidate.fail_eval(error, staged_output),
+                }
                 1
             },
         );
@@ -3554,10 +3572,11 @@ impl Engine {
 
     fn main_fiber_can_attempt_runtime_op(&self) -> bool {
         self.main_started
-            && !matches!(
-                self.fiber.frame.status,
-                FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-            )
+            && (self.fiber.frame.scope_defer_exit_pending()
+                || !matches!(
+                    self.fiber.frame.status,
+                    FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+                ))
             && self.fiber_can_attempt_runtime_op(&self.fiber)
     }
 
@@ -4338,7 +4357,44 @@ impl Engine {
         prepared: NativePreparedDeferredLineChild,
         defer_parent: defer::NativeDeferParent,
     ) -> NativeLineTaskExecutionBatch {
-        let (id, _, _, captures) = registration.into_parts();
+        let owner = FlowFiberOwner::LineTask(LineTaskFiberOwner {
+            tag: LineTaskWorkTag::activation(
+                *activation,
+                crate::line_task::LineTaskWork::Defer(registration.id()),
+            ),
+            join_policy: ChildJoinPolicy::Join,
+            cancel_policy: ChildCancelPolicy::Finish,
+            closing: false,
+            defer_parent: Some(defer_parent),
+        });
+        let next_fiber_id = prepared.next_fiber_id;
+        let child = self.build_prepared_defer_child(
+            parent,
+            crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                activation: *activation,
+            },
+            registration,
+            prepared,
+            owner,
+        );
+        NativeLineTaskExecutionBatch {
+            child_fibers: VecDeque::from([child]),
+            closing_existing: BTreeSet::new(),
+            next_fiber_id,
+            run_child_next: true,
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
+        }
+    }
+
+    fn build_prepared_defer_child(
+        &self,
+        parent: FlowFiberId,
+        presentation_bank: crate::runtime_id::RuntimePresentationBankId,
+        registration: crate::line_task::RuntimeLineDeferredRegistration,
+        prepared: NativePreparedDeferredLineChild,
+        owner: FlowFiberOwner,
+    ) -> FlowFiber {
+        let (_, _, _, captures) = registration.into_parts();
         let site = self
             .plan
             .function_sites()
@@ -4371,19 +4427,10 @@ impl Engine {
             .expect("checked deferred pattern remains matched");
             env.bind_all(bindings);
         }
-        let mut batch = NativeLineTaskExecutionBatch {
-            child_fibers: VecDeque::new(),
-            closing_existing: BTreeSet::new(),
-            next_fiber_id: prepared.next_fiber_id,
-            run_child_next: true,
-            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
-        };
         let child = FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
-                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Dialogue {
-                    activation: *activation,
-                },
+                presentation_bank,
                 line_cursor: 0,
                 pending_ops: prepared.pending_ops,
                 control_stack: Vec::new(),
@@ -4402,24 +4449,14 @@ impl Engine {
             launch: crate::engine::FlowFiberLaunch::Local,
             persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
-            owner: FlowFiberOwner::LineTask(LineTaskFiberOwner {
-                tag: LineTaskWorkTag::activation(
-                    activation.clone(),
-                    crate::line_task::LineTaskWork::Defer(id),
-                ),
-                join_policy: ChildJoinPolicy::Join,
-                cancel_policy: ChildCancelPolicy::Finish,
-                closing: false,
-                defer_parent: Some(defer_parent),
-            }),
+            owner,
         };
         debug_assert_eq!(
             flow_fiber_line_handle_tokens(&child)
                 .expect("checked deferred capture ownership remains unique"),
             prepared.capture_tokens
         );
-        batch.child_fibers.push_back(child);
-        batch
+        child
     }
 
     fn step_next_child_fiber(
@@ -4525,23 +4562,29 @@ impl Engine {
         let mut reached_defer = None;
         match scope_step {
             defer::NativeChildScopeProgress::Pop { terminal, failure } => {
-                self.complete_line_child_scope_step(terminal, failure, output, pure_backend)?;
+                self.complete_deferred_scope_step(terminal, failure, output, pure_backend)?;
                 drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
             }
-            defer::NativeChildScopeProgress::None => self.step_active_child_fiber(
-                input,
-                events,
-                output,
-                pure_backend,
-                &mut drop_policy,
-                before_tokens
-                    .as_ref()
-                    .map(|before| registry::NativeChildRegistryExecution {
-                        before,
-                        pending: &mut line_registry_mutation,
-                        reached_defer: &mut reached_defer,
-                    }),
-            ),
+            defer::NativeChildScopeProgress::None => {
+                if self.step_flow_defer_scope(output, pure_backend)? {
+                    drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
+                } else {
+                    self.step_active_child_fiber(
+                        input,
+                        events,
+                        output,
+                        pure_backend,
+                        &mut drop_policy,
+                        before_tokens.as_ref().map(|before| {
+                            registry::NativeChildRegistryExecution {
+                                before,
+                                pending: &mut line_registry_mutation,
+                                reached_defer: &mut reached_defer,
+                            }
+                        }),
+                    );
+                }
+            }
             defer::NativeChildScopeProgress::Waiting => {
                 unreachable!("waiting child retained before swap")
             }
@@ -4652,11 +4695,29 @@ impl Engine {
             child.frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         ) && (self.has_joined_work_for(child.id)
+            || child.frame.scope_defer_exit_pending()
             || (matches!(&owner, FlowFiberOwner::LineTask(_))
                 && (!child.frame.control_stack.is_empty()
                     || !child.frame.root_cleanups.is_empty())))
         {
             self.child_fibers.push_back(child);
+            return Ok(true);
+        }
+        if let FlowFiberOwner::FlowDefer {
+            scope,
+            registration,
+            site,
+        } = &owner
+        {
+            let failure = match &child.frame.status {
+                FlowFiberStatus::Failed(message) => Some(message.clone()),
+                FlowFiberStatus::Done(_) => None,
+                _ => {
+                    self.child_fibers.push_back(child);
+                    return Ok(true);
+                }
+            };
+            self.complete_flow_defer_child(child.parent, *scope, *registration, *site, failure)?;
             return Ok(true);
         }
         let completion_launch = if matches!(
@@ -4802,6 +4863,7 @@ impl Engine {
                         Some(owner.tag.activation_id().clone())
                     }
                     FlowFiberOwner::Executor
+                    | FlowFiberOwner::FlowDefer { .. }
                     | FlowFiberOwner::RootReducer { .. }
                     | FlowFiberOwner::LineTask(_) => None,
                 };
@@ -5205,6 +5267,9 @@ impl Engine {
     }
 
     fn effective_fiber_status(&self) -> FlowFiberStatus {
+        if self.fiber.frame.scope_defer_exit_pending() {
+            return FlowFiberStatus::Running;
+        }
         if (self.has_executor_work() || self.root_has_pending_reduction())
             && matches!(
                 self.fiber.frame.status,
@@ -5271,6 +5336,15 @@ impl Engine {
     }
 
     fn hard_stop_reason(&self, output: &RuntimeStepOutput) -> Option<RuntimeStepStopReason> {
+        if self.fiber.frame.scope_defer_exit_pending() {
+            return if self.main_fiber_can_attempt_runtime_op() || self.has_runnable_child_fibers() {
+                None
+            } else if output.has_presentation_visible_output() || output.has_host_requests() {
+                Some(RuntimeStepStopReason::Output)
+            } else {
+                Some(RuntimeStepStopReason::Blocked)
+            };
+        }
         if matches!(self.fiber.frame.status, FlowFiberStatus::DurationWaiting(_))
             && self.has_runnable_child_fibers()
         {

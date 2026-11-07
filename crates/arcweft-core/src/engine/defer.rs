@@ -13,6 +13,8 @@ use crate::value::{
     RuntimeStoredValue, RuntimeValue,
 };
 
+mod flow_scope;
+
 #[cfg(test)]
 mod tests;
 
@@ -298,6 +300,14 @@ impl super::NativeFlowExecutionFrame {
             super::FlowControlStackEntryKind::Scope { defers, .. } if defers.has_work())
         })
     }
+
+    pub(super) fn scope_defer_exit_pending(&self) -> bool {
+        self.lexical_exit.is_some()
+            || (matches!(
+                self.status,
+                super::FlowFiberStatus::Done(_) | super::FlowFiberStatus::Failed(_)
+            ) && self.has_scope_defer_work())
+    }
 }
 
 pub(super) enum NativeChildScopeProgress {
@@ -456,9 +466,6 @@ impl super::Engine {
         action: NativeLexicalExitAction<RuntimeValue>,
     ) -> Result<(), NativeLexicalExitAction<RuntimeValue>> {
         use super::FlowControlStackEntryKind;
-        if !matches!(self.fiber.owner, super::FlowFiberOwner::LineTask(_)) {
-            return Err(action);
-        }
         let mut pending = false;
         for (index, entry) in self.fiber.frame.control_stack.iter().enumerate().rev() {
             let FlowControlStackEntryKind::Scope { origin, defers, .. } = &entry.kind else {
@@ -569,7 +576,7 @@ impl super::Engine {
         }
     }
 
-    pub(super) fn complete_line_child_scope_step(
+    pub(super) fn complete_deferred_scope_step(
         &mut self,
         terminal: bool,
         failure: Option<String>,
@@ -762,6 +769,90 @@ impl NativeDeferCaptureOwner<'_> {
     }
 }
 
+fn inspect_defer_captures<'a>(
+    plan: &crate::plan::RuntimePlan,
+    env: &'a crate::value::RuntimeEnv,
+    site: RuntimeDeferSiteId,
+    captures: &[crate::value::RuntimeExpr],
+) -> Result<Vec<&'a RuntimeValue>, super::dialogue::DialogueExecutionError> {
+    use crate::line_task::LineRuntimeError;
+    use crate::value::{RuntimeEvalError, RuntimeExprKind, RuntimeLocalReadMode};
+    let function = plan
+        .defer_function_site(site)
+        .and_then(|id| plan.function_sites().get(id))
+        .ok_or(RuntimeEvalError::UnknownDeferredSite { site })?;
+    if captures.len() != function.capture_inputs().count() {
+        return Err(LineRuntimeError::InvalidActivationOperation.into());
+    }
+    let mut moved_locals = std::collections::BTreeSet::new();
+    captures
+        .iter()
+        .zip(function.capture_inputs())
+        .map(|(capture, input)| {
+            let RuntimeExprKind::Local(read) = capture.kind() else {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            };
+            if capture.ty() != input.pattern().ty() {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            let local = read.local();
+            let value = env
+                .get(local)
+                .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+            if !plan
+                .value_matches_type(capture.ty(), value)
+                .map_err(RuntimeEvalError::from)?
+            {
+                return Err(RuntimeEvalError::InvalidExpressionType(capture.ty()).into());
+            }
+            if read.mode() == RuntimeLocalReadMode::Copy {
+                if !value.ownership().permits_copy() {
+                    return Err(RuntimeEvalError::AffineLocalCopy(local).into());
+                }
+            } else if !moved_locals.insert(local) {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            Ok(value)
+        })
+        .collect()
+}
+
+fn take_defer_captures(
+    env: &mut crate::value::RuntimeEnv,
+    captures: &[crate::value::RuntimeExpr],
+) -> Vec<RuntimeValue> {
+    use crate::value::{RuntimeExprKind, RuntimeLocalReadMode};
+    let reads = || {
+        captures.iter().map(|capture| {
+            let RuntimeExprKind::Local(read) = capture.kind() else {
+                unreachable!("defer capture was checked as a local");
+            };
+            read
+        })
+    };
+    let mut values = reads()
+        .map(|read| {
+            (read.mode() == RuntimeLocalReadMode::Copy).then(|| {
+                env.get(read.local())
+                    .expect("checked copied defer local remains present")
+                    .clone()
+            })
+        })
+        .collect::<Vec<_>>();
+    for (read, value) in reads().zip(&mut values) {
+        if read.mode() == RuntimeLocalReadMode::Move {
+            *value = Some(
+                env.take(read.local())
+                    .expect("checked moved defer local remains present"),
+            );
+        }
+    }
+    values
+        .into_iter()
+        .map(|value| value.expect("checked defer read has one mode"))
+        .collect()
+}
+
 /// Admits every capture and ledger transfer before taking any local. The
 /// actual lexical scope or line root receives the sole checked packet.
 pub(super) fn register_line_defer(
@@ -777,50 +868,18 @@ pub(super) fn register_line_defer(
 ) -> Result<Option<RuntimeLineDeferredRegistration>, super::dialogue::DialogueExecutionError> {
     use super::dialogue::unique_affine_line_handles;
     use crate::line_task::{LineRuntimeError, RuntimeHandleOwnerSlot};
-    use crate::value::{RuntimeEvalError, RuntimeExprKind};
+    use crate::value::{RuntimeExprKind, RuntimeLocalReadMode};
 
-    let function_id = plan
-        .defer_function_site(site)
-        .ok_or(RuntimeEvalError::UnknownDeferredSite { site })?;
-    let function = plan
-        .function_sites()
-        .get(function_id)
-        .ok_or(RuntimeEvalError::UnknownDeferredSite { site })?;
-    if captures.len() != function.capture_inputs().count() {
-        return Err(LineRuntimeError::InvalidActivationOperation.into());
-    }
-
+    let capture_refs = inspect_defer_captures(plan, env, site, captures)?;
     let mut ledger = activation.ledger().clone();
-    let mut moved_locals = std::collections::BTreeSet::new();
     let mut captured_handles = std::collections::BTreeSet::new();
     let mut scoped_transfers = Vec::new();
-    let mut capture_refs = Vec::with_capacity(captures.len());
-    for (capture, input) in captures.iter().zip(function.capture_inputs()) {
+    for (capture, value) in captures.iter().zip(&capture_refs) {
         let RuntimeExprKind::Local(read) = capture.kind() else {
-            return Err(LineRuntimeError::InvalidActivationOperation.into());
+            unreachable!("defer capture was checked as a local");
         };
-        let local = read.local();
-        if capture.ty() != input.pattern().ty() {
-            return Err(LineRuntimeError::InvalidActivationOperation.into());
-        }
-        let value = env
-            .get(local)
-            .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-        capture_refs.push(value);
-        if !plan
-            .value_matches_type(capture.ty(), value)
-            .map_err(RuntimeEvalError::from)?
-        {
-            return Err(RuntimeEvalError::InvalidExpressionType(capture.ty()).into());
-        }
-        if read.mode() == crate::value::RuntimeLocalReadMode::Copy {
-            if !value.ownership().permits_copy() {
-                return Err(RuntimeEvalError::AffineLocalCopy(local).into());
-            }
+        if read.mode() == RuntimeLocalReadMode::Copy {
             continue;
-        }
-        if !moved_locals.insert(local) {
-            return Err(LineRuntimeError::InvalidActivationOperation.into());
         }
         for handle in unique_affine_line_handles(value)? {
             if !captured_handles.insert(handle.token().clone()) {
@@ -873,34 +932,7 @@ pub(super) fn register_line_defer(
             RuntimeHandleOwnerSlot::ScopedDefer(prepared.id()),
         )?;
     }
-    let mut values = (0..captures.len()).map(|_| None).collect::<Vec<_>>();
-    for (index, capture) in captures.iter().enumerate() {
-        let RuntimeExprKind::Local(read) = capture.kind() else {
-            unreachable!("defer capture was checked as a local")
-        };
-        if read.mode() == crate::value::RuntimeLocalReadMode::Copy {
-            values[index] = Some(
-                env.get(read.local())
-                    .expect("checked copied defer local remains present")
-                    .clone(),
-            );
-        }
-    }
-    for (index, capture) in captures.iter().enumerate() {
-        let RuntimeExprKind::Local(read) = capture.kind() else {
-            unreachable!("defer capture was checked as a local")
-        };
-        if read.mode() == crate::value::RuntimeLocalReadMode::Move {
-            values[index] = Some(
-                env.take(read.local())
-                    .expect("checked moved defer local remains present"),
-            );
-        }
-    }
-    let values = values
-        .into_iter()
-        .map(|value| value.expect("checked defer read has one mode"))
-        .collect::<Vec<_>>();
+    let values = take_defer_captures(env, captures);
     let scoped_registration = match owner.is_scoped() {
         true => Some(activation.commit_deferred_registration(site, outcome, values, prepared)),
         false => {

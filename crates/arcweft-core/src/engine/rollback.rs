@@ -431,6 +431,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             }
             (
                 FlowFiberOwner::Executor
+                | FlowFiberOwner::FlowDefer { .. }
                 | FlowFiberOwner::LineTask(_)
                 | FlowFiberOwner::DialogueEffectCallback { .. },
                 None,
@@ -503,12 +504,9 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             admission.validate_owned_borrowed(value.borrowed_value())?;
         }
         if let Some(exit) = &self.lexical_exit {
-            if self
-                .control_stack
-                .get(exit.target)
-                .and_then(ScopeControl::defer_scope)
-                .is_none()
-            {
+            if self.control_stack.get(exit.target..).is_none_or(|scopes| {
+                scopes.is_empty() || scopes.iter().any(|entry| entry.defer_scope().is_none())
+            }) {
                 return Err(invalid("native lexical exit target is absent".into()));
             }
             exit.admit(admission, self.env.function_instantiation())?;
@@ -992,6 +990,7 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
             self.main_started,
             self.next_fiber_id,
             self.next_scheduled_scope_sequence,
+            self.flow_defer_frontier,
             self.run_child_next,
             self.audio_epoch,
             self.next_audio_sequence,
@@ -1201,25 +1200,40 @@ impl<N, P, R, V, FP, O, C, A, S, D>
             || "native defer is not paired with its exact reached lexical owner".to_owned();
         let mut pending = BTreeMap::new();
         let mut registrations = BTreeMap::<_, Vec<_>>::new();
+        let mut flow_registrations = BTreeSet::new();
         let mut scoped_tokens = BTreeSet::new();
-        for child in self.session_children() {
+        for child in self.session_fibers() {
             for (index, entry) in child.frame.control_stack.iter().enumerate() {
                 let Some(scope) = entry.defer_scope().filter(|scope| scope.has_work()) else {
                     continue;
                 };
-                let FlowFiberOwner::LineTask(owner) = &child.owner else {
-                    return Err(invalid());
+                let line = match &child.owner {
+                    FlowFiberOwner::LineTask(owner) => {
+                        let activation = *owner.tag.activation_id();
+                        let (line, _) = reached(&activation).ok_or_else(invalid)?;
+                        registrations
+                            .entry(activation)
+                            .or_default()
+                            .extend(scope.ids());
+                        Some((activation, line))
+                    }
+                    FlowFiberOwner::Executor | FlowFiberOwner::FlowDefer { .. } => {
+                        if scope.ids().any(|id| {
+                            !self.flow_defer_frontier.contains(id) || !flow_registrations.insert(id)
+                        }) {
+                            return Err(invalid());
+                        }
+                        None
+                    }
+                    _ => return Err(invalid()),
                 };
-                let activation = owner.tag.activation_id();
-                let (line, _) = reached(activation).ok_or_else(invalid)?;
-                registrations
-                    .entry(*activation)
-                    .or_default()
-                    .extend(scope.ids());
                 if let Some(inflight) = &scope.inflight {
                     if child.frame.control_stack.len().checked_sub(1) != Some(index)
                         || pending
-                            .insert((*activation, child.id, index), inflight)
+                            .insert(
+                                (line.map(|(activation, _)| activation), child.id, index),
+                                (inflight, child.frame.presentation_bank),
+                            )
                             .is_some()
                     {
                         return Err(invalid());
@@ -1233,13 +1247,15 @@ impl<N, P, R, V, FP, O, C, A, S, D>
                             .map_err(|_| invalid())?
                         {
                             if !scoped_tokens.insert(handle.token().clone())
-                                || line.ledger().lease(handle.token()).is_none_or(|lease| {
-                                    lease.owner()
-                                        != &RuntimeHandleOwnerSlot::ScopedDefer(
-                                            registration.packet.id(),
-                                        )
-                                        || lease.resource().kind() != handle.kind()
-                                })
+                                || line
+                                    .and_then(|(_, line)| line.ledger().lease(handle.token()))
+                                    .is_none_or(|lease| {
+                                        lease.owner()
+                                            != &RuntimeHandleOwnerSlot::ScopedDefer(
+                                                registration.packet.id(),
+                                            )
+                                            || lease.resource().kind() != handle.kind()
+                                    })
                             {
                                 return Err(invalid());
                             }
@@ -1260,6 +1276,32 @@ impl<N, P, R, V, FP, O, C, A, S, D>
         }
         let mut activation_children = BTreeSet::new();
         for child in self.session_children() {
+            if let FlowFiberOwner::FlowDefer {
+                scope,
+                registration,
+                site,
+            } = &child.owner
+            {
+                let parent = child.parent.ok_or_else(invalid)?;
+                let (inflight, bank) = pending
+                    .remove(&(None, parent, *scope))
+                    .ok_or_else(invalid)?;
+                let function = self.plan.defer_function_site(*site).ok_or_else(invalid)?;
+                if inflight.id != *registration
+                    || inflight.site != *site
+                    || child.frame.presentation_bank != bank
+                    || child
+                        .frame
+                        .env
+                        .function_contexts()
+                        .next()
+                        .map(|(site, _)| site)
+                        != Some(function)
+                {
+                    return Err(invalid());
+                }
+                continue;
+            }
             let FlowFiberOwner::LineTask(owner) = &child.owner else {
                 continue;
             };
@@ -1280,9 +1322,9 @@ impl<N, P, R, V, FP, O, C, A, S, D>
                     }
                     scopes.last().and_then(|scope| scope.inflight.as_ref())
                 }
-                NativeDeferParent::Control { scope } => {
-                    pending.remove(&(*activation, parent, scope))
-                }
+                NativeDeferParent::Control { scope } => pending
+                    .remove(&(Some(*activation), parent, scope))
+                    .map(|(inflight, _)| inflight),
             }
             .filter(|inflight| inflight.id == id)
             .ok_or_else(invalid)?

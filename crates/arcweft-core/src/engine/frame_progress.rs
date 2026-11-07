@@ -96,9 +96,7 @@ impl Engine {
     }
 
     fn fiber_waits_for_lexical_defer(&self, fiber: &FlowFiber) -> bool {
-        let super::FlowFiberOwner::LineTask(owner) = &fiber.owner else {
-            return false;
-        };
+        let activation = fiber.owner.dialogue_activation();
         fiber
             .frame
             .control_stack
@@ -107,9 +105,8 @@ impl Engine {
                 super::FlowControlStackEntryKind::Scope { defers, .. } => {
                     defers.inflight.is_some()
                         || (defers.exit.is_some()
-                            && self
-                                .dialogue_activations
-                                .active_line(owner.tag.activation_id())
+                            && activation
+                                .and_then(|id| self.dialogue_activations.active_line(id))
                                 .is_some_and(|line| line.has_pending_commands()))
                 }
                 _ => false,
