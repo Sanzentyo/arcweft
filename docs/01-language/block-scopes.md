@@ -116,6 +116,10 @@ availability is decided by the static ownership flow.
 
 In expression position, the final expression is the block value unless it is explicitly discarded with `;`.
 
+Assignment and lifetime-registry writes remain statements at the end of a
+value block, including a cleanup callback body. They do not require a trailing
+semicolon. A block with no final expression has type `Unit`.
+
 ```arcw
 let x = {
     let a = 1

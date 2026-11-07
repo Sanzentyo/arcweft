@@ -663,6 +663,21 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn trailing_registry_write_is_an_ordinary_statement_in_cleanup_value_blocks() {
+    for body in [
+        "{ 'flow.flag <- true }",
+        "{\n    'flow.flag <- true\n}",
+        "{\r\n    'flow.flag <- true\r\n}",
+    ] {
+        let source = format!(
+            "flow main() {{\n 'flow.flag <- false\n scope inner {{ defer {body} }}\n let flag: Option<bool> = 'flow.flag?\n if let .Some(value) = flag {{ log.info(value) }} else {{ log.info(\"missing\") }}\n}}\nentry cli @entry.main {{ goto @flow.main }}\n"
+        );
+        assert_eq!(native(&source), ["true"], "{body:?}");
+        assert_eq!(saved_awbc(&source), ["true"], "{body:?}");
+    }
+}
+
+#[test]
 fn callback_failure_drains_remaining_cleanup_without_resuming_normal_code() {
     let source = r#"
 flow main() effects { log.write } {

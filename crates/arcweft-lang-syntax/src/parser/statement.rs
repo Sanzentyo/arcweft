@@ -319,8 +319,12 @@ fn emit_block_sequence(
         let unterminated_value_head = !semicolon
             && !later
             && first.is_some_and(|spelling| matches!(spelling, "if" | "loop" | "match" | "thread"));
-        let statement_shaped =
-            is_statement_start(parser, start, significant_end) && !unterminated_value_head;
+        let statement_shaped = (is_statement_start(parser, start, significant_end)
+            || matches!(
+                classify_statement(parser, significant_end, item_kind),
+                SyntaxKind::AssignmentStatement | SyntaxKind::LifetimeSetStatement
+            ))
+            && !unterminated_value_head;
         if sequence_kind != BlockSequenceKind::Value || semicolon || later || statement_shaped {
             let end = if choice_expression_start.is_some() {
                 // Choice owns its indentation newline and comment geometry.

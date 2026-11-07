@@ -27,6 +27,132 @@ fn kinds(text: &str) -> Vec<SyntaxKind> {
 }
 
 #[test]
+fn value_block_trailing_registry_writes_keep_statement_and_omitted_tail_identity() {
+    for body in [
+        "{ 'flow.flag <- true }",
+        "{\n    'flow.flag <- true\n}",
+        "{\r\n    'flow.flag <- true\r\n}",
+    ] {
+        let source = format!("fn cleanup() {{ defer {body} }}\n");
+        let built =
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+        let kinds = built
+            .index()
+            .entries()
+            .iter()
+            .map(UnattachedGrammarEntry::kind)
+            .collect::<Vec<_>>();
+        assert!(
+            built.diagnostics().is_empty(),
+            "{body:?}: {:?}",
+            built.diagnostics()
+        );
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|&&kind| kind == SyntaxKind::LifetimeSetStatement)
+                .count(),
+            1,
+            "{body:?}"
+        );
+        assert!(!kinds.contains(&SyntaxKind::ErrorExpression), "{body:?}");
+        assert!(kinds.contains(&SyntaxKind::OmittedBlockTail), "{body:?}");
+        assert_eq!(built.green().to_string(), source);
+    }
+}
+
+#[test]
+fn value_block_trailing_place_assignment_keeps_its_statement_identity() {
+    let source = "fn cleanup() { let result = { items[0] = true } }\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == SyntaxKind::AssignmentStatement)
+            .count(),
+        1
+    );
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(kinds.contains(&SyntaxKind::OmittedBlockTail));
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn value_block_nested_operators_do_not_replace_record_or_expression_tails() {
+    let source = "fn cleanup() { defer { log.info(\"a <- b\", field = true) };\n let result = { field = \"kept\" } }\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == SyntaxKind::CallExpression)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == SyntaxKind::RecordLiteralExpression)
+            .count(),
+        1
+    );
+    assert!(!kinds.contains(&SyntaxKind::LifetimeSetStatement));
+    assert!(!kinds.contains(&SyntaxKind::AssignmentStatement));
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn value_block_trailing_registry_write_retains_missing_initializer_recovery() {
+    let source = "fn cleanup() { defer { 'flow.flag <- } }\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == SyntaxKind::LifetimeSetStatement)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|&&kind| kind == SyntaxKind::MissingExpression)
+            .count(),
+        1
+    );
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    let root = crate::attachment::SyntaxNode::new_root(built.green().clone());
+    let missing = root
+        .descendants()
+        .find(|node| node.kind() == rowan::SyntaxKind(SyntaxKind::MissingExpression as u16))
+        .unwrap();
+    assert!(missing.text_range().is_empty());
+    assert_eq!(
+        u32::from(missing.text_range().start()),
+        u32::try_from(source.find('}').unwrap()).unwrap()
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn top_level_function_receiver_shape_requires_a_typed_pattern_annotation() {
     let source = "fn invalid(self) -> Unit { () }\n";
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
