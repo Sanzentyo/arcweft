@@ -35552,5 +35552,729 @@
         }
       ]
     }
+  },
+  "deferredDialogueReceivers": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": {
+      "version": 1,
+      "commit": "4a6d9c3eb1ceb83f16718cf2a97be13519389b62",
+      "parent": "c001598e2009a0fe8099554c9cf256c8c7765c87",
+      "tree": "e08aed29086bdd7efd6a3ca41094307d95e33204",
+      "remote": "4a6d9c3eb1ceb83f16718cf2a97be13519389b62",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "9a50de5e1311d3636c0ebf1568ab394cd95e34b6"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "56259dba214c57b49986d818a00c7d9cc4b847ca"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "a3dc56bacab4a3c940fcc03e628c7d3e5a074f15"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "blob": "13426dd51d80802c958707cdf43c625d2156830e"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "a2bdf3b7273ffc4ce4b9f995fbbfaf664dfbbde6"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "blob": "ca3c5641ba4e6c2a5200320e1cbd30ff299f73f3"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "ebf55304f97c9ebfbf248aec59653f38d29960ca"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "ce8eab930610b9c90a921f9828089e675f11823fed6d5daa8e5de03e6fec292a",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T17:51:31.3984786Z"
+    },
+    "behavior": [
+      "Product dialogue receivers identify an actual allocated ordinary fiber or an activation frame. Main and non-Line-owned children use the same dialogue dispatch, input handoff, publication and continuation protocol.",
+      "Foreground status exposes the real child dialogue activation while its caller is draining a defer. Each-step public JSON save/cold restore authenticates the existing receiver topology against actual retained child frames.",
+      "Failure closes the dialogue and traps its actual ordinary receiver so child and caller cleanup can drain. The real child cleanup and bank unwind are preflighted before final dialogue abandonment.",
+      "Native Line-work completion authenticates the actual receiver among retained session fibers, replacing the incorrect main-only status gate. Exact persistent owner and activation identities remain mandatory. No wire, codec or contract version changes."
+    ],
+    "actual": {
+      "core": {
+        "run": 2323,
+        "passed": 2323,
+        "failed": 0,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:39:36.5640101Z",
+          "endedAt": "2026-11-07T17:41:40.9030506Z"
+        }
+      },
+      "compiler": {
+        "run": 113,
+        "passed": 112,
+        "failed": 1,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:41:41.2891423Z",
+          "endedAt": "2026-11-07T17:43:29.1314256Z"
+        }
+      },
+      "scopedDefer": {
+        "run": 30,
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scoped_defer",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:43:29.5107449Z",
+          "endedAt": "2026-11-07T17:43:46.774638Z"
+        }
+      },
+      "fanout": {
+        "run": 4,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 162,
+        "receipt": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "-E",
+            "test(program_fanout)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:43:47.1871806Z",
+          "endedAt": "2026-11-07T17:47:05.1938109Z"
+        }
+      },
+      "coreDocs": {
+        "passed": 80,
+        "failed": 0,
+        "receipt": {
+          "arguments": [
+            "test",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--doc"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:47:05.7859103Z",
+          "endedAt": "2026-11-07T17:49:16.3573228Z"
+        }
+      },
+      "quality": {
+        "core": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:39:36.5640101Z",
+          "endedAt": "2026-11-07T17:41:40.9030506Z"
+        },
+        "compiler": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:41:41.2891423Z",
+          "endedAt": "2026-11-07T17:43:29.1314256Z"
+        },
+        "scoped": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scoped_defer",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:43:29.5107449Z",
+          "endedAt": "2026-11-07T17:43:46.774638Z"
+        },
+        "fanout": {
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "-E",
+            "test(program_fanout)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:43:47.1871806Z",
+          "endedAt": "2026-11-07T17:47:05.1938109Z"
+        },
+        "docs": {
+          "arguments": [
+            "test",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--doc"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:47:05.7859103Z",
+          "endedAt": "2026-11-07T17:49:16.3573228Z"
+        },
+        "clippy": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-compiler",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-07T17:49:16.8004796Z",
+          "endedAt": "2026-11-07T17:51:07.5956623Z"
+        },
+        "structure": {
+          "command": "just structure-audit-gate",
+          "exitCode": 0,
+          "sourceInputs": 3416,
+          "sourceDrift": 0
+        },
+        "fmt": {
+          "command": "rustfmt --check --edition 2024 --config skip_children=true",
+          "exitCode": 0,
+          "paths": [
+            "crates/arcweft-core/src/awbc/product_step.rs",
+            "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+            "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+            "crates/arcweft-core/src/awbc/product_step/line.rs",
+            "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+            "crates/arcweft-core/src/engine.rs",
+            "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs"
+          ],
+          "sourceDrift": 0
+        }
+      },
+      "operationBound": 1,
+      "tickBound": 512,
+      "conditions": [
+        "original nested deferred Line, saved AWBC",
+        "original two closed generic deferred Lines, saved AWBC",
+        "Actor retained in another cleanup packet during a deferred Dialogue, Native and saved AWBC; actual public child waiting activation",
+        "deferred Dialogue cancellation returns to its owning cleanup, Native and saved AWBC; one Actor acquire and release",
+        "failed deferred Dialogue drains child cleanup and failed caller cleanup without executing either normal continuation, saved AWBC",
+        "missing or replaced actual deferred child receiver is rejected during save binding; rejected admission preserves the complete original executor snapshot and the original execution then completes"
+      ]
+    },
+    "development": [
+      {
+        "receipt": "deferred-dialogue-receiver-20261108.first.receipt.json",
+        "result": "2 PASS / 106 SKIP: original saved nested/generic deferred Lines now execute",
+        "scope": "Initial receiver implementation, before the additional lifecycle projection and negative/cancellation tests."
+      },
+      {
+        "receipt": "deferred-dialogue-receiver-20261108.extended.receipt.json",
+        "result": "4 PASS / 1 FAIL / 106 SKIP",
+        "failure": "New Native deferred-dialogue cancellation input reached StaleCommandOutcome; the combined cancellation test stopped before AWBC.",
+        "resolution": "Split the backend tests, then replace Native main-only receiver authentication with the exact retained receiver. This did not reopen earlier accepted Native inputs."
+      },
+      {
+        "receipt": "deferred-dialogue-receiver-20261108.cancel.receipt.json",
+        "result": "1 PASS / 1 FAIL / 110 SKIP",
+        "failure": "The split run confirmed AWBC cancellation passes and Native alone fails."
+      },
+      {
+        "receipt": "deferred-dialogue-receiver-20261108.cancel-r2.receipt.json",
+        "result": "2 PASS / 110 SKIP",
+        "resolution": "Native receiver repair passes the original new input alongside saved AWBC."
+      },
+      {
+        "receipt": "deferred-dialogue-receiver-20261108.tamper.receipt.json",
+        "result": "0 PASS / 1 FAIL / 112 SKIP",
+        "failure": "The new test incorrectly unwrapped save binding, which already correctly rejected the missing receiver.",
+        "resolution": "Assert rejection at the actual binding admission boundary and compare the unchanged original snapshot."
+      },
+      {
+        "receipt": "deferred-dialogue-receiver-20261108.tamper-r2.receipt.json",
+        "result": "1 PASS / 112 SKIP",
+        "note": "This probe preceded the final child failure-close preflight and final formatting; the complete quality run covers those final bytes."
+      }
+    ],
+    "remainingFailures": [
+      "ordinary_defer::native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line: AffineGroupCapture; initial owned Line inputs and post-reveal shared inputs are not separated"
+    ],
+    "corrections": [
+      "Remove the two current AWBC deferred-child Dialogue rejection cases because their exact original inputs now pass; retain the old 108-case 105 PASS/3 FAIL result and all earlier SHAs as history.",
+      "The newly reproduced Native cancellation failure was limited to an actual deferred child receiver and is repaired and verified here. Previously accepted Generic Match, Line/init, returned Actor captures and bounded Native inputs remain accepted.",
+      "The current evaluated_effects result is one 113-case run with 112 PASS/1 FAIL. Do not combine its counts with development probes or older full runs."
+    ],
+    "ownershipReview": {
+      "base": "c001598e2009a0fe8099554c9cf256c8c7765c87",
+      "workingTree": "7 task-owned source paths plus the unchanged original 12 tracked and 6 untracked WIP",
+      "rows": [
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 279301,
+          "physicalLines": 6834,
+          "basePhysicalLines": 6778,
+          "growth": 56,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing Product executor coordinates scheduler, dialogue handoff and failure close using exact retained receiver identity. The new branches retain current frame, issuer ledger, bank and checkpoint owners; no API widening or alternate model.",
+          "embeddedTestModulePhysicalLines": 0,
+          "testBoundary": "Existing test modules and cfg(test) fixture accessors are unchanged by this cut; their responsibility remains the same owner."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 37015,
+          "physicalLines": 959,
+          "basePhysicalLines": 834,
+          "growth": 125,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing dialogue adapter selects actual ordinary fibers and nested activation frames by allocated identity. Generalizing its receiver removes the main-only assumption and preserves one registry and checkpoint authority.",
+          "embeddedTestModulePhysicalLines": 0,
+          "testBoundary": "Existing test modules and cfg(test) fixture accessors are unchanged by this cut; their responsibility remains the same owner."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 25454,
+          "physicalLines": 613,
+          "basePhysicalLines": 610,
+          "growth": 3,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The lifecycle owner exposes the foreground child dialogue through the same status projection as a main-owned dialogue.",
+          "embeddedTestModulePhysicalLines": 0,
+          "testBoundary": "Existing test modules and cfg(test) fixture accessors are unchanged by this cut; their responsibility remains the same owner."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 208894,
+          "physicalLines": 4914,
+          "basePhysicalLines": 4897,
+          "growth": 17,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing typed publication preflight and commit borrow the exact actual ordinary child receiver alongside independently cancelled Line children. No copied side table, fake frame or alternate result path.",
+          "embeddedTestModulePhysicalLines": 74,
+          "testBoundary": "Existing test modules and cfg(test) fixture accessors are unchanged by this cut; their responsibility remains the same owner."
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 122375,
+          "physicalLines": 2950,
+          "basePhysicalLines": 2930,
+          "growth": 20,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The ordinary child suspension owner delegates reached Dialogue packets to the Product dialogue dispatcher; Line-owned callback restrictions remain with their existing protocol.",
+          "embeddedTestModulePhysicalLines": 0,
+          "testBoundary": "Existing test modules and cfg(test) fixture accessors are unchanged by this cut; their responsibility remains the same owner."
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "owner": "arcweft-core",
+          "classification": "production",
+          "bytes": 260513,
+          "physicalLines": 6457,
+          "basePhysicalLines": 6454,
+          "growth": 3,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing Native Line-work completion owner checks the actual allocated receiver across retained session fibers instead of assuming the main receiver. Exact activation identity and existing registry transaction remain mandatory.",
+          "embeddedTestModulePhysicalLines": 887,
+          "testBoundary": "Existing test modules and cfg(test) fixture accessors are unchanged by this cut; their responsibility remains the same owner."
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "owner": "arcweft-compiler",
+          "classification": "integration-test",
+          "bytes": 19887,
+          "physicalLines": 560,
+          "basePhysicalLines": 361,
+          "growth": 199,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "Behavior tests retain the existing 1-op/512-step and exact Actor acquire/release assertions. New tests exercise deferred dialogue cancellation, failure drain, public waiting status, each-step save/cold restore and forged actual receiver rejection.",
+          "embeddedTestModulePhysicalLines": 0,
+          "testBoundary": "Entire file is behavioral integration tests."
+        }
+      ],
+      "dependency": {
+        "metadata": "function-scope-20261107.metadata-all.json",
+        "workspacePackages": 98,
+        "coreReverseClosure": [
+          "arcweft",
+          "arcweft-adapter-desktop",
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-policy",
+          "arcweft-agent-protocol",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-browser-bench",
+          "arcweft-bundle",
+          "arcweft-bundle-assets",
+          "arcweft-character-view",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-core",
+          "arcweft-debug-model",
+          "arcweft-debug-sqlite",
+          "arcweft-dialogue",
+          "arcweft-glyphon",
+          "arcweft-host-adapter",
+          "arcweft-lang-jit-cranelift",
+          "arcweft-lang-sema",
+          "arcweft-launch",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-text-input",
+          "arcweft-player-web",
+          "arcweft-project",
+          "arcweft-project-loader",
+          "arcweft-rag",
+          "arcweft-render-text",
+          "arcweft-render-web",
+          "arcweft-render-wgpu",
+          "arcweft-resource-manifest",
+          "arcweft-resource-model",
+          "arcweft-runtime-accelerator",
+          "arcweft-runtime-codegen",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-runtime-scheduler",
+          "arcweft-save",
+          "arcweft-test",
+          "arcweft-text-layout",
+          "arcweft-text-model",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3",
+          "arcweft-view"
+        ],
+        "count": 53,
+        "cargoChanged": 0,
+        "newDependencies": 0,
+        "direction": "Existing runtime-plan/compiler consumers remain above the Sans-I/O Core. No dependency, feature, export or contract-version changes."
+      },
+      "scannerDisposition": "Current structure gate is retained in the raw evidence. The unchanged embedded test module counts of 887 (Engine) and 74 (Product line publication) are reused from the immediately preceding scanner; this cut changes no embedded test module. No LOC-only split or public widening is introduced."
+    },
+    "limits": [
+      "The remaining Native initial owned Line input is a separate boundary. No general cancellation or all-resource acceptance is inferred from the bounded deferred-dialogue cases.",
+      "Core53 reverse-closure and workspace all-target/all-feature check/Clippy have not been rerun for this source. Manifests and the resolved graph remain unchanged; the actual Core reverse closure has 53 packages.",
+      "Aggregate registration/child preconstruction limits, Native public save, remaining CLI failures and Native/Web visual acceptance remain wider convergence conditions. All lint warnings are retained; no performance improvement is claimed."
+    ],
+    "raw": {
+      "path": "task-deferred-dialogue-receivers.raw.zip",
+      "sha256": "061d2a3fe3c1982320a1c916a28548af05b948e04ae3f7f1178b334146b9f444",
+      "entries": [
+        {
+          "entry": "deferred-dialogue-receiver-20261108.cancel-r2.log",
+          "bytes": 89986,
+          "sha256": "e6da63b9fa2354bca5e503ab49160205f77512f780ccc27c9f39aab98487b2cf"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.cancel-r2.receipt.json",
+          "bytes": 493,
+          "sha256": "1fc7772ed03304807911d65ab948273f1d67e4719344c0292789ac2cc8ab1f89"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.cancel.log",
+          "bytes": 89367,
+          "sha256": "1ccbc0db847642103f136b4b0b413efd4f383b971ccfe445bda2e544567fb1d0"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.cancel.receipt.json",
+          "bytes": 495,
+          "sha256": "33259bdc6d6c6fb8a05c81de50620e54782e28b75c64efa2d9eceb6251d2f1f3"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.extended.log",
+          "bytes": 91338,
+          "sha256": "bfa24afb5dfabd9abbe0e290ac39b95f1ca785b10f95446d2d0b826e9753854c"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.extended.receipt.json",
+          "bytes": 507,
+          "sha256": "04c2c3e73b1970ca7d1aef67c2aaf4b71d43cd1a8f57337e406077cd4de97053"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.first.log",
+          "bytes": 89975,
+          "sha256": "9dd116e8164229167011b92c5a7dc11afe81dbe6d52d91590f590fc0893342aa"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.first.receipt.json",
+          "bytes": 478,
+          "sha256": "87e2fecdde2a604d2704a14196e9695bc3afbd4afee9d7135b842d4e60471d99"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.ownership-review.json",
+          "bytes": 7528,
+          "sha256": "0869de882ea60d15200834f1c537155394c398c3f33868e78049e4885853f4d7"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.clippy.log",
+          "bytes": 7725217,
+          "sha256": "43c7a10f4e539a50acf241c74e9ebe997c49f814e88570cd7bfb8abe6a369b82"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.clippy.receipt.json",
+          "bytes": 331,
+          "sha256": "d71b91bc49f04d040b085e7adc2b3bf9f1d16d4312d905c9d524201a12ec29b1"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.compiler.log",
+          "bytes": 106681,
+          "sha256": "43da813c1a3fc23edebbfb40386d958d8c5358c67f1027b258a78233582004c6"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.compiler.receipt.json",
+          "bytes": 365,
+          "sha256": "118f42da84c998ccc43b5a94bdb45ed12b7d74b88427f80c1b6c8a8a02adf871"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.core.log",
+          "bytes": 391615,
+          "sha256": "b90250159e7b5d5c2c6fd7d73f89d39d818dc5ff03dc57a118d6862607d75301"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.core.receipt.json",
+          "bytes": 332,
+          "sha256": "2c94d1087c7418948b30b30239894753fc19ce084cccaaec8d96e491236d08cf"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.docs.log",
+          "bytes": 83167,
+          "sha256": "d493cce9949954a56e63c7f8d8a0cacb42e4e7fa773c6da0249ad0e94d281147"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.docs.receipt.json",
+          "bytes": 262,
+          "sha256": "ff2b3c339e32ab91e9345caffa7954b9aece0c28aeef2dd318fc6df7a67cdfc7"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.fanout.log",
+          "bytes": 89287,
+          "sha256": "34879e86e556a95c8deb25b33419467b9783350a86e9ffae8adf6ab89119cdea"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.fanout.receipt.json",
+          "bytes": 366,
+          "sha256": "e07e0572384b3c16d9fc83ba2e60d5856411b2166be2be67ec0278b32b540e97"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.fmt.receipt.json",
+          "bytes": 555,
+          "sha256": "c4bfc16ed95e5c5f1590f273a2e38b9e8368be78363c67ff05dfc9b4b64a0a38"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.scoped.log",
+          "bytes": 91688,
+          "sha256": "6039bd6852224a3b9528b4b7dc031d4c84b6aa457adc7c751b34c36b147a9a17"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.scoped.receipt.json",
+          "bytes": 358,
+          "sha256": "73bf311ccefc02d53262b1dad3abd7e39f4365251ca78ce592852d96b48aa344"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.source.json",
+          "bytes": 605889,
+          "sha256": "3869dc20cd939ae9a670057b671db9cb68f8e5320c819dcd90cfeb3e83beacaf"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.structure.log",
+          "bytes": 65874,
+          "sha256": "c5b17ba65e65c7e6510779945c846c90c81f725bc9041ce74fbb14817ac7e172"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.quality.structure.receipt.json",
+          "bytes": 112,
+          "sha256": "0492917c91b2c78f60933c75205f9d1673aee1cd02a401cf1ce97a6486667dc3"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.reverse-tree.log",
+          "bytes": 19452,
+          "sha256": "3f1a725a8c4e20d7ff324f499910203eab3b157f862f4030f796f3b84bf6d79a"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.source.message.txt",
+          "bytes": 57,
+          "sha256": "a84357a2e8ad7ea7d2a65b6299990e21c9a329eab962d954089bbff477040c08"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.source.owned.txt",
+          "bytes": 367,
+          "sha256": "5335a57a27d107fa7ce3b64f35b97b8fe7fd9f7a968e29d58b6bdc3a22d7ab07"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.source.pathspec",
+          "bytes": 360,
+          "sha256": "8c5ada92380fed488be18c2e52c0a0fb2082bdc54b32aa19b00bb8fb8ea92505"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.source.prepared.json",
+          "bytes": 2146,
+          "sha256": "b36abd26dfb1fcc56ef2521a718d48b75c3b6e2d7ad3297de92b08e03979a2b7"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.source.reviewed.patch",
+          "bytes": 36868,
+          "sha256": "ce8eab930610b9c90a921f9828089e675f11823fed6d5daa8e5de03e6fec292a"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.source.verified.json",
+          "bytes": 1548,
+          "sha256": "6276cd1ead40635a768209d70f77b61ce91dda5322bafe1ab903571330ecd33e"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.tamper-r2.log",
+          "bytes": 88762,
+          "sha256": "946c60f831522c87206cde8ad94680016006b80ebb461a300b4e10a81a5adf9a"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.tamper-r2.receipt.json",
+          "bytes": 441,
+          "sha256": "802e34ecea3df4240c483457259aa25b9d15ced7c6259cab4950f9f71fbb6cc9"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.tamper.log",
+          "bytes": 89603,
+          "sha256": "d66c3b5237651044c79ad0404eee362b73903500c4c727f68f8c3dba29c235d9"
+        },
+        {
+          "entry": "deferred-dialogue-receiver-20261108.tamper.receipt.json",
+          "bytes": 443,
+          "sha256": "70000874eaa6a5d43cd085b0f93d3b34aed741a11b35560ea51c7b381ab475be"
+        },
+        {
+          "entry": "record-deferred-dialogue-receiver-20261108.ps1",
+          "bytes": 15228,
+          "sha256": "768136fcc35390e61b3ebb678f371c6dc813a6ca56796a7cf1ff81295a0820a6"
+        },
+        {
+          "entry": "run-deferred-dialogue-receiver-quality-20261108.ps1",
+          "bytes": 2997,
+          "sha256": "01dae3540ecfa2b2d00ef6c5ea1b39ffbd320df061bdb11dacbce45f2cbd819d"
+        }
+      ]
+    }
   }
 }
