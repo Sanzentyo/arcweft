@@ -31587,5 +31587,630 @@
         }
       ]
     }
+  },
+  "flowTransferInputCustody": {
+    "version": 1,
+    "date": "2026-11-07",
+    "source": {
+      "version": 1,
+      "commit": "b6df0c825805b9ac77cad6a9760761a861007679",
+      "parent": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+      "tree": "0fd2a9b3715cbff5a1fca785005185e0f5c79bdd",
+      "remote": "b6df0c825805b9ac77cad6a9760761a861007679",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "d1a737ea5c8d64e55536c6c0698e585d549a66c9"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/tests/transfer.rs",
+          "blob": "87ac16a3db5a97227237bab0b0968a457966dd0c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/transfer.rs",
+          "blob": "6fbc2735d37517c768070f3699a1bf19f8d12165"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "e1521de6b6d00922759ed2c9945893260429ead8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "25370ceda906d9e17f799905f15066a4828d1482"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/flow_transfer.rs",
+          "blob": "4fd5980f7189407a448e30586b8d4ee3957358f8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "6576e0c06a396d3d959b02aa90534dcad2f12fa2"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "05f1a668341eeb510adba5a702573a047011d9817eec425cc3efa5d5c29cc0b9",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T13:33:36.7214404Z"
+    },
+    "scope": "Pending Flow input custody and shared Copy-proof resource failure; preserve the already accepted bounded goto/Choice behavior.",
+    "reproduction": {
+      "version": 1,
+      "sourceBase": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+      "arguments": [
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(pending_flow_transfer_line_handle_) | test(pending_flow_transfer_preserves_)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ],
+      "startedAt": "2026-11-07T13:26:51.1973176Z",
+      "endedAt": "2026-11-07T13:27:34.9547351Z",
+      "exitCode": 100
+    },
+    "corrections": [
+      "Two actual regressions reproduce on the preceding published source: the pending destination is absent from the Line-handle slot graph, and a shared work refusal is replaced by a deep-Copy message. Both fail before the fix and pass afterwards.",
+      "The first new test build used unwrap on a non-fallible site-ID constructor (E0599); the first fix build named a private save-result alias (E0603). These are development build errors, not runtime failures; both attempts remain in raw evidence.",
+      "Use the same retained real-frame inventory for live and inert physical ownership. Preserve the enclosing work bank first failure in the ABI admission helper, rather than reconstructing an error downstream.",
+      "The two old public frame-replacement methods have zero repository consumers after the prior migration and are deleted. No released or persisted compatibility contract is known; the active transfer authority remains the prepared real destination and exit state.",
+      "The Cue lease is issued by the real ledger and moves from its original register to the actual destination register. The case checks live, public JSON save, restored storage, duplicate-owner rejection and an explicit ledger transfer. This validates pending-input custody, not all Line-affine defer capture behavior."
+    ],
+    "quality": {
+      "owner-fixed-type": {
+        "version": 1,
+        "sourceBase": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "-E",
+          "test(pending_flow_transfer_) | test(goto_without_callbacks_) | test(partial_unwind_moves_) | test(control_failures_retire_actual_)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T13:30:20.7065496Z",
+        "endedAt": "2026-11-07T13:31:12.9450027Z",
+        "exitCode": 0
+      },
+      "compiler-owner": {
+        "version": 1,
+        "sourceBase": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "--workspace",
+          "--test",
+          "scoped_defer",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3834,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T13:31:54.7985749Z",
+        "endedAt": "2026-11-07T13:33:48.0803935Z"
+      },
+      "fmt": {
+        "version": 1,
+        "arguments": [
+          "--edition",
+          "2024",
+          "--config",
+          "skip_children=true",
+          "--check",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/awbc/fiber/transfer.rs",
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/transfer.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/flow_transfer.rs"
+        ],
+        "exitCode": 0
+      },
+      "workspace-check": {
+        "version": 1,
+        "sourceBase": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+        "arguments": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3834,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T13:33:48.0849417Z",
+        "endedAt": "2026-11-07T13:35:08.1167736Z"
+      },
+      "workspace-clippy": {
+        "version": 1,
+        "sourceBase": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+        "arguments": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3834,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T13:35:08.1185477Z",
+        "endedAt": "2026-11-07T13:36:45.3804636Z"
+      },
+      "structure": {
+        "version": 1,
+        "sourceBase": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+        "arguments": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3834,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-07T13:36:45.3826998Z",
+        "endedAt": "2026-11-07T13:36:51.15081Z"
+      },
+      "doctest": {
+        "version": 1,
+        "source": "b6df0c825805b9ac77cad6a9760761a861007679",
+        "arguments": [
+          "test",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--doc"
+        ],
+        "startedAt": "2026-11-07T13:54:22.9501929Z",
+        "endedAt": "2026-11-07T13:57:07.4318067Z",
+        "exitCode": 0,
+        "sourceInputs": 3834,
+        "sourceDrift": 0,
+        "summary": [
+          "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.28s"
+        ]
+      }
+    },
+    "reverse": {
+      "initialBuild": {
+        "version": 1,
+        "arguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--message-format",
+          "json"
+        ],
+        "exitCode": 101,
+        "startedAt": "2026-11-07T13:36:51.611331Z",
+        "endedAt": "2026-11-07T13:41:51.8183725Z"
+      },
+      "successfulBuild": {
+        "version": 1,
+        "arguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--message-format",
+          "json"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T13:46:28.8465681Z",
+        "endedAt": "2026-11-07T13:54:16.8105259Z",
+        "initialAttempt": "awbc-flow-transfer-custody-20261107.reverse.list.receipt.json"
+      },
+      "receipt": {
+        "version": 1,
+        "sourceBase": "b86eac00a730407fd6c4a17bf5ac31ce843d5adf",
+        "filter": "rdeps(=arcweft-core)",
+        "listArguments": [
+          "nextest",
+          "list",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--message-format",
+          "json"
+        ],
+        "listReceipt": "awbc-flow-transfer-custody-20261107.reverse.retry1.list.receipt.json",
+        "arguments": [
+          "nextest",
+          "run",
+          "--locked",
+          "--workspace",
+          "--lib",
+          "--tests",
+          "-E",
+          "rdeps(=arcweft-core)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "listExitCode": 0,
+        "filterMatchedTests": 7962,
+        "exitCode": 100,
+        "sourceInputs": 3834,
+        "sourceDrift": 0,
+        "cargoInputs": 100,
+        "cargoDrift": 0,
+        "summary": [
+          "     Summary [1286.291s] 7962 tests run: 7958 passed (81 slow), 4 failed, 41 skipped"
+        ],
+        "startedAt": "2026-11-07T13:46:28.8465681Z",
+        "endedAt": "2026-11-07T14:15:53.6717737Z"
+      },
+      "diagnosticComparison": {
+        "version": 1,
+        "baselineSource": "82f4a37865361752d01a20a189e37dda7f716123",
+        "currentSource": "b6df0c825805b9ac77cad6a9760761a861007679",
+        "failureKeys": 4,
+        "rows": [
+          {
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+            "binary": "arcweft-cli::check",
+            "baselineDiagnostics": [
+              "authored Scroll live observe should succeed, stderr: error[sema.final_analysis]: shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr })"
+            ],
+            "currentDiagnostics": [
+              "authored Scroll live observe should succeed, stderr: error[sema.final_analysis]: shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr })"
+            ],
+            "equal": true
+          },
+          {
+            "test": "spec_valid_run_edge_fixture_now_executes",
+            "binary": "arcweft-cli::check",
+            "baselineDiagnostics": [
+              "\"active dialogue has no voice\"",
+              "\"fiber_status\": \"failed active dialogue has no voice\",",
+              "\"final_status\": \"failed active dialogue has no voice\""
+            ],
+            "currentDiagnostics": [
+              "\"active dialogue has no voice\"",
+              "\"fiber_status\": \"failed active dialogue has no voice\",",
+              "\"final_status\": \"failed active dialogue has no voice\""
+            ],
+            "equal": true
+          },
+          {
+            "test": "verify_json_records_required_solver_checks",
+            "binary": "arcweft-cli::check",
+            "baselineDiagnostics": [
+              "\"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+            ],
+            "currentDiagnostics": [
+              "\"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+            ],
+            "equal": true
+          },
+          {
+            "test": "verify_json_reports_missing_promotion_proof",
+            "binary": "arcweft-cli::check",
+            "baselineDiagnostics": [
+              "\"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+            ],
+            "currentDiagnostics": [
+              "\"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+            ],
+            "equal": true
+          }
+        ]
+      },
+      "counts": {
+        "run": 7962,
+        "passed": 7958,
+        "failed": 4,
+        "skipped": 41
+      },
+      "resolvedPackages": 53,
+      "actualTestPackages": 50,
+      "cliRun": 710,
+      "failures": [
+        {
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ]
+    },
+    "limits": "Four existing CLI failures remain. Earlier 7960-case source evidence, owner 8, compiler owner 30 and doc 80 are separate runs and must not be added to this matrix. Preserve Native, Line/init and Generic Match acceptance. The broader pending conditions remain in the sole current-status table.",
+    "raw": {
+      "path": "task-awbc-flow-transfer-input-custody.raw.zip",
+      "sha256": "9c1ba9050e1a9eed72e28723e0340cf30b6e1874dbc4378feb3a81205a8d3956",
+      "entries": [
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.cli-failure-comparison.json",
+          "bytes": 2695,
+          "sha256": "8b53a10f5e87cf0163a888146da7eaf9495e1469c391522c6cfd025fa0ee0c93"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.compiler-owner.log",
+          "bytes": 93528,
+          "sha256": "3975a26eecf309ef6d08dd88487fbbb848bf5a35c071a76229bf0199d5febad6"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.compiler-owner.receipt.json",
+          "bytes": 420,
+          "sha256": "898eca10a45e5d4f430d33972acef5f9967fdfbe360b422fe7d068f711b1115f"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.docs.message.txt",
+          "bytes": 45,
+          "sha256": "295c62288e0160d3a9e692544ac522db5dd376e0338b78ea566d08f2a127a601"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.docs.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.docs.owned.txt",
+          "bytes": 250,
+          "sha256": "74d3cf2b2104671d0f8d13ea782a8046700bab46eb9d53596222ed13989a8afb"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.doctest.log",
+          "bytes": 83434,
+          "sha256": "337aeab3855d064a7c3b86914592721b90202a3971c0a31b71193b4602d2501b"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.doctest.receipt.json",
+          "bytes": 460,
+          "sha256": "39392390d218d959c7436c9ccb9f892aa1b132cc49d07ba119c58fd2ca0f3c16"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.fmt.receipt.json",
+          "bytes": 549,
+          "sha256": "f280325e659e78f2068670bda836aa75cd25db5483e492783cd1dec3eec3fc3f"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.graph.json",
+          "bytes": 7013,
+          "sha256": "cc5af0b46dc3498e1c5d21581863602050f99c01592199ab25091c3754e94fbf"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.owned.txt",
+          "bytes": 346,
+          "sha256": "2d57796396fd94899aa6a87ea79c1ab711a54b64be2194b137f074c893d35b85"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.owner-fixed-type.log",
+          "bytes": 36289,
+          "sha256": "8efd169e68ebe7d17b4411b5943b72d24cf1d52f69289a73259ee7f7812fc717"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.owner-fixed-type.receipt.json",
+          "bytes": 514,
+          "sha256": "aaafe5c6dc018d4632976887f5e9ac543dfefcca9ff5b8305f489d84f12db2bb"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.owner.log",
+          "bytes": 13249,
+          "sha256": "0ddacc23a4dcfaccf417820286b2b6c45b44b162f1312786bd1c64eeb50521c0"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.owner.receipt.json",
+          "bytes": 516,
+          "sha256": "497bf1cd6935981d58a2510ead1cc3a0985af8803e0e824706dc2543210e6a3c"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.repro-fixed-harness.log",
+          "bytes": 37913,
+          "sha256": "27e082fcf47f73d8d20149875e7836902c040c4b651d67b12a62c3c60de7c0a3"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.repro-fixed-harness.receipt.json",
+          "bytes": 467,
+          "sha256": "5fb5c8fdb6cccedda18ca57bde65b0c086d2cb4cc0e227cd0403abaa422400b6"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.repro.log",
+          "bytes": 13326,
+          "sha256": "5742373a1055251ec8315d5d5bf7af49d7f2e809a812ac4bfdb6317e31cb8918"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.repro.receipt.json",
+          "bytes": 426,
+          "sha256": "3cb484042c7727243cff6a45a655948002bcd7cec892f746bbdf03ed1bc57ff0"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.list.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.list.receipt.json",
+          "bytes": 333,
+          "sha256": "675ffa27c20b69e0065bca3707eb20495cf836ebedefd2c98f8e8252cff0d28c"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.list.stderr.log",
+          "bytes": 110596,
+          "sha256": "47e681b684a23a39a6e9ff514f36f6fc0813861e497a1564c5a8a29867e951db"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.log",
+          "bytes": 1314384,
+          "sha256": "3166cdf47596196f6e95c02f4f93463309dc0470774f17ca5baa340ed89df3a7"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.receipt.json",
+          "bytes": 994,
+          "sha256": "7fe2e4351b9bf3e3a4d6121297fbb3a1ac1d4a94405014ae9d71a4192a400f00"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.retry1.list.json",
+          "bytes": 1413238,
+          "sha256": "0b800c8b0897b41ef44ce90c0ea8d6f3a2f080b985fa9e57961497a2f52d611b"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.retry1.list.receipt.json",
+          "bytes": 417,
+          "sha256": "06dba8bad4763bc0d63c49266c51e00ca93f5688cf532dbc72a8ab04b4ba80d6"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.retry1.list.stderr.log",
+          "bytes": 110064,
+          "sha256": "9cff404a48a70c2dee634c9ed395b35881a876bce421e5b3cbc3a246aa4fe66e"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.selection.json",
+          "bytes": 1458491,
+          "sha256": "b3fce237c3746a40ca6924dc7af1ed9e16c1bde1f21215be6f0ad2f64bf89cc8"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.reverse.tree.log",
+          "bytes": 25372,
+          "sha256": "ab3a36615f5e7fa83c6e308c3520c003dbf356839dc635fd649f0d460631fe57"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source-freeze.json",
+          "bytes": 751375,
+          "sha256": "731c6fce48be1d6b72d41a9c2de47300addb3e06349ca52d54224aac697a2be5"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source.message.txt",
+          "bytes": 590,
+          "sha256": "dd4025df7639b383a61d259f77290dc4fb07efcbb4dbd3a3219a24b1575614c1"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source.owned.txt",
+          "bytes": 346,
+          "sha256": "2d57796396fd94899aa6a87ea79c1ab711a54b64be2194b137f074c893d35b85"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source.pathspec",
+          "bytes": 339,
+          "sha256": "fc15c1a83d2e22f20a2f02348a0c9fe9cebf6c2424c3dd132a14068769b9617b"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source.prepared.json",
+          "bytes": 2125,
+          "sha256": "bfab530cb3c20d2d46b798db11c81ed5f85949bd4662ef7c61782831365c1e4d"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source.reviewed.patch",
+          "bytes": 15471,
+          "sha256": "05f1a668341eeb510adba5a702573a047011d9817eec425cc3efa5d5c29cc0b9"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.source.verified.json",
+          "bytes": 1527,
+          "sha256": "74da29bfbf489dc9253a142f2c929e9f6f498fb89d87a2cdc46e8e6d0b3776b2"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.structure.log",
+          "bytes": 65874,
+          "sha256": "6f5635f827c51afd86a63fef3f339ba695dbc895190411d13f4a1f52e524cff3"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.structure.receipt.json",
+          "bytes": 383,
+          "sha256": "29dc103572986b732eb0ddb24d71f7a46b968d4073bc4722ffb906e87bad0dfa"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.workspace-check.log",
+          "bytes": 113010,
+          "sha256": "77886dcfb087f92b3dba4f034cb9175b9d1d6c83b117eff1119c3b5f77575b8b"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.workspace-check.receipt.json",
+          "bytes": 360,
+          "sha256": "f5754163fbfe779f3890931e0db91b27d77c9b958a8fc83a6a54b74fa1b3e19d"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.workspace-clippy.log",
+          "bytes": 9132989,
+          "sha256": "f51e873efd7e53ba4b725b4f537f56adb1653a617f27f71c4b1044ab7519f396"
+        },
+        {
+          "entry": "awbc-flow-transfer-custody-20261107.workspace-clippy.receipt.json",
+          "bytes": 361,
+          "sha256": "da13bdea968ae6f17f515f7ba4743e10dc6a740562ff0566215186766bc35904"
+        },
+        {
+          "entry": "compare-flow-transfer-custody-cli-failures.ps1",
+          "bytes": 1964,
+          "sha256": "fdcdfad076bcbc9c1630fb549c6e4b80d879e18e59125fe41e32a2fcaf066d9a"
+        },
+        {
+          "entry": "function-scope-20261107.metadata-all.json",
+          "bytes": 4293339,
+          "sha256": "121ed3fb126ba5868048c8c69fb3ddaa29528ddb7f1d174b7e5da348681d8c60"
+        },
+        {
+          "entry": "record-flow-transfer-custody.ps1",
+          "bytes": 11847,
+          "sha256": "c960865f692b8ce7b5ea376ed234813376e4574e9ec5201d1a5f689decd18017"
+        },
+        {
+          "entry": "retry-flow-transfer-custody-matrix.ps1",
+          "bytes": 2730,
+          "sha256": "e83a5b3bc8ccc16bdeda9b4df790b51829a000f7707ee4c2c4fc0d74e1d7baaa"
+        },
+        {
+          "entry": "run-flow-transfer-custody-doctest.ps1",
+          "bytes": 1571,
+          "sha256": "28b7afcb9b3747ee0983dc25fd4d969b03282037df2dbaa732338718c9c3260d"
+        },
+        {
+          "entry": "run-flow-transfer-custody-validation.ps1",
+          "bytes": 5715,
+          "sha256": "061cd3d1e4596e2fdc0bb9137d4beec4701b96e88735c8452a0ff5fc2affa821"
+        }
+      ]
+    }
   }
 }
