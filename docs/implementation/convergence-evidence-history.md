@@ -15182,3 +15182,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 最初の Core 型検査はエラー型の変換と、ライブ値を含む型への `Clone` の派生で停止した。修正後の初回の Compiler 対象実行は2件通過、1件失敗だった。追加した `if` 内の defer が RuntimePlan に拒否されたため、ハンドラー直下専用の登録を共通の文 lowering に移した。修正後の Compiler の対象90件、Core の2,296件、RuntimePlan の134件はすべて通過した。RuntimePlan の既存1件はスキップ。構造監査のブロッキング違反は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - Runtime Driver／Runtime Host／Save は260件が通過した。Save の廃止済み JSON デコーダーを外部クレートから呼ぶ compile-fail テストは、clean 後の試験用依存関係のビルドを含め120.300秒で通過した。Cargo の解決済みグラフで変更クレートを含む53 workspace パッケージを特定した。[コマンド・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0だった。Core の `engine/defer.rs` は Native の登録・スコープ終了・保持値の検証を受け持つ新しい所有モジュールで、788行。呼出し側の `engine.rs` は6,108行から6,288行に増え、既存の scheduler と候補トランザクションでその所有状態を進める。固定した3,639入力の差分は0件で、既存の未コミット12パスを検証入力に含めた。公開した17ファイルの Git blob と検証差分は一致した。[公開差分・各コマンド・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Loop transfers across scoped defer in mark handlers
+
+- 公開ソース `7332612534866dfcb334ab790a9eb4948e4dbaa8`。修正前の同じ入力でデコード済み AWBC は毎ステップ保存・復元して通過し、Native はスコープ終了マーカーの対応が崩れて停止した。Native は元の制御命令、移譲先のループ、評価済みの `break` 値をスコープ終了処理に保持する。cleanup が終わってから反復継続を消費するため、内側から外側へ順に終了できる。既存の Native のループ移譲も同じ処理に集約した。
+- Compiler の最初の通過実行は evaluated_effects と callable_execution の計413件。追加検証後の evaluated_effects 93件と Core 2,297件もすべて通過した。cleanup 中の入力取消しで保留中の結果を破棄し、内側から外側へ終了した。Native の保持データは正規の値を復元し、移譲先を内側ループへ付け替えた場合と Unit を Bool へ差し替えた場合を拒否した。初回の Core 型検査は Unit の値ビューの指定誤りで停止し、scalar variant に訂正した。構造監査のブロッキング違反は0件だった。[コマンド・実測・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
+- Runtime Driver／Runtime Host／Save の260件がすべて通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0。最終実行で照合した3,640入力の差分は0件だった。検証時に含めた既存の未コミット12パスを分けて保持し、公開した8ファイルの Git blob と検証した差分の一致を確認した。[原本・実行条件・公開差分](acceptance-evidence/task-flow-registry-execution.json)。

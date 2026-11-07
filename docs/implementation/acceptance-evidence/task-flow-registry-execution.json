@@ -21640,5 +21640,322 @@
         }
       ]
     }
+  },
+  "markScopedDeferLoopTransfer": {
+    "source": "7332612534866dfcb334ab790a9eb4948e4dbaa8",
+    "base": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+    "published": {
+      "version": 1,
+      "commit": "7332612534866dfcb334ab790a9eb4948e4dbaa8",
+      "parent": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+      "tree": "25daaf5d2b82b26176a8eddaa27d873992bf5e2b",
+      "remote": "7332612534866dfcb334ab790a9eb4948e4dbaa8",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "86d68d9b7061a87ae970dbb1fccaf44075a3d925"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "11ad93700158cc2b79a54b1f6ee7bf5f95ebeab6"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/code_cursor.rs",
+          "blob": "e30058b49d24df4de68f75e4444de274c66dd4c3"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer.rs",
+          "blob": "29c2eaeb1b5b8a58a10324ae761be260cbbae93b"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/tests.rs",
+          "blob": "70035df8579da94078b228fb5e93a944688143e1"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "d3a753faa81b91e29a5ffb4b991e619feb807de4"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow/resume.rs",
+          "blob": "a17c677f6148f8f1d9ce1caf46d5be7e624eee5d"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "f634a1a413406996a1afd00825cd4f72ff3125ae"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "bb04cee21a84d2bb38459acf2da1a77ad2a16e7be7b21191cc02d1fe103f5a36",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T01:01:04.0924904Z"
+    },
+    "sourceInputs": 3640,
+    "repro": {
+      "passed": 1,
+      "failed": 1,
+      "skipped": 90,
+      "failure": "Native lost queued exact scope close markers",
+      "awbc": "saved and restored at every step"
+    },
+    "firstCompilerSuite": {
+      "version": 1,
+      "head": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+      "exitCode": 0,
+      "inputs": 3639,
+      "sourceDrift": null,
+      "summary": [
+        "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 19s",
+        "Summary [  34.195s] 413 tests run: 413 passed, 0 skipped"
+      ],
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--test",
+        "callable_execution",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ]
+    },
+    "exactCases": [
+      "native_mark_defers_run_before_loop_transfers",
+      "awbc_mark_defers_run_before_loop_transfers_after_restore",
+      "native_cancelled_mark_discards_the_suspended_break_after_cleanup"
+    ],
+    "acceptance": [
+      {
+        "version": 1,
+        "head": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+        "exitCode": 0,
+        "inputs": 3640,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 58.95s",
+          "Summary [   6.971s] 93 tests run: 93 passed, 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "evaluated_effects",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T00:56:23.1476595Z",
+        "finishedAt": "2026-11-07T00:57:31.1668536Z"
+      },
+      {
+        "version": 1,
+        "head": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+        "exitCode": 0,
+        "inputs": 3640,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 31s",
+          "Summary [  18.259s] 2297 tests run: 2297 passed, 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T00:57:31.1726608Z",
+        "finishedAt": "2026-11-07T01:00:22.9317618Z"
+      },
+      {
+        "version": 1,
+        "head": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+        "exitCode": 0,
+        "inputs": 3640,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 46s",
+          "Summary [  76.125s] 260 tests run: 260 passed (1 slow), 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-save",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T01:00:22.9346274Z",
+        "finishedAt": "2026-11-07T01:05:33.4036883Z"
+      },
+      {
+        "version": 1,
+        "head": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+        "exitCode": 0,
+        "inputs": 3640,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 01s"
+        ],
+        "command": [
+          "cargo",
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T01:05:33.4059678Z",
+        "finishedAt": "2026-11-07T01:07:37.4197535Z"
+      },
+      {
+        "version": 1,
+        "head": "315da1fcaa44b7f2dbfdaf94ffde68b8daf7332b",
+        "exitCode": 0,
+        "inputs": 3640,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 19s"
+        ],
+        "command": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T01:07:37.4214996Z",
+        "finishedAt": "2026-11-07T01:09:59.3855574Z"
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-mark-loop-transfer.raw.zip",
+      "sha256": "1d6cbdcc3ba68fba6985288fe52d02a074e09a749865d0f7d40be9ca59a42390",
+      "entries": [
+        {
+          "entry": "checkpoint-mark-loop-defer-20261107.verified.json",
+          "bytes": 1624,
+          "sha256": "af32b2c3b2e0e42ba06ddaf68c51b8540768ce980d8a5261ee8eee1ab354cc53"
+        },
+        {
+          "entry": "checkpoint-mark-loop-defer-20261107.reviewed.patch",
+          "bytes": 50633,
+          "sha256": "bb04cee21a84d2bb38459acf2da1a77ad2a16e7be7b21191cc02d1fe103f5a36"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.source-freeze.json",
+          "bytes": 629426,
+          "sha256": "809c1d3fb6055b47a20fe484ba3c6ac0ac2aa32be089e86a3e20bdae37704644"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.baseline.log",
+          "bytes": 89481,
+          "sha256": "75a0af425fd215d4ed651a90aec1e46c890c7ab7e66ef5a5e61070f9e52d9da5"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.check.log",
+          "bytes": 10670,
+          "sha256": "901e1b6733ea166bb456ed7cd2b5a160b2ccef09d77d833f906773b0fff678e1"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.compiler.log",
+          "bytes": 146459,
+          "sha256": "3d3669b5c0b06915b0492ef57103932680e3a1b0e5eccfe9ac294b9f91617ec8"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.compiler.receipt.json",
+          "bytes": 556,
+          "sha256": "725e880d6f58cdcd8d3561d56539552d6d567f352ba9a3ea4ced59db3c7637e6"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.source-freeze.json",
+          "bytes": 629209,
+          "sha256": "be52332a7ce87de93dfda6bcbe3249653451e8c54bf5f7f710d5982ccf441f73"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.structure.log",
+          "bytes": 65784,
+          "sha256": "2a4ee5beb7ec3945a6ae94ee79b31b6a18815ea377d7b4dcaa96c75727f5d326"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.graph.txt",
+          "bytes": 19177,
+          "sha256": "274d879585f2c8cfb5b787233c2821c761fdf5cb2ef73137a854c7c4684e2d16"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.compiler.receipt.json",
+          "bytes": 609,
+          "sha256": "657bc65f276b2a2e5db4eb63703b5fd300b1b5c5342c5d7a4e3c728ff5f2e4e5"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.compiler.log",
+          "bytes": 101204,
+          "sha256": "33803554ce1ad2d1dd8a4b8c4078aea56a5e802c621b359c81dcfc8b7b194e57"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.core.receipt.json",
+          "bytes": 582,
+          "sha256": "a05eca33fffe25b3f116c46ccc23aaccbf3cc363e72cb1812fde770864ad0b87"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.core.log",
+          "bytes": 388670,
+          "sha256": "60e2ed9288c3a3ace5bb158e6f542fd7dddd5f5520c15707191a86cbd6b7f88e"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.consumers.receipt.json",
+          "bytes": 657,
+          "sha256": "d9a548ed9455c62ee7adac5e484386750869f5539342f32bc1f0ce8cf7ba9a0f"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.consumers.log",
+          "bytes": 128991,
+          "sha256": "38d2b22920a778c77a1fa30316e798fac417e0e94d40c5f03ba353c9a26adec5"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.workspace-check.receipt.json",
+          "bytes": 464,
+          "sha256": "f9ef8295095e98bf957567f3438a94691ae894164ac18d9d12a200b6c8d93f7e"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.workspace-check.log",
+          "bytes": 111555,
+          "sha256": "fc585a19cdfeaa65daba9f9e860f3861a7322f10063ba0241ee2fcea862da88a"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.workspace-clippy.receipt.json",
+          "bytes": 465,
+          "sha256": "4e210674613209dac4be57c8a27b3c51a202d2c4284c4b128431def895d50772"
+        },
+        {
+          "entry": "mark-loop-defer-20261107.final.workspace-clippy.log",
+          "bytes": 9063376,
+          "sha256": "ec21130cc660cc40d060406489422d82a817761e96897030c0729c771c8dfee5"
+        }
+      ]
+    }
   }
 }
