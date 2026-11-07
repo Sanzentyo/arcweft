@@ -15334,3 +15334,13 @@ Source **36c1d21780f5d1e93b1dad15ee905d77e8c4dfa5**、parent **287e6856c3ef234cd
 対象専用の --workspace --test scoped_defer はCore依存artifactが広域構成と異なることを実測しており、同じ構成との説明は訂正した。広域listの2回のWindows1455はテスト未実行として原本に保持。入力・feature・対象を変えずキャッシュを再利用した全Core逆依存53パッケージのrunは、7948件中 7944 PASS／4 FAIL／41 SKIP。実テストがあるのは50パッケージ。CLIは710件中706 PASS／4 FAIL、非CLI 7238件は全通過。5件の新registry回帰とSemaのscope権限回帰もこのrunでPASS。先行23件は合算しない。
 workspace全target／全feature check／Clippy、変更13 Rust pathのfmt、構造gateは終了0。開始前にroot fixture180件を含む3,829入力を固定し、Cargo100入力を含めdrift0。旧「AWBC通常deferのFlow registryがcontext不足」という現状説明はこの実測で置換する。必須読取りの静的存在証明と、semicolonなし末尾書込みの構文条件は別境界であり、runtime受入を未完了へ戻す根拠にしない。Generic Matchと従来のNative受入を保持する。
 [初回失敗・訂正理由・全コマンド・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Trailing writes retain statement identity in value blocks
+
+Production **24c9c687f0a2fbedfd4ee710b40b32cee873c93c**、parent **fa860b18165cbeede8c4fb246ab9f10d9eb7ab5c** と、fixture **2557725fa88bf4d2b444e7feb3fb6710eabfb2fc** を既存mainへ通常commit/pushし、4+1 pathのtree／blob／完全差分を照合した。既存tracked 12 pathとuntracked 6 fileは保持した。
+元のCLI入力はHIR recoveryで停止し、構文回帰4件は修正前に1 PASS／3 FAIL。最初のテストbuildのE0308はRowanのraw kindと型付きkindの比較を直した後に再現を採取しており、本番の失敗と混同しない。value block末尾の通常代入／registry書込みを既存の文分類で保持し、Unit tailの省略へ接続した。recordやcall内の演算子、通常の式tail、欠落初期値の正確な0幅recoveryを保つ。
+Syntax全752件とscoped_defer全24件は通過。compact／LF／CRLFをNativeとdecoded AWBCで1 opずつ実行し、AWBCは毎step公開保存からcold restoreした。元のCLI入力も同じ64-op／8-step条件で両実行器がDoneとなった。workspace全target／全feature check／Clippy、fmt、構造gateは終了0。
+Syntaxの全25逆依存をworkspace既定featureで実行し、5997件中5992 PASS／5 FAIL／32 SKIP。CLIは710件中706 PASS／4 FAIL、非CLIは5287件中5286 PASS／1 FAIL。Semaの旧fixtureはHIR拒否を期待して停止していた。5不正入力を必ずHIRへ通し、checked semantic authorityのWrongPayloadFamilyで拒否する検査へ訂正した。entity receiverを括弧で区切って実在宣言を使い、RHS不一致はmutableなnominal baseで単独に検査する。修復後の同じworkspace構成の対象1件はPASS、Sema全target／全feature Clippyとfmtは終了0。広域5 FAILを4 FAILの再実行に書き換えず、先行752件／24件・前Core53 matrixとも合算しない。
+広域run終了時のroot fixture180件と現行仕様を含む3830入力、Cargo100入力はdrift0。その後の変更は当該Sema test methodの1 pathだけで、他の広域入力は不変。修正済みの入力を固定した最終Clippy／公開時も差分0。最初のfixture修復で露出したValueResolutionFailedと、編集に重なった先行Clippyの適用限界も原本へ保持した。
+現状一覧の末尾書込みHIR recoveryは解消として置換し、元の診断・失敗・SHAは履歴へ保持した。次のgoto probeはDoneだけで判定せずログを照合し、AWBCのstatic／dynamic gotoでouter cleanup、関数内gotoでfunction／outer cleanupの欠落を確認した。各CLIの元binary identityを保持し、Nativeの受入を戻さない。Generic Matchも受入・公開済みを維持する。
+[修正前後・原本・全公開SHA](acceptance-evidence/task-flow-registry-execution.json)。
