@@ -24240,5 +24240,504 @@
         }
       ]
     }
+  },
+  "nativeFunctionBodyScopes": {
+    "version": 1,
+    "recordedAt": "2026-11-07T05:32:11.1341362Z",
+    "sourceCommit": "2775c5c3aea57391a09bab4ec5777df00d26ced5",
+    "parentCommit": "aa05e184da5e1261e0c910f59f24cd9a33b095e3",
+    "scope": "Published Native invocation-body owner foundation. Ordinary Flow source defer lowering and AWBC integration remain unpublished work.",
+    "behavior": [
+      "Invocation setup enters a body scope inside input bindings without adding a source operation.",
+      "Implicit Flow Unit completion waits for invocation cleanup. Cleanup failure suppresses normal completion and caller resumption.",
+      "Rollback checks original function site, unique body scope, invocation boundary and retained EOF. Ambient function type context in a task is not a function invocation.",
+      "Synchronous expression scope retirement and AOT eligibility retain original source operation budgets."
+    ],
+    "finalCore": {
+      "exitCode": 0,
+      "passed": 2312,
+      "log": "function-scope-20261107.core-lib-accepted.log",
+      "failed": 0,
+      "command": "cargo nextest run --locked -p arcweft-core --lib --no-tests fail --no-fail-fast",
+      "newRegressionTests": 3,
+      "skipped": 0
+    },
+    "development": [
+      {
+        "log": "function-scope-20261107.owner.log",
+        "exitCode": 101,
+        "result": "Internal visibility and test type errors; no tests ran."
+      },
+      {
+        "passed": 0,
+        "log": "function-scope-20261107.owner-retry.log",
+        "exitCode": 100,
+        "reason": "Fixture lacked the callee Flow owner/schema; repaired through the existing typed builder.",
+        "failed": 3
+      },
+      {
+        "passed": 2305,
+        "log": "function-scope-20261107.core-lib.log",
+        "exitCode": 100,
+        "reason": "AOT assumed an empty control stack; two fixtures selected obsolete frame locations. Repaired consumers without reducing AOT fast-path or operation-count assertions.",
+        "failed": 7
+      },
+      {
+        "passed": 2295,
+        "log": "function-scope-20261107.core-lib-final.log",
+        "exitCode": 100,
+        "reason": "New body-scope presence admission misclassified ambient Task function type context as an invocation. Corrected the ownership distinction.",
+        "failed": 17
+      }
+    ],
+    "developmentIdentity": "Development logs retain their actual results; complete source freezes were not captured for each intermediate attempt. Do not aggregate them with final-source acceptance.",
+    "sourceExperiments": {
+      "native": {
+        "passed": 1,
+        "skipped": 1,
+        "observable": "body, inner, first, completed, first; public Native step API with at most one operation per step",
+        "failed": 0
+      },
+      "unpublishedPaths": [
+        "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+        "crates/arcweft-compiler/tests/scoped_defer.rs"
+      ],
+      "publishedCore": "2775c5c3aea57391a09bab4ec5777df00d26ced5",
+      "awbc": {
+        "passed": 0,
+        "skipped": 1,
+        "boundary": "CurrentScope defer requires an active lexical scope. Ordinary AWBC invocation-root ownership and its registration/unwind consumer remain incomplete.",
+        "failed": 1
+      },
+      "admission": "These source experiments do not publish or accept ordinary Flow source defer across backends."
+    },
+    "inputCount": 3647,
+    "inputDriftAtCompletion": 0,
+    "reverseDependencyGraph": {
+      "source": "Cargo metadata --locked --all-features --format-version 1 and cargo tree --locked --workspace --all-features --invert arcweft-core",
+      "workspacePackages": 53,
+      "packages": [
+        {
+          "name": "arcweft",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-desktop",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp-client",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-policy",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-protocol",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-repl",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-runner",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+        },
+        {
+          "name": "arcweft-browser-bench",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle-assets",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+        },
+        {
+          "name": "arcweft-character-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+        },
+        {
+          "name": "arcweft-cli",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+        },
+        {
+          "name": "arcweft-compiler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+        },
+        {
+          "name": "arcweft-core",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-sqlite",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+        },
+        {
+          "name": "arcweft-dialogue",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+        },
+        {
+          "name": "arcweft-glyphon",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+        },
+        {
+          "name": "arcweft-host-adapter",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-jit-cranelift",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-launch",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+        },
+        {
+          "name": "arcweft-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-player-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+        },
+        {
+          "name": "arcweft-player-scene",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+        },
+        {
+          "name": "arcweft-player-text-input",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+        },
+        {
+          "name": "arcweft-player-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+        },
+        {
+          "name": "arcweft-project",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+        },
+        {
+          "name": "arcweft-project-loader",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+        },
+        {
+          "name": "arcweft-rag",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+        },
+        {
+          "name": "arcweft-render-text",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+        },
+        {
+          "name": "arcweft-render-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+        },
+        {
+          "name": "arcweft-render-wgpu",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-manifest",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-accelerator",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-codegen",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-driver",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-host",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-plan",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-scheduler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0"
+        },
+        {
+          "name": "arcweft-save",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0"
+        },
+        {
+          "name": "arcweft-test",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+        },
+        {
+          "name": "arcweft-text-layout",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+        },
+        {
+          "name": "arcweft-text-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+        },
+        {
+          "name": "arcweft-tooling",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+        },
+        {
+          "name": "arcweft-verify",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-oxiz",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-z3",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+        },
+        {
+          "name": "arcweft-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+        }
+      ]
+    },
+    "broaderValidation": {
+      "reverseDependencyTests": "not run for this Native foundation checkpoint",
+      "tier2": "not run",
+      "fmt": "cargo fmt -p arcweft-core --check exit 0",
+      "structure": "cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking exit 0",
+      "workspaceAllTargetsAllFeaturesCheck": "not run",
+      "workspaceAllTargetsAllFeaturesClippy": "not run",
+      "publicNativeSave": "not accepted by this checkpoint"
+    },
+    "ownerReview": {
+      "productionOwner": "arcweft-core::engine::function_scope",
+      "productionPhysicalLoc": 81,
+      "regressionPhysicalLoc": 316,
+      "rationale": "Invocation body entry and implicit completion belong to the Native frame/engine. Existing typed lexical defer storage remains the sole registration authority; no executable catalog, duplicate wire reader, I/O or dependency edge was added. Task kernels retain their real Task scope and ambient type context. Internal visibility expands only to the existing engine owner for completion."
+    },
+    "clean": {
+      "command": "cargo clean",
+      "removedGiB": 127.1,
+      "exitCode": 0,
+      "removedFiles": 105784
+    },
+    "sourcePublication": {
+      "version": 1,
+      "commit": "2775c5c3aea57391a09bab4ec5777df00d26ced5",
+      "parent": "aa05e184da5e1261e0c910f59f24cd9a33b095e3",
+      "tree": "c2d35a21c11669a6d6e845e5674befae4d4ffa28",
+      "remote": "2775c5c3aea57391a09bab4ec5777df00d26ced5",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "dad5f591838c3861be6f90c5322ac2a40b403841"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/aot.rs",
+          "blob": "df7c55b3e195ba898669037664c6b14be5c2d00e"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer.rs",
+          "blob": "e47de6087e1be8890fd79aa6d78ed7819a338c2a"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval/callable.rs",
+          "blob": "a16a1a998cd4c9d7e9e5b649937a9cddc6682aee"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow/function_call.rs",
+          "blob": "eab5542e1cc9c359463d094dab36d4f0f9a385bd"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow/function_call/tests.rs",
+          "blob": "8d11dfdaf0c16afc4e2bf4785fc64b5789c44499"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow/scope_tests.rs",
+          "blob": "e147c21e6ed26ef97dd725e3ae2dc08102c2732e"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/function_scope.rs",
+          "blob": "090671351b8537a36735676d4b64becf995380dc"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/function_scope/tests.rs",
+          "blob": "1c82cc08de2b319a2ba562642bbf1a02a01cc7dd"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/line.rs",
+          "blob": "188cea55319e287fc11abb3d6beb13e34fa9fb0d"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "e8c5c4d83add195f2b83330a1be68cda1f37ee9a"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/work.rs",
+          "blob": "b9eecbc3d9d79ac537c4739b93d41acbe1115eef"
+        },
+        {
+          "path": "crates/arcweft-core/src/scope.rs",
+          "blob": "f2023900d9b63d879cd034b472fe5d931f5a8ec1"
+        },
+        {
+          "path": "docs/01-language/block-scopes.md",
+          "blob": "7c4f91c0a60a3b713fd6b05478aeb029ae3354dc"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "ce5165a739f7375efe92402b905d61cf4b56c8a189b785d4b4585da3ae88f6c8",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "sha256": "901619bd13ae9072c1963b4a949b7047dc4a0ba0898708f2df1ca4e001a40d26"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "sha256": "406f251484dd43ac9f900a4d1589896365427262d482cb1b0ee0087a07f9a312"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "sha256": "9a3ea79ac08e543c17ee521ea30fe43b53b5891e15829898a5c86311e5b672f3"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-11-07T05:23:33.5866649Z"
+    },
+    "originalWip": {
+      "binaryPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "trackedPaths": 12,
+      "actualUntrackedFiles": 6,
+      "preserved": true
+    },
+    "raw": {
+      "entries": [
+        {
+          "entry": "function-scope-20261107.owner.log",
+          "bytes": 18951,
+          "sha256": "55d432703518c416b4b054cb9aa5e0244125221a8228d559ff95033d70c1ae47"
+        },
+        {
+          "entry": "function-scope-20261107.owner-retry.log",
+          "bytes": 37055,
+          "sha256": "a1c1e9c90e9fd1ad83d9c8552e961ca33d7fa5cee3c5fa8b956a2e2475241d6a"
+        },
+        {
+          "entry": "function-scope-20261107.core-lib.log",
+          "bytes": 395100,
+          "sha256": "7ba55ed032b159a68c4a0822bc43a100b0b6475f8bb2bd06b9eee3901d2c3b65"
+        },
+        {
+          "entry": "function-scope-20261107.core-lib-final.log",
+          "bytes": 408144,
+          "sha256": "0eb40763485a9956fbf0b0296023ccd72733a6ac45effd67e18adcb02faf89cb"
+        },
+        {
+          "entry": "function-scope-20261107.core-lib-accepted.log",
+          "bytes": 388845,
+          "sha256": "dc53c15a26f35939ec54468f8b70bdeaecf42dce89c80d46001a768ea62eda9e"
+        },
+        {
+          "entry": "function-scope-20261107.core-lib-accepted.receipt.json",
+          "bytes": 683,
+          "sha256": "8348dd1bde090d00c3f743a39c0d83e89fa9e2ea35fbe695cb9bb33f1bad4574"
+        },
+        {
+          "entry": "function-scope-20261107.source-native.log",
+          "bytes": 95788,
+          "sha256": "d27170210530d55dc098f60f643b119482a54c522498072c1e2030a4aa5bbfe2"
+        },
+        {
+          "entry": "function-scope-20261107.source-awbc.log",
+          "bytes": 88047,
+          "sha256": "f023c2e3b801d0346aa6473aae9319c34a78baf980aeea624b1cfa4124a621d9"
+        },
+        {
+          "entry": "function-scope-20261107.source-experiments.receipt.json",
+          "bytes": 1995,
+          "sha256": "7d66cc22a255f122e0d0a3929b08d567efe15993ba1ff083503c01fb59a4af15"
+        },
+        {
+          "entry": "function-scope-20261107.final.source-freeze.json",
+          "bytes": 711541,
+          "sha256": "0820c800db84f5460d7a7f5be8a62493033d3bac3ad7708a28ac9b6c892f6150"
+        },
+        {
+          "entry": "function-scope-20261107.source.reviewed.patch",
+          "bytes": 40337,
+          "sha256": "ce5165a739f7375efe92402b905d61cf4b56c8a189b785d4b4585da3ae88f6c8"
+        },
+        {
+          "entry": "function-scope-20261107.source.verified.json",
+          "bytes": 2941,
+          "sha256": "31ae787e26360ac4627f7fb2df99d8adbea5fb3a60501d50af5423a08e6e6644"
+        },
+        {
+          "entry": "function-scope-20261107.clean.receipt.json",
+          "bytes": 289,
+          "sha256": "9c24164477f173bd47108f3a449a2f55d4a6627e4fa58998270a4160f7b42d62"
+        },
+        {
+          "entry": "function-scope-20261107.fmt.receipt.json",
+          "bytes": 146,
+          "sha256": "eac0d83645f561bbb48bed87da81fbe4beb0f6b46e964c08c92975b0486da54c"
+        },
+        {
+          "entry": "function-scope-20261107.structure.log",
+          "bytes": 65874,
+          "sha256": "5465eaae40ea6bad7020625ded5e55778059aac85dd07bb60fe9b2e4965650d0"
+        },
+        {
+          "entry": "function-scope-20261107.structure.receipt.json",
+          "bytes": 189,
+          "sha256": "8deb1238791d20a70c552d69db2b47e5da0470957d5cd45be2b07b8ec1d63ea7"
+        },
+        {
+          "entry": "function-scope-20261107.metadata-reverse.json",
+          "bytes": 6886,
+          "sha256": "e58c011e45eb8910c3afc525f2cf29ddb3334c3dca55af582b8d69a899561f72"
+        },
+        {
+          "entry": "function-scope-20261107.graph-all.log",
+          "bytes": 25531,
+          "sha256": "ae0873e501707e03a6e6a03f4a51bcc0d72d20437a1cf1bc96734cdc6f74b88f"
+        }
+      ],
+      "path": "task-native-function-body-scopes.raw.zip",
+      "sha256": "791b6e0ab1221f0bed26918232d5b8a0d8037f8b62529de0adaac10ca4ee3cb1"
+    }
   }
 }
