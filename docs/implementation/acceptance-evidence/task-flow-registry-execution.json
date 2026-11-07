@@ -27513,5 +27513,545 @@
     "owner": "scalar_live_budget_owner_tests",
     "disposition": "The existing scalar budget and joined-return tests keep their responsibility. This patch moves the existing child contour and strengthens its actual call-time liveness witness without adding unrelated state or widening an API."
   }
-}
+},
+"unsafeAuditBodyAndTypedCliFixtures": {
+    "version": 1,
+    "date": "2026-11-07",
+    "source": {
+      "version": 1,
+      "commit": "19f08e319088d8f1ae3f0f7ff57414e8af19ca80",
+      "parent": "2065064bbc5dcadaf5e83bb6e9da92378baac33a",
+      "tree": "02b223c2028306a4781ed42c47c2598fb556b619",
+      "remote": "19f08e319088d8f1ae3f0f7ff57414e8af19ca80",
+      "paths": [
+        {
+          "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+          "blob": "1e85c5a95b293a678d854e6c96e53314929b13cb"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "blob": "abd11d41b06747ce59f633567aeb58f4de4a8363"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "blob": "42656721e2f78f98bbc4f080e57d520a4ee978fe"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "8a73cf63ba1a626ff8fb682527ec74426b57ed8b"
+        },
+        {
+          "path": "tests/fixtures/arcw/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.arcw",
+          "blob": "1df6c9457603d325f644ba3b18120b949227ddd9"
+        },
+        {
+          "path": "tests/fixtures/arcw/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.arcw",
+          "blob": "70f7b22535262c26a90177d088e79090de4824c3"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "f7350d82089ae3e33230035f7b3a67ee9d84883b9a7ef1ca6a6ddfa4b96227a4",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T09:43:17.3917042Z"
+    },
+    "regressionBase": "2065064bbc5dcadaf5e83bb6e9da92378baac33a",
+    "initialReproduction": {
+      "newTests": 2,
+      "failure": "Accepted UnsafeLifetime statements had no checked core projection.",
+      "failed": 2,
+      "passed": 0
+    },
+    "behavior": "Lower the accepted authored body through the existing anonymous lexical scope. Native and decoded Product AWBC retain statement order, local ownership, generic return values, break targets, LIFO cleanup and suspension. AWBC is publicly saved and cold-restored at every step in all five new cases; no invented voice handle, proof discharge, runtime opcode or wire version is introduced.",
+    "fixtureCorrections": {
+      "audit": "The audit-list and missing-header fixtures test metadata, so replace their obsolete receiverless promote_unchecked calls with an owned String body. Keep the missing reason/SAFETY conditions and original rejection/action assertions; strengthen the listing to assert exact identity, decoded reason, metadata flags and source identity.",
+      "cleanup": "Use the optional registry key and explicit typed pipe argument, and Unit for the cancelled result, retaining both completed and cancelled cleanup. This verifies an admitted report and does not establish MustDrop formal proof collection.",
+      "resolvedTests": [
+        "unsafe_json_lists_audit_regions",
+        "spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "verify_json_respects_semantic_defer_cancel_discharge"
+      ]
+    },
+    "graph": {
+      "version": 1,
+      "base": "2065064bbc5dcadaf5e83bb6e9da92378baac33a",
+      "metadata": "function-scope-20261107.metadata-all.json",
+      "packages": [
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify-lsp"
+      ]
+    },
+    "matrix": {
+      "version": 1,
+      "sourceBase": "2065064bbc5dcadaf5e83bb6e9da92378baac33a",
+      "filter": "rdeps(=arcweft-runtime-plan)",
+      "listArguments": [
+        "nextest",
+        "list",
+        "--locked",
+        "--workspace",
+        "--lib",
+        "--tests",
+        "-E",
+        "rdeps(=arcweft-runtime-plan)",
+        "--message-format",
+        "json"
+      ],
+      "arguments": [
+        "nextest",
+        "run",
+        "--locked",
+        "--workspace",
+        "--lib",
+        "--tests",
+        "-E",
+        "rdeps(=arcweft-runtime-plan)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ],
+      "listExitCode": 0,
+      "filterMatchedTests": 2617,
+      "exitCode": 100,
+      "sourceInputCount": 3648,
+      "sourceDrift": 0,
+      "cargoInputs": 100,
+      "cargoDrift": 0,
+      "summary": [
+        "     Summary [ 629.773s] 2617 tests run: 2613 passed (35 slow), 4 failed, 24 skipped"
+      ],
+      "startedAt": "2026-11-07T09:29:48.6371766Z",
+      "endedAt": "2026-11-07T09:41:49.8170438Z"
+    },
+    "counts": {
+      "run": 2617,
+      "passed": 2613,
+      "failed": 4,
+      "skipped": 24
+    },
+    "actualPackages": 16,
+    "cli": {
+      "failed": 4,
+      "remaining": [
+        {
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ],
+      "passed": 706,
+      "run": 710
+    },
+    "nonCliPassed": 1907,
+    "quality": {
+      "workspace-check": {
+        "version": 1,
+        "arguments": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T09:41:49.8198427Z",
+        "endedAt": "2026-11-07T09:42:20.5038896Z"
+      },
+      "workspace-clippy": {
+        "version": 1,
+        "arguments": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T09:42:20.5078811Z",
+        "endedAt": "2026-11-07T09:42:50.8421998Z"
+      },
+      "structure": {
+        "version": 1,
+        "arguments": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-07T09:42:50.8438892Z",
+        "endedAt": "2026-11-07T09:42:55.6872209Z"
+      },
+      "fmt": {
+        "version": 1,
+        "command": "rustfmt --edition 2024 --config skip_children=true --check",
+        "paths": [
+          "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "crates/arcweft-cli/tests/check/cli_runtime_bench.rs"
+        ],
+        "exitCode": 0
+      }
+    },
+    "inputIdentity": {
+      "rootFixtures": 180,
+      "rootFixtureCapturePhase": "During the reverse run; supplements the existing pre-run 3648-input freeze without relabeling this as a pre-run snapshot.",
+      "originalUntrackedFiles": 6,
+      "untrackedDrift": 0,
+      "originalTrackedWip": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "preRunInputs": 3648,
+      "sourceDrift": 0,
+      "rootFixtureDrift": 0,
+      "rootFixtureCapture": "2026-11-07T09:35:56.0441651Z"
+    },
+    "ownerMetrics": [
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "bytes": 454312,
+        "loc": 10625
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+        "bytes": 19378,
+        "loc": 604
+      },
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "bytes": 342852,
+        "loc": 9961
+      }
+    ],
+    "ownershipReview": "FinalFlowLowerer retains the existing accepted-HIR-to-Core projection responsibility, adding one statement family through the existing lexical scope model. No state authority, dependency, source reader or public API was added. Scoped-defer coverage uses the existing native/public-save helpers. The existing CLI harness changes only its related verification/audit fixtures and assertions; its prior ownership dispositions remain applicable. All file growth is below 300 LOC.",
+    "nextRegistryProbe": "The root AWBC Flow registry control completes. An ordinary defer ending in a registry write without a semicolon is rejected at HIR recovery (also when multiline); a read is rejected by reaching-registration analysis. Adding the statement semicolon or an explicit Unit tail admits the write. The semicolon source completes in Native (bytecode-vm) and fails in AWBC with RegistryContextRequired after seven operations. The source and runtime boundaries are distinct pending conditions; no accepted Native boundary is reopened.",
+    "limits": "The remaining four CLI IDs are observed failures, retained with their full raw diagnostics. Lifetime promotion and mandatory voice-handle execution are not accepted by this cut. No ignored Tier2, other-platform runtime, or Native public-save validation is claimed. Earlier wider matrices retain their original source identities and counts. Generic Match and accepted Native boundaries remain accepted.",
+    "raw": {
+      "path": "task-unsafe-audit-body.raw.zip",
+      "entries": [
+        {
+          "entry": "019_unsafe_lifetime_missing_reason_rejected.arcw.probe.stderr",
+          "bytes": 937,
+          "sha256": "bbabdc5f41d28969c1225a7904341879f446c14e8104033b26b689b10d89e614"
+        },
+        {
+          "entry": "019_unsafe_lifetime_missing_reason_rejected.arcw.probe.stdout",
+          "bytes": 131,
+          "sha256": "454d00899f0a45e20fcc22c2ebaf096d488fcaf6fb8acdc4208ee372405adfc0"
+        },
+        {
+          "entry": "020_unsafe_block_missing_safety_doc_rejected.arcw.probe.stderr",
+          "bytes": 910,
+          "sha256": "f9375a4e6b5ad3e7c0665308d0231f6c06da90d79900691b9a39fbb469d215f2"
+        },
+        {
+          "entry": "020_unsafe_block_missing_safety_doc_rejected.arcw.probe.stdout",
+          "bytes": 132,
+          "sha256": "92daff2863aa95af6249e0b745c1c66d699df339620b821343f6e7aae3146bdf"
+        },
+        {
+          "entry": "defer-flow-registry-multiline-20261107.arcw",
+          "bytes": 126,
+          "sha256": "38e8912f95746815299bff895744a664285be14fec8210c8a94dc1e1932c60c9"
+        },
+        {
+          "entry": "defer-flow-registry-multiline-20261107.arcw.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-multiline-20261107.arcw.stderr",
+          "bytes": 213,
+          "sha256": "78ae4561ee98dc385b3a5111e36ccfe4d152067e6a798621e35babb9cfe69180"
+        },
+        {
+          "entry": "defer-flow-registry-next-20261107.arcw",
+          "bytes": 136,
+          "sha256": "92bfbdaefb0671ced7131c361822bbec34eb2ddf98777bb0990c1149aa47b71e"
+        },
+        {
+          "entry": "defer-flow-registry-next-20261107.arcw.awbc-product.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-next-20261107.arcw.awbc-product.stderr",
+          "bytes": 213,
+          "sha256": "78ae4561ee98dc385b3a5111e36ccfe4d152067e6a798621e35babb9cfe69180"
+        },
+        {
+          "entry": "defer-flow-registry-next-20261107.arcw.bytecode-vm.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-next-20261107.arcw.bytecode-vm.stderr",
+          "bytes": 213,
+          "sha256": "78ae4561ee98dc385b3a5111e36ccfe4d152067e6a798621e35babb9cfe69180"
+        },
+        {
+          "entry": "defer-flow-registry-read_only-20261107.arcw",
+          "bytes": 116,
+          "sha256": "caf61f5bdfafbd26afa0e7c0e8f57556caf1b94071f3f46addde87865e2c3fcb"
+        },
+        {
+          "entry": "defer-flow-registry-read_only-20261107.arcw.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-read_only-20261107.arcw.stderr",
+          "bytes": 300,
+          "sha256": "03c29463848434b809070e909b38848199d14e10e290d85e3189ee81a5fc7b31"
+        },
+        {
+          "entry": "defer-flow-registry-root_only-20261107.arcw",
+          "bytes": 82,
+          "sha256": "0d0eb33fdd21404d6548f2b5c01638752ffa5b702486db4642ea1e1f61987b24"
+        },
+        {
+          "entry": "defer-flow-registry-root_only-20261107.arcw.json",
+          "bytes": 5625,
+          "sha256": "6c6ab8ea112a7175da9104bd6bdb241fc0c9c4da6b10e8e0b90ff7b5321ce421"
+        },
+        {
+          "entry": "defer-flow-registry-root_only-20261107.arcw.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-semicolon-20261107.arcw",
+          "bytes": 115,
+          "sha256": "4b23628417f39f93403929a7f4f2e2b357f7474f8500a6b571c94eaf24df4b89"
+        },
+        {
+          "entry": "defer-flow-registry-semicolon-20261107.arcw.bytecode-vm.json",
+          "bytes": 5648,
+          "sha256": "3c570312c60d2a3dbd25586af7a93bfe03a8943f0dc249f648d4ef80b67cd3b1"
+        },
+        {
+          "entry": "defer-flow-registry-semicolon-20261107.arcw.bytecode-vm.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-semicolon-20261107.arcw.json",
+          "bytes": 5851,
+          "sha256": "842c6870548bc3bb07c4b9d06a302197f722b0150e8bf520d37a1a31ca5dd9be"
+        },
+        {
+          "entry": "defer-flow-registry-semicolon-20261107.arcw.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-unit_tail-20261107.arcw",
+          "bytes": 118,
+          "sha256": "005b0d45e201eacb69c7cad21a3275809b7dec7deba86427789038a13c245e24"
+        },
+        {
+          "entry": "defer-flow-registry-unit_tail-20261107.arcw.json",
+          "bytes": 5851,
+          "sha256": "c54b0c43fed69c6e7942d60886183b77b6d99607867378dc50ff9adc0d345ed1"
+        },
+        {
+          "entry": "defer-flow-registry-unit_tail-20261107.arcw.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-write_only-20261107.arcw",
+          "bytes": 114,
+          "sha256": "70bab60daf80edc564c0ac45b5a5bbdb4e02b74e9a34c3444038a5305647e054"
+        },
+        {
+          "entry": "defer-flow-registry-write_only-20261107.arcw.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "defer-flow-registry-write_only-20261107.arcw.stderr",
+          "bytes": 213,
+          "sha256": "78ae4561ee98dc385b3a5111e36ccfe4d152067e6a798621e35babb9cfe69180"
+        },
+        {
+          "entry": "run-unsafe-body-validation.ps1",
+          "bytes": 3889,
+          "sha256": "2a30ab7a5e6516c6341674886dfdaa6641d75ca3776b50a3a494c3450d372846"
+        },
+        {
+          "entry": "unsafe-body-20261107.delta.json",
+          "bytes": 229,
+          "sha256": "53efce7a31e2d05c66e031907ebda0cb872b04c99a2ac13c34b8bc1c033841f9"
+        },
+        {
+          "entry": "unsafe-body-20261107.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "unsafe-body-20261107.fmt.receipt.json",
+          "bytes": 303,
+          "sha256": "b3f78b55eb3c23b89d5fe63c114e0c427448e19a2162591812d7c79c7b0fd7ad"
+        },
+        {
+          "entry": "unsafe-body-20261107.graph.json",
+          "bytes": 586,
+          "sha256": "18fdd50f13a3b08aebc6abf44e6b234cab127d4f4c9accfda171ca0194d163b6"
+        },
+        {
+          "entry": "unsafe-body-20261107.owner-metrics.json",
+          "bytes": 346,
+          "sha256": "5ef9282f8a5e79d0dab02d03f4372d7c7ef67c2450ca3e8b04b04759956376d3"
+        },
+        {
+          "entry": "unsafe-body-20261107.owner.list.json",
+          "bytes": 151331,
+          "sha256": "951a4573fbbddb3b16526260b81ee3da8c515ac9063281b266f19449b1eea8d6"
+        },
+        {
+          "entry": "unsafe-body-20261107.owner.list.stderr",
+          "bytes": 108709,
+          "sha256": "20e73f50038a5b95133e151d213361a3c37d48a32d94e96f298122f426a6dfa1"
+        },
+        {
+          "entry": "unsafe-body-20261107.owner.log",
+          "bytes": 109913,
+          "sha256": "5be4ab8c896ee64ad40861da1cade964130c2ebc540c2c9bfed8bea6019575c3"
+        },
+        {
+          "entry": "unsafe-body-20261107.owner.receipt.json",
+          "bytes": 180,
+          "sha256": "eb5ee7b436d33dce9589d13cc3ec194aa83f4c5a4e77e84b194a9f70d398e660"
+        },
+        {
+          "entry": "unsafe-body-20261107.registry-probes.receipt.json",
+          "bytes": 5284,
+          "sha256": "414c6b2427dfe6490b1aee66fe0f7dba133f8a3d30f17bd8f62e65c2cf5bbf01"
+        },
+        {
+          "entry": "unsafe-body-20261107.repro.log",
+          "bytes": 116199,
+          "sha256": "37374a81702a9414f9b862dcad22e634d425f535a8a04770d321be95a42f1648"
+        },
+        {
+          "entry": "unsafe-body-20261107.repro.receipt.json",
+          "bytes": 295,
+          "sha256": "a501378ecfcbd5fe8e8a674fbf1875657abc2b340172cd7a4cd814f31438433f"
+        },
+        {
+          "entry": "unsafe-body-20261107.reverse.list.json",
+          "bytes": 540675,
+          "sha256": "f77d4b051af711755a39c4d6f4d85e106107847806ae6880449c1982ef593aa7"
+        },
+        {
+          "entry": "unsafe-body-20261107.reverse.list.stderr.log",
+          "bytes": 107711,
+          "sha256": "47c27e2c94e78b8e224bf10ea4935e870d830616552778ef81608bf927415537"
+        },
+        {
+          "entry": "unsafe-body-20261107.reverse.log",
+          "bytes": 503083,
+          "sha256": "ca9987bbc5c8093b0a3e13158d63697a1ca6e75170acee05ddf7f4dd742a95a6"
+        },
+        {
+          "entry": "unsafe-body-20261107.reverse.receipt.json",
+          "bytes": 932,
+          "sha256": "02032d7a73e2300b14832eaa570c91be39ffe02448f22a80835681fa3ea4ef57"
+        },
+        {
+          "entry": "unsafe-body-20261107.reverse.selection.json",
+          "bytes": 452992,
+          "sha256": "0a8bb084a7c9526b682cf179e8ece1ac8a3c51be2dc3973ae25a0ddcac72470e"
+        },
+        {
+          "entry": "unsafe-body-20261107.reverse.tree.log",
+          "bytes": 4174,
+          "sha256": "d415ed8032ecac9c3c656899633e29a0e3169515316ffb1e0eafe385acbccdfd"
+        },
+        {
+          "entry": "unsafe-body-20261107.root-fixtures.json",
+          "bytes": 49099,
+          "sha256": "2c949858df832c03398191bb0a39b3b6820baa1af6da682fa43e5df37969f44e"
+        },
+        {
+          "entry": "unsafe-body-20261107.source-freeze.json",
+          "bytes": 711733,
+          "sha256": "684f0d0134fc61173220e8777e509240bb5bf0613216beac138d2a60a08f39f3"
+        },
+        {
+          "entry": "unsafe-body-20261107.source.prepared.json",
+          "bytes": 2057,
+          "sha256": "f4fd4e7a36bd340bbbae768858046d83c80457b8714af912e1858be5260d1bf3"
+        },
+        {
+          "entry": "unsafe-body-20261107.source.reviewed.patch",
+          "bytes": 10301,
+          "sha256": "f7350d82089ae3e33230035f7b3a67ee9d84883b9a7ef1ca6a6ddfa4b96227a4"
+        },
+        {
+          "entry": "unsafe-body-20261107.source.verified.json",
+          "bytes": 1459,
+          "sha256": "f86092c4969318da07a2fdc0ffdd7adb81e82f9adec8ccabd176eedf81ea4ea4"
+        },
+        {
+          "entry": "unsafe-body-20261107.structure.log",
+          "bytes": 65874,
+          "sha256": "a5192626d21b27c5408952628b0d5282af1400ec7d4a9846f2f225231e3f608b"
+        },
+        {
+          "entry": "unsafe-body-20261107.structure.receipt.json",
+          "bytes": 276,
+          "sha256": "f96953587fd0b6ce743c97fd7f1fbcbcc2152f6ce3a16b38519ef9190f942ef3"
+        },
+        {
+          "entry": "unsafe-body-20261107.workspace-check.log",
+          "bytes": 108708,
+          "sha256": "467d9bc46bf3f374d2258930f2d5d5be1bb05183ea086888dfb00728bd65175f"
+        },
+        {
+          "entry": "unsafe-body-20261107.workspace-check.receipt.json",
+          "bytes": 253,
+          "sha256": "ebf2a55ab321120fff09cbbc51cf06d39ebaa2400a231ef7613da7ca300dbfd4"
+        },
+        {
+          "entry": "unsafe-body-20261107.workspace-clippy.log",
+          "bytes": 9114132,
+          "sha256": "589a379c09fa71f641bf43884690a8d13d50b03f6c3ad519f3f957832e5e3e10"
+        },
+        {
+          "entry": "unsafe-body-20261107.workspace-clippy.receipt.json",
+          "bytes": 254,
+          "sha256": "41cd78bc48838ff939861180471312f1f9d43b6e7f2ec933d57acc85b22004c4"
+        }
+      ],
+      "sha256": "34877a19f32cbbfe9895be72fda458d218162fa7f4384b5e8fd10f38735efc92"
+    }
+  }
 }

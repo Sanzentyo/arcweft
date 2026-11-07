@@ -15316,3 +15316,12 @@ Production Source の Syntax 逆依存25パッケージを、CLIを除外せず 
 旧一覧の「全 check 712件」は、一次記録の scope に従い「旧 Source の独立した全 feature CLI 全 target partition、705 PASS／7 FAIL」へ訂正する。今回の workspace 既定 CLI 710件（check471／lib196／他43）とは区別する。旧 Source・件数・7失敗IDは保持した。
 最終3,648入力、元の tracked 12 path と untracked 6 file を保持。View の既受入境界と Generic Match を未完了へ戻さず、この実測で確認した構文文脈の退行と fixture の条件不足だけを修復した。
 [失敗・訂正理由・8比較・実測・全公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Unsafe audit body execution and typed CLI fixtures
+
+Source **19f08e319088d8f1ae3f0f7ff57414e8af19ca80**、parent **2065064bbc5dcadaf5e83bb6e9da92378baac33a** を既存 main へ通常 commit/push し、6 path の tree／blob／完全差分を照合した。既存 tracked 12 path と untracked 6 file は保持した。
+追加した最初の2件は修正前に失敗。受理済み unsafe lifetime 本体を既存の匿名 lexical scope へ下げ、本文順・local・defer の所有を保持した。追加5件は副作用のない関数、generic return、loop break、通常終了、cleanup wait を Native／decoded AWBC で確認する。AWBC は各 step で公開保存から cold restore する。wait の40 ms＋60 ms、途中0 op、元の1 op予算と完了後の再実行なしを維持した。
+監査一覧と理由／SAFETY 欠落の fixture は、古い receiver なしの promote_unchecked によって監査前で停止していた。対象を所有 String 本体へ訂正し、元の拒否・修復 action の期待を保ち、一覧の exact id／理由／metadata／元 Source を追加検査した。取消し cleanup は任意キーと明示 pipeline 入力、Unit の取消し結果へ揃え、completed／cancelled の両方を保持した。この通過を promotion や MustDrop の形式証明完了に読み替えない。
+RuntimePlan を含む全16推移的逆依存を workspace 既定 feature で選択し、2617 件中 2613 PASS／4 FAIL／24 SKIP。非CLI 1907 件は全通過、CLI 710 件は 706 PASS／4 FAIL。従来7件のうち監査一覧・不正監査 fixture・取消し cleanup の3件はこの同じ run でPASS。残る4件は元の失敗IDと全出力を保持した。全 target／全 feature の workspace check／Clippy、fmt、構造ゲートは終了0。先行15件をこの件数へ加算しない。
+開始前の3,648入力は drift 0。root fixture 180 file は run 中に追加捕捉したことを明記し、保存から公開時まで drift 0 を照合した。通常 defer の Flow registry probe は、末尾の書込みに `;` がないとHIR recovery、読取りは到達解析で停止した。`;` またはUnit tailを与えた書込みはcompileを通過し、同じsemicolon SourceはNativeでDone、AWBCで7 op後に所有実行context不足で失敗した。これらを別の未達条件として保持し、全体 goal や未受入入力を理由に Generic Match や既存 Native の受入境界を戻さない。
+[失敗原本・訂正理由・全選択・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
