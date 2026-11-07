@@ -3040,11 +3040,11 @@ entry cli @entry.main { goto @flow.main }
                     .iter_mut()
                     .flat_map(|child| &mut child.fiber.frames)
                     .flat_map(|frame| &mut frame.scopes)
-                    .find(|scope| scope.defers.len() == 3)
+                    .find(|scope| scope.deferred.defers.len() == 3)
                 else {
                     return executor;
                 };
-                scope.defers.swap(0, 2);
+                scope.deferred.defers.swap(0, 2);
                 let tampered = executor.bind_product_save_snapshot(tampered).unwrap();
                 let rejection = executor
                     .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(tampered))
