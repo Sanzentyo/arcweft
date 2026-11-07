@@ -56,6 +56,17 @@ pub(super) enum NativeDeferScopeStep {
     Drained,
 }
 
+pub(super) struct NativeDeferScopeProgress {
+    pub(super) step: NativeDeferScopeStep,
+    pub(super) received: Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
+}
+
+pub(super) struct NativeDeferScopeContext {
+    pub(super) parent: super::FlowFiberId,
+    pub(super) execution: crate::runtime_id::ExecutionInstanceId,
+    pub(super) owner: NativeDeferParent,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativeLexicalExit<V> {
     pub(super) target: usize,
@@ -785,13 +796,17 @@ impl super::Engine {
             activation,
             transaction.line_mut(),
             defers,
-            child.id,
-            NativeDeferParent::Control { scope: index },
+            NativeDeferScopeContext {
+                parent: child.id,
+                execution: child.execution,
+                owner: NativeDeferParent::Control { scope: index },
+            },
             exit,
         )?;
+        transaction.stage_received_handles(step.received);
         let receipt = self.dialogue_activations.commit_transaction(transaction)?;
         Self::publish_dialogue_line_receipt(receipt.into_line(), output);
-        match step {
+        match step.step {
             NativeDeferScopeStep::Waiting => Ok(NativeChildScopeProgress::Waiting),
             NativeDeferScopeStep::Deferred(batch) => {
                 self.commit_line_task_execution_batch(batch);
@@ -1007,51 +1022,105 @@ impl super::Engine {
             crate::runtime_id::RuntimePlanTypeId,
         >,
         scope: &mut NativeLexicalDeferScope,
-        parent: super::FlowFiberId,
-        owner: NativeDeferParent,
+        context: NativeDeferScopeContext,
         exit: ScopeExit,
-    ) -> Result<NativeDeferScopeStep, super::dialogue::DialogueExecutionError> {
+    ) -> Result<NativeDeferScopeProgress, super::dialogue::DialogueExecutionError> {
         let exit = scope.freeze_exit(exit);
         if scope.inflight.is_some() || line.has_pending_commands() {
-            return Ok(NativeDeferScopeStep::Waiting);
+            return Ok(NativeDeferScopeProgress {
+                step: NativeDeferScopeStep::Waiting,
+                received: None,
+            });
         }
         while let Some(registration) = scope.deferred.last() {
+            let before = registration
+                .packet
+                .received_handle_slots(context.execution, activation_id)?;
             let prepared = registration
                 .packet
                 .outcome_filter()
                 .matches(exit)
                 .then(|| self.inspect_deferred_line_child(&registration.packet))
                 .transpose()?;
-            let transition =
-                line.prepare_scoped_deferred(activation_id, &registration.packet, exit)?;
+            let received = if before.is_empty() {
+                None
+            } else {
+                let after = prepared
+                    .as_ref()
+                    .map(|child| child.received_handle_slots(activation_id))
+                    .unwrap_or_default();
+                let mut drops = crate::line_task::RuntimeHandleDropAuthorization::default();
+                if prepared.is_none() {
+                    drops.authorize_tokens(before.keys().cloned())?;
+                }
+                Some(
+                    self.dialogue_activations
+                        .inspect_parent_fiber_reconciliation(
+                            self.published_receiver_execution(),
+                            &before,
+                            &after,
+                            &drops,
+                        )?,
+                )
+            };
+            let transition = line.inspect_scoped_defer_unwind_with(
+                activation_id,
+                registration.packet.id(),
+                registration.packet.outcome_filter(),
+                registration.packet.captures(),
+                exit,
+                |handle, registration, ordinal| {
+                    self.dialogue_activations.inspect_received_defer_capture(
+                        self.published_receiver_execution(),
+                        handle,
+                        crate::value::ownership::RuntimeOwnedSlotId::LineDeferCapture {
+                            execution: context.execution,
+                            activation: *activation_id,
+                            registration,
+                            ordinal,
+                        },
+                    )
+                },
+            )?;
+            let decision = transition.decision();
+            line.commit_scoped_defer_unwind(transition);
             let NativeLexicalDeferred { packet, source } =
                 scope.deferred.pop().expect("checked lexical registration");
-            match transition {
+            match decision {
                 crate::line_task::RuntimeScopedDeferDecision::Run => {
                     scope.inflight = Some(NativeDeferInFlight {
                         id: packet.id(),
                         site: packet.site(),
                         source,
                     });
-                    return Ok(NativeDeferScopeStep::Deferred(
-                        self.commit_prepared_deferred_line_child(
-                            parent,
-                            activation_id,
-                            packet,
-                            prepared.expect("run child was preflighted"),
-                            owner,
+                    return Ok(NativeDeferScopeProgress {
+                        step: NativeDeferScopeStep::Deferred(
+                            self.commit_prepared_deferred_line_child(
+                                context.parent,
+                                activation_id,
+                                packet,
+                                prepared.expect("run child was preflighted"),
+                                context.owner,
+                            ),
                         ),
-                    ));
+                        received,
+                    });
                 }
                 crate::line_task::RuntimeScopedDeferDecision::Skipped
-                    if line.has_pending_commands() =>
+                    if line.has_pending_commands() || received.is_some() =>
                 {
-                    return Ok(NativeDeferScopeStep::Waiting);
+                    return Ok(NativeDeferScopeProgress {
+                        step: NativeDeferScopeStep::Waiting,
+                        received,
+                    });
                 }
                 crate::line_task::RuntimeScopedDeferDecision::Skipped => {}
             }
         }
-        Ok(NativeDeferScopeStep::Drained)
+        Ok(NativeDeferScopeProgress {
+            step: NativeDeferScopeStep::Drained,
+            received: None,
+        })
     }
 }
 

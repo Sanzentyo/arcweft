@@ -1274,6 +1274,29 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         captures: &[RuntimeValue],
         exit: ScopeExit,
     ) -> Result<RuntimePreparedScopedDeferUnwind, LineRuntimeError> {
+        self.inspect_scoped_defer_unwind_with(
+            activation,
+            id,
+            outcome_filter,
+            captures,
+            exit,
+            |_, _, _| Err(LineRuntimeError::WrongActivation),
+        )
+    }
+
+    pub(crate) fn inspect_scoped_defer_unwind_with(
+        &mut self,
+        activation: &DialogueActivationId,
+        id: RuntimeDeferRegistrationId,
+        outcome_filter: RuntimeDeferOutcomeFilter,
+        captures: &[RuntimeValue],
+        exit: ScopeExit,
+        inspect_received: impl FnMut(
+            &crate::value::ownership::RuntimeAffineLineHandle,
+            RuntimeDeferRegistrationId,
+            u32,
+        ) -> Result<(), LineRuntimeError>,
+    ) -> Result<RuntimePreparedScopedDeferUnwind, LineRuntimeError> {
         if self.frame_released || self.defer_unwind.is_some() {
             return Err(LineRuntimeError::InvalidDeferredTransition);
         }
@@ -1285,7 +1308,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             captures,
             exit,
             owner,
-            |_, _, _| Err(LineRuntimeError::WrongActivation),
+            inspect_received,
         )?;
         match stage.commands {
             Some(commands) => self

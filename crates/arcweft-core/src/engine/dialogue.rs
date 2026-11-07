@@ -107,8 +107,11 @@ pub(super) enum DialogueActivationStep {
 }
 
 enum ActivationScopeStep {
-    Waiting,
-    Deferred(super::NativeLineTaskExecutionBatch),
+    Waiting(Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>),
+    Deferred(
+        super::NativeLineTaskExecutionBatch,
+        Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
+    ),
     Finished(Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>),
 }
 
@@ -642,10 +645,9 @@ impl Engine {
                 };
                 match step {
                     ActivationScopeStep::Finished(None) => {}
-                    ActivationScopeStep::Waiting | ActivationScopeStep::Finished(Some(_)) => {
-                        if let ActivationScopeStep::Finished(received) = step {
-                            transaction.stage_received_handles(received);
-                        }
+                    ActivationScopeStep::Waiting(received)
+                    | ActivationScopeStep::Finished(received) => {
+                        transaction.stage_received_handles(received);
                         match self.commit_dialogue_activation_transaction(transaction, output) {
                             Ok(()) => {
                                 self.fiber.frame.status =
@@ -658,7 +660,8 @@ impl Engine {
                         }
                         return;
                     }
-                    ActivationScopeStep::Deferred(batch) => {
+                    ActivationScopeStep::Deferred(batch, received) => {
+                        transaction.stage_received_handles(received);
                         match self.commit_dialogue_activation_transaction(transaction, output) {
                             Ok(()) => {
                                 self.fiber.frame.status =
@@ -1275,12 +1278,16 @@ impl Engine {
                     ScopeExit::Completed,
                 )?;
                 return match step {
-                    ActivationScopeStep::Waiting => Ok(DialogueActivationStep::Continue),
+                    ActivationScopeStep::Waiting(received) => {
+                        slot.transaction_mut().stage_received_handles(received);
+                        Ok(DialogueActivationStep::Continue)
+                    }
                     ActivationScopeStep::Finished(received) => {
                         slot.transaction_mut().stage_received_handles(received);
                         Ok(DialogueActivationStep::Continue)
                     }
-                    ActivationScopeStep::Deferred(batch) => {
+                    ActivationScopeStep::Deferred(batch, received) => {
+                        slot.transaction_mut().stage_received_handles(received);
                         Ok(DialogueActivationStep::Deferred(batch))
                     }
                 };
@@ -1330,8 +1337,12 @@ impl Engine {
                     ScopeExit::Completed,
                 )?;
                 return match step {
-                    ActivationScopeStep::Waiting => Ok(DialogueActivationStep::Continue),
-                    ActivationScopeStep::Deferred(batch) => {
+                    ActivationScopeStep::Waiting(received) => {
+                        slot.transaction_mut().stage_received_handles(received);
+                        Ok(DialogueActivationStep::Continue)
+                    }
+                    ActivationScopeStep::Deferred(batch, received) => {
+                        slot.transaction_mut().stage_received_handles(received);
                         Ok(DialogueActivationStep::Deferred(batch))
                     }
                     ActivationScopeStep::Finished(received) => {
@@ -1610,25 +1621,15 @@ impl Engine {
                 RuntimeHandleOwnerSlot::parent_fiber(self.published_receiver_execution(), slot),
             );
         }
-        for scope in &frame.scopes {
-            for registration in &scope.deferred {
-                for (token, slot) in registration
-                    .packet
-                    .received_handle_slots(self.fiber.execution, activation)?
-                {
-                    if owners
-                        .insert(
-                            token,
-                            RuntimeHandleOwnerSlot::parent_fiber(
-                                self.published_receiver_execution(),
-                                slot,
-                            ),
-                        )
-                        .is_some()
-                    {
-                        return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-                    }
-                }
+        for (token, slot) in frame.received_scoped_defer_slots(self.fiber.execution, activation)? {
+            if owners
+                .insert(
+                    token,
+                    RuntimeHandleOwnerSlot::parent_fiber(self.published_receiver_execution(), slot),
+                )
+                .is_some()
+            {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
             }
         }
         for (local, value) in frame.execution.env.bindings() {
@@ -1828,17 +1829,23 @@ impl Engine {
             .scopes
             .last_mut()
             .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-        match self.step_line_defer_scope(
+        let progress = self.step_line_defer_scope(
             activation_id,
             activation,
             scope,
-            frame.parent,
-            super::defer::NativeDeferParent::Activation,
+            super::defer::NativeDeferScopeContext {
+                parent: frame.parent,
+                execution: self.fiber.execution,
+                owner: super::defer::NativeDeferParent::Activation,
+            },
             exit,
-        )? {
-            super::defer::NativeDeferScopeStep::Waiting => return Ok(ActivationScopeStep::Waiting),
+        )?;
+        match progress.step {
+            super::defer::NativeDeferScopeStep::Waiting => {
+                return Ok(ActivationScopeStep::Waiting(progress.received));
+            }
             super::defer::NativeDeferScopeStep::Deferred(batch) => {
-                return Ok(ActivationScopeStep::Deferred(batch));
+                return Ok(ActivationScopeStep::Deferred(batch, progress.received));
             }
             super::defer::NativeDeferScopeStep::Drained => {}
         }
@@ -4151,7 +4158,7 @@ mod tests {
         line.commit_result(ty, RuntimeValue::Unit)
             .expect("result staged before scope exit");
 
-        let ActivationScopeStep::Deferred(_) = engine
+        let ActivationScopeStep::Deferred(_, _) = engine
             .prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Completed)
             .expect("first scope step")
         else {
@@ -4169,7 +4176,7 @@ mod tests {
             .expect("second child closes");
         frame.scopes[0].inflight = None;
 
-        let ActivationScopeStep::Deferred(_) = engine
+        let ActivationScopeStep::Deferred(_, _) = engine
             .prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Failed)
             .expect("frozen scope step")
         else {
@@ -4581,7 +4588,7 @@ mod tests {
         assert_eq!(actor, &token);
         assert!(matches!(
             engine.prepare_activation_scope_exit(&id, frame, line, ScopeExit::Completed),
-            Ok(ActivationScopeStep::Waiting)
+            Ok(ActivationScopeStep::Waiting(None))
         ));
         line.accept_runtime_outcome(&crate::presentation::RuntimeLineHostOutcome::Stage(
             crate::presentation::RuntimeStageCommandOutcome::ReleasedActor {

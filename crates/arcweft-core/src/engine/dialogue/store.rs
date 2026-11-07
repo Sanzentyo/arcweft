@@ -119,6 +119,30 @@ type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
 impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    pub(in crate::engine) fn received_scoped_defer_slots(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        activation: &DialogueActivationId,
+    ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, LineRuntimeError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        let mut slots = BTreeMap::new();
+        for scope in &self.scopes {
+            for deferred in &scope.deferred {
+                for (token, slot) in deferred
+                    .packet
+                    .received_handle_slots(execution, activation)?
+                {
+                    if slots.insert(token, slot).is_some() {
+                        return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                    }
+                }
+            }
+        }
+        Ok(slots)
+    }
+
     fn admit_scoped_defer_registrations<L>(
         &self,
         line: &RuntimeDialogueActivationState<RuntimePlanTypeId, L>,
@@ -835,6 +859,14 @@ impl DialogueActivationStore {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence);
                 }
             }
+            for (token, slot) in active
+                .frame
+                .received_scoped_defer_slots(execution, activation)?
+            {
+                if owners.insert(token, slot).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                }
+            }
             for (local, value) in active.frame.execution.env.bindings() {
                 let slot = active.frame.execution.owned_local_slot(execution, local);
                 for handle in value
@@ -1312,7 +1344,7 @@ impl DialogueActivationTransaction {
         (&mut frame.frame, line)
     }
 
-    pub(super) fn stage_received_handles(
+    pub(in crate::engine) fn stage_received_handles(
         &mut self,
         prepared: Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
     ) {
