@@ -38197,5 +38197,139 @@
         }
       ]
     }
+  },
+  "initialLineInputCustody": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": {
+      "version": 1,
+      "commit": "02d1edb454e2996078a57d25f67570a102b0b14f",
+      "parent": "6c27f57c1adb33e4dfc04bb291d9ec1afd9fb364",
+      "tree": "4d10c03a4ca76bbd1fc23458ce4c60b0a09ba136",
+      "remote": "02d1edb454e2996078a57d25f67570a102b0b14f",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "8436cde9a3162b93c74ea3bf6302064c84efe9ea"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a44826a120b51b42065610d1f1dfd9666f10729af24314d8cbf12bede68b5f6b",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T19:34:45.319769Z"
+    },
+    "status": "Accepted additional saved-custody regression; production is unchanged from the prior initial-input acceptance.",
+    "actual": {
+      "run": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 116,
+      "receipt": {
+        "command": "cargo nextest run --locked -p arcweft-compiler --test evaluated_effects -E test(initial_line_input_rejects_forged) --no-tests fail",
+        "exitCode": 0,
+        "startedAt": "2026-11-07T19:31:29.9777452Z",
+        "endedAt": "2026-11-07T19:31:44.035789Z",
+        "sourceTestSha256": "703583361bda509e4bd635d5772a46ddbc78054bb058b8f7242721bfdcbfce5c"
+      }
+    },
+    "scope": [
+      "The original Actor input crosses an actual pending AWBC Dialogue packet and the actual receiving activation frame, both observed through the public AWBC save API.",
+      "Ten well-formed save changes are refused: packet execution/fiber/frame/content/input ordinal, removal of its original inputs, and activation execution/fiber/frame/register.",
+      "Every refused save leaves the original snapshot equal; the original executor finishes with two reveals, one acquire/release, original log order and one-op/512-step bounds."
+    ],
+    "development": {
+      "run": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 116,
+      "receipt": {
+        "command": "cargo nextest run --locked -p arcweft-compiler --test evaluated_effects -E test(initial_line_input_rejects_forged) --no-tests fail",
+        "exitCode": 100,
+        "startedAt": "2026-11-07T19:29:56.9847668Z",
+        "endedAt": "2026-11-07T19:29:59.0099774Z",
+        "sourceTestSha256": "21dfc1b272c4596b5b17b317e33d9225dec313b900433b22c3948d849d9023df"
+      },
+      "reason": "The first test wrongly required a missing input packet to fail at bind alone. The admitted container is refused during owned restore. The corrected test accepts refusal at either stage and verifies original-state preservation and successful original continuation."
+    },
+    "reuse": "Earlier Compiler 146 PASS remains its original 116-case evaluated_effects plus 30-case scoped_defer run. The new catalog has 117 evaluated_effects cases; only its added regression ran here. Do not claim a full 147-case rerun.",
+    "remaining": "The shared-contract workspace matrix and Core reverse closure remain separate validation. No accepted Generic Match, Line/init, Native or ordinary-defer condition is reopened.",
+    "raw": {
+      "path": "task-initial-line-input-custody.raw.zip",
+      "sha256": "dd1063772ef23cec32cded850d7824baab372489d59013168dd3fb51e197110f",
+      "entries": [
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-r2.log",
+          "bytes": 88241,
+          "sha256": "574e742850edee14b7883f400f133acec807db3f30433e202fe1967b2375dc35"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-r2.receipt.json",
+          "bytes": 356,
+          "sha256": "e9b251e669bc1878946d8a5f3fb3b6b5b9b66b321a76ffa23ac1e0630616585e"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-source.message.txt",
+          "bytes": 693,
+          "sha256": "b4e394c31ef610675d7196c68966c1becc04a4452ca4692997a89da890ecc128"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-source.owned.txt",
+          "bytes": 67,
+          "sha256": "49cd052e639b99decdb080cdad37f796e58970612ad5b91d0169e88ad0655fec"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-source.pathspec",
+          "bytes": 66,
+          "sha256": "5688552ed8f80d17630dc784942987f1ca8db1a06f7e9b1f20bce1957b47569c"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-source.prepared.json",
+          "bytes": 1306,
+          "sha256": "e37c6aa70a5132010053064631e9a5be38aaed22d165b4dd9ec536ae7408ee4f"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-source.reviewed.patch",
+          "bytes": 5695,
+          "sha256": "a44826a120b51b42065610d1f1dfd9666f10729af24314d8cbf12bede68b5f6b"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save-source.verified.json",
+          "bytes": 708,
+          "sha256": "de3cbf9c59e86e3848d33827a8d750199219d9943ebd4b6f050ce61d5573654b"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save.log",
+          "bytes": 89161,
+          "sha256": "fa3e895b6faad4f85a2214ef21d4b480694a1170b68e764a4f8d3482f8c77358"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save.receipt.json",
+          "bytes": 358,
+          "sha256": "92cc7802c62036c397faabf7deae027aa1203445e3dc4455ba899ad193e26955"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save.selection.json",
+          "bytes": 20577,
+          "sha256": "dffdcd04f4ce6b7d03be47b8f15a5d0b6c35a1c45116a01df2762ac86551df52"
+        },
+        {
+          "entry": "line-initial-inputs-20261108.initial-save.selection.log",
+          "bytes": 87807,
+          "sha256": "be09bed4e2249d1b09114d744af0241df097651b86559ab933963fdde4a174cb"
+        },
+        {
+          "entry": "record-initial-input-custody-20261108.ps1",
+          "bytes": 6784,
+          "sha256": "0f81094978bda3114d6808d95ede47ca202c93a5ee5777df755eacb2d0e49140"
+        }
+      ]
+    }
   }
 }

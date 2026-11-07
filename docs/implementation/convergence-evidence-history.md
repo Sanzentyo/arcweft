@@ -15413,3 +15413,9 @@ Source **9a99f1d42d9fd3ecbe13e544a31850b833199446** と受信元修正 **e5b5307
 元の Actor 再返却は Native／毎 step 公開 JSON 保存・cold restore AWBC で PASS。Copy String の caller 再利用も両実行器で PASS。取得・解放各1回、2 reveal、元 log 順序、1-op／512-step を維持する。最終 Source owner 11 PASS／2316 選択外、RuntimePlan 165 PASS／既存 generator 1 SKIP、Compiler の evaluated_effects116＋scoped_defer30 は146 PASS／0 SKIP。Core・RuntimePlan・Sema・Compiler の全target／全feature Clippy と56 path fmtは終了0、Core doctest80 PASS。Core 全2327件の開発 run は2325 PASS／新規 fixture2 FAILで、その2件を後の選択runで修復確認した。全件の再実行に合算しない。中間3 PASS／1 FAIL、Core compile error、旧 slot／codec offset と fixture namespace の失敗も raw 原本へ保持する。
 
 同じ元入力が通ったことを理由に、現状の「未分離」、Native AffineGroupCapture、AWBC Copy 専用 ABI 拒否を削除した。既受入の Generic Match／Line-init／Native／通常 defer／子 Dialogue を戻さない。全 Core53／workspace 最終matrix と範囲外の受入をこの検証へ合算しない。[全入力別結果・訂正・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIP は106 entries、SHA-256 d722262ece8b115a35ac05d99383972605fd62a4b6570526ec5a92f6fd5ef16e。
+
+## 2026-11-08 — 初期 Line 入力の保存AWBCにおける実 slot 認証
+
+追加テスト Source **02d1edb454e2996078a57d25f67570a102b0b14f** を既存 main へ通常 commit/push し、親・tree・全 blob・完全差分を照合した。production は変更せず、同じ Actor 再返却のAWBC公開保存で実待機 packet と実 activation の両方を観測した。packet の execution／fiber／frame／content／入力 ordinal、その入力 packet の削除、activation の execution／fiber／frame／register の計10改変を拒否。拒否ごとに元 snapshot の同一性を確認し、その executor の元入力は1-op／512-step、2 reveal、取得・解放各1回と元log順で完走した。追加1件は **1 PASS／116 SKIP**。先行146 PASSと合成して全147件runとはしない。
+
+初回の **0 PASS／1 FAIL／116 SKIP** は、packet欠落をbind時だけに拒否するというテスト期待の誤りだった。実際にはowned restoreで拒否される。修正後は両admission段階の拒否を認め、元状態保全と元実行の成功を確認した。初回ログ・修正後ログ・全SHAを保持する。既受入を戻す新規不具合とは扱わない。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIP は14 entries、SHA-256 dd1063772ef23cec32cded850d7824baab372489d59013168dd3fb51e197110f。
