@@ -1353,8 +1353,9 @@ impl Engine {
     pub(super) fn evaluate_entity_target(
         &mut self,
         expr: &RuntimeExpr,
+        backend: &mut impl RuntimeCallBackend,
     ) -> Result<FlowRuntimeId, RuntimeEvalError> {
-        match self.evaluate_expr(expr)? {
+        match self.evaluate_expr_with_backend(expr, backend)? {
             RuntimeValue::EntityRef(target) => {
                 if let Some(flow) = target.exact_flow_identity() {
                     return self.flow_index(flow).map(|_| flow.clone()).ok_or_else(|| {

@@ -775,6 +775,10 @@ pub(crate) struct LineTaskFiberOwner {
 }
 
 impl FlowFiberOwner {
+    fn owns_flow_defers(&self) -> bool {
+        matches!(self, Self::Executor | Self::FlowDefer { .. })
+    }
+
     fn has_joined_work(&self) -> bool {
         !matches!(
             self,

@@ -66,10 +66,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<bool, DialogueExecutionError> {
-        if !matches!(
-            self.fiber.owner,
-            FlowFiberOwner::Executor | FlowFiberOwner::FlowDefer { .. }
-        ) {
+        if !self.fiber.owner.owns_flow_defers() {
             return Ok(false);
         }
         if !self.fiber.frame.scope_defer_exit_pending() {

@@ -2,7 +2,7 @@
 
 use super::NativePendingWork;
 use super::code_cursor::NativeSourceOperation;
-use super::defer::NativeLexicalExitAction;
+use super::defer::{NativeDeferBoundary, NativeLexicalExitAction};
 use super::work::{NativePendingWorkKind, NativeRuntimeContinuation, NativeStoredWork};
 use super::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
@@ -441,7 +441,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         }
     }
 
-    pub(super) fn return_defer_target(&self) -> Option<usize>
+    pub(super) fn defer_target(&self, boundary: NativeDeferBoundary) -> Option<usize>
     where
         C: ScopeControl<O>,
     {
@@ -449,7 +449,9 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             .iter()
             .enumerate()
             .rev()
-            .take_while(|(_, entry)| entry.function_context().is_none())
+            .take_while(|(_, entry)| {
+                boundary == NativeDeferBoundary::Flow || entry.function_context().is_none()
+            })
             .filter_map(|(index, entry)| {
                 entry
                     .defer_scope()
@@ -528,7 +530,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     .function_contexts()
                     .next_back()
                     .map(|(site, _)| site);
-                if self.return_defer_target() != Some(exit.target)
+                if self.defer_target(NativeDeferBoundary::Invocation) != Some(exit.target)
                     || function.is_some_and(|site| {
                         source.owner() != crate::plan::code::RuntimeCodeOwner::Function(site)
                     })
@@ -536,6 +538,12 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     return Err(invalid(
                         "native return does not reach its original invocation and defer scope"
                             .into(),
+                    ));
+                }
+            } else if matches!(exit.action, NativeLexicalExitAction::Goto { .. }) {
+                if self.defer_target(NativeDeferBoundary::Flow) != Some(exit.target) {
+                    return Err(invalid(
+                        "native goto does not reach its outermost defer scope".into(),
                     ));
                 }
             } else if self.control_stack.get(exit.target..).is_none_or(|scopes| {
@@ -1237,6 +1245,15 @@ impl<N, P, R, V, FP, O, C, A, S, D>
         let mut flow_registrations = BTreeSet::new();
         let mut scoped_tokens = BTreeSet::new();
         for child in self.session_fibers() {
+            if let Some(exit) = &child.frame.lexical_exit
+                && matches!(
+                    exit.action,
+                    NativeLexicalExitAction::Goto { .. } | NativeLexicalExitAction::Return { .. }
+                )
+                && !child.owner.owns_flow_defers()
+            {
+                return Err(invalid());
+            }
             if let Some(super::defer::NativeLexicalExit {
                 action: NativeLexicalExitAction::Return { result, .. },
                 ..
@@ -1248,11 +1265,7 @@ impl<N, P, R, V, FP, O, C, A, S, D>
                         .control_stack
                         .iter()
                         .any(|entry| entry.function_context().is_some());
-                if !matches!(
-                    child.owner,
-                    FlowFiberOwner::Executor | FlowFiberOwner::FlowDefer { .. }
-                ) || typed != matches!(result, super::defer::NativeReturnResult::Value(_))
-                {
+                if typed != matches!(result, super::defer::NativeReturnResult::Value(_)) {
                     return Err(invalid());
                 }
             }

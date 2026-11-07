@@ -32,13 +32,12 @@ impl NativeFlowExecutionFrame {
         }
     }
 
-    /// A task return stays at its original position until its descendants drain.
+    /// A task return or Flow transfer waits until joined descendants drain.
     /// Returning to a caller continues the same task and does not join it.
     fn next_transition_completes_task(&self, plan: &RuntimePlan) -> bool {
-        let function = self.active_function();
-        if function.is_some_and(|frame| frame.continuation.returns_to_caller()) {
-            return false;
-        }
+        let returns_to_caller = self
+            .active_function()
+            .is_some_and(|frame| frame.continuation.returns_to_caller());
         for work in &self.pending_ops {
             match &work.kind {
                 NativePendingWorkKind::Resume(_) => return false,
@@ -47,15 +46,23 @@ impl NativeFlowExecutionFrame {
                         if operations.is_empty() && *role != NativeSourceRangeRole::FunctionRoot {
                             continue;
                         }
-                        return operations.first().is_none_or(|operation| {
-                            matches!(operation, FlowOp::Return(_) | FlowOp::ReturnExpr(_))
-                        });
+                        return match operations.first() {
+                            Some(
+                                FlowOp::Goto(_)
+                                | FlowOp::GotoExpr(_)
+                                | FlowOp::Effect(crate::effect::LineEffectRequest::Goto(_)),
+                            ) => true,
+                            None | Some(FlowOp::Return(_) | FlowOp::ReturnExpr(_)) => {
+                                !returns_to_caller
+                            }
+                            _ => false,
+                        };
                     }
-                    return position.expression(plan).is_some();
+                    return !returns_to_caller && position.expression(plan).is_some();
                 }
             }
         }
-        true
+        !returns_to_caller
     }
 
     pub(super) fn function_root_position(&self) -> Option<&super::NativeCodeCursor> {

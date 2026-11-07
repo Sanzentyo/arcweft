@@ -1018,7 +1018,7 @@ impl Engine {
             self.emit_line_effect(LineEffectRequest::Out(out), output, pure_backend);
         }
         if let Some(target) = option.target {
-            self.goto(&target, output, pure_backend);
+            self.goto(&target, None, output, pure_backend);
         } else {
             self.fiber.frame.status = FlowFiberStatus::Running;
         }

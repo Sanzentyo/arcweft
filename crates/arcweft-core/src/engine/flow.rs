@@ -1027,9 +1027,9 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                 }
             }
-            FlowOp::Goto(target) => self.goto(target, output, pure_backend),
-            FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(expr) {
-                Ok(target) => self.goto(&target, output, pure_backend),
+            FlowOp::Goto(target) => self.goto(target, Some(source_site), output, pure_backend),
+            FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(expr, pure_backend) {
+                Ok(target) => self.goto(&target, Some(source_site), output, pure_backend),
                 Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::Return(_) => {
@@ -1047,6 +1047,9 @@ impl Engine {
                 Ok(value) => self.return_from_source(source_site, value, output, pure_backend),
                 Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
+            FlowOp::Effect(crate::effect::LineEffectRequest::Goto(label)) => {
+                self.goto_from_label(label, Some(source_site), output, pure_backend);
+            }
             FlowOp::Effect(_) => {
                 let FlowOp::Effect(effect) = op.into_owned() else {
                     unreachable!("selected effect");
@@ -1125,10 +1128,7 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                 }
                 (crate::plan::RuntimeDeferOwner::CurrentScope, None)
-                    if matches!(
-                        self.fiber.owner,
-                        super::FlowFiberOwner::Executor | super::FlowFiberOwner::FlowDefer { .. }
-                    ) =>
+                    if self.fiber.owner.owns_flow_defers() =>
                 {
                     match self.register_flow_defer(source_site) {
                         Ok(()) => self.advance_if_needed(next_op_index),

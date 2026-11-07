@@ -4,7 +4,7 @@ use super::code_cursor::NativeSourceOperation;
 use crate::line_task::{
     AwbcRuntimeDeferredRegistrationSnapshot, RuntimeLineDeferredRegistration, ScopeExit,
 };
-use crate::plan::{FlowOp, RuntimeDeferOwner};
+use crate::plan::{FlowOp, FlowRuntimeId, RuntimeDeferOwner};
 use crate::runtime_id::{RuntimeDeferRegistrationId, RuntimeDeferSiteId};
 use crate::scope::RuntimeScheduledScopeToken;
 use crate::task::RuntimeProgramOwner;
@@ -75,6 +75,16 @@ pub(super) enum NativeLexicalExitAction<V> {
         source: NativeSourceOperation,
         result: NativeReturnResult<V>,
     },
+    Goto {
+        source: NativeSourceOperation,
+        destination: FlowRuntimeId,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum NativeDeferBoundary {
+    Invocation,
+    Flow,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -142,6 +152,13 @@ impl<V> NativeLexicalExitAction<V> {
                     NativeReturnResult::Value(value) => NativeReturnResult::Value(value),
                 },
             },
+            Self::Goto {
+                source,
+                destination,
+            } => NativeLexicalExitAction::Goto {
+                source: source.clone(),
+                destination: destination.clone(),
+            },
         }
     }
 
@@ -172,6 +189,13 @@ impl<V> NativeLexicalExitAction<V> {
                     NativeReturnResult::FlowLabel(label) => NativeReturnResult::FlowLabel(label),
                     NativeReturnResult::Value(value) => NativeReturnResult::Value(map(value)?),
                 },
+            },
+            Self::Goto {
+                source,
+                destination,
+            } => NativeLexicalExitAction::Goto {
+                source,
+                destination,
             },
         })
     }
@@ -240,7 +264,8 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
             NativeLexicalExitAction::Emitted => return Ok(()),
             NativeLexicalExitAction::Scheduled(token) => return admission.validate_metadata(token),
             NativeLexicalExitAction::Bind { source, .. }
-            | NativeLexicalExitAction::Return { source, .. } => (source, None),
+            | NativeLexicalExitAction::Return { source, .. }
+            | NativeLexicalExitAction::Goto { source, .. } => (source, None),
             NativeLexicalExitAction::Transfer(transfer) => {
                 (&transfer.source, Some(&transfer.target))
             }
@@ -248,6 +273,9 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
         source.admit_retained(admission)?;
         if let Some(target) = transfer_target {
             target.admit_retained(admission)?;
+        }
+        if let NativeLexicalExitAction::Goto { destination, .. } = &self.action {
+            admission.validate_metadata(destination)?;
         }
         let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
             unreachable!("native position has an admitted plan");
@@ -272,6 +300,20 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
                     return admission.validate_metadata(label);
                 }
                 Some(expr.ty())
+            }
+            (NativeLexicalExitAction::Goto { destination, .. }, Some(operation)) => {
+                let agrees = match operation {
+                    FlowOp::Goto(original) => destination == original,
+                    FlowOp::GotoExpr(_) => true,
+                    FlowOp::Effect(crate::effect::LineEffectRequest::Goto(label)) => plan
+                        .resolve_flow_target_value(label)
+                        .is_ok_and(|original| original == *destination),
+                    _ => false,
+                };
+                if !agrees || plan.validate_flow_invocation(destination, &[]).is_err() {
+                    return Err(invalid());
+                }
+                return Ok(());
             }
             (NativeLexicalExitAction::Transfer(transfer), Some(FlowOp::Break { depth, value }))
                 if matches!(transfer.kind, NativeLoopTransferKind::Break(_))
@@ -536,10 +578,11 @@ impl super::Engine {
                 value => crate::value::runtime_value_label(&value),
             })
         };
-        if matches!(
-            self.fiber.owner,
-            super::FlowFiberOwner::Executor | super::FlowFiberOwner::FlowDefer { .. }
-        ) && let Some(target) = self.fiber.frame.return_defer_target()
+        if self.fiber.owner.owns_flow_defers()
+            && let Some(target) = self
+                .fiber
+                .frame
+                .defer_target(NativeDeferBoundary::Invocation)
         {
             self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
                 target,
@@ -772,6 +815,12 @@ impl super::Engine {
                         }
                         NativeLexicalExitAction::Return { result, .. } => {
                             self.complete_source_return(result, output, backend);
+                        }
+                        NativeLexicalExitAction::Goto {
+                            source,
+                            destination,
+                        } => {
+                            self.goto(&destination, Some(source), output, backend);
                         }
                     }
                 }
