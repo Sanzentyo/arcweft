@@ -22262,5 +22262,339 @@
         }
       ]
     }
+  },
+  "nativeFlowScopeDefer": {
+    "source": "85e9b92c40c172edbdb81f37a257be716cb44a73",
+    "base": "0d1eb8699ccab03a4bdf7528dbca648dd722ab05",
+    "published": {
+      "version": 1,
+      "commit": "85e9b92c40c172edbdb81f37a257be716cb44a73",
+      "parent": "0d1eb8699ccab03a4bdf7528dbca648dd722ab05",
+      "tree": "ace3aac5c3629194cebcccb3cb7779bb70764d5c",
+      "remote": "85e9b92c40c172edbdb81f37a257be716cb44a73",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "2dc58541c757e66b31e63f24f118282578f41f57"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer.rs",
+          "blob": "5602d53c39e4095a926a436bc07814fa871221e0"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/flow_scope.rs",
+          "blob": "a4bbf21cf1e333b0bce28f3650cdf12d26ba7b76"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/tests.rs",
+          "blob": "263ece04b14acf2c4c3315b3adbbe7eb80344dcf"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "blob": "6a1df6bf176a61acac2a22377e002964c2dddec3"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "7e4be719b8ff8c89bdd234849bb2e930c2a5508f"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/frame_progress.rs",
+          "blob": "0b76cbe6963f761eb239772c9569872a393fbe13"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/registry.rs",
+          "blob": "9192ff1e662a484a97443a41d12fa4c230c61dd6"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "99909a9c224beba1ae9127fca82ec0435bba7704"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "bb1ccd768ac36746748c2a0cbc566be608741feb63ec27b6666cb8592668a282",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T02:06:50.5525776Z"
+    },
+    "sourceInputs": 3642,
+    "scope": "Ordinary Native Flow execution of typed RuntimePlans with an explicit lexical scope and non-Line captures. RuntimePlan source lowering, AWBC ordinary Flow, early return/goto, and Native public persistence remain separate.",
+    "priorRuns": [
+      {
+        "log": "native-flow-defer-20261107.first-tests.log",
+        "passed": 1,
+        "failed": 1,
+        "skipped": 2297,
+        "detail": "Native rollback rejected the defer child before recognizing its executable Root origin."
+      },
+      {
+        "log": "native-flow-defer-20261107.second-tests.log",
+        "compiled": false,
+        "detail": "Fixture compilation failed with E0433 and E0308."
+      },
+      {
+        "log": "native-flow-defer-20261107.third-tests.log",
+        "passed": 2,
+        "failed": 0,
+        "skipped": 2297,
+        "detail": "First post-clean exact run before the cleanup startup failure repair."
+      }
+    ],
+    "exactCases": [
+      "ordinary_native_flow_unwinds_defer_and_restores_its_exact_owner",
+      "ordinary_native_flow_reports_cleanup_start_failure_after_draining_scope",
+      "native_loop_transfer_image_requires_the_original_loop_and_value"
+    ],
+    "reverseGraph": {
+      "workspacePackages": 53,
+      "fullMatrixExecuted": false,
+      "selection": "Core, RuntimePlan, Compiler, Runtime Driver, Runtime Host, Save"
+    },
+    "acceptance": [
+      {
+        "version": 1,
+        "head": "0d1eb8699ccab03a4bdf7528dbca648dd722ab05",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 07s",
+          "Summary [  64.535s] 2434 tests run: 2434 passed, 1 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-runtime-plan",
+          "--lib",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T02:00:56.3726718Z",
+        "finishedAt": "2026-11-07T02:06:11.6311848Z",
+        "name": "owners"
+      },
+      {
+        "version": 1,
+        "head": "0d1eb8699ccab03a4bdf7528dbca648dd722ab05",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 49s",
+          "Summary [  29.717s] 414 tests run: 414 passed, 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "evaluated_effects",
+          "--test",
+          "callable_execution",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T02:06:17.3484664Z",
+        "finishedAt": "2026-11-07T02:11:39.9021796Z",
+        "name": "compiler"
+      },
+      {
+        "version": 1,
+        "head": "0d1eb8699ccab03a4bdf7528dbca648dd722ab05",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 44s",
+          "Summary [  97.136s] 260 tests run: 260 passed (1 slow), 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-save",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T02:11:39.9150079Z",
+        "finishedAt": "2026-11-07T02:18:09.8884847Z",
+        "name": "consumers"
+      },
+      {
+        "version": 1,
+        "head": "0d1eb8699ccab03a4bdf7528dbca648dd722ab05",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 30s"
+        ],
+        "command": [
+          "cargo",
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T02:18:09.8906937Z",
+        "finishedAt": "2026-11-07T02:21:42.1697095Z",
+        "name": "workspace-check"
+      },
+      {
+        "version": 1,
+        "head": "0d1eb8699ccab03a4bdf7528dbca648dd722ab05",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 43s"
+        ],
+        "command": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T02:21:42.1715252Z",
+        "finishedAt": "2026-11-07T02:24:27.5791288Z",
+        "name": "workspace-clippy"
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-native-flow-defer.raw.zip",
+      "sha256": "d74a2d66c79c76fbf86b960e70c6ac6f2d466eb1a002e002b6bce87949444311",
+      "entries": [
+        {
+          "entry": "checkpoint-native-flow-defer-20261107.verified.json",
+          "bytes": 1754,
+          "sha256": "d87421ce017fda700a1509978f3da1a1f363bf0ec0b42004b937c7fb9a6b7ceb"
+        },
+        {
+          "entry": "checkpoint-native-flow-defer-20261107.reviewed.patch",
+          "bytes": 59576,
+          "sha256": "bb1ccd768ac36746748c2a0cbc566be608741feb63ec27b6666cb8592668a282"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.source-freeze.json",
+          "bytes": 629797,
+          "sha256": "403416990276821a120816e7242b1d555a3b36cebb1ab63976700198c94be22d"
+        },
+        {
+          "entry": "native-flow-defer-20261107.clean.receipt.json",
+          "bytes": 314,
+          "sha256": "6ded658e39fb64a9e4fd0c2dae19b16924c2a9304a51403f6bbce743e1567f15"
+        },
+        {
+          "entry": "native-flow-defer-20261107.check.log",
+          "bytes": 71994,
+          "sha256": "fd3d3507ed9d1b32eee9f5ab6c71d69298f8bfabcc2b464d8712f45507a925f9"
+        },
+        {
+          "entry": "native-flow-defer-20261107.first-tests.log",
+          "bytes": 34954,
+          "sha256": "e2aaa2489a9d09abb79a169018500d63e8c11f7b2513dcca41b6104b145dddd3"
+        },
+        {
+          "entry": "native-flow-defer-20261107.second-tests.log",
+          "bytes": 13384,
+          "sha256": "7cc5beab0621bc06d75af3c2194b61958620be19777e9c42b11feeca9aeac5b5"
+        },
+        {
+          "entry": "native-flow-defer-20261107.third-tests.log",
+          "bytes": 38602,
+          "sha256": "5a3d3f30c8cef989649bd85e769c0def0e1e68149b9a322bb367caa3662bbf06"
+        },
+        {
+          "entry": "native-flow-defer-20261107.third-tests.source-freeze.json",
+          "bytes": 629797,
+          "sha256": "900c3d9498ccf9fa947bb4ee145c9bcf75e3eef1f12c1101d991a7ec04d29961"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.structure.log",
+          "bytes": 65741,
+          "sha256": "310eb4b77ee569c1522eb106a26f84e3d9c438dfb2afa1e1a13faa837311df3c"
+        },
+        {
+          "entry": "native-flow-defer-20261107.graph.txt",
+          "bytes": 19452,
+          "sha256": "3f1a725a8c4e20d7ff324f499910203eab3b157f862f4030f796f3b84bf6d79a"
+        },
+        {
+          "entry": "native-flow-defer-20261107.metadata-reverse.json",
+          "bytes": 31290,
+          "sha256": "d84ff4e7b9794f9baf220a05ab755d28fe281493c946b5722d2e3068b5bc1134"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.owners.receipt.json",
+          "bytes": 622,
+          "sha256": "f03a4285aa9a2ef8f37f7e7cd0b430d461321685d5973b202b4397748e24e301"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.owners.log",
+          "bytes": 474950,
+          "sha256": "068b0bb4cd1a7e9c82d3e8e0a23f9e08dc61f8954eb5db247869270941ff2846"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.compiler.receipt.json",
+          "bytes": 653,
+          "sha256": "c45ec9c70a8a7058cdfdadfc66bbfdeba19d0206296857f0704fbc5f98d7e87d"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.compiler.log",
+          "bytes": 152839,
+          "sha256": "5b68ff495804f6ac823fc6263299f88cd3ed941366af5c427f722963162bd68c"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.consumers.receipt.json",
+          "bytes": 657,
+          "sha256": "eeb2e8b1f5f56e7a64fc192081a8c2e5c393210b82dfa726b9e74052e77e8e4e"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.consumers.log",
+          "bytes": 135976,
+          "sha256": "f5c80b53a6dd5edf85c483e775dced31352cb37ec4846d36f4f61009420ca74b"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.workspace-check.receipt.json",
+          "bytes": 464,
+          "sha256": "8aa1c15697a13a5ccd67692b16ea308079ed08b9e86d4b7735b571c5bb00085e"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.workspace-check.log",
+          "bytes": 132384,
+          "sha256": "7c6fe27e225a8caabfe2cca276c6ac256ae89e00cc8c1e8f2805b39a59ffed99"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.workspace-clippy.receipt.json",
+          "bytes": 465,
+          "sha256": "821363fffeb92b57aed644821f3c0b9e191b7a2bf670a08ab10c69cd89926260"
+        },
+        {
+          "entry": "native-flow-defer-20261107.final.workspace-clippy.log",
+          "bytes": 9071081,
+          "sha256": "b20c8126ef2b1aad542b43cdd493c3e70b4749c0008a9e4bcf71313e614adb94"
+        }
+      ]
+    }
   }
 }
