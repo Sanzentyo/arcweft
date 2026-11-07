@@ -33714,5 +33714,398 @@
         }
       ]
     }
+  },
+  "lineOutProducer": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": {
+      "version": 1,
+      "commit": "e02f53b2f52f21e6220be70554681f0c85949eee",
+      "parent": "0ed464d8aa0a8de270a82e658032191c5a68c898",
+      "tree": "ad08a88df91ae3bee2f1d54b214f7343f0d0228a",
+      "remote": "e02f53b2f52f21e6220be70554681f0c85949eee",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "71c7f80d89f8d675a7c682401142cee7f65caa68"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "blob": "0d88e2d4e1638a0ecb308095998eaac082980ab7"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "fdec046ca272840023b813742c01ed07505f8c74"
+        },
+        {
+          "path": "docs/01-language/control-transfer-return-out-yield.md",
+          "blob": "b7c86fa1905273c13dcf325e962def3c685f0794"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "6a25569bc15db7a327f5f6cc1f5ed458c529182123c3ca886f6abcdd39c15ebe",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T15:59:31.2743874Z"
+    },
+    "behavior": [
+      "Direct checked Line capability calls use the same typed command/site/capture draft factory as let bindings.",
+      "An already admitted expression-result local owns the produced value before a Move into CommitDialogueResult; no copied handle or invented temporary identity.",
+      "Other out values use the ordinary source-order, budgeted value continuation. Pure result commitment remains the existing operation."
+    ],
+    "actual": {
+      "compiler": {
+        "run": 99,
+        "passed": 97,
+        "failed": 2,
+        "skipped": 0,
+        "receipt": {
+          "sourceBase": "0ed464d8aa0a8de270a82e658032191c5a68c898",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 100,
+          "startedAt": "2026-11-07T15:48:58.6519305Z",
+          "endedAt": "2026-11-07T15:49:32.5044985Z"
+        },
+        "note": "Same tested producer bytes before adding the effectful-out test. No synthetic 100-case run."
+      },
+      "resultCases": {
+        "run": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 98,
+        "cases": [
+          "line_result_direct_acquisition_uses_its_owning_line_plan",
+          "line_result_effectful_call_keeps_its_value_continuation_and_source_order"
+        ],
+        "backends": [
+          "Native",
+          "decoded AWBC with public JSON save and cold restore each step"
+        ],
+        "operationBound": 1,
+        "tickBound": 512,
+        "stageAcquireAndRelease": 1,
+        "note": "Additional test plus direct Actor rerun, a separate execution from the 99-case result."
+      },
+      "owner": {
+        "run": 134,
+        "passed": 134,
+        "failed": 0,
+        "skipped": 1,
+        "skippedCase": "awbc_lower::tests::program_fanout::regenerate_presentation_cancellation_fixtures",
+        "skipReason": "Existing ignored fixture generator; no default filter or ignore change."
+      },
+      "quality": {
+        "owner": {
+          "sourceBase": "0ed464d8aa0a8de270a82e658032191c5a68c898",
+          "selection": [
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "--lib"
+          ],
+          "catalogExit": 0,
+          "selected": 134,
+          "exitCode": 0,
+          "startedAt": "2026-11-07T15:52:04.986003Z",
+          "endedAt": "2026-11-07T15:55:32.4913447Z"
+        },
+        "clippy": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-compiler",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceDrift": 0,
+          "sourceInputs": 2,
+          "startedAt": "2026-11-07T15:50:55.6276984Z",
+          "endedAt": "2026-11-07T15:51:07.7714503Z"
+        },
+        "testClippy": {
+          "arguments": [
+            "clippy",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T15:58:26.5490146Z",
+          "endedAt": "2026-11-07T15:58:31.5705065Z"
+        },
+        "fmt": {
+          "arguments": [
+            "rustfmt",
+            "--check",
+            "--edition",
+            "2024",
+            "--config",
+            "skip_children=true",
+            "crates/arcweft-runtime-plan/src/final_flow.rs",
+            "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+            "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs"
+          ],
+          "exitCode": 0,
+          "paths": [
+            "crates/arcweft-runtime-plan/src/final_flow.rs",
+            "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+            "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs"
+          ],
+          "hashes": [
+            {
+              "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+              "sha256": "EA43F929AE003953E26440CCE8FC9A896E8848979CD100A505B2352C13C35FD2"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+              "sha256": "B3F294C6E7B75C7241C24E4FFD6B30F1E6C8FDB64190B6BABA6D83D9AEAF7F73"
+            },
+            {
+              "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+              "sha256": "AC86926B29F29C03911AFC85E1A15A6E87992BEDDF135E1CD730DDCA19F1143E"
+            }
+          ]
+        },
+        "resultCases": {
+          "sourceBase": "0ed464d8aa0a8de270a82e658032191c5a68c898",
+          "arguments": [
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(ordinary_defer::line_result_)",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-07T15:56:50.0647183Z",
+          "endedAt": "2026-11-07T15:57:04.7747184Z"
+        }
+      }
+    },
+    "corrections": [
+      "Replace the current direct-out remaining-work clause because the original failing Actor input now completes in Native and saved AWBC. Keep the original RuntimePlanLower rejection and all Source SHAs in the earlier immutable evidence.",
+      "The earlier 10-case 7 PASS / 3 FAIL record remains a run of its original Source; this 99-case run and later 2-case run do not rewrite or add to its counts.",
+      "Previously accepted Generic Match, Line/init and Native bounded features remain accepted. The two new unresolved capture conditions retain their concrete reproductions."
+    ],
+    "remainingFailures": [
+      "ordinary_defer::native_ordinary_flow_defer_reexports_an_actor_through_its_nested_line: unknown runtime local declaration 4",
+      "ordinary_defer::saved_awbc_ordinary_flow_defer_keeps_returned_line_actor_until_its_cleanup: invalid ordinary deferred scope transition at tick 15"
+    ],
+    "reverseGraph": {
+      "metadata": "function-scope-20261107.metadata-all.json",
+      "cargoChanged": 0,
+      "count": 16,
+      "packages": [
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify-lsp"
+      ]
+    },
+    "ownershipReview": {
+      "base": "0ed464d8aa0a8de270a82e658032191c5a68c898",
+      "rows": [
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "owner": "arcweft-runtime-plan",
+          "classification": "production",
+          "bytes": 454492,
+          "physicalLines": 10629,
+          "basePhysicalLines": 10625,
+          "growth": 4,
+          "embeddedTestLines": 668,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing exhaustive value-continuation algebra owns result commitment and source-order evaluation. The four added lines introduce no public API, dependency edge or new wire operation."
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "owner": "arcweft-runtime-plan",
+          "classification": "production",
+          "bytes": 57120,
+          "physicalLines": 1440,
+          "basePhysicalLines": 1422,
+          "growth": 18,
+          "embeddedTestLines": 0,
+          "disposition": "retain-cohesive-owner",
+          "rationale": "The existing Line operation draft owner creates command-backed results; its admitted expression local bridges to the existing result commit. No second site/capture authority."
+        }
+      ],
+      "structureGateReused": "ordinary-defer-line-captures-20261108.native-quality.structure.receipt.json",
+      "reuseReason": "Private continuation and existing Line producer only; crate ownership, dependency direction, state ownership and public/wire grammar are unchanged. Size owners are measured and reviewed here."
+    },
+    "limits": [
+      "The RuntimePlan reverse closure is 16 packages, contained in the pending Core53 final convergence matrix. No fresh 16-package or Core53 all-consumer run is claimed.",
+      "Core 2323 tests and 80 doctests at ddd7307237fb1697e15cc5cadf6efe00426ea07c retain unchanged relevant Core inputs; these are reused, not new runs.",
+      "The structural gate is reused for unchanged crate/state/public/wire boundaries; exact touched-owner measurements and cohesion reasons are retained.",
+      "Broader nested Line capability composition, Native public save and final Native/Web visual acceptance are not established by these cases."
+    ],
+    "raw": {
+      "path": "task-line-out-producer.raw.zip",
+      "sha256": "88ad1efc5c19c4cd1fff4c3a3856798c6651477f2450cba293fdb79b25594e95",
+      "entries": [
+        {
+          "entry": "line-out-producer-20261108.cargo-tree.log",
+          "bytes": 4174,
+          "sha256": "d415ed8032ecac9c3c656899633e29a0e3169515316ffb1e0eafe385acbccdfd"
+        },
+        {
+          "entry": "line-out-producer-20261108.compiler.log",
+          "bytes": 104087,
+          "sha256": "937430d22867cb254f7466c2d95619aadcd7a732efeebceb14b54d1446d40c17"
+        },
+        {
+          "entry": "line-out-producer-20261108.compiler.receipt.json",
+          "bytes": 380,
+          "sha256": "55acd7f619f850359fc84e9d6e467f726fd5a144caab91a7288b42443e23505a"
+        },
+        {
+          "entry": "line-out-producer-20261108.fmt.receipt.json",
+          "bytes": 1095,
+          "sha256": "58e1b1aaf7182fd31b610e93437186af4af6f0d9cbfd2b4a85502441a1cb6c78"
+        },
+        {
+          "entry": "line-out-producer-20261108.owner.catalog.log",
+          "bytes": 113273,
+          "sha256": "0bd7bf9ba5f2f8d61be815b1ac35d49e904306dcffed974638bd3cf99f07a795"
+        },
+        {
+          "entry": "line-out-producer-20261108.owner.inventory.json",
+          "bytes": 27801,
+          "sha256": "1bcfa0f64a94035fcd004ee87b3c70d3a97fc0b56277b55f68c0ea02869ba92d"
+        },
+        {
+          "entry": "line-out-producer-20261108.owner.receipt.json",
+          "bytes": 313,
+          "sha256": "a827e8d53619b845aebfb42673ccde61dcd979df42f1db0863793c7b0a3412f7"
+        },
+        {
+          "entry": "line-out-producer-20261108.owner.runtime.log",
+          "bytes": 107650,
+          "sha256": "c8b84cac1ad0b36e87ef68ef075e3f5174fb4c82c863c17d6f5a89d9e4723210"
+        },
+        {
+          "entry": "line-out-producer-20261108.ownership-review.json",
+          "bytes": 1505,
+          "sha256": "51f457843bca7e1cde13f6cf55cf27b4a2fa33fcc5c03bfa7a5a37ab54009240"
+        },
+        {
+          "entry": "line-out-producer-20261108.quality.clippy.log",
+          "bytes": 7149689,
+          "sha256": "53c929a0c312330be05d9e39e94dcc229625a11a7b78d30bc0aa1588122f6022"
+        },
+        {
+          "entry": "line-out-producer-20261108.quality.clippy.receipt.json",
+          "bytes": 336,
+          "sha256": "16b70ba8101422f17fffb339ebb7c13eb22b6363f46cbff27f3a24b4ea1a292b"
+        },
+        {
+          "entry": "line-out-producer-20261108.quality.source.json",
+          "bytes": 415,
+          "sha256": "995b9dc25007cb15be2d25f771b62598d8a52cc0fcc03b10bc4adf0edb81aee0"
+        },
+        {
+          "entry": "line-out-producer-20261108.result-cases.log",
+          "bytes": 88401,
+          "sha256": "f64f5a8aebb3406a051cdeaceab2f960d6a9ef7385494bbe190d9ecc2d1dc89a"
+        },
+        {
+          "entry": "line-out-producer-20261108.result-cases.receipt.json",
+          "bytes": 432,
+          "sha256": "789cddf20d89d30e0d62ba3d877d5e4b6079d6bf4dc0d4d9c482e0cc300a9d8b"
+        },
+        {
+          "entry": "line-out-producer-20261108.reverse-graph.json",
+          "bytes": 552,
+          "sha256": "68217fd8e724b815f0efd5382b118b870b4c50df88c69b1b084d6cec229c7e4c"
+        },
+        {
+          "entry": "line-out-producer-20261108.source.message.txt",
+          "bytes": 674,
+          "sha256": "24f230db9bf93180b08333558de7363550208e1dc10873624a9283078caf8136"
+        },
+        {
+          "entry": "line-out-producer-20261108.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-out-producer-20261108.source.owned.txt",
+          "bytes": 226,
+          "sha256": "59585a67cb6e5695b4783c56fe993444d9d92917f445fba030ef96ae60e5b76c"
+        },
+        {
+          "entry": "line-out-producer-20261108.source.pathspec",
+          "bytes": 222,
+          "sha256": "26ab857b1bc3c9f53a6006508d7316cba21225fc58ecffe4cadc150fbff0205a"
+        },
+        {
+          "entry": "line-out-producer-20261108.source.prepared.json",
+          "bytes": 1735,
+          "sha256": "335c35e840446a2fddd599b189ed7846928dec5fc75a4859c4aecf5283ccb528"
+        },
+        {
+          "entry": "line-out-producer-20261108.source.reviewed.patch",
+          "bytes": 6235,
+          "sha256": "6a25569bc15db7a327f5f6cc1f5ed458c529182123c3ca886f6abcdd39c15ebe"
+        },
+        {
+          "entry": "line-out-producer-20261108.source.verified.json",
+          "bytes": 1137,
+          "sha256": "d352e8ef9f2136fd51475335e9b932525a35bb61aa30a717607153b697a83eb4"
+        },
+        {
+          "entry": "line-out-producer-20261108.test-quality.log",
+          "bytes": 6801508,
+          "sha256": "b008256ee228add03dee8e6540de85cff2ccb11c2cefe80b4141fced77d3d335"
+        },
+        {
+          "entry": "line-out-producer-20261108.test-quality.receipt.json",
+          "bytes": 272,
+          "sha256": "be221bd373f1c8a4894a3d7cc9d25f491d0dc4c3158cdafba68f299c766f2594"
+        },
+        {
+          "entry": "record-line-out-producer-20261108.ps1",
+          "bytes": 10055,
+          "sha256": "41dfeac23415e8a29f14e8e25f01b84b2bbb7b990d72d2163de288b780de1d70"
+        }
+      ]
+    }
   }
 }
