@@ -15447,3 +15447,13 @@ workspace一体の全feature catalogは2回ともOS1455／メモリ確保不足�
 構造監査の実byte／物理LOC／embedded test LOC／増分とfan-in/outを原本へ保持する。Coreの大きなengine／dialogueとAWBC product／line／snapshotは、実行・所有取引または保持graph検査の既存境界を担当する。共通handle／activationは唯一のresource台帳・revisionを、deferは唯一の捕捉packetを、slot／binaryは閉じたidentityとcodecを所有する。子準備のtoken集合を元pattern由来の受取先proofへ置換し、live値のcopy、永続side table、Source再構築、fallbackやI/O依存を足さない。Compiler ordinary_deferは同じ実Source・host・cold restore fixtureを用いるintegration ownerであり、LOCだけを理由とするAPI拡大や分割は行わない。
 
 途中のE0423／E0282と、古い検証wrapperが削除済みviewport.rsを参照したCargo開始前の拒否も原本へ保持した。raw wrapperのhistorical held=14 labelを現状WIP数に使わず、既存12 tracked／6 actual untrackedを別照合する。現状一覧の初期入力行と古いgate説明を今回の具体的な通過で置換し、重複した旧拒否の説明を履歴へ移した。[全入力・失敗・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは124 entries、SHA-256 80e8477501c64a03dce3e57c9147564b68095dd04ea508499cac3c6b6467766d。
+
+## 2026-11-08 — root defer修復後のCore53／CLI統合終端
+
+検証Source **245fe74354733f1ee57a25ac43f60b2fbaca5947**、production **5ba67c20a9aacafe3d1dd25939be42c92cddf52a**。非CLIの同一workspace全feature構成を、Core2327、RuntimePlan／Sema／Compiler1714、残る3283の相補3 runに分け、**7324 PASS／18 SKIP**。CLI既定featureは全check471件の467 PASS／4 FAIL／23 SKIPと相補240 PASSで、**711 run／707 PASS／4 FAIL／23 SKIP**。計 **8035 run／8031 PASS／4 FAIL／41 SKIP**。二つのfeature点と五つのコマンドを単一runにしない。8035件の選択重複0、5本の実binary path／SHA256を相補実行前後で照合、3416入力drift0。Core逆依存53 packageの実テストは50、compile-onlyはarcweft／arcweft-bundle-assets／arcweft-render-webの3。新root defer回帰5件を一度ずつ含む。
+
+純粋なCore単体と独立する全CLI check、続いて純粋なRuntimePlan／Sema／Compiler単体とCLI checkを並行した。規約の資源配分例外に従い各Cargo buildは4 jobsとし、実process引数を保存した。残るcompile fixture／host／renderの統合runとCLI相補は直列・Cargo既定jobs。元のthread数、profile、assertion、実行量、budgetとignored条件は維持した。Core53のcold build、slowなfanout・IME generator・公開API fixtureの実所要時間も原本に保持する。
+
+4失敗のIDと診断は前Sourceと一致した。ScrollはExprId slot15のshared callable解決、fixture011は必須voiceなし、promotion2件は旧receiverなし入力がslot8の型判定で停止する。以前の8030件はそのSourceの実測として保持し、追加した5 testによる増分だけを今回の選択へ対応付けた。先行Core2327／Compiler152選択runは二重計上しない。最初の非CLI相補wrapperは、成功したcatalogの後に古い監査ファイル名を参照し、runtime前で停止した。元一覧と拒否を残し、別prefixのglobal-rest-r2で正しいgraphを照合して全件実行した。開始したとのcommentaryは、この拒否を観測した時点で訂正した。
+
+現状一覧の統合終端未確認という記載を、今回の実終端を根拠に置換した。受入済みGeneric Match／Native／Line-init／初期入力／root deferを全体goalの未達で戻さず、他platform／Tier2／Native公開save／全画像parityの最終受入は推定しない。[全選択・実binary・公開SHA・失敗・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは55 entries、SHA-256 d7c1e173c566f9d6a64fb423b58db745350b3065435c0acfd017e3c0375012e8。

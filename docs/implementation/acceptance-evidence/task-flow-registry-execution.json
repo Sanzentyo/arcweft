@@ -43190,5 +43190,973 @@
         }
       ]
     }
+  },
+  "initialInputLineRootIntegratedConsumers": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "245fe74354733f1ee57a25ac43f60b2fbaca5947",
+    "productionSource": "5ba67c20a9aacafe3d1dd25939be42c92cddf52a",
+    "boundedEvidence": "245fe74354733f1ee57a25ac43f60b2fbaca5947",
+    "primaryMatrix": {
+      "source": "245fe74354733f1ee57a25ac43f60b2fbaca5947",
+      "sourceInputs": 3416,
+      "sourceDrift": 0,
+      "graphPackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "matchedPackages": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "compileOnlyPackages": [
+        "arcweft",
+        "arcweft-bundle-assets",
+        "arcweft-render-web"
+      ],
+      "runs": [
+        {
+          "slice": "global-core-parallel",
+          "receipt": {
+            "arguments": [
+              "nextest",
+              "run",
+              "--locked",
+              "--workspace",
+              "--exclude",
+              "arcweft-cli",
+              "--all-features",
+              "--lib",
+              "--tests",
+              "--build-jobs",
+              "4",
+              "-E",
+              "package(=arcweft-core) & binary(=arcweft_core)",
+              "--no-tests",
+              "fail",
+              "--no-fail-fast"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 3416,
+            "sourceDrift": 0,
+            "parallelGroup": "line-root-defer-global-core-and-cli-check",
+            "startedAt": "2026-11-07T22:55:31.8620643Z",
+            "endedAt": "2026-11-07T22:56:57.3010267Z"
+          },
+          "selected": 2327,
+          "summary": {
+            "run": 2327,
+            "passed": 2327,
+            "failed": 0,
+            "skipped": 0,
+            "terminal": "Summary [  58.960s] 2327 tests run: 2327 passed, 0 skipped"
+          },
+          "failures": []
+        },
+        {
+          "slice": "global-pure-owners-parallel",
+          "receipt": {
+            "arguments": [
+              "nextest",
+              "run",
+              "--locked",
+              "--workspace",
+              "--exclude",
+              "arcweft-cli",
+              "--all-features",
+              "--lib",
+              "--tests",
+              "--build-jobs",
+              "4",
+              "-E",
+              "(package(=arcweft-runtime-plan) & binary(=arcweft_runtime_plan)) | (package(=arcweft-lang-sema) & binary(=arcweft_lang_sema)) | (package(=arcweft-compiler) & binary(=arcweft_compiler))",
+              "--no-tests",
+              "fail",
+              "--no-fail-fast"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 3416,
+            "sourceDrift": 0,
+            "parallelGroup": "line-root-defer-global-core-and-cli-check",
+            "startedAt": "2026-11-07T22:57:36.9911488Z",
+            "endedAt": "2026-11-07T23:01:02.8066151Z"
+          },
+          "selected": 1714,
+          "summary": {
+            "run": 1714,
+            "passed": 1714,
+            "failed": 0,
+            "skipped": 1,
+            "terminal": "Summary [ 193.814s] 1714 tests run: 1714 passed (1 slow), 1 skipped"
+          },
+          "failures": []
+        },
+        {
+          "slice": "global-rest-r2",
+          "receipt": {
+            "arguments": [
+              "nextest",
+              "run",
+              "--locked",
+              "--workspace",
+              "--exclude",
+              "arcweft-cli",
+              "--all-features",
+              "--lib",
+              "--tests",
+              "-E",
+              "rdeps(=arcweft-core) & !((package(=arcweft-core) & binary(=arcweft_core)) | (package(=arcweft-runtime-plan) & binary(=arcweft_runtime_plan)) | (package(=arcweft-lang-sema) & binary(=arcweft_lang_sema)) | (package(=arcweft-compiler) & binary(=arcweft_compiler)))",
+              "--no-tests",
+              "fail",
+              "--no-fail-fast"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 3416,
+            "sourceDrift": 0,
+            "coreReuse": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\line-root-defer-20261108.global-core-parallel.run.receipt.json",
+            "ownerReuse": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\line-root-defer-20261108.global-pure-owners-parallel.run.receipt.json",
+            "startedAt": "2026-11-07T23:11:21.4304385Z",
+            "endedAt": "2026-11-07T23:23:57.5409769Z"
+          },
+          "selected": 3283,
+          "summary": {
+            "run": 3283,
+            "passed": 3283,
+            "failed": 0,
+            "skipped": 17,
+            "terminal": "Summary [ 749.306s] 3283 tests run: 3283 passed (9 slow), 17 skipped"
+          },
+          "failures": []
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "receipt": {
+            "arguments": [
+              "nextest",
+              "run",
+              "--locked",
+              "-p",
+              "arcweft-cli",
+              "--test",
+              "check",
+              "--build-jobs",
+              "4",
+              "--no-tests",
+              "fail",
+              "--no-fail-fast"
+            ],
+            "exitCode": 100,
+            "sourceInputs": 3416,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-07T22:39:03.0129855Z",
+            "endedAt": "2026-11-07T23:04:29.3794972Z"
+          },
+          "selected": 471,
+          "summary": {
+            "run": 471,
+            "passed": 467,
+            "failed": 4,
+            "skipped": 23,
+            "terminal": "Summary [ 559.724s] 471 tests run: 467 passed (42 slow), 4 failed, 23 skipped"
+          },
+          "failures": [
+            {
+              "binary": "arcweft-cli::check",
+              "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+            },
+            {
+              "binary": "arcweft-cli::check",
+              "test": "spec_valid_run_edge_fixture_now_executes"
+            },
+            {
+              "binary": "arcweft-cli::check",
+              "test": "verify_json_records_required_solver_checks"
+            },
+            {
+              "binary": "arcweft-cli::check",
+              "test": "verify_json_reports_missing_promotion_proof"
+            }
+          ]
+        },
+        {
+          "slice": "cli-default-rest",
+          "receipt": {
+            "arguments": [
+              "nextest",
+              "run",
+              "--locked",
+              "-p",
+              "arcweft-cli",
+              "--lib",
+              "--tests",
+              "-E",
+              "!binary(=check)",
+              "--no-tests",
+              "fail",
+              "--no-fail-fast"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 3416,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-07T23:25:09.3667579Z",
+            "endedAt": "2026-11-07T23:25:46.4988374Z"
+          },
+          "selected": 240,
+          "summary": {
+            "run": 240,
+            "passed": 240,
+            "failed": 0,
+            "skipped": 0,
+            "terminal": "Summary [  34.394s] 240 tests run: 240 passed, 0 skipped"
+          },
+          "failures": []
+        }
+      ],
+      "requiredRootCases": [
+        "native_initial_owned_line_input_moves_into_the_line_root_defer",
+        "saved_awbc_initial_owned_line_input_moves_into_the_line_root_defer",
+        "native_initial_owned_line_root_defer_preserves_outcome_filters",
+        "saved_awbc_initial_owned_line_root_defer_preserves_outcome_filters",
+        "saved_awbc_initial_line_root_defer_rejects_forged_capture_custody"
+      ],
+      "selectedCases": 8035,
+      "duplicates": 0,
+      "ignoredCases": [
+        {
+          "slice": "global-pure-owners-parallel",
+          "binary": "arcweft-runtime-plan",
+          "test": "awbc_lower::tests::program_fanout::regenerate_presentation_cancellation_fixtures",
+          "key": "arcweft-runtime-plan|awbc_lower::tests::program_fanout::regenerate_presentation_cancellation_fixtures"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu",
+          "test": "offscreen::crop_tests::cropped_prepared_coverage_matches_original_full_frame_alpha",
+          "key": "arcweft-render-wgpu|offscreen::crop_tests::cropped_prepared_coverage_matches_original_full_frame_alpha"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::prepared_text",
+          "test": "missing_view_text_id_is_a_typed_compositor_failure",
+          "key": "arcweft-render-wgpu::prepared_text|missing_view_text_id_is_a_typed_compositor_failure"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::prepared_text",
+          "test": "multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit",
+          "key": "arcweft-render-wgpu::prepared_text|multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::prepared_text",
+          "test": "prepared_batch_interaction_paints_selection_before_glyphs_and_ime_after",
+          "key": "arcweft-render-wgpu::prepared_text|prepared_batch_interaction_paints_selection_before_glyphs_and_ime_after"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::prepared_text",
+          "test": "prepared_batch_renders_without_renderer_side_shaping",
+          "key": "arcweft-render-wgpu::prepared_text|prepared_batch_renders_without_renderer_side_shaping"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::prepared_text",
+          "test": "view_text_interaction_paints_selection_before_glyphs_and_ime_after",
+          "key": "arcweft-render-wgpu::prepared_text|view_text_interaction_paints_selection_before_glyphs_and_ime_after"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::prepared_text",
+          "test": "view_text_obeys_transform_clip_opacity_inside_offscreen_group",
+          "key": "arcweft-render-wgpu::prepared_text|view_text_obeys_transform_clip_opacity_inside_offscreen_group"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::prepared_text",
+          "test": "view_text_renders_at_primitive_position_without_late_duplicate_submission",
+          "key": "arcweft-render-wgpu::prepared_text|view_text_renders_at_primitive_position_without_late_duplicate_submission"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+          "test": "prepared_control_backdrop_blur_executes_shared_renderer_path",
+          "key": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke|prepared_control_backdrop_blur_executes_shared_renderer_path"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+          "test": "prepared_control_foreground_filter_blur_executes_shared_renderer_path",
+          "key": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke|prepared_control_foreground_filter_blur_executes_shared_renderer_path"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke",
+          "test": "rounded_runtime_control_stroke_draws_straight_edges",
+          "key": "arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke|rounded_runtime_control_stroke_draws_straight_edges"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::view_box_shadow_exact_png_golden",
+          "test": "seq06_13e1_inset_shadow_native_exact_png_packet_is_complete",
+          "key": "arcweft-render-wgpu::view_box_shadow_exact_png_golden|seq06_13e1_inset_shadow_native_exact_png_packet_is_complete"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::view_box_shadow_exact_png_golden",
+          "test": "seq06_13e1_inset_shadow_web_exact_png_packet_is_complete",
+          "key": "arcweft-render-wgpu::view_box_shadow_exact_png_golden|seq06_13e1_inset_shadow_web_exact_png_packet_is_complete"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::view_box_shadow_gpu_smoke",
+          "test": "per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path",
+          "key": "arcweft-render-wgpu::view_box_shadow_gpu_smoke|per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke",
+          "test": "gpu_smoke_blur_shadow_mask_clip_backdrop_and_blend_fixture",
+          "key": "arcweft-render-wgpu::view_compositor_gpu_smoke|gpu_smoke_blur_shadow_mask_clip_backdrop_and_blend_fixture"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c",
+          "test": "seq06_13c_path_clip_gradient_mask_visual_smoke_fixture",
+          "key": "arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c|seq06_13c_path_clip_gradient_mask_visual_smoke_fixture"
+        },
+        {
+          "slice": "global-rest-r2",
+          "binary": "arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps",
+          "test": "gpu_smoke_clip_mask_and_motion_timestamps",
+          "key": "arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps|gpu_smoke_clip_mask_and_motion_timestamps"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_mcp_stdio_reads_agent_trace_resource",
+          "key": "arcweft-cli::check|agent_mcp_stdio_reads_agent_trace_resource"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_mcp_stdio_debug_script_runs_reads_persisted_runs",
+          "key": "arcweft-cli::check|agent_observe_native::agent_mcp_stdio_debug_script_runs_reads_persisted_runs"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_mcp_stdio_debug_search_filters_chunks_by_privacy",
+          "key": "arcweft-cli::check|agent_observe_native::agent_mcp_stdio_debug_search_filters_chunks_by_privacy"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_mcp_stdio_lists_resource_templates_before_observe",
+          "key": "arcweft-cli::check|agent_observe_native::agent_mcp_stdio_lists_resource_templates_before_observe"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_captures_combined_typewriter_animation_sample",
+          "key": "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_captures_combined_typewriter_animation_sample"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_loose",
+          "key": "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_loose"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_normal",
+          "key": "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_normal"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_lr_ruby_text_combine",
+          "key": "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_lr_ruby_text_combine"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_tutr",
+          "key": "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_tutr"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_writes_layer_png_and_object_raw_images",
+          "key": "arcweft-cli::check|agent_observe_native::agent_observe_writes_layer_png_and_object_raw_images"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_connects_source_from_input_session",
+          "key": "arcweft-cli::check|agent_repl_connects_source_from_input_session"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_executes_and_saves_physical_pointer_cell",
+          "key": "arcweft-cli::check|agent_repl_executes_and_saves_physical_pointer_cell"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_inspects_fragments_and_captures_from_input_session",
+          "key": "arcweft-cli::check|agent_repl_inspects_fragments_and_captures_from_input_session"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_marks_failed_cells_partially_effectful_from_host_events",
+          "key": "arcweft-cli::check|agent_repl_marks_failed_cells_partially_effectful_from_host_events"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_observes_and_lists_actions_from_input_session",
+          "key": "arcweft-cli::check|agent_repl_observes_and_lists_actions_from_input_session"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_reads_trace_in_read_only_input_session",
+          "key": "arcweft-cli::check|agent_repl_reads_trace_in_read_only_input_session"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_reuses_serialized_live_bindings_between_cells",
+          "key": "arcweft-cli::check|agent_repl_reuses_serialized_live_bindings_between_cells"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_repl_saves_loads_and_drops_bindings_from_input_session",
+          "key": "arcweft-cli::check|agent_repl_saves_loads_and_drops_bindings_from_input_session"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_script_run_native_source_captures_native_resource",
+          "key": "arcweft-cli::check|agent_script_run_native_source_captures_native_resource"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_script_run_native_source_dispatches_advance_text_in_game_mode",
+          "key": "arcweft-cli::check|agent_script_run_native_source_dispatches_advance_text_in_game_mode"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_script_run_native_source_dispatches_semantic_choice_action",
+          "key": "arcweft-cli::check|agent_script_run_native_source_dispatches_semantic_choice_action"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_script_run_native_source_dispatches_semantic_invoke_action",
+          "key": "arcweft-cli::check|agent_script_run_native_source_dispatches_semantic_invoke_action"
+        },
+        {
+          "slice": "cli-full-check-parallel",
+          "binary": "arcweft-cli::check",
+          "test": "agent_script_run_native_source_resolves_project_entities",
+          "key": "arcweft-cli::check|agent_script_run_native_source_resolves_project_entities"
+        }
+      ],
+      "ignoredDuplicates": 0,
+      "run": 8035,
+      "passed": 8031,
+      "failed": 4,
+      "skipped": 41,
+      "reusedBinaryChecks": [
+        {
+          "binary": "arcweft-core",
+          "selectedBy": "global-core-parallel",
+          "excludedFrom": "global-rest-r2",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-d96d572b9cc8cc85.exe",
+          "sha256": "30cdd10bc48e3cc2f0da8d8826262afca950821dd3adb8975718a399bb2f9a39"
+        },
+        {
+          "binary": "arcweft-runtime-plan",
+          "selectedBy": "global-pure-owners-parallel",
+          "excludedFrom": "global-rest-r2",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-7247ed5b68d6b0ee.exe",
+          "sha256": "e3fe5a5798a7dae1a380f2f00c3f21f5c35b3f25083e7e235365bc21f664ea60"
+        },
+        {
+          "binary": "arcweft-lang-sema",
+          "selectedBy": "global-pure-owners-parallel",
+          "excludedFrom": "global-rest-r2",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-bd5765fb07c9b555.exe",
+          "sha256": "fc54e91aa2a34ee8cc4933a6c9fc0930f360761367bfd24e294a6ad0929712b0"
+        },
+        {
+          "binary": "arcweft-compiler",
+          "selectedBy": "global-pure-owners-parallel",
+          "excludedFrom": "global-rest-r2",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-7687d12b8e5e0217.exe",
+          "sha256": "4de1d65eeab30e5e93170eebb2d94f968393590099760c20179f5f0d58bf6d51"
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "selectedBy": "cli-full-check-parallel",
+          "excludedFrom": "cli-default-rest",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\check-8943352bdf2682d0.exe",
+          "sha256": "341e5dffa7baa0c0cc55b69a0da03b13dc94dca2344b04a2d3d334734337d451"
+        }
+      ],
+      "pinsBeforeComplements": {
+        "source": "245fe74354733f1ee57a25ac43f60b2fbaca5947",
+        "at": "2026-11-07T23:02:42.6156429Z",
+        "purpose": "After the completed pure unit commands and before any complementary Cargo command. The full CLI check is still running its selected binary. Capture actual SHA256 identities now and compare them after both complement runs; never copy build artifacts.",
+        "binaries": [
+          {
+            "binary": "arcweft-core",
+            "slice": "global-core-parallel",
+            "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-d96d572b9cc8cc85.exe",
+            "sha256": "30cdd10bc48e3cc2f0da8d8826262afca950821dd3adb8975718a399bb2f9a39"
+          },
+          {
+            "binary": "arcweft-runtime-plan",
+            "slice": "global-pure-owners-parallel",
+            "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-7247ed5b68d6b0ee.exe",
+            "sha256": "e3fe5a5798a7dae1a380f2f00c3f21f5c35b3f25083e7e235365bc21f664ea60"
+          },
+          {
+            "binary": "arcweft-lang-sema",
+            "slice": "global-pure-owners-parallel",
+            "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-bd5765fb07c9b555.exe",
+            "sha256": "fc54e91aa2a34ee8cc4933a6c9fc0930f360761367bfd24e294a6ad0929712b0"
+          },
+          {
+            "binary": "arcweft-compiler",
+            "slice": "global-pure-owners-parallel",
+            "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_compiler-7687d12b8e5e0217.exe",
+            "sha256": "4de1d65eeab30e5e93170eebb2d94f968393590099760c20179f5f0d58bf6d51"
+          },
+          {
+            "binary": "arcweft-cli::check",
+            "slice": "cli-full-check-parallel",
+            "path": "D:\\git\\arcweft\\target\\debug\\deps\\check-8943352bdf2682d0.exe",
+            "sha256": "341e5dffa7baa0c0cc55b69a0da03b13dc94dca2344b04a2d3d334734337d451"
+          }
+        ]
+      },
+      "baselineFailureSetPreserved": true,
+      "scope": "Non-CLI full-workspace all-feature composition, partitioned into four pure unit binaries and their complement; CLI default-feature all targets, partitioned into check and its complement. Separate invocations/feature points, not one global run. Supplemental package slices are not added to this primary total.",
+      "at": "2026-11-07T23:26:46.4682134Z"
+    },
+    "totals": {
+      "nonCli": {
+        "run": 7324,
+        "passed": 7324,
+        "failed": 0,
+        "skipped": 18
+      },
+      "cliDefault": {
+        "run": 711,
+        "passed": 707,
+        "failed": 4,
+        "skipped": 23
+      },
+      "combined": {
+        "run": 8035,
+        "passed": 8031,
+        "failed": 4,
+        "skipped": 41
+      }
+    },
+    "composition": "The full non-CLI workspace all-feature lib/tests composition is partitioned into Core unit, RuntimePlan/Sema/Compiler units, and their exact complement. CLI default lib/bin/integration tests are partitioned into check and its complement. These are five invocations and two feature points, never one run. Actual 8035 case keys have zero overlap. All five excluded binary paths and SHA256 identities match pins recorded after the completed pure-unit commands and before complementary Cargo commands; CLI check was still running at pin time.",
+    "parallelCoordination": "Pure Sans-I/O units ran alongside independent full CLI check. Each intentionally parallel test command used four Cargo build jobs under crates/AGENTS.md, with actual process arguments and overlap receipts retained. All other integration/compile-fixture/host/render runtime groups were serial, using default Cargo jobs. Test threads, profiles, execution budgets, assertion quantities and ignored/default-filter policy were unchanged.",
+    "acceptance": "All five new root-defer regressions are included exactly once in the primary matrix. This supports the bounded initial-input/root-defer acceptance already published, while preserving Generic Match, Native and Line/init acceptance. It is not final acceptance of every producer/platform, Native public save, Tier2, or all Native/Web display parity.",
+    "baseline": "The earlier f267dc30d20a25092c64d08bb42b596b14ad3400 matrix remains 8030 run / 8026 PASS / 4 FAIL / 41 SKIP. The new five root-defer test cases explain the new total, and all four failure IDs exactly match that retained baseline. Earlier standalone 2327 Core and 152 Compiler owner runs are supplemental and are not added to these primary totals.",
+    "failures": "Fresh diagnostics are unchanged: authored Scroll shared callable semantic resolution at ExprId slot15; fixture011 active dialogue without required voice; and two obsolete receiverless promote inputs rejected at ExprId slot8 before verifier proof checks. Promotion receiver admission is still a separate concrete implementation condition, not declared fixed by changing old test text.",
+    "preparationCorrection": "The first complementary non-CLI wrapper completed its catalog but referenced the obsolete ownership-review-r2.json suffix before starting any tests. Its original catalog and refusal are retained. The corrected global-rest-r2 wrapper uses the current typed dependency graph. This is not a product-test failure or a passed runtime. The first final-audit script also stopped before its terminal report because a foreach variable shadowed the evidence stem; the corrected audit and original script are retained, without rerunning or modifying product tests. A commentary claim of runtime start was corrected immediately after observing this refusal.",
+    "raw": {
+      "path": "task-initial-line-root-integrated.raw.zip",
+      "sha256": "d7c1e173c566f9d6a64fb423b58db745350b3065435c0acfd017e3c0375012e8",
+      "entries": [
+        {
+          "entry": "audit-line-root-integrated-consumers-20261108.ps1",
+          "bytes": 7953,
+          "sha256": "bd95a35e77aa9b46d78f18c3c0f3b6f5034f57bf4a96e520051df2e5573440b3"
+        },
+        {
+          "entry": "audit-line-root-integrated-consumers-r1-20261108.ps1",
+          "bytes": 7929,
+          "sha256": "a240ee890e1028888d31fe5a2437b17c79437e57f9e5d30e31df48f599f569b0"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-default-rest.run.log",
+          "bytes": 124219,
+          "sha256": "7c039a3b51fd943d8e5ce1af60ca0fee75f6af0c667aa8228c3b0ca0691e7cbf"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-default-rest.run.receipt.json",
+          "bytes": 382,
+          "sha256": "9bb98e87e9639ba1eb1bdc4060882e7d88bffa30e25168e67bb4829f0662272c"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-default-rest.selection-review.json",
+          "bytes": 1370,
+          "sha256": "3d95d3b7ab9b8f920941577bc9d312ffd17040351bc5ad7b94cd50e9b16465a1"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-default-rest.selection.json",
+          "bytes": 44011,
+          "sha256": "41dbcf21db81d0a4d5927c6a913f58935acf65ad02307d8d2293e5bc3d543163"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-default-rest.selection.log",
+          "bytes": 90523,
+          "sha256": "2f56d1b4b51aca13a412cc1a3f2e388cc0cdd0f826b33ee098acf0efb3ffe7c5"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-default-rest.selection.receipt.json",
+          "bytes": 341,
+          "sha256": "165b7e76f0c588d0c52e3829dc941e2aec7a03ba4b4eda42350020b4ab54b88d"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-default-rest.source.json",
+          "bytes": 606229,
+          "sha256": "81301d3c657186774f71600db6746e68bed4f0d9f1977fdf9d7f616ad0b93a3c"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-full-check-parallel.run.log",
+          "bytes": 182915,
+          "sha256": "81249b373efb42509ea82d6c5c50c4256c4a1daf670b76f24efe400220ebfc04"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-full-check-parallel.run.receipt.json",
+          "bytes": 379,
+          "sha256": "5a1b3e11d83a849de5304c57f47d4a1cf9327e8899fac2f1acee803a837750f4"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-full-check-parallel.selection-review.json",
+          "bytes": 43049,
+          "sha256": "13e83d032af62869f836053b908aacccfc69f05a01af9643757214e923d3a6bd"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-full-check-parallel.selection.json",
+          "bytes": 77049,
+          "sha256": "93c71e3a70159423e940cd2c8211a6aa46041dc369e26de87234e71fad999b05"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-full-check-parallel.selection.log",
+          "bytes": 94499,
+          "sha256": "52a70ca6d170d68711fa012d862510f423d9724c78da798fa4eb14ab4cb07d60"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-full-check-parallel.selection.receipt.json",
+          "bytes": 336,
+          "sha256": "2716c3ad74b418aad680b30cc150bef5e71531ccd13cd181977faadd6a39e08c"
+        },
+        {
+          "entry": "line-root-defer-20261108.cli-full-check-parallel.source.json",
+          "bytes": 606188,
+          "sha256": "e90713b696b254b9db1e3cf88f867a0c64b71de1d3271141f8fa7bff3ccb884f"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-core-parallel.run.log",
+          "bytes": 465597,
+          "sha256": "562fecbfc6ec0a192b8f35680ecf4cbd13b77f052876f64ad9b750ea14afd3b0"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-core-parallel.run.receipt.json",
+          "bytes": 559,
+          "sha256": "d900769307e5bbea11577603f950c5e2fb495fe4f93bf52e7a309bde56771bd3"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-core-parallel.selection-review.json",
+          "bytes": 111,
+          "sha256": "61033ded2867e57c50c50d5728b8caa73d77ab7ffb9f03226ab3b41383542391"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-core-parallel.selection.json",
+          "bytes": 545593,
+          "sha256": "359c315f331415c0189ed59dd764aa47e18d494e872ee52a3f9a7baa462c31fe"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-core-parallel.selection.log",
+          "bytes": 112362,
+          "sha256": "8a8136dcf1fdc40e93455755e85af28c320fb28e4c9cd27eb9e59ad8f7ed35af"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-core-parallel.selection.receipt.json",
+          "bytes": 453,
+          "sha256": "4402a00b4cc675d72bd330c47afdea2768780cc381cb151afde7221ed1e146b4"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-core-parallel.source.json",
+          "bytes": 606358,
+          "sha256": "e5fcdacb138c1a1e7741f6b08ae920d776f8726828e3676b853320fd9c5e9534"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-pure-owners-parallel.run.log",
+          "bytes": 374827,
+          "sha256": "5a40cd1b389cd224981cf6517f99ea0ccdc3ae064f9ead65327b6ff1c84dd0d8"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-pure-owners-parallel.run.receipt.json",
+          "bytes": 697,
+          "sha256": "00d1ede60443a85d7b2e8a6ec0f87052f14b5a8aff2a2fff680f1e8807decc3f"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-pure-owners-parallel.selection-review.json",
+          "bytes": 426,
+          "sha256": "e48cdee46fc81264230e11571224fbad84032819005ab202513e8a96e8be019e"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-pure-owners-parallel.selection.json",
+          "bytes": 434138,
+          "sha256": "aff08cc0ef228d711dcd506ca1726c30bf8e7e5ebc1ac94dcc607b527dfac8d6"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-pure-owners-parallel.selection.log",
+          "bytes": 107806,
+          "sha256": "166c8330629fbec1893b7a8adaed18dca9723831411cbb21bc60a322ac6a20b5"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-pure-owners-parallel.selection.receipt.json",
+          "bytes": 591,
+          "sha256": "bc6fe16342a7ac95c96722c19cc4d400e55f1967f265cfb0d060f319a6387538"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-pure-owners-parallel.source.json",
+          "bytes": 606428,
+          "sha256": "7f4e6005e5546992d38c6c1f9225835a50a5bab4963e8ebcbd9cc5d1b23ca4b7"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest-r2.run.log",
+          "bytes": 564504,
+          "sha256": "0270174cccf2a0a8a5848461a6a890ef9e04d959edced5725c38eb5a7ea60403"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest-r2.run.receipt.json",
+          "bytes": 1014,
+          "sha256": "1b5fb2d4c0ef25aa275080f52bd4e9cd0270859a9a4dfcbf70d94b0b5b36cc80"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest-r2.selection-review.json",
+          "bytes": 664721,
+          "sha256": "390249d96a9b330de74064e6d47e3cb0b03bf956b9264e65cf4995fb257d8cae"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest-r2.selection.json",
+          "bytes": 613703,
+          "sha256": "9a8fdc7fcf5a1c30de0ae987c55fc1c978c64b21c70ded743e28d01686ae2d1a"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest-r2.selection.log",
+          "bytes": 107806,
+          "sha256": "59e77672a73940a8374947b04f0e445d24bb84ab3f362ebd43d539f36fbfa09c"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest-r2.selection.receipt.json",
+          "bytes": 637,
+          "sha256": "8cd0edb4e7a573af02e216a68ac3c59a545d3f8a982e96319343ff14d3cfd5da"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest-r2.source.json",
+          "bytes": 606586,
+          "sha256": "7d9c631eccc926d655fde93473c4086ce0ba641385862992d471a74523dd8205"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest.preparation-refusal.json",
+          "bytes": 374,
+          "sha256": "1c7ec4b0171176d2b4dbe7fef5dedaab3ba28a9f3a4df1790a3450c37c6ecda2"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest.selection.json",
+          "bytes": 613703,
+          "sha256": "9a8fdc7fcf5a1c30de0ae987c55fc1c978c64b21c70ded743e28d01686ae2d1a"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest.selection.log",
+          "bytes": 107806,
+          "sha256": "db10a08f755aa17b3c6a13e13cffc8d529ea92da3f6b6701ba9ae89604e1c352"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest.selection.receipt.json",
+          "bytes": 637,
+          "sha256": "986603323701bc46692d5cedf0652d4bee8a56d288b23de7241de701875a82f0"
+        },
+        {
+          "entry": "line-root-defer-20261108.global-rest.source.json",
+          "bytes": 606586,
+          "sha256": "7d9c631eccc926d655fde93473c4086ce0ba641385862992d471a74523dd8205"
+        },
+        {
+          "entry": "line-root-defer-20261108.integrated-consumers.audit.json",
+          "bytes": 26029,
+          "sha256": "c265c6663f66eeb0e4c50acdb2fa7f30d85fa9c2d947d6a9d5cb82e882372325"
+        },
+        {
+          "entry": "line-root-defer-20261108.integrated-consumers.preparation-refusal.json",
+          "bytes": 356,
+          "sha256": "88aa06c93916e7369d68180833e602d0625cb6287cf2edeffde1b71d96373326"
+        },
+        {
+          "entry": "line-root-defer-20261108.parallel-intent-observed.json",
+          "bytes": 2360,
+          "sha256": "8e5fcde804467585d10cb879b4fe952b7e5a3831b2789cdfb4b643ba0d2c83a3"
+        },
+        {
+          "entry": "line-root-defer-20261108.parallel-intent.json",
+          "bytes": 901,
+          "sha256": "9503fc41840696538c8a5f35339ff8f5e652dac116088ad60804667c43d35027"
+        },
+        {
+          "entry": "line-root-defer-20261108.primary-before-complements.binaries.json",
+          "bytes": 1764,
+          "sha256": "268680500ad0948e97fdfc37904070113e0614faa7023cf4d7550640c18731b6"
+        },
+        {
+          "entry": "line-root-defer-20261108.validation-source.json",
+          "bytes": 605889,
+          "sha256": "65aea41e4a779ceab75994cbdcc20b7d6c61e2f13da5200c825c1ef9829d6841"
+        },
+        {
+          "entry": "record-line-root-integrated-consumers-20261108.ps1",
+          "bytes": 11712,
+          "sha256": "77e1443922015cbad42f843f86beb0699980a1ee5ec6f244792932449cb06728"
+        },
+        {
+          "entry": "run-line-root-cli-default-rest-20261108.ps1",
+          "bytes": 3014,
+          "sha256": "ccc5231eaa47d723e0b2f8f01ea6ef7f949dee7d04b9bba879c91d67aef3e10f"
+        },
+        {
+          "entry": "run-line-root-cli-full-check-parallel-20261108.ps1",
+          "bytes": 2951,
+          "sha256": "5fde961e85a92e3a561ed6ec6fd8e2a6779756681fb2806756282a06f27c725d"
+        },
+        {
+          "entry": "run-line-root-global-core-parallel-20261108.ps1",
+          "bytes": 3084,
+          "sha256": "21d2d676ae2be1fb791ffe7d0284a1d7031a20ded31c840fa8500fed6509b5b3"
+        },
+        {
+          "entry": "run-line-root-global-pure-owners-parallel-20261108.ps1",
+          "bytes": 3376,
+          "sha256": "3dac214688a1e7df3db76f484a6ec90b156a748e22222974de8cff968d10b10b"
+        },
+        {
+          "entry": "run-line-root-global-rest-20261108.ps1",
+          "bytes": 5389,
+          "sha256": "3f04ca68df0400e21bdf1646866c5c63a676d75490a54c14d7440e6fba9a9e4e"
+        },
+        {
+          "entry": "run-line-root-global-rest-r2-20261108.ps1",
+          "bytes": 5389,
+          "sha256": "0e3edf410a0ee7a840d5e05beb13b84e0e169f774f0b01dcdcc49d83716523b0"
+        }
+      ]
+    }
   }
 }
