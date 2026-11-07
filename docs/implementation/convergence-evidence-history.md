@@ -15209,3 +15209,11 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 正常例ではループから早期 return し、cleanup によるレジストリ変更の前に評価した値を返した。関数からの戻り値は親スコープを終了させず、親は合流後の処理を再開した。内側の cleanup が失敗する場合は return を破棄し、外側の失敗時 cleanup が走った。各ステップの内部復元と、保留中の値の型・終了先を改変した像の拒否を確認した。表示リースは戻り値が保持するものだけを外側のスコープへ移し、破棄時はそのリースを退役させることを所有境界で確認した。戻り値を保留する Native スロットの version 1 JSON／バイナリ表現も照合した。
 - 最初のテストビルドはフィクスチャの型 import が欠けて停止した。修正後は対象5件が通過し、2,296件をスキップした。cleanup の失敗と表示リースのテストを加えた最終の Core／RuntimePlan は2,437件通過、1件スキップ。構造監査のブロッキング違反は0件だった。[検証の原本と公開差分](acceptance-evidence/task-flow-registry-execution.json)。
 - Compiler の対象414件、Runtime Driver／Runtime Host／Save の260件が通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0だった。Cargo の全機能の依存グラフでは Core を含む53パッケージを特定した。この区切りの nextest は対象の6クレートで実行し、全53パッケージのテスト行列は未実行。固定した3,642入力の差分は0件。検証入力に既存の未コミット12パスを含め、公開した15ファイルの Git blob と検証差分の一致を確認した。[コマンド・実測・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Native goto across scoped defer
+
+- 公開ソース `e04ccec8579086903e6d38055900cdffde8ac063`、基点 `0113cedc887cdd0af5e6dba95a2af39da3b85bfa`。静的・動的 goto 命令と静的 goto 効果が、元の命令位置と受理した移譲先をスコープ終了状態に保持する。移譲先の引数契約と置換する実行キューを事前検査し、内側の関数と親 Flow の cleanup が終わってから goto を公開する。関数と formatter のフレームを終了する際は元の親キューを復元し、終了途中も実行コンテキストの対応を保持する。
+- 動的移譲先の決定後に cleanup が参照元のレジストリを変更しても、最初に選んだ Flow へ移譲した。各ステップで内部ロールバックから復元し、関数内と関数終了後の両方を確認した。移譲先は新しい Flow レジストリで始まる。改変した外側のスコープ index、静的移譲先、引数を要求する動的移譲先を復元時に拒否する。引数契約で拒否された goto と cleanup 自体の失敗は、外側の失敗時 cleanup を実行し、goto を公開しない。
+- 合流対象の子を持つ関数内 goto は、子のスコープ開始・log・return の3操作の間、元の命令位置に留まった。待機のための余分な操作予算を課さず、各段階で内部復元した。初回の対象7件はすべて通過し、2,298件をスキップした。合流待ちと新しい Flow レジストリの確認を加えた対象8件もすべて通過した。最終の Core／RuntimePlan は2,440件通過、1件スキップ。構造監査のブロッキング違反は0件だった。[実測・公開差分・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 現状一覧の「goto が残る」を命令からの Native 実行範囲について更新した。元の命令位置を保持していない旧 Choice の target からの移譲、通常 Flow のソース変換と AWBC は別の受入として残る。既存の明示スコープと早期 return の結果は履歴に保持した。[現状一覧](current-status.md#項目別の状態)。
+- Compiler の対象414件、Runtime Driver／Runtime Host／Save の260件が通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0だった。Cargo の全機能の依存グラフでは Core を含む53パッケージを特定した。この区切りの nextest は対象の6クレートで実行し、全53パッケージのテスト行列は未実行。固定した3,642入力の差分は0件。検証入力に既存の未コミット12パスを含め、公開した10ファイルの Git blob と検証差分の一致を確認した。[コマンド・実測・公開差分](acceptance-evidence/task-flow-registry-execution.json)。

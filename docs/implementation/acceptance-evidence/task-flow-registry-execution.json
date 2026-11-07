@@ -22933,5 +22933,323 @@
         }
       ]
     }
+  },
+  "nativeScopedGoto": {
+    "source": "e04ccec8579086903e6d38055900cdffde8ac063",
+    "base": "0113cedc887cdd0af5e6dba95a2af39da3b85bfa",
+    "published": {
+      "version": 1,
+      "commit": "e04ccec8579086903e6d38055900cdffde8ac063",
+      "parent": "0113cedc887cdd0af5e6dba95a2af39da3b85bfa",
+      "tree": "cb438ec3c9d9b226f188de21d5479ccd331f56a2",
+      "remote": "e04ccec8579086903e6d38055900cdffde8ac063",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "c5743afc6efae577b2dd330239aa22894871debe"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer.rs",
+          "blob": "31b4d39cd99985d95c82991570a4d09f46636cf0"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/flow_scope.rs",
+          "blob": "479fe3f3e544cbc01953b6c9286be35ca1ac095e"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/tests.rs",
+          "blob": "2a980ba54a3a6b51c09408edb13bb46d7a3b3346"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "blob": "a7cd9d021e74813e8fb889329629e28da3c708ef"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "3a564b8d0a81f5658d0488b2c0c1395aa6ceae10"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/frame_progress.rs",
+          "blob": "55d2998e4376f8878accc81ef94beee3c8245e8e"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/line.rs",
+          "blob": "feec94974c6d2d00875c4d114f116b9a25298d36"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "309ff122c25853eab37ff481839107f7cbe07dbd"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/suspend.rs",
+          "blob": "fa38c4119d0fa6397ac485b4fdb243e241050672"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "5c12b17adb82022df9839f18aa5fd35aecd3b33567f30e14e0ec56b58add870b",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T03:14:16.9354856Z"
+    },
+    "sourceInputs": 3642,
+    "scope": "Authored static/dynamic goto operations and static Goto effects in ordinary Native Flow typed RuntimePlans. The original operation and accepted destination are retained through callee and caller lexical cleanup. Legacy Choice target transfer and source lowering remain separate.",
+    "priorRuns": [
+      {
+        "log": "native-goto-defer-20261107.first-tests.log",
+        "passed": 7,
+        "failed": 0,
+        "skipped": 2298,
+        "detail": "Initial static, dynamic, effect, invalid-ABI, cleanup failure and existing-return regression cases."
+      },
+      {
+        "log": "native-goto-defer-20261107.second-tests.log",
+        "passed": 8,
+        "failed": 0,
+        "skipped": 2298,
+        "detail": "Added joined-child scheduling and fresh destination Flow registry checks."
+      }
+    ],
+    "exactCases": [
+      "native_goto_finishes_inner_and_caller_cleanup_before_transferring",
+      "native_goto_uses_failure_cleanup_without_publishing_an_unaccepted_transfer",
+      "native_goto_in_a_call_waits_for_joined_work_at_its_original_position"
+    ],
+    "reverseGraph": {
+      "workspacePackages": 53,
+      "fullMatrixExecuted": false,
+      "selection": "Core, RuntimePlan, Compiler, Runtime Driver, Runtime Host, Save"
+    },
+    "acceptance": [
+      {
+        "version": 1,
+        "head": "0113cedc887cdd0af5e6dba95a2af39da3b85bfa",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 16s",
+          "Summary [  59.420s] 2440 tests run: 2440 passed, 1 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-runtime-plan",
+          "--lib",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T03:10:41.0796168Z",
+        "finishedAt": "2026-11-07T03:14:00.6283016Z",
+        "name": "owners"
+      },
+      {
+        "version": 1,
+        "head": "0113cedc887cdd0af5e6dba95a2af39da3b85bfa",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 44s",
+          "Summary [  30.035s] 414 tests run: 414 passed, 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "evaluated_effects",
+          "--test",
+          "callable_execution",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T03:14:08.9358004Z",
+        "finishedAt": "2026-11-07T03:17:25.9373284Z",
+        "name": "compiler"
+      },
+      {
+        "version": 1,
+        "head": "0113cedc887cdd0af5e6dba95a2af39da3b85bfa",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 03s",
+          "Summary [  72.838s] 260 tests run: 260 passed (1 slow), 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-save",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T03:17:25.9515011Z",
+        "finishedAt": "2026-11-07T03:21:50.1353795Z",
+        "name": "consumers"
+      },
+      {
+        "version": 1,
+        "head": "0113cedc887cdd0af5e6dba95a2af39da3b85bfa",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 44s"
+        ],
+        "command": [
+          "cargo",
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T03:21:50.1377084Z",
+        "finishedAt": "2026-11-07T03:23:36.4255166Z",
+        "name": "workspace-check"
+      },
+      {
+        "version": 1,
+        "head": "0113cedc887cdd0af5e6dba95a2af39da3b85bfa",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 56s"
+        ],
+        "command": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T03:23:36.4273932Z",
+        "finishedAt": "2026-11-07T03:25:35.470825Z",
+        "name": "workspace-clippy"
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-native-goto-defer.raw.zip",
+      "sha256": "c861a6be66cc277b1989e1a5686d8bd5e3a88f5ab3b33038a97304ca025ae85d",
+      "entries": [
+        {
+          "entry": "checkpoint-native-goto-defer-20261107.verified.json",
+          "bytes": 1883,
+          "sha256": "fd09c11007ff755911985e1f60471da062fd974104fb8308da81edbe04d3c0ce"
+        },
+        {
+          "entry": "checkpoint-native-goto-defer-20261107.reviewed.patch",
+          "bytes": 45722,
+          "sha256": "5c12b17adb82022df9839f18aa5fd35aecd3b33567f30e14e0ec56b58add870b"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.source-freeze.json",
+          "bytes": 629843,
+          "sha256": "57e6975c91d782853abea686f5fb20dfcbdb02b7a8dc91a5d16da2bcc8abe7d9"
+        },
+        {
+          "entry": "native-goto-defer-20261107.check.log",
+          "bytes": 72251,
+          "sha256": "00102a79a000e81fb5606b53fd1ea9b6303fd66eb94d5bb8868177ab21405d2d"
+        },
+        {
+          "entry": "native-goto-defer-20261107.first-tests.log",
+          "bytes": 34624,
+          "sha256": "954bd4b1e56d1685f3d06513f496a09ca7b601139a89f7459ee7302df6a9bef8"
+        },
+        {
+          "entry": "native-goto-defer-20261107.second-tests.log",
+          "bytes": 34760,
+          "sha256": "13ea278af918409f2c88848d22a3e7c6391dcf20fec88870fea534d5ab8b0268"
+        },
+        {
+          "entry": "native-goto-defer-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "7e8eb2bb7b1b7e8c6bfdb6dd84f8ec65febfd88d8f800e27c062653e3034ebf1"
+        },
+        {
+          "entry": "native-goto-defer-20261107.graph.txt",
+          "bytes": 19452,
+          "sha256": "3f1a725a8c4e20d7ff324f499910203eab3b157f862f4030f796f3b84bf6d79a"
+        },
+        {
+          "entry": "native-flow-defer-20261107.metadata-reverse.json",
+          "bytes": 31290,
+          "sha256": "d84ff4e7b9794f9baf220a05ab755d28fe281493c946b5722d2e3068b5bc1134"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.owners.receipt.json",
+          "bytes": 622,
+          "sha256": "214ec7ad7eb8768e8d612d6b24b0443ceea5feb3e9d9343c2b3c982300f7aa18"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.owners.log",
+          "bytes": 472432,
+          "sha256": "e12bfea8ca99c280d0b5873cd915e68590edcfb9b64396a67bb873f6cc516c51"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.compiler.receipt.json",
+          "bytes": 653,
+          "sha256": "11d8d3a0fb195180e5423ad2851f6c57f03a9a2fe98595a44359b79a5d511328"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.compiler.log",
+          "bytes": 147028,
+          "sha256": "52cf837881de02a7a1fb8409a1fc466f73ec742fcf6b17418274ed28b62ffc54"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.consumers.receipt.json",
+          "bytes": 657,
+          "sha256": "67be5afe4c57181c1d14e10b03346ad8a7412401a847008c60e762493eb40296"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.consumers.log",
+          "bytes": 129423,
+          "sha256": "5363313779a85b73d0aaaa842ec5379c6f5a69b80ab32ace0c07508e8ee9d9c2"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.workspace-check.receipt.json",
+          "bytes": 464,
+          "sha256": "cb42bead0e648f2f47f3f905b5be773211641c5a89a8a5190e96dd60bb4992db"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.workspace-check.log",
+          "bytes": 112001,
+          "sha256": "2b68523d03fe987e171a3542e335e06487600addcea43904014bd7c212bffdbd"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.workspace-clippy.receipt.json",
+          "bytes": 465,
+          "sha256": "4352ffe35863d1ab59e3f06524e45e3253fd933cf237c5a1f874d5816b46269e"
+        },
+        {
+          "entry": "native-goto-defer-20261107.final.workspace-clippy.log",
+          "bytes": 9077540,
+          "sha256": "82eeca34d7727b792a3fdc85b3b568c129878eeb7aec6818526c4ec3c22bd5f6"
+        }
+      ]
+    }
   }
 }
