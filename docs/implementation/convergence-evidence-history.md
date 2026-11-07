@@ -15202,3 +15202,10 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - ユーザーの指定で、基点の `main` に実装中と既存作業の差分がある状態で出力先を確認し、`cargo clean` を実行した。終了コード0、56,840ファイル、68.8 GiB を削除した。直後に `target` は存在せず、D: の空きは464,286,883,840バイトから532,302,606,336バイトに増えた。上記の対象2件と最終実行は clean 後にビルドした。[clean の結果とテスト原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 現状一覧で従来の「通常 Flow は RuntimePlan がスコープ所有の登録を拒否する」を訂正した。ソースからの変換には拒否が残る一方、型付き計画を直接受け取る Native の実行は明示スコープの正常終了・失敗で検証済みになった。マークハンドラーは独立行で受入実績を保持し、Native の公開保存・復元の判定は共通の公開 API の行に集約した。[現状一覧](current-status.md#項目別の状態)。
 - Compiler の対象414件、Runtime Driver／Runtime Host／Save の260件が通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0だった。Cargo の全機能の依存グラフでは Core を含む53パッケージを特定した。この区切りの nextest は対象の6クレートで実行し、全53パッケージのテスト行列は未実行。固定した3,642入力の差分は0件。検証入力に既存の未コミット12パスを含め、公開した9ファイルの Git blob と検証差分の一致を確認した。[コマンド・実測・公開差分](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Native early return across scoped defer
+
+- 公開ソース `f5d0ae22a65ed3eafa7536496e1a4a9c95584aae`、基点 `b8a16abd05691c98ad13f93dc60d5f6a18beef75`。従来は早期 return が通常 Flow のスコープを閉じようとして保留中の defer に阻まれるか、関数フレームの取り出しで登録を飛ばしていた。元の return 命令と評価済みの結果をスコープ終了状態に保持し、元の呼出し境界まで処理する。Native AOT と Map／Sum の融合経路も元の return 位置を渡す。
+- 正常例ではループから早期 return し、cleanup によるレジストリ変更の前に評価した値を返した。関数からの戻り値は親スコープを終了させず、親は合流後の処理を再開した。内側の cleanup が失敗する場合は return を破棄し、外側の失敗時 cleanup が走った。各ステップの内部復元と、保留中の値の型・終了先を改変した像の拒否を確認した。表示リースは戻り値が保持するものだけを外側のスコープへ移し、破棄時はそのリースを退役させることを所有境界で確認した。戻り値を保留する Native スロットの version 1 JSON／バイナリ表現も照合した。
+- 最初のテストビルドはフィクスチャの型 import が欠けて停止した。修正後は対象5件が通過し、2,296件をスキップした。cleanup の失敗と表示リースのテストを加えた最終の Core／RuntimePlan は2,437件通過、1件スキップ。構造監査のブロッキング違反は0件だった。[検証の原本と公開差分](acceptance-evidence/task-flow-registry-execution.json)。
+- Compiler の対象414件、Runtime Driver／Runtime Host／Save の260件が通過した。全ターゲット・全機能の workspace check と Clippy は警告ありで終了コード0だった。Cargo の全機能の依存グラフでは Core を含む53パッケージを特定した。この区切りの nextest は対象の6クレートで実行し、全53パッケージのテスト行列は未実行。固定した3,642入力の差分は0件。検証入力に既存の未コミット12パスを含め、公開した15ファイルの Git blob と検証差分の一致を確認した。[コマンド・実測・公開差分](acceptance-evidence/task-flow-registry-execution.json)。

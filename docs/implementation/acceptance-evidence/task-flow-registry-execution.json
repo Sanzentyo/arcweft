@@ -22596,5 +22596,342 @@
         }
       ]
     }
+  },
+  "nativeScopedEarlyReturn": {
+    "source": "f5d0ae22a65ed3eafa7536496e1a4a9c95584aae",
+    "base": "b8a16abd05691c98ad13f93dc60d5f6a18beef75",
+    "published": {
+      "version": 1,
+      "commit": "f5d0ae22a65ed3eafa7536496e1a4a9c95584aae",
+      "parent": "b8a16abd05691c98ad13f93dc60d5f6a18beef75",
+      "tree": "7f55fee36f7db01c3190855b220b1c25263f9468",
+      "remote": "f5d0ae22a65ed3eafa7536496e1a4a9c95584aae",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "a467f71570ed997d6e2b56e3790fe81b921b1c1d"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/aot.rs",
+          "blob": "1800866fe2e51c31f8fb0c470759fdfacf38d25b"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/code_cursor.rs",
+          "blob": "693e17d5148df9c3ac68117ac89cd2f7c0fcb15b"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer.rs",
+          "blob": "c4e5b8f0a6f7e8d0f83f2c3b996717af2c9cc407"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/flow_scope.rs",
+          "blob": "983da34229f07c85ede49158a865437b38489975"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/defer/tests.rs",
+          "blob": "c3fa004ed2d77c6a5998f3ae373c116ab20d50d7"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "e8c48cb7cb7ff52649db9275f0cbd9030052bcf5"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/numeric_map.rs",
+          "blob": "c41bf84965f99835a0773e12f2301f6284fdba6c"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/numeric_map/control.rs",
+          "blob": "8e7678421a39bb134c47191f96aa3941a6bf38db"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/presentation.rs",
+          "blob": "d8dde72cd23cdbe69a2ee4806cb10db999dbdfa6"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/presentation_tests/custody.rs",
+          "blob": "e7407e929f6ca94a2a0f85d7ddce52b5336df06f"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "7130b60525d7045c35c890b7b301fa8879ca650f"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/scope.rs",
+          "blob": "be04b4c427a3d3e5b785c5e6e3a9fad3bc6e0955"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership/binary.rs",
+          "blob": "bb583e676cbd9b3fb4a81f93b2627ec27e8d9646"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/ownership/slot.rs",
+          "blob": "4f93f86e30179530b0a32a95c85906c22335f6da"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "98cf89078a6a079a3f61595497f90a9774ba1d8a7e8de1b9ad644f37870703a9",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T02:45:37.0110846Z"
+    },
+    "sourceInputs": 3642,
+    "scope": "Authored return in ordinary Native Flow typed RuntimePlans and their structured function calls. The evaluated value is retained during lexical cleanup. The native pending-return owned slot uses version 1.",
+    "priorRuns": [
+      {
+        "log": "native-early-return-20261107.first-tests.log",
+        "compiled": false,
+        "detail": "Fixture compilation failed with a missing RuntimeSemanticTypeId import."
+      },
+      {
+        "log": "native-early-return-20261107.second-tests.log",
+        "passed": 5,
+        "failed": 0,
+        "skipped": 2296,
+        "detail": "Targeted run before adding failed-cleanup and presentation-retirement cases."
+      }
+    ],
+    "exactCases": [
+      "ordinary_native_early_return_drains_the_reached_invocation_after_restore",
+      "ordinary_native_return_is_discarded_when_inner_cleanup_fails",
+      "native_pending_return_reparents_only_the_escaping_presentation_lease",
+      "owned_slot_binary_goldens_round_trip"
+    ],
+    "reverseGraph": {
+      "workspacePackages": 53,
+      "fullMatrixExecuted": false,
+      "selection": "Core, RuntimePlan, Compiler, Runtime Driver, Runtime Host, Save"
+    },
+    "acceptance": [
+      {
+        "version": 1,
+        "head": "b8a16abd05691c98ad13f93dc60d5f6a18beef75",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 30s",
+          "Summary [  59.540s] 2437 tests run: 2437 passed, 1 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-runtime-plan",
+          "--lib",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T02:41:46.2070802Z",
+        "finishedAt": "2026-11-07T02:45:19.8582945Z",
+        "name": "owners"
+      },
+      {
+        "version": 1,
+        "head": "b8a16abd05691c98ad13f93dc60d5f6a18beef75",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 01s",
+          "Summary [  29.837s] 414 tests run: 414 passed, 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "evaluated_effects",
+          "--test",
+          "callable_execution",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T02:45:25.2258649Z",
+        "finishedAt": "2026-11-07T02:48:59.8950646Z",
+        "name": "compiler"
+      },
+      {
+        "version": 1,
+        "head": "b8a16abd05691c98ad13f93dc60d5f6a18beef75",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 22s",
+          "Summary [  72.977s] 260 tests run: 260 passed (1 slow), 0 skipped"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-save",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast"
+        ],
+        "startedAt": "2026-11-07T02:48:59.9066232Z",
+        "finishedAt": "2026-11-07T02:53:43.839763Z",
+        "name": "consumers"
+      },
+      {
+        "version": 1,
+        "head": "b8a16abd05691c98ad13f93dc60d5f6a18beef75",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 56s"
+        ],
+        "command": [
+          "cargo",
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T02:53:43.8416874Z",
+        "finishedAt": "2026-11-07T02:55:42.3720835Z",
+        "name": "workspace-check"
+      },
+      {
+        "version": 1,
+        "head": "b8a16abd05691c98ad13f93dc60d5f6a18beef75",
+        "exitCode": 0,
+        "inputs": 3642,
+        "sourceDrift": null,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 03s"
+        ],
+        "command": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "startedAt": "2026-11-07T02:55:42.3743467Z",
+        "finishedAt": "2026-11-07T02:57:48.1090767Z",
+        "name": "workspace-clippy"
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-native-early-return.raw.zip",
+      "sha256": "713ae6e8af4c5ba219785c68491a100e689c6b1de26fa1a528da28227ff36b46",
+      "entries": [
+        {
+          "entry": "checkpoint-native-early-return-20261107.verified.json",
+          "bytes": 2615,
+          "sha256": "db2dd204f867cc891e20cc1514eb05b45f0b42fa42b2dda81d8631a75af928e2"
+        },
+        {
+          "entry": "checkpoint-native-early-return-20261107.reviewed.patch",
+          "bytes": 63483,
+          "sha256": "98cf89078a6a079a3f61595497f90a9774ba1d8a7e8de1b9ad644f37870703a9"
+        },
+        {
+          "entry": "native-early-return-20261107.final.source-freeze.json",
+          "bytes": 630160,
+          "sha256": "af91880e2a885a391eeeb6d6d2981f16efe24bb54d90657171844d6708fba1f0"
+        },
+        {
+          "entry": "native-early-return-20261107.check.log",
+          "bytes": 74142,
+          "sha256": "24ac80a106b3785729c0df8a1f7da7b61cd6b137d3bc975ac40d4351275dd62a"
+        },
+        {
+          "entry": "native-early-return-20261107.first-tests.log",
+          "bytes": 11898,
+          "sha256": "8bb570ab6571cc794ec1b750aaacede7bab765d23630ba9f4fd3e9a421ec835e"
+        },
+        {
+          "entry": "native-early-return-20261107.second-tests.log",
+          "bytes": 34377,
+          "sha256": "304bbc29df7a7922e6eaf5d87ab326065ada9539d0b52c99cd36f6a9fca33ab6"
+        },
+        {
+          "entry": "native-early-return-20261107.final.structure.log",
+          "bytes": 65741,
+          "sha256": "dd34a18b055bbace0abfe57405682e4c3ef2d5aaa4761e3f08e0143afadc10e8"
+        },
+        {
+          "entry": "native-early-return-20261107.graph.txt",
+          "bytes": 19452,
+          "sha256": "3f1a725a8c4e20d7ff324f499910203eab3b157f862f4030f796f3b84bf6d79a"
+        },
+        {
+          "entry": "native-flow-defer-20261107.metadata-reverse.json",
+          "bytes": 31290,
+          "sha256": "d84ff4e7b9794f9baf220a05ab755d28fe281493c946b5722d2e3068b5bc1134"
+        },
+        {
+          "entry": "native-early-return-20261107.final.owners.receipt.json",
+          "bytes": 622,
+          "sha256": "c199935bda305e8ed460f03faf0937078e519057e3ecd06f545c8dd78ffbde4e"
+        },
+        {
+          "entry": "native-early-return-20261107.final.owners.log",
+          "bytes": 471746,
+          "sha256": "05c6d38fa5d1e25cb1b99e3454d084a91259cc841f1dd63d54137f6ef1051382"
+        },
+        {
+          "entry": "native-early-return-20261107.final.compiler.receipt.json",
+          "bytes": 653,
+          "sha256": "771659d77f12960c16acfc135750e865e3adef21bfd1089f555e58e60e37b9a0"
+        },
+        {
+          "entry": "native-early-return-20261107.final.compiler.log",
+          "bytes": 146771,
+          "sha256": "6c29f8dd96ca71a53dd00a98b1aebda3a2da5158991f0e0a290b557635ddb294"
+        },
+        {
+          "entry": "native-early-return-20261107.final.consumers.receipt.json",
+          "bytes": 657,
+          "sha256": "da2350d6241846181d2facc045f6856187177dffd0427d0a80348457a236cca8"
+        },
+        {
+          "entry": "native-early-return-20261107.final.consumers.log",
+          "bytes": 129166,
+          "sha256": "9b21959f8fbe8281cbd5ca3d496b3ea3677297751c020445ba1fd17eb88652ed"
+        },
+        {
+          "entry": "native-early-return-20261107.final.workspace-check.receipt.json",
+          "bytes": 464,
+          "sha256": "ea1b74fe5104a6d46bff1dacff07f84b7b2cffae45ef84d7bc628ce5f6682c9c"
+        },
+        {
+          "entry": "native-early-return-20261107.final.workspace-check.log",
+          "bytes": 111730,
+          "sha256": "5cf9588ee4bc1f609731b6574fa0ee46af1c874780fdcefcab6385ed29ddc310"
+        },
+        {
+          "entry": "native-early-return-20261107.final.workspace-clippy.receipt.json",
+          "bytes": 465,
+          "sha256": "6dc95810392777994bcec338d20f992949735a2a778d90dbc51d72f93aa74f8e"
+        },
+        {
+          "entry": "native-early-return-20261107.final.workspace-clippy.log",
+          "bytes": 9075024,
+          "sha256": "322433215208afe53c55f27b08affe166c766bbaae78e023e61fc503d50a6a40"
+        }
+      ]
+    }
   }
 }
