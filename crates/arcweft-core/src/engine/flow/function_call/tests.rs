@@ -194,7 +194,18 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
         crate::engine::FunctionCallFrameRollbackImage {
             type_instantiation, ..
         },
-    )) = missing.fiber.frame.control_stack.last_mut()
+    )) = missing
+        .fiber
+        .frame
+        .control_stack
+        .iter_mut()
+        .rev()
+        .find(|entry| {
+            matches!(
+                entry,
+                crate::engine::FlowControlStackEntryRollbackImage::FunctionCall(_)
+            )
+        })
     else {
         panic!("program did not retain its active function frame")
     };

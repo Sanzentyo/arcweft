@@ -59,6 +59,7 @@ pub mod dialogue;
 pub mod eval;
 mod fanout;
 mod frame_progress;
+mod function_scope;
 pub use fanout::ProgramFanoutState;
 mod numeric_map;
 mod presentation;
@@ -2775,7 +2776,7 @@ impl Engine {
             .map_err(|error| EngineStartError::InvalidFlowInvocation {
                 message: error.to_string(),
             })?;
-        self.fiber.frame.env.bind_root_function(
+        self.fiber.frame.bind_root_function(
             declaration.site(),
             declaration.type_instantiation.clone(),
             staged,
@@ -2960,7 +2961,6 @@ impl Engine {
         };
         self.fiber
             .frame
-            .env
             .bind_root_function(site, instantiation, staged);
         self.fiber.frame.pending_ops = pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
@@ -3856,7 +3856,7 @@ impl Engine {
             .expect("prepared callback pattern remains matched");
             env.bind_all(bindings);
         }
-        FlowFiber {
+        let mut child = FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
                 presentation_bank: crate::runtime_id::RuntimePresentationBankId::Dialogue {
@@ -3884,7 +3884,9 @@ impl Engine {
                 activation: prepared.key,
                 closing: false,
             },
-        }
+        };
+        child.frame.enter_function_body(prepared.site);
+        child
     }
 
     fn take_dialogue_effect_callbacks(
@@ -4447,7 +4449,7 @@ impl Engine {
             .expect("checked deferred pattern remains matched");
             env.bind_all(bindings);
         }
-        let child = FlowFiber {
+        let mut child = FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
                 presentation_bank,
@@ -4471,6 +4473,7 @@ impl Engine {
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
             owner,
         };
+        child.frame.enter_function_body(prepared.site_id);
         debug_assert_eq!(
             flow_fiber_line_handle_tokens(&child)
                 .expect("checked deferred capture ownership remains unique"),

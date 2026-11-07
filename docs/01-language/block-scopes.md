@@ -19,6 +19,15 @@ let x = {
 
 `a` and `b` are visible only inside the block.
 
+Each executable function invocation owns an implicit body scope inside its
+input-binding context. A `defer` outside a nested block belongs to that body;
+its registrations stay with the invocation until cleanup completes. Nested
+calls own separate body scopes. A Flow that reaches the end with a `Unit`
+result runs its matching cleanup before it completes or resumes its caller,
+just as an explicit return waits for cleanup. Cleanup failure prevents normal
+completion and caller resumption. See [scoped cleanup](dialogue-calls-scopes-cancellation.md)
+for outcome filters, capture transfer, and registration order.
+
 ## Local ownership and replacement
 
 Each binding introduces a distinct local declaration and generation. Shadowing

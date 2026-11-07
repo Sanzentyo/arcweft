@@ -18,6 +18,8 @@ pub(super) trait NativeStoredWork {
 
     fn function_root_owner(&self) -> Option<crate::plan::code::RuntimeCodeOwner>;
 
+    fn function_end_site(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId>;
+
     fn queued_function_root_owner(
         work: &std::collections::VecDeque<Self>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -571,6 +573,21 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue> N
                 position,
                 role: NativeSourceRangeRole::FunctionRoot,
             } => Some(position.owner()),
+            _ => None,
+        }
+    }
+
+    fn function_end_site(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId> {
+        match &self.kind {
+            NativePendingWorkKind::Source {
+                position,
+                role: NativeSourceRangeRole::FunctionRoot,
+            } if position.is_root() && position.remaining_operation_count() == Some(0) => {
+                match position.owner() {
+                    crate::plan::code::RuntimeCodeOwner::Function(site) => Some(site),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }

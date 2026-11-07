@@ -180,7 +180,6 @@ impl Engine {
             && !self.has_executor_work()
             && self.plan.stream_plans.is_empty()
             && self.fiber.frame.pending_ops.len() == 1
-            && self.fiber.frame.control_stack.is_empty()
             && matches!(self.fiber.frame.status, FlowFiberStatus::Running)
             && self
                 .fiber
@@ -189,7 +188,17 @@ impl Engine {
                 .is_some_and(|cursor| {
                     (match cursor.owner() {
                         crate::plan::code::RuntimeCodeOwner::Function(site) if cursor.is_root() => {
-                            program.flow_block(site)
+                            matches!(
+                                self.fiber.frame.control_stack.as_slice(),
+                                [super::FlowControlStackEntry {
+                                    kind: super::FlowControlStackEntryKind::Scope {
+                                        origin: crate::scope::RuntimeScopeFrameOrigin::FunctionBody(body_site),
+                                        ..
+                                    },
+                                }] if *body_site == site
+                            )
+                            .then(|| program.flow_block(site))
+                            .flatten()
                         }
                         _ => None,
                     })

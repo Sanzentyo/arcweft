@@ -149,11 +149,12 @@ impl RuntimeScheduledScopeToken {
 pub(crate) enum RuntimeScopeFrameOrigin {
     EmittedLexical,
     Scheduled(RuntimeScheduledScopeToken),
+    FunctionBody(crate::runtime_id::RuntimeFunctionSiteId),
 }
 impl RuntimeScopeFrameOrigin {
     pub(crate) const fn token(self) -> Option<RuntimeScheduledScopeToken> {
         match self {
-            Self::EmittedLexical => None,
+            Self::EmittedLexical | Self::FunctionBody(_) => None,
             Self::Scheduled(token) => Some(token),
         }
     }
@@ -161,6 +162,7 @@ impl RuntimeScopeFrameOrigin {
         match self {
             Self::EmittedLexical => RuntimeScopeFrameKind::EmittedLexical,
             Self::Scheduled(token) => token.kind(),
+            Self::FunctionBody(_) => RuntimeScopeFrameKind::Control,
         }
     }
 }

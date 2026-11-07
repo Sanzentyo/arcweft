@@ -110,6 +110,7 @@ impl Engine {
         ),
     ) {
         let (staged, input_order) = staged;
+        let body_site = frame.site;
         self.fiber.frame.env.push_function_scope(
             frame.site,
             staged.len(),
@@ -130,6 +131,7 @@ impl Engine {
         self.fiber.frame.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FunctionCall(frame),
         });
+        self.fiber.frame.enter_function_body(body_site);
     }
 
     fn complete_function_call_return(
@@ -363,11 +365,14 @@ impl Engine {
         Some(value)
     }
 
-    pub(super) fn complete_function_call_fallthrough(
+    pub(in crate::engine) fn complete_function_call_fallthrough(
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        if self.defer_function_fallthrough(output) {
+            return;
+        }
         let frame = match self.take_function_call_frame(&RuntimeValue::Unit, output, pure_backend) {
             Ok(frame) => frame,
             Err(error) => {

@@ -212,8 +212,8 @@ impl Engine {
                 ))
             }
         });
-        if self.fiber.frame.control_stack.len() != frame_depth + 1
-            || self.fiber.frame.env.scope_depth() != scope_depth + 1
+        if self.fiber.frame.control_stack.len() != frame_depth + 2
+            || self.fiber.frame.env.scope_depth() != scope_depth + 2
         {
             // A nested call whose scope could not unwind still owns its real
             // frame and environment. Preserve it for the failure owner.
@@ -224,8 +224,24 @@ impl Engine {
             return value;
         }
         if let Ok(value) = &value {
-            self.transition_presentation_return(1, false, std::iter::once(value))?;
+            self.transition_presentation_return(2, false, std::iter::once(value))?;
         }
+        let Some(FlowControlStackEntry {
+            kind:
+                FlowControlStackEntryKind::Scope {
+                    origin: crate::scope::RuntimeScopeFrameOrigin::FunctionBody(body_site),
+                    cleanups,
+                    defers,
+                    ..
+                },
+        }) = self.fiber.frame.control_stack.last()
+        else {
+            unreachable!("synchronous evaluator retains its function body scope")
+        };
+        assert_eq!(*body_site, site);
+        assert!(cleanups.is_empty() && !defers.has_work());
+        self.pop_runtime_scope()?;
+        self.fiber.frame.control_stack.pop();
         self.pop_runtime_scope()?;
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FunctionCall(frame),

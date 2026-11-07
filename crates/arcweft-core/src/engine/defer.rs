@@ -75,6 +75,9 @@ pub(super) enum NativeLexicalExitAction<V> {
         source: NativeSourceOperation,
         result: NativeReturnResult<V>,
     },
+    Fallthrough {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+    },
     Goto {
         source: NativeGotoOrigin,
         destination: FlowRuntimeId,
@@ -215,6 +218,7 @@ impl<V> NativeLexicalExitAction<V> {
                     NativeReturnResult::Value(value) => NativeReturnResult::Value(value),
                 },
             },
+            Self::Fallthrough { site } => NativeLexicalExitAction::Fallthrough { site: *site },
             Self::Goto {
                 source,
                 destination,
@@ -253,6 +257,7 @@ impl<V> NativeLexicalExitAction<V> {
                     NativeReturnResult::Value(value) => NativeReturnResult::Value(map(value)?),
                 },
             },
+            Self::Fallthrough { site } => NativeLexicalExitAction::Fallthrough { site },
             Self::Goto {
                 source,
                 destination,
@@ -323,6 +328,24 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
                 .into(),
         };
         admission.validate_metadata(&self.target)?;
+        if let NativeLexicalExitAction::Fallthrough { site } = &self.action {
+            admission.validate_metadata(&site.get())?;
+            let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
+                return Err(invalid());
+            };
+            return plan
+                .function_sites()
+                .get(*site)
+                .filter(|function| {
+                    function.role().allows_implicit_unit_completion()
+                        && matches!(
+                            plan.checked_type(function.result()),
+                            Ok(Some(crate::pattern::RuntimeCheckedType::Unit))
+                        )
+                })
+                .map(|_| ())
+                .ok_or_else(invalid);
+        }
         if let NativeLexicalExitAction::Goto {
             source,
             destination,
@@ -336,6 +359,9 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
             NativeLexicalExitAction::Bind { source, .. }
             | NativeLexicalExitAction::Return { source, .. } => (source, None),
             NativeLexicalExitAction::Goto { .. } => unreachable!("admitted goto above"),
+            NativeLexicalExitAction::Fallthrough { .. } => {
+                unreachable!("admitted fallthrough above")
+            }
             NativeLexicalExitAction::Transfer(transfer) => {
                 (&transfer.source, Some(&transfer.target))
             }
@@ -868,6 +894,13 @@ impl super::Engine {
                         }
                         NativeLexicalExitAction::Return { result, .. } => {
                             self.complete_source_return(result, output, backend);
+                        }
+                        NativeLexicalExitAction::Fallthrough { .. } => {
+                            if self.fiber.frame.active_function().is_some() {
+                                self.complete_function_call_fallthrough(output, backend);
+                            } else {
+                                self.finish(output, backend);
+                            }
                         }
                         NativeLexicalExitAction::Goto {
                             source,

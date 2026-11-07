@@ -16,6 +16,16 @@ use std::sync::Arc;
 
 mod await_state;
 
+pub(super) trait NativeInvocationStatus {
+    fn retires_invocation_scopes(&self) -> bool;
+}
+
+impl<A, M> NativeInvocationStatus for FlowFiberStatus<A, M> {
+    fn retires_invocation_scopes(&self) -> bool {
+        matches!(self, Self::Done(_) | Self::Failed(_))
+    }
+}
+
 pub(super) trait SuspendedValues {
     fn admit_suspended_values(
         &self,
@@ -471,7 +481,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         O: NativeStoredWork,
         C: ScopeControl<O>,
         A: SuspendedValues,
-        S: SuspendedValues,
+        S: SuspendedValues + NativeInvocationStatus,
     {
         let invalid =
             |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
@@ -537,6 +547,25 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                 {
                     return Err(invalid(
                         "native return does not reach its original invocation and defer scope"
+                            .into(),
+                    ));
+                }
+            } else if let NativeLexicalExitAction::Fallthrough { site } = &exit.action {
+                if self.defer_target(NativeDeferBoundary::Invocation) != Some(exit.target)
+                    || self
+                        .env
+                        .function_contexts()
+                        .next_back()
+                        .map(|(site, _)| site)
+                        != Some(*site)
+                    || self.pending_ops.len() > 1
+                    || self
+                        .pending_ops
+                        .iter()
+                        .any(|work| work.function_end_site() != Some(*site))
+                {
+                    return Err(invalid(
+                        "native fallthrough does not reach its original invocation end and defer scope"
                             .into(),
                     ));
                 }
@@ -618,6 +647,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
     where
         O: NativeStoredWork,
         C: ScopeControl<O>,
+        S: NativeInvocationStatus,
     {
         let invalid = || crate::value::AwbcRuntimeValueSnapshotError::Message {
             message: "native function frames disagree with their retained environment contexts"
@@ -625,8 +655,24 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         };
         let mut root = O::queued_function_root_owner(&self.pending_ops, admission)?;
         let mut contexts = self.env.function_contexts().rev().peekable();
+        let mut body_scope = false;
+        let retiring = self.status.retires_invocation_scopes()
+            || self
+                .lexical_exit
+                .as_ref()
+                .is_some_and(|exit| matches!(exit.action, NativeLexicalExitAction::Goto { .. }));
         for entry in self.control_stack.iter().rev() {
+            if let Some(site) = entry.function_body_site() {
+                if body_scope || contexts.peek().map(|(expected, _)| *expected) != Some(site) {
+                    return Err(invalid());
+                }
+                admission.validate_metadata(&site.get())?;
+                body_scope = true;
+            }
             if let Some(frame) = entry.function_context() {
+                if frame.entered && !body_scope && !retiring {
+                    return Err(invalid());
+                }
                 let expected_root = if frame.expression {
                     None
                 } else {
@@ -638,6 +684,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     });
                 }
                 root = None;
+                body_scope = false;
                 admission.validate_metadata(&(frame.site.get(), frame.entered))?;
                 let Some((site, binding)) = contexts.next() else {
                     return Err(invalid());
@@ -669,10 +716,13 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                 .and_then(|(_, binding)| binding.map(Arc::as_ref));
             entry.admit_control_values(admission, binding)?;
         }
-        // Callback and deferred child roots retain one function environment
-        // without a return frame. Nested calls above it still zip exactly.
+        // A real function root retains its body scope without a return frame.
+        // A task kernel may instead retain an ambient function type context:
+        // its original task scope owns that body, rather than an invocation of
+        // the enclosing function. Nested calls above either root zip exactly.
         let outer = contexts.next();
-        if contexts.next().is_some()
+        if (root.is_some() && outer.is_some() && !body_scope && !retiring)
+            || contexts.next().is_some()
             || root.is_some_and(|root| {
                 Some(root)
                     != outer.map(|(site, _)| crate::plan::code::RuntimeCodeOwner::Function(site))
@@ -737,6 +787,7 @@ pub(super) trait ScopeControl<O> {
     fn loop_source(&self) -> Option<&NativeSourceOperation>;
 
     fn function_context(&self) -> Option<FunctionContext<'_>>;
+    fn function_body_site(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId>;
     fn admit_control_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -766,6 +817,16 @@ where
 
     fn loop_source(&self) -> Option<&NativeSourceOperation> {
         FlowControlStackEntryKind::loop_source(self)
+    }
+
+    fn function_body_site(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId> {
+        match self {
+            Self::Scope {
+                origin: crate::scope::RuntimeScopeFrameOrigin::FunctionBody(site),
+                ..
+            } => Some(*site),
+            _ => None,
+        }
     }
 
     fn admit_control_values(
@@ -864,6 +925,10 @@ where
 
 impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
     type DeferValue = crate::value::RuntimeValue;
+
+    fn function_body_site(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId> {
+        self.kind.function_body_site()
+    }
 
     fn defer_scope(&self) -> Option<&super::defer::NativeLexicalDeferScope<Self::DeferValue>> {
         self.kind.defer_scope()

@@ -103,7 +103,15 @@ fn native_scope_snapshot_retains_exact_closes_and_consumes_them_once_after_emitt
     };
     let step = restored.step(Default::default(), options);
     assert!(step.output.diagnostics.is_empty(), "{step:?}");
-    assert!(restored.fiber.frame.control_stack.is_empty());
+    assert!(matches!(
+        restored.fiber.frame.control_stack.as_slice(),
+        [crate::engine::FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::Scope {
+                origin: RuntimeScopeFrameOrigin::FunctionBody(_),
+                ..
+            },
+        }]
+    ));
     assert!(
         !restored
             .fiber

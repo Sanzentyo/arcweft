@@ -109,7 +109,7 @@ impl Engine {
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
-        self.fiber.frame.env.bind_root_function(
+        self.fiber.frame.bind_root_function(
             declaration.site(),
             declaration.type_instantiation.clone(),
             ([], crate::value::RuntimeInputOrder::canonical(0)),
@@ -212,6 +212,9 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        if self.defer_function_fallthrough(output) {
+            return;
+        }
         if matches!(&self.fiber.launch, super::FlowFiberLaunch::Program(_))
             && self.fiber.frame.invocation_result.is_none()
         {
