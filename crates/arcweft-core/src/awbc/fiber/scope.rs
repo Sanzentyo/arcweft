@@ -16,6 +16,29 @@ use crate::value::{AwbcRuntimeValueSnapshot, RuntimeValue, RuntimeValueView};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+impl<V, O, N, B, R, G> super::FiberState<V, O, N, B, R, G> {
+    pub(in crate::awbc) fn has_inflight_defer(&self) -> bool {
+        self.frames
+            .iter()
+            .flat_map(|frame| frame.deferred_scopes())
+            .any(|(_, scope)| scope.defer_inflight.is_some())
+    }
+
+    pub(in crate::awbc) fn has_pending_deferred_cleanup(&self) -> bool {
+        self.frames
+            .iter()
+            .flat_map(|frame| frame.deferred_scopes())
+            .any(|(_, scope)| scope.defer_inflight.is_some() || !scope.defer_releasing.is_empty())
+    }
+
+    pub(in crate::awbc) fn has_deferred_work(&self) -> bool {
+        self.frames
+            .iter()
+            .flat_map(|frame| frame.deferred_scopes())
+            .any(|(_, scope)| !scope.is_empty())
+    }
+}
+
 impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
     super::FiberState<V, O, N, B, R, G>
 {
@@ -316,6 +339,20 @@ pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresenta
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presentation_scope: Option<G>,
     pub cleanups: Vec<FiberScopeCleanup<V>>,
+    pub deferred: FiberDeferredScope<V>,
+}
+
+/// Deferred custody shared by an invocation body and an explicit lexical scope.
+/// Only inert value storage implements the version 1 save grammar.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: super::InertRuntimeValueStorage",
+        deserialize = "V: super::InertRuntimeValueStorage"
+    )
+)]
+pub struct FiberDeferredScope<V = RuntimeValue> {
     pub defers: Vec<FiberDeferredRegistration<V>>,
     /// Only token identities remain after an outcome-filtered packet drops.
     pub defer_releasing: Vec<FiberDeferredRelease>,
@@ -324,6 +361,32 @@ pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresenta
     pub defer_inflight: Option<FiberDeferredInFlight>,
     /// The first failure does not change the exit used by later registrations.
     pub defer_failure: Option<FiberTrap>,
+}
+
+impl<V> FiberDeferredScope<V> {
+    pub const fn new() -> Self {
+        Self {
+            defers: Vec::new(),
+            defer_releasing: Vec::new(),
+            defer_exit: None,
+            defer_inflight: None,
+            defer_failure: None,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.defers.is_empty()
+            && self.defer_releasing.is_empty()
+            && self.defer_exit.is_none()
+            && self.defer_inflight.is_none()
+            && self.defer_failure.is_none()
+    }
+}
+
+impl<V> Default for FiberDeferredScope<V> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Captures at the exact reached executable defer instruction.
@@ -677,42 +740,59 @@ impl<V, G> FiberScope<V, G> {
             .work()
             .charge(0)
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        for count in [
-            self.cleanups.len(),
-            self.defers.len(),
-            self.defer_releasing.len(),
-        ] {
-            resources
-                .work()
-                .collection(count)
-                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        }
+        resources
+            .work()
+            .collection(self.cleanups.len())
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         let definition = frame
             .layout
             .scopes
             .get(self.id.index())
             .ok_or(FiberStateError::InvalidFrame)?;
+        if self.depth as usize != ordinal
+            || ordinal >= frame.layout.max_scope_depth as usize
+            || definition.parent != parent
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        for cleanup in &self.cleanups {
+            cleanup.validate_inputs(frame, resources, view)?;
+        }
+        self.deferred.validate_inputs(frame, ids, resources, view)
+    }
+}
+
+impl<V> FiberDeferredScope<V> {
+    pub(super) fn validate_inputs(
+        &self,
+        frame: &FrameValueContext<'_, V>,
+        ids: &mut BTreeSet<RuntimeDeferRegistrationId>,
+        resources: &mut ValueResourceAdmission,
+        view: impl Fn(&V) -> RuntimeValueView<'_> + Copy,
+    ) -> Result<(), FiberStateError> {
+        // The containing frame or lexical scope admits its identity once.
+        // This inline storage shares that owner's resource bank.
+        for count in [self.defers.len(), self.defer_releasing.len()] {
+            resources
+                .work()
+                .collection(count)
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        }
         let started = match (self.defer_inflight, self.defer_releasing.as_slice()) {
             (running, []) => running.map(|row| row.registration),
             (None, [releasing]) => Some(releasing.registration),
             _ => return Err(FiberStateError::InvalidFrame),
         };
-        if self.depth as usize != ordinal
-            || ordinal >= frame.layout.max_scope_depth as usize
-            || definition.parent != parent
-            || (self.defer_exit.is_none()
-                && (self.defer_inflight.is_some()
-                    || self.defer_failure.is_some()
-                    || !self.defer_releasing.is_empty()))
+        if (self.defer_exit.is_none()
+            && (self.defer_inflight.is_some()
+                || self.defer_failure.is_some()
+                || !self.defer_releasing.is_empty()))
             || !crate::scope::defer_registration_stack_is_ordered(
                 self.defers.iter().map(|row| row.id),
                 started,
             )
         {
             return Err(FiberStateError::InvalidFrame);
-        }
-        for cleanup in &self.cleanups {
-            cleanup.validate_inputs(frame, resources, view)?;
         }
         for deferred in &self.defers {
             if !ids.insert(deferred.id) {
@@ -930,15 +1010,7 @@ impl FiberScope {
                 .iter()
                 .map(|value| value.snapshot_admitted(owner))
                 .collect::<Result<_, _>>()?,
-            defers: self
-                .defers
-                .iter()
-                .map(|value| value.snapshot_admitted(owner))
-                .collect::<Result<_, _>>()?,
-            defer_releasing: self.defer_releasing.clone(),
-            defer_exit: self.defer_exit,
-            defer_inflight: self.defer_inflight,
-            defer_failure: self.defer_failure.clone(),
+            deferred: self.deferred.snapshot_admitted(owner)?,
         })
     }
 }
@@ -959,6 +1031,37 @@ impl super::AwbcFiberScopeSnapshot {
                 .into_iter()
                 .map(|value| value.into_live_admitted(owner))
                 .collect::<Result<_, _>>()?,
+            deferred: self.deferred.into_live_admitted(owner)?,
+        })
+    }
+}
+
+impl FiberDeferredScope {
+    pub(super) fn snapshot_admitted(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> AwbcSaveResult<FiberDeferredScope<AwbcRuntimeValueSnapshot>> {
+        Ok(FiberDeferredScope {
+            defers: self
+                .defers
+                .iter()
+                .map(|value| value.snapshot_admitted(owner))
+                .collect::<Result<_, _>>()?,
+            defer_releasing: self.defer_releasing.clone(),
+            defer_exit: self.defer_exit,
+            defer_inflight: self.defer_inflight,
+            defer_failure: self.defer_failure.clone(),
+        })
+    }
+}
+
+impl FiberDeferredScope<AwbcRuntimeValueSnapshot> {
+    pub(super) fn into_live_admitted<'a>(
+        self,
+        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
+    ) -> AwbcSaveResult<FiberDeferredScope> {
+        let owner = owner.into();
+        Ok(FiberDeferredScope {
             defers: self
                 .defers
                 .into_iter()

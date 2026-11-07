@@ -206,6 +206,26 @@ impl AwbcProductStepExecutor {
         if let Some(root) = &self.root {
             root.admit_retained(&mut admission)?;
         }
+        super::defer::validate_flow_defer_contour(
+            &self.program,
+            self.flow_defer_frontier,
+            std::iter::once((&self.fiber, None)).chain(self.child_fibers.iter().filter_map(
+                |child| {
+                    let owner = match child.owner {
+                        ProductChildFiberOwner::FlowDeferred {
+                            owner,
+                            registration,
+                            site,
+                        } => Some((owner, registration, site)),
+                        ProductChildFiberOwner::Independent
+                        | ProductChildFiberOwner::Program { .. } => None,
+                        _ => return None,
+                    };
+                    Some((&child.fiber, owner))
+                },
+            )),
+        )
+        .map_err(ProductStepError::Internal)?;
         self.admit_fiber_state(&mut admission)?;
         self.admit_task_state(&mut admission)?;
         dialogues.admit_retained(&mut admission)?;

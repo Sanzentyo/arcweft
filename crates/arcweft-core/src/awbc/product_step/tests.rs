@@ -1441,7 +1441,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
             .scopes
             .last()
             .expect("lexical Init scope is active");
-        let [registration] = scope.defers.as_slice() else {
+        let [registration] = scope.deferred.defers.as_slice() else {
             panic!("one reached CurrentScope statement registers one defer");
         };
         assert_eq!(registration.site.index(), 0);

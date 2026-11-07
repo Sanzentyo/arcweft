@@ -6667,12 +6667,12 @@ pub enum RuntimeExecutableSemanticScope<'facts> {
 /// site or its synthetic parameter owner.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct RuntimeImplicitCallableSiteKey {
-    scope: RuntimeImplicitCallableSiteScope,
+    scope: RuntimeExecutableSiteScope,
     expression: ExprId,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum RuntimeImplicitCallableSiteScope {
+pub(crate) enum RuntimeExecutableSiteScope {
     Global,
     Program(RuntimePureProgramId),
     ProjectFunction(RuntimeProjectFunctionInstanceKey),
@@ -6680,24 +6680,32 @@ enum RuntimeImplicitCallableSiteScope {
     TraitMethod(RuntimeTraitMethodInstanceKey),
 }
 
-impl RuntimeImplicitCallableSiteKey {
-    pub(crate) fn new(scope: RuntimeExecutableSemanticScope<'_>, expression: ExprId) -> Self {
-        let scope = match scope {
-            RuntimeExecutableSemanticScope::Global => RuntimeImplicitCallableSiteScope::Global,
+impl From<RuntimeExecutableSemanticScope<'_>> for RuntimeExecutableSiteScope {
+    fn from(scope: RuntimeExecutableSemanticScope<'_>) -> Self {
+        match scope {
+            RuntimeExecutableSemanticScope::Global => RuntimeExecutableSiteScope::Global,
             RuntimeExecutableSemanticScope::Program(program) => {
-                RuntimeImplicitCallableSiteScope::Program(program)
+                RuntimeExecutableSiteScope::Program(program)
             }
             RuntimeExecutableSemanticScope::ProjectFunction(key) => {
-                RuntimeImplicitCallableSiteScope::ProjectFunction(key.clone())
+                RuntimeExecutableSiteScope::ProjectFunction(key.clone())
             }
             RuntimeExecutableSemanticScope::Closure(key) => {
-                RuntimeImplicitCallableSiteScope::Closure(key.clone())
+                RuntimeExecutableSiteScope::Closure(key.clone())
             }
             RuntimeExecutableSemanticScope::TraitMethod(key) => {
-                RuntimeImplicitCallableSiteScope::TraitMethod(key.clone())
+                RuntimeExecutableSiteScope::TraitMethod(key.clone())
             }
-        };
-        Self { scope, expression }
+        }
+    }
+}
+
+impl RuntimeImplicitCallableSiteKey {
+    pub(crate) fn new(scope: RuntimeExecutableSemanticScope<'_>, expression: ExprId) -> Self {
+        Self {
+            scope: scope.into(),
+            expression,
+        }
     }
 }
 
@@ -11201,6 +11209,30 @@ impl RuntimePlanSemanticFacts {
         }
     }
 
+    /// Visits each defer under its exact closed executable catalog.
+    pub(crate) fn visit_scoped_defers<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            StmtId,
+            &'facts RuntimeDeferFact,
+        ),
+    ) {
+        let global = RuntimeScopedExecutableSemanticFactView::global(self);
+        for (statement, fact) in self.defers() {
+            visitor(global, statement, fact);
+        }
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+            self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
+        ) {
+            semantics.visit_scoped_defers(scope, visitor);
+        }
+    }
     /// Visits each selected call with the exact global, closed project-
     /// function, or closure semantic catalog that owns it.
     ///

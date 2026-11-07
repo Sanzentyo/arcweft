@@ -2686,6 +2686,33 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         }
     }
 
+    pub(super) fn visit_scoped_defers<'facts>(
+        &'facts self,
+        scope: RuntimeScopedExecutableSemanticFactView<'facts>,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            StmtId,
+            &'facts RuntimeDeferFact,
+        ),
+    ) {
+        for statement in &self.statements {
+            if let RuntimeProjectFunctionStatementPayload::Defer(fact) = statement.payload() {
+                visitor(scope, statement.owner(), fact);
+            }
+        }
+        for expression in &self.expressions {
+            if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
+            {
+                closure.semantics().visit_scoped_defers(
+                    RuntimeScopedExecutableSemanticFactView::closure(
+                        closure.key(),
+                        closure.semantics(),
+                    ),
+                    visitor,
+                );
+            }
+        }
+    }
     pub fn visit_scoped_implicit_callables<'facts>(
         &'facts self,
         scope: RuntimeScopedExecutableSemanticFactView<'facts>,

@@ -10,6 +10,7 @@ mod checkpoint;
 pub use admission::AwbcProductProgram;
 use checkpoint::{ProductCheckpointTarget, ProductExecutionCheckpoint};
 mod control;
+mod defer;
 mod dialogue;
 mod execution;
 mod lifecycle;
@@ -45,8 +46,8 @@ pub use self::snapshot::{
 };
 use crate::awbc::fiber::{
     AwbcFiberLexicalScopeId, FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget,
-    FiberBudget, FiberCursor, FiberDialogueContentEffectBinding, FiberState, FiberStatus,
-    FiberSuspensionReason, FiberTerminalValue, FiberTrap, runtime_value_matches_type,
+    FiberBudget, FiberCursor, FiberDialogueContentEffectBinding, FiberState, FiberStateError,
+    FiberStatus, FiberSuspensionReason, FiberTerminalValue, FiberTrap, runtime_value_matches_type,
 };
 use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId,
@@ -83,9 +84,9 @@ use crate::step::{
 };
 use crate::stream::{RuntimeStreamEvent, StreamRuntimeState};
 use crate::task::{
-    GenerationId, NeedId, NeedProducerRegistry, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
-    TaskPublicationCursor, TaskSequence, normalize_runtime_need_states, normalize_task_events,
-    resolved_runtime_need_state,
+    GenerationId, NeedId, NeedProducerRegistry, RuntimeNeedState, RuntimeProgramOwner, TaskEvent,
+    TaskEventKind, TaskId, TaskPublicationCursor, TaskSequence, normalize_runtime_need_states,
+    normalize_task_events, resolved_runtime_need_state,
 };
 use crate::time::LogicalDuration;
 use crate::value::{
@@ -656,6 +657,11 @@ impl AwbcProductStepExecutor {
 #[derive(Clone, Debug, PartialEq)]
 enum ProductChildFiberOwner {
     Independent,
+    FlowDeferred {
+        owner: AwbcFiberLexicalScopeId,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
     Program {
         launch: crate::task::ProgramTaskLaunch,
         parent: crate::runtime_id::RuntimeFiberInstanceId,
@@ -750,7 +756,7 @@ impl ProductChildFiberOwner {
             Self::Deferred { activation, .. } | Self::ScopedDeferred { activation, .. } => {
                 Some(*activation)
             }
-            Self::Independent | Self::Program { .. } => None,
+            Self::Independent | Self::Program { .. } | Self::FlowDeferred { .. } => None,
         }
     }
 
@@ -765,7 +771,7 @@ impl ProductChildFiberOwner {
             | Self::ScopedDeferred {
                 activation: owner, ..
             } => owner == activation,
-            Self::Independent | Self::Program { .. } => false,
+            Self::Independent | Self::Program { .. } | Self::FlowDeferred { .. } => false,
         }
     }
 }
@@ -780,6 +786,7 @@ impl ProductChildFiber {
                     ProductChildFiberOwner::Deferred { .. }
                         | ProductChildFiberOwner::ScopedDeferred { .. }
                         | ProductChildFiberOwner::Program { .. }
+                        | ProductChildFiberOwner::FlowDeferred { .. }
                 ) && matches!(
                     self.fiber
                         .suspension
@@ -793,6 +800,7 @@ impl ProductChildFiber {
                 ProductChildFiberOwner::Deferred { .. }
                     | ProductChildFiberOwner::ScopedDeferred { .. }
                     | ProductChildFiberOwner::Program { .. }
+                    | ProductChildFiberOwner::FlowDeferred { .. }
             ),
         }
     }
@@ -1687,6 +1695,7 @@ pub struct AwbcProductStepExecutor {
     next_generation: u64,
     next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
     next_host_call_sequence: u64,
+    flow_defer_frontier: crate::scope::RuntimeDeferRegistrationFrontier,
     next_audio_sequence: u64,
     compact_pure_stats: crate::step::RuntimePureCallStats,
     root: Option<RootRuntime>,
@@ -2352,6 +2361,7 @@ impl AwbcProductStepExecutor {
             dialogue_occurrences: BTreeMap::new(),
             next_generation: 1,
             next_fiber_instance,
+            flow_defer_frontier: crate::scope::RuntimeDeferRegistrationFrontier::initial(),
             next_host_call_sequence: 0,
             next_audio_sequence: 0,
             compact_pure_stats: crate::step::RuntimePureCallStats::default(),
@@ -2730,6 +2740,16 @@ impl AwbcProductStepExecutor {
                 }
                 continue;
             }
+            if self.fiber.has_pending_deferred_cleanup() {
+                if !self.step_next_child(output, pure_backend, input, need_states) {
+                    break;
+                }
+                executed_ops = executed_ops.saturating_add(1);
+                if self.should_return_to_host(options.mode, output, executed_ops) {
+                    break;
+                }
+                continue;
+            }
             if self.fiber.status == FiberStatus::Suspended {
                 let progress =
                     self.resume_main_suspension(input, need_states, output, pure_backend, budgets);
@@ -2746,7 +2766,7 @@ impl AwbcProductStepExecutor {
                 continue;
             }
             let line_effects_before = output.effects.line.len();
-            if self.fiber.status == FiberStatus::Running {
+            if self.fiber.status == FiberStatus::Running || self.fiber.has_deferred_work() {
                 executed_ops = executed_ops.saturating_add(self.step_main_vm(
                     need_states,
                     output,
@@ -2807,6 +2827,7 @@ impl AwbcProductStepExecutor {
         };
         self.root_has_pending_reduction()
             || self.fiber.status == FiberStatus::Running
+            || self.fiber.has_deferred_work()
             || self.fiber.suspension.as_ref().is_some_and(|suspension| matches!(
                 suspension.reason, FiberSuspensionReason::ActionReceive { payload } if self.actions.has_message(payload)))
             || dialogue_work
@@ -2824,11 +2845,16 @@ impl AwbcProductStepExecutor {
     fn has_attemptable_work(&self) -> bool {
         match self.fiber.status {
             FiberStatus::Running | FiberStatus::Suspended => true,
-            FiberStatus::Returned | FiberStatus::Cancelled => !self.child_fibers.is_empty(),
-            FiberStatus::Trapped => self
-                .child_fibers
-                .iter()
-                .any(|child| child.fiber.status == FiberStatus::Running),
+            FiberStatus::Returned | FiberStatus::Cancelled => {
+                self.fiber.has_deferred_work() || !self.child_fibers.is_empty()
+            }
+            FiberStatus::Trapped => {
+                self.fiber.has_deferred_work()
+                    || self
+                        .child_fibers
+                        .iter()
+                        .any(|child| child.fiber.status == FiberStatus::Running)
+            }
         }
     }
 
@@ -2867,20 +2893,31 @@ impl AwbcProductStepExecutor {
             fallback_stats: &mut candidate_stats,
             context: &context,
         };
-        match step_with_execution_resources(
-            &self.program,
-            &mut self.fiber,
-            VmStepOptions {
-                max_instructions: 1,
-            },
-            crate::awbc::vm::VmExecutionResources {
-                context: Some(&context),
-                presentation: Some(&mut self.presentation),
-                actions: Some(&mut self.actions),
-                dialogue_registry: None,
-            },
-            &mut host,
-        ) {
+        let terminal_owner = RuntimeProgramOwner::Awbc(self.program_arc());
+        let vm_result = if self.fiber.status.is_terminal() && self.fiber.has_deferred_work() {
+            Self::step_terminal_child_scope(
+                &self.program,
+                &terminal_owner,
+                &mut self.presentation,
+                &mut self.fiber,
+            )
+        } else {
+            step_with_execution_resources(
+                &self.program,
+                &mut self.fiber,
+                VmStepOptions {
+                    max_instructions: 1,
+                },
+                crate::awbc::vm::VmExecutionResources {
+                    context: Some(&context),
+                    presentation: Some(&mut self.presentation),
+                    actions: Some(&mut self.actions),
+                    dialogue_registry: None,
+                },
+                &mut host,
+            )
+        };
+        match vm_result {
             Ok(mut vm_output) => {
                 if let Err(error) = self.preflight_control_traps(&vm_output.observations) {
                     return self.fail_main_vm_step(checkpoint, error, output, vm_output.executed);
@@ -2907,7 +2944,7 @@ impl AwbcProductStepExecutor {
                         self.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
                     }
                 }
-                let (drop_policy, observations) =
+                let (drop_policy, mut observations) =
                     match partition_drop_observation(vm_output.observations) {
                         Ok(parts) => parts,
                         Err(error) => {
@@ -2919,6 +2956,22 @@ impl AwbcProductStepExecutor {
                             );
                         }
                     };
+                let mut defer_batch = line::empty_activation_batch(self);
+                let prepared_defer = match self.prepare_flow_defer_step(
+                    &self.fiber,
+                    &mut observations,
+                    &defer_batch,
+                ) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        return self.fail_main_vm_step(
+                            checkpoint,
+                            error,
+                            output,
+                            vm_output.executed,
+                        );
+                    }
+                };
                 let after_owners = match line::product_fiber_handle_owners(
                     self.facade_fiber.execution,
                     &self.fiber,
@@ -2949,6 +3002,16 @@ impl AwbcProductStepExecutor {
                         );
                     }
                 };
+                if let Some(prepared) = prepared_defer {
+                    if let Some(spawn) = Self::commit_flow_defer_step(
+                        &mut self.fiber,
+                        prepared,
+                        &mut self.flow_defer_frontier,
+                    ) {
+                        spawn.commit(self, &mut defer_batch);
+                    }
+                }
+                self.commit_line_task_commands(defer_batch, output);
                 self.compact_pure_stats = candidate_stats;
                 output
                     .requests
@@ -3250,9 +3313,7 @@ impl AwbcProductStepExecutor {
         let Some(front) = self.child_fibers.front() else {
             return false;
         };
-        if front.owner.line_activation().is_some()
-            && line::fiber_has_pending_scoped_defer(&front.fiber)
-        {
+        if front.fiber.has_pending_deferred_cleanup() {
             let child = self
                 .child_fibers
                 .pop_front()
@@ -3272,7 +3333,9 @@ impl AwbcProductStepExecutor {
                 self.child_fibers.push_back(child);
                 return false;
             }
-            if matches!(front.owner, ProductChildFiberOwner::Program { .. }) {
+            if matches!(front.owner, ProductChildFiberOwner::Program { .. })
+                && !front.fiber.has_deferred_work()
+            {
                 let child = self
                     .child_fibers
                     .pop_front()
@@ -3286,6 +3349,7 @@ impl AwbcProductStepExecutor {
             ProductChildFiberOwner::Deferred { .. }
                 | ProductChildFiberOwner::ScopedDeferred { .. }
                 | ProductChildFiberOwner::Program { .. }
+                | ProductChildFiberOwner::FlowDeferred { .. }
         );
         let line_terminal =
             front.owner.line_activation().is_some() && front.fiber.status.is_terminal();
@@ -3378,12 +3442,15 @@ impl AwbcProductStepExecutor {
                                 true
                             }
                             ProductChildFiberOwner::Independent
-                            | ProductChildFiberOwner::Program { .. } => unreachable!(),
+                            | ProductChildFiberOwner::Program { .. }
+                            | ProductChildFiberOwner::FlowDeferred { .. } => unreachable!(),
                         };
                     }
                 }
             }
-            ProductChildFiberOwner::Independent | ProductChildFiberOwner::Program { .. } => None,
+            ProductChildFiberOwner::Independent
+            | ProductChildFiberOwner::Program { .. }
+            | ProductChildFiberOwner::FlowDeferred { .. } => None,
         };
         let mut skip_vm_instruction = false;
         if child.fiber.status == FiberStatus::Suspended {
@@ -3453,17 +3520,16 @@ impl AwbcProductStepExecutor {
             fallback_stats: &mut candidate_stats,
             context: &context,
         };
-        let terminal_unwind =
-            if registry_activation.is_some() && line::fiber_has_scoped_defer_work(&child.fiber) {
-                match child.fiber.status {
-                    FiberStatus::Returned => Some(ScopeExit::Completed),
-                    FiberStatus::Cancelled => Some(ScopeExit::Cancelled),
-                    FiberStatus::Trapped => Some(ScopeExit::Failed),
-                    _ => None,
-                }
-            } else {
-                None
-            };
+        let terminal_unwind = if child.fiber.has_deferred_work() {
+            match child.fiber.status {
+                FiberStatus::Returned => Some(ScopeExit::Completed),
+                FiberStatus::Cancelled => Some(ScopeExit::Cancelled),
+                FiberStatus::Trapped => Some(ScopeExit::Failed),
+                _ => None,
+            }
+        } else {
+            None
+        };
         let terminal_exit = (terminal_unwind.is_none()
             && matches!(
                 child.fiber.status,
@@ -3471,7 +3537,12 @@ impl AwbcProductStepExecutor {
             ))
         .then(|| crate::awbc::vm::terminal_exit(&mut child.fiber));
         let vm_result = if terminal_unwind.is_some() {
-            self.step_terminal_child_scope(&mut child.fiber)
+            Self::step_terminal_child_scope(
+                &self.program,
+                &RuntimeProgramOwner::Awbc(self.program_arc()),
+                &mut self.presentation,
+                &mut child.fiber,
+            )
         } else if skip_vm_instruction {
             Ok(crate::awbc::vm::VmStepOutput {
                 executed: 0,
@@ -3598,7 +3669,8 @@ impl AwbcProductStepExecutor {
                     }
                     ProductChildFiberOwner::Program { .. }
                     | ProductChildFiberOwner::Deferred { .. }
-                    | ProductChildFiberOwner::ScopedDeferred { .. } => {
+                    | ProductChildFiberOwner::ScopedDeferred { .. }
+                    | ProductChildFiberOwner::FlowDeferred { .. } => {
                         child.fiber.mark_trapped(FiberTrap {
                             code: AwbcTrapCode::InternalInvariant,
                             message: Some(message),
@@ -3651,11 +3723,10 @@ impl AwbcProductStepExecutor {
                 }
             }
         };
-        if registry_activation.is_some()
-            && let Some(index) = vm_output
-                .observations
-                .iter()
-                .position(|observation| matches!(observation, VmObservation::ScopedDeferFailure(_)))
+        if let Some(index) = vm_output
+            .observations
+            .iter()
+            .position(|observation| matches!(observation, VmObservation::ScopedDeferFailure(_)))
         {
             let VmObservation::ScopedDeferFailure(trap) = vm_output.observations.remove(index)
             else {
@@ -3783,7 +3854,8 @@ impl AwbcProductStepExecutor {
                     }
                     ProductChildFiberOwner::Program { .. }
                     | ProductChildFiberOwner::Deferred { .. }
-                    | ProductChildFiberOwner::ScopedDeferred { .. } => {
+                    | ProductChildFiberOwner::ScopedDeferred { .. }
+                    | ProductChildFiberOwner::FlowDeferred { .. } => {
                         child.fiber.mark_trapped(FiberTrap {
                             code: AwbcTrapCode::InternalInvariant,
                             message: Some(error.to_string()),
@@ -3824,6 +3896,56 @@ impl AwbcProductStepExecutor {
                 return true;
             }
         };
+        if owner.line_activation().is_none() {
+            let mut batch = line::empty_activation_batch(self);
+            let prepared =
+                match self.prepare_flow_defer_step(&child.fiber, &mut observations, &batch) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        if self.rollback_selected_child_step(
+                            child,
+                            checkpoint,
+                            pending_host_call_before,
+                            resume_journal,
+                            need_states,
+                            output,
+                        ) {
+                            self.record_error(error, output);
+                        }
+                        return true;
+                    }
+                };
+            if let Some(prepared) = prepared {
+                if let Some(spawn) = Self::commit_flow_defer_step(
+                    &mut child.fiber,
+                    prepared,
+                    &mut self.flow_defer_frontier,
+                ) {
+                    spawn.commit(self, &mut batch);
+                }
+            }
+            self.commit_line_task_commands(batch, output);
+        }
+        if matches!(&owner, ProductChildFiberOwner::FlowDeferred { .. }) {
+            resume_journal.commit_staged_need_ready(
+                &mut self.need_producers,
+                need_states,
+                &self.program,
+                &mut child.fiber,
+            );
+            resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
+            resume_journal.commit(self, staged_resume_output, output);
+            self.compact_pure_stats = candidate_stats;
+            if child.fiber.status.is_terminal() && !child.fiber.has_deferred_work() {
+                if let Err(error) = self.finish_flow_defer_child(child) {
+                    self.fail_with_error(error, output);
+                }
+            } else {
+                self.child_fibers.push_back(child);
+            }
+            self.consume_observations(observations, output);
+            return true;
+        }
         if matches!(&owner, ProductChildFiberOwner::Program { .. }) {
             // Program children use the prepared Ready/Host-result transfer
             // without a dialogue transaction. Commit the payload and resume
@@ -3845,10 +3967,7 @@ impl AwbcProductStepExecutor {
             }
             resume_journal.commit(self, staged_resume_output, output);
             self.compact_pure_stats = candidate_stats;
-            if matches!(
-                child.fiber.status,
-                FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
-            ) {
+            if child.fiber.status.is_terminal() && !child.fiber.has_deferred_work() {
                 self.retire_program_child(child, output);
             } else {
                 self.child_fibers.push_back(child);
@@ -3909,7 +4028,9 @@ impl AwbcProductStepExecutor {
                     site,
                 }),
             ),
-            ProductChildFiberOwner::Independent | ProductChildFiberOwner::Program { .. } => {
+            ProductChildFiberOwner::Independent
+            | ProductChildFiberOwner::Program { .. }
+            | ProductChildFiberOwner::FlowDeferred { .. } => {
                 self.fail_with_error(
                     crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
                     output,
@@ -4088,7 +4209,7 @@ impl AwbcProductStepExecutor {
 
         if child.fiber.status == FiberStatus::Running
             || (child.fiber.status == FiberStatus::Suspended && deferred.is_some())
-            || (child.fiber.status.is_terminal() && line::fiber_has_scoped_defer_work(&child.fiber))
+            || (child.fiber.status.is_terminal() && child.fiber.has_deferred_work())
         {
             let proof = match self.dialogues.inspect_commit(&transaction) {
                 Ok(proof) => proof,
@@ -4479,14 +4600,28 @@ impl AwbcProductStepExecutor {
     }
 
     fn step_terminal_child_scope(
-        &self,
+        program: &AwbcProductProgram,
+        owner: &RuntimeProgramOwner,
+        presentation: &mut Option<
+            crate::presentation::resources::PresentationBanks<
+                crate::presentation::resources::PresentationBody<crate::value::RuntimePayload>,
+            >,
+        >,
         fiber: &mut FiberState,
     ) -> Result<crate::awbc::vm::VmStepOutput, VmError> {
         let mut observations = Vec::new();
         if let Some(scope) = fiber.active_frame()?.scopes.last() {
             let id = scope.id;
-            if scope.defers.is_empty() {
-                let (cleanups, failure) = line::pop_activation_scope(&self.program, fiber, id)
+            if scope.deferred.defers.is_empty() {
+                if scope.presentation_scope.is_some() {
+                    fiber
+                        .retire_presentation_scope(
+                            owner,
+                            presentation.as_mut().ok_or(FiberStateError::InvalidFrame)?,
+                        )
+                        .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+                }
+                let (cleanups, failure) = line::pop_activation_scope(program, fiber, Some(id))
                     .map_err(|error| VmError::Runtime(error.to_string()))?;
                 if let Some(failure) = failure {
                     fiber.record_terminal_defer_failure(failure);
@@ -4503,16 +4638,42 @@ impl AwbcProductStepExecutor {
             } else {
                 observations.push(VmObservation::ScopedDeferUnwind {
                     cursor: fiber.cursor,
-                    scope: id,
+                    scope: Some(id),
                 });
             }
+        } else if !fiber.active_frame()?.root_deferred.defers.is_empty() {
+            observations.push(VmObservation::ScopedDeferUnwind {
+                cursor: fiber.cursor,
+                scope: None,
+            });
         } else {
-            fiber.retire_terminal_callee()?;
+            if fiber.active_frame()?.root_presentation_scope.is_some() {
+                fiber
+                    .retire_presentation_scope(
+                        owner,
+                        presentation.as_mut().ok_or(FiberStateError::InvalidFrame)?,
+                    )
+                    .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+            }
+            let (_, failure) = line::pop_activation_scope(program, fiber, None)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            if let Some(failure) = failure {
+                fiber.record_terminal_defer_failure(failure);
+            }
+            observations.extend(fiber.take_active_frame_cleanups(program)?.into_iter().map(
+                |cleanup| VmObservation::Effect {
+                    effect: cleanup.effect,
+                    args: cleanup.args,
+                },
+            ));
+            if fiber.frames.len() > 1 {
+                fiber.retire_terminal_callee()?;
+            }
             observations.push(VmObservation::Drop {
                 policy: crate::effect::RuntimeDropPolicy::Default,
             });
         }
-        let exit = if line::fiber_has_scoped_defer_work(fiber) {
+        let exit = if fiber.has_deferred_work() {
             VmExit::Running
         } else {
             crate::awbc::vm::terminal_exit(fiber)

@@ -296,7 +296,7 @@ pub enum VmObservation {
     /// captures before advancing this exact cursor.
     ScopedDeferRegistration {
         cursor: FiberCursor,
-        scope: crate::awbc::schema::AwbcScopeId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
         site: crate::runtime_id::RuntimeDeferSiteId,
         outcome: crate::line_task::RuntimeDeferOutcomeFilter,
         captures: Vec<(AwbcRegisterId, RuntimeValue)>,
@@ -305,7 +305,7 @@ pub enum VmObservation {
     /// registrations have been drained in LIFO order.
     ScopedDeferUnwind {
         cursor: FiberCursor,
-        scope: crate::awbc::schema::AwbcScopeId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
     },
     /// The scope was closed after all defers ran; the activation owner must
     /// now fail the activation while preserving that completed exit filter.
@@ -526,7 +526,14 @@ pub fn cancel_fiber(
 ) -> Result<VmStepOutput, VmError> {
     let mut observations = Vec::new();
     if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
-        emit_ordered_cleanup_observations(fiber.take_unwind_cleanups(program)?, &mut observations);
+        if fiber.has_deferred_work() {
+            fiber.validate_cleanup_inputs(program)?;
+        } else {
+            emit_ordered_cleanup_observations(
+                fiber.take_unwind_cleanups(program)?,
+                &mut observations,
+            );
+        }
         fiber.mark_cancelled();
     }
     Ok(VmStepOutput {
@@ -965,11 +972,7 @@ fn execute_instruction(
                     depth,
                     presentation_scope: None,
                     cleanups: Vec::new(),
-                    defers: Vec::new(),
-                    defer_releasing: Vec::new(),
-                    defer_exit: None,
-                    defer_inflight: None,
-                    defer_failure: None,
+                    deferred: super::fiber::FiberDeferredScope::new(),
                 });
         }
         AwbcInstruction::ExitScope { scope } => {
@@ -983,15 +986,15 @@ fn execute_instruction(
                 .scopes
                 .last()
                 .ok_or_else(|| VmError::Runtime("scope stack is empty".to_owned()))?;
-            if active.defer_inflight.is_some() {
+            if active.deferred.defer_inflight.is_some() {
                 return Err(VmError::Runtime(
                     "scope exit reached while a defer child is still active".to_owned(),
                 ));
             }
-            if !active.defers.is_empty() || !active.defer_releasing.is_empty() {
+            if !active.deferred.defers.is_empty() || !active.deferred.defer_releasing.is_empty() {
                 observations.push(VmObservation::ScopedDeferUnwind {
                     cursor: fiber.cursor,
-                    scope: *scope,
+                    scope: Some(*scope),
                 });
                 return Ok(InstructionControl::Yield);
             }
@@ -1025,7 +1028,7 @@ fn execute_instruction(
                         .collect(),
                     observations,
                 );
-                scope.defer_failure
+                scope.deferred.defer_failure
             });
             let active_scope_depth = u32::try_from(frame.scopes.len())
                 .map_err(|_| VmError::Runtime("scope depth exceeds u32".to_owned()))?;
@@ -2737,16 +2740,7 @@ fn execute_instruction(
                 });
                 return Ok(InstructionControl::Yield);
             }
-            let scope = fiber
-                .active_frame()?
-                .scopes
-                .last()
-                .map(|scope| scope.id)
-                .ok_or_else(|| {
-                    VmError::Runtime(
-                        "CurrentScope defer requires an active lexical scope".to_owned(),
-                    )
-                })?;
+            let scope = fiber.active_frame()?.scopes.last().map(|scope| scope.id);
             observations.push(VmObservation::ScopedDeferRegistration {
                 cursor: fiber.cursor,
                 scope,
@@ -3647,6 +3641,25 @@ fn execute_terminator(
             )
         }
         AwbcTerminator::Return { .. } | AwbcTerminator::Complete => {
+            let frame = fiber.active_frame()?;
+            let deferred = &frame.root_deferred;
+            if frame.scopes.is_empty() && !deferred.is_empty() {
+                if deferred.defer_inflight.is_some()
+                    || !deferred.defers.is_empty()
+                    || !deferred.defer_releasing.is_empty()
+                {
+                    observations.push(VmObservation::ScopedDeferUnwind {
+                        cursor: fiber.cursor,
+                        scope: None,
+                    });
+                    return Ok(VmExit::Running);
+                }
+                let deferred = std::mem::take(&mut fiber.active_frame_mut()?.root_deferred);
+                if let Some(trap) = deferred.defer_failure {
+                    observations.push(VmObservation::ScopedDeferFailure(trap));
+                    return Ok(VmExit::Running);
+                }
+            }
             let value = match terminator {
                 AwbcTerminator::Return { value } => *value,
                 AwbcTerminator::Complete => None,
@@ -6003,8 +6016,12 @@ fn terminate_with_trap(
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<FiberTrap, VmError> {
-    execution.retire_unwind(program, fiber)?;
-    emit_unwind_cleanup_observations(program, fiber, observations)?;
+    if fiber.has_deferred_work() {
+        fiber.validate_cleanup_inputs(program)?;
+    } else {
+        execution.retire_unwind(program, fiber)?;
+        emit_unwind_cleanup_observations(program, fiber, observations)?;
+    }
     let trap = FiberTrap {
         code,
         message,

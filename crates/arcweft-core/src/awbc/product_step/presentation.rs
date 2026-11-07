@@ -154,7 +154,9 @@ impl AwbcProductProgram {
         fiber: &mut FiberState,
         presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
     ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
-        self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
+        if !fiber.has_deferred_work() {
+            self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
+        }
         crate::awbc::vm::cancel_fiber(self, fiber)
     }
 }
@@ -166,7 +168,9 @@ impl AwbcProductProgram {
         presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
         trap: crate::awbc::fiber::FiberTrap,
     ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
-        self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
+        if !fiber.has_deferred_work() {
+            self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
+        }
         crate::awbc::vm::trap_fiber(self, fiber, trap)
     }
 }
@@ -176,8 +180,11 @@ impl ProductChildFiberOwner {
         match self {
             Self::Independent => PresentationExecutionRole::Independent,
             Self::Program { parent, .. } => {
-                PresentationExecutionRole::ProgramChild { parent: *parent }
+                PresentationExecutionRole::AttachedChild { parent: *parent }
             }
+            Self::FlowDeferred { owner, .. } => PresentationExecutionRole::AttachedChild {
+                parent: owner.fiber,
+            },
             Self::LineTask { tag, .. } => PresentationExecutionRole::Dialogue(*tag.activation_id()),
             Self::Deferred { activation, .. } | Self::ScopedDeferred { activation, .. } => {
                 PresentationExecutionRole::Dialogue(*activation)
@@ -191,8 +198,11 @@ impl AwbcProductChildFiberOwnerSnapshot {
         match self {
             Self::Independent => PresentationExecutionRole::Independent,
             Self::Program { parent, .. } => {
-                PresentationExecutionRole::ProgramChild { parent: *parent }
+                PresentationExecutionRole::AttachedChild { parent: *parent }
             }
+            Self::FlowDeferred { owner, .. } => PresentationExecutionRole::AttachedChild {
+                parent: owner.fiber,
+            },
             Self::LineTask { tag, .. } => {
                 PresentationExecutionRole::Dialogue(match &tag.instance {
                     AwbcProductLineTaskWorkInstanceSnapshot::Activation(activation) => *activation,

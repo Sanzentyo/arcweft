@@ -251,6 +251,15 @@ impl ProductChildFiberOwner {
     fn snapshot(&self) -> AwbcProductChildFiberOwnerSnapshot {
         match self {
             Self::Independent => AwbcProductChildFiberOwnerSnapshot::Independent,
+            Self::FlowDeferred {
+                owner,
+                registration,
+                site,
+            } => AwbcProductChildFiberOwnerSnapshot::FlowDeferred {
+                owner: *owner,
+                registration: *registration,
+                site: *site,
+            },
             Self::Program { launch, parent } => AwbcProductChildFiberOwnerSnapshot::Program {
                 handle: launch.handle(),
                 parent: *parent,
@@ -306,6 +315,15 @@ impl ProductChildFiberOwner {
     ) -> Result<Self, String> {
         Ok(match snapshot {
             AwbcProductChildFiberOwnerSnapshot::Independent => Self::Independent,
+            AwbcProductChildFiberOwnerSnapshot::FlowDeferred {
+                owner,
+                registration,
+                site,
+            } => Self::FlowDeferred {
+                owner: *owner,
+                registration: *registration,
+                site: *site,
+            },
             AwbcProductChildFiberOwnerSnapshot::Program { handle, parent } => Self::Program {
                 launch: registry
                     .program_launch_for_handle(*handle)
@@ -410,6 +428,7 @@ pub struct AwbcProductExecutorSnapshot {
     pub stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
     pub next_generation: u64,
     pub next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
+    pub(crate) flow_defer_frontier: crate::scope::RuntimeDeferRegistrationFrontier,
     pub dialogue_occurrences: Vec<AwbcProductDialogueOccurrenceSnapshot>,
     pub next_host_call_sequence: u64,
     pub next_audio_sequence: u64,
@@ -453,6 +472,7 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
     pub next_generation: u64,
     pub next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
+    pub(crate) flow_defer_frontier: crate::scope::RuntimeDeferRegistrationFrontier,
     pub dialogue_occurrences: Vec<AwbcProductDialogueOccurrenceSnapshot>,
     pub next_host_call_sequence: u64,
     pub next_audio_sequence: u64,
@@ -2000,6 +2020,7 @@ impl AwbcProductExecutorSnapshot {
                     &self.stream_sequences,
                     self.next_generation,
                     self.next_fiber_instance,
+                    self.flow_defer_frontier,
                     self.next_host_call_sequence,
                     self.next_audio_sequence,
                 ),
@@ -2135,19 +2156,22 @@ impl AwbcProductExecutorSnapshot {
             match (&child.owner, &child.pending_host_call, host_call) {
                 (
                     AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
-                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
+                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. }
+                    | AwbcProductChildFiberOwnerSnapshot::FlowDeferred { .. },
                     Some(pending),
                     Some(call),
                 ) if pending.call == call && program.host_calls.get(call.index()).is_some() => {}
                 (
                     AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
-                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
+                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. }
+                    | AwbcProductChildFiberOwnerSnapshot::FlowDeferred { .. },
                     None,
                     None,
                 ) => {}
                 (
                     AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
-                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
+                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. }
+                    | AwbcProductChildFiberOwnerSnapshot::FlowDeferred { .. },
                     _,
                     _,
                 ) => {
@@ -2165,6 +2189,26 @@ impl AwbcProductExecutorSnapshot {
                 }
             }
         }
+        super::defer::validate_flow_defer_contour(
+            program,
+            snapshot.flow_defer_frontier,
+            std::iter::once((&snapshot.fiber, None)).chain(
+                snapshot.child_fibers.iter().filter_map(|child| {
+                    let owner = match child.owner {
+                        AwbcProductChildFiberOwnerSnapshot::FlowDeferred {
+                            owner,
+                            registration,
+                            site,
+                        } => Some((owner, registration, site)),
+                        AwbcProductChildFiberOwnerSnapshot::Independent
+                        | AwbcProductChildFiberOwnerSnapshot::Program { .. } => None,
+                        _ => return None,
+                    };
+                    Some((&child.fiber, owner))
+                }),
+            ),
+        )
+        .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         self.validate_live_flow_bindings(program)?;
         let deferred_children = expected_deferred_children(snapshot)?;
         snapshot
@@ -2557,7 +2601,7 @@ impl AwbcProductExecutorSnapshot {
                 .chain(children.iter().map(|child| &child.fiber));
             let scoped_registration_ids = lexical_fibers
                 .clone()
-                .flat_map(|fiber| fiber.frames.iter().flat_map(|frame| &frame.scopes))
+                .flat_map(|fiber| fiber.frames.iter().flat_map(|frame| frame.deferred_scopes().map(|(_, scope)| scope)))
                 .flat_map(|scope| {
                     scope
                         .defers
@@ -2573,12 +2617,12 @@ impl AwbcProductExecutorSnapshot {
                 })?;
             for fiber in lexical_fibers {
                 for frame in &fiber.frames {
-                    for scope in &frame.scopes {
+                    for (scope_id, scope) in frame.deferred_scopes() {
                         if let Some(inflight) = scope.defer_inflight {
                             let owner = crate::awbc::fiber::AwbcFiberLexicalScopeId {
                                 fiber: fiber.instance,
                                 frame: frame.instance,
-                                scope: scope.id,
+                                scope: scope_id,
                             };
                             if owner.active_scope(fiber).is_none_or(|active| active.defer_exit.is_none())
                                 || expected_scoped_inflight.insert(owner, inflight).is_some()
@@ -2662,7 +2706,7 @@ impl AwbcProductExecutorSnapshot {
                     || owner.fiber >= child.fiber.instance
                     || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
                     || (child.fiber.status.is_terminal()
-                        && !super::line::fiber_has_scoped_defer_work(&child.fiber))
+                        && !child.fiber.has_deferred_work())
                     || expected_scoped_inflight.remove(owner) != Some(inflight)
                 {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -2802,7 +2846,8 @@ impl AwbcProductExecutorSnapshot {
         owner: &AwbcProductChildFiberOwnerSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
         if let AwbcProductChildFiberOwnerSnapshot::Deferred { site, .. }
-        | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { site, .. } = owner
+        | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { site, .. }
+        | AwbcProductChildFiberOwnerSnapshot::FlowDeferred { site, .. } = owner
         {
             let function_id = program
                 .defer_sites
@@ -3184,6 +3229,7 @@ impl AwbcProductExecutorSaveSnapshot {
             stream_sequences: snapshot.stream_sequences.clone(),
             next_generation: snapshot.next_generation,
             next_fiber_instance: snapshot.next_fiber_instance,
+            flow_defer_frontier: snapshot.flow_defer_frontier,
             dialogue_occurrences: snapshot.dialogue_occurrences.clone(),
             next_host_call_sequence: snapshot.next_host_call_sequence,
             next_audio_sequence: snapshot.next_audio_sequence,
@@ -3302,6 +3348,7 @@ impl AwbcProductExecutorSaveSnapshot {
             stream_sequences: self.stream_sequences,
             next_generation: self.next_generation,
             next_fiber_instance: self.next_fiber_instance,
+            flow_defer_frontier: self.flow_defer_frontier,
             dialogue_occurrences: self.dialogue_occurrences,
             next_host_call_sequence: self.next_host_call_sequence,
             next_audio_sequence: self.next_audio_sequence,
@@ -3384,6 +3431,11 @@ pub enum AwbcProductLineTaskCancelSnapshot {
 #[serde(deny_unknown_fields)]
 pub enum AwbcProductChildFiberOwnerSnapshot {
     Independent,
+    FlowDeferred {
+        owner: crate::awbc::fiber::AwbcFiberLexicalScopeId,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
     Program {
         handle: crate::task::TaskHandle,
         parent: crate::runtime_id::RuntimeFiberInstanceId,
@@ -3559,8 +3611,7 @@ fn expected_deferred_children(
         else {
             continue;
         };
-        if (child.fiber.status.is_terminal()
-            && !super::line::fiber_has_scoped_defer_work(&child.fiber))
+        if (child.fiber.status.is_terminal() && !child.fiber.has_deferred_work())
             || expected
                 .insert(activation.clone(), (*registration, *site))
                 .is_some()
@@ -3879,6 +3930,7 @@ impl AwbcProductStepExecutor {
             stream_sequences: self.stream_sequences.clone(),
             next_generation: self.next_generation,
             next_fiber_instance: self.next_fiber_instance,
+            flow_defer_frontier: self.flow_defer_frontier,
             dialogue_occurrences: self
                 .dialogue_occurrences
                 .iter()
@@ -4042,6 +4094,7 @@ impl AwbcProductStepExecutor {
         executor.stream_sequences = snapshot.stream_sequences;
         executor.next_generation = snapshot.next_generation;
         executor.next_fiber_instance = snapshot.next_fiber_instance;
+        executor.flow_defer_frontier = snapshot.flow_defer_frontier;
         executor.dialogue_occurrences = snapshot
             .dialogue_occurrences
             .into_iter()

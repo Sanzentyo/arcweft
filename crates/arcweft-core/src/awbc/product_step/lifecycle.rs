@@ -144,6 +144,15 @@ impl AwbcProductStepExecutor {
     }
 
     pub(super) fn terminate_with_trap(&mut self, trap: FiberTrap, output: &mut RuntimeStepOutput) {
+        if self.fiber.has_deferred_work() && !self.fiber.status.is_terminal() {
+            if let Err(error) = self.fiber.validate_cleanup_inputs(&self.program) {
+                self.record_error(error.into(), output);
+                return;
+            }
+            self.record_trap(&trap, output);
+            self.fiber.mark_trapped(trap);
+            return;
+        }
         if matches!(
             self.fiber.status,
             FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
@@ -259,7 +268,7 @@ impl AwbcProductStepExecutor {
         executed_ops: usize,
         output: &RuntimeStepOutput,
     ) -> RuntimeStepStopReason {
-        if self.fiber.status == FiberStatus::Trapped {
+        if self.fiber.status == FiberStatus::Trapped && !self.fiber.has_deferred_work() {
             return RuntimeStepStopReason::Failed;
         }
         if matches!(
@@ -379,6 +388,9 @@ impl AwbcProductStepExecutor {
     }
 
     fn product_status(&self) -> AwbcProductExecutorStatus {
+        if self.fiber.has_deferred_work() && self.fiber.status.is_terminal() {
+            return AwbcProductExecutorStatus::Shared(Box::new(FlowFiberStatus::Running));
+        }
         if ((!self.child_fibers.is_empty()
             && (self.fiber.status != FiberStatus::Suspended || self.has_internal_work()))
             || self.root_has_pending_reduction())

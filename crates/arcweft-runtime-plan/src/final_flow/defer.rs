@@ -2,7 +2,26 @@
 
 use super::*;
 
-pub(super) struct ReservedGlobalDeferDefinition {
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct DeferSiteKey {
+    scope: crate::semantic_facts::RuntimeExecutableSiteScope,
+    statement: StmtId,
+}
+
+impl DeferSiteKey {
+    pub(super) fn new(
+        scope: crate::semantic_facts::RuntimeExecutableSemanticScope<'_>,
+        statement: StmtId,
+    ) -> Self {
+        Self {
+            scope: scope.into(),
+            statement,
+        }
+    }
+}
+
+pub(super) struct ReservedDeferDefinition<'facts> {
+    scope: RuntimeScopedExecutableSemanticFactView<'facts>,
     statement: StmtId,
     body: ExprId,
     function: RuntimeFunctionSiteSeedId,
@@ -10,20 +29,24 @@ pub(super) struct ReservedGlobalDeferDefinition {
     locals: ProjectFunctionFrameLocals,
 }
 
-pub(super) fn reserve_global_defer_sites(
-    context: &FinalLoweringContext<'_, '_>,
+pub(super) fn reserve_defer_sites<'facts>(
+    context: &FinalLoweringContext<'_, 'facts>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> (
-    BTreeMap<StmtId, RuntimeDeferSiteId>,
-    Vec<ReservedGlobalDeferDefinition>,
+    BTreeMap<DeferSiteKey, RuntimeDeferSiteId>,
+    Vec<ReservedDeferDefinition<'facts>>,
 ) {
     let mut sites = BTreeMap::new();
     let mut definitions = Vec::new();
-    let specs = context
+    let mut scoped = Vec::new();
+    context
         .facts
-        .defers()
-        .flat_map(|(statement, fact)| {
+        .visit_scoped_defers(&mut |scope, statement, fact| scoped.push((scope, statement, fact)));
+    let specs = scoped
+        .iter()
+        .flat_map(|(scope, statement, fact)| {
+            let key = DeferSiteKey::new(scope.scope(), *statement);
             fact.captures()
                 .iter()
                 .enumerate()
@@ -33,7 +56,7 @@ pub(super) fn reserve_global_defer_sites(
                         .runtime_local_declaration_source()
                         .map(|origin| {
                             (
-                                statement,
+                                key.clone(),
                                 position,
                                 RuntimeLocalDeclarationSeed::new(origin, capture.ty().identity()),
                             )
@@ -59,15 +82,12 @@ pub(super) fn reserve_global_defer_sites(
     let input_locals = specs
         .iter()
         .zip(admission.local_ids())
-        .map(|((statement, position, _), local)| ((*statement, *position), local.clone()))
+        .map(|((statement, position, _), local)| ((statement.clone(), *position), local.clone()))
         .collect::<BTreeMap<_, _>>();
 
-    for (statement, fact) in context.facts.defers() {
-        let mut frame = match ProjectFunctionFrameLocals::admit_view(
-            crate::semantic_facts::RuntimeExecutableSemanticFactView::global(context.facts),
-            None,
-            builder,
-        ) {
+    for (scope, statement, fact) in scoped {
+        let key = DeferSiteKey::new(scope.scope(), statement);
+        let mut frame = match ProjectFunctionFrameLocals::admit_view(scope.facts(), None, builder) {
             Ok(frame) => frame,
             Err(error) => {
                 errors.push(error);
@@ -75,7 +95,7 @@ pub(super) fn reserve_global_defer_sites(
             }
         };
         let declaration = (|| -> Result<_, RuntimePlanLowerError> {
-            let result = context.facts.expression_type(fact.body()).ok_or_else(|| {
+            let result = scope.expression_type(fact.body()).ok_or_else(|| {
                 RuntimePlanLowerError::new(format!(
                     "defer {statement:?} has no checked Unit body type"
                 ))
@@ -87,14 +107,14 @@ pub(super) fn reserve_global_defer_sites(
                 .iter()
                 .enumerate()
                 .map(|(position, capture)| {
-                    context.locals.get(&capture.local()).ok_or_else(|| {
+                    frame.hir.get(&capture.local()).ok_or_else(|| {
                         RuntimePlanLowerError::new(format!(
                             "defer {statement:?} capture {:?} has no admitted local",
                             capture.local()
                         ))
                     })?;
                     let input_local = input_locals
-                        .get(&(statement, position))
+                        .get(&(key.clone(), position))
                         .cloned()
                         .ok_or_else(|| {
                             RuntimePlanLowerError::new(format!(
@@ -171,8 +191,9 @@ pub(super) fn reserve_global_defer_sites(
                 continue;
             }
         };
-        sites.insert(statement, site);
-        definitions.push(ReservedGlobalDeferDefinition {
+        sites.insert(key, site);
+        definitions.push(ReservedDeferDefinition {
+            scope,
             statement,
             body: fact.body(),
             function,
@@ -183,9 +204,9 @@ pub(super) fn reserve_global_defer_sites(
     (sites, definitions)
 }
 
-pub(super) fn define_global_defer_sites(
-    context: &FinalLoweringContext<'_, '_>,
-    definitions: &[ReservedGlobalDeferDefinition],
+pub(super) fn define_defer_sites<'facts>(
+    context: &FinalLoweringContext<'_, 'facts>,
+    definitions: &[ReservedDeferDefinition<'facts>],
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> Vec<RuntimeAssertionSite> {
@@ -215,7 +236,7 @@ pub(super) fn define_global_defer_sites(
                 RuntimeAssertionOwner::Defer(definition.statement),
             )
             .with_executable_scope(
-                RuntimeScopedExecutableSemanticFactView::global(context.facts),
+                definition.scope,
                 &definition.locals.control,
                 &definition.locals.hir,
                 &definition.locals.specialized_operands,

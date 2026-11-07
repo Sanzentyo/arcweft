@@ -126,11 +126,7 @@ fn scope<V, G>() -> FiberScope<V, G> {
         depth: 0,
         presentation_scope: None,
         cleanups: vec![],
-        defers: vec![],
-        defer_releasing: vec![],
-        defer_exit: None,
-        defer_inflight: None,
-        defer_failure: None,
+        deferred: super::FiberDeferredScope::new(),
     }
 }
 
@@ -377,7 +373,7 @@ fn empty_scope_consumes_metadata_work_without_synthetic_values() {
             .is_err()
     );
     let mut forged = packet;
-    forged.defer_failure = Some(FiberTrap {
+    forged.deferred.defer_failure = Some(FiberTrap {
         code: AwbcTrapCode::InternalInvariant,
         message: Some("failure".into()),
         source_map: None,
@@ -406,6 +402,7 @@ fn inert_scope_codec_has_one_grammar_and_requires_defer_source() {
         .cleanups
         .push(cleanup(AwbcRuntimeValueSnapshot::String("cleanup".into())));
     packet
+        .deferred
         .defers
         .push(deferred(AwbcRuntimeValueSnapshot::String("capture".into())));
     let bytes = serde_json::to_vec(&packet).unwrap();
@@ -414,7 +411,10 @@ fn inert_scope_codec_has_one_grammar_and_requires_defer_source() {
         packet
     );
     let mut json = serde_json::to_value(&packet).unwrap();
-    json["defers"][0].as_object_mut().unwrap().remove("source");
+    json["deferred"]["defers"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("source");
     assert!(serde_json::from_value::<crate::awbc::fiber::AwbcFiberScopeSnapshot>(json).is_err());
     for field in ["key", "effect"] {
         let mut json = serde_json::to_value(&packet).unwrap();
@@ -432,6 +432,102 @@ fn inert_scope_codec_has_one_grammar_and_requires_defer_source() {
     let mut json = serde_json::to_value(&packet).unwrap();
     json["old_live_values"] = serde_json::json!([]);
     assert!(serde_json::from_value::<crate::awbc::fiber::AwbcFiberScopeSnapshot>(json).is_err());
+}
+
+#[test]
+fn invocation_body_defer_keeps_original_root_scope_and_capture_grammar() {
+    let mut program = program();
+    // This check also runs the executable's structural verifier. The smaller
+    // packet-only fixture above intentionally does not declare frame ingress.
+    program.frame_layouts[0].slots[0].role = AwbcFrameSlotRole::Parameter;
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        ty: AwbcTypeId(1),
+        role: AwbcFrameSlotRole::Temporary,
+        name: None,
+        scope_depth: 0,
+    });
+    program.effect_plans.clear();
+    program.constants = vec![AwbcConstant::Unit];
+    program.instructions.truncate(1);
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(1),
+        constant: AwbcConstantId(0),
+    });
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+    program.functions[0].input_ownership = vec![AwbcFunctionInputOwnership::capture(
+        crate::plan::RuntimeLocalOrigin::Binding(
+            *blake3::hash(b"arcweft.awbc.function_body_defer.capture.v1\0").as_bytes(),
+        ),
+        0,
+        crate::plan::RuntimeFunctionCaptureMode::Copy,
+    )];
+    let mut context = context(&program);
+    context.scope_count = 0;
+    let mut body = FiberDeferredScope::new();
+    body.defers
+        .push(deferred(AwbcRuntimeValueSnapshot::String("capture".into())));
+    let bytes = serde_json::to_vec(&body).unwrap();
+    let body: FiberDeferredScope<AwbcRuntimeValueSnapshot> =
+        serde_json::from_slice(&bytes).unwrap();
+    let no_scopes: &[FiberScope<
+        AwbcRuntimeValueSnapshot,
+        crate::presentation::RuntimePresentationScopeSnapshot,
+    >] = &[];
+    program
+        .verify_scope_stacks([(body.defers[0].source, no_scopes)])
+        .expect("fixture has a verified original invocation-root coordinate");
+    context
+        .validate_scopes(
+            &[],
+            &body,
+            no_scopes,
+            &mut ValueResourceAdmission::snapshot(
+                RuntimeSchemaLimits::engine_default(),
+                ValueAdmissionOrigin::InertSnapshot,
+            ),
+            AwbcRuntimeValueSnapshot::view,
+        )
+        .unwrap();
+
+    // The packet's original RegisterDefer occurs at the invocation root;
+    // placing it in a well-formed explicit scope cannot change that owner.
+    let mut moved = scope::<_, crate::presentation::RuntimePresentationScopeSnapshot>();
+    moved.deferred = body.clone();
+    context.scope_count = 1;
+    assert!(
+        context
+            .validate_scopes(
+                &[],
+                &FiberDeferredScope::new(),
+                &[moved],
+                &mut ValueResourceAdmission::snapshot(
+                    RuntimeSchemaLimits::engine_default(),
+                    ValueAdmissionOrigin::InertSnapshot
+                ),
+                AwbcRuntimeValueSnapshot::view,
+            )
+            .is_err()
+    );
+
+    context.scope_count = 0;
+    let mut forged = body;
+    forged.defers[0].source.function = AwbcFunctionId(99);
+    assert!(
+        context
+            .validate_scopes(
+                &[],
+                &forged,
+                no_scopes,
+                &mut ValueResourceAdmission::snapshot(
+                    RuntimeSchemaLimits::engine_default(),
+                    ValueAdmissionOrigin::InertSnapshot
+                ),
+                AwbcRuntimeValueSnapshot::view,
+            )
+            .is_err()
+    );
 }
 
 #[test]

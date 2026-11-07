@@ -50,7 +50,7 @@ pub use format::{FiberFormatAttemptState, FiberFormatState};
 use input::FrameValueContext;
 use return_context::FiberReturnContext;
 pub(super) use scope::FiberCleanupDispatch;
-pub use scope::{FiberDeferredRegistration, FiberScope, FiberScopeCleanup};
+pub use scope::{FiberDeferredRegistration, FiberDeferredScope, FiberScope, FiberScopeCleanup};
 
 type AwbcSaveResult<T> = Result<T, crate::value::AwbcRuntimeValueSnapshotError>;
 
@@ -375,34 +375,40 @@ impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
 pub struct AwbcFiberLexicalScopeId {
     pub fiber: RuntimeFiberInstanceId,
     pub frame: RuntimeFrameInstanceId,
-    pub scope: AwbcScopeId,
+    /// None identifies the body owned by this exact invocation frame.
+    pub scope: Option<AwbcScopeId>,
 }
 
 impl AwbcFiberLexicalScopeId {
     pub(super) fn active_scope<V, O, N, B, R, G>(
         self,
         fiber: &FiberState<V, O, N, B, R, G>,
-    ) -> Option<&FiberScope<V, G>> {
+    ) -> Option<&FiberDeferredScope<V>> {
         let frame = fiber
             .frames
             .last()
             .filter(|frame| fiber.instance == self.fiber && frame.instance == self.frame)?;
-        frame.scopes.last().filter(|scope| scope.id == self.scope)
+        match (self.scope, frame.scopes.last()) {
+            (Some(id), Some(scope)) if scope.id == id => Some(&scope.deferred),
+            (None, None) => Some(&frame.root_deferred),
+            _ => None,
+        }
     }
 
     pub(super) fn active_scope_mut<V, O, N, B, R, G>(
         self,
         fiber: &mut FiberState<V, O, N, B, R, G>,
-    ) -> Option<&mut FiberScope<V, G>> {
+    ) -> Option<&mut FiberDeferredScope<V>> {
         let instance = fiber.instance;
         let frame = fiber
             .frames
             .last_mut()
             .filter(|frame| instance == self.fiber && frame.instance == self.frame)?;
-        frame
-            .scopes
-            .last_mut()
-            .filter(|scope| scope.id == self.scope)
+        match (self.scope, frame.scopes.last_mut()) {
+            (Some(id), Some(scope)) if scope.id == id => Some(&mut scope.deferred),
+            (None, None) => Some(&mut frame.root_deferred),
+            _ => None,
+        }
     }
 }
 
@@ -622,6 +628,7 @@ pub struct FiberFrame<
     /// Nested source-ordered Flow formatter transactions owned by this frame.
     pub format_attempts: Vec<FiberFormatAttemptState<V>>,
     pub root_cleanups: Vec<FiberScopeCleanup<V>>,
+    pub root_deferred: FiberDeferredScope<V>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root_presentation_scope: Option<G>,
     #[serde(
@@ -647,6 +654,7 @@ impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone, G: Clone> Clone
             format: self.format.clone(),
             format_attempts: self.format_attempts.clone(),
             root_cleanups: self.root_cleanups.clone(),
+            root_deferred: self.root_deferred.clone(),
             root_presentation_scope: self.root_presentation_scope.clone(),
             flow_registry: self.flow_registry.clone(),
             scopes: self.scopes.clone(),
@@ -681,6 +689,27 @@ impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
 }
 
 impl<V, B, R, G> FiberFrame<V, B, R, G> {
+    /// Visits the invocation body and its explicit scopes under one defer grammar.
+    pub(super) fn deferred_scopes(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (Option<AwbcScopeId>, &FiberDeferredScope<V>)> {
+        std::iter::once((None, &self.root_deferred)).chain(
+            self.scopes
+                .iter()
+                .map(|scope| (Some(scope.id), &scope.deferred)),
+        )
+    }
+
+    pub(super) fn deferred_scopes_mut(
+        &mut self,
+    ) -> impl DoubleEndedIterator<Item = (Option<AwbcScopeId>, &mut FiberDeferredScope<V>)> {
+        std::iter::once((None, &mut self.root_deferred)).chain(
+            self.scopes
+                .iter_mut()
+                .map(|scope| (Some(scope.id), &mut scope.deferred)),
+        )
+    }
+
     fn admit_flow_registry(
         &self,
         fiber: RuntimeFiberInstanceId,
@@ -752,7 +781,13 @@ where
     ) -> AwbcSaveResult<()> {
         let context = self.value_context(program)?;
         context.validate_formats(self.format.as_ref(), &self.format_attempts, resources, view)?;
-        context.validate_scopes(&self.root_cleanups, &self.scopes, resources, view)?;
+        context.validate_scopes(
+            &self.root_cleanups,
+            &self.root_deferred,
+            &self.scopes,
+            resources,
+            view,
+        )?;
         let copy_proofs = program.copy_proofs_at(cursor).map_err(|error| {
             crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(Box::new(error))
         })?;
@@ -1272,6 +1307,13 @@ impl AwbcFiberStateSnapshot {
                     visit(value)?;
                 }
             }
+            if include_defers {
+                for registration in &frame.root_deferred.defers {
+                    for value in &registration.captures {
+                        visit(value)?;
+                    }
+                }
+            }
             for scope in &frame.scopes {
                 for cleanup in &scope.cleanups {
                     for value in &cleanup.args {
@@ -1279,7 +1321,7 @@ impl AwbcFiberStateSnapshot {
                     }
                 }
                 if include_defers {
-                    for registration in &scope.defers {
+                    for registration in &scope.deferred.defers {
                         for value in &registration.captures {
                             visit(value)?;
                         }
@@ -1591,6 +1633,7 @@ impl AwbcFiberFrameSnapshot {
                 .iter()
                 .map(|value| value.snapshot_admitted(owner))
                 .collect::<Result<_, _>>()?,
+            root_deferred: frame.root_deferred.snapshot_admitted(owner)?,
             root_presentation_scope: frame
                 .root_presentation_scope
                 .as_ref()
@@ -1639,6 +1682,7 @@ impl AwbcFiberFrameSnapshot {
                 .into_iter()
                 .map(|value| value.into_live_admitted(owner))
                 .collect::<Result<_, _>>()?,
+            root_deferred: self.root_deferred.into_live_admitted(owner)?,
             root_presentation_scope: self
                 .root_presentation_scope
                 .map(|snapshot| snapshot.into_admitted_live(owner.owner())),
@@ -2142,10 +2186,11 @@ impl FiberState {
                     && frame.format.is_none()
                     && frame.format_attempts.is_empty()
                     && frame.root_cleanups.is_empty()
+                    && frame.root_deferred.is_empty()
                     && frame.root_presentation_scope.is_none()
                     && frame.scopes.iter().all(|scope| {
                         scope.cleanups.is_empty()
-                            && scope.defers.is_empty()
+                            && scope.deferred.is_empty()
                             && scope.presentation_scope.is_none()
                     })
                     && frame
@@ -2180,9 +2225,10 @@ impl FiberState {
                 return_to.continuation.visit_runtime_values(&mut visitor)?;
             }
             visit_scope_cleanup_values(&frame.root_cleanups, &mut visitor)?;
+            visit_deferred_capture_values(&frame.root_deferred.defers, &mut visitor)?;
             for scope in &frame.scopes {
                 visit_scope_cleanup_values(&scope.cleanups, &mut visitor)?;
-                visit_deferred_capture_values(&scope.defers, &mut visitor)?;
+                visit_deferred_capture_values(&scope.deferred.defers, &mut visitor)?;
             }
         }
         if let Some(suspension) = &self.suspension {
@@ -4218,6 +4264,7 @@ impl FiberState {
             || self.frames.len() < 2
             || !callee.scopes.is_empty()
             || !callee.root_cleanups.is_empty()
+            || !callee.root_deferred.is_empty()
         {
             return Err(FiberStateError::InvalidFrame);
         }
@@ -4281,6 +4328,7 @@ impl FiberState {
         for frame in &self.frames {
             frame.value_context(program)?.validate_scopes(
                 &frame.root_cleanups,
+                &frame.root_deferred,
                 &frame.scopes,
                 &mut resources,
                 RuntimeValue::view,
@@ -4498,11 +4546,11 @@ where
 fn scope_has_pending_cleanup(scope: &FiberScope) -> bool {
     scope.presentation_scope.is_some()
         || !scope.cleanups.is_empty()
-        || !scope.defers.is_empty()
-        || !scope.defer_releasing.is_empty()
-        || scope.defer_inflight.is_some()
-        || scope.defer_exit.is_some()
-        || scope.defer_failure.is_some()
+        || !scope.deferred.defers.is_empty()
+        || !scope.deferred.defer_releasing.is_empty()
+        || scope.deferred.defer_inflight.is_some()
+        || scope.deferred.defer_exit.is_some()
+        || scope.deferred.defer_failure.is_some()
 }
 
 /// Resolves the original frame inventory and declaration binding for live
@@ -4590,6 +4638,7 @@ fn validate_frame(
     )?;
     context.validate_scopes(
         &frame.root_cleanups,
+        &frame.root_deferred,
         &frame.scopes,
         resources,
         RuntimeValue::view,
@@ -5655,6 +5704,7 @@ impl FiberFrame {
             format: None,
             format_attempts: Vec::new(),
             root_cleanups: Vec::new(),
+            root_deferred: FiberDeferredScope::new(),
             root_presentation_scope: None,
             flow_registry: crate::effect::RuntimeScopeRegistry::default(),
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
@@ -5664,13 +5714,14 @@ impl FiberFrame {
     fn has_pending_cleanup(&self) -> bool {
         self.root_presentation_scope.is_some()
             || !self.root_cleanups.is_empty()
+            || !self.root_deferred.is_empty()
             || self.scopes.iter().any(|scope| {
                 scope.presentation_scope.is_some()
                     || !scope.cleanups.is_empty()
-                    || !scope.defers.is_empty()
-                    || !scope.defer_releasing.is_empty()
-                    || scope.defer_inflight.is_some()
-                    || scope.defer_exit.is_some()
+                    || !scope.deferred.defers.is_empty()
+                    || !scope.deferred.defer_releasing.is_empty()
+                    || scope.deferred.defer_inflight.is_some()
+                    || scope.deferred.defer_exit.is_some()
             })
     }
 

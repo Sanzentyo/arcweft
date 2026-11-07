@@ -2589,7 +2589,6 @@ impl AwbcProductStepExecutor {
                 | VmObservation::LineDeferRegistration { .. }
                 | VmObservation::ScopedDeferRegistration { .. }
                 | VmObservation::ScopedDeferUnwind { .. }
-                | VmObservation::ScopedDeferFailure(_)
                 | VmObservation::Drop { .. }
                 | VmObservation::DiscardedValue(_)
                 | VmObservation::DiscardedLineHandles(_) => self.fail_with_error(
@@ -2597,6 +2596,7 @@ impl AwbcProductStepExecutor {
                     output,
                 ),
                 VmObservation::Trap(trap) => self.record_trap(&trap, output),
+                VmObservation::ScopedDeferFailure(trap) => self.terminate_with_trap(trap, output),
             }
         }
     }

@@ -600,8 +600,6 @@ impl LinePlanLowerer<'_, '_> {
         statements: &[StmtId],
     ) -> Result<Vec<FlowDraft>, RuntimePlanLowerError> {
         self.flow.begin_dialogue_result_selection(self.owner)?;
-        let previous_defer_context =
-            std::mem::replace(&mut self.flow.lower_line_child_defers, true);
         let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope {
             identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
         })];
@@ -618,7 +616,6 @@ impl LinePlanLowerer<'_, '_> {
             }
             Ok(())
         })();
-        self.flow.lower_line_child_defers = previous_defer_context;
         let selected_result = self.flow.finish_dialogue_result_selection(self.owner)?;
         lowered?;
         actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));

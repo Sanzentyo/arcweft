@@ -11,7 +11,7 @@ use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission}
 pub(crate) enum PresentationExecutionRole {
     Root,
     Dialogue(DialogueActivationId),
-    ProgramChild {
+    AttachedChild {
         parent: RuntimeFiberInstanceId,
     },
     /// A detached line child may retain its original Dialogue bank after the
@@ -35,7 +35,7 @@ impl PresentationExecutionRole {
             {
                 Err(RuntimePresentationError::Owner)
             }
-            Self::Root | Self::Dialogue(_) | Self::ProgramChild { .. } | Self::Independent => {
+            Self::Root | Self::Dialogue(_) | Self::AttachedChild { .. } | Self::Independent => {
                 Ok(())
             }
         }
@@ -148,7 +148,7 @@ impl<'a> PresentationExecutionAdmission<'a> {
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let result = (|| {
             for (instance, (bank, role)) in &self.fibers {
-                if let PresentationExecutionRole::ProgramChild { parent } = role {
+                if let PresentationExecutionRole::AttachedChild { parent } = role {
                     if parent.get() >= instance.get()
                         || self
                             .fibers

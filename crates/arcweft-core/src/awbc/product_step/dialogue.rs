@@ -422,7 +422,7 @@ impl ProductDialogueStore {
                             .map(|suspension| &suspension.reason),
                         Some(crate::awbc::fiber::FiberSuspensionReason::DurationWait(_))
                     )
-                    && !super::line::fiber_has_scoped_defer_inflight(fiber)
+                    && !fiber.has_inflight_defer()
             }
             super::ProductDialoguePhase::Reducing { line_task }
             | super::ProductDialoguePhase::Publishing { line_task } => {
@@ -432,7 +432,7 @@ impl ProductDialogueStore {
                 !joined_work
                     && match &closing.state {
                         super::ProductDialogueClosingState::Activation { fiber, .. } => {
-                            !super::line::fiber_has_scoped_defer_inflight(fiber)
+                            !fiber.has_inflight_defer()
                         }
                         super::ProductDialogueClosingState::LineTask { line_task } => {
                             line_task.is_closed()

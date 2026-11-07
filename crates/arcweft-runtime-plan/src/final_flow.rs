@@ -612,7 +612,7 @@ struct FinalLoweringContext<'project, 'data> {
     >,
     trait_method_locals: &'data BTreeMap<RuntimeTraitMethodInstanceKey, ProjectFunctionFrameLocals>,
     function_sites: &'data BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
-    defer_sites: &'data BTreeMap<StmtId, RuntimeDeferSiteId>,
+    defer_sites: &'data BTreeMap<defer::DeferSiteKey, RuntimeDeferSiteId>,
     dialogue_effect_sites:
         &'data BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     dialogue_value_capture_input_locals:
@@ -1947,7 +1947,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         ..context
     };
     let (defer_sites, defer_definitions) =
-        defer::reserve_global_defer_sites(&context, &mut builder, &mut errors);
+        defer::reserve_defer_sites(&context, &mut builder, &mut errors);
     let context = FinalLoweringContext {
         defer_sites: &defer_sites,
         ..context
@@ -1973,7 +1973,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     // Bodies may invoke any reserved function site or start any admitted
     // dialogue occurrence. Define them only after both inventories exist.
     define_function_sites(&context, &function_definitions, &mut builder, &mut errors);
-    dialogue_assertion_sites.extend(defer::define_global_defer_sites(
+    dialogue_assertion_sites.extend(defer::define_defer_sites(
         &context,
         &defer_definitions,
         &mut builder,
@@ -5845,7 +5845,7 @@ struct FinalFlowLowerer<'a> {
         RuntimeLocalSeedId,
     >,
     function_sites: &'a BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
-    defer_sites: &'a BTreeMap<StmtId, RuntimeDeferSiteId>,
+    defer_sites: &'a BTreeMap<defer::DeferSiteKey, RuntimeDeferSiteId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     project_callable_states: &'a callable_states::ProjectCallableStates,
     environment_callable_states: &'a ExternalCallableStates<'a>,
@@ -5867,7 +5867,6 @@ struct FinalFlowLowerer<'a> {
     carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
     result_selection_application: Option<ExprId>,
     result_selection_emitted: bool,
-    lower_line_child_defers: bool,
     scope_continuations: Vec<scopes::ScopeContinuationFrame>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
@@ -6222,7 +6221,6 @@ impl<'a> FinalFlowLowerer<'a> {
             carrier_continuations: BTreeMap::new(),
             result_selection_application: None,
             result_selection_emitted: false,
-            lower_line_child_defers: false,
             scope_continuations: Vec::new(),
             assertion_owner,
             assertion_ordinal: 0,
@@ -6707,7 +6705,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 )
             }
             HirStmtKind::Wait { .. } => self.lower_wait_statement(id, RuntimeFlowTail::None),
-            HirStmtKind::Defer { .. } if self.lower_line_child_defers => {
+            HirStmtKind::Defer { .. } => {
                 let op = self.lower_defer_registration(id)?;
                 if !matches!(
                     op,
@@ -6717,14 +6715,11 @@ impl<'a> FinalFlowLowerer<'a> {
                     }
                 ) {
                     return Err(RuntimePlanLowerError::new(format!(
-                        "line child defer {id:?} has no checked lexical owner"
+                        "defer {id:?} has no checked lexical owner"
                     )));
                 }
                 Ok(vec![op])
             }
-            HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
-                "defer {id:?} requires scope-owned runtime registration"
-            ))),
             HirStmtKind::Include(_) => {
                 let target = self.semantic_facts.facts().include(id).ok_or_else(|| {
                     RuntimePlanLowerError::new("Include statement has no original checked target")
@@ -7153,11 +7148,17 @@ impl<'a> FinalFlowLowerer<'a> {
                 "defer {statement:?} has no selected checked body fact"
             ))
         })?;
-        let site = *self.defer_sites.get(&statement).ok_or_else(|| {
-            RuntimePlanLowerError::new(format!(
-                "defer {statement:?} has no reserved executable site"
+        let site = *self
+            .defer_sites
+            .get(&defer::DeferSiteKey::new(
+                self.semantic_facts.scope(),
+                statement,
             ))
-        })?;
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "defer {statement:?} has no reserved executable site"
+                ))
+            })?;
         let captures = fact
             .captures()
             .iter()

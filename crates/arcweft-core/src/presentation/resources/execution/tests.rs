@@ -89,7 +89,7 @@ fn physical_inventory_includes_dialogue_parents_and_detached_bank_lifetimes() {
         .register_fiber(
             fiber(3),
             bank,
-            PresentationExecutionRole::ProgramChild { parent: fiber(2) },
+            PresentationExecutionRole::AttachedChild { parent: fiber(2) },
             &mut admission,
         )
         .unwrap();
@@ -197,7 +197,7 @@ fn program_children_require_the_actual_parent_and_inherited_bank() {
             .register_fiber(
                 fiber(3),
                 RuntimePresentationBankId::Dialogue { activation: act },
-                PresentationExecutionRole::ProgramChild {
+                PresentationExecutionRole::AttachedChild {
                     parent: fiber(parent),
                 },
                 &mut admission,

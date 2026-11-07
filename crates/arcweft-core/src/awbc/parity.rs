@@ -219,7 +219,10 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
             id: format!("scoped-defer#{}", site.get().get()),
         },
         VmObservation::ScopedDeferUnwind { scope, .. } => ParityEvent::Effect {
-            id: format!("scoped-defer-unwind#{}", scope.0),
+            id: scope.map_or_else(
+                || "function-body-defer-unwind".to_owned(),
+                |scope| format!("scoped-defer-unwind#{}", scope.0),
+            ),
         },
         VmObservation::ScopedDeferFailure(trap) => ParityEvent::Trap {
             code: trap_code(trap.code).to_owned(),

@@ -174,7 +174,7 @@ impl PreparedChildScopedDeferRegistration {
     }
 }
 
-struct PreparedLineChildSpawn {
+pub(super) struct PreparedLineChildSpawn {
     child_generation: u64,
     next_generation: u64,
     next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
@@ -871,7 +871,7 @@ impl super::AwbcProductStepExecutor {
                         }
                         match policy.cancel {
                             ChildCancelPolicy::CancelAndJoin => {
-                                if fiber_has_scoped_defer_work(&child.fiber) {
+                                if child.fiber.has_deferred_work() {
                                     actions.insert(
                                         instance,
                                         ProductExistingChildAction::UnwindAndJoin,
@@ -1644,7 +1644,7 @@ impl super::AwbcProductStepExecutor {
                 });
             }
         };
-        if fiber_has_scoped_defer_inflight(before) {
+        if before.has_inflight_defer() {
             return Ok(ProductActivationProgress {
                 trap: None,
                 progressed: false,
@@ -3034,7 +3034,7 @@ impl super::AwbcProductStepExecutor {
         line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
         fiber: &mut FiberState,
         cursor: FiberCursor,
-        scope_id: crate::awbc::schema::AwbcScopeId,
+        scope_id: Option<crate::awbc::schema::AwbcScopeId>,
         site: crate::runtime_id::RuntimeDeferSiteId,
         outcome: crate::line_task::RuntimeDeferOutcomeFilter,
         captures: &mut Vec<(crate::awbc::schema::AwbcRegisterId, RuntimeValue)>,
@@ -3059,7 +3059,7 @@ impl super::AwbcProductStepExecutor {
         line: &RuntimeDialogueActivationState<AwbcTypeId>,
         fiber: &FiberState,
         cursor: FiberCursor,
-        scope_id: crate::awbc::schema::AwbcScopeId,
+        scope_id: Option<crate::awbc::schema::AwbcScopeId>,
         site: crate::runtime_id::RuntimeDeferSiteId,
         outcome: crate::line_task::RuntimeDeferOutcomeFilter,
         captures: &[(crate::awbc::schema::AwbcRegisterId, RuntimeValue)],
@@ -3205,7 +3205,7 @@ impl super::AwbcProductStepExecutor {
         line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
         fiber: &mut FiberState,
         cursor: FiberCursor,
-        scope_id: crate::awbc::schema::AwbcScopeId,
+        scope_id: Option<crate::awbc::schema::AwbcScopeId>,
         requested_exit: crate::line_task::ScopeExit,
         batch: &mut super::ProductLineTaskExecutionBatch,
     ) -> Result<BTreeSet<RuntimeLineHandleToken>, ProductStepError> {
@@ -3229,7 +3229,7 @@ impl super::AwbcProductStepExecutor {
         line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
         fiber: &FiberState,
         cursor: FiberCursor,
-        scope_id: crate::awbc::schema::AwbcScopeId,
+        scope_id: Option<crate::awbc::schema::AwbcScopeId>,
         requested_exit: crate::line_task::ScopeExit,
         batch: &super::ProductLineTaskExecutionBatch,
     ) -> Result<PreparedScopedDeferUnwind, ProductStepError> {
@@ -3702,7 +3702,7 @@ impl super::AwbcProductStepExecutor {
             } => fiber,
             _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
         };
-        if fiber_has_scoped_defer_inflight(fiber) {
+        if fiber.has_inflight_defer() {
             return Ok(ProductActivationProgress {
                 trap: None,
                 progressed: false,
@@ -3719,7 +3719,7 @@ impl super::AwbcProductStepExecutor {
             let scope_id = scope.id;
             let before_owners =
                 activation_fiber_handle_owners(self.facade_fiber.execution, &activation, fiber)?;
-            if !scope.defers.is_empty() {
+            if !scope.deferred.defers.is_empty() {
                 let mut batch = empty_activation_batch(self);
                 let cursor = fiber.cursor;
                 let handled = self.prepare_scoped_defer_unwind(
@@ -3728,7 +3728,7 @@ impl super::AwbcProductStepExecutor {
                     line,
                     fiber,
                     cursor,
-                    scope_id,
+                    Some(scope_id),
                     crate::line_task::ScopeExit::Completed,
                     &mut batch,
                 )?;
@@ -3755,11 +3755,11 @@ impl super::AwbcProductStepExecutor {
                     host_result_take: None,
                 });
             }
-            if !scope.defer_releasing.is_empty() {
+            if !scope.deferred.defer_releasing.is_empty() {
                 return Err(LineRuntimeError::InvalidDeferredTransition.into());
             }
 
-            let (cleanups, failure) = pop_activation_scope(&self.program, fiber, scope_id)?;
+            let (cleanups, failure) = pop_activation_scope(&self.program, fiber, Some(scope_id))?;
             let mut batch = empty_activation_batch(self);
             for cleanup in cleanups.into_iter().rev() {
                 batch.observations.push(VmObservation::Effect {
@@ -3827,11 +3827,12 @@ impl super::AwbcProductStepExecutor {
         let scope_id = scope.id;
         let before_owners =
             activation_fiber_handle_owners(self.facade_fiber.execution, &activation, fiber)?;
-        if scope.defer_inflight.is_some() {
+        if scope.deferred.defer_inflight.is_some() {
             return Ok((true, None));
         }
-        if !scope.defers.is_empty() {
+        if !scope.deferred.defers.is_empty() {
             let exit = scope
+                .deferred
                 .defer_exit
                 .unwrap_or(crate::line_task::ScopeExit::Failed);
             let cursor = fiber.cursor;
@@ -3841,7 +3842,7 @@ impl super::AwbcProductStepExecutor {
                 line,
                 fiber,
                 cursor,
-                scope_id,
+                Some(scope_id),
                 exit,
                 batch,
             )?;
@@ -3858,13 +3859,13 @@ impl super::AwbcProductStepExecutor {
             transaction.stage_received_handles(received);
             return Ok((true, None));
         }
-        if !scope.defer_releasing.is_empty() {
+        if !scope.deferred.defer_releasing.is_empty() {
             if line.has_pending_commands() {
                 return Ok((true, None));
             }
             return Err(LineRuntimeError::InvalidDeferredTransition.into());
         }
-        let (cleanups, failure) = pop_activation_scope(&self.program, fiber, scope_id)?;
+        let (cleanups, failure) = pop_activation_scope(&self.program, fiber, Some(scope_id))?;
         for cleanup in cleanups.into_iter().rev() {
             batch.observations.push(VmObservation::Effect {
                 effect: cleanup.effect,
@@ -4214,7 +4215,7 @@ impl super::AwbcProductStepExecutor {
 }
 
 impl super::ProductLineTaskExecutionBatch {
-    fn prepare_spawn(
+    pub(super) fn prepare_spawn(
         &self,
         executor: &super::AwbcProductStepExecutor,
         function: crate::awbc::schema::AwbcFunctionId,
@@ -4243,7 +4244,7 @@ impl super::ProductLineTaskExecutionBatch {
         })
     }
 
-    fn spawn_prepared(
+    pub(super) fn spawn_prepared(
         &mut self,
         executor: &super::AwbcProductStepExecutor,
         bank: crate::runtime_id::RuntimePresentationBankId,
@@ -4382,32 +4383,6 @@ fn awbc_formatter_handle_owners<V: RuntimeStoredValue, O, N, B, R, G>(
     Ok(owners)
 }
 
-pub(super) fn fiber_has_scoped_defer_inflight(fiber: &FiberState) -> bool {
-    fiber
-        .frames
-        .iter()
-        .flat_map(|frame| &frame.scopes)
-        .any(|scope| scope.defer_inflight.is_some())
-}
-
-pub(super) fn fiber_has_pending_scoped_defer(fiber: &FiberState) -> bool {
-    fiber
-        .frames
-        .iter()
-        .flat_map(|frame| &frame.scopes)
-        .any(|scope| scope.defer_inflight.is_some() || !scope.defer_releasing.is_empty())
-}
-
-pub(super) fn fiber_has_scoped_defer_work<V, O, N, B, R, G>(
-    fiber: &crate::awbc::fiber::FiberState<V, O, N, B, R, G>,
-) -> bool {
-    fiber
-        .frames
-        .iter()
-        .flat_map(|frame| &frame.scopes)
-        .any(|scope| !scope.defers.is_empty() || scope.defer_exit.is_some())
-}
-
 pub(super) fn settle_scoped_defer_releases(
     transaction: &mut ProductDialogueTransaction,
     children: &mut VecDeque<super::ProductChildFiber>,
@@ -4426,7 +4401,11 @@ pub(super) fn settle_scoped_defer_releases(
 }
 
 fn settle_fiber_scoped_defer_releases(fiber: &mut FiberState, ledger: &RuntimeLineHandleLedger) {
-    for scope in fiber.frames.iter_mut().flat_map(|frame| &mut frame.scopes) {
+    for (_, scope) in fiber
+        .frames
+        .iter_mut()
+        .flat_map(|frame| frame.deferred_scopes_mut())
+    {
         scope.defer_releasing.retain_mut(|release| {
             release.tokens.retain(|token| {
                 ledger.lease(token).is_some_and(|lease| {
@@ -4459,7 +4438,7 @@ pub(super) fn empty_activation_batch(
 pub(super) fn pop_activation_scope(
     program: &crate::awbc::schema::AwbcProgram,
     fiber: &mut FiberState,
-    scope_id: crate::awbc::schema::AwbcScopeId,
+    scope_id: Option<crate::awbc::schema::AwbcScopeId>,
 ) -> Result<
     (
         Vec<crate::awbc::fiber::FiberCleanupDispatch>,
@@ -4469,13 +4448,24 @@ pub(super) fn pop_activation_scope(
 > {
     fiber.validate_cleanup_inputs(program)?;
     let frame = fiber.active_frame_mut()?;
+    if scope_id.is_none() {
+        if !frame.scopes.is_empty()
+            || !frame.root_deferred.defers.is_empty()
+            || !frame.root_deferred.defer_releasing.is_empty()
+            || frame.root_deferred.defer_inflight.is_some()
+        {
+            return Err(LineRuntimeError::InvalidDeferredTransition.into());
+        }
+        let deferred = std::mem::take(&mut frame.root_deferred);
+        return Ok((Vec::new(), deferred.defer_failure));
+    }
     let Some(scope) = frame.scopes.last() else {
         return Err(LineRuntimeError::InvalidActivationOperation.into());
     };
-    if scope.id != scope_id
-        || !scope.defers.is_empty()
-        || !scope.defer_releasing.is_empty()
-        || scope.defer_inflight.is_some()
+    if Some(scope.id) != scope_id
+        || !scope.deferred.defers.is_empty()
+        || !scope.deferred.defer_releasing.is_empty()
+        || scope.deferred.defer_inflight.is_some()
     {
         return Err(LineRuntimeError::InvalidDeferredTransition.into());
     }
@@ -4506,7 +4496,7 @@ pub(super) fn pop_activation_scope(
             .into_iter()
             .map(|cleanup| cleanup.into_dispatch_admitted(program))
             .collect(),
-        scope.defer_failure,
+        scope.deferred.defer_failure,
     ))
 }
 
@@ -4570,7 +4560,7 @@ fn activation_fiber_handle_owners(
         .collect::<BTreeMap<_, _>>();
     for frame in &fiber.frames {
         for scope in &frame.scopes {
-            for deferred in &scope.defers {
+            for deferred in &scope.deferred.defers {
                 for capture in &deferred.captures {
                     for handle in unique_line_handles(capture)? {
                         if handle.token().activation() != activation

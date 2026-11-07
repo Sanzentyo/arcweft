@@ -99,6 +99,7 @@ impl<V> FrameValueContext<'_, V> {
     pub(super) fn validate_scopes<G>(
         &self,
         root_cleanups: &[FiberScopeCleanup<V>],
+        root_deferred: &super::FiberDeferredScope<V>,
         scopes: &[FiberScope<V, G>],
         resources: &mut ValueResourceAdmission,
         view: impl Fn(&V) -> RuntimeValueView<'_> + Copy,
@@ -113,6 +114,7 @@ impl<V> FrameValueContext<'_, V> {
             cleanup.validate_inputs(self, resources, view)?;
         }
         let mut ids = std::collections::BTreeSet::new();
+        root_deferred.validate_inputs(self, &mut ids, resources, view)?;
         for (ordinal, scope) in scopes.iter().enumerate() {
             scope.validate_inputs(
                 self,
@@ -130,8 +132,15 @@ impl<V> FrameValueContext<'_, V> {
                 root_cleanups
                     .iter()
                     .map(|cleanup| (cleanup.source, &scopes[..0]))
+                    .chain(
+                        root_deferred
+                            .defers
+                            .iter()
+                            .map(|deferred| (deferred.source, &scopes[..0])),
+                    )
                     .chain(scopes.iter().enumerate().flat_map(|(ordinal, scope)| {
                         scope
+                            .deferred
                             .defers
                             .iter()
                             .map(move |deferred| (deferred.source, &scopes[..=ordinal]))
@@ -430,6 +439,7 @@ impl super::FiberFrame {
         };
         context.validate_scopes(
             &self.root_cleanups,
+            &self.root_deferred,
             &self.scopes,
             &mut resources,
             RuntimeValue::view,
