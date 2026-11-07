@@ -15267,3 +15267,15 @@ Supersedes: 前記 Native foundation／AWBC storage development の時点にお�
 検証後の差分は semantic-facts のコメント移動だけで、元ハッシュへ逆変換できることを記録した。
 この cut は通常 defer 全体の完了判定ではない。最新の項目別判定は [現状一覧](current-status.md) にのみ置く。
 [全結果・訂正理由・公開 blob 照合・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — AWBC deferred storage consumer validation
+
+Source `df46b44b3a42eea9336d16d75f01cfc33aa9102a` は Compiler の既存保存改変 fixture の2参照を
+`scope.deferred.defers` に移行した。親は `ffe5d5353164afbbe1886b35ec6eb9c385f44418`、
+production は `dbd34d860869726765dcb1f2e27be7b8f351054e` と同じ。
+全 target／全 feature の初回 workspace check はこの移行漏れで終了101。
+修復後の Compiler evaluated_effects は93件全通過、workspace check と Clippy はともに終了0。
+警告を含む全出力、失敗した初回、元の3 packet の順序改変拒否 assertion、公開 patch／blob 照合を保持する。
+新規 owner の物理 LOC／bytes と責務・fan-in／fan-outのレビューも原本へ記録した。
+この記録は逆依存テスト全体の終了や通常 defer 全体の完了を表さない。
+[コマンド・結果・原本](acceptance-evidence/task-flow-registry-execution.json)。

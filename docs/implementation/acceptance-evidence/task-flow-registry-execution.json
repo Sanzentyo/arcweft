@@ -25244,5 +25244,173 @@
       "sha256": "07cb74ab2cfc2d1234c0098334161be97bbb74a4e5573bb18a257bbe3f99ff18",
       "path": "task-ordinary-flow-awbc-source.raw.zip"
     }
+  },
+"ordinaryFlowAwbcConsumers": {
+    "version": 1,
+    "recordedAt": "2026-11-07T06:42:12.6787495Z",
+    "sourceCommit": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+    "productionCommit": "dbd34d860869726765dcb1f2e27be7b8f351054e",
+    "behavior": "Migrate the existing Compiler scoped-defer stack-order tampering fixture to FiberScope.deferred.defers. The original three-packet reorder and owning-restore rejection assertion are unchanged.",
+    "priorFailure": {
+      "source": "dbd34d860869726765dcb1f2e27be7b8f351054e",
+      "log": "awbc-flow-defer-20261107.workspace-check.log",
+      "command": "cargo check --locked --workspace --all-targets --all-features",
+      "reason": "Compiler evaluated_effects integration target referenced the removed flat defers field at two locations. This is a change-caused consumer migration omission, repaired without changing production or weakening the tamper rejection.",
+      "exitCode": 101
+    },
+    "compiler": {
+      "passed": 93,
+      "log": "awbc-flow-defer-20261107.compiler-effects.log",
+      "failed": 0,
+      "exitCode": 0,
+      "command": "cargo nextest run --locked -p arcweft-compiler --test evaluated_effects --no-tests fail --no-fail-fast",
+      "skipped": 0
+    },
+    "check": {
+      "log": "awbc-flow-defer-20261107.workspace-check-repaired.log",
+      "command": "cargo check --locked --workspace --all-targets --all-features",
+      "exitCode": 0
+    },
+    "clippy": {
+      "version": 1,
+      "command": "cargo clippy --locked --workspace --all-targets --all-features",
+      "exitCode": 0,
+      "source": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+      "at": "2026-11-07T06:39:01.8699915Z"
+    },
+    "warnings": "Check and Clippy emitted warnings. Complete output is preserved; exit 0 is not a claim of warning-free source.",
+    "ownerReview": {
+      "version": 1,
+      "source": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+      "dirty": "Original 12 tracked and 6 untracked WIP only",
+      "owners": [
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/defer.rs",
+          "owningCrate": "arcweft-core",
+          "bytes": 12594,
+          "physicalLoc": 330,
+          "baselinePhysicalLoc": 0,
+          "baseline": "69d3232ab6cb201487c98432070e0fc8997c2023",
+          "classification": "production",
+          "embeddedTestLoc": 0
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+          "owningCrate": "arcweft-compiler",
+          "bytes": 10716,
+          "physicalLoc": 314,
+          "baselinePhysicalLoc": 0,
+          "baseline": "69d3232ab6cb201487c98432070e0fc8997c2023",
+          "classification": "integration regression tests",
+          "embeddedTestLoc": 0
+        }
+      ],
+      "fanIn": "New Product defer owner is used by the executor, live checkpoint and inert snapshot owners in arcweft-core.",
+      "fanOut": "AWBC fiber state, shared Core scope registration frontier, and existing prepared Product child spawning; Cargo edges unchanged.",
+      "disposition": "Cohesive scheduling/admission module and separate public API integration regressions. No source-layout split, facade expansion, parallel reader or I/O addition."
+    },
+    "publication": {
+      "version": 1,
+      "commit": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+      "parent": "ffe5d5353164afbbe1886b35ec6eb9c385f44418",
+      "tree": "abeee43dc862520244b4d0cae80343e0ebbcc10b",
+      "remote": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "d4c953a354ff7385029c1959d3822495749adaa9"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a14dd5c484a30610cf6a7f64f2e74702a71b822c67ef40481ee8a56040744230",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-07T06:36:03.1528712Z"
+    },
+    "reverseSelection": {
+      "version": 1,
+      "source": "df46b44b3a42eea9336d16d75f01cfc33aa9102a",
+      "graph": "function-scope-20261107.metadata-reverse.json",
+      "workspacePackages": 53,
+      "reusedGraphManifestInputs": 100,
+      "cargoInputDrift": 0,
+      "filter": "rdeps(=arcweft-core) & not (package(=arcweft-core) & (kind(lib) | binary(=direct_suspension))) & not (package(=arcweft-compiler) & (binary(=scoped_defer) | binary(=evaluated_effects)))",
+      "exclusions": {
+        "compilerScopedDefer": 8,
+        "compilerEvaluatedEffects": 93,
+        "coreDirectSuspension": 8,
+        "coreLib": 2313
+      },
+      "selection": "Windows default features; exclude CLI from non-CLI library/integration run. CLI policy targets selected separately.",
+      "status": "prepared, not run"
+    },
+    "acceptance": "These consumer passes extend evidence for the current checkpoint. The ordinary Flow defer remaining conditions and separate accepted features keep their existing item-specific judgments in current-status.md. Full reverse-dependency test completion is not claimed here.",
+    "raw": {
+      "sha256": "538131669718e2bde80517a6962c84da5c8a2cbbade04176534e108faf02d04c",
+      "path": "task-ordinary-flow-awbc-consumers.raw.zip",
+      "entries": [
+        {
+          "entry": "awbc-flow-defer-20261107.workspace-check.log",
+          "bytes": 131285,
+          "sha256": "1ffadb68a7a46e5481e6252b0c9e56546cb6514a76792b6f2ac21ced819fa960"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.workspace-check.receipt.json",
+          "bytes": 219,
+          "sha256": "351d46c27bb23b109b0749127c96d0ab6357b0ff9351ff7a012e4f364ac5661b"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.compiler-effects.log",
+          "bytes": 100150,
+          "sha256": "f727b49986c31f5d210090a465ea0eace264c3db75cdaf1b25adfb6b08f1b794"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.workspace-check-repaired.log",
+          "bytes": 108024,
+          "sha256": "c86ce31f19093dad014a6400367d2fc5b0fa10e0e05c92c1f1b1f906f68b40f0"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.consumer.receipt.json",
+          "bytes": 101,
+          "sha256": "0adb6f26e09593ca713fff58fe33787d24799c3d48c2fd875128f443308e8df1"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.workspace-clippy.log",
+          "bytes": 9116019,
+          "sha256": "6aeb85b8e288d97c467889239dbd8f9cbad4aef0c8115f64826d7858e43a4649"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.workspace-clippy.receipt.json",
+          "bytes": 218,
+          "sha256": "b8e72b01ec4c611eb1a8e2b0a125ceecf1205ec83eb27d6dc9d898b659399791"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.consumer.source-freeze.json",
+          "bytes": 711733,
+          "sha256": "44bd92db10ad7299713e96c7bcb5924af4484eda826f1f5500fab971f1bdca4b"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.consumer.reviewed.patch",
+          "bytes": 1076,
+          "sha256": "a14dd5c484a30610cf6a7f64f2e74702a71b822c67ef40481ee8a56040744230"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.consumer.verified.json",
+          "bytes": 693,
+          "sha256": "14b32606a9b435442ef919353c57f9fc10ee314e45e9be05e720b7ad6a832eda"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.owner-review.json",
+          "bytes": 1295,
+          "sha256": "77d64f17b9370b818a8c15fbfcb4686b96a18520ccef081b3f70ffae5f0574c2"
+        },
+        {
+          "entry": "awbc-flow-defer-20261107.reverse-selection.json",
+          "bytes": 746,
+          "sha256": "08ac9d928c3b0c5e23c83b4e9123d130eb6acd502d4101e8f582cd9015e29bb1"
+        }
+      ]
+    }
   }
 }
