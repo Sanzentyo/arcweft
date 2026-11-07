@@ -1,6 +1,6 @@
 flow unsafe_missing_reason {
     unsafe lifetime @unsafe.cache {
         /// SAFETY: deliberately malformed fixture; reason is missing.
-        let summary = promote_unchecked('flow)
+        let summary = "owned summary"
     }
 }

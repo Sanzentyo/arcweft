@@ -97,7 +97,7 @@ use arcweft_lang_hir::source_index::{
 };
 use arcweft_lang_hir::stmt::{
     HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirStmtKind,
-    HirStmtMatchArmBody,
+    HirStmtMatchArmBody, HirUnsafeLifetimeBody,
 };
 use arcweft_lang_hir::symbol::{
     CallableDeclarationId, CallableDeclarationKey, CallablePackageId, ImplMethodDeclarationId,
@@ -7028,6 +7028,13 @@ impl<'a> FinalFlowLowerer<'a> {
             HirStmtKind::Scope(scope) => {
                 self.lower_scope_statement(id, scope.body(), RuntimeFlowTail::None)
             }
+            HirStmtKind::UnsafeLifetime {
+                body: HirUnsafeLifetimeBody::Block { statements, .. },
+                ..
+            } => Ok(vec![RuntimeFlowOpSeed::Scope {
+                identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
+                body: self.lower_statement_ids(statements)?,
+            }]),
             HirStmtKind::Break { value, .. } => Ok(vec![RuntimeFlowOpSeed::Break {
                 depth: self.loop_transfer_depth(id)?,
                 value: value

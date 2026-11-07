@@ -893,10 +893,10 @@ flow cancel_cleanup {
         init:
             'line.focus <- true
         defer on completed:
-            'line.focus |> drop_optional
+            'line.focus? |> drop_optional(^)
         defer on cancelled:
-            'line.focus |> drop_optional
-        cancel on input(.SkipLine) { out .Skipped }
+            'line.focus? |> drop_optional(^)
+        cancel on input(.SkipLine) { out () }
 }
 "#,
     );
@@ -912,10 +912,14 @@ flow cancel_cleanup {
 
     assert!(
         output.status.success(),
-        "completed and cancelled defers should discharge line focus, stdout: {}, stderr: {}",
+        "typed completed and cancelled cleanup should verify, stdout: {}, stderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["policy"]["mode"], "test");
+    assert!(report["diagnostics"].as_array().unwrap().is_empty());
+    assert!(report["obligations"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -953,9 +957,9 @@ fn unsafe_json_lists_audit_regions() {
         "unsafe-audit",
         r#"
 flow audit {
-    unsafe lifetime @unsafe.cache reason = "owned clone" {
-        /// SAFETY: value is owned before promotion
-        let summary = promote_unchecked('flow)
+    unsafe lifetime @unsafe.cache reason = "owned local" {
+        /// SAFETY: the owned summary stays inside this block.
+        let summary = "owned summary"
     }
 }
 "#,
@@ -973,11 +977,15 @@ flow audit {
         "unsafe listing should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("cache"),
-        "unsafe JSON should include audit id: {stdout}"
-    );
+    let audits: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let [audit] = audits.as_array().unwrap().as_slice() else {
+        panic!("one checked audit region: {audits}");
+    };
+    assert_eq!(audit["id"], "unsafe.cache");
+    assert_eq!(audit["has_reason"], true);
+    assert_eq!(audit["reason"], "owned local");
+    assert_eq!(audit["has_safety_doc"], true);
+    assert!(audit["source"]["source"]["id"].is_string());
 }
 
 #[test]

@@ -132,6 +132,13 @@ Rules:
 Write the reason as a nonempty string literal. The checked audit retains the
 source operand, and the report retains the decoded text.
 
+The block executes its body in source order in its own lexical scope. Its
+locals and deferred cleanup belong to that scope; cleanup completes before
+execution continues after the block. A return or loop transfer keeps its
+enclosing target and leaves the block through normal scope cleanup. Audit
+metadata does not suppress body execution or turn an unproved operation into
+a proven one.
+
 Diagnostics should point at the operation and the required proof/audit path:
 
 ```text

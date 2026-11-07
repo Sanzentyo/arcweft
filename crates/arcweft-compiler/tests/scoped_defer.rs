@@ -449,6 +449,110 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn unsafe_audit_body_runs_its_lexical_cleanup_before_the_outer_continuation() {
+    let source = r#"
+flow main() effects { log.write } {
+    defer { log.info("flow-cleanup") }
+    unsafe lifetime @unsafe.body reason = "owned local stays in this body" {
+        /// SAFETY: only the owned local is captured by this body's cleanup.
+        let message = "audit-cleanup"
+        defer { log.info(message) }
+        log.info("audit-body")
+    }
+    log.info("after-audit")
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let expected = ["audit-body", "audit-cleanup", "after-audit", "flow-cleanup"];
+    assert_eq!(native(source), expected);
+    assert_eq!(saved_awbc(source), expected);
+}
+
+#[test]
+fn unsafe_audit_body_preserves_generic_return_and_cleanup_ownership() {
+    let source = r#"
+fn audited<T>(value: T) -> T effects { log.write } {
+    defer { log.info("function-cleanup") }
+    unsafe lifetime @unsafe.return reason = "return keeps the input's owned type" {
+        /// SAFETY: no borrowed value escapes this invocation.
+        defer { log.info("audit-cleanup") }
+        return value
+    }
+}
+flow main() effects { log.write } {
+    log.info(audited("kept"))
+    log.info(audited(42i64))
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let expected = [
+        "audit-cleanup",
+        "function-cleanup",
+        "kept",
+        "audit-cleanup",
+        "function-cleanup",
+        "42",
+    ];
+    assert_eq!(native(source), expected);
+    assert_eq!(saved_awbc(source), expected);
+}
+
+#[test]
+fn unsafe_audit_body_without_effects_keeps_its_enclosing_value() {
+    let source = r#"
+fn audited(value: i64) -> i64 {
+    unsafe lifetime @unsafe.local reason = "the block retains only an owned scalar" {
+        /// SAFETY: the local does not escape its lexical scope.
+        let value = 99i64
+    }
+    value
+}
+flow main() { log.info(audited(42i64)) }
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["42"]);
+    assert_eq!(saved_awbc(source), ["42"]);
+}
+
+#[test]
+fn unsafe_audit_body_drains_cleanup_before_breaking_its_enclosing_loop() {
+    let source = r#"
+flow main() {
+    let value = loop {
+        unsafe lifetime @unsafe.loop reason = "the loop result is owned" {
+            /// SAFETY: cleanup finishes before the owned result leaves.
+            defer { log.info("audit-cleanup") }
+            break "kept"
+        }
+    }
+    log.info(value)
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    assert_eq!(native(source), ["audit-cleanup", "kept"]);
+    assert_eq!(saved_awbc(source), ["audit-cleanup", "kept"]);
+}
+
+#[test]
+fn unsafe_audit_body_waits_for_cleanup_before_resuming_its_caller() {
+    assert_deferred_wait(
+        r#"
+flow main() {
+    unsafe lifetime @unsafe.wait reason = "cleanup retains its owned input while suspended" {
+        /// SAFETY: the callback and its input remain in this scope.
+        defer { log.info("cleanup-enter"); wait(0.1s); log.info("cleanup-done") }
+        log.info("audit-body")
+    }
+    log.info("after-audit")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        &["audit-body", "cleanup-enter"],
+        &["cleanup-done", "after-audit"],
+    );
+}
+
+#[test]
 fn callback_failure_drains_remaining_cleanup_without_resuming_normal_code() {
     let source = r#"
 flow main() effects { log.write } {
