@@ -1815,14 +1815,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.lower_continue(frame, body, *depth, path);
             }
             FlowOp::Goto(transfer) => {
-                let order = match transfer.input_order() {
-                    Ok(order) => order,
-                    Err(error) => {
-                        self.inventory
-                            .diagnostic(AwbcLowerDiagnostic::error(path, error.to_string()));
-                        return;
-                    }
-                };
+                let order = transfer
+                    .input_order()
+                    .expect("the sealed Plan admits the complete original Flow input permutation");
                 let stable_target = match &transfer.target {
                     arcweft_core::plan::RuntimeFlowTransferTarget::Static(_) => None,
                     arcweft_core::plan::RuntimeFlowTransferTarget::Dynamic(expr) => {
@@ -1860,24 +1855,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.emit_format_attempt_abandons(0);
                 let terminator = match &transfer.target {
                     arcweft_core::plan::RuntimeFlowTransferTarget::Static(target) => {
-                        if let Some(function) = self.prepare_flow_target(target, path) {
-                            AwbcTerminator::GotoStatic {
-                                function,
-                                args: arguments,
-                            }
-                        } else {
-                            let target = target.canonical_label();
-                            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                                path,
-                                format!("static goto targets missing accepted Flow `{target}`"),
-                            ));
-                            let message = self.inventory.intern_string(&format!(
-                                "static goto targets missing accepted Flow `{target}`"
-                            ));
-                            AwbcTerminator::Trap {
-                                code: AwbcTrapCode::MissingDynamicTarget,
-                                message: Some(message),
-                            }
+                        let function = self.prepare_flow_target(target, path).expect(
+                            "the sealed static Flow retains its original executable function site",
+                        );
+                        AwbcTerminator::GotoStatic {
+                            function,
+                            args: arguments,
                         }
                     }
                     arcweft_core::plan::RuntimeFlowTransferTarget::Dynamic(_) => {

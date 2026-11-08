@@ -23,6 +23,7 @@ enum OrdinaryFlowExit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GotoCase {
     Static,
+    Inputs,
     Dynamic,
     Effect,
     InvalidAbi,
@@ -86,11 +87,17 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                     ),
                     boolean,
                 ),
+                RuntimeLocalDeclarationSeed::new(
+                    crate::engine::manual_local_source(
+                        "arcweft-core.fixture.engine.defer.flow_scope.transfer_input",
+                    ),
+                    boolean,
+                ),
             ],
         )
         .unwrap();
-    let [local, capture, argument, call_result] = locals.local_ids() else {
-        panic!("four admitted bindings")
+    let [local, capture, argument, call_result, transfer_input] = locals.local_ids() else {
+        panic!("five admitted bindings")
     };
     let bind = |local: &RuntimeLocalSeedId| {
         RuntimePatternSeed::new(
@@ -231,6 +238,15 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
     };
     let nested_transfer = |transfer| {
         let mut body = vec![inner_defer.clone().unwrap(), transfer];
+        if exit == OrdinaryFlowExit::Goto(GotoCase::Inputs) {
+            body.insert(
+                1,
+                RuntimeFlowOpSeed::Let {
+                    pattern: bind(transfer_input),
+                    expr: boolean_value(false),
+                },
+            );
+        }
         if exit == OrdinaryFlowExit::Goto(GotoCase::ChoiceContinue) {
             body.push(RuntimeFlowOpSeed::ReturnExpr(boolean_value(true)));
         }
@@ -303,12 +319,20 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                         RuntimeExecutableBodySeed {
                             effects: RuntimeEffectSet::empty(),
                             ops: Box::new([
-                                log(if index == 0 {
-                                    "destination started"
-                                } else {
-                                    "wrong destination"
-                                }),
-                                RuntimeFlowOpSeed::ReturnExpr(boolean_value(index == 0)),
+                                log(
+                                    if index == 0 || (case == GotoCase::Inputs && with_argument) {
+                                        "destination started"
+                                    } else {
+                                        "wrong destination"
+                                    },
+                                ),
+                                RuntimeFlowOpSeed::ReturnExpr(
+                                    if case == GotoCase::Inputs && with_argument {
+                                        read(argument, RuntimeLocalReadMode::Move)
+                                    } else {
+                                        boolean_value(index == 0)
+                                    },
+                                ),
                             ]),
                         },
                     ))
@@ -321,6 +345,13 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                 )
             };
             Some(match case {
+                GotoCase::Inputs => RuntimeFlowOpSeed::Goto(RuntimeFlowTransfer {
+                    target: RuntimeFlowTransferTarget::Static(needs_argument),
+                    arguments: Box::new([crate::value::RuntimeFlowParameterBinding {
+                        parameter: FlowParameterCoordinate::from_position(0),
+                        value: read(transfer_input, RuntimeLocalReadMode::Move),
+                    }]),
+                }),
                 GotoCase::Static | GotoCase::CleanupFailure => RuntimeFlowOpSeed::Goto(
                     crate::plan::RuntimeFlowTransfer::static_without_arguments(target),
                 ),
@@ -731,10 +762,20 @@ fn native_goto_finishes_inner_and_caller_cleanup_before_transferring() {
     use crate::step::{RuntimeStepInput, RuntimeStepOptions};
     use crate::time::TickId;
 
-    for case in [GotoCase::Static, GotoCase::Dynamic, GotoCase::Effect] {
+    for case in [
+        GotoCase::Static,
+        GotoCase::Dynamic,
+        GotoCase::Effect,
+        GotoCase::Inputs,
+    ] {
         let mut engine = ordinary_flow_defer_engine(OrdinaryFlowExit::Goto(case));
         let owner = RuntimeProgramOwner::Plan(engine.program_plan());
-        let destination = FlowRuntimeId::canonical("test.goto_destination").unwrap();
+        let destination = FlowRuntimeId::canonical(if case == GotoCase::Inputs {
+            "test.goto_needs_argument"
+        } else {
+            "test.goto_destination"
+        })
+        .unwrap();
         let mut logs = Vec::new();
         let mut observed_inside_call = false;
         let mut observed_after_call = false;
@@ -854,7 +895,14 @@ fn native_goto_finishes_inner_and_caller_cleanup_before_transferring() {
             }
             engine = Engine::from_rollback_image(image, &owner).unwrap();
             if let FlowFiberStatus::Done(FlowExit::Return(value)) = step.fiber_status {
-                assert_eq!(value, "true");
+                assert_eq!(
+                    value,
+                    if case == GotoCase::Inputs {
+                        "false"
+                    } else {
+                        "true"
+                    }
+                );
                 assert_eq!(
                     logs,
                     [

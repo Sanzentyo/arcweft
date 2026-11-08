@@ -131,14 +131,20 @@ impl Engine {
                 },
             });
         } else {
-            self.activate_flow_transfer(transfer, source, type_instantiation, output, backend);
+            self.activate_flow_transfer(
+                transfer,
+                source.as_ref(),
+                type_instantiation,
+                output,
+                backend,
+            );
         }
     }
 
     pub(super) fn activate_flow_transfer(
         &mut self,
         transfer: crate::plan::RuntimeFlowTransfer<crate::value::RuntimeValue>,
-        source: Option<NativeGotoOrigin>,
+        source: Option<&NativeGotoOrigin>,
         type_instantiation: Option<
             std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
         >,
@@ -182,7 +188,7 @@ impl Engine {
             })
             .expect("the unchanged input patterns were admitted before any Move or cleanup");
         if let Some(FlowOp::Effect(effect @ LineEffectRequest::Goto(_))) =
-            source.as_ref().and_then(|source| match source {
+            source.and_then(|source| match source {
                 NativeGotoOrigin::Operation(source) => source.operation(&plan),
                 NativeGotoOrigin::Choice { .. } => None,
             })

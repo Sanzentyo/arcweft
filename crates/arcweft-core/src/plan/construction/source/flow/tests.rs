@@ -293,6 +293,74 @@ fn flow_source_preserves_nested_guard_bodies_never_results_and_actual_native_exe
 }
 
 #[test]
+fn flow_source_preserves_transfer_order_and_rejects_duplicate_coordinates_before_value_roots() {
+    let plan = fixture(Some(true));
+    let boolean = plan.type_table().id_for_semantic(boolean()).unwrap();
+    // Codec admission retains syntax; the enclosing Plan seal separately
+    // admits the target ABI and the pre-evaluated owning-input grammar.
+    let operation = FlowOp::Goto(RuntimeFlowTransfer {
+        target: RuntimeFlowTransferTarget::Static(FlowRuntimeId::canonical("target").unwrap()),
+        arguments: [1, 0]
+            .map(|position| crate::value::RuntimeFlowParameterBinding {
+                parameter: crate::entry::FlowParameterCoordinate::from_position(position),
+                value: crate::value::RuntimeExpr::from_admitted_parts(
+                    boolean,
+                    crate::value::RuntimeExprKind::Value(RuntimeValue::Bool(position == 1)),
+                ),
+            })
+            .into(),
+    });
+    let bounds = limits(&plan);
+    let encoded = plan
+        .encode_flow_source(&[operation], bounds, &resources(), &mut meter())
+        .unwrap();
+    let (mut construction, _) = source(&plan);
+    let expressions = empty_expression_handles();
+    let handles = RuntimeFlowSourceHandles {
+        expression: &expressions,
+        contents: &[],
+        defers: &[],
+        tasks: &[],
+    };
+    let seeds = PreparedRuntimeFlowSource::preflight(
+        encoded.bytes(),
+        bounds,
+        &resources(),
+        &mut construction.meter,
+    )
+    .unwrap()
+    .materialize(&mut construction, &handles, &mut resources())
+    .unwrap();
+    let RuntimeFlowOpSeed::Goto(restored) = &seeds[0] else {
+        panic!("transfer source")
+    };
+    assert_eq!(
+        restored
+            .arguments
+            .iter()
+            .map(|arg| arg.parameter.position())
+            .collect::<Vec<_>>(),
+        [1, 0]
+    );
+
+    let mut cursor = metadata::Cursor::new(encoded.bytes());
+    assert_eq!(cursor.header().unwrap(), (1, 1));
+    assert_eq!(cursor.byte().unwrap(), 33);
+    cursor.frame().unwrap();
+    let metadata_end = cursor.offset;
+    let mut forged = encoded.bytes()[..metadata_end].to_vec();
+    forged[metadata_end - 4..].copy_from_slice(&1u32.to_le_bytes());
+    // No value roots are available. Duplicate-coordinate admission must
+    // finish first, without allocating operands or reading expression data.
+    forged.extend_from_slice(&0u32.to_le_bytes());
+    forged.extend_from_slice(&0u32.to_le_bytes());
+    assert!(matches!(
+        PreparedRuntimeFlowSource::preflight(&forged, bounds, &resources(), &mut meter()),
+        Err(Error::DuplicateFlowParameter { coordinate: 1 })
+    ));
+}
+
+#[test]
 fn labelled_loop_depth_survives_source_codec_and_native_execution() {
     for depth in [1, 2] {
         let mut body = vec![RuntimeFlowOpSeed::If {

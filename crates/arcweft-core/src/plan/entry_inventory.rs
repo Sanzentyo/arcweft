@@ -357,7 +357,7 @@ pub enum RuntimeFlowInvocationError {
     TransferPattern(#[source] Box<crate::value::RuntimeEvalError>),
 }
 
-impl RuntimePlan {
+impl super::RuntimePlanInventory {
     /// Admits the complete coordinate permutation before evaluating or staging
     /// operands. The same original schema bounds all following input storage.
     pub(crate) fn validate_flow_transfer_shape<E>(
@@ -396,6 +396,28 @@ impl RuntimePlan {
         Ok((runtime_flow.function_site(), order))
     }
 
+    fn flow_invocation_contract(
+        &self,
+        flow: &FlowRuntimeId,
+    ) -> Result<(&super::RuntimeFlow, &crate::entry::RuntimeFlowSchema), RuntimeFlowInvocationError>
+    {
+        let runtime_flow =
+            self.flows
+                .flow(flow)
+                .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
+                    flow: flow.canonical_label(),
+                })?;
+        let schema =
+            self.flows
+                .schema(flow)
+                .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
+                    flow: flow.canonical_label(),
+                })?;
+        Ok((runtime_flow, schema))
+    }
+}
+
+impl RuntimePlan {
     /// Source order is retained by the packet; only borrowed references are
     /// projected into the canonical ABI for the shared joint input admission.
     pub(crate) fn validate_flow_transfer_inputs<V: Borrow<crate::value::RuntimeValue>>(
@@ -542,26 +564,6 @@ impl RuntimePlan {
             collected.push(binding);
         }
         Ok(collected)
-    }
-
-    fn flow_invocation_contract(
-        &self,
-        flow: &FlowRuntimeId,
-    ) -> Result<(&super::RuntimeFlow, &crate::entry::RuntimeFlowSchema), RuntimeFlowInvocationError>
-    {
-        let runtime_flow =
-            self.flows
-                .flow(flow)
-                .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
-                    flow: flow.canonical_label(),
-                })?;
-        let schema =
-            self.flows
-                .schema(flow)
-                .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
-                    flow: flow.canonical_label(),
-                })?;
-        Ok((runtime_flow, schema))
     }
 
     /// Coordinate admission and the actual FunctionSite input ABI are one
@@ -964,6 +966,8 @@ pub enum RuntimePlanError {
     InvalidDeferFunctionSite { site: RuntimeDeferSiteId },
     #[error("runtime defer-site table exceeds its identity space")]
     DeferSiteIdentityExhausted,
+    #[error("invalid Flow transfer: {0}")]
+    FlowTransfer(#[source] Box<RuntimeFlowInvocationError>),
 }
 
 impl RuntimePlan {
@@ -1135,6 +1139,22 @@ impl super::RuntimePlanInventory {
 
     fn verify_executable_site_op(&self, op: &FlowOp) -> Result<(), RuntimePlanError> {
         match op {
+            FlowOp::Goto(transfer) => {
+                let invalid = |error| RuntimePlanError::FlowTransfer(Box::new(error));
+                match &transfer.target {
+                    super::RuntimeFlowTransferTarget::Static(target) => {
+                        self.validate_flow_transfer_shape(target, transfer)
+                            .map_err(invalid)?;
+                    }
+                    super::RuntimeFlowTransferTarget::Dynamic(_) => {
+                        transfer
+                            .input_order()
+                            .map_err(RuntimeFlowInvocationError::from)
+                            .map_err(invalid)?;
+                    }
+                }
+                transfer.validate_input_sources().map_err(invalid)?;
+            }
             FlowOp::ProjectCall { site } => {
                 if self.project_call_sites().get(*site).is_none() {
                     return Err(RuntimePlanError::MissingProjectCallSite { site: *site });
@@ -1186,7 +1206,6 @@ impl super::RuntimePlanInventory {
             | FlowOp::ApplyGroup { .. }
             | FlowOp::Break { .. }
             | FlowOp::Continue { .. }
-            | FlowOp::Goto(_)
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::Effect(_)

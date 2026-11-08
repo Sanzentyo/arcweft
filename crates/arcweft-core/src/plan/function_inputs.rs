@@ -161,6 +161,7 @@ impl RuntimePlan {
                 crate::value::AwbcRuntimeValueSnapshotError::from,
             )
         };
+        admission.validate_metadata_collection(transfer.arguments.len())?;
         let (site, _) = self
             .validate_flow_transfer_shape(flow, transfer)
             .map_err(|error| invalid(error.to_string()))?;

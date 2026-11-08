@@ -88,6 +88,8 @@ pub(in crate::plan) enum RuntimeFlowSourceError {
         actual: u32,
         maximum: usize,
     },
+    #[error("Flow Source repeats parameter coordinate {coordinate}")]
+    DuplicateFlowParameter { coordinate: u32 },
     #[error("Flow Source contains a foreign or reordered {kind} handle")]
     Handle { kind: &'static str },
     #[error("Flow Source {kind} namespace has {actual} rows instead of {expected}")]

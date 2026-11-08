@@ -265,24 +265,30 @@ pub(super) fn preflight(
         }
         43 | 46 => (),
         33 => {
-            match reader.metadata.byte()? {
-                0 => reader.path()?,
-                1 => reader.expression()?,
+            let dynamic = match reader.metadata.byte()? {
+                0 => {
+                    reader.path()?;
+                    false
+                }
+                1 => true,
                 tag => {
                     return Err(Error::Tag {
                         kind: "Flow transfer target",
                         tag,
                     });
                 }
-            }
+            };
             let count = reader.metadata.u32()? as usize;
             reader
                 .counts
                 .array::<crate::value::RuntimeFlowParameterBinding<crate::plan::RuntimeExprSeed>>(
                     count,
                 )?;
-            for _ in 0..count {
-                let coordinate = reader.metadata.u32()?;
+            let coordinates = reader
+                .metadata
+                .raw(count.checked_mul(4).ok_or(Error::Arithmetic)?)?;
+            for (index, bytes) in coordinates.chunks_exact(4).enumerate() {
+                let coordinate = u32::from_le_bytes(bytes.try_into().expect("coordinate width"));
                 if coordinate as usize >= count {
                     return Err(Error::Reference {
                         kind: "Flow transfer parameter",
@@ -290,6 +296,18 @@ pub(super) fn preflight(
                         maximum: count.saturating_sub(1),
                     });
                 }
+                reader.meter.charge_work(index as u64)?;
+                if coordinates[..index * 4]
+                    .chunks_exact(4)
+                    .any(|prior| prior == bytes)
+                {
+                    return Err(Error::DuplicateFlowParameter { coordinate });
+                }
+            }
+            if dynamic {
+                reader.expression()?;
+            }
+            for _ in 0..count {
                 reader.expression()?;
             }
         }

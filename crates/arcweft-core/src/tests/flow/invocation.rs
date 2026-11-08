@@ -35,6 +35,14 @@ fn string_inputs_plan_with_last_literal(
     count: usize,
     last_literal: Option<&str>,
 ) -> (RuntimePlan, FlowRuntimeId) {
+    string_inputs_candidate(count, last_literal, false).unwrap()
+}
+
+fn string_inputs_candidate(
+    count: usize,
+    last_literal: Option<&str>,
+    empty_self_transfer: bool,
+) -> Result<(RuntimePlan, FlowRuntimeId), crate::plan::RuntimePlanBuildError> {
     let mut builder = RuntimePlanBuilder::new();
     let function = RuntimeSemanticTypeId::from_bytes([0xb1; 32]);
     let admitted = builder
@@ -95,15 +103,14 @@ fn string_inputs_plan_with_last_literal(
             input_local: local.clone(),
             pattern: RuntimePatternSeed::new(
                 string_type(),
-                if formal.coordinate.position() as usize + 1 == count && last_literal.is_some() {
-                    RuntimePatternSeedKind::Literal(RuntimeValue::String(
-                        last_literal.unwrap().into(),
-                    ))
-                } else {
-                    RuntimePatternSeedKind::Bind {
+                match last_literal.filter(|_| formal.coordinate.position() as usize + 1 == count) {
+                    Some(value) => {
+                        RuntimePatternSeedKind::Literal(RuntimeValue::String(value.into()))
+                    }
+                    None => RuntimePatternSeedKind::Bind {
                         mutable: false,
                         local: local.clone(),
-                    }
+                    },
                 },
             ),
             ownership: RuntimeValueOwnershipRequirement::Owned,
@@ -123,19 +130,33 @@ fn string_inputs_plan_with_last_literal(
             ),
             RuntimeExecutableBodySeed {
                 effects: RuntimeEffectSet::empty(),
-                ops: Box::new([crate::plan::RuntimeFlowOpSeed::ReturnExpr(
-                    RuntimeExprSeed::new(
-                        string_type(),
-                        RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                            admitted.local_ids()[0].clone(),
-                            RuntimeLocalReadMode::Copy,
-                        )),
-                    ),
-                )]),
+                ops: if empty_self_transfer {
+                    Box::new([crate::plan::RuntimeFlowOpSeed::Goto(
+                        crate::plan::RuntimeFlowTransfer::static_without_arguments(flow.clone()),
+                    )])
+                } else {
+                    Box::new([crate::plan::RuntimeFlowOpSeed::ReturnExpr(
+                        RuntimeExprSeed::new(
+                            string_type(),
+                            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                                admitted.local_ids()[0].clone(),
+                                RuntimeLocalReadMode::Copy,
+                            )),
+                        ),
+                    )])
+                },
             },
         ))
         .unwrap();
-    (builder.finish().unwrap(), flow)
+    Ok((builder.finish()?, flow))
+}
+
+#[test]
+fn static_flow_transfer_cannot_omit_unused_and_nonbinding_formals_at_plan_publication() {
+    let error = string_inputs_candidate(2, Some("unused"), true).unwrap_err();
+    assert!(matches!(error,
+        crate::plan::RuntimePlanBuildError::Plan(crate::plan::RuntimePlanError::FlowTransfer(error))
+            if matches!(*error, RuntimeFlowInvocationError::BindingCount { expected: 2, actual: 0, .. })));
 }
 
 fn borrowed_bindings(

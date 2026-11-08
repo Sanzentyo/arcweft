@@ -4,7 +4,7 @@ use super::code_cursor::NativeSourceOperation;
 use crate::line_task::{
     AwbcRuntimeDeferredRegistrationSnapshot, RuntimeLineDeferredRegistration, ScopeExit,
 };
-use crate::plan::{FlowOp, FlowRuntimeId, RuntimeDeferOwner};
+use crate::plan::{FlowOp, RuntimeDeferOwner};
 use crate::runtime_id::{RuntimeDeferRegistrationId, RuntimeDeferSiteId};
 use crate::scope::RuntimeScheduledScopeToken;
 use crate::task::RuntimeProgramOwner;
@@ -1023,7 +1023,7 @@ impl super::Engine {
                         } => {
                             self.activate_flow_transfer(
                                 transfer,
-                                Some(source),
+                                Some(&source),
                                 type_instantiation,
                                 output,
                                 backend,

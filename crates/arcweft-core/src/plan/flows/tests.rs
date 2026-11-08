@@ -7,6 +7,12 @@ use crate::plan::{
 };
 
 fn plan(ids: impl IntoIterator<Item = FlowRuntimeId>) -> RuntimePlan {
+    plan_result(ids.into_iter().map(|id| (id, Box::new([]) as Box<[_]>))).unwrap()
+}
+
+fn plan_result(
+    bodies: impl IntoIterator<Item = (FlowRuntimeId, Box<[crate::plan::RuntimeFlowOpSeed]>)>,
+) -> Result<RuntimePlan, crate::plan::RuntimePlanBuildError> {
     let mut builder = RuntimePlanBuilder::new();
     let unit = RuntimeCheckedType::Unit.semantic_identity_digest();
     builder
@@ -18,7 +24,7 @@ fn plan(ids: impl IntoIterator<Item = FlowRuntimeId>) -> RuntimePlan {
             [],
         )
         .unwrap();
-    for id in ids {
+    for (id, ops) in bodies {
         builder
             .push_flow_schema(RuntimeFlowSchema {
                 flow: id.clone(),
@@ -37,12 +43,28 @@ fn plan(ids: impl IntoIterator<Item = FlowRuntimeId>) -> RuntimePlan {
                 ),
                 RuntimeExecutableBodySeed {
                     effects: RuntimeEffectSet::empty(),
-                    ops: Box::new([]),
+                    ops,
                 },
             ))
             .unwrap();
     }
-    builder.finish().unwrap()
+    builder.finish()
+}
+
+#[test]
+fn missing_static_flow_transfer_cannot_publish_an_executable_plan() {
+    let source = FlowRuntimeId::canonical("source").unwrap();
+    let target = FlowRuntimeId::canonical("missing").unwrap();
+    let error = plan_result([(
+        source,
+        Box::new([crate::plan::RuntimeFlowOpSeed::Goto(
+            crate::plan::RuntimeFlowTransfer::static_without_arguments(target.clone()),
+        )]) as Box<[_]>,
+    )])
+    .unwrap_err();
+    assert!(matches!(error,
+        crate::plan::RuntimePlanBuildError::Plan(crate::plan::RuntimePlanError::FlowTransfer(error))
+            if *error == crate::plan::RuntimeFlowInvocationError::UnknownFlow { flow: target.canonical_label() }));
 }
 
 #[test]

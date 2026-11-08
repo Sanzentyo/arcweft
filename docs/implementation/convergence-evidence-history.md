@@ -15839,3 +15839,20 @@ Native保留exitは全引数と元のsource／target instantiationを保持す�
 
 未実行の全逆依存／workspace品質gate、描画ハンドルの最終Flow root移管・取消し、引数付きprivate rollbackの完全matrix、Plan／codecの完全preflightとSourceの明示bindingを引き続き実装する。Native公開saveを対応済みとしない。既受入の引数なし拒否、Generic Match、Style等は維持する。現状一覧の「途中版は未検証」は今回の限定runに合わせて訂正し、「tracked WIPは0」という時点依存の重複記述を除いた。先行結果・失敗・SHAは削除しない。
 原本 docs/implementation/acceptance-evidence/task-flow-transfer-native-wip2.raw.zip：30 entries／465019 bytes／SHA256 f9904ee14944760afe69f0a73bea8bb025516393073654e7931f2f12735810cd。ソース・ログ・catalog・metadataのみを格納し、実行ファイル／AWFBは含めない。
+
+## 2026-11-09 Flow転送のPlan／codec admission途中checkpoint（受入未了）
+
+先行Native途中Source b146a7490ac78f413505f8755148ef86c6048384をmainへ公開済み。parent cbbea7f86213bc10b2a72b37f8065b981abe741e、tree 0fed35aa4b6282176c9b850c6136b347ba960b2e、patch SHA256 0b19970a1bc4503fce71877ac164904690fc7b5d4513e1e74da9d6cfa476f31b。25明示pathのblob・差分・非forced remote ref一致、index空、held tracked WIP 0を確認した。今回もユーザーの途中保存指示によるcheckpointで、明示引数goto全体の受入ではない。
+
+ABI形状検査を最終RuntimePlanInventoryへ移し、Native実行と公開前sealが同じ元Flow table／schemaを読む。静的target不在・完全formal数不足、座標permutation、distinct whole-local Moveの不正を公開前に拒否する。元Flowのunused formalとbindingを作らないliteral patternのformalも数える。型の完全admission・dynamic ABIとSourceの明示bindingは継続中。AWBC loweringはsealed Planの静的target／permutationを使い、存在しない静的FlowをTrapへ変える旧成功経路を削除した。Source codecはversion 1を維持し、借用した全座標の範囲・重複を共有workで検査してからtarget／引数rootを読む。operandの所有配列や重複検査用集合は構築せず、比較回数を先に共有meterへ課金する。
+
+Nativeの実ケースでは、callee内でfalseをcaller slotへ評価し、引数付きGotoが内側・callee・callerのcleanupを終えてから、渡されたfalseを元の転送先formalから返すことを確認した。各stepでprivate rollbackへ保存／復元し、保留入力が関数呼出しの内側・外側の両方を通る。既存のstatic／dynamic／effect／Choice・失敗filterのケースを維持する。Actorなど描画handleのFlow root移管や全取消しmatrixの受入へ拡張しない。
+
+開発all-targets／all-features Core checkは、test helperが存在しないtype-table iterを呼ぶ1 errorで終了101。元semantic identityを使うid_for_semanticへ修復後、Coreの同feature nextest listはbuild終了0（1分51秒）。Core r1は2394／2394 PASS、0 SKIP、1 slow、145.771秒。新規2件はmissing static targetによるPlan公開拒否と、座標順のcodec保持／値rootが存在しない入力でも先行する重複座標拒否。Native引数ケースもこのrunに含む。その後、unused／nonbinding formal数の公開拒否、retained入力のcollection preflight、AWBCの旧Trap削除を追加した。
+
+二ownerのcargo clippy --locked -p arcweft-core -p arcweft-runtime-plan --all-targets --all-featuresは終了0／2分02秒、警告あり。その後に、Nativeで未使用になったimportとsource originの不要な所有引数を借用へ整理した。後続owners r2のnextest listはbuild終了0（3分45秒）、Core35件＋RuntimePlan165件を点検。RuntimePlan inventory166件中1件は規定除外。同じfilterのrunは200／200 PASS、2361 filter等SKIP、1 slow、144.782秒。RuntimePlanのdecoded AWBC、public save、Native parity、public API compile-failを含む。r1とr2は異なるsourceであり、合計2594件などの単一matrixにしない。原本には基点b146a7490ac78f413505f8755148ef86c6048384＋r1の6 path、Clippyの9 path、r2の11 pathをそれぞれ再現する別patchと、後続source hash／R2終了後に元pathで観測したcurrent test EXE hashを保存した。R1の実行前後本体hashは未記録で、同じpathは後続buildで更新されたためR1本体pinとして帰属し直さない。実行前後のbinary drift 0は主張しない。EXEをコピー／退避していない。
+
+locked／all-features Cargo metadataのnormal／dev／build／target edgeから推移的reverse closureを算出。workspace98、Core53、RuntimePlan16。Coreのtarget all treeと集合差0。最初の照合器がfacade名arcweftをregexから落としていたfalse mismatchを修復し、同じmetadata／treeで再照合した。53 packageの最終matrixとworkspace品質gateは未実行であり、owner結果を全consumerの受入へ拡張しない。既受入のGeneric Match等は維持し、進捗は現状一覧のgoto行だけへ集約する。
+
+所有境界の確認：Inventoryは元Flow／formal／公開seal、Flow Sourceは借用framing、Nativeはcleanup継続、AWBC Flow lowererは検証済み操作から一つのframe／instruction inventoryへの変換を所有する。依存edge・I/O・公開facadeを増やさず、既存の大きいownerへ別責任を追加していない。物理LOC／bytesと基点LOCはmetadataへ記録した。AWBCの大きいexhaustive lowererは同じFlow operationのframe状態と排他的な分岐を共有するため、この削除cutで物理行数だけの分割は行わない。
+原本 docs/implementation/acceptance-evidence/task-flow-transfer-plan-wip3.raw.zip：28 entries／1400380 bytes／SHA256 7672f0bb5e4d166fb3f71049ee01a102c47496813964bb7ed51a78d841feaf11。ソース・patch・ログ・catalog・metadataのみで、EXE／AWFBは含めない。
