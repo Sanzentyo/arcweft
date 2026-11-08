@@ -3,18 +3,33 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::{
+    expr::{HirExprKind, HirSelectedMember},
     identity::{ExprId, HirModuleId, ItemId, TypeId},
     item::{HirItemKind, HirStyleBodyItem},
+    leaf::{HirPathRoot, HirPathSegment},
     module::HirModule,
 };
-use arcweft_view::style::{ViewPropertyKind, ViewStyleValueKind};
+use arcweft_view::style::{ViewPropertyKind, ViewStyleTokenId, ViewStyleValueKind};
 
 use crate::{
     nominal::{ResolvedTypeRefOutcome, TypeResolutionReport},
     types::{CompileTimeStyleType, TypeKind},
 };
 
+use super::super::CheckedStyleTokenReference;
 use super::super::FinalSemanticAnalysisError;
+
+struct StyleTokenDeclaration {
+    ordinal: u32,
+    value: ExprId,
+    id: ViewStyleTokenId,
+}
+
+#[derive(Default)]
+struct StyleTokenScope {
+    declarations: BTreeMap<Vec<String>, StyleTokenDeclaration>,
+    max_path_segments: usize,
+}
 
 #[derive(Clone, Copy)]
 struct StyleTokenAnnotationOwner {
@@ -26,6 +41,7 @@ struct StyleTokenAnnotationOwner {
 pub(super) struct StyleAnalysisContext {
     values: BTreeMap<ExprId, ViewStyleValueKind>,
     annotations: BTreeMap<TypeId, StyleTokenAnnotationOwner>,
+    tokens: BTreeMap<ItemId, StyleTokenScope>,
 }
 
 impl StyleAnalysisContext {
@@ -35,6 +51,7 @@ impl StyleAnalysisContext {
         let mut context = Self {
             values: BTreeMap::new(),
             annotations: BTreeMap::new(),
+            tokens: BTreeMap::new(),
         };
         for module in modules.values() {
             for (owner, item) in module.items() {
@@ -42,11 +59,30 @@ impl StyleAnalysisContext {
                     continue;
                 };
                 for (ordinal, token) in style.tokens().iter().enumerate() {
+                    let ordinal = u32::try_from(ordinal)
+                        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                    let id = arcweft_id::PublicId::try_from(token)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                    let name: Vec<String> = id.as_str().split('.').map(str::to_owned).collect();
+                    let scope = context.tokens.entry(owner).or_default();
+                    scope.max_path_segments = scope.max_path_segments.max(name.len());
+                    if scope
+                        .declarations
+                        .insert(
+                            name,
+                            StyleTokenDeclaration {
+                                ordinal,
+                                value: token.value(),
+                                id: ViewStyleTokenId::from_public_id(id),
+                            },
+                        )
+                        .is_some()
+                    {
+                        return Err(FinalSemanticAnalysisError::InvalidOwner);
+                    }
                     let Some(ty) = token.value_type() else {
                         continue;
                     };
-                    let ordinal = u32::try_from(ordinal)
-                        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
                     if context
                         .annotations
                         .insert(
@@ -136,5 +172,58 @@ impl StyleAnalysisContext {
 
     pub(super) fn value_kind(&self, owner: ExprId) -> Option<ViewStyleValueKind> {
         self.values.get(&owner).copied()
+    }
+
+    pub(super) fn token(
+        &self,
+        module: &HirModule,
+        style: ItemId,
+        mut expression: ExprId,
+    ) -> Option<CheckedStyleTokenReference> {
+        let scope = self.tokens.get(&style)?;
+        let mut suffix = Vec::new();
+        // No declared name can match after this exact scope-derived bound.
+        // Qualifiers remain HIR syntax and are never evaluated as values.
+        let mut name = loop {
+            match module.resolve_expr(expression).ok()?.kind() {
+                HirExprKind::Select(select) => {
+                    let HirSelectedMember::Name(member) = select.member() else {
+                        return None;
+                    };
+                    if suffix.len() >= scope.max_path_segments {
+                        return None;
+                    }
+                    suffix.push(member.as_str().to_owned());
+                    expression = select.target();
+                }
+                HirExprKind::Path(path) => {
+                    let path = path.as_resolved()?;
+                    if path.root() != HirPathRoot::ImplicitCrate
+                        || path.segments().len().checked_add(suffix.len())?
+                            > scope.max_path_segments
+                    {
+                        return None;
+                    }
+                    break path
+                        .segments()
+                        .iter()
+                        .map(|segment| match segment {
+                            HirPathSegment::Identifier(name) => name.as_str().to_owned(),
+                            HirPathSegment::ProjectSymbol(name) => name.as_str().to_owned(),
+                        })
+                        .collect::<Vec<_>>();
+                }
+                _ => return None,
+            }
+        };
+        name.extend(suffix.into_iter().rev());
+        let token = scope.declarations.get(&name)?;
+        Some(CheckedStyleTokenReference::new(
+            style,
+            token.ordinal,
+            token.value,
+            token.id.clone(),
+            self.value_kind(token.value)?,
+        ))
     }
 }

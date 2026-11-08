@@ -973,6 +973,7 @@ impl FinalAnalysisExecutionProjection<'_> {
                     | CheckedExpressionResolution::ViewCall(_)
                     | CheckedExpressionResolution::ViewFxApplication(_)
                     | CheckedExpressionResolution::StyleValue(_)
+                    | CheckedExpressionResolution::StyleOperand(_)
                     | CheckedExpressionResolution::ViewPartName(_)
                     | CheckedExpressionResolution::CompileTimeCallee(_)
                     | CheckedExpressionResolution::TypeValue(_)

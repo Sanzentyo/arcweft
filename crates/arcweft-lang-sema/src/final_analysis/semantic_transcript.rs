@@ -2958,6 +2958,40 @@ fn write_resolution_payload(
             transcript_update!(hasher, &[9]);
             transcript_update!(hasher, value.semantic_digest().as_bytes());
         }
+        CheckedExpressionResolution::StyleOperand(operand) => {
+            use super::CheckedStyleOperand;
+            use arcweft_view::style::ViewFontFamily;
+            transcript_update!(hasher, &[23, operand.style_type().semantic_tag()]);
+            match operand {
+                CheckedStyleOperand::FontFamily(ViewFontFamily::Named(name)) => {
+                    transcript_update!(hasher, &[0]);
+                    write_bytes(hasher, name.as_bytes())?;
+                }
+                CheckedStyleOperand::FontFamily(ViewFontFamily::System(family)) => {
+                    transcript_update!(hasher, &[1, family.semantic_tag()]);
+                }
+                CheckedStyleOperand::SystemFontFamily(family) => {
+                    transcript_update!(hasher, &[family.semantic_tag()]);
+                }
+                CheckedStyleOperand::SystemColor(role) => {
+                    transcript_update!(hasher, &[role.semantic_tag()]);
+                }
+                CheckedStyleOperand::Token(reference) => {
+                    transcript_update!(hasher, &[reference.kind().semantic_tag()]);
+                    transcript_update!(hasher, &reference.ordinal().to_le_bytes());
+                    write_bytes(
+                        hasher,
+                        &coordinates
+                            .expression(reference.initializer())?
+                            .canonical_bytes()?,
+                    )?;
+                    write_bytes(
+                        hasher,
+                        reference.id().public_id().canonical_identity_bytes(),
+                    )?;
+                }
+            }
+        }
         CheckedExpressionResolution::ViewPartName(name) => {
             transcript_update!(hasher, &[22]);
             write_bytes(hasher, name.as_public_id().canonical_identity_bytes())?;

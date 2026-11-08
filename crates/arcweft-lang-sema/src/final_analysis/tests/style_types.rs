@@ -1,4 +1,5 @@
 use super::*;
+use crate::final_analysis::CheckedStyleOperand;
 use crate::nominal::{
     CheckedTypeReferenceCache, GenericTypeScope, NominalResolutionLimits, ResolvedTypeNodePurpose,
     ResolvedTypeRefOutcome, SelfTypeScope, TypeResolutionInput, TypeResolutionInputError,
@@ -6,6 +7,51 @@ use crate::nominal::{
 };
 use crate::types::CompileTimeStyleType;
 use arcweft_view::style::ViewStyleValueKind;
+
+#[test]
+fn style_construction_operands_retain_the_original_sheet_and_declaration() {
+    let fixture = fixture(
+        "style A {\n token font.stack: FontFamilyList = [\"Yu Gothic\", system_font(.Ui)]\n token ink: Color = system_color(.CanvasText)\n Text { font-family = token(font.stack); color = token(ink) }\n}\nstyle B { token font.stack: FontFamilyList = [system_font(.Serif)] }\n",
+        None,
+    );
+    let report = analyze(&fixture).unwrap();
+    let project = fixture.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let (owner, style) = module
+        .items()
+        .find_map(|(owner, item)| match item.kind() {
+            HirItemKind::Style(style) if style.tokens().len() == 2 => Some((owner, style)),
+            _ => None,
+        })
+        .unwrap();
+    let mut references = 0;
+    let mut operands = 0;
+    for (expression, _) in module.expressions() {
+        let Some(checked) = report.expression(expression) else {
+            continue;
+        };
+        if let CheckedExpressionResolution::StyleOperand(operand) = checked.resolution() {
+            operands += 1;
+            assert_eq!(
+                checked.value_type(),
+                Some(&TypeKind::CompileTimeStyle(operand.style_type()))
+            );
+            assert!(checked.effects().is_empty());
+            if let CheckedStyleOperand::Token(reference) = operand {
+                references += 1;
+                assert_eq!(reference.style(), owner);
+                let token = &style.tokens()[reference.ordinal() as usize];
+                assert_eq!(reference.initializer(), token.value());
+                assert_eq!(
+                    reference.id().public_id(),
+                    &arcweft_id::PublicId::try_from(token).unwrap()
+                );
+            }
+        }
+    }
+    assert_eq!(references, 2);
+    assert_eq!(operands, 8);
+}
 
 #[test]
 fn style_annotation_facts_reach_the_original_token_values_without_runtime_types() {

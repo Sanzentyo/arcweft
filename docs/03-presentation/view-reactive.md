@@ -320,6 +320,17 @@ semantic-only `StyleAnnotation` purpose; this is separate from ordinary nominal
 lookup and its cache identity. Unknown names and structural or generic types do
 not fall back to ordinary runtime types in this annotation grammar.
 
+`token(name)` resolves the normalized dotted name in the original owning sheet.
+Its checked operand retains that sheet, token ordinal, initializer, native token
+identity, and exact value kind; another sheet with the same name is independent.
+The compiler publishes each declaration with its original source range, and the
+native Style model rejects duplicate, unknown, mistyped, cyclic, or excessively
+deep token references. A font stack preserves an ordered, nonempty list of named
+families and `system_font(.Ui)`-style system families. `system_color(.CanvasText)`
+retains a typed palette role until presentation environment projection. System
+font and color names follow their native case-sensitive registries. These
+construction operands cannot escape as ordinary function results.
+
 A specified Style `Length` belongs to the physical layout profile and uses px
 thousandths. Ordinary registered `Length` quantities retain their own type and
 unit; they do not implicitly become specified Style values. Likewise a Style

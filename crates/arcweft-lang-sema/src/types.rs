@@ -610,6 +610,9 @@ impl ViewCallableId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StyleCallableId {
     Rgba,
+    Token,
+    SystemColor,
+    SystemFont,
 }
 
 impl StyleCallableId {
@@ -617,6 +620,9 @@ impl StyleCallableId {
     pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::Rgba => 0,
+            Self::Token => 1,
+            Self::SystemColor => 2,
+            Self::SystemFont => 3,
         }
     }
 
@@ -624,6 +630,9 @@ impl StyleCallableId {
     pub const fn source_label(self) -> &'static str {
         match self {
             Self::Rgba => "rgba",
+            Self::Token => "token",
+            Self::SystemColor => "system_color",
+            Self::SystemFont => "system_font",
         }
     }
 }

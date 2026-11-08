@@ -10,6 +10,8 @@ pub(super) mod dialogue_line_plan;
 mod records;
 #[path = "expressions/source_effects.rs"]
 mod source_effects;
+#[path = "expressions/style.rs"]
+mod style;
 
 use std::{rc::Rc, sync::Arc};
 
@@ -733,6 +735,11 @@ impl Analyzer<'_, '_, '_> {
                 .check_view_part_name(context, owner, expression)
                 .map(Into::into)
                 .map_err(Into::into);
+        }
+        if let Some(checked) =
+            self.check_style_expression_kind(context, module, owner, expression, expectation)?
+        {
+            return Ok(checked.into());
         }
         let expression_uses = self
             .topology
@@ -1653,11 +1660,6 @@ impl Analyzer<'_, '_, '_> {
             return Err(
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner).into(),
             );
-        }
-        if let Some(checked) =
-            self.check_style_expression_kind(context, module, owner, expression)?
-        {
-            return Ok(checked);
         }
         match expression.kind() {
             HirExprKind::Block(block) => self
@@ -4841,136 +4843,6 @@ impl Analyzer<'_, '_, '_> {
         ))
     }
 
-    fn check_style_expression_kind(
-        &mut self,
-        context: &AnalyzerExpressionContext<'_>,
-        module: &HirModule,
-        owner: ExprId,
-        expression: &HirExpr,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
-        let Some(expected) = self.styles.value_kind(owner) else {
-            return Ok(None);
-        };
-        match expected {
-            arcweft_view::style::ViewStyleValueKind::Length => {
-                return self
-                    .check_style_length_expression(context, module, owner, expression)
-                    .map(Some);
-            }
-            arcweft_view::style::ViewStyleValueKind::Color => {}
-            _ => return Ok(None),
-        }
-        let HirExprKind::Call(call) = expression.kind() else {
-            return Ok(None);
-        };
-        let super::HirCallCallee::Value { value: callee } = call.callee() else {
-            return Ok(None);
-        };
-        if Self::direct_callee_name(module, *callee)?.as_deref() != Some("rgba") {
-            return Ok(None);
-        }
-        let [red, green, blue, alpha] = call.arguments() else {
-            return Err(AnalyzerExpressionError::rejected(owner));
-        };
-        let mut effects = EffectSet::new();
-        let channels =
-            [red, green, blue, alpha].map(|argument| -> Result<u8, AnalyzerExpressionError> {
-                let HirCallArgument::Positional { .. } = argument else {
-                    return Err(AnalyzerExpressionError::rejected(owner));
-                };
-                let checked =
-                    self.evaluate_expression(context, argument.value(), Some(&TypeKind::U8))?;
-                effects.union_with(checked.effects());
-                style_u8_literal(module, argument.value())
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))
-            });
-        let [red, green, blue, alpha] = channels;
-        let color = arcweft_view::style::ViewColorValue::Literal {
-            color: arcweft_presentation::appearance::PresentationColor::rgba(
-                red?, green?, blue?, alpha?,
-            ),
-        };
-        self.facts
-            .publish_new_expression(
-                *callee,
-                CheckedExpression::value(
-                    TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::Style(
-                        crate::types::StyleCallableId::Rgba,
-                    )),
-                    CheckedTypeSelection::Inferred,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::CompileTimeCallee(
-                        CheckedCompileTimeCallee::Style(crate::types::StyleCallableId::Rgba),
-                    ),
-                ),
-            )
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
-        Ok(Some(CheckedExpression::value(
-            TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
-                arcweft_view::style::ViewStyleValueKind::Color,
-            )),
-            CheckedTypeSelection::Inferred,
-            effects,
-            CheckedExpressionResolution::StyleValue(
-                arcweft_view::style::ViewSpecifiedValue::Color { value: color },
-            ),
-        )))
-    }
-
-    /// Admits the direct Style property root through the registered Length type
-    /// and the shared HIR scalar reducer. The current physical layout profile
-    /// owns logical pixels; no relative or point-unit conversion is inferred.
-    fn check_style_length_expression(
-        &mut self,
-        context: &AnalyzerExpressionContext<'_>,
-        module: &HirModule,
-        owner: ExprId,
-        expression: &HirExpr,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
-        use crate::checked_text_proxy::{CheckedCompileTimeScalar, CheckedCompileTimeScalarKind};
-        use arcweft_primitives::LengthUnit;
-
-        let kind = CheckedCompileTimeScalarKind::Length;
-        let scalar = crate::checked_text_proxy::reduce_literal_expression(module, owner, &kind)
-            .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
-        let CheckedCompileTimeScalar::Length(length) = &scalar else {
-            return Err(AnalyzerExpressionError::rejected(owner));
-        };
-        if length.unit != LengthUnit::Px {
-            return Err(AnalyzerExpressionError::rejected(owner));
-        }
-        let ty = self.compile_time_scalar_type(&kind);
-        let checked = match self.check_leaf_expression_kind(module, owner, expression, Some(&ty))? {
-            Some(checked) => checked,
-            None => self
-                .check_unary_expression_kind(
-                    context,
-                    module,
-                    owner,
-                    expression,
-                    &AnalyzerExpressionExpectation::Complete(&ty),
-                )?
-                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?,
-        };
-        if checked.value_type() != Some(&ty) || !checked.effects().is_empty() {
-            return Err(AnalyzerExpressionError::rejected(owner));
-        }
-        Ok(CheckedExpression::value(
-            TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
-                arcweft_view::style::ViewStyleValueKind::Length,
-            )),
-            CheckedTypeSelection::Expected,
-            checked.effects().clone(),
-            CheckedExpressionResolution::StyleValue(
-                arcweft_view::style::ViewSpecifiedValue::Length {
-                    value: arcweft_view::style::ViewLengthMilli::new(length.milli),
-                },
-            ),
-        ))
-    }
-
     fn direct_callee_name(
         module: &HirModule,
         owner: ExprId,
@@ -5945,23 +5817,6 @@ fn array_repeat_length(length: &PreparedExpressionFact) -> Option<usize> {
         return None;
     };
     magnitude.to_decimal_string().parse().ok()
-}
-
-fn style_u8_literal(module: &HirModule, owner: ExprId) -> Option<u8> {
-    let expression = module.resolve_expr(owner).ok()?;
-    let HirExprKind::Literal(HirLiteral::Integer(HirIntegerLiteral::Value {
-        magnitude,
-        suffix: None,
-        ..
-    })) = expression.kind()
-    else {
-        return None;
-    };
-    match magnitude.limbs_le() {
-        [] => Some(0),
-        [value] => u8::try_from(*value).ok(),
-        _ => None,
-    }
 }
 
 fn source_span_for_role(

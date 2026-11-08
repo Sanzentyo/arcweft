@@ -931,7 +931,11 @@ fn expression_resolution_matches(
 ) -> bool {
     match (kind, resolution) {
         (
-            HirExprKind::Literal(_) | HirExprKind::Unary(_),
+            HirExprKind::Literal(_) | HirExprKind::ShortVariant(_) | HirExprKind::Path(_) | HirExprKind::Select(_) | HirExprKind::Call(_),
+            CheckedExpressionResolution::StyleOperand(_),
+        ) => true,
+        (
+            HirExprKind::Literal(_) | HirExprKind::Unary(_) | HirExprKind::BracketSequence(_),
             CheckedExpressionResolution::StyleValue(_),
         ) => true,
         (HirExprKind::Select(_), CheckedExpressionResolution::Value(_)) => {
@@ -1207,6 +1211,33 @@ fn validate_expression_resolution(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
+        CheckedExpressionResolution::StyleOperand(operand) => {
+            if ty != &TypeKind::CompileTimeStyle(operand.style_type()) {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            if let super::CheckedStyleOperand::Token(reference) = operand {
+                use arcweft_lang_hir::project::{HirSemanticPathOwnerId, HirSemanticPathRoot};
+                let module = resolve_module(modules, owner.module())?;
+                let location = topology.semantic_path(HirSemanticPathOwnerId::Expression(owner))
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                if !matches!(location.root(), HirSemanticPathRoot::Item { item, .. } if *item == reference.style()) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let item = module.resolve_item(reference.style()).map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let super::HirItemKind::Style(style) = item.kind() else { return Err(FinalSemanticAnalysisError::WrongPayloadFamily); };
+                let token = style.tokens().get(reference.ordinal() as usize).ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                if token.value() != reference.initializer()
+                    || arcweft_id::PublicId::try_from(token).as_ref() != Ok(reference.id().public_id())
+                    || expressions.get(&token.value()).and_then(CheckedExpression::value_type) != Some(&TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(reference.kind()))) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                if !reference.matches_source_path(module, owner) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
+            Ok(())
+        }
         CheckedExpressionResolution::StyleValue(value) => {
             (ty == &TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
                 value.kind(),

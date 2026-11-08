@@ -972,6 +972,10 @@ impl CheckedContentApplication {
     }
 }
 
+#[path = "model/style.rs"]
+mod style;
+pub use style::{CheckedStyleOperand, CheckedStyleTokenReference};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExpressionResolution {
     Structural,
@@ -1020,6 +1024,8 @@ pub enum CheckedExpressionResolution {
     ViewFxApplication(Box<CheckedViewFxApplication>),
     /// A property value admitted by the final-HIR Style checker.
     StyleValue(arcweft_view::style::ViewSpecifiedValue),
+    /// A typed source construction operand consumed by the Style checker.
+    StyleOperand(CheckedStyleOperand),
     /// A static local part name admitted by the View property grammar.
     ViewPartName(arcweft_view::ViewPartLocalName),
     /// A compile-time callable leaf selected by a language-owned checker.
@@ -1061,6 +1067,7 @@ impl CheckedExpressionResolution {
         match self {
             Self::Variant(_)
             | Self::ViewPartName(_)
+            | Self::StyleOperand(CheckedStyleOperand::Token(_))
             | Self::Value(
                 CheckedValueResolution::ProjectCallable(_)
                 | CheckedValueResolution::EnvironmentCallable(_)
@@ -1125,6 +1132,7 @@ impl CheckedExpressionResolution {
             | Self::PipeLeft(_)
             | Self::ViewCall(_)
             | Self::StyleValue(_)
+            | Self::StyleOperand(_)
             | Self::ViewPartName(_)
             | Self::CompileTimeCallee(_)
             | Self::TypeValue(_)
@@ -1193,6 +1201,7 @@ impl CheckedExpressionResolution {
             | Self::ViewCall(_)
             | Self::ViewFxApplication(_)
             | Self::StyleValue(_)
+            | Self::StyleOperand(_)
             | Self::ViewPartName(_)
             | Self::CompileTimeCallee(_)
             | Self::DialogueLineReference(_)

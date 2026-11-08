@@ -685,7 +685,8 @@ fn execution_plan_for_expression_with_roles(
         | CheckedExpressionResolution::Pipe(_)
         | CheckedExpressionResolution::PipeLeft(_)
         | CheckedExpressionResolution::ViewCall(_)
-        | CheckedExpressionResolution::StyleValue(_) => {
+        | CheckedExpressionResolution::StyleValue(_)
+        | CheckedExpressionResolution::StyleOperand(_) => {
             Ok(super::CheckedExpressionExecutionPlan::structural(
                 value,
                 CheckedStructuralExecutionReason::Value,

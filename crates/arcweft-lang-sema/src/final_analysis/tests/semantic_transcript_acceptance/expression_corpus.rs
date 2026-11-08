@@ -192,6 +192,7 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
     CheckedExpressionResolution::ViewCall(_) => ViewCall => Accepted,
     CheckedExpressionResolution::ViewFxApplication(_) => ViewFxApplication => Accepted,
     CheckedExpressionResolution::StyleValue(_) => StyleValue => ProvenUnreachable,
+    CheckedExpressionResolution::StyleOperand(_) => StyleOperand => ProvenUnreachable,
     CheckedExpressionResolution::ViewPartName(_) => ViewPartName => Accepted,
     CheckedExpressionResolution::CompileTimeCallee(_) => CompileTimeCallee => Accepted,
     CheckedExpressionResolution::TypeValue(_) => TypeValue => Accepted,
