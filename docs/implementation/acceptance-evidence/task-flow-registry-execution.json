@@ -51744,5 +51744,312 @@
       "originalFileHashEvidence": "input-before.json"
     },
     "workflow": "The live protected tracked set becomes empty. Checkpoint helpers treat an empty held set as empty bytes instead of running an unrestricted Git diff; explicit owned/other path and staged-tree checks remain active. Four local untracked cache files remain unchanged."
+  },
+  "awbcDialogueInputIntegratedConsumers": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "0ed7a4b093caaac1bf65c51812f9d215018dc25c",
+    "production": "c96539d2fa8107fac34b03bf7568cbb4ce7b16a5",
+    "featureSource": "17e34d99e32c4618ac6ed866a7ee9ccdcff441c5",
+    "fixtureCheckpoints": [
+      "3ec9934b355c88193229818b84a4ef20b16f07c9",
+      "0ed7a4b093caaac1bf65c51812f9d215018dc25c"
+    ],
+    "validation": {
+      "executed": 8056,
+      "passed": 8052,
+      "failed": 4,
+      "skipped": 41,
+      "uniqueCases": 8056,
+      "caseOverlap": 0,
+      "matchedPackages": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "compileOnlyPackages": [
+        "arcweft",
+        "arcweft-bundle-assets",
+        "arcweft-render-web"
+      ],
+      "requiredRegressions": [
+        "native_initial_owned_line_init_defer_preserves_explicit_scope",
+        "saved_awbc_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits",
+        "saved_awbc_initial_line_init_defer_rejects_forged_child_dialogue_receivers",
+        "native_init_scope_result_moves_only_after_suspended_cleanup",
+        "saved_awbc_init_scope_result_moves_only_after_suspended_cleanup",
+        "native_deferred_dialogue_retains_cancellation_during_zero_operation_steps",
+        "saved_awbc_deferred_dialogue_retains_cancellation_during_zero_operation_steps",
+        "saved_awbc_deferred_dialogue_rejects_forged_pending_cancellation_packets",
+        "live_and_inert_input_admission_share_order_replay_and_limit_checks"
+      ],
+      "failures": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ],
+      "newFailures": [],
+      "baselineFailuresNotPresent": []
+    },
+    "runs": [
+      {
+        "slice": "noncli",
+        "sourceInputs": 3417,
+        "terminal": {
+          "version": 1,
+          "base": "c96539d2fa8107fac34b03bf7568cbb4ce7b16a5",
+          "run": "awbc-dialogue-input-integrated-20261108.noncli-r2.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [ 808.123s] 7345 tests run: 7345 passed (9 slow), 18 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 7345,
+          "passed": 7345,
+          "failed": 0,
+          "skipped": 18,
+          "selectedPackages": 0,
+          "matchedPackages": 49,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-08T03:22:56.9655127Z"
+        }
+      },
+      {
+        "slice": "cli",
+        "sourceInputs": 3641,
+        "terminal": {
+          "version": 1,
+          "base": "3ec9934b355c88193229818b84a4ef20b16f07c9",
+          "run": "awbc-dialogue-input-integrated-20261108.cli.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [ 529.974s] 711 tests run: 707 passed (26 slow), 4 failed, 23 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 711,
+          "passed": 707,
+          "failed": 4,
+          "skipped": 23,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3641,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "spec_valid_run_edge_fixture_now_executes"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "verify_json_records_required_solver_checks"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "verify_json_reports_missing_promotion_proof"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T03:38:21.6918125Z"
+        }
+      }
+    ],
+    "executableIdentity": {
+      "actualTestExecutables": 327,
+      "cliMain": {
+        "version": 1,
+        "path": "D:/git/arcweft/target/debug/arcw.exe",
+        "sha256": "e08d982379577356384cb46ff2d7ca47b46a3ac6019e566df14af54216c71e63",
+        "runtimeStartedAt": "2026-11-08T03:29:00.3323791Z",
+        "runtimeFinishedAt": "2026-11-08T03:38:19.4684614Z",
+        "beforeRuntime": true,
+        "binaryDrift": 0,
+        "recordedAt": "2026-11-08T03:38:19.802252Z"
+      },
+      "fullPinInventory": "combined-audit.json and per-epoch binaries-before.json in raw",
+      "sourceDrift": 0
+    },
+    "sourceIdentity": "The non-CLI epoch froze c96539d2fa8107fac34b03bf7568cbb4ce7b16a5 and the CLI epoch froze 3ec9934b355c88193229818b84a4ef20b16f07c9. Current files match both frozen inventories; the later Git checkpoints preserve every original source byte and clear all twelve tracked WIP paths. CLI freezes 3641 inputs, including 24 .awfagent files in addition to the original Rust/Cargo/config/toolchain and sample/fixture inputs. Four local untracked cache files remain unchanged.",
+    "acceptance": "Two invocations / two feature points, 8056 unique executed cases, zero overlap: non-CLI 7345 pass / 18 skipped; default CLI 707 pass / four existing failures / 23 skipped. The four new dialogue-ingress regressions and earlier init/scoped regressions each occur once. Focused runs and preparation failures are not added to primary totals. Current workspace check/Clippy/structure/seven-path format results are preserved in awbcDialogueInputNonCliConsumers.",
+    "correction": "No new failure ID appeared. The generic held=14 receipt label remains historical; the final tracked tree is clean, with four preserved local untracked cache files. Earlier 8052-case source results, the interrupted older CLI run, Windows1455 preparation refusal, and all old results/SHAs remain unchanged in their prior records.",
+    "remaining": "The four observed CLI failures still concern Scroll input.text admission, an unavailable required VoiceHandle, and two receiverless old promotion inputs. Actual promotion implementation, Native public Save, platform/Tier2 and final Native-Web parity remain separately tracked. Generic Match and other accepted boundaries stay accepted.",
+    "nonCliRaw": "task-awbc-dialogue-input-noncli-consumers.raw.zip",
+    "raw": {
+      "path": "task-awbc-dialogue-input-cli-consumers.raw.zip",
+      "sha256": "b399fbc718bf0bf40d6d92e20f93c9540c3f74007c8e8aa8e138a0f11d1c7efb",
+      "entries": [
+        {
+          "entry": "audit-awbc-input-integrated-20261108.ps1",
+          "bytes": 5415,
+          "sha256": "ace14829f481baa9a77b3f2ba9a0d09f6b9b371ea2e7980a046fcdbc20901171"
+        },
+        {
+          "entry": "audit-nextest-final-result.ps1",
+          "bytes": 5266,
+          "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.binaries-before.json",
+          "bytes": 2892,
+          "sha256": "bef86711aebc370325bc3349864fe0a8e08947d339eb5fe1eb9f9a4e0ed853fd"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.catalog.inventory.json",
+          "bytes": 176136,
+          "sha256": "88e87bd1faf82adda528101995e79e987e79a3317b6dc13b6d6352dbfaf79e2b"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.catalog.json",
+          "bytes": 548,
+          "sha256": "b72a71c9d3c562dcee1a2629f6e99b0a2aa11c532e0b7cef10fde73fe0895cc8"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.catalog.log",
+          "bytes": 214255,
+          "sha256": "c43d1b6e671dd4e76c769f9de12e72ad6cbaff899092af58495f6ee03b5ec54b"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.main-audit.json",
+          "bytes": 361,
+          "sha256": "3c4f89cd2087f7282632eb2c5baa4c7920299b056810466ac23879dd06a4e987"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.main-before.json",
+          "bytes": 203,
+          "sha256": "4b47fabb51bf2fd829f3aa427306266e922dc068f6bbec1c37b614cade5d12a6"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.runtime.json",
+          "bytes": 642,
+          "sha256": "96f4151b27cec0128c9e3640ea2a6b2bef937c44ccf383a9aee6ba2dfab2bec7"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.runtime.log",
+          "bytes": 317634,
+          "sha256": "ce2c0a6e2d3f4d12e988c84fdf9627a0f29b05dda057cb655601ea975b3a3486"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.runtime.terminal-audit.json",
+          "bytes": 1263,
+          "sha256": "e256e82d7ca5965bf8d86f2d0674e0ad1c26a721fc77c56050dcd1ab415734c9"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.cli.source-freeze.json",
+          "bytes": 729685,
+          "sha256": "a2df6584b5a84ae051831c88b36129b7ef9d96f78e08b20bea7f3fd11d2be771"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.combined-audit.json",
+          "bytes": 101685,
+          "sha256": "37eb3e6d8da4e2ebbdc0a34f3bd3f3514e9183e3ec88a3f016ef7799f169902a"
+        },
+        {
+          "entry": "awbc-dialogue-input-integrated-20261108.noncli-evidence.verified.json",
+          "bytes": 1169,
+          "sha256": "47f184c627a7eb220fd3151fe5885631c25ce7d638e754eccd13a198bf4c039a"
+        },
+        {
+          "entry": "existing-consumer-fixture-checkpoint-20261108.verified.json",
+          "bytes": 2616,
+          "sha256": "6927e7dd2785cd92fa599f276c766843dd21f542fb241b992537eb7fea11b813"
+        },
+        {
+          "entry": "existing-presentation-fixture-checkpoint-20261108.inventory-after.json",
+          "bytes": 204,
+          "sha256": "0952bbfc1a035b477b1d03ae6ff08e8b905f8b0837ba163c9af9a6c9fa6be2d9"
+        },
+        {
+          "entry": "existing-presentation-fixture-checkpoint-20261108.verified.json",
+          "bytes": 1412,
+          "sha256": "73904fab481cb7d8e26976b48cddf647935e26a6a76e32a100fe25e24cedf373"
+        },
+        {
+          "entry": "record-awbc-input-cli-20261108.ps1",
+          "bytes": 10091,
+          "sha256": "0ddbba890d460a4f5a1261068eccf99a77602789bb17cb4ae9e22515cb02ca03"
+        },
+        {
+          "entry": "run-awbc-input-cli-main-20261108.ps1",
+          "bytes": 4798,
+          "sha256": "f66f79d187b77ab6a4da2f4942301a11680e43ace41d4a0f9c21192c6b90fd4c"
+        }
+      ]
+    }
   }
 }

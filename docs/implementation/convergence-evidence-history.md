@@ -15538,3 +15538,10 @@ Rust Source **c96539d2fa8107fac34b03bf7568cbb4ce7b16a5**、内容不変のconsum
 確認Source **e32217f6507aba141cd2b424bd2a6fc15bfb8c2c**。元のScroll test／rich-text sample 3ファイルを内容不変でcheckpointへ採用する。patch SHA-256 **caee0866442e352ac79356ffac8679f2432a11a385eda3ef0f4e5016a5a799fd** は[元差分原本](acceptance-evidence/task-existing-consumer-fixture-checkpoint.raw.zip)のremaining-held.patchと一致し、各file hashも元12ファイルの記録と一致する。tracked WIPは0になり、4 local cacheは保持する。進行中の検証入力・実行量・assertionを変えない。
 
 Scrollのinput.text型判定は引き続き失敗として追跡する。sampleのflashはUnitを返す通常callbackであり、host flash effectの受入には数えない。standaloneに存在しないlookの除去もStage／Look受入を意味しない。checkpointを機能完了や新しいテスト実行とはせず、Generic Match等の既受入も維持する。過去128 record・実測・全SHAを保持した。[採用path・file hash・適用範囲](acceptance-evidence/task-flow-registry-execution.json)。
+
+
+## 2026-11-08 — 対話入力修復後の全Core逆依存・CLI終端
+
+確認Source **0ed7a4b093caaac1bf65c51812f9d215018dc25c**、production **c96539d2fa8107fac34b03bf7568cbb4ce7b16a5**、feature **17e34d99e32c4618ac6ed866a7ee9ccdcff441c5**。非CLI7345 PASS／18 SKIPと、凍結Source **3ec9934b355c88193229818b84a4ef20b16f07c9** のCLI711件中707 PASS／4 FAIL／23 SKIPを照合し、**8056件中8052 PASS／4 FAIL／41 SKIP**、2 run／2 feature point・重複0。Core逆依存53中50 packageを実行し、3はcompile-only。9個の新旧required regressionを各1回含み、focused ownerを合算しない。実test executable 327本とCLI本体を元pathで前後照合した。3417 Rust等入力とCLI3641入力（.awfagent24件を追加）のdrift0。
+
+最終4失敗のIDは先行Sourceと一致し、新規失敗0。Scroll入力生成、必須VoiceHandleの開始状態、旧receiverless promotion入力2件の境界を引き続き各ownerで追跡する。元12ファイルのcheckpointは内容を変えず、tracked WIPは0、4 local cacheは保持する。generic held=14 labelは旧templateとして保持し、現状へ転記しない。先行8052件、中断した旧CLI run、OS1455準備失敗、全SHA／実測は保持する。全体goalの未達でGeneric Matchなど完了cutを戻さない。[全選択・終端・diagnostics・公開receipt](acceptance-evidence/task-flow-registry-execution.json)。raw 19 entries、SHA-256 b399fbc718bf0bf40d6d92e20f93c9540c3f74007c8e8aa8e138a0f11d1c7efb。
