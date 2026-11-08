@@ -15770,3 +15770,15 @@ CLI既定は Summary [ 528.686s] 711 tests run: 707 passed (26 slow), 4 failed, 
 同じ実CLIを追加buildなしで使い、native-text-inputのcheckはstatus ok、main-profile bundleは終了0・89命令・81840 bytes。元path D:/git/arcweft/target/arcweft/native-text-input-inferred.awfb のSHA256 2e348be119a21fda294a11f2e2379537ffb16f3e437cba10a351979946701cd6 は前回と一致し、3917入力／実CLI差分0。Source受付と生成物の検証であり、実Native／Web操作・画像parityの受入ではない。
 
 現状一覧の「最終consumer実行中」を今回の終端結果へ訂正し、旧View範囲の現状重複は履歴へ移した。以前のSource／失敗／full SHA／実測は保持する。Environment、sampleと既知CLI4条件は具体的未達として残し、Generic Match等の完了を戻さない。既存147 registry propertyの値を全件照合して保持し、styleTokenInferenceConsumersを追加した。原本 docs/implementation/acceptance-evidence/task-style-token-inference-consumers.raw.zip は32 entry／1093655 bytes、SHA256 dd15bfe23a0bc21e5e33d3ab5ddd6e3356d837470316b6fa7fcff251325bc0b3。EXE／AWFB等のbuild artifactをZIPへコピーしていない。
+
+## 2026-11-09 — Style Environmentの元Source接続
+
+Source ef2679347c14dccee649e5fb716d3a37510cac1f をmainへ通常公開し、parent／tree／19 pathのblobとpatchを照合した。Semaは元Style／body path／wrapper・clause ordinal／value ExprIdからnative testを検査・発行し、final validationで元HIRから再検証する。Environmentはsemantic-only Style operand role12で、native component digestをtranscriptへ含める。製品Source IDやruntime値、HIRを捏造していない。CompilerのStyleBodyLowererが一つのSource表と全体のrule記述順を所有し、nested wrapperとclauseの元Sourceをcanonical native条件へ渡す。従来のroot-only body lowering／Environment一律拒否を削除した。
+
+閉じたnative predicateは等値を表すため、color-scheme light／dark、contrast standard／more、reduced-motion boolは等値文法にした。text-scaleはnative6比較と500..4000 milliの正確な値を使い、unsuffixed整数／小数・percentを受理する。Ratioの1000上限を流用せず、共通scalar literal／HIR decimal変換を再利用し、丸め・clamp・runtime式・token・suffix・他unitを拒否する。4 wrapper／4非重複fieldをdescent／frame clone前にpreflightし、final native constructorがcanonical順・wrapper使用・重複を検証する。Siblingは独立する。Cargo依存方向、I/O、unsafe、wire shape、version 1は維持した。
+
+開発checkは終了0。初回owner catalogはWindowsのpaging-file不足OS1455で元rlibのmmapに失敗し、invalid metadataとICEが続いて終了101。テスト実行前の失敗として原本へ保持した。全handle終了後、Source・selection・Cargo設定を変えずに再試行し、55／55 PASS・2559 filter SKIP・4.902秒、3920入力／catalog／実EXE差分0。canonical codec往復、四段nestedの正確なSource・rule順、4field、text-scale全比較／両表記／境界、誤値／operator／重複拒否、元clauseのsemantic-only証明、native test payload digestを確認した。
+
+全98 workspaceのlocked／all-target／all-feature check・Clippy、構造gate、明示18 Rust pathのfmtが終了0。後からCompiler新test1 pathだけのraw文字列delimiter／等価method closureを整理し、最終対象Clippy／fmtが終了0。本番Source／assertion／fixture／budget差分0で、このscopeを分離した。metadataとtarget-all invert treeはView逆依存41 packageで一致する。全consumer runtimeは次に実行し、owner55件を最終matrixに転用しない。既知CLI4件、残るsampleと実Native／Webは具体的な別境界として継続する。
+
+現状一覧のEnvironmentを実装未達からowner検証・公開へ更新した。全consumerはpendingと明記し、構築・推論やGeneric Match等の既受入を維持する。以前のSource／失敗／full SHA／実測は保持し、旧現状の重複は履歴へ集約した。既存148 registry propertyの値を全件照合して保持し、styleEnvironmentSourceCheckpointを追加した。原本 docs/implementation/acceptance-evidence/task-style-environment-checkpoint.raw.zip は47 entry／2604752 bytes、SHA256 a20e0fecc2fbd74206eaca0a40fff50401de51202ced0452a709b358b259f68b。EXE／AWFB等のbuild artifactをZIPへコピーしていない。
