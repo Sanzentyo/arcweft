@@ -2990,6 +2990,10 @@ fn write_resolution_payload(
                         reference.id().public_id().canonical_identity_bytes(),
                     )?;
                 }
+                CheckedStyleOperand::Number(number) => {
+                    transcript_update!(hasher, &[number.kind().value_kind().semantic_tag()]);
+                    transcript_update!(hasher, &number.magnitude().to_le_bytes());
+                }
             }
         }
         CheckedExpressionResolution::ViewPartName(name) => {

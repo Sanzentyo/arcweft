@@ -109,20 +109,32 @@ pub style @style.Mobile {
         .zip([720_000, 84_000, 42_000, 56_700])
     {
         let checked = analysis.expression(declaration.value()).unwrap();
-        let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::CompileTimeScalar(
-            scalar,
+        let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::StyleValue(
+            ViewSpecifiedValue::Length { value },
         ) = checked.resolution()
         else {
-            panic!("owning Style declaration retains its admitted scalar")
+            panic!("owning Style declaration retains its specified Length")
         };
-        assert_eq!(scalar.length().unwrap().milli, milli);
+        assert_eq!(value.value(), milli);
         assert_eq!(
-            scalar.length().unwrap().unit,
-            arcweft_primitives::LengthUnit::Px
+            checked.value_type(),
+            Some(&arcweft_lang_sema::types::TypeKind::CompileTimeStyle(
+                arcweft_lang_sema::types::CompileTimeStyleType::Value(
+                    arcweft_view::style::ViewStyleValueKind::Length
+                )
+            ))
         );
+        assert!(checked.effects().is_empty());
         assert!(matches!(
-            scalar.original(),
-            arcweft_lang_sema::final_analysis::CheckedExpressionResolution::Literal(_)
+            module.resolve_expr(declaration.value()).unwrap().kind(),
+            arcweft_lang_hir::expr::HirExprKind::Literal(
+                arcweft_lang_hir::leaf::HirLiteral::UnitNumber(
+                    arcweft_lang_hir::leaf::HirUnitNumberLiteral::Value {
+                        unit: arcweft_lang_hir::leaf::HirUnitNumberUnit::Px,
+                        ..
+                    }
+                )
+            )
         ));
     }
     let declarations = sheet.rules()[0].declarations();

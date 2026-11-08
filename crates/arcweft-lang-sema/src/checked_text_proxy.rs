@@ -150,6 +150,15 @@ pub enum CompileTimeScalarReductionError {
     WrongEnumPayload,
 }
 
+impl From<arcweft_lang_hir::leaf::HirDecimalScaleError> for CompileTimeScalarReductionError {
+    fn from(error: arcweft_lang_hir::leaf::HirDecimalScaleError) -> Self {
+        match error {
+            arcweft_lang_hir::leaf::HirDecimalScaleError::Overflow => Self::Overflow,
+            arcweft_lang_hir::leaf::HirDecimalScaleError::PrecisionLoss => Self::PrecisionLoss,
+        }
+    }
+}
+
 /// Complete typed diagnostic for one authored text-proxy declaration default.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TextProxyDeclarationDiagnostic {

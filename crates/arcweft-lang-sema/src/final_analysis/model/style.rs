@@ -8,6 +8,10 @@ use arcweft_view::style::{
 
 use crate::types::CompileTimeStyleType;
 
+#[path = "style_number.rs"]
+mod number;
+pub use number::{CheckedStyleNumber, CheckedStyleNumberError};
+
 /// A reference issued from the original sheet-local token declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedStyleTokenReference {
@@ -103,6 +107,7 @@ pub enum CheckedStyleOperand {
     SystemFontFamily(ViewSystemFontFamily),
     SystemColor(SystemColor),
     Token(CheckedStyleTokenReference),
+    Number(CheckedStyleNumber),
 }
 
 impl CheckedStyleOperand {
@@ -112,6 +117,7 @@ impl CheckedStyleOperand {
             Self::SystemFontFamily(_) => CompileTimeStyleType::SystemFontFamily,
             Self::SystemColor(_) => CompileTimeStyleType::SystemColor,
             Self::Token(token) => CompileTimeStyleType::Token(token.kind()),
+            Self::Number(number) => CompileTimeStyleType::NumericLiteral(number.kind()),
         }
     }
 }

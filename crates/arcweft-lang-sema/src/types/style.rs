@@ -2,6 +2,58 @@
 
 use arcweft_view::style::ViewStyleValueKind;
 
+/// Numeric literal grammars used to construct complete native Style values.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StyleNumericType {
+    Integer,
+    Ratio,
+    Scalar,
+    Length,
+    Angle,
+    FontWeight,
+}
+
+impl StyleNumericType {
+    pub const ALL: [Self; 6] = [
+        Self::Integer,
+        Self::Ratio,
+        Self::Scalar,
+        Self::Length,
+        Self::Angle,
+        Self::FontWeight,
+    ];
+
+    pub const fn value_kind(self) -> ViewStyleValueKind {
+        match self {
+            Self::Integer => ViewStyleValueKind::Integer,
+            Self::Ratio => ViewStyleValueKind::Ratio,
+            Self::Scalar => ViewStyleValueKind::Scalar,
+            Self::Length => ViewStyleValueKind::Length,
+            Self::Angle => ViewStyleValueKind::Angle,
+            Self::FontWeight => ViewStyleValueKind::FontWeight,
+        }
+    }
+
+    pub(crate) const fn maximum_magnitude(self) -> u32 {
+        match self {
+            Self::Integer | Self::Length | Self::Angle => 1 << 31,
+            Self::Scalar => u32::MAX,
+            Self::Ratio | Self::FontWeight => 1000,
+        }
+    }
+}
+
+impl TryFrom<ViewStyleValueKind> for StyleNumericType {
+    type Error = ViewStyleValueKind;
+
+    fn try_from(kind: ViewStyleValueKind) -> Result<Self, Self::Error> {
+        Self::ALL
+            .into_iter()
+            .find(|numeric| numeric.value_kind() == kind)
+            .ok_or(kind)
+    }
+}
+
 /// Type of one specified Style value or a typed operand used to construct it.
 ///
 /// These are semantic-only values, including unresolved palette/token references.
@@ -17,6 +69,7 @@ pub enum CompileTimeStyleType {
     Transition,
     Token(ViewStyleValueKind),
     Property,
+    NumericLiteral(StyleNumericType),
 }
 
 impl CompileTimeStyleType {
@@ -31,12 +84,14 @@ impl CompileTimeStyleType {
             Self::Transition => 6,
             Self::Token(_) => 7,
             Self::Property => 8,
+            Self::NumericLiteral(_) => 9,
         }
     }
 
     pub const fn value_kind(self) -> Option<ViewStyleValueKind> {
         match self {
             Self::Value(kind) | Self::Token(kind) => Some(kind),
+            Self::NumericLiteral(kind) => Some(kind.value_kind()),
             Self::FontFamily
             | Self::SystemFontFamily
             | Self::SystemColor
@@ -58,6 +113,9 @@ impl CompileTimeStyleType {
             Self::Filter => "StyleOperand<Filter>".to_owned(),
             Self::Transition => "StyleOperand<Transition>".to_owned(),
             Self::Property => "StyleOperand<Property>".to_owned(),
+            Self::NumericLiteral(kind) => {
+                format!("StyleLiteral<{}>", kind.value_kind().source_name())
+            }
         }
     }
 }

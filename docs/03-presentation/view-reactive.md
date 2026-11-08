@@ -338,6 +338,18 @@ unit; they do not implicitly become specified Style values. Likewise a Style
 is not interchangeable with an ordinary runtime color value. The compiler uses
 the same specified-value path for Color, Length, and the other property kinds.
 
+Static numeric Style literals use unsuffixed integers/decimals and the native
+value's complete carrier: signed i32 for Integer, px thousandths for Length and
+milli-degrees for Angle; nonnegative u32 thousandths for Scalar; 0–1000
+thousandths for Ratio; and integer 1–1000 for FontWeight. Ratio also accepts
+percentages, while angles accept deg/turn and radians normalized by the shared
+angle owner. Decimal scaling rejects precision loss and overflow. An ordinary
+numeric suffix does not convert a runtime number into a specified Style value.
+The magnitude used by unary negation is a semantic-only construction operand,
+so the signed minimum can be checked without publishing its positive magnitude
+as a runtime or complete property value. Closed Style enums use the exact
+case-sensitive names from their native owner registry.
+
 Retained View nodes and runtime controls use the single typed
 `arcweft-view::style::ViewStyleResolver`. `ViewStyleProgram` owns sheets and
 inline patches; the bundle codec validates and transports that program but does

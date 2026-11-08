@@ -935,7 +935,7 @@ fn expression_resolution_matches(
             CheckedExpressionResolution::StyleOperand(_),
         ) => true,
         (
-            HirExprKind::Literal(_) | HirExprKind::Unary(_) | HirExprKind::BracketSequence(_),
+            HirExprKind::Literal(_) | HirExprKind::Unary(_) | HirExprKind::BracketSequence(_) | HirExprKind::ShortVariant(_),
             CheckedExpressionResolution::StyleValue(_),
         ) => true,
         (HirExprKind::Select(_), CheckedExpressionResolution::Value(_)) => {
@@ -1214,6 +1214,13 @@ fn validate_expression_resolution(
         CheckedExpressionResolution::StyleOperand(operand) => {
             if ty != &TypeKind::CompileTimeStyle(operand.style_type()) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            if let super::CheckedStyleOperand::Number(number) = operand {
+                let expression = resolve_module(modules, owner.module())?.resolve_expr(owner).map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let HirExprKind::Literal(literal) = expression.kind() else { return Err(FinalSemanticAnalysisError::WrongPayloadFamily); };
+                if super::CheckedStyleNumber::try_from((number.kind(), literal)).as_ref() != Ok(number) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
             }
             if let super::CheckedStyleOperand::Token(reference) = operand {
                 use arcweft_lang_hir::project::{HirSemanticPathOwnerId, HirSemanticPathRoot};

@@ -9,6 +9,37 @@ use crate::types::CompileTimeStyleType;
 use arcweft_view::style::ViewStyleValueKind;
 
 #[test]
+fn style_numeric_operands_preserve_signed_minimum_magnitudes_without_runtime_types() {
+    let fixture = fixture(
+        "style Numeric {\n token integer_min: Integer = -2147483648\n token length_min: Length = -2147483.648px\n token angle_min: Angle = -2147483.648deg\n}\n",
+        None,
+    );
+    let report = analyze(&fixture).unwrap();
+    let numbers = report
+        .expressions()
+        .filter_map(|(_, checked)| match checked.resolution() {
+            CheckedExpressionResolution::StyleOperand(CheckedStyleOperand::Number(number)) => {
+                Some((number, checked))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(numbers.len(), 3);
+    for (number, checked) in numbers {
+        assert_eq!(number.magnitude(), 1 << 31);
+        assert_eq!(
+            checked.value_type(),
+            Some(&TypeKind::CompileTimeStyle(
+                CompileTimeStyleType::NumericLiteral(number.kind())
+            ))
+        );
+        assert!(checked.effects().is_empty());
+        assert!(number.specified_value(false).is_err());
+        assert!(number.specified_value(true).is_ok());
+    }
+}
+
+#[test]
 fn style_construction_operands_retain_the_original_sheet_and_declaration() {
     let fixture = fixture(
         "style A {\n token font.stack: FontFamilyList = [\"Yu Gothic\", system_font(.Ui)]\n token ink: Color = system_color(.CanvasText)\n Text { font-family = token(font.stack); color = token(ink) }\n}\nstyle B { token font.stack: FontFamilyList = [system_font(.Serif)] }\n",

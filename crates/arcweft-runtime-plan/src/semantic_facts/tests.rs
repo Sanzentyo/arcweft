@@ -1728,9 +1728,10 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
             "view Card(dialogue: DialogueView, count: i64 = 1i64) { Text(\"x\") }\n",
             "#[tool.flag(2)]\n",
             "style Theme {\n",
-            "    token spacing.gap: i64 = 1i64\n",
-            "    Button { gap = 2px }\n",
-            "    when environment(text-scale >= 100%) { Button { gap = 3px } }\n",
+            "    token spacing.gap: Length = 1px\n",
+            "    token offset.inline: Length = -1px\n",
+            "    Column { row-gap = 2px }\n",
+            "    when environment(text-scale >= 100%) { Column { row-gap = 3px } }\n",
             "}\n",
             "fn after(third: bool) -> bool { third }\n",
         ),
@@ -1787,6 +1788,33 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
             .then_some(owner)
         })
         .expect("retained local path");
+
+    let numeric_operand = module
+        .expressions()
+        .find_map(|(_, expression)| match expression.kind() {
+            HirExprKind::Unary(unary)
+                if unary.operator() == arcweft_lang_hir::expr::HirUnaryOp::Negate =>
+            {
+                Some(unary.operand())
+            }
+            _ => None,
+        })
+        .expect("source Style negation operand");
+    assert!(!runtime_owners.contains_expression(numeric_operand));
+    let mut input = complete_type_input(&project);
+    input.push_expression_type(
+        numeric_operand,
+        unit_type(),
+        fixture_expression_origin(&project, numeric_operand),
+    );
+    assert_eq!(
+        runtime_facts(&project, input)
+            .expect_err("a Style numeric construction operand cannot enter the runtime domain"),
+        RuntimeSemanticFactsError::InactiveExpressionFact {
+            expression: numeric_operand,
+            family: RuntimeSemanticFactFamily::ExpressionType
+        }
+    );
 
     let mut input = complete_type_input(&project);
     input.push_local_declaration(

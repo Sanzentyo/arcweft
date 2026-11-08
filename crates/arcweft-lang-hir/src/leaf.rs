@@ -1017,6 +1017,52 @@ impl HirDecimal {
             .filter(|value| value.is_finite())
     }
 
+    /// Converts this exact decimal to a signed fixed-point integer.
+    ///
+    /// The result is `self * multiplier * 10^fractional_digits`, with the
+    /// requested sign. Fractional loss is rejected rather than rounded.
+    pub fn to_scaled_i64(
+        &self,
+        fractional_digits: u32,
+        multiplier: u16,
+        negative: bool,
+    ) -> Result<i64, HirDecimalScaleError> {
+        if multiplier == 0 || self.coefficient.digits() == [0] {
+            return Ok(0);
+        }
+        let coefficient = self
+            .coefficient
+            .digits()
+            .iter()
+            .try_fold(0_i128, |value, digit| {
+                value
+                    .checked_mul(10)
+                    .and_then(|value| value.checked_add(i128::from(*digit)))
+                    .ok_or(HirDecimalScaleError::Overflow)
+            })?
+            .checked_mul(i128::from(multiplier))
+            .ok_or(HirDecimalScaleError::Overflow)?;
+        let power =
+            i64::from(self.exponent10) - i64::from(self.scale) + i64::from(fractional_digits);
+        let factor = 10_i128
+            .checked_pow(
+                u32::try_from(power.unsigned_abs()).map_err(|_| HirDecimalScaleError::Overflow)?,
+            )
+            .ok_or(HirDecimalScaleError::Overflow)?;
+        let scaled = if power >= 0 {
+            coefficient
+                .checked_mul(factor)
+                .ok_or(HirDecimalScaleError::Overflow)?
+        } else {
+            if coefficient % factor != 0 {
+                return Err(HirDecimalScaleError::PrecisionLoss);
+            }
+            coefficient / factor
+        };
+        i64::try_from(if negative { -scaled } else { scaled })
+            .map_err(|_| HirDecimalScaleError::Overflow)
+    }
+
     fn scientific_decimal(&self) -> String {
         let digits = self
             .coefficient
@@ -1115,6 +1161,15 @@ impl HirDecimal {
         }
         format!("0.{}{}", "0".repeat(fractional - digits.len()), digits)
     }
+}
+
+/// Failure to project an exact decimal into a fixed-point integer carrier.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirDecimalScaleError {
+    #[error("decimal conversion exceeds the signed fixed-point carrier")]
+    Overflow,
+    #[error("decimal conversion loses fractional precision")]
+    PrecisionLoss,
 }
 
 /// Closed-constructor failure for one canonical decimal payload.

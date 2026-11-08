@@ -1,4 +1,49 @@
 use super::*;
+
+#[test]
+fn exact_decimal_scaling_preserves_native_ranges_units_and_signed_extremes() {
+    let decimal = |coefficient: &str, scale, exponent| {
+        let digits = coefficient
+            .bytes()
+            .map(|byte| byte - b'0')
+            .collect::<Vec<_>>();
+        HirDecimal::try_new(
+            HirDecimalDigits::try_new(digits.into_boxed_slice()).unwrap(),
+            scale,
+            exponent,
+        )
+        .unwrap()
+    };
+    for (coefficient, scale, exponent, places, multiplier, negative, expected) in [
+        ("4294967295", 3, 0, 3, 1, false, 4_294_967_295),
+        ("2147483647", 3, 0, 3, 1, false, 2_147_483_647),
+        ("2147483648", 3, 0, 3, 1, true, -2_147_483_648),
+        ("9223372036854775807", 0, 0, 0, 1, false, i64::MAX),
+        ("9223372036854775808", 0, 0, 0, 1, true, i64::MIN),
+        ("125", 3, 0, 3, 360, false, 45_000),
+        ("955", 1, 0, 1, 1, false, 955),
+        ("1", 0, -3, 3, 1, false, 1),
+        ("0", 0, 0, 3, 360, true, 0),
+    ] {
+        assert_eq!(
+            decimal(coefficient, scale, exponent).to_scaled_i64(places, multiplier, negative),
+            Ok(expected)
+        );
+    }
+    assert_eq!(
+        decimal("9223372036854775808", 0, 0).to_scaled_i64(0, 1, false),
+        Err(HirDecimalScaleError::Overflow)
+    );
+    assert_eq!(
+        decimal("1", 4, 0).to_scaled_i64(3, 1, false),
+        Err(HirDecimalScaleError::PrecisionLoss)
+    );
+    assert_eq!(
+        decimal("1", 0, 1000).to_scaled_i64(3, 1, false),
+        Err(HirDecimalScaleError::Overflow)
+    );
+    assert_eq!(decimal("1", 0, 1000).to_scaled_i64(3, 0, false), Ok(0));
+}
 use crate::identity::{
     HirDatabaseId, HirIdKind, HirModuleId, HirRevision, HirTypedId, RawHirId, SyntheticRole,
 };

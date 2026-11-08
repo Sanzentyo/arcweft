@@ -260,7 +260,7 @@ fn accepted_scalar(name: &str, kind: CompileTimeScalarKind) -> TypeKind {
 
 #[test]
 fn specified_style_values_and_operands_keep_exact_semantic_types() {
-    use super::CompileTimeStyleType;
+    use super::{CompileTimeStyleType, StyleNumericType};
     use arcweft_view::style::ViewStyleValueKind;
 
     let mut styles = ViewStyleValueKind::ALL
@@ -281,6 +281,7 @@ fn specified_style_values_and_operands_keep_exact_semantic_types() {
         CompileTimeStyleType::Transition,
         CompileTimeStyleType::Property,
     ]);
+    styles.extend(StyleNumericType::ALL.map(CompileTimeStyleType::NumericLiteral));
     let types = styles
         .into_iter()
         .map(TypeKind::CompileTimeStyle)

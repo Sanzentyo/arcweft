@@ -11,6 +11,9 @@ mod spacing;
 #[path = "view_product/style_tokens.rs"]
 mod style_tokens;
 
+#[path = "view_product/style_primitives.rs"]
+mod style_primitives;
+
 #[path = "view_product/text_input.rs"]
 mod text_input;
 

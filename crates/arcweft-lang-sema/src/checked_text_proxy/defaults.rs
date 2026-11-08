@@ -2,7 +2,7 @@ use arcweft_lang_hir::{
     expr::{HirCallArgument, HirExprKind, HirUnaryOp},
     identity::ExprId,
     leaf::{
-        HirBigUint, HirDecimal, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral, HirLiteral,
+        HirBigUint, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral, HirLiteral,
         HirStringLiteral, HirUnitNumberLiteral, HirUnitNumberUnit,
     },
     module::HirModule,
@@ -135,7 +135,7 @@ fn reduce_literal(
         (
             HirLiteral::Float(HirFloatLiteral::Value { decimal, .. }),
             CheckedCompileTimeScalarKind::Milli,
-        ) => checked_signed_milli(signed_decimal_milli(decimal, negative, 1)?)
+        ) => checked_signed_milli(decimal.to_scaled_i64(3, 1, negative)?)
             .map(|value| CheckedCompileTimeScalar::Milli(Milli(value))),
         (
             HirLiteral::Integer(HirIntegerLiteral::Value { magnitude, .. }),
@@ -148,7 +148,7 @@ fn reduce_literal(
         (
             HirLiteral::Float(HirFloatLiteral::Value { decimal, .. }),
             CheckedCompileTimeScalarKind::Ratio,
-        ) if !negative => checked_ratio(signed_decimal_milli(decimal, false, 1)?),
+        ) if !negative => checked_ratio(decimal.to_scaled_i64(3, 1, false)?),
         (
             HirLiteral::Integer(HirIntegerLiteral::Value { .. })
             | HirLiteral::Float(HirFloatLiteral::Value { .. }),
@@ -177,7 +177,7 @@ fn reduce_literal(
                 }
             };
             Ok(CheckedCompileTimeScalar::Length(CheckedLength {
-                milli: checked_signed_milli(signed_decimal_milli(decimal, negative, 1)?)?,
+                milli: checked_signed_milli(decimal.to_scaled_i64(3, 1, negative)?)?,
                 unit,
             }))
         }
@@ -188,7 +188,7 @@ fn reduce_literal(
             }),
             CheckedCompileTimeScalarKind::Ratio,
         ) if !negative => {
-            let milli = signed_decimal_milli(decimal, false, 1)?;
+            let milli = decimal.to_scaled_i64(3, 1, false)?;
             if milli % 100 != 0 {
                 return Err(CompileTimeScalarReductionError::PrecisionLoss);
             }
@@ -207,9 +207,9 @@ fn reduce_literal(
                 1
             };
             Ok(CheckedCompileTimeScalar::Angle(CheckedAngle {
-                milli_degrees: checked_angle_milli(signed_decimal_milli(
-                    decimal, negative, multiplier,
-                )?)?,
+                milli_degrees: checked_angle_milli(
+                    decimal.to_scaled_i64(3, multiplier, negative)?,
+                )?,
             }))
         }
         (
@@ -315,49 +315,6 @@ fn signed_i64(value: &HirBigUint, negative: bool) -> Result<i64, CompileTimeScal
     } else {
         i64::try_from(value).map_err(|_| CompileTimeScalarReductionError::Overflow)
     }
-}
-
-fn signed_decimal_milli(
-    decimal: &HirDecimal,
-    negative: bool,
-    multiplier: u16,
-) -> Result<i64, CompileTimeScalarReductionError> {
-    let mut coefficient = 0_i128;
-    for digit in decimal.coefficient().digits() {
-        coefficient = coefficient
-            .checked_mul(10)
-            .and_then(|value| value.checked_add(i128::from(*digit)))
-            .ok_or(CompileTimeScalarReductionError::Overflow)?;
-    }
-    coefficient = coefficient
-        .checked_mul(i128::from(multiplier))
-        .ok_or(CompileTimeScalarReductionError::Overflow)?;
-    let power = i64::from(decimal.exponent10()) - i64::from(decimal.scale()) + 3;
-    let milli = if power >= 0 {
-        coefficient
-            .checked_mul(
-                10_i128
-                    .checked_pow(
-                        u32::try_from(power)
-                            .map_err(|_| CompileTimeScalarReductionError::Overflow)?,
-                    )
-                    .ok_or(CompileTimeScalarReductionError::Overflow)?,
-            )
-            .ok_or(CompileTimeScalarReductionError::Overflow)?
-    } else {
-        let divisor = 10_i128
-            .checked_pow(
-                u32::try_from(power.unsigned_abs())
-                    .map_err(|_| CompileTimeScalarReductionError::Overflow)?,
-            )
-            .ok_or(CompileTimeScalarReductionError::Overflow)?;
-        if coefficient % divisor != 0 {
-            return Err(CompileTimeScalarReductionError::PrecisionLoss);
-        }
-        coefficient / divisor
-    };
-    i64::try_from(if negative { -milli } else { milli })
-        .map_err(|_| CompileTimeScalarReductionError::Overflow)
 }
 
 fn checked_signed_milli(value: i64) -> Result<i32, CompileTimeScalarReductionError> {
