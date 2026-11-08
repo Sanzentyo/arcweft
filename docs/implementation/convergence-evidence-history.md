@@ -15900,3 +15900,14 @@ r1の元Source5 path＋基点patchで、Sema11件＋Compiler2件の13／13 PASS�
 両runとも元pathの実EXEを実行前後に採取し、binary drift 0。r1とr2で異なるSource patch、source hash、catalog、before/after pinを保持した。r2の3 owner（Sema／RuntimePlan／Compiler）locked／all-targets／all-features Clippyは終了0／19.69秒、警告あり。変更5 Rust pathの限定fmt check終了0。Source closure23とCore closure53、workspace gateは未実行で、前回のmetadataを再利用する。動的な明示引数適用、generic／default／spread／型の完全admission、affine入力のcall-frame横断と全取消し／失敗matrix、Native公開save・実Native／Web parityは未達または未検証。Generic Match等の受入状態は変更していない。
 
 原本 docs/implementation/acceptance-evidence/task-flow-transfer-target-wip6.raw.zip：20 entries／850843 bytes／SHA256 c276cf16f0fcf33c945248d81391cd60fcf9876504576dd7c9423b5efb5c5673。source、patch、log、catalog、metadataのみを保存し、EXE／AWFBを移動・コピーしていない。現状の重複した11件の途中説明はWIP5履歴へ残し、goto行を今回の正確な対象範囲へ更新した。
+## modern-feedback-viewの明示state転送と実CLI（WIP7、2026-11-09）
+
+確認基点はmain／origin/mainの1f6a839f1f57522d65950aa47bd65cf1c71788f7（親20d63c52450beeac011b3436e469f3ace4f57bcc、tree e418e14969e85e8e926668e430a9279f6d24916c、公開patch SHA256 cf211ddf2f84a70196ca5c5a78983c1567b8cd394e5a1a95cc3947ae8762ddfc）。9 pathのblob・非forced remote・patch照合を保持する。今回のSource変更はsamples/modern-feedback-view/src/main.arcwの自己Gotoへstate = stateを加えた一行とREADMEの説明のみ。Entryの初期入力、元画像／metadata、全Style／font／Text property、元input target／label／placeholder／IME hint、2 Actionとpayload、2 mount scope、全対話／分岐／GameStateを保持した。現sample Source SHA256 c9758dd5a7b02c8862fb6f7af4830bdb21012f59b38b26065c522f3b996c803d。
+
+同じEngine Sourceをcargo build --locked -p arcweft-cli --all-featuresで実ビルドし、終了0／8分54秒。元path D:/git/arcweft/target/debug/arcw.exeの実本体は342918144 bytes／SHA256 efc916272a3a336d3467d02b6fa2e6f1d9c26f28a57f564ae715b55763801455。4入力の全probe前後で本体hashとtracked patchを照合しdrift0。EXE／AWFBを別pathへコピー・移動せず、生成した元pathのhashを採取した。
+
+最小の空対照はcheck0／bundle0、38016 bytes／SHA256 b5aa326bb5e140ceb389032c5e10818c5e177b28247c2e98692d68031024b61eで、978c45c75c4546b4ca6c6bcd98eaa5429eae4ff8時のartifactと同じ。変更しない裸の自己Gotoはcheck1／bundle1、sema.goto.argument_count、生成物なし。元Sourceを別の診断fixtureとして保持し、Flow本体の自己Gotoだけへstate = stateを加えた最小入力はcheck0／bundle0、38432 bytes／SHA256 40c576143a06113b524dc55822feff952dd4d1fbc37ea38a3cc7a5e46601cc65。実modern-feedback-viewはcheck0／bundle0、945200 bytes／SHA256 e9d77b97a91a5ecffd2524d8aeb60b69a3dd87d6ea64102a4d43dad98f86dd72、元の画像を含む1 virtual fileを保持した。4 probe／8 commandはnextestの件数へ加算しない。
+
+Source 8d9a57e08bdcbd207b322fd3cd80337688d23f49のAPI移行を取り消したのではなく、Engine側の明示入力経路とsampleの不足入力を揃えて、旧block25／引数なし診断で止まっていた生成物を今回通過させた。このため現状一覧のsample行から旧拒否を「現在の失敗」として重複列挙していた説明を除き、この履歴と既存原本へ残す。裸Gotoの診断で原文labelがsource text unavailableとして省略される問題は継続。実Native／Web操作・表示・画像parityは未実行であり、AWFB生成を実操作の受入としない。registry153 propertyとGeneric Matchの受入行を変更していない。
+
+原本 docs/implementation/acceptance-evidence/task-flow-transfer-modern-wip7.raw.zip：25 entries／33717 bytes／SHA256 ef77e344e42d46bf2541e561dc7e9e37737073ac990dd866498d2b7bae14f19e。Source、manifest、patch、CLI log、probe script、metadataのみを保持する。

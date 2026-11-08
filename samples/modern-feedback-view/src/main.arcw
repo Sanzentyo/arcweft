@@ -266,5 +266,5 @@ flow modern_feedback_view(state: GameState) {
 
     concierge: This is the end of the modern_feedback flow. Returning to the beginning.
 
-    goto @flow:.modern_feedback_view
+    goto @flow:.modern_feedback_view(state = state)
 }

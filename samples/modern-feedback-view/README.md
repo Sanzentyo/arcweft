@@ -22,7 +22,8 @@ It demonstrates:
   display by declaration alone;
 - a flow that uses `await receive(feedback.submit_name)` and
   `await receive(feedback.submit_brief)`, preserves both empty/nonempty branches,
-  and transfers back to its beginning after the final dialogue.
+  and explicitly transfers its current GameState back to its beginning after
+  the final dialogue.
 
 ## Check
 
