@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unicode_not_nfc,
+    reason = "decomposed combining marks must remain distinct Unicode scalars in these fixtures"
+)]
+
 use super::*;
 
 #[test]
@@ -30,12 +35,14 @@ flow main() -> usize {{
 fn string_operations_and_captures_survive_each_awbc_step_public_cold_restore() {
     use arcweft_core::{
         awbc::{
+            codec::AwbcDecodeBudget,
             product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductProgram},
             schema::AwbcProgram,
+            verify::{AwbcVerifyBudget, AwbcVerifyContext},
         },
         engine::{FlowExit, FlowFiberStatus},
         executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor},
-        plan::RuntimeEntryTarget,
+        plan::{RuntimeEntryTarget, RuntimeTaskSourceArtifactLimits},
         step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
     };
 
@@ -73,12 +80,12 @@ flow main() -> usize {
     .encode_canonical()
     .unwrap();
     let fresh = || {
-        let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
+        let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
         let admitted = AwbcProductProgram::admit(
             Arc::new(decoded),
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext::default(),
+            RuntimeTaskSourceArtifactLimits::default(),
             None,
         )
         .unwrap();

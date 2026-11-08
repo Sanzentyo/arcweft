@@ -913,7 +913,7 @@ fn string_intrinsic_construction_checks_exact_abi_before_executable_publication(
             RuntimeStringResultKind::String => 1,
             RuntimeStringResultKind::USize => 2,
         };
-        let mut builder = fixture();
+        let builder = fixture();
         assert!(
             builder
                 .lower_expression(intrinsic_call_seed(
@@ -923,7 +923,7 @@ fn string_intrinsic_construction_checks_exact_abi_before_executable_publication(
                 ))
                 .is_ok()
         );
-        let mut builder = fixture();
+        let builder = fixture();
         assert!(matches!(
             builder.lower_expression(intrinsic_call_seed(
                 RuntimeIntrinsic::String(operation),
@@ -935,7 +935,7 @@ fn string_intrinsic_construction_checks_exact_abi_before_executable_publication(
                 ..
             })
         ));
-        let mut builder = fixture();
+        let builder = fixture();
         let wrong_receiver = RuntimeExprSeed::new(
             semantic(4),
             RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
@@ -952,7 +952,7 @@ fn string_intrinsic_construction_checks_exact_abi_before_executable_publication(
             })
         ));
         for count in [0, 2] {
-            let mut builder = fixture();
+            let builder = fixture();
             assert!(
                 matches!(builder.lower_expression(intrinsic_call_seed(RuntimeIntrinsic::String(operation), result, (0..count).map(|_| receiver()).collect())), Err(RuntimePlanBuildError::CallableAbiArity { context: "String intrinsic", expected: 1, actual }) if actual == count)
             );
