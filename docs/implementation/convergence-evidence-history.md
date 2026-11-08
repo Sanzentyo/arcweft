@@ -15637,3 +15637,13 @@ owner-r2はId／Presentation／Semaのclosed-enum登録と全View93件を含む3
 standalone生成器の既存integration testも1／1 PASS、246.618秒、3899入力drift0。実際の生成bundleの決定性と実行callbackを維持した。全98 workspace package・全target／全feature・locked check／Clippy、構造gate、変更Rustと生成器本文のfmtは終了0。生成器の最初のfmt checkはimportの整形で1となった原本を保持し、Cargo frontmatterを保存して本文だけfmtした。owner-r2後の差分はこの生成器の整形だけであり、最終品質と生成器テストが最終bytesを検証した。owner-r2をそのscript bytesの再実行とは呼ばない。
 
 一意なowner被覆は342件。元136件のJSON記録を変更せず追記した。[owner原本](acceptance-evidence/task-ime-input-policy-owner.raw.zip) は57 entry／1956697 bytes、SHA256 `046ec529a391a3c2f9961da2ec864e0833786172ef6433b7509d98dfea06bfcc`。Source公開patch／blob、各入力／EXE pin、Root toolのfmt失敗と修正、graph・metrics／構造責任・品質を保持し、実行ファイルや生成AWFBは含まない。IME文書の旧「committed Binding」の説明は、adapterの編集documentとapplicationの保持String authorityが曖昧だったため訂正し、元の文は公開差分に保持した。現状一覧のgenericな「policy移行」説明は、purpose／Enter-keyのowner完了と、placeholder等の別条件を区別する説明へ置換した。71 package逆依存・CLI・旧sampleとScroll・実Native／Web表示はこのowner結果から閉じず、Generic Match等の既受入も戻さない。
+
+## 2026-11-08 IME policyの全71逆依存・実CLIの終端照合
+
+production `76d32c7a3ff15513f2e62120f32a84bf775598af`、owner証拠公開 `3091178263b949f56e7a02a6aa5132eb1148df12`。Id逆依存71 packageの非CLI全feature・lib／testsは9535／9535 PASS、10 slow、26 SKIP、908.888秒、66実行package。先行View closureの4646 caseに欠落0、必須owner342 caseも各1回、重複0だった。3899入力、catalogと元pathの実EXEの前後差分0。先行Sourceのowner反復や論理的な再利用は加算しない。
+
+CLI既定のlib／testsはretry-r2で711実行・707 PASS／4 FAIL／23 SKIP、26 slow、510.939秒、3923入力drift0。初回準備はBundle rlib `libarcweft_bundle-02810d89b427c070.rlib` のmmapがWindows OS1455（ページングファイル不足）で拒否され、E0786・準備101、runtime未実行だった。残るbuild jobの完了後、Source／feature／profile／Cargo jobs／budget／対象を変えず、完了済みbuildを再利用してretryした。準備失敗は711件に含めず、原本を保持する。4失敗のIDと実診断は先行と同じScrollのshared callable／Expr slot15、active dialogue has no voice、promotion2件のsolver到達前のtype-check／Expr slot8拒否で、新規失敗0。これらの修復や最終goal達成とはしない。
+
+実CLI本体は元pathで前後SHA256 `b3dccecb0dc831419766fefcd41227aab18996b8ab4aeaf883551d4b0ced8b7a` を照合し、test binaryも差分0。同じ本体で公開target・保持String・named Actionとpurpose=.search／enter_key=.sendを持つSourceをcheckし、成功0／status okだった。Source SHA256 `61c01e0c8ae7cceba229c0fcfeaa99ea8237c0db974a9e14e403217266ee4e47`、Source／manifest／本体の前後差分0。このprobeをnextest件数へ加算しない。
+
+新規2 run／2 feature pointで10246実行・10242 PASS／4 FAIL／49 SKIP。先行5357件・論理被覆8076件とその2719件の再利用、focused owner342件を合算せず、元137件のJSON記録を変更せず追記した。[consumer原本](acceptance-evidence/task-ime-input-policy-consumers.raw.zip) は35 entry／1748758 bytes、SHA256 `93ea771e0b75034d1a8b6ea5c344de661391a888c55242d3e809b94ddf98cdaa`。全終端・入力／EXE pin・選択、実診断、準備失敗とretry、Source probeを保持し、実行ファイルや生成AWFBは含まない。現状一覧の「71 package実行中」を実測済みへ更新した。purpose／Enter-key hintの伝搬を、placeholder等の旧sample・Scroll・実Native／Web表示の継続条件と混同しない。既受入Generic Match、保持入力／target／Actionの判定は維持する。

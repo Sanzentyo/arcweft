@@ -56808,5 +56808,826 @@
     },
     "preservedPriorRecords": 136,
     "integration": "Owner and workspace quality passed. The 71-package reverse closure, default CLI, remaining Source sample/policy/Scroll migration and actual Native/Web display remain separate conditions."
+  },
+  "viewImeInputPolicyConsumers": {
+    "version": 1,
+    "date": "2026-11-08",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "parent": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "tree": "16d432739c5c854f18a9e878f5b26fafd925ce61",
+      "remote": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "paths": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "blob": "cf21e1bdd75814621e24f767b1d6d913bcc2d313"
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model/input.rs",
+          "blob": "342c5bc12f91a1612b8ddcf08b96c25c29aeb290"
+        },
+        {
+          "path": "crates/arcweft-bundle/tests/view_resource_codecs.rs",
+          "blob": "ab0b8a75cd998f5920ad6bcc210bb6ab3495fd46"
+        },
+        {
+          "path": "crates/arcweft-bundle/tests/view_runtime_text_controls.rs",
+          "blob": "45fb119f21cc14dac4ab6a81b310a787a5b136b8"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+          "blob": "1434ba249d6977c60971d7cbc4bdfd280c007a6f"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "blob": "820ec0a5560c43c33a2a5be3cae01dd2a2c77e27"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "blob": "1b5d4b79b8502fe3b1a44444230ba623e1f15a3e"
+        },
+        {
+          "path": "crates/arcweft-id/src/closed_enum.rs",
+          "blob": "b58a05b91830b9324efa57258c95d02898abbebd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "061bdb065cf2ef6093a8126e30d896ee3253090e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/registration/closed_enum.rs",
+          "blob": "330c493e7ff97a050b1b55190a57693d83f71027"
+        },
+        {
+          "path": "crates/arcweft-player-scene/src/text_controls.rs",
+          "blob": "4931a723d416bc196047906c2b2c41756e998198"
+        },
+        {
+          "path": "crates/arcweft-player-scene/tests/runtime_control_style_lowering.rs",
+          "blob": "c2fd6eaaa2ba7db5ed389fa2e7cedd5ea5ae1b2a"
+        },
+        {
+          "path": "crates/arcweft-player-scene/tests/runtime_text_controls.rs",
+          "blob": "7515a3ba119e944517f36718a6ffc9450547fe82"
+        },
+        {
+          "path": "crates/arcweft-player-web/tests/input.rs",
+          "blob": "e534f52665145596575d07df363f9f0c65051f41"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/text_input.rs",
+          "blob": "effc092103a9020b6104d7d420eab62720fdfcbe"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/text_input/policy.rs",
+          "blob": "813a436fa803e212b0ca8524fc61985903eef3c2"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+          "blob": "0cbb9d48d611f11b33320a7587a7fe5fe0aedab3"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session/hot_swap.rs",
+          "blob": "a227a66a59315633702e97895d45c98d819a6ad4"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session/text_control.rs",
+          "blob": "56a65aca1ce4dd3dea9a5415e548822773e6b526"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+          "blob": "2397a4a04f755c26cdc644eb672f9da72a04c834"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+          "blob": "cb8cd2e78bd569623328e0f788ae7bbade4b9f90"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+          "blob": "169ed897efb4fed21e42626f66ce255b97ea7fec"
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "blob": "09d01f34351926b6fcc76cc0d140b2636cb4bfd7"
+        },
+        {
+          "path": "crates/arcweft-view/src/program.rs",
+          "blob": "81a2860ef62ad15ba7d2389ecd857130296a9b30"
+        },
+        {
+          "path": "docs/03-presentation/view-input-text-field.md",
+          "blob": "65f01154d404689f59fdf7b5756e5aa013902f19"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "f255e5e123d2e8cef3f3e762a099d3c9c2451365"
+        },
+        {
+          "path": "tools/build-web-ime-player-rendered-fixture.rs",
+          "blob": "cec82d3dbd60ee8c1e2d1144c9e935b19c9b078d"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "cf50569875d4e3e5eb331890de10c04adb67c34d3972b863bbe3f5e75534214f",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T08:26:47.4483437Z"
+    },
+    "ownerEvidencePublication": {
+      "version": 1,
+      "commit": "3091178263b949f56e7a02a6aa5132eb1148df12",
+      "parent": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "tree": "454a56083bf78aa0e0d7358d1e1932d694457db4",
+      "remote": "3091178263b949f56e7a02a6aa5132eb1148df12",
+      "paths": [
+        {
+          "path": "docs/implementation/acceptance-evidence/task-flow-registry-execution.json",
+          "blob": "301b089dd4221e2c2ccdfd2885a3d8f45ddf7821"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-ime-input-policy-owner.raw.zip",
+          "blob": "9efe37de713699a79235e61e81bfb522939b5cd3"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "16ac17b351481b6f1bc2d37dcc62af5f04eed773"
+        },
+        {
+          "path": "docs/implementation/current-status.md",
+          "blob": "f471b41df26b96efa2b3109a773b39be0f2ce90a"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "d7082b77b05b5b64425b9c63555e528416d5042769ec3a398105368fc9a5e4ac",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T08:29:47.6312638Z"
+    },
+    "nonCli": {
+      "version": 1,
+      "base": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "run": "ime-purpose-enter-key-integrated-20261108.noncli.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 908.888s] 9535 tests run: 9535 passed (10 slow), 26 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 9535,
+      "passed": 9535,
+      "failed": 0,
+      "skipped": 26,
+      "selectedPackages": 0,
+      "matchedPackages": 66,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3899,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T08:57:02.5839334Z"
+    },
+    "cli": {
+      "version": 1,
+      "base": "3091178263b949f56e7a02a6aa5132eb1148df12",
+      "run": "ime-purpose-enter-key-integrated-20261108.cli-r2.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 510.939s] 711 tests run: 707 passed (26 slow), 4 failed, 23 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 711,
+      "passed": 707,
+      "failed": 4,
+      "skipped": 23,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3923,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-08T09:10:40.5217173Z"
+    },
+    "mainExecutable": {
+      "version": 1,
+      "path": "D:/git/arcweft/target/debug/arcw.exe",
+      "sha256": "b3dccecb0dc831419766fefcd41227aab18996b8ab4aeaf883551d4b0ced8b7a",
+      "runtimeStartedAt": "2026-11-08T09:02:04.7351953Z",
+      "runtimeFinishedAt": "2026-11-08T09:10:38.4380194Z",
+      "beforeRuntime": true,
+      "binaryDrift": 0,
+      "recordedAt": "2026-11-08T09:10:38.7485464Z"
+    },
+    "freshUniqueExecuted": 10246,
+    "passed": 10242,
+    "failed": 4,
+    "skipped": 49,
+    "featurePoints": [
+      "workspace except CLI, all-features, lib/tests, rdeps(Id)",
+      "CLI default, lib/tests"
+    ],
+    "graph": {
+      "version": 1,
+      "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "metadata": "retained-text-input-integrated-20261108.metadata.json",
+      "workspaceManifestsChanged": [],
+      "owners": [
+        "arcweft-id",
+        "arcweft-presentation",
+        "arcweft-view",
+        "arcweft-lang-sema",
+        "arcweft-bundle",
+        "arcweft-compiler",
+        "arcweft-runtime-driver",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-cli"
+      ],
+      "closurePackages": [
+        {
+          "name": "arcweft",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-context",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-context#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-desktop",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-metadata",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-metadata#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp-client",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-policy",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-protocol",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-repl",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-runner",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-codec",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-codec#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-core",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-core#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-device-cpal",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-device-cpal#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-mixer",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-mixer#0.1.0"
+        },
+        {
+          "name": "arcweft-browser-bench",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle-assets",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+        },
+        {
+          "name": "arcweft-character",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character#0.1.0"
+        },
+        {
+          "name": "arcweft-character-psd",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-psd#0.1.0"
+        },
+        {
+          "name": "arcweft-character-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+        },
+        {
+          "name": "arcweft-cli",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+        },
+        {
+          "name": "arcweft-compiler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+        },
+        {
+          "name": "arcweft-core",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-sqlite",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+        },
+        {
+          "name": "arcweft-desktop-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-desktop-native#0.1.0"
+        },
+        {
+          "name": "arcweft-dialogue",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+        },
+        {
+          "name": "arcweft-glyphon",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+        },
+        {
+          "name": "arcweft-host-adapter",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0"
+        },
+        {
+          "name": "arcweft-id",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-id#0.1.0"
+        },
+        {
+          "name": "arcweft-interaction-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-interaction-model#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-hir",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-hir#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-jit-cranelift",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-syntax",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-syntax#0.1.0"
+        },
+        {
+          "name": "arcweft-launch",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+        },
+        {
+          "name": "arcweft-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-manifest-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-manifest-model#0.1.0"
+        },
+        {
+          "name": "arcweft-player-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+        },
+        {
+          "name": "arcweft-player-scene",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+        },
+        {
+          "name": "arcweft-player-text-input",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+        },
+        {
+          "name": "arcweft-player-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+        },
+        {
+          "name": "arcweft-presentation",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-presentation#0.1.0"
+        },
+        {
+          "name": "arcweft-project",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+        },
+        {
+          "name": "arcweft-project-loader",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+        },
+        {
+          "name": "arcweft-rag",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+        },
+        {
+          "name": "arcweft-ref",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-ref#0.1.0"
+        },
+        {
+          "name": "arcweft-render-text",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+        },
+        {
+          "name": "arcweft-render-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+        },
+        {
+          "name": "arcweft-render-wgpu",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-manifest",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0"
+        },
+        {
+          "name": "arcweft-rich-text-schema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rich-text-schema#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-accelerator",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-codegen",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-driver",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-host",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-plan",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-scheduler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0"
+        },
+        {
+          "name": "arcweft-save",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0"
+        },
+        {
+          "name": "arcweft-source",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-source#0.1.0"
+        },
+        {
+          "name": "arcweft-test",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+        },
+        {
+          "name": "arcweft-text-layout",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+        },
+        {
+          "name": "arcweft-text-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+        },
+        {
+          "name": "arcweft-tooling",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+        },
+        {
+          "name": "arcweft-verify",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-oxiz",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-z3",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+        },
+        {
+          "name": "arcweft-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+        }
+      ],
+      "externalCargoConsumer": "tools/build-web-ime-player-rendered-fixture.rs: standalone path dependency on arcweft-presentation; verified by the existing ime_player_rendered integration test"
+    },
+    "coverageReview": {
+      "version": 1,
+      "production": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "selected": 9535,
+      "runtimePackages": 66,
+      "priorViewClosureCases": 4646,
+      "priorCasesMissing": [],
+      "requiredOwnerCases": 342,
+      "requiredMissing": [],
+      "duplicates": [],
+      "note": "New ID reverse closure, same all-features non-CLI lib/tests point. Previous View closure and all owner cases each remain selected once; no prior executions are added to the fresh count."
+    },
+    "cliFailureIdChanges": [],
+    "observedDiagnostics": {
+      "version": 1,
+      "production": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "log": "ime-purpose-enter-key-integrated-20261108.cli-r2.runtime.log",
+      "failureDiagnostics": [
+        {
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+          "observedCause": "sema.final_analysis shared callable resolution, expression slot 15",
+          "logStartLine": 2506,
+          "firstLines": [
+            "        FAIL [   5.420s] (431/711) arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+            "  stdout ───",
+            "",
+            "    running 1 test",
+            "    test agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering ... FAILED",
+            "",
+            "    failures:",
+            "",
+            "    failures:",
+            "        agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+            "",
+            "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 5.39s",
+            "",
+            "  stderr ───",
+            "",
+            "    thread 'agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering' (65044) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:2720:5:",
+            "    authored Scroll live observe should succeed, stderr: error[sema.final_analysis]: shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr })",
+            "",
+            "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+            "",
+            "        PASS [   6.293s] (432/711) arcweft-cli::check agent_observe_native::agent_observe_read_uri_returns_latest_native_layer_image",
+            "        PASS [   5.929s] (433/711) arcweft-cli::check agent_observe_native::agent_observe_read_uri_uses_native_renderer_without_selected_image",
+            "        PASS [  25.983s] (434/711) arcweft-cli::check agent_observe_native::agent_observe_native_vertical_capture_matches_imq_reference",
+            "        SKIP [         ] (───────) arcweft-cli::check agent_observe_native::agent_observe_writes_layer_png_and_object_raw_images",
+            "        PASS [  49.189s] (435/711) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_vertical_presentation_compact_bracket_raw_crops",
+            "        PASS [   0.038s] (436/711) arcweft-cli::check agent_observe_native::native_checked_in_visual_golden_artifacts_are_well_formed",
+            "        PASS [   6.705s] (437/711) arcweft-cli::check agent_observe_native::agent_observe_reports_signal_and_visual_effects",
+            "        PASS [  25.609s] (438/711) arcweft-cli::check agent_observe_native::agent_observe_native_vertical_lr_typewriter_ruby_capture_time_controls_base_and_annotation",
+            "        PASS [  13.499s] (439/711) arcweft-cli::check agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata",
+            "        PASS [   0.706s] (440/711) arcweft-cli::check agent_rag_query_indexes_source_directories",
+            "        PASS [   1.800s] (441/711) arcweft-cli::check agent_rag_query_indexes_multiple_sources",
+            "        PASS [   0.412s] (442/711) arcweft-cli::check agent_rag_query_records_local_embedding_fallback_diagnostic",
+            "        PASS [   1.360s] (443/711) arcweft-cli::check agent_rag_query_indexes_source_project_chunks",
+            "        SKIP [         ] (───────) arcweft-cli::check agent_repl_connects_source_from_input_session",
+            "        SKIP [         ] (───────) arcweft-cli::check agent_repl_executes_and_saves_physical_pointer_cell",
+            "        SKIP [         ] (───────) arcweft-cli::check agent_repl_inspects_fragments_and_captures_from_input_session",
+            "        SKIP [         ] (───────) arcweft-cli::check agent_repl_marks_failed_cells_partially_effectful_from_host_events",
+            "        SKIP [         ] (───────) arcweft-cli::check agent_repl_observes_and_lists_actions_from_input_session"
+          ],
+          "voiceStatusLines": []
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes",
+          "observedCause": "active dialogue has no voice",
+          "logStartLine": 2752,
+          "firstLines": [
+            "        FAIL [   0.530s] (643/711) arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+            "  stdout ───",
+            "",
+            "    running 1 test",
+            "    test spec_valid_run_edge_fixture_now_executes ... FAILED",
+            "",
+            "    failures:",
+            "",
+            "    failures:",
+            "        spec_valid_run_edge_fixture_now_executes",
+            "",
+            "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.44s",
+            "",
+            "  stderr ───",
+            "",
+            "    thread 'spec_valid_run_edge_fixture_now_executes' (60768) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:7789:5:",
+            "    D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\tests/fixtures/arcw/spec_should_pass/check/011_dialogue_line_value_and_handle_discard.arcw should now execute, stdout: {",
+            "      \"host_system\": {",
+            "        \"physical_cores\": 12,",
+            "        \"logical_threads\": 20,",
+            "        \"available_parallelism\": 20",
+            "      },",
+            "      \"executor\": \"bytecode_vm\",",
+            "      \"executor_stats\": {",
+            "        \"aot_fast_path_ops\": 0,",
+            "        \"pure_config\": {",
+            "          \"backend\": \"auto\",",
+            "          \"workers\": \"auto\",",
+            "          \"resolved_workers\": 20,",
+            "          \"worker_pool_active\": false,",
+            "          \"batch_min_len\": 1024,",
+            "          \"emit_object_artifacts\": false,",
+            "          \"math_backend\": \"auto\",",
+            "          \"math_wgpu_min_elements\": 67108864",
+            "        },",
+            "        \"pure_acceleration\": {",
+            "          \"annotated\": 0,",
+            "          \"inferred\": 0,"
+          ],
+          "voiceStatusLines": [
+            {
+              "line": 3097,
+              "text": "          \"fiber_status\": \"failed active dialogue has no voice\","
+            },
+            {
+              "line": 3137,
+              "text": "            \"active dialogue has no voice\""
+            },
+            {
+              "line": 3154,
+              "text": "      \"final_status\": \"failed active dialogue has no voice\""
+            }
+          ]
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks",
+          "observedCause": "type-check denied: sema.final_analysis, expression slot 8 has no admissible final type; solver phase was not reached",
+          "logStartLine": 3169,
+          "firstLines": [
+            "        FAIL [   0.387s] (654/711) arcweft-cli::check verify_json_records_required_solver_checks",
+            "  stdout ───",
+            "",
+            "    running 1 test",
+            "    test verify_json_records_required_solver_checks ... FAILED",
+            "",
+            "    failures:",
+            "",
+            "    failures:",
+            "        verify_json_records_required_solver_checks",
+            "",
+            "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.26s",
+            "",
+            "  stderr ───",
+            "",
+            "    thread 'verify_json_records_required_solver_checks' (62152) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:381:5:",
+            "    JSON report should include the required solver check: {",
+            "      \"version\": 1,",
+            "      \"status\": \"denied\",",
+            "      \"stage\": \"type-check\",",
+            "      \"diagnostics\": [",
+            "        {",
+            "          \"module\": null,",
+            "          \"stage\": \"type-check\",",
+            "          \"diagnostic\": {",
+            "            \"severity\": \"error\",",
+            "            \"code\": \"sema.final_analysis\",",
+            "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+            "            \"span\": null,",
+            "            \"labels\": [],",
+            "            \"notes\": [],",
+            "            \"suggestions\": [],",
+            "            \"commands\": []",
+            "          }",
+            "        }",
+            "      ]",
+            "    }",
+            ""
+          ],
+          "voiceStatusLines": []
+        },
+        {
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof",
+          "observedCause": "type-check denied: sema.final_analysis, expression slot 8 has no admissible final type; solver phase was not reached",
+          "logStartLine": 3216,
+          "firstLines": [
+            "        FAIL [   0.331s] (662/711) arcweft-cli::check verify_json_reports_missing_promotion_proof",
+            "  stdout ───",
+            "",
+            "    running 1 test",
+            "    test verify_json_reports_missing_promotion_proof ... FAILED",
+            "",
+            "    failures:",
+            "",
+            "    failures:",
+            "        verify_json_reports_missing_promotion_proof",
+            "",
+            "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.24s",
+            "",
+            "  stderr ───",
+            "",
+            "    thread 'verify_json_reports_missing_promotion_proof' (54208) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:348:5:",
+            "    JSON report should include the promotion obligation: {",
+            "      \"version\": 1,",
+            "      \"status\": \"denied\",",
+            "      \"stage\": \"type-check\",",
+            "      \"diagnostics\": [",
+            "        {",
+            "          \"module\": null,",
+            "          \"stage\": \"type-check\",",
+            "          \"diagnostic\": {",
+            "            \"severity\": \"error\",",
+            "            \"code\": \"sema.final_analysis\",",
+            "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+            "            \"span\": null,",
+            "            \"labels\": [],",
+            "            \"notes\": [],",
+            "            \"suggestions\": [],",
+            "            \"commands\": []",
+            "          }",
+            "        }",
+            "      ]",
+            "    }",
+            ""
+          ],
+          "voiceStatusLines": []
+        }
+      ],
+      "note": "Actual diagnostic excerpts; complete raw log is authoritative. Final failure-set comparison is performed against the terminal audit, not inferred from these excerpts."
+    },
+    "cliSourceProbe": {
+      "version": 1,
+      "production": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "inspectedHead": "3091178263b949f56e7a02a6aa5132eb1148df12",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/ime-purpose-enter-key-probe/arcw.toml",
+        "--json"
+      ],
+      "sourceSha256": "61c01e0c8ae7cceba229c0fcfeaa99ea8237c0db974a9e14e403217266ee4e47",
+      "manifestSha256": "f4bd3f4f2b0e05860cca74bc59881aa25f64d8850e15854914d20bc4243508e6",
+      "exitCode": 0,
+      "status": "ok",
+      "mainExecutableSha256": "b3dccecb0dc831419766fefcd41227aab18996b8ab4aeaf883551d4b0ced8b7a",
+      "binaryDrift": 0,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-08T09:02:48.3181823Z",
+      "finishedAt": "2026-11-08T09:02:48.6940231Z",
+      "scope": "Actual CLI type-check of a mounted retained String input and named Action handlers with authored container/input/button PublicIds and typed purpose/Enter-key hints; not an additional nextest case or a Native/Web capture."
+    },
+    "failedPreparation": {
+      "version": 1,
+      "base": "3091178263b949f56e7a02a6aa5132eb1148df12",
+      "command": [
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-cli",
+        "--lib",
+        "--tests",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/ime-purpose-enter-key-integrated-20261108.cli.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 3923,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-08T08:57:16.1388891Z",
+      "finishedAt": "2026-11-08T09:00:50.5825808Z"
+    },
+    "preparationCause": "Initial CLI preparation: E0786 mmap of libarcweft_bundle-02810d89b427c070.rlib refused with Windows OS1455 (paging file). No runtime tests executed. Retry retains the same source/features/profile/default jobs/budgets/selection and reuses completed builds.",
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-ime-input-policy-consumers.raw.zip",
+      "entries": 35,
+      "bytes": 1748758,
+      "sha256": "93ea771e0b75034d1a8b6ea5c344de661391a888c55242d3e809b94ddf98cdaa",
+      "containsExecutables": false
+    },
+    "preservedPriorRecords": 137,
+    "scope": "Fresh 71-package ID reverse closure and default CLI. No prior runs, logical reuse or focused owner repetitions are added. Remaining Source samples/placeholder/navigation/Scroll and actual Native/Web display remain distinct conditions."
   }
 }
