@@ -139,6 +139,8 @@ pub struct ViewRuntimeTextControl {
     pub bounds: ViewRuntimeTextControlBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
     #[serde(
         default,
         skip_serializing_if = "ViewRuntimeTextControlHandlers::is_empty"
@@ -253,6 +255,11 @@ impl ViewInputOptions {
         let label = runtime_label_source(program, self)
             .and_then(|source| text.and_then(|resource| resource.literal_text(source)))
             .map(ToOwned::to_owned);
+        let placeholder = self
+            .placeholder_text_source
+            .as_deref()
+            .and_then(|source| text.and_then(|resource| resource.literal_text(source)))
+            .map(ToOwned::to_owned);
         ViewRuntimeTextControl {
             public_id: self.public_id.clone(),
             target: self.public_id.clone(),
@@ -265,6 +272,7 @@ impl ViewInputOptions {
             bounds,
             value,
             label,
+            placeholder,
             handlers: ViewRuntimeTextControlHandlers::from_input(self, program),
             style: ViewRuntimeControlVisualStyle::default(),
         }
@@ -296,6 +304,7 @@ impl ViewInputKind {
             selection: ViewRuntimeTextSelection::collapsed_at_end(&value),
             value,
             label,
+            placeholder: None,
             kind: self,
             bounds,
             options: ViewRuntimeTextControlOptions {
@@ -391,6 +400,7 @@ impl fmt::Debug for ViewRuntimeTextControl {
             .field("kind", &self.kind)
             .field("bounds", &self.bounds)
             .field("label", &self.label)
+            .field("placeholder", &self.placeholder)
             .field("handlers", &self.handlers)
             .field("style", &self.style)
             .finish()
@@ -565,15 +575,13 @@ fn runtime_label_source<'a>(
     program: Option<&'a ViewProgramResource>,
     input: &'a ViewInputOptions,
 ) -> Option<&'a str> {
-    program
-        .and_then(|program| {
-            program.semantic_targets.iter().find_map(|target| {
-                (target.target == input.public_id || target.public_id == input.public_id)
-                    .then_some(target.label_text_source.as_deref())
-                    .flatten()
-            })
+    program.and_then(|program| {
+        program.semantic_targets.iter().find_map(|target| {
+            (target.target == input.public_id || target.public_id == input.public_id)
+                .then_some(target.label_text_source.as_deref())
+                .flatten()
         })
-        .or(input.placeholder_text_source.as_deref())
+    })
 }
 
 fn stable_text_session(public_id: &str) -> u64 {

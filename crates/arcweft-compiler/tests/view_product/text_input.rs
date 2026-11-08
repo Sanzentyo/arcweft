@@ -1,4 +1,6 @@
 use super::*;
+#[path = "text_input/placeholder.rs"]
+mod placeholder;
 use arcweft_core::{pure::VmRuntimePureCallBackend, value::RuntimeFormatContext};
 use arcweft_presentation::{
     input::InteractionTarget,

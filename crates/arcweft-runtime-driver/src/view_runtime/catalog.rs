@@ -636,13 +636,13 @@ fn map_instruction(
         }
         ViewProgramInstruction::BindTextInput {
             value,
-            label,
+            text,
             purpose,
             enter_key,
             ..
         } => ViewInstruction::BindTextInput {
             value: *value,
-            label: label.clone(),
+            text: text.clone(),
             purpose: *purpose,
             enter_key: *enter_key,
         },

@@ -704,9 +704,9 @@ fn binding_for_target(
         control.target == id
             && control.value.is_empty()
             && control
-                .label
+                .placeholder
                 .as_deref()
-                .is_some_and(|label| !label.is_empty())
+                .is_some_and(|placeholder| !placeholder.is_empty())
     });
     let composing = input.ime_composing()
         && input

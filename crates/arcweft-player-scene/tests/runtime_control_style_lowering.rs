@@ -253,6 +253,7 @@ fn text_control_with_kind_and_style(
         kind,
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
         label: Some("Feedback".to_owned()),
+        placeholder: None,
         handlers: ViewRuntimeTextControlHandlers::default(),
         style,
     }

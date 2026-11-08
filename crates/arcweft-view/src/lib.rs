@@ -85,7 +85,8 @@ pub use program::{
     ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
     ViewElementTextInputKind, ViewFxApplicationInstruction, ViewFxArgumentSource,
     ViewFxCallArgument, ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewProgram,
-    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextInputTextArgument,
+    ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{

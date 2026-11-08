@@ -7,7 +7,7 @@ use super::{
 use crate::view_runtime::{MountedViewTextInputSeal, mount_scoped_id};
 use arcweft_bundle::resource_codec::view::{ViewInputKind, ViewRuntimeTextControlBounds};
 use arcweft_core::value::RuntimeValue;
-use arcweft_view::{ViewExecutionInput, ViewExecutionInputSource, ViewExpressionProgram};
+use arcweft_view::{ViewExecutionInput, ViewExecutionInputSource, ViewTextInputTextArgument};
 
 impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
     #[allow(clippy::too_many_arguments)]
@@ -18,7 +18,7 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
         mounted: &mut MountedView,
         instruction: usize,
         input: ViewExecutionInput,
-        label: Option<&ViewExpressionProgram>,
+        text: &[ViewTextInputTextArgument],
         purpose: arcweft_presentation::text_input::TextInputPurpose,
         enter_key: arcweft_presentation::text_input::EnterKeyHint,
         builder: &mut MountRenderBuilder,
@@ -83,20 +83,24 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
             });
             session
         };
-        let label = label
-            .map(|label| {
-                match self.evaluate_expression_program(
-                    &key.handle,
-                    definition,
-                    mounted,
-                    instruction,
-                    label,
-                )? {
-                    RuntimeValue::String(value) => Ok(value),
-                    _ => Err(invalid()),
-                }
-            })
-            .transpose()?;
+        let mut label = None;
+        let mut placeholder = None;
+        for argument in text {
+            let value = match self.evaluate_expression_program(
+                &key.handle,
+                definition,
+                mounted,
+                instruction,
+                argument.program(),
+            )? {
+                RuntimeValue::String(value) => value,
+                _ => return Err(invalid()),
+            };
+            match argument {
+                ViewTextInputTextArgument::Label { .. } => label = Some(value),
+                ViewTextInputTextArgument::Placeholder { .. } => placeholder = Some(value),
+            }
+        }
         let bounds = self
             .program
             .text_control_bounds_for(authored_target.as_deref().ok_or_else(invalid)?)
@@ -117,6 +121,7 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
             bounds,
         );
         control.options.purpose = purpose;
+        control.placeholder = placeholder;
         control.options.enter_key = enter_key;
         control.selection = mounted
             .text_input_seals

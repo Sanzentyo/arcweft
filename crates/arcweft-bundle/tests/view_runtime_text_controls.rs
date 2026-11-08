@@ -70,6 +70,11 @@ fn view_input_resource_emits_runtime_text_control_shape() {
     assert_eq!(control.selection, ViewRuntimeTextSelection::new(3, 3));
     assert_eq!(control.kind, ViewInputKind::TextField);
     assert_eq!(control.label.as_deref(), Some("Player name"));
+    assert_eq!(control.placeholder.as_deref(), Some("Name"));
+    let without_semantics = view_input.runtime_text_controls(Some(&view_text), None);
+    assert_eq!(without_semantics[0].label, None);
+    assert_eq!(without_semantics[0].placeholder.as_deref(), Some("Name"));
+    assert_eq!(without_semantics[0].value, "Ada");
     assert_eq!(
         control.bounds,
         ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48)

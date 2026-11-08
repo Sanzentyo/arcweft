@@ -20,6 +20,7 @@ pub enum ViewElementArgumentRole {
     Target,
     Purpose,
     EnterKey,
+    Placeholder,
 }
 
 impl ViewElementArgumentRole {
@@ -31,6 +32,7 @@ impl ViewElementArgumentRole {
             Self::Target => 9,
             Self::Purpose => 10,
             Self::EnterKey => 11,
+            Self::Placeholder => 12,
             Self::Label => 0,
             Self::Enabled => 1,
             Self::X => 2,
@@ -73,6 +75,7 @@ impl ViewElementArgumentRole {
             "target" => Some(Self::Target),
             "purpose" => Some(Self::Purpose),
             "enter_key" => Some(Self::EnterKey),
+            "placeholder" => Some(Self::Placeholder),
             _ => None,
         }
     }
@@ -80,7 +83,7 @@ impl ViewElementArgumentRole {
     pub const fn accepts_element(self, element: ViewElementKind) -> bool {
         match self {
             Self::Value => element.is_text_input(),
-            Self::Purpose | Self::EnterKey => element.is_text_input(),
+            Self::Purpose | Self::EnterKey | Self::Placeholder => element.is_text_input(),
             Self::Label => element.is_action_control() || element.is_text_input(),
             Self::Enabled => element.is_action_control(),
             Self::Spacing => self.style_property(element).is_some(),
@@ -104,6 +107,7 @@ impl ViewElementArgumentRole {
             },
             Self::Value
             | Self::Label
+            | Self::Placeholder
             | Self::Enabled
             | Self::Part
             | Self::Target
@@ -121,6 +125,7 @@ impl ViewElementArgumentRole {
             Self::Height => Some(ViewPropertyKind::Height),
             Self::Value
             | Self::Label
+            | Self::Placeholder
             | Self::Enabled
             | Self::Spacing
             | Self::Part

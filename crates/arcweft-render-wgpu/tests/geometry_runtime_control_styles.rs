@@ -404,7 +404,8 @@ fn empty_text_control_paints_current_placeholder_style() {
         SemanticRole::TextField,
         HitRect::new(48.0, 48.0, 420.0, 48.0),
     )
-    .with_label("Your name")
+    .with_label("Player name")
+    .with_placeholder("Your name")
     .with_style(RenderControlVisualStyle {
         placeholder: Some([148, 163, 184, 255]),
         letter_spacing_milli: Some(500),
@@ -428,6 +429,57 @@ fn empty_text_control_paints_current_placeholder_style() {
             .all(|glyph| glyph.color.channels() == [148, 163, 184, 255])
     );
     assert_eq!(placeholder.layout.runs[0].style.letter_spacing_milli(), 500);
+    assert_eq!(
+        frame
+            .semantics
+            .find(&target("input.placeholder"))
+            .unwrap()
+            .label(),
+        Some("Player name")
+    );
+    assert!(!placeholder.interaction.character_bounds.is_empty());
+    assert!(
+        placeholder
+            .interaction
+            .character_bounds
+            .iter()
+            .all(|character| character.source_range.start == 0 && character.source_range.end == 0)
+    );
+}
+
+#[test]
+fn label_is_never_painted_as_placeholder_and_nonempty_value_wins() {
+    for (value, placeholder, expected) in [("", None, ""), ("Ada", Some("Your name"), "Ada")] {
+        let mut control = RenderTextInputControl::new(
+            target("input.name"),
+            TextInputSessionId(43),
+            value,
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(48.0, 48.0, 420.0, 48.0),
+        )
+        .with_label("Player name");
+        if let Some(placeholder) = placeholder {
+            control = control.with_placeholder(placeholder);
+        }
+        let frame = prepare(&scene(
+            vec![control],
+            Vec::new(),
+            InteractionVisualState::default(),
+        ));
+        assert_eq!(
+            frame.semantics.find(&target("input.name")).unwrap().label(),
+            Some("Player name")
+        );
+        let painted: String = frame
+            .text
+            .items()
+            .iter()
+            .map(|item| item.interaction.text.as_str())
+            .collect();
+        assert_eq!(painted, expected);
+    }
 }
 
 #[test]

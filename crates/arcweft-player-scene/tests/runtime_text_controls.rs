@@ -46,6 +46,11 @@ fn runtime_text_control_lowers_into_render_scene_and_focused_target() {
     let prepared = prepare(&scene).expect("frame prepares");
 
     assert_eq!(scene.text_inputs.len(), 1);
+    assert_eq!(scene.text_inputs[0].label.as_deref(), Some("Name"));
+    assert_eq!(
+        scene.text_inputs[0].placeholder.as_deref(),
+        Some("Your name")
+    );
     assert!(prepared.focused_text_input_target().is_some());
 }
 
@@ -515,6 +520,7 @@ fn runtime_control(public_id: &str, kind: ViewInputKind, value: &str) -> ViewRun
         kind,
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 260, 48),
         label: Some("Name".to_owned()),
+        placeholder: Some("Your name".to_owned()),
         handlers: ViewRuntimeTextControlHandlers::default(),
         style: ViewRuntimeControlVisualStyle::default(),
     }

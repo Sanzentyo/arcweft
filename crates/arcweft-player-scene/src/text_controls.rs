@@ -116,6 +116,9 @@ impl RuntimeTextControlLowerer {
         if let Some(label) = &control.label {
             render = render.with_label(label.clone());
         }
+        if let Some(placeholder) = &control.placeholder {
+            render = render.with_placeholder(placeholder.clone());
+        }
         render = render.with_style(lower_control_style(&control.style));
         Ok(render)
     }

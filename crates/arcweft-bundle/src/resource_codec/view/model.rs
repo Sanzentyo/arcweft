@@ -165,7 +165,7 @@ pub enum ViewProgramInstruction {
     /// A writable retained String field belonging to the current text element.
     BindTextInput {
         value: arcweft_view::ViewExecutionInput,
-        label: Option<arcweft_view::ViewExpressionProgram>,
+        text: Box<[arcweft_view::ViewTextInputTextArgument]>,
         purpose: arcweft_presentation::text_input::TextInputPurpose,
         enter_key: arcweft_presentation::text_input::EnterKeyHint,
         source: Option<SourceRangeRef>,

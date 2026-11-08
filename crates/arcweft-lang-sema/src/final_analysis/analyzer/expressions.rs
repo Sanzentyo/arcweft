@@ -4615,6 +4615,7 @@ impl Analyzer<'_, '_, '_> {
             };
             let expected = role.map(|role| match role {
                 arcweft_view::ViewElementArgumentRole::Label
+                | arcweft_view::ViewElementArgumentRole::Placeholder
                 | arcweft_view::ViewElementArgumentRole::Value => TypeKind::String,
                 arcweft_view::ViewElementArgumentRole::Enabled => TypeKind::Bool,
                 arcweft_view::ViewElementArgumentRole::Spacing => TypeKind::I32,

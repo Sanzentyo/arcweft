@@ -49,6 +49,7 @@ pub struct RenderTextInputControl {
     pub bounds: HitRect,
     pub viewport_clip: Option<HitRect>,
     pub label: Option<String>,
+    pub placeholder: Option<String>,
     pub style: RenderControlVisualStyle,
 }
 
@@ -73,6 +74,7 @@ impl RenderTextInputControl {
             bounds,
             viewport_clip: None,
             label: None,
+            placeholder: None,
             style: RenderControlVisualStyle::default(),
         }
     }
@@ -80,6 +82,12 @@ impl RenderTextInputControl {
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = Some(placeholder.into());
         self
     }
 
@@ -297,15 +305,19 @@ pub(super) fn build_text_input(
     }
 
     let text_start = text.len();
-    let text_rgba =
-        if control.value.is_empty() && control.label.as_deref().is_some_and(|v| !v.is_empty()) {
-            visual
-                .placeholder
-                .or(visual.text)
-                .unwrap_or(palette.choice_text)
-        } else {
-            visual.text.unwrap_or(palette.choice_text)
-        };
+    let text_rgba = if control.value.is_empty()
+        && control
+            .placeholder
+            .as_deref()
+            .is_some_and(|v| !v.is_empty())
+    {
+        visual
+            .placeholder
+            .or(visual.text)
+            .unwrap_or(palette.choice_text)
+    } else {
+        visual.text.unwrap_or(palette.choice_text)
+    };
     let style = super::prepared_text::resolved_plain_style(
         control_font_families(visual),
         text_control_font_size(control, visual),
@@ -398,7 +410,10 @@ struct TextControlDisplayChar {
 impl TextControlDisplayText {
     fn for_control(control: &RenderTextInputControl, options: &TextInputOptions) -> Self {
         if control.value.is_empty()
-            && let Some(placeholder) = control.label.as_deref().filter(|value| !value.is_empty())
+            && let Some(placeholder) = control
+                .placeholder
+                .as_deref()
+                .filter(|value| !value.is_empty())
         {
             return Self::placeholder(placeholder);
         }

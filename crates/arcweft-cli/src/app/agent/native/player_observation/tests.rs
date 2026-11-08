@@ -352,6 +352,7 @@ fn runtime_text_control(public_id: &str) -> ViewRuntimeTextControl {
         kind: ViewInputKind::TextField,
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
         label: None,
+        placeholder: None,
         handlers: ViewRuntimeTextControlHandlers::default(),
         style: ViewRuntimeControlVisualStyle::default(),
     }

@@ -63,13 +63,34 @@ pub enum ViewInstruction {
     BindLocal(crate::ViewBindingProgram),
     BindTextInput {
         value: crate::ViewExecutionInput,
-        label: Option<crate::ViewExpressionProgram>,
+        text: Box<[ViewTextInputTextArgument]>,
         purpose: arcweft_presentation::text_input::TextInputPurpose,
         enter_key: arcweft_presentation::text_input::EnterKeyHint,
     },
     ApplyFx(ViewFxApplicationInstruction),
     BindEvent(BindEvent),
     AttachSemantic(ViewSemanticSpec),
+}
+
+/// A text-control expression and its display role, retained in authored order.
+/// Label names the control for accessibility; placeholder hints at an empty value.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "role", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ViewTextInputTextArgument {
+    Label {
+        program: crate::ViewExpressionProgram,
+    },
+    Placeholder {
+        program: crate::ViewExpressionProgram,
+    },
+}
+
+impl ViewTextInputTextArgument {
+    pub const fn program(&self) -> &crate::ViewExpressionProgram {
+        match self {
+            Self::Label { program } | Self::Placeholder { program } => program,
+        }
+    }
 }
 
 /// Closed event algebra accepted by authored View programs and runtime input routing.

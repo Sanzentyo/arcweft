@@ -728,7 +728,7 @@ impl ViewProgramResource {
                             );
                         }
                     }
-                    ViewProgramInstruction::BindTextInput { value, label, .. } => {
+                    ViewProgramInstruction::BindTextInput { value, text, .. } => {
                         self.validate_execution_inputs(
                             definition,
                             std::slice::from_ref(value),
@@ -762,9 +762,13 @@ impl ViewProgramResource {
                                 "view_text_input_state",
                             ));
                         }
-                        if let Some(label) = label {
-                            let signature = self
-                                .validate_expression_program(program, definition, label, &locals)?;
+                        for argument in text {
+                            let signature = self.validate_expression_program(
+                                program,
+                                definition,
+                                argument.program(),
+                                &locals,
+                            )?;
                             if !signature
                                 .result
                                 .and_then(|ty| program.runtime_types.get(ty.index()))
@@ -776,7 +780,7 @@ impl ViewProgramResource {
                                 })
                             {
                                 return Err(SectionCodecError::NonCanonicalTable(
-                                    "view_text_input_label",
+                                    "view_text_input_text",
                                 ));
                             }
                         }
@@ -1855,7 +1859,24 @@ impl ViewProgramResource {
                     | ViewProgramInstruction::EmitImage { .. }
                     | ViewProgramInstruction::EmitCustom { .. }
                     | ViewProgramInstruction::CallView { .. } => target = Some(ordinal),
-                    ViewProgramInstruction::BindTextInput { value, .. } => {
+                    ViewProgramInstruction::BindTextInput { value, text, .. } => {
+                        let mut label_seen = false;
+                        let mut placeholder_seen = false;
+                        for argument in text {
+                            let seen = match argument {
+                                arcweft_view::ViewTextInputTextArgument::Label { .. } => {
+                                    &mut label_seen
+                                }
+                                arcweft_view::ViewTextInputTextArgument::Placeholder { .. } => {
+                                    &mut placeholder_seen
+                                }
+                            };
+                            if std::mem::replace(seen, true) {
+                                return Err(SectionCodecError::NonCanonicalTable(
+                                    "view_text_input_text",
+                                ));
+                            }
+                        }
                         self.validate_execution_inputs(
                             definition,
                             std::slice::from_ref(value),

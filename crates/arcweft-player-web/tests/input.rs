@@ -423,6 +423,7 @@ fn runtime_control(public_id: &str, kind: ViewInputKind, value: &str) -> ViewRun
         kind,
         bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 260, 48),
         label: Some("Name".to_owned()),
+        placeholder: None,
         handlers: ViewRuntimeTextControlHandlers::default(),
         style: ViewRuntimeControlVisualStyle::default(),
     }

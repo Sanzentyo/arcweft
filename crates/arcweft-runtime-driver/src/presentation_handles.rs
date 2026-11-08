@@ -457,6 +457,7 @@ mod tests {
             kind: ViewInputKind::TextField,
             bounds: ViewRuntimeTextControlBounds::from_px(0, 0, 100, 24),
             label: None,
+            placeholder: None,
             handlers: ViewRuntimeTextControlHandlers::default(),
             style: ViewRuntimeControlVisualStyle::default(),
         }

@@ -152,7 +152,10 @@ Copy として保持値を複製しない。
 `local state mut` が所有する String フィールドを指定する。第1位置引数も
 `value` に対応する。通常の `let`、parameter、一時 String、読み取り専用の
 state は入力先にならない。現在の入力契約はフィールド全体を扱い、レコード内の
-部分フィールドや式から書き込み先を推測しない。表示名は `label = String式` で指定する。
+部分フィールドや式から書き込み先を推測しない。アクセシビリティ名は `label = String式`、
+空の値への表示ヒントは `placeholder = String式` で指定する。両式は記述順に評価し、
+保持値の更新に応じて再評価する。placeholderは非空の値を置換せず、入力値・選択範囲・
+submit payloadへ取り込まない。labelはplaceholder描画に使わず、placeholderはlabelへ補完しない。
 Sema は入力先の宣言を checked argument に保持し、compiler はその fact を消費する。
 保持フィールドの bundle 宣言は identity と ReadOnly／ReadWrite を一つの record に持つ。
 入力や handler の書き込み要求から権限を作らず、元の ReadWrite 宣言と照合する。

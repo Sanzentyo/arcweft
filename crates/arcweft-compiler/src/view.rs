@@ -2008,11 +2008,17 @@ impl AuthoredViewBodyLowerer<'_> {
                 source: arcweft_view::ViewExecutionInputSource::Local(local.coordinate),
                 value_type: local.value_type,
             };
-            let label = arguments
+            let text = arguments
                 .iter()
-                .find(|argument| argument.role() == arcweft_view::ViewElementArgumentRole::Label)
+                .filter(|argument| {
+                    matches!(
+                        argument.role(),
+                        arcweft_view::ViewElementArgumentRole::Label
+                            | arcweft_view::ViewElementArgumentRole::Placeholder
+                    )
+                })
                 .map(|argument| {
-                    ViewExpressionLowerer {
+                    let program = ViewExpressionLowerer {
                         module: self.module,
                         project: self.project,
                         analysis: self.analysis,
@@ -2023,9 +2029,18 @@ impl AuthoredViewBodyLowerer<'_> {
                         locals: &self.locals,
                         output: self.output,
                     }
-                    .lower(argument.value())
+                    .lower(argument.value())?;
+                    Ok(match argument.role() {
+                        arcweft_view::ViewElementArgumentRole::Label => {
+                            arcweft_view::ViewTextInputTextArgument::Label { program }
+                        }
+                        arcweft_view::ViewElementArgumentRole::Placeholder => {
+                            arcweft_view::ViewTextInputTextArgument::Placeholder { program }
+                        }
+                        _ => unreachable!("text argument roles are exhaustive"),
+                    })
                 })
-                .transpose()?;
+                .collect::<Result<Box<[_]>, ViewProjectLowerError>>()?;
             let mut purpose = if element == arcweft_view::ViewElementKind::SecureField {
                 arcweft_presentation::text_input::TextInputPurpose::Password
             } else {
@@ -2057,7 +2072,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 .instructions
                 .push(ViewProgramInstruction::BindTextInput {
                     value,
-                    label,
+                    text,
                     purpose,
                     enter_key,
                     source: None,
@@ -2296,6 +2311,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 role,
                 ViewElementArgumentRole::Value
                     | ViewElementArgumentRole::Label
+                    | ViewElementArgumentRole::Placeholder
                     | ViewElementArgumentRole::Enabled
                     | ViewElementArgumentRole::Part
                     | ViewElementArgumentRole::Target
