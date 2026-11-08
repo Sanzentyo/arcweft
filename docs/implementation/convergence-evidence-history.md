@@ -15577,3 +15577,13 @@ Source `7af6e561ffa90716501e1ee0f15a397b666bffde` と同じRust入力の非CLI r
 その後、既存6回帰のruntimeを実AWFB encode/decodeの往復へ移した。追加した実BundleSessionのplayer batch回帰はowner-r7で7件中6 PASS／1 FAIL、change→submitがViewEvent(UnknownBinding)になることを再現した。Native/Webの実call-siteはともにqueue_text_control_write_backsを使用する。状態更新後に次のeventまでViewを再評価してsealと表示を公開し、元のVM時刻ではflowを実行しない。Text controlの旧投影はmoveで評価へ渡し、投影未更新時は元へ戻す。入力／handlerのadmission失敗後は再評価せず、完全sessionを保つ。
 
 owner-r8は7／7 PASS、r9はclick→change→submit／完全session失敗原子性を加え9／9 PASS、r10は投影Clone除去後9／9 PASS、r11は成功したclick後もruntime時計／sequenceとexecutorが不変で表示だけ更新されることを加え9／9 PASS（72 skip、0.561秒、3897入力 drift0）。後続のSource変更で先行7351件を再実行したことにはしない。Cargo入力不変のmetadataからRuntimeDriverの逆依存12 packageを確定し、後続修復はこのclosureとworkspace gates／CLIで検証する。旧sampleの未実装input factory等は移行前で、Scroll CLIの完了判定と既受入境界の状態は変更しない。
+
+## 2026-11-08 player batch修復の逆依存とworkspace品質検証
+
+Source `5a879a8dbd9d817e39db1d8125fb806fff046e7e` のRuntimeDriver逆依存12 packageのうち、非CLI 11 packageは1713／1713 PASS、2 slow、除外0、112.568秒。3897入力とcatalogの差分0、元pathの実EXEを実行前後に照合した。workspace全98 package・全target・全featureのlocked check／Clippy、canonical構造gate、変更Rust pathのfmtも終了0。Clippyの既存警告は保持する。
+
+旧7351件のうちDriver closure 1710件は今回の1713件で置換し、影響外5641件を元Source・command・入力guard付きで再利用する。新9件のowner実行を重ねて数えず、一つの全件再実行とも呼ばない。先行記録の「後続修復のworkspace gates／driver逆依存未完了」を実測に従い更新した。Generic Matchを含む既受入cutは維持する。
+
+同じSourceのCLIは711実行、707 PASS／4 FAIL／23 SKIP、26 slow、511.677秒、3921入力drift0。失敗IDは先行と同じ Scroll capture／release、spec_valid_run_edge_fixture_now_executes、verify_json_records_required_solver_checks、verify_json_reports_missing_promotion_proof。ID一致から原因解消や全CLI通過を推論しない。実CLI本体は元pathで前後SHA256 `a765021fc71a16f1f192a59cd9fc9057c2184acf950c66cbf92f812131abc96d`。
+
+影響外5641 PASSの再利用＋現Driver1713 PASS＋現CLI707 PASS／4 FAILで、論理的な重複なし被覆8065実行相当・8061 PASS／4 FAIL／41 SKIP。旧8056件と今回の各実行を合算せず、current-statusの横断行を最新入力へ更新した。元131件のJSON記録は値を変えず、新しいconsumer記録だけを追記した。新旧終端、準備失敗、9件ownerの修復前後、Source／EXE pin、graph、構造レビューと品質ログは [task-retained-text-input-consumers.raw.zip](acceptance-evidence/task-retained-text-input-consumers.raw.zip) 111 entry／4723361 bytes、SHA256 `8503e68ff851ec67b6ddc98f00275ed1a4a5e1d299cb0952bb31f75c82374a95` に保持する。実行ファイルは含めない。

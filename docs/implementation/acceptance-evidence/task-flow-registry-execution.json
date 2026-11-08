@@ -52824,5 +52824,472 @@
       ],
       "gate": "canonical structure audit exit 0; no blocking dependency violation"
     }
+  },
+  "retainedTextInputConsumers": {
+    "version": 1,
+    "date": "2026-11-08",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+      "parent": "46e23e5ff53b4954193e9a5bccf85367411db0c2",
+      "tree": "cd2a8fc3487f8ae6554222702380cd61bd43c571",
+      "remote": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "blob": "ed792453b5fc9bac3c949e8a36e95fa604422f3d"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session.rs",
+          "blob": "869eb9673173abfef7d824ecd11e2bb57abff8a6"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "784303d7b3555b419a4df784dc77e2bcd9200e86"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "24b845f3fc9f716516d24a3d59ffd0a08beab8b9"
+        },
+        {
+          "path": "docs/implementation/current-status.md",
+          "blob": "6ee4e108bfdbee56130f7669bdfd5a8646a46704"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "fc28495a5bf5630d37f28a19a96817ca8abf2c8c85da0ba2071456974c813267",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T05:17:31.7982561Z"
+    },
+    "originalProduction": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+    "originalCoreConsumers": {
+      "version": 1,
+      "base": "46e23e5ff53b4954193e9a5bccf85367411db0c2",
+      "run": "retained-text-input-integrated-20261108.noncli-r3.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 801.861s] 7351 tests run: 7351 passed (9 slow), 18 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7351,
+      "passed": 7351,
+      "failed": 0,
+      "skipped": 18,
+      "selectedPackages": 0,
+      "matchedPackages": 49,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3418,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T05:02:49.7200720Z"
+    },
+    "completeOriginalInputGuard": {
+      "version": 1,
+      "production": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "inputs": 3897,
+      "sourceDrift": 0,
+      "before": "retained-text-input-20261108.quality.source.json",
+      "finishedAt": "2026-11-08T05:03:59.6746456Z"
+    },
+    "currentDriverConsumers": {
+      "version": 1,
+      "base": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+      "run": "retained-text-input-batch-20261108.noncli.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 112.568s] 1713 tests run: 1713 passed (2 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1713,
+      "passed": 1713,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 0,
+      "matchedPackages": 11,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3897,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T05:28:15.1622436Z"
+    },
+    "cli": {
+      "version": 1,
+      "base": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+      "run": "retained-text-input-batch-20261108.cli.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 511.677s] 711 tests run: 707 passed (26 slow), 4 failed, 23 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 711,
+      "passed": 707,
+      "failed": 4,
+      "skipped": 23,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3921,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-08T05:41:27.4384000Z"
+    },
+    "cliMain": {
+      "version": 1,
+      "path": "D:/git/arcweft/target/debug/arcw.exe",
+      "sha256": "a765021fc71a16f1f192a59cd9fc9057c2184acf950c66cbf92f812131abc96d",
+      "runtimeStartedAt": "2026-11-08T05:32:50.6084657Z",
+      "runtimeFinishedAt": "2026-11-08T05:41:25.2530814Z",
+      "beforeRuntime": true,
+      "binaryDrift": 0,
+      "recordedAt": "2026-11-08T05:41:25.5866015Z"
+    },
+    "newOwnerEpochs": [
+      {
+        "version": 1,
+        "base": "46e23e5ff53b4954193e9a5bccf85367411db0c2",
+        "run": "retained-text-input-20261108.owner-r7.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.536s] 7 tests run: 6 passed, 1 failed, 72 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 7,
+        "passed": 6,
+        "failed": 1,
+        "skipped": 72,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "held": 0,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::view_product",
+            "test": "text_input::retained_text_input_player_batch_changes_then_submits_without_losing_the_handler"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-08T05:05:22.2653050Z"
+      },
+      {
+        "version": 1,
+        "base": "46e23e5ff53b4954193e9a5bccf85367411db0c2",
+        "run": "retained-text-input-20261108.owner-r8.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.539s] 7 tests run: 7 passed, 72 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 72,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "held": 0,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T05:09:59.7545965Z"
+      },
+      {
+        "version": 1,
+        "base": "46e23e5ff53b4954193e9a5bccf85367411db0c2",
+        "run": "retained-text-input-20261108.owner-r9.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.621s] 9 tests run: 9 passed, 72 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 72,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "held": 0,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T05:12:37.9294747Z"
+      },
+      {
+        "version": 1,
+        "base": "46e23e5ff53b4954193e9a5bccf85367411db0c2",
+        "run": "retained-text-input-20261108.owner-r10.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.608s] 9 tests run: 9 passed, 72 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 72,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "held": 0,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T05:14:21.8087965Z"
+      },
+      {
+        "version": 1,
+        "base": "46e23e5ff53b4954193e9a5bccf85367411db0c2",
+        "run": "retained-text-input-20261108.owner-r11.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.561s] 9 tests run: 9 passed, 72 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 72,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "held": 0,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T05:15:47.9859981Z"
+      }
+    ],
+    "workspaceQuality": [
+      {
+        "version": 1,
+        "base": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+        "command": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T05:17:34.2394634Z",
+        "finishedAt": "2026-11-08T05:18:04.8303493Z"
+      },
+      {
+        "version": 1,
+        "base": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+        "command": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T05:18:05.2925151Z",
+        "finishedAt": "2026-11-08T05:18:35.1857542Z"
+      },
+      {
+        "version": 1,
+        "base": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/retained-text-input-batch-20261108.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3897,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T05:18:35.5798670Z",
+        "finishedAt": "2026-11-08T05:18:39.8315199Z"
+      },
+      {
+        "base": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+        "paths": [
+          "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "crates/arcweft-bundle/src/resource_codec/view/merge.rs",
+          "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "crates/arcweft-bundle/src/resource_codec/view/model/input.rs",
+          "crates/arcweft-bundle/src/resource_codec/view/semantic.rs",
+          "crates/arcweft-compiler/src/view.rs",
+          "crates/arcweft-compiler/tests/view_product.rs",
+          "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "crates/arcweft-core/src/value/borrowed.rs",
+          "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "crates/arcweft-player-scene/src/frame/surfaces.rs",
+          "crates/arcweft-player-scene/src/frame/view_geometry/tests.rs",
+          "crates/arcweft-player-scene/src/frame/view_style/tests.rs",
+          "crates/arcweft-player-scene/tests/scroll_regions.rs",
+          "crates/arcweft-player-web/src/inset_shadow_exact_capture.rs",
+          "crates/arcweft-runtime-driver/src/display/tests.rs",
+          "crates/arcweft-runtime-driver/src/session.rs",
+          "crates/arcweft-runtime-driver/src/view_projection.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/catalog/fingerprint.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/handler.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/replacement/reconcile.rs",
+          "crates/arcweft-view/src/element_argument.rs",
+          "crates/arcweft-view/src/expression_program.rs",
+          "crates/arcweft-view/src/lib.rs",
+          "crates/arcweft-view/src/program.rs"
+        ],
+        "exitCode": 0,
+        "sourceDrift": 0
+      }
+    ],
+    "graph": {
+      "version": 1,
+      "metadata": "retained-text-input-integrated-20261108.metadata.json",
+      "metadataSource": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "changedOwner": "arcweft-runtime-driver",
+      "reverseCount": 12,
+      "packages": [
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-verify-lsp"
+      ],
+      "cargoInputsUnchanged": true
+    },
+    "partition": {
+      "reusedUnchangedOutsideDriverClosure": 5641,
+      "replacedOriginalDriverCases": 1710,
+      "newDriverCases": 1713,
+      "logicalNonCli": 7354,
+      "logicalIncludingCli": 8065,
+      "note": "Logical unique coverage combines reused unaffected original input with current driver/CLI runs; it is not one fresh all-Core run. Focused owner cases are not added again."
+    },
+    "preservedPreparationFailures": [
+      "noncli preparation 101, OS1455; no runtime",
+      "noncli-r2 preparation 101, OS1455; no runtime"
+    ],
+    "nativeBinPreparation": {
+      "command": [
+        "nextest",
+        "list",
+        "--locked",
+        "--workspace",
+        "--exclude",
+        "arcweft-cli",
+        "--all-features",
+        "--bin",
+        "arcweft-player-native",
+        "--message-format",
+        "json"
+      ],
+      "exitCode": 0,
+      "purpose": "prepare the remaining binary before retrying the unchanged complete consumer selection",
+      "finishedAt": "2026-11-08T04:40:35.5696449Z"
+    },
+    "structuralReview": {
+      "version": 1,
+      "source": "5a879a8dbd9d817e39db1d8125fb806fff046e7e",
+      "baseline": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "files": [
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "owner": "arcweft-compiler",
+          "bytes": "19958",
+          "physical_lines": "500",
+          "code_lines": "482",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "80246",
+          "physical_lines": "1974",
+          "code_lines": "1852",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "328"
+        }
+      ],
+      "packages": [
+        {
+          "package": "arcweft-compiler",
+          "manifest": "crates/arcweft-compiler/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "25",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "10"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "manifest": "crates/arcweft-runtime-driver/Cargo.toml",
+          "workspace_fan_in": "6",
+          "workspace_fan_out": "16",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "3"
+        }
+      ],
+      "growth": {
+        "textInputTests": "170 added / 20 removed",
+        "session": "45 added / 8 removed"
+      },
+      "disposition": "Session owns ordering of accepted player events and same-clock presentation refresh; no new scheduler, value authority, dependency, feature or unsafe. Existing state/executor ownership is preserved. Nine actual codec/player tests remain with the text-input owner. Prior 33-path structural review remains applicable to unchanged owners."
+    },
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-retained-text-input-consumers.raw.zip",
+      "entries": 111,
+      "bytes": 4723361,
+      "sha256": "8503e68ff851ec67b6ddc98f00275ed1a4a5e1d299cb0952bb31f75c82374a95",
+      "containsExecutables": false
+    },
+    "scope": "Owner/codec/player-batch boundary validated. Old source factory samples, named Action UI bridge, Scroll fixture and actual Native/Web capture remain independent unmet boundaries. Generic Match and other accepted cuts stay accepted.",
+    "preservedPriorRecords": 131
   }
 }
