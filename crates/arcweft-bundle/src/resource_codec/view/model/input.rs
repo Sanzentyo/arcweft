@@ -2,6 +2,7 @@ use super::{
     CrossSectionRef, Deserialize, Serialize, ViewElementKind, ViewElementTextInputKind,
     ViewHandlerRef, ViewProgramResource, ViewRuntimeControlVisualStyle, ViewTextResource, fmt,
 };
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 use arcweft_view::ViewHandlerProgramId;
 
 /// Product text-input metadata section decoded from `ViewInput`.
@@ -21,7 +22,7 @@ pub struct ViewInputOptions {
     pub kind: ViewInputKind,
     pub value_text_source: String,
     pub placeholder_text_source: Option<String>,
-    pub purpose: ViewInputPurpose,
+    pub purpose: TextInputPurpose,
     pub autocorrect: TextAssistPolicy,
     pub spellcheck: TextAssistPolicy,
     pub capitalization: TextCapitalization,
@@ -49,23 +50,6 @@ pub enum ViewInputKind {
     TextField,
     TextArea,
     SecureField,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewInputPurpose {
-    #[default]
-    Text,
-    Search,
-    Name,
-    Email,
-    Url,
-    Telephone,
-    Number,
-    Decimal,
-    Password,
-    Pin,
-    Terminal,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -117,19 +101,6 @@ pub enum TextCapitalization {
     Sentences,
     Words,
     Characters,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EnterKeyHint {
-    #[default]
-    Default,
-    Enter,
-    Done,
-    Go,
-    Next,
-    Search,
-    Send,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -209,7 +180,7 @@ pub struct ViewRuntimeTextControlBounds {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewRuntimeTextControlOptions {
-    pub purpose: ViewInputPurpose,
+    pub purpose: TextInputPurpose,
     pub autocorrect: TextAssistPolicy,
     pub spellcheck: TextAssistPolicy,
     pub capitalization: TextCapitalization,
@@ -329,9 +300,9 @@ impl ViewInputKind {
             bounds,
             options: ViewRuntimeTextControlOptions {
                 purpose: if self.is_secure() {
-                    ViewInputPurpose::Password
+                    TextInputPurpose::Password
                 } else {
-                    ViewInputPurpose::Text
+                    TextInputPurpose::Text
                 },
                 autocorrect: if self.is_secure() {
                     TextAssistPolicy::Disabled

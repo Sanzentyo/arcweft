@@ -5,9 +5,8 @@ use crate::frame::{
 };
 use crate::input::InputController;
 use arcweft_bundle::resource_codec::view::{
-    EnterKeyHint as ViewEnterKeyHint, TextAssistPolicy as ViewTextAssistPolicy,
-    TextCapitalization as ViewTextCapitalization, ViewInputKind, ViewInputPurpose,
-    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextSelection,
+    TextAssistPolicy as ViewTextAssistPolicy, TextCapitalization as ViewTextCapitalization,
+    ViewInputKind, ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextSelection,
     ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
     ViewTextVerticalNavigationPolicy,
 };
@@ -16,9 +15,9 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
-    Capitalization, EnterKeyHint, TextAssistPolicy, TextByteOffset, TextInputOptions,
-    TextInputPurpose, TextInputSessionId, TextRange, TextSelectionPolicy, TextShortcutPolicy,
-    TextTabPolicy, TextVerticalNavigationPolicy,
+    Capitalization, TextAssistPolicy, TextByteOffset, TextInputOptions, TextInputSessionId,
+    TextRange, TextSelectionPolicy, TextShortcutPolicy, TextTabPolicy,
+    TextVerticalNavigationPolicy,
 };
 use arcweft_render_wgpu::geometry::{FramePlanError, RenderTextInputControl};
 use arcweft_view::geometry::ViewGeometryConsumer;
@@ -173,11 +172,11 @@ fn lower_role(kind: ViewInputKind) -> SemanticRole {
 
 fn lower_options(control: &ViewRuntimeTextControl) -> TextInputOptions {
     TextInputOptions::default()
-        .with_purpose(lower_purpose(control.options.purpose))
+        .with_purpose(control.options.purpose)
         .with_autocorrect(lower_assist(control.options.autocorrect))
         .with_spellcheck(lower_assist(control.options.spellcheck))
         .with_capitalization(lower_capitalization(control.options.capitalization))
-        .with_enter_key(lower_enter_key(control.options.enter_key))
+        .with_enter_key(control.options.enter_key)
         .multiline(control.options.multiline || control.kind.is_multiline())
         .with_selection_policy(lower_selection_policy(control.options.selection_policy))
         .with_shortcut_policy(lower_shortcut_policy(control.options.shortcut_policy))
@@ -186,22 +185,6 @@ fn lower_options(control: &ViewRuntimeTextControl) -> TextInputOptions {
             control.options.vertical_navigation_policy,
         ))
         .secure(control.options.secure_policy.is_secure() || control.kind.is_secure())
-}
-
-fn lower_purpose(purpose: ViewInputPurpose) -> TextInputPurpose {
-    match purpose {
-        ViewInputPurpose::Text => TextInputPurpose::Text,
-        ViewInputPurpose::Search => TextInputPurpose::Search,
-        ViewInputPurpose::Name => TextInputPurpose::Name,
-        ViewInputPurpose::Email => TextInputPurpose::Email,
-        ViewInputPurpose::Url => TextInputPurpose::Url,
-        ViewInputPurpose::Telephone => TextInputPurpose::Telephone,
-        ViewInputPurpose::Number => TextInputPurpose::Number,
-        ViewInputPurpose::Decimal => TextInputPurpose::Decimal,
-        ViewInputPurpose::Password => TextInputPurpose::Password,
-        ViewInputPurpose::Pin => TextInputPurpose::Pin,
-        ViewInputPurpose::Terminal => TextInputPurpose::Terminal,
-    }
 }
 
 fn lower_assist(policy: ViewTextAssistPolicy) -> TextAssistPolicy {
@@ -218,18 +201,6 @@ fn lower_capitalization(capitalization: ViewTextCapitalization) -> Capitalizatio
         ViewTextCapitalization::Sentences => Capitalization::Sentences,
         ViewTextCapitalization::Words => Capitalization::Words,
         ViewTextCapitalization::Characters => Capitalization::Characters,
-    }
-}
-
-fn lower_enter_key(enter_key: ViewEnterKeyHint) -> EnterKeyHint {
-    match enter_key {
-        ViewEnterKeyHint::Default => EnterKeyHint::Default,
-        ViewEnterKeyHint::Enter => EnterKeyHint::Enter,
-        ViewEnterKeyHint::Done => EnterKeyHint::Done,
-        ViewEnterKeyHint::Go => EnterKeyHint::Go,
-        ViewEnterKeyHint::Next => EnterKeyHint::Next,
-        ViewEnterKeyHint::Search => EnterKeyHint::Search,
-        ViewEnterKeyHint::Send => EnterKeyHint::Send,
     }
 }
 

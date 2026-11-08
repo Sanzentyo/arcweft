@@ -12,6 +12,7 @@ pub const CLOSED_ENUM_IDENTITY_VERSION: u8 = 1;
 pub enum ClosedEnumOwnerId {
     RichText = 0,
     Fx = 1,
+    TextInput = 2,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -84,7 +85,7 @@ pub enum ClosedEnumIdentityError {
 }
 
 impl ClosedEnumOwnerId {
-    pub const ALL: [Self; 2] = [Self::RichText, Self::Fx];
+    pub const ALL: [Self; 3] = [Self::RichText, Self::Fx, Self::TextInput];
     pub const fn tag(self) -> u8 {
         self as u8
     }
@@ -92,6 +93,7 @@ impl ClosedEnumOwnerId {
         match tag {
             0 => Ok(Self::RichText),
             1 => Ok(Self::Fx),
+            2 => Ok(Self::TextInput),
             value => Err(ClosedEnumIdentityError::UnknownOwner(value)),
         }
     }
@@ -180,7 +182,15 @@ mod tests {
             serde_json::from_str::<ClosedEnumOwnerId>("0").unwrap(),
             ClosedEnumOwnerId::RichText
         );
-        assert!(serde_json::from_str::<ClosedEnumOwnerId>("2").is_err());
+        assert_eq!(
+            serde_json::to_string(&ClosedEnumOwnerId::TextInput).unwrap(),
+            "2"
+        );
+        assert_eq!(
+            serde_json::from_str::<ClosedEnumOwnerId>("2").unwrap(),
+            ClosedEnumOwnerId::TextInput
+        );
+        assert!(serde_json::from_str::<ClosedEnumOwnerId>("3").is_err());
         assert!(serde_json::from_str::<ClosedEnumOwnerId>("256").is_err());
     }
 

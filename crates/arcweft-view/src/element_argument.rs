@@ -18,6 +18,8 @@ pub enum ViewElementArgumentRole {
     Spacing,
     Part,
     Target,
+    Purpose,
+    EnterKey,
 }
 
 impl ViewElementArgumentRole {
@@ -27,6 +29,8 @@ impl ViewElementArgumentRole {
         match self {
             Self::Value => 8,
             Self::Target => 9,
+            Self::Purpose => 10,
+            Self::EnterKey => 11,
             Self::Label => 0,
             Self::Enabled => 1,
             Self::X => 2,
@@ -67,6 +71,8 @@ impl ViewElementArgumentRole {
             "spacing" => Some(Self::Spacing),
             "part" => Some(Self::Part),
             "target" => Some(Self::Target),
+            "purpose" => Some(Self::Purpose),
+            "enter_key" => Some(Self::EnterKey),
             _ => None,
         }
     }
@@ -74,6 +80,7 @@ impl ViewElementArgumentRole {
     pub const fn accepts_element(self, element: ViewElementKind) -> bool {
         match self {
             Self::Value => element.is_text_input(),
+            Self::Purpose | Self::EnterKey => element.is_text_input(),
             Self::Label => element.is_action_control() || element.is_text_input(),
             Self::Enabled => element.is_action_control(),
             Self::Spacing => self.style_property(element).is_some(),
@@ -95,7 +102,13 @@ impl ViewElementArgumentRole {
                 }
                 Some(ViewPhysicalFlow::Overlay) | None => None,
             },
-            Self::Value | Self::Label | Self::Enabled | Self::Part | Self::Target => None,
+            Self::Value
+            | Self::Label
+            | Self::Enabled
+            | Self::Part
+            | Self::Target
+            | Self::Purpose
+            | Self::EnterKey => None,
         }
     }
 
@@ -112,6 +125,18 @@ impl ViewElementArgumentRole {
             | Self::Spacing
             | Self::Part
             | Self::Target => None,
+            Self::Purpose | Self::EnterKey => None,
+        }
+    }
+
+    pub const fn compile_time_enum_domain(
+        self,
+    ) -> Option<arcweft_id::closed_enum::ClosedEnumDomainId> {
+        use arcweft_presentation::text_input::TextInputPolicyDomain;
+        match self {
+            Self::Purpose => Some(TextInputPolicyDomain::Purpose.domain_id()),
+            Self::EnterKey => Some(TextInputPolicyDomain::EnterKey.domain_id()),
+            _ => None,
         }
     }
 }

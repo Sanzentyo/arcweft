@@ -1,16 +1,17 @@
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputPurpose, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
-    ViewRuntimeButtonBounds, ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlFilter,
-    ViewRuntimeControlFilterList, ViewRuntimeControlVisualStyle, ViewRuntimeTextControl,
-    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
-    ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
-    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
+    ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlFilter, ViewRuntimeControlFilterList,
+    ViewRuntimeControlVisualStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
+    ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+    ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+    ViewTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
 use arcweft_presentation::appearance::PresentationColor;
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 use arcweft_render_wgpu::geometry::{RenderControlFilter, RenderControlFilterList};
 
 #[test]
@@ -236,7 +237,7 @@ fn text_control_with_kind_and_style(
         value: "hello".to_owned(),
         selection: ViewRuntimeTextSelection::new(5, 5),
         options: ViewRuntimeTextControlOptions {
-            purpose: ViewInputPurpose::Text,
+            purpose: TextInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,

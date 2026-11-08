@@ -8,6 +8,8 @@ arcweft-id = { path = "../crates/arcweft-id" }
 arcweft-text-model = { path = "../crates/arcweft-text-model" }
 arcweft-view = { path = "../crates/arcweft-view" }
 arcweft-source = { path = "../crates/arcweft-source" }
+# Standalone fixture generator imports IME policy types from their shared owner.
+arcweft-presentation = { path = "../crates/arcweft-presentation" }
 # Current nightly rejects zune-core's disabled-log statement macro in an
 # expression position. Enable the upstream logging macro through feature
 # unification; the generator itself still emits no log output.
@@ -15,12 +17,11 @@ zune-jpeg = { version = "0.5.15", features = ["log"] }
 ---
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewElementKind,
-    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
-    ViewLogicalRect, ViewProgramInstruction, ViewProgramResource, ViewSecureInputPolicy,
-    ViewSemanticTarget, ViewTaskPlanAssertions, ViewTextResource, ViewTextSelectionPolicy,
-    ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
-    ViewTextVerticalNavigationPolicy,
+    CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewElementKind, ViewInputKind,
+    ViewInputOptions, ViewInputResource, ViewLayoutBoundsResource, ViewLogicalRect,
+    ViewProgramInstruction, ViewProgramResource, ViewSecureInputPolicy, ViewSemanticTarget,
+    ViewTaskPlanAssertions, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::resource_codec::view::{
     ViewDefinitionRef, ViewDefinitionResource, ViewHandlerRef, ViewInstructionSpan, ViewProgramId,
@@ -41,6 +42,7 @@ use arcweft_core::plan::{
 use arcweft_core::value::RuntimeValue;
 use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_id::view::ViewId;
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
 use arcweft_view::{ViewHandlerResult, ViewHandlerResultRole, ViewHandlerTransitionValueRole};
@@ -331,7 +333,7 @@ fn view_input() -> ViewInputResource {
                 ViewInputKind::TextField,
                 "text.value.jp_text_field",
                 Some("text.placeholder.jp_text_field"),
-                ViewInputPurpose::Text,
+                TextInputPurpose::Text,
                 ViewSecureInputPolicy::Plain,
                 Some(FixtureHandler::JapaneseChange),
                 Some(FixtureHandler::JapaneseSubmit),
@@ -341,7 +343,7 @@ fn view_input() -> ViewInputResource {
                 ViewInputKind::TextArea,
                 "text.value.long_latin_area",
                 Some("text.placeholder.long_latin_area"),
-                ViewInputPurpose::Text,
+                TextInputPurpose::Text,
                 ViewSecureInputPolicy::Plain,
                 Some(FixtureHandler::MultilineChange),
                 None,
@@ -351,7 +353,7 @@ fn view_input() -> ViewInputResource {
                 ViewInputKind::SecureField,
                 "text.value.secret_secure_field",
                 Some("text.placeholder.secret_secure_field"),
-                ViewInputPurpose::Password,
+                TextInputPurpose::Password,
                 ViewSecureInputPolicy::Password,
                 Some(FixtureHandler::SecureChange),
                 Some(FixtureHandler::SecureSubmit),
@@ -366,7 +368,7 @@ fn input_option(
     kind: ViewInputKind,
     value_text_source: &str,
     placeholder_text_source: Option<&str>,
-    purpose: ViewInputPurpose,
+    purpose: TextInputPurpose,
     secure_policy: ViewSecureInputPolicy,
     change_handler: Option<FixtureHandler>,
     submit_handler: Option<FixtureHandler>,

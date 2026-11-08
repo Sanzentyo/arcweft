@@ -9,6 +9,12 @@
 use crate::hit::HitRect;
 use crate::input::InteractionTarget;
 use core::fmt;
+use serde::{Deserialize, Serialize};
+
+mod policy;
+pub use policy::{
+    TEXT_INPUT_CLOSED_ENUM_DOMAINS, TextInputPolicyDomain, TextInputPolicyValueError,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TextByteOffset(pub u32);
@@ -272,7 +278,9 @@ pub struct TextInputOptions {
     vertical_navigation: TextVerticalNavigationPolicy,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum TextInputPurpose {
     #[default]
     Text,
@@ -343,7 +351,9 @@ pub enum Capitalization {
     Characters,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum EnterKeyHint {
     #[default]
     Default,

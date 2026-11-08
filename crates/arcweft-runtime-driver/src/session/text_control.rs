@@ -32,14 +32,15 @@ mod tests {
     use super::apply_text_control_write_back_to_controls;
     use crate::session::{TextControlWriteBack, ViewRuntimeTextControl, ViewRuntimeTextSelection};
     use arcweft_bundle::resource_codec::view::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-        ViewInputPurpose, ViewRuntimeControlVisualStyle, ViewRuntimeTextControlBounds,
+        CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewInputKind,
+        ViewRuntimeControlVisualStyle, ViewRuntimeTextControlBounds,
         ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewSecureInputPolicy,
         ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
         ViewTextVerticalNavigationPolicy,
     };
     use arcweft_id::PublicId;
     use arcweft_presentation::input::InteractionTarget as PresentationTarget;
+    use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
     use arcweft_presentation::text_input::{
         TextByteOffset, TextControlValue, TextInputSessionId, TextRange, TextRevision,
     };
@@ -54,7 +55,7 @@ mod tests {
             value: value.to_owned(),
             selection: ViewRuntimeTextSelection::collapsed_at_end(value),
             options: ViewRuntimeTextControlOptions {
-                purpose: ViewInputPurpose::Text,
+                purpose: TextInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
                 capitalization: TextCapitalization::None,

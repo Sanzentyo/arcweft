@@ -2026,11 +2026,40 @@ impl AuthoredViewBodyLowerer<'_> {
                     .lower(argument.value())
                 })
                 .transpose()?;
+            let mut purpose = if element == arcweft_view::ViewElementKind::SecureField {
+                arcweft_presentation::text_input::TextInputPurpose::Password
+            } else {
+                arcweft_presentation::text_input::TextInputPurpose::Text
+            };
+            let mut enter_key = arcweft_presentation::text_input::EnterKeyHint::Default;
+            for argument in arguments
+                .iter()
+                .filter(|argument| argument.role().compile_time_enum_domain().is_some())
+            {
+                let Some(CheckedExpressionResolution::CompileTimeEnum(value)) = self
+                    .analysis
+                    .expression(argument.value())
+                    .map(|fact| fact.resolution())
+                else {
+                    return Err(invalid());
+                };
+                match argument.role() {
+                    arcweft_view::ViewElementArgumentRole::Purpose => {
+                        purpose = (*value).try_into().map_err(|_| invalid())?
+                    }
+                    arcweft_view::ViewElementArgumentRole::EnterKey => {
+                        enter_key = (*value).try_into().map_err(|_| invalid())?
+                    }
+                    _ => unreachable!("text input policy roles are exhaustive"),
+                }
+            }
             self.output
                 .instructions
                 .push(ViewProgramInstruction::BindTextInput {
                     value,
                     label,
+                    purpose,
+                    enter_key,
                     source: None,
                 });
         }
@@ -2270,6 +2299,8 @@ impl AuthoredViewBodyLowerer<'_> {
                     | ViewElementArgumentRole::Enabled
                     | ViewElementArgumentRole::Part
                     | ViewElementArgumentRole::Target
+                    | ViewElementArgumentRole::Purpose
+                    | ViewElementArgumentRole::EnterKey
             ) {
                 continue;
             }

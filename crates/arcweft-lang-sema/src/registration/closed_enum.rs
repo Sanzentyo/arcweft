@@ -386,6 +386,11 @@ pub(crate) fn production_owner_descriptors() -> impl Iterator<Item = ClosedEnumD
                 .iter()
                 .copied(),
         )
+        .chain(
+            arcweft_presentation::text_input::TEXT_INPUT_CLOSED_ENUM_DOMAINS
+                .iter()
+                .copied(),
+        )
 }
 
 #[cfg(test)]

@@ -19,6 +19,8 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
         instruction: usize,
         input: ViewExecutionInput,
         label: Option<&ViewExpressionProgram>,
+        purpose: arcweft_presentation::text_input::TextInputPurpose,
+        enter_key: arcweft_presentation::text_input::EnterKeyHint,
         builder: &mut MountRenderBuilder,
     ) -> Result<(), EvaluationFailure> {
         let invalid = || {
@@ -114,6 +116,8 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
             label,
             bounds,
         );
+        control.options.purpose = purpose;
+        control.options.enter_key = enter_key;
         control.selection = mounted
             .text_input_seals
             .get(&seal_key)

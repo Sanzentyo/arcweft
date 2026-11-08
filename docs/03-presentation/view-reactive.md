@@ -157,6 +157,17 @@ Sema は入力先の宣言を checked argument に保持し、compiler はその
 保持フィールドの bundle 宣言は identity と ReadOnly／ReadWrite を一つの record に持つ。
 入力や handler の書き込み要求から権限を作らず、元の ReadWrite 宣言と照合する。
 
+名前付き `purpose` と `enter_key` は、各domainのcompile-time enum値を指定する。
+たとえば `TextField(draft, purpose = .search, enter_key = .send)` と書く。
+purposeは `.text`／`.search`／`.name`／`.email`／`.url`／`.telephone`／`.number`／
+`.decimal`／`.password`／`.pin`／`.terminal`、Enter-key hintは `.default`／`.enter`／
+`.done`／`.go`／`.next`／`.search`／`.send` を持つ。省略時のpurposeはSecureFieldが
+`.password`、他の入力欄が `.text`、Enter-key hintは `.default`。
+未知の値、別domainの値、動的String、重複引数や入力欄以外への指定は拒否する。
+これらはIMEへのhintであり、入力値の型やprivacyを変更しない。secret扱いの正本は
+SecureFieldのkindであり、通常のTextFieldに `.password` を指定してもsecret扱いにはならない。
+Source、製品データ、保持Viewとadapterは同じPresentation-owned enumを使う。
+
 ```arcw
 view Feedback() {
     local state mut draft: String = ""

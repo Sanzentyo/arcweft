@@ -840,3 +840,116 @@ fn authored_target_ids_reject_a_forged_collision_in_bundle_admission() {
         .is_err()
     );
 }
+
+#[test]
+fn authored_input_policies_reach_decoded_controls_and_cold_restore() {
+    use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
+    let cases = TextInputPurpose::ALL
+        .into_iter()
+        .map(|purpose| (purpose, EnterKeyHint::Send))
+        .chain(
+            EnterKeyHint::ALL
+                .into_iter()
+                .filter(|hint| *hint != EnterKeyHint::Send)
+                .map(|hint| (TextInputPurpose::Search, hint)),
+        );
+    for (purpose, hint) in cases {
+        let source = SOURCE.replace(
+            "TextField(caption, label = \"Feedback\")",
+            &format!(
+                "TextField(caption, label = \"Feedback\", purpose = .{}, enter_key = .{})",
+                purpose.source_name(),
+                hint.source_name()
+            ),
+        );
+        let (mut runtime, handle) = runtime(&source);
+        let initial = frame(&mut runtime, &handle);
+        assert_eq!(initial.mounts[0].text_inputs[0].options.purpose, purpose);
+        assert_eq!(initial.mounts[0].text_inputs[0].options.enter_key, hint);
+        let saved = runtime.snapshot().unwrap();
+        runtime
+            .restore(&saved, std::slice::from_ref(&handle))
+            .unwrap();
+        let restored = frame(&mut runtime, &handle);
+        assert_eq!(restored.mounts[0].text_inputs[0].options.purpose, purpose);
+        assert_eq!(restored.mounts[0].text_inputs[0].options.enter_key, hint);
+    }
+}
+
+#[test]
+fn authored_input_policies_reject_wrong_domains_dynamic_values_and_unknown_members() {
+    for arguments in [
+        "purpose = .done",
+        "purpose = .serch",
+        "purpose = .Search",
+        "purpose = caption",
+        "purpose = \"search\"",
+        "enter_key = .email",
+        "enter_key = .snd",
+        "enter_key = caption",
+        "enter_key = 42",
+        "enter_key = .send, enter_key = .done",
+    ] {
+        let source = SOURCE.replace(
+            "TextField(caption, label = \"Feedback\")",
+            &format!("TextField(caption, label = \"Feedback\", {arguments})"),
+        );
+        assert!(
+            project_view_fixture_with_entry(&source, "arcweft-test://input-policy-rejection")
+                .compile()
+                .is_err(),
+            "{arguments}"
+        );
+    }
+    let source = SOURCE.replace(
+        "TextField(caption, label = \"Feedback\")",
+        "Button(\"Send\", purpose = .search)",
+    );
+    assert!(
+        project_view_fixture_with_entry(&source, "arcweft-test://input-policy-kind")
+            .compile()
+            .is_err()
+    );
+}
+
+#[test]
+fn authored_input_policy_hints_preserve_kind_privacy_and_atomic_submit() {
+    use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
+    for (widget, purpose) in [
+        ("TextField", TextInputPurpose::Password),
+        ("SecureField", TextInputPurpose::Pin),
+    ] {
+        let source = SOURCE.replace(
+            "TextField(caption, label = \"Feedback\")",
+            &format!(
+                "{widget}(caption, label = \"Feedback\", purpose = .{}, enter_key = .send)",
+                purpose.source_name()
+            ),
+        );
+        let (mut runtime, handle) = runtime(&source);
+        let initial = frame(&mut runtime, &handle);
+        let control = &initial.mounts[0].text_inputs[0];
+        assert_eq!(control.options.purpose, purpose);
+        assert_eq!(control.options.enter_key, EnterKeyHint::Send);
+        assert_eq!(
+            control.options.secure_policy.is_secure(),
+            widget == "SecureField"
+        );
+        let before = runtime.snapshot().unwrap();
+        let wrong = TextControlWriteBack::submit(
+            InteractionTarget::new(PublicId::try_new(&control.target).unwrap()),
+            TextInputSessionId(control.session),
+            if control.kind.is_secure() {
+                TextControlValue::plain("東京")
+            } else {
+                TextControlValue::sensitive("東京")
+            },
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextRevision(1),
+        );
+        assert!(dispatch(&mut runtime, &wrong).is_err());
+        assert_eq!(runtime.snapshot().unwrap(), before);
+        dispatch(&mut runtime, &write(control, "京都", 1, true)).unwrap();
+        assert_eq!(labels(&frame(&mut runtime, &handle)), ["京都", "京都"]);
+    }
+}

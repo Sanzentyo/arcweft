@@ -1,9 +1,9 @@
 use super::*;
 use arcweft_agent_protocol::action::{AgentActionDispatch, AgentActionKind};
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputPurpose, ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+    ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
@@ -15,6 +15,7 @@ use arcweft_interaction_model::presentation::PresentationImageBounds;
 use arcweft_interaction_model::presentation::{
     ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
 };
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::LayerId;
@@ -335,7 +336,7 @@ fn runtime_text_control(public_id: &str) -> ViewRuntimeTextControl {
         value: String::new(),
         selection: ViewRuntimeTextSelection::new(0, 0),
         options: ViewRuntimeTextControlOptions {
-            purpose: ViewInputPurpose::Text,
+            purpose: TextInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,

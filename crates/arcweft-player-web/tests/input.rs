@@ -1,15 +1,16 @@
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputPurpose, ViewRuntimeControlVisualStyle, ViewRuntimeTextControl,
-    ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
-    ViewRuntimeTextSelection, ViewSecureInputPolicy, ViewTextSelectionPolicy,
-    ViewTextShortcutPolicy, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewInputKind,
+    ViewRuntimeControlVisualStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
+    ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
+    ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+    ViewTextVerticalNavigationPolicy,
 };
 use arcweft_id::PublicId;
 use arcweft_player_scene::{
     input::{InputController, InputPointerModifiers},
     text_controls::RuntimeTextControlLowerer,
 };
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 use arcweft_presentation::{
     hit::HitRect,
     input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint},
@@ -406,7 +407,7 @@ fn runtime_control(public_id: &str, kind: ViewInputKind, value: &str) -> ViewRun
         value: value.to_owned(),
         selection: ViewRuntimeTextSelection::new(end, end),
         options: ViewRuntimeTextControlOptions {
-            purpose: ViewInputPurpose::Text,
+            purpose: TextInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,

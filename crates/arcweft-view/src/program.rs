@@ -64,6 +64,8 @@ pub enum ViewInstruction {
     BindTextInput {
         value: crate::ViewExecutionInput,
         label: Option<crate::ViewExpressionProgram>,
+        purpose: arcweft_presentation::text_input::TextInputPurpose,
+        enter_key: arcweft_presentation::text_input::EnterKeyHint,
     },
     ApplyFx(ViewFxApplicationInstruction),
     BindEvent(BindEvent),

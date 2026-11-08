@@ -4618,6 +4618,13 @@ impl Analyzer<'_, '_, '_> {
                 | arcweft_view::ViewElementArgumentRole::Value => TypeKind::String,
                 arcweft_view::ViewElementArgumentRole::Enabled => TypeKind::Bool,
                 arcweft_view::ViewElementArgumentRole::Spacing => TypeKind::I32,
+                arcweft_view::ViewElementArgumentRole::Purpose
+                | arcweft_view::ViewElementArgumentRole::EnterKey => {
+                    TypeKind::CompileTimeEnum(crate::types::CompileTimeEnumType::any(
+                        role.compile_time_enum_domain()
+                            .expect("input policy roles own a closed enum domain"),
+                    ))
+                }
                 arcweft_view::ViewElementArgumentRole::Part
                 | arcweft_view::ViewElementArgumentRole::Target => self
                     .catalogs

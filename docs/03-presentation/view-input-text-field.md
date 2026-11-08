@@ -2,9 +2,11 @@
 
 ## Committed text vs composition overlay
 
-Japanese input must display preedit text without mutating the committed Binding
-value. A `TextEditState` owns committed document text and an optional
-`TextComposition` overlay. Rendering creates a `TextVisualBuffer`:
+Japanese input displays preedit text without changing the retained String field.
+A `TextEditState` owns the adapter's editing document and an optional
+`TextComposition` overlay. The retained field remains the application value
+authority described in [retained String input](view-reactive.md#保持-string-入力).
+Rendering creates a `TextVisualBuffer`:
 
 ```text
 document before replacement

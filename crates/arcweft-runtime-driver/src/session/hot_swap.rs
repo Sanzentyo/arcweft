@@ -496,12 +496,13 @@ mod tests {
     use super::preserve_runtime_text_control_values;
     use crate::session::ViewRuntimeTextControl;
     use arcweft_bundle::resource_codec::view::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-        ViewInputPurpose, ViewRuntimeControlVisualStyle, ViewRuntimeTextControlBounds,
+        CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewInputKind,
+        ViewRuntimeControlVisualStyle, ViewRuntimeTextControlBounds,
         ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewSecureInputPolicy,
         ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
         ViewTextVerticalNavigationPolicy,
     };
+    use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 
     fn runtime_control(target: &str, session: u64, value: &str) -> ViewRuntimeTextControl {
         ViewRuntimeTextControl {
@@ -513,7 +514,7 @@ mod tests {
             value: value.to_owned(),
             selection: super::super::ViewRuntimeTextSelection::collapsed_at_end(value),
             options: ViewRuntimeTextControlOptions {
-                purpose: ViewInputPurpose::Text,
+                purpose: TextInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
                 capitalization: TextCapitalization::None,

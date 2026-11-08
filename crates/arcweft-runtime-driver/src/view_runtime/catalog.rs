@@ -634,12 +634,18 @@ fn map_instruction(
         ViewProgramInstruction::BindLocal { program, .. } => {
             ViewInstruction::BindLocal(program.clone())
         }
-        ViewProgramInstruction::BindTextInput { value, label, .. } => {
-            ViewInstruction::BindTextInput {
-                value: *value,
-                label: label.clone(),
-            }
-        }
+        ViewProgramInstruction::BindTextInput {
+            value,
+            label,
+            purpose,
+            enter_key,
+            ..
+        } => ViewInstruction::BindTextInput {
+            value: *value,
+            label: label.clone(),
+            purpose: *purpose,
+            enter_key: *enter_key,
+        },
         ViewProgramInstruction::ApplyFx {
             fx,
             parameter_layout,

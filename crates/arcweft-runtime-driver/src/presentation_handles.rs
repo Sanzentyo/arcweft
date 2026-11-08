@@ -371,14 +371,15 @@ where
 mod tests {
     use super::*;
     use arcweft_bundle::resource_codec::view::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-        ViewInputPurpose, ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-        ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+        CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewInputKind,
+        ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
+        ViewTextVerticalNavigationPolicy,
     };
     use arcweft_bundle::resource_codec::{
         ViewRuntimeControlVisualStyle, ViewRuntimeTextControlBounds,
         ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
     };
+    use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 
     fn handle(value: &str) -> PresentationHandleId {
         PresentationHandleId::try_new(value).expect("valid handle id")
@@ -440,7 +441,7 @@ mod tests {
             value: String::new(),
             selection: ViewRuntimeTextSelection::new(0, 0),
             options: ViewRuntimeTextControlOptions {
-                purpose: ViewInputPurpose::Text,
+                purpose: TextInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
                 capitalization: TextCapitalization::None,

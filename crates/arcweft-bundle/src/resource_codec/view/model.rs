@@ -8,6 +8,7 @@ use arcweft_presentation::fx::{
     FxDefinitionArgumentValue, FxDefinitionParameterIndex, FxDefinitionParameterLayoutDigest, FxId,
     FxRuntimeType,
 };
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 use arcweft_source::ProductSourceRef;
 use arcweft_text_model::{LineDisplayFrameSnapshot, RichTextDocument};
 pub use arcweft_view::ViewProgramId;
@@ -165,6 +166,8 @@ pub enum ViewProgramInstruction {
     BindTextInput {
         value: arcweft_view::ViewExecutionInput,
         label: Option<arcweft_view::ViewExpressionProgram>,
+        purpose: arcweft_presentation::text_input::TextInputPurpose,
+        enter_key: arcweft_presentation::text_input::EnterKeyHint,
         source: Option<SourceRangeRef>,
     },
     /// Applies a resolved `#[fx] fn -> Fx` graph to the current retained node.
@@ -1955,7 +1958,7 @@ mod tests {
             kind: ViewInputKind::TextField,
             value_text_source: "text.name".to_owned(),
             placeholder_text_source: None,
-            purpose: ViewInputPurpose::Text,
+            purpose: TextInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
             capitalization: TextCapitalization::None,

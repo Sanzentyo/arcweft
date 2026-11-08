@@ -1,11 +1,11 @@
 use arcweft_bundle::container::BundleSectionKind;
 use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, EventKind, SystemColorOverride,
+    CompositionOnBlurPolicy, DialogueTextProjection, EventKind, SystemColorOverride,
     TextAssistPolicy, TextCapitalization, ViewCallArgumentBindingRef, ViewDefinitionRef,
     ViewDefinitionResource, ViewElementKind, ViewExportValidationError, ViewExportedPart,
     ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewFxArgumentSourceRef, ViewHandlerRef,
-    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewInstructionSpan,
+    ViewInputKind, ViewInputOptions, ViewInputResource, ViewInstructionSpan,
     ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
     ViewObserveClassification, ViewOwnedPartRef, ViewParameterResource, ViewPartExportSourceRef,
     ViewProgramInstruction, ViewProgramResource, ViewProgramStyleResources, ViewResourceBudget,
@@ -20,6 +20,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
     migrated_view_section_compatibility,
 };
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 use arcweft_text_model::{RichTextDocument, RichTextNode};
 
 use arcweft_bundle::resource_codec::{
@@ -1848,7 +1849,7 @@ fn fixture_input(secure_policy: ViewSecureInputPolicy) -> ViewInputResource {
             kind: ViewInputKind::TextField,
             value_text_source: "text.dialogue.name".to_owned(),
             placeholder_text_source: Some("text.dialogue.placeholder".to_owned()),
-            purpose: ViewInputPurpose::Name,
+            purpose: TextInputPurpose::Name,
             autocorrect: TextAssistPolicy::Enabled,
             spellcheck: TextAssistPolicy::Enabled,
             capitalization: TextCapitalization::Words,

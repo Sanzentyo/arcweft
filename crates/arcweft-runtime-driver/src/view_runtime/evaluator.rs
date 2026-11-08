@@ -2152,7 +2152,13 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     }
                     cursor += 1;
                 }
-                ViewProgramInstruction::BindTextInput { value, label, .. } => {
+                ViewProgramInstruction::BindTextInput {
+                    value,
+                    label,
+                    purpose,
+                    enter_key,
+                    ..
+                } => {
                     self.bind_text_input(
                         key,
                         definition,
@@ -2160,6 +2166,8 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         cursor,
                         *value,
                         label.as_ref(),
+                        *purpose,
+                        *enter_key,
                         builder,
                     )?;
                     cursor += 1;

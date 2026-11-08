@@ -1,11 +1,11 @@
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
-    ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
-    ViewLogicalRect, ViewProgramResource, ViewRuntimeTextControlBounds, ViewRuntimeTextSelection,
-    ViewSecureInputPolicy, ViewSemanticTarget, ViewTextResource, ViewTextSelectionPolicy,
-    ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
-    ViewTextVerticalNavigationPolicy,
+    CompositionOnBlurPolicy, TextAssistPolicy, TextCapitalization, ViewInputKind, ViewInputOptions,
+    ViewInputResource, ViewLayoutBoundsResource, ViewLogicalRect, ViewProgramResource,
+    ViewRuntimeTextControlBounds, ViewRuntimeTextSelection, ViewSecureInputPolicy,
+    ViewSemanticTarget, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
+    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
+use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
 
 #[test]
 fn view_input_resource_emits_runtime_text_control_shape() {
@@ -264,7 +264,7 @@ fn text_input_option(
         kind,
         value_text_source: value_text_source.to_owned(),
         placeholder_text_source: placeholder_text_source.map(ToOwned::to_owned),
-        purpose: ViewInputPurpose::Text,
+        purpose: TextInputPurpose::Text,
         autocorrect: TextAssistPolicy::PlatformDefault,
         spellcheck: TextAssistPolicy::PlatformDefault,
         capitalization: TextCapitalization::None,
