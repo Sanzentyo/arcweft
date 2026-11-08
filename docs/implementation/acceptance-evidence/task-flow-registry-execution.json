@@ -63690,5 +63690,420 @@
     "bytes": 2317412,
     "sha256": "7667257981baae5c2e3da64f3e0be313d9e3dbdcca2820a227bc52fd72676448"
   }
+},
+  "styleTokenInferenceConsumers": {
+  "version": 1,
+  "date": "2026-11-09",
+  "productionPublication": {
+    "version": 1,
+    "commit": "f8c17506c05ee9df614581d8df12e46a2c178464",
+    "parent": "21303d45deecde6c93a3bc52ef1479d3c73707f0",
+    "tree": "02f8bb2bef42b81714d5bbcc7c1b03dee3ac8f44",
+    "remote": "f8c17506c05ee9df614581d8df12e46a2c178464",
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/tests/view_product.rs",
+        "blob": "d75ee85248f0f9ba561f3636baa65e3407fe3dea"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/view_product/style_inference.rs",
+        "blob": "0a7c38db7bfdadfb42a7b9cfd44f0ef2a3344a8f"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+        "blob": "c6578d0d36e9ca176ecee5fe6dc04298a63c809e"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/style.rs",
+        "blob": "17dbae8727620195e619888726f96988e01ef784"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/style/composites.rs",
+        "blob": "7bc40166799d54b23a2dcf0f97c67442900d4536"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/style/primitives.rs",
+        "blob": "dffd37a16e8bc941205c1a1a4e2bbc207f67ed15"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/style.rs",
+        "blob": "37dc19109f4fce352aff5292e3bab2e90a774afb"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/style/grammar.rs",
+        "blob": "38de7ce340d372f8453642196943014ba7b37124"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/style/inference.rs",
+        "blob": "253fe8b7d568f0a1b84a8e2f39f36b6602ad0151"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests/style_types.rs",
+        "blob": "de27933325fc31d07092d99bddc07dfbaea6d7eb"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/types.rs",
+        "blob": "7590539cad009897760da8bc90557503cb39a67d"
+      },
+      {
+        "path": "docs/03-presentation/view-reactive.md",
+        "blob": "833b13d15159392d69e38228fd3f96feb8fea79d"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "5715b0ec9ca29a7ba51690d4e734f19bd3cae3ab598861696b6f758ff69cd24e",
+    "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-08T17:21:30.5532692Z"
+  },
+  "recordingBase": "5560fb6f978ba09a7a591e9ed73c0c5921a96ed3",
+  "status": "Unannotated Style token inference passed complete Sema reverse-dependency execution apart from the same four diagnosed CLI failures. Environment and full sample/Native/Web acceptance remain open.",
+  "qualityReuse": "Reuse styleTokenInferenceCheckpoint all98 workspace gates and final Sema lint/fmt for unchanged production/test/fixture bytes. The complete consumer runs here validate final arity-preflight and lint-correction bytes.",
+  "nonCli": {
+    "version": 1,
+    "base": "5560fb6f978ba09a7a591e9ed73c0c5921a96ed3",
+    "run": "style-token-inference-integrated-20261109.noncli-r1.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 278.432s] 3622 tests run: 3622 passed (4 slow), 1 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 3622,
+    "passed": 3622,
+    "failed": 0,
+    "skipped": 1,
+    "selectedPackages": 21,
+    "matchedPackages": 21,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3917,
+    "sourceDrift": 0,
+    "held": 0,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-08T17:38:59.2234590Z"
+  },
+  "cli": {
+    "version": 1,
+    "base": "5560fb6f978ba09a7a591e9ed73c0c5921a96ed3",
+    "run": "style-token-inference-integrated-20261109.cli-r1.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [ 528.686s] 711 tests run: 707 passed (26 slow), 4 failed, 23 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 711,
+    "passed": 707,
+    "failed": 4,
+    "skipped": 23,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 3941,
+    "sourceDrift": 0,
+    "held": 0,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-08T17:53:44.7231392Z"
+  },
+  "freshTotals": {
+    "executed": 4333,
+    "passed": 4329,
+    "failed": 4,
+    "skipped": 24,
+    "runs": 2,
+    "featurePoints": 2
+  },
+  "coverage": {
+    "version": 1,
+    "baselineSource": "eb4b9a820e7e74a106e4ca17405e50b642cb579b",
+    "currentSource": "f8c17506c05ee9df614581d8df12e46a2c178464",
+    "baselineRetainedInCurrentClosure": 3618,
+    "missing": 0,
+    "duplicates": 0,
+    "additionalCurrentCases": 4,
+    "additionalByPackage": [
+      {
+        "package": "arcweft-compiler",
+        "cases": 3
+      },
+      {
+        "package": "arcweft-lang-sema",
+        "cases": 1
+      }
+    ],
+    "currentSelected": 3622,
+    "rename": [],
+    "scope": "Project the previous View-closure catalog into the current Sema closure. Preserve all cases in the affected closure; lower native View/render-only packages remain covered by their unchanged earlier source. Do not relabel these scopes as the same complete workspace matrix."
+  },
+  "failureDiagnostics": {
+    "version": 1,
+    "base": "f8c17506c05ee9df614581d8df12e46a2c178464",
+    "sourceFreeze": "style-token-inference-integrated-20261109.cli-r1.source-freeze.json",
+    "log": "style-token-inference-integrated-20261109.cli-r1.runtime.log",
+    "failureDiagnostics": [
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "observedCause": "sema.final_analysis shared callable resolution, expression slot 15",
+        "logStartLine": 2523,
+        "firstLines": [
+          "        FAIL [   5.962s] (433/711) arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 5.91s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering' (68276) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:2720:5:",
+          "    authored Scroll live observe should succeed, stderr: error[sema.final_analysis]: shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr })",
+          "",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          ""
+        ],
+        "diagnosticLines": [
+          "    authored Scroll live observe should succeed, stderr: error[sema.final_analysis]: shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr })"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes",
+        "observedCause": "active dialogue has no voice",
+        "logStartLine": 2768,
+        "firstLines": [
+          "        FAIL [   0.601s] (644/711) arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test spec_valid_run_edge_fixture_now_executes ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        spec_valid_run_edge_fixture_now_executes",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.52s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'spec_valid_run_edge_fixture_now_executes' (58296) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:7789:5:",
+          "    D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\tests/fixtures/arcw/spec_should_pass/check/011_dialogue_line_value_and_handle_discard.arcw should now execute, stdout: {",
+          "      \"host_system\": {",
+          "        \"physical_cores\": 12,",
+          "        \"logical_threads\": 20,",
+          "        \"available_parallelism\": 20",
+          "      },",
+          "      \"executor\": \"bytecode_vm\",",
+          "      \"executor_stats\": {",
+          "        \"aot_fast_path_ops\": 0,",
+          "        \"pure_config\": {",
+          "          \"backend\": \"auto\",",
+          "          \"workers\": \"auto\",",
+          "          \"resolved_workers\": 20,",
+          "          \"worker_pool_active\": false,",
+          "          \"batch_min_len\": 1024,",
+          "          \"emit_object_artifacts\": false,",
+          "          \"math_backend\": \"auto\",",
+          "          \"math_wgpu_min_elements\": 67108864",
+          "        },",
+          "        \"pure_acceleration\": {",
+          "          \"annotated\": 0,",
+          "          \"inferred\": 0,"
+        ],
+        "diagnosticLines": [
+          "          \"fiber_status\": \"failed active dialogue has no voice\",",
+          "            \"active dialogue has no voice\"",
+          "      \"final_status\": \"failed active dialogue has no voice\""
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks",
+        "observedCause": "type-check denied: sema.final_analysis, expression slot 8 has no admissible final type; solver phase was not reached",
+        "logStartLine": 3185,
+        "firstLines": [
+          "        FAIL [   0.412s] (655/711) arcweft-cli::check verify_json_records_required_solver_checks",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test verify_json_records_required_solver_checks ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        verify_json_records_required_solver_checks",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.30s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'verify_json_records_required_solver_checks' (46416) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:381:5:",
+          "    JSON report should include the required solver check: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"type-check\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"type-check\",",
+          "          \"diagnostic\": {",
+          "            \"severity\": \"error\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+          "            \"span\": null,",
+          "            \"labels\": [],",
+          "            \"notes\": [],",
+          "            \"suggestions\": [],",
+          "            \"commands\": []",
+          "          }",
+          "        }",
+          "      ]",
+          "    }",
+          ""
+        ],
+        "diagnosticLines": [
+          "      \"stage\": \"type-check\",",
+          "          \"stage\": \"type-check\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof",
+        "observedCause": "type-check denied: sema.final_analysis, expression slot 8 has no admissible final type; solver phase was not reached",
+        "logStartLine": 3233,
+        "firstLines": [
+          "        FAIL [   0.655s] (664/711) arcweft-cli::check verify_json_reports_missing_promotion_proof",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test verify_json_reports_missing_promotion_proof ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        verify_json_reports_missing_promotion_proof",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.27s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'verify_json_reports_missing_promotion_proof' (65336) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:348:5:",
+          "    JSON report should include the promotion obligation: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"type-check\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"type-check\",",
+          "          \"diagnostic\": {",
+          "            \"severity\": \"error\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+          "            \"span\": null,",
+          "            \"labels\": [],",
+          "            \"notes\": [],",
+          "            \"suggestions\": [],",
+          "            \"commands\": []",
+          "          }",
+          "        }",
+          "      ]",
+          "    }",
+          ""
+        ],
+        "diagnosticLines": [
+          "      \"stage\": \"type-check\",",
+          "          \"stage\": \"type-check\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+        ]
+      }
+    ],
+    "note": "Actual raw diagnostic blocks are checked for the same cause and exact expression coordinate as the preceding accepted record. Final failure IDs are compared independently with terminal audits."
+  },
+  "actualCli": {
+    "version": 1,
+    "path": "D:/git/arcweft/target/debug/arcw.exe",
+    "sha256": "82f0783982d58d2e694f0444d4f07230040acc43cd3337262e7605382fb587c4",
+    "runtimeStartedAt": "2026-11-08T17:44:50.7835273Z",
+    "runtimeFinishedAt": "2026-11-08T17:53:42.4455224Z",
+    "beforeRuntime": true,
+    "binaryDrift": 0,
+    "recordedAt": "2026-11-08T17:53:42.7683697Z"
+  },
+  "nativeSourceProbe": {
+    "version": 1,
+    "base": "5560fb6f978ba09a7a591e9ed73c0c5921a96ed3",
+    "main": {
+      "path": "D:/git/arcweft/target/debug/arcw.exe",
+      "sha256": "82f0783982d58d2e694f0444d4f07230040acc43cd3337262e7605382fb587c4"
+    },
+    "sourceInputs": 3917,
+    "sourceDrift": 0,
+    "binaryDrift": 0,
+    "checkCommand": [
+      "check",
+      "--manifest-path",
+      "samples/native-text-input/arcw.toml",
+      "--json"
+    ],
+    "checkExitCode": 0,
+    "startedAt": "2026-11-08T17:54:25.2523462Z",
+    "finishedAt": "2026-11-08T17:54:27.4633693Z",
+    "scope": "Actual CLI Source check, not interactive Native/Web acceptance",
+    "bundleCommand": [
+      "bundle",
+      "--manifest-path",
+      "samples/native-text-input/arcw.toml",
+      "--profile",
+      "main",
+      "--output",
+      "D:/git/arcweft/target/arcweft/native-text-input-inferred.awfb",
+      "--json"
+    ],
+    "bundleExitCode": 0,
+    "artifact": {
+      "path": "D:/git/arcweft/target/arcweft/native-text-input-inferred.awfb",
+      "bytes": 81840,
+      "sha256": "2e348be119a21fda294a11f2e2379537ffb16f3e437cba10a351979946701cd6"
+    }
+  },
+  "scope": "Metadata and target-all reverse tree agree on Sema22: nonCLI21 all-features and CLI1 defaults. All21 nonCLI selected packages have runtime cases. Project the prior View40 catalog into the current Sema21 selection: retained3618, missing0, duplicates0, additional4 Compiler3/Sema1. Previous native View/render consumer acceptance remains historical evidence; do not call this the same workspace matrix. Do not add owner50, earlier runs, separate Source probe or skipped cases to fresh executed totals.",
+  "pending": "Environment Source publication, remaining sample migrations, real Native/Web operations/capture parity, and the unchanged four CLI failures. Accepted Generic Match, explicit Style construction and other completed functions remain accepted.",
+  "archive": {
+    "path": "docs/implementation/acceptance-evidence/task-style-token-inference-consumers.raw.zip",
+    "entries": 32,
+    "bytes": 1093655,
+    "sha256": "dd15bfe23a0bc21e5e33d3ab5ddd6e3356d837470316b6fa7fcff251325bc0b3"
+  }
 }
 }

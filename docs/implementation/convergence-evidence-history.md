@@ -15760,3 +15760,13 @@ Source f8c17506c05ee9df614581d8df12e46a2c178464 をmainへ通常公開し、pare
 全98 workspaceのlocked／all-target／all-feature check・Clippy、構造gate、fmtが終了0。最終Sema all-target／all-feature Clippyと明示11 Rust pathのfmtも終了0。今回のproduction ownerはprivate Source文法／SemaとCompiler testsなので、metadata／target-all tree一致のSema逆依存22 package（非CLI全feature21＋CLI既定1）を次に実行する。前回のnative componentを含むView逆依存41 packageの実測と受入は保ち、今回実行済みとは記さない。Environment、sample移行、実Native／Webと既知CLI4条件は別の未達として保持する。Generic Match等の完了を戻さない。
 
 現状一覧の未annotation推論を実装未達からowner検証・公開へ更新した根拠は今回のSourceと実測である。全consumerはpendingとして明記し、過去のSource／失敗／full SHAを保持した。既存146 registry propertyの値を全件照合して保持し、styleTokenInferenceCheckpointを追加した。原本 docs/implementation/acceptance-evidence/task-style-token-inference-checkpoint.raw.zip は42 entry／2317412 bytes、SHA256 7667257981baae5c2e3da64f3e0be313d9e3dbdcca2820a227bc52fd72676448。build artifactをZIPへコピーしていない。
+
+## 2026-11-09 — Style token推論の全Sema consumer検証
+
+推論Source f8c17506c05ee9df614581d8df12e46a2c178464、記録base 5560fb6f978ba09a7a591e9ed73c0c5921a96ed3 を固定した。owner後の引数数preflightとlint整理を含む最終bytesで、metadata／target-all tree一致のSema逆依存22 packageを実行した。非CLI全feature21 packageは3622／3622 PASS・1 SKIP・278.432秒、選択21 package全てにruntime caseがあり、3917入力／catalog／EXE差分0。前回View40 catalogの今回範囲3618件は欠落／重複0、追加4件はCompiler3／Sema1で、renameはない。前回のnative View／render-onlyの実行を今回と混同しない。
+
+CLI既定は Summary [ 528.686s] 711 tests run: 707 passed (26 slow), 4 failed, 23 skipped。先行の4失敗IDと実diagnosticを照合した。Scrollのshared callable resolution Expr15、voice不在、promotion2件のsolver前type-check Expr8拒否は継続し、新しい失敗はない。3941入力／catalog／EXE差分0、実target/debug/arcw.exeの前後pinはSHA256 82f0783982d58d2e694f0444d4f07230040acc43cd3337262e7605382fb587c4 で一致した。今回の最終2 run／2 feature pointは4333実行／4329 PASS／4 FAIL／24 SKIPであり、owner50件・旧run・別Source probeを加算していない。
+
+同じ実CLIを追加buildなしで使い、native-text-inputのcheckはstatus ok、main-profile bundleは終了0・89命令・81840 bytes。元path D:/git/arcweft/target/arcweft/native-text-input-inferred.awfb のSHA256 2e348be119a21fda294a11f2e2379537ffb16f3e437cba10a351979946701cd6 は前回と一致し、3917入力／実CLI差分0。Source受付と生成物の検証であり、実Native／Web操作・画像parityの受入ではない。
+
+現状一覧の「最終consumer実行中」を今回の終端結果へ訂正し、旧View範囲の現状重複は履歴へ移した。以前のSource／失敗／full SHA／実測は保持する。Environment、sampleと既知CLI4条件は具体的未達として残し、Generic Match等の完了を戻さない。既存147 registry propertyの値を全件照合して保持し、styleTokenInferenceConsumersを追加した。原本 docs/implementation/acceptance-evidence/task-style-token-inference-consumers.raw.zip は32 entry／1093655 bytes、SHA256 dd15bfe23a0bc21e5e33d3ab5ddd6e3356d837470316b6fa7fcff251325bc0b3。EXE／AWFB等のbuild artifactをZIPへコピーしていない。
