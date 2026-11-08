@@ -67,30 +67,24 @@ style native_text_input_sample {
 }
 
 pub view NativeTextInputPanel() {
-  let jp_text_field = input.text(@input:.jp_text_field, initial = "Tokyo")
-  let jp_text_area = input.text(@input:.jp_text_area, initial = "line one")
-  let secret_secure_field = input.secure(@input:.secret_secure_field, initial = "sekret-1234")
+  local state mut jp_text_field: String = "Tokyo"
+  local state mut jp_text_area: String = "line one"
+  local state mut secret_secure_field: String = "sekret-1234"
 
   Column {
-    TextField(jp_text_field)
-      .label("Japanese TextField / 日本語入力")
-      .placeholder("日本語 IME text")
-      .purpose(.text)
-      .enter_key(.done)
+    TextField(jp_text_field, target = @input:.jp_text_field,
+              label = "Japanese TextField / 日本語入力", placeholder = "日本語 IME text",
+              purpose = .text, enter_key = .done)
       .style(@style:.native_text_input_sample)
 
-    TextArea(jp_text_area)
-      .label("Multiline TextArea / 複数行")
-      .placeholder("複数行の IME text")
-      .purpose(.text)
-      .enter_key(.enter)
+    TextArea(jp_text_area, target = @input:.jp_text_area,
+             label = "Multiline TextArea / 複数行", placeholder = "複数行の IME text",
+             purpose = .text, enter_key = .enter)
       .style(@style:.native_text_input_sample)
 
-    SecureField(secret_secure_field)
-      .label("SecureField / redacted")
-      .placeholder("secret")
-      .purpose(.password)
-      .enter_key(.done)
+    SecureField(secret_secure_field, target = @input:.secret_secure_field,
+                label = "SecureField / redacted", placeholder = "secret",
+                purpose = .password, enter_key = .done)
       .style(@style:.native_text_input_sample)
   }
 }
@@ -114,14 +108,12 @@ fn i_to_string_2(i: i32) -> String {
 }
 
 flow native_text_input_sample(state: GameState) -> String {
-  view(@view:.NativeTextInputPanel)
+  let panel = mount(NativeTextInputPanel())
 
     let a: i32 = 2
 
     for i in 0i32..a {
-        narrator: This is a native text input sample. Iteration #[
-            i_to_string(i)
-        ] of #[a].
+        narrator: This is a native text input sample. Iteration #[i_to_string(i)] of #[a].
     }
   narrator:
     Native player-rendered IME acceptance sample.[p]
