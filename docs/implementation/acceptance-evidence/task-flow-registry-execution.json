@@ -55852,5 +55852,961 @@
     },
     "preservedPriorRecords": 135,
     "scope": "41-package View reverse closure, with 37 actual non-CLI runtime packages. Fresh executions and unchanged outside-closure reuse are distinct. Do not add focused owner repetitions or present logical coverage as a fresh all-Core run. Sample migration, Scroll and Native/Web capture remain separate conditions."
+  },
+  "viewImeInputPolicyOwner": {
+    "version": 1,
+    "date": "2026-11-08",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "parent": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "tree": "16d432739c5c854f18a9e878f5b26fafd925ce61",
+      "remote": "76d32c7a3ff15513f2e62120f32a84bf775598af",
+      "paths": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "blob": "cf21e1bdd75814621e24f767b1d6d913bcc2d313"
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model/input.rs",
+          "blob": "342c5bc12f91a1612b8ddcf08b96c25c29aeb290"
+        },
+        {
+          "path": "crates/arcweft-bundle/tests/view_resource_codecs.rs",
+          "blob": "ab0b8a75cd998f5920ad6bcc210bb6ab3495fd46"
+        },
+        {
+          "path": "crates/arcweft-bundle/tests/view_runtime_text_controls.rs",
+          "blob": "45fb119f21cc14dac4ab6a81b310a787a5b136b8"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+          "blob": "1434ba249d6977c60971d7cbc4bdfd280c007a6f"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "blob": "820ec0a5560c43c33a2a5be3cae01dd2a2c77e27"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "blob": "1b5d4b79b8502fe3b1a44444230ba623e1f15a3e"
+        },
+        {
+          "path": "crates/arcweft-id/src/closed_enum.rs",
+          "blob": "b58a05b91830b9324efa57258c95d02898abbebd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "061bdb065cf2ef6093a8126e30d896ee3253090e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/registration/closed_enum.rs",
+          "blob": "330c493e7ff97a050b1b55190a57693d83f71027"
+        },
+        {
+          "path": "crates/arcweft-player-scene/src/text_controls.rs",
+          "blob": "4931a723d416bc196047906c2b2c41756e998198"
+        },
+        {
+          "path": "crates/arcweft-player-scene/tests/runtime_control_style_lowering.rs",
+          "blob": "c2fd6eaaa2ba7db5ed389fa2e7cedd5ea5ae1b2a"
+        },
+        {
+          "path": "crates/arcweft-player-scene/tests/runtime_text_controls.rs",
+          "blob": "7515a3ba119e944517f36718a6ffc9450547fe82"
+        },
+        {
+          "path": "crates/arcweft-player-web/tests/input.rs",
+          "blob": "e534f52665145596575d07df363f9f0c65051f41"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/text_input.rs",
+          "blob": "effc092103a9020b6104d7d420eab62720fdfcbe"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/text_input/policy.rs",
+          "blob": "813a436fa803e212b0ca8524fc61985903eef3c2"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+          "blob": "0cbb9d48d611f11b33320a7587a7fe5fe0aedab3"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session/hot_swap.rs",
+          "blob": "a227a66a59315633702e97895d45c98d819a6ad4"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session/text_control.rs",
+          "blob": "56a65aca1ce4dd3dea9a5415e548822773e6b526"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+          "blob": "2397a4a04f755c26cdc644eb672f9da72a04c834"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+          "blob": "cb8cd2e78bd569623328e0f788ae7bbade4b9f90"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+          "blob": "169ed897efb4fed21e42626f66ce255b97ea7fec"
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "blob": "09d01f34351926b6fcc76cc0d140b2636cb4bfd7"
+        },
+        {
+          "path": "crates/arcweft-view/src/program.rs",
+          "blob": "81a2860ef62ad15ba7d2389ecd857130296a9b30"
+        },
+        {
+          "path": "docs/03-presentation/view-input-text-field.md",
+          "blob": "65f01154d404689f59fdf7b5756e5aa013902f19"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "f255e5e123d2e8cef3f3e762a099d3c9c2451365"
+        },
+        {
+          "path": "tools/build-web-ime-player-rendered-fixture.rs",
+          "blob": "cec82d3dbd60ee8c1e2d1144c9e935b19c9b078d"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "cf50569875d4e3e5eb331890de10c04adb67c34d3972b863bbe3f5e75534214f",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T08:26:47.4483437Z"
+    },
+    "scope": "Typed purpose and Enter-key hints from Source closed enums through Bundle and retained View into the existing IME policy types",
+    "owner": {
+      "version": 1,
+      "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "run": "ime-purpose-enter-key-20261108.owner-r2.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  72.503s] 341 tests run: 341 passed (2 slow), 1402 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 341,
+      "passed": 341,
+      "failed": 0,
+      "skipped": 1402,
+      "selectedPackages": 4,
+      "matchedPackages": 4,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3899,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T08:14:45.6544437Z"
+    },
+    "standaloneGenerator": {
+      "version": 1,
+      "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "run": "ime-purpose-enter-key-20261108.generator.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 246.618s] 1 test run: 1 passed (1 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3899,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T08:25:32.0457136Z"
+    },
+    "uniqueOwnerCases": 342,
+    "firstFocusedRun": {
+      "version": 1,
+      "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "run": "ime-purpose-enter-key-20261108.owner-r1.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   2.047s] 2 tests run: 2 passed, 90 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 90,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3899,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T08:05:38.8506097Z"
+    },
+    "quality": [
+      {
+        "version": 1,
+        "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+        "command": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3899,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T08:14:53.6189602Z",
+        "finishedAt": "2026-11-08T08:15:57.5412156Z"
+      },
+      {
+        "version": 1,
+        "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+        "command": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3899,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T08:15:57.9780481Z",
+        "finishedAt": "2026-11-08T08:17:51.0246865Z"
+      },
+      {
+        "version": 1,
+        "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/ime-purpose-enter-key-20261108.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3899,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T08:17:51.4048963Z",
+        "finishedAt": "2026-11-08T08:17:56.6118317Z"
+      },
+      {
+        "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+        "paths": [
+          "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "crates/arcweft-bundle/src/resource_codec/view/model/input.rs",
+          "crates/arcweft-bundle/tests/view_resource_codecs.rs",
+          "crates/arcweft-bundle/tests/view_runtime_text_controls.rs",
+          "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+          "crates/arcweft-compiler/src/view.rs",
+          "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "crates/arcweft-id/src/closed_enum.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "crates/arcweft-lang-sema/src/registration/closed_enum.rs",
+          "crates/arcweft-player-scene/src/text_controls.rs",
+          "crates/arcweft-player-scene/tests/runtime_control_style_lowering.rs",
+          "crates/arcweft-player-scene/tests/runtime_text_controls.rs",
+          "crates/arcweft-player-web/tests/input.rs",
+          "crates/arcweft-presentation/src/text_input.rs",
+          "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+          "crates/arcweft-runtime-driver/src/session/hot_swap.rs",
+          "crates/arcweft-runtime-driver/src/session/text_control.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+          "crates/arcweft-view/src/element_argument.rs",
+          "crates/arcweft-view/src/program.rs",
+          "crates/arcweft-presentation/src/text_input/policy.rs"
+        ],
+        "exitCode": 0,
+        "sourceDrift": 0
+      },
+      {
+        "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+        "path": "tools/build-web-ime-player-rendered-fixture.rs",
+        "exitCode": 0,
+        "sourceDrift": 0,
+        "scope": "Rustfmt checks the original script body after its Cargo frontmatter; the authoritative file is not rewritten."
+      }
+    ],
+    "graph": {
+      "version": 1,
+      "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "metadata": "retained-text-input-integrated-20261108.metadata.json",
+      "workspaceManifestsChanged": [],
+      "owners": [
+        "arcweft-id",
+        "arcweft-presentation",
+        "arcweft-view",
+        "arcweft-lang-sema",
+        "arcweft-bundle",
+        "arcweft-compiler",
+        "arcweft-runtime-driver",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-cli"
+      ],
+      "closurePackages": [
+        {
+          "name": "arcweft",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-context",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-context#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-desktop",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-metadata",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-metadata#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp-client",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-policy",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-protocol",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-repl",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-runner",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-codec",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-codec#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-core",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-core#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-device-cpal",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-device-cpal#0.1.0"
+        },
+        {
+          "name": "arcweft-audio-mixer",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-audio-mixer#0.1.0"
+        },
+        {
+          "name": "arcweft-browser-bench",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle-assets",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+        },
+        {
+          "name": "arcweft-character",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character#0.1.0"
+        },
+        {
+          "name": "arcweft-character-psd",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-psd#0.1.0"
+        },
+        {
+          "name": "arcweft-character-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+        },
+        {
+          "name": "arcweft-cli",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+        },
+        {
+          "name": "arcweft-compiler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+        },
+        {
+          "name": "arcweft-core",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-sqlite",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+        },
+        {
+          "name": "arcweft-desktop-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-desktop-native#0.1.0"
+        },
+        {
+          "name": "arcweft-dialogue",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+        },
+        {
+          "name": "arcweft-glyphon",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+        },
+        {
+          "name": "arcweft-host-adapter",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0"
+        },
+        {
+          "name": "arcweft-id",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-id#0.1.0"
+        },
+        {
+          "name": "arcweft-interaction-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-interaction-model#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-hir",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-hir#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-jit-cranelift",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-syntax",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-syntax#0.1.0"
+        },
+        {
+          "name": "arcweft-launch",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+        },
+        {
+          "name": "arcweft-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-manifest-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-manifest-model#0.1.0"
+        },
+        {
+          "name": "arcweft-player-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+        },
+        {
+          "name": "arcweft-player-scene",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+        },
+        {
+          "name": "arcweft-player-text-input",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+        },
+        {
+          "name": "arcweft-player-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+        },
+        {
+          "name": "arcweft-presentation",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-presentation#0.1.0"
+        },
+        {
+          "name": "arcweft-project",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+        },
+        {
+          "name": "arcweft-project-loader",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+        },
+        {
+          "name": "arcweft-rag",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+        },
+        {
+          "name": "arcweft-ref",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-ref#0.1.0"
+        },
+        {
+          "name": "arcweft-render-text",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+        },
+        {
+          "name": "arcweft-render-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+        },
+        {
+          "name": "arcweft-render-wgpu",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-manifest",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0"
+        },
+        {
+          "name": "arcweft-rich-text-schema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rich-text-schema#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-accelerator",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-codegen",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-driver",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-host",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-plan",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-scheduler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0"
+        },
+        {
+          "name": "arcweft-save",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0"
+        },
+        {
+          "name": "arcweft-source",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-source#0.1.0"
+        },
+        {
+          "name": "arcweft-test",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+        },
+        {
+          "name": "arcweft-text-layout",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+        },
+        {
+          "name": "arcweft-text-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+        },
+        {
+          "name": "arcweft-tooling",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+        },
+        {
+          "name": "arcweft-verify",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-oxiz",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-z3",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+        },
+        {
+          "name": "arcweft-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+        }
+      ],
+      "externalCargoConsumer": "tools/build-web-ime-player-rendered-fixture.rs: standalone path dependency on arcweft-presentation; verified by the existing ime_player_rendered integration test"
+    },
+    "structuralReview": {
+      "version": 1,
+      "base": "d5519fb0cd462ccff625a6a9f5e007076ea7fe77",
+      "trackedState": "26 tracked paths changed and one new policy module; four pre-existing untracked Windows cache files preserved",
+      "files": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "owner": "arcweft-bundle",
+          "bytes": "66660",
+          "physical_lines": "1983",
+          "code_lines": "1748",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "55"
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model/input.rs",
+          "owner": "arcweft-bundle",
+          "bytes": "19641",
+          "physical_lines": "596",
+          "code_lines": "539",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-bundle/tests/view_resource_codecs.rs",
+          "owner": "arcweft-bundle",
+          "bytes": "73059",
+          "physical_lines": "1936",
+          "code_lines": "1816",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-bundle/tests/view_runtime_text_controls.rs",
+          "owner": "arcweft-bundle",
+          "bytes": "10383",
+          "physical_lines": "293",
+          "code_lines": "279",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+          "owner": "arcweft-cli",
+          "bytes": "15561",
+          "physical_lines": "426",
+          "code_lines": "394",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "owner": "arcweft-compiler",
+          "bytes": "129534",
+          "physical_lines": "3188",
+          "code_lines": "3088",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "owner": "arcweft-compiler",
+          "bytes": "37255",
+          "physical_lines": "955",
+          "code_lines": "924",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-id/src/closed_enum.rs",
+          "owner": "arcweft-id",
+          "bytes": "6115",
+          "physical_lines": "208",
+          "code_lines": "189",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "35"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": "260281",
+          "physical_lines": "6064",
+          "code_lines": "5849",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "88"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/registration/closed_enum.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": "20401",
+          "physical_lines": "557",
+          "code_lines": "510",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "162"
+        },
+        {
+          "path": "crates/arcweft-player-scene/src/text_controls.rs",
+          "owner": "arcweft-player-scene",
+          "bytes": "9727",
+          "physical_lines": "249",
+          "code_lines": "226",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-player-scene/tests/runtime_control_style_lowering.rs",
+          "owner": "arcweft-player-scene",
+          "bytes": "9581",
+          "physical_lines": "259",
+          "code_lines": "236",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-player-scene/tests/runtime_text_controls.rs",
+          "owner": "arcweft-player-scene",
+          "bytes": "21271",
+          "physical_lines": "562",
+          "code_lines": "515",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-player-web/tests/input.rs",
+          "owner": "arcweft-player-web",
+          "bytes": "17334",
+          "physical_lines": "466",
+          "code_lines": "430",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/text_input.rs",
+          "owner": "arcweft-presentation",
+          "bytes": "48808",
+          "physical_lines": "1709",
+          "code_lines": "1442",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "32"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "17298",
+          "physical_lines": "532",
+          "code_lines": "490",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "163"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session/hot_swap.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "23782",
+          "physical_lines": "549",
+          "code_lines": "517",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "56"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session/text_control.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "4203",
+          "physical_lines": "96",
+          "code_lines": "88",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "67"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "27439",
+          "physical_lines": "715",
+          "code_lines": "670",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "121757",
+          "physical_lines": "2844",
+          "code_lines": "2780",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "5225",
+          "physical_lines": "133",
+          "code_lines": "130",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "owner": "arcweft-view",
+          "bytes": "4746",
+          "physical_lines": "142",
+          "code_lines": "128",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-view/src/program.rs",
+          "owner": "arcweft-view",
+          "bytes": "43314",
+          "physical_lines": "1274",
+          "code_lines": "1144",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "254"
+        },
+        {
+          "path": "tools/build-web-ime-player-rendered-fixture.rs",
+          "owner": "repository-tools",
+          "bytes": "21097",
+          "physical_lines": "554",
+          "code_lines": "537",
+          "classification": "tool",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/text_input/policy.rs",
+          "owner": "arcweft-presentation",
+          "bytes": "4576",
+          "physical_lines": "151",
+          "code_lines": "133",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        }
+      ],
+      "packages": [
+        {
+          "package": "arcweft-bundle",
+          "manifest": "crates/arcweft-bundle/Cargo.toml",
+          "workspace_fan_in": "11",
+          "workspace_fan_out": "19",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-cli",
+          "manifest": "crates/arcweft-cli/Cargo.toml",
+          "workspace_fan_in": "0",
+          "workspace_fan_out": "54",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "2"
+        },
+        {
+          "package": "arcweft-compiler",
+          "manifest": "crates/arcweft-compiler/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "25",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "10"
+        },
+        {
+          "package": "arcweft-id",
+          "manifest": "crates/arcweft-id/Cargo.toml",
+          "workspace_fan_in": "33",
+          "workspace_fan_out": "0",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+          "workspace_fan_in": "8",
+          "workspace_fan_out": "15",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "manifest": "crates/arcweft-player-scene/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "14",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "4"
+        },
+        {
+          "package": "arcweft-player-web",
+          "manifest": "crates/arcweft-player-web/Cargo.toml",
+          "workspace_fan_in": "0",
+          "workspace_fan_out": "17",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "8"
+        },
+        {
+          "package": "arcweft-presentation",
+          "manifest": "crates/arcweft-presentation/Cargo.toml",
+          "workspace_fan_in": "21",
+          "workspace_fan_out": "4",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "manifest": "crates/arcweft-runtime-driver/Cargo.toml",
+          "workspace_fan_in": "6",
+          "workspace_fan_out": "16",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "3"
+        },
+        {
+          "package": "arcweft-view",
+          "manifest": "crates/arcweft-view/Cargo.toml",
+          "workspace_fan_in": "15",
+          "workspace_fan_out": "5",
+          "development_workspace_fan_in": "5",
+          "development_workspace_fan_out": "0"
+        }
+      ],
+      "responsibilities": [
+        "Id owns only neutral owner/domain/value identities; TextInput is owner tag 2 inside identity version 1, not a new version.",
+        "Presentation owns the complete purpose and Enter-key vocabularies, Serde representation, domain descriptors and context-free TryFrom conversion. The policy child separates vocabulary/identity from IME editing protocol.",
+        "View owns typed argument roles. Sema uses the existing registered CompileTimeEnum expression fact; Compiler consumes its original typed ID. There is no string parser or project-enum workaround.",
+        "Bundle removes its duplicate purpose/hint enums. Driver transports the same values through product and retained instructions, frame fingerprints, controls and cold restore. Scene deletes the two duplicate conversion tables.",
+        "The standalone fixture tool imports Presentation directly through its existing path-dependency model; the workspace dependency graph is unchanged. Large existing owners retain their original cohesive responsibilities; no arbitrary splitting, new unsafe, or version bump."
+      ],
+      "formatting": "Owner-r2 precedes only a formatting-only change to the standalone tool body. Formal quality and the generator test use the final bytes; the owner tests are not relabeled as a rerun of those script bytes."
+    },
+    "behavior": [
+      "All 11 purpose values and 7 Enter-key values cross real AWFB encode/decode and cold restore in 17 distinct pairs.",
+      "Wrong domains, unknown/case-mismatched members, dynamic Strings, integer values, duplicate arguments and Button misuse reject before publication.",
+      "Password-purpose on a plain TextField keeps plain privacy; Pin-purpose on SecureField keeps secure privacy. Wrong-privacy submit preserves the complete View snapshot; valid submit atomically publishes input and state.",
+      "Existing ID/public API, enum registration, Presentation and all 93 View cases pass. The standalone generator keeps deterministic product bytes and executable callbacks."
+    ],
+    "changes": "Remove Bundle-owned duplicate purpose/hint enums and Scene conversion tables. Presentation is the sole vocabulary owner. Register TextInput owner tag 2 inside closed-enum identity version 1; reject unknown owner 3 and out-of-range 256. Required BindTextInput fields evolve in place without legacy readers.",
+    "formatting": "Owner-r2 predates only formatting of the standalone tool body. Final quality and generator use the final body. Retain the initial format-check failure and its correction; do not relabel owner-r2 as rerunning those script bytes.",
+    "documentCorrection": "The IME chapter previously described committed Binding ownership ambiguously. Clarify that TextEditState owns the adapter editing document, while the retained String field is the application authority; preserve the original wording in the source patch/history.",
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-ime-input-policy-owner.raw.zip",
+      "entries": 57,
+      "bytes": 1956697,
+      "sha256": "046ec529a391a3c2f9961da2ec864e0833786172ef6433b7509d98dfea06bfcc",
+      "containsExecutables": false
+    },
+    "preservedPriorRecords": 136,
+    "integration": "Owner and workspace quality passed. The 71-package reverse closure, default CLI, remaining Source sample/policy/Scroll migration and actual Native/Web display remain separate conditions."
   }
 }
