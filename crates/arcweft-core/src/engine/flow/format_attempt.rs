@@ -225,18 +225,14 @@ impl Engine {
             return false;
         };
         while self.fiber.frame.control_stack.len() > index + 1 {
-            let owns_scope = match &self
+            let owns_scope = self
                 .fiber
                 .frame
                 .control_stack
                 .last()
                 .expect("bounded format unwind")
                 .kind
-            {
-                FlowControlStackEntryKind::Scope { .. } => true,
-                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
-                _ => false,
-            };
+                .owns_runtime_scope();
             if owns_scope && !self.pop_runtime_scope_for_output(output) {
                 return true;
             }

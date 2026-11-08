@@ -1928,7 +1928,31 @@ impl CallableFamily {
     ];
 }
 
+/// How a selected operation accesses an addressable receiver. Computed
+/// receivers retain value evaluation when no checked place/local exists.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CallableReceiverAccess {
+    Value,
+    BorrowValue,
+    InspectPlace,
+    MutatePlace,
+}
+
 impl CallableCandidateId {
+    pub(crate) fn receiver_access(&self) -> CallableReceiverAccess {
+        match self {
+            Self::CapacityMethod(id) if id.operation().requires_place_receiver() => {
+                CallableReceiverAccess::MutatePlace
+            }
+            Self::StageMethod(StageMethodId::Look) => CallableReceiverAccess::BorrowValue,
+            Self::PresentationHandleMethod(method)
+                if matches!(method.operation(), arcweft_interaction_model::presentation::PresentationHandleOperation::SetVisibility(_)) => {
+                CallableReceiverAccess::InspectPlace
+            }
+            _ => CallableReceiverAccess::Value,
+        }
+    }
+
     /// Flow declarations selected as applications are non-returning transfer
     /// targets. Ordinary Flow reference values do not grant call rights.
     pub(crate) const fn is_flow_transfer(&self) -> bool {

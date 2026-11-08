@@ -1137,6 +1137,21 @@ impl<F, A, V> FlowControlStackEntryKind<F, A, V> {
     }
 }
 
+impl<O, P, V>
+    FlowControlStackEntryKind<FunctionCallFrame<O, P>, NativeFormatAttemptFrame<V, O>, V>
+{
+    fn owns_runtime_scope(&self) -> bool {
+        match self {
+            Self::Scope { .. } => true,
+            Self::FunctionCall(frame) => frame.function_scope,
+            Self::FormatAttempt(frame) => frame.active.is_some(),
+            Self::Loop { .. } | Self::While { .. } | Self::WhileLet { .. } | Self::For { .. } => {
+                false
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub(crate) struct NativeFormatAttemptFrame<V = RuntimeValue, O = NativePendingWork> {
     pub(crate) attempt: RuntimeFormatAttemptId,

@@ -982,16 +982,10 @@ impl super::Engine {
                         self.fiber.frame.lexical_exit = Some(exit);
                         return Err(error);
                     }
-                } else if matches!(
-                    self.fiber.frame.control_stack[index].kind,
-                    super::FlowControlStackEntryKind::Scope { .. }
-                        | super::FlowControlStackEntryKind::FormatAttempt(
-                            super::NativeFormatAttemptFrame {
-                                active: Some(_),
-                                ..
-                            }
-                        )
-                ) {
+                } else if self.fiber.frame.control_stack[index]
+                    .kind
+                    .owns_runtime_scope()
+                {
                     let exit = self
                         .fiber
                         .frame

@@ -3705,13 +3705,15 @@ impl AnalyzerPreparedCallPrefix {
         if crate::callable::is_contextual_capability_type(actual) {
             return None;
         }
-        Some(match self.application.selected().id() {
-            crate::callable::CallableCandidateId::CapacityMethod(id)
-                if id.operation().requires_place_receiver() =>
-            {
+        Some(match self.application.selected().id().receiver_access() {
+            crate::callable::CallableReceiverAccess::InspectPlace
+            | crate::callable::CallableReceiverAccess::MutatePlace => {
                 PreparedCallReceiverEvaluation::Place(*source)
             }
-            _ => PreparedCallReceiverEvaluation::Value(*source),
+            crate::callable::CallableReceiverAccess::Value
+            | crate::callable::CallableReceiverAccess::BorrowValue => {
+                PreparedCallReceiverEvaluation::Value(*source)
+            }
         })
     }
 

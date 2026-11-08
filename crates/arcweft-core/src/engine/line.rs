@@ -323,18 +323,12 @@ impl Engine {
         let Some(entry) = self.fiber.frame.control_stack.last() else {
             return Ok(());
         };
-        let owns_scope = match &entry.kind {
-            FlowControlStackEntryKind::Scope { defers, .. } => {
-                if defers.has_work() {
-                    return Err(crate::scope::RuntimeScopeExitError::DeferredWorkPending.into());
-                }
-                true
-            }
-            FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
-            FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
-            _ => false,
-        };
-        if owns_scope {
+        if let FlowControlStackEntryKind::Scope { defers, .. } = &entry.kind
+            && defers.has_work()
+        {
+            return Err(crate::scope::RuntimeScopeExitError::DeferredWorkPending.into());
+        }
+        if entry.kind.owns_runtime_scope() {
             self.pop_runtime_scope()?;
         }
         let entry = self

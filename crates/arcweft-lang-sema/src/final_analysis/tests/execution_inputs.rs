@@ -30,6 +30,33 @@ fn declaration_body(report: &FinalSemanticAnalysis, name: &str) -> CheckedExecut
 }
 
 #[test]
+fn borrowed_formal_receivers_keep_their_original_execution_input_access() {
+    for kind in ["fn", "flow"] {
+        let world = fixture(
+            &format!(
+                "{kind} root(handle: Handle<ImageSurface>) -> i64 {{ handle.hide(); handle.show(); handle.release(); return 42i64 }}\n"
+            ),
+            None,
+        );
+        let report = analyze(&world).expect("formal Handle methods are well typed");
+        assert!(report.call_diagnostics().next().is_none());
+        let source = declaration_body(&report, "root");
+        let context = report
+            .checked_execution_context(
+                world.project.analysis_view().unwrap(),
+                &world.symbols,
+                source.clone(),
+                None,
+            )
+            .unwrap();
+        let abi = context
+            .checked_execution_input_abi(source)
+            .unwrap_or_else(|error| panic!("{kind}: {error:?}"));
+        assert_eq!(abi.parameters().len(), 1);
+    }
+}
+
+#[test]
 fn curried_map_admission_retains_each_family_and_the_original_callback_body() {
     for (input, output) in [
         ("Vec<i64>", "Vec<i64>"),

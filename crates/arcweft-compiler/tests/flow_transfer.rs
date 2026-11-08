@@ -48,6 +48,12 @@ fn sources() -> Vec<String> {
              flow other() -> i64 {{ return {other}i64 }}\n"
         ));
     }
+    cases.push(
+        "entry cli @entry.main { goto @flow.main }\n\
+         fn leave() -> Unit { let handle = image(id = \"transfer.call\", width = 20px, height = 10px); goto @flow.next(handle) }\n\
+         flow main() -> i64 { leave(); return 99i64 }\n\
+         flow next(handle: Handle<ImageSurface>) -> i64 { handle.hide(); handle.show(); handle.release(); return 42i64 }\n".to_owned()
+    );
     cases
 }
 #[test]
@@ -60,7 +66,26 @@ fn explicit_flow_inputs_reach_the_native_receiving_root() {
         let RuntimeEntryTarget::Flow(flow) = &entry.target else {
             panic!("the authored entry selects its Flow");
         };
-        let mut engine = Engine::for_flow(compiled.plan.clone(), flow).unwrap();
+        let bytes = AwbcLowerer::for_entry(
+            &compiled.plan,
+            &compiled.dialogue_content,
+            "flow-transfer.arcw",
+            &entry.id,
+        )
+        .lower()
+        .unwrap()
+        .program
+        .encode_canonical()
+        .unwrap();
+        let mut plan = compiled.plan.clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&bytes).as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut engine = Engine::for_flow(plan, flow).unwrap();
         for _ in 0..256 {
             let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
             assert!(result.stats.executed_ops <= 1);

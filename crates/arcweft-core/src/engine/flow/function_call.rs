@@ -298,22 +298,11 @@ impl Engine {
         );
         let count = self.fiber.frame.control_stack[function_index..]
             .iter()
-            .filter(|entry| match &entry.kind {
-                FlowControlStackEntryKind::Scope { .. } => true,
-                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
-                FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
-                _ => false,
-            })
+            .filter(|entry| entry.kind.owns_runtime_scope())
             .count();
         self.transition_presentation_return(count, detached, std::iter::once(result))?;
         while let Some(entry) = self.fiber.frame.control_stack.last() {
-            let owns_scope = match &entry.kind {
-                FlowControlStackEntryKind::Scope { .. } => true,
-                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
-                FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
-                _ => false,
-            };
-            if owns_scope {
+            if entry.kind.owns_runtime_scope() {
                 self.pop_runtime_scope()?;
             }
             let entry = self

@@ -144,7 +144,6 @@ pub use facts::{
     SemanticSignatureHelp, SemanticSignatureIndex, SemanticSignatureRecovery,
     SemanticSignatureSurface,
 };
-pub(crate) use identity::resolve_fx_source_constructor;
 pub use identity::{
     ActionCallableId, AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId,
     CallableArgumentSlotIndex, CallableAuthorityRank, CallableCandidateId, CallableFamily,
@@ -165,6 +164,7 @@ pub use identity::{
     StandardEnvironmentId, StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation,
     VectorDimensions,
 };
+pub(crate) use identity::{CallableReceiverAccess, resolve_fx_source_constructor};
 pub use join::{
     CallableInstantiationDigest, CallableReceiverMode, CheckedCallableArgument,
     CheckedCallableArgumentSlot, CheckedCallableJoin, CheckedCallableJoinDigest,

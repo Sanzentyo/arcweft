@@ -15911,3 +15911,18 @@ r1の元Source5 path＋基点patchで、Sema11件＋Compiler2件の13／13 PASS�
 Source 8d9a57e08bdcbd207b322fd3cd80337688d23f49のAPI移行を取り消したのではなく、Engine側の明示入力経路とsampleの不足入力を揃えて、旧block25／引数なし診断で止まっていた生成物を今回通過させた。このため現状一覧のsample行から旧拒否を「現在の失敗」として重複列挙していた説明を除き、この履歴と既存原本へ残す。裸Gotoの診断で原文labelがsource text unavailableとして省略される問題は継続。実Native／Web操作・表示・画像parityは未実行であり、AWFB生成を実操作の受入としない。registry153 propertyとGeneric Matchの受入行を変更していない。
 
 原本 docs/implementation/acceptance-evidence/task-flow-transfer-modern-wip7.raw.zip：25 entries／33717 bytes／SHA256 ef77e344e42d46bf2541e561dc7e9e37737073ac990dd866498d2b7bae14f19e。Source、manifest、patch、CLI log、probe script、metadataのみを保持する。
+## formal receiverとNative function-scope転送（WIP8、2026-11-09）
+
+確認基点はmain／origin/mainのb9215161c853d9208b6c97a995600aaf6e65d980（親1f6a839f1f57522d65950aa47bd65cf1c71788f7、tree 48fc38dbe7359a82ef90956ad0eadecff30dce54、公開patch SHA256 1981aa1c93787909c17458dea18073213d643ab8e0606a42af094240167090a1）。sample公開5 pathのblob・非forced remote・patchを照合、index空、保持cache4。WIP7の実CLI／AWFB成功と未実行の操作・描画境界は維持する。
+
+実Sourceの回帰を一つ追加した。通常関数leave内で元image factoryからImage Handleを発行し、Gotoの入力として渡し、転送先Flowのformal Handleをhide／show／releaseする。元callerのreturn99には戻らず、転送先の42を返す。Nativeは同じSourceのcanonical AWBC hashで実Planのartifactをbindし、偽のlive handle／scope／frameを生成していない。元6 caseと合わせ各backend7 Source case。
+
+r1は2 FAIL／0 PASS／0 SKIP／1.364秒で、実行前にexpression45のchecked local-access authorityが無いと拒否した。Semaへformal Handleの同じmethod列のABI回帰を追加すると、fnのexpression14でも同じ失敗を再現した。calleeのtraversalだけを変えたr2は3 FAIL／0 PASS／1411 filter等SKIP／1.437秒で解消せず、その変更を削除した。実際にはlocal-use側がvisibility receiverをPlaceとして借用する一方、prepared execution側はValueとしていた。選択済みCallableCandidateIdがValue／BorrowValue／InspectPlace／MutatePlaceを一つの規則で所有し、既存capacity mutation／Stage Lookとvisibilityの両consumerを移行した。computed receiverの既存value評価、contextual capability、元calleeのsemantic graphを維持し、存在しないlocal-accessを補うfallbackは追加していない。
+
+r3はSemaのfn／flow formal ABIとAWBCの7 caseがPASSしたが、Nativeでpresentation handle has no exact live issuing recordを再現した（2 PASS／1 FAIL／1411 filter等SKIP／1.701秒）。原因は、Gotoの終了継続がScope／active formatterのleaseを保持しても、実function scopeを持つFunctionCall frameで保持せずpopしていたこと。FlowControlStackEntryKind自身に実scope所有判定を置き、Goto／return継続、通常unwind、function returnのscope count／pop、formatterの退出を同じ判定へ揃えた。保留Goto packetの元leaseをscope退出前に既存return transitionで親へ保持し、最終receiving rootへの既存一括移管へ接続する。
+
+r4は3／3 PASS、1411 filter等SKIP、1.897秒。Sema1 testはfn／flowの2 context、Compiler2 testは各backend7 Source caseを実行するが、それらを別testとして件数へ加算しない。AWBCはOneOp／max_ops=1／256 ticksを保ち、元runtimeをdropした各stepの公開JSON cold restoreを含む。Nativeも各step1 op以下。r1／r3／r4の実EXEを元pathで前後採取してbinary drift0、r4 source drift0。r2のbefore binary pinは未採取でありdrift0を主張しない。各phaseの独立patch／入力hash／終端ログを保持し、異なる入力の件数を単一matrixへ加算しない。
+
+変更11 Rust pathのfmt check終了0。これはユーザーが認めた途中commitであり、現在patchのClippy・workspace品質gateと全53逆依存の実行は未完了。Cargo／lock／featureに変更が無く、先行metadata／target-all treeのCore53 closure（Source23を含む）を再利用して次の影響検証を行う。動的明示適用、generic／default／spreadと型の完全admission、全取消し／失敗matrix、Native公開save、実Native／Web parityは未達または未検証。新しい条件の修復であり、Generic Match等の既受入を戻す判定ではない。goto行の旧13件の説明はWIP6履歴へ保持し、今回の正確な範囲へ整理した。
+
+原本 docs/implementation/acceptance-evidence/task-flow-transfer-affine-call-wip8.raw.zip：35 entries／396323 bytes／SHA256 4c3450344d0d3efa19d6fcf7378ffe2ca43fdcb323f44286ad3e2b5c77a9b0e8。Source、patch、log、catalog、metadataのみを保存し、EXE／AWFBはコピー・移動していない。

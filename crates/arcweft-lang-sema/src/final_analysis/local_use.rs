@@ -49,8 +49,7 @@ use thiserror::Error;
 use crate::callable::{
     CallableCandidateId, CallableInstantiationDigest, CheckedCallApplicationCore,
     CheckedCallArgumentSlotSource, CheckedCallOperandDestination, CheckedCallReceiverProjection,
-    CheckedCapacityOperation, CheckedProjectFunctionInstanceSolution, LineScheduleCallableId,
-    StageMethodId,
+    CheckedProjectFunctionInstanceSolution, LineScheduleCallableId,
 };
 use crate::checked_rich_text::{
     CheckedDialogueToken, CheckedDisplayConformance, CheckedDisplayInstantiationError,
@@ -3730,12 +3729,13 @@ fn selected_in_place_receivers(
         let Some(application) = call.selected_application() else {
             continue;
         };
-        if !application
+        if application
             .core()
             .candidates()
             .selected()
-            .capacity_operation()
-            .is_some_and(CheckedCapacityOperation::requires_place_receiver)
+            .id()
+            .receiver_access()
+            != crate::callable::CallableReceiverAccess::MutatePlace
         {
             continue;
         }
@@ -3783,11 +3783,19 @@ fn selected_borrowed_receivers(
         let Some(application) = call.selected_application() else {
             continue;
         };
-        let borrow = match application.core().candidates().selected().id() {
-            CallableCandidateId::StageMethod(StageMethodId::Look) => SelectedReceiverBorrow::LocalValue,
-            CallableCandidateId::PresentationHandleMethod(method)
-                if matches!(method.operation(), arcweft_interaction_model::presentation::PresentationHandleOperation::SetVisibility(_)) => SelectedReceiverBorrow::Place,
-            _ => continue,
+        let borrow = match application
+            .core()
+            .candidates()
+            .selected()
+            .id()
+            .receiver_access()
+        {
+            crate::callable::CallableReceiverAccess::BorrowValue => {
+                SelectedReceiverBorrow::LocalValue
+            }
+            crate::callable::CallableReceiverAccess::InspectPlace => SelectedReceiverBorrow::Place,
+            crate::callable::CallableReceiverAccess::Value
+            | crate::callable::CallableReceiverAccess::MutatePlace => continue,
         };
         let CheckedCallReceiverProjection::Operand { source, .. } =
             application.core().execution().receiver()
