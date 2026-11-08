@@ -60829,5 +60829,600 @@
       "containsExecutables": false,
       "containsGeneratedBundles": false
     }
+  },
+
+  "styleTokenSourceCheckpoint": {
+    "version": 1,
+    "date": "2026-11-08",
+    "status": "Intermediate Source publication: original token annotation/declaration/reference ownership, font stacks and symbolic palette. Complete Style and interactive sample acceptance remain open.",
+    "annotationPublication": {
+      "version": 1,
+      "commit": "3cada521ecac205c76744b09613b9cf519d5ccb5",
+      "parent": "87c383fe24caca020fed8f5361971c4e9374a696",
+      "tree": "b061f54655d256bda5bbb0c63f2420a77c89c3b2",
+      "remote": "3cada521ecac205c76744b09613b9cf519d5ccb5",
+      "paths": [
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+          "blob": "1e369ae14d37d5ea5d81b98a2f4b489a75f5bba4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "efd311850581aee0d1c91ffa12289e7d3746c2e8"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/preparation.rs",
+          "blob": "1e0cc21f8c04eb2f36fc9a0411fd6629a7a509df"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/style.rs",
+          "blob": "256208299262eaa9e35139588f8560826ee54fa0"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "9bb6630ed07ec9daaf73af30f1741538581c7ed4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/style_types.rs",
+          "blob": "f870015fd0e9af0718cf2cd3370d594f18f5b9ce"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/nominal.rs",
+          "blob": "852b25ed472f06e604e192832492210a6ebaf532"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/nominal/cache.rs",
+          "blob": "ffde46c0db565be1bebf8ebf8fcf1cde4697d1f2"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/nominal/diagnostic.rs",
+          "blob": "dfd9266ba06cf0d68e1ee38f0a7913646b462fdf"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/nominal/input.rs",
+          "blob": "dc3347b5b283203f3aca563b65850f163d11412b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/nominal/model.rs",
+          "blob": "b38c21e092ef7646e4af1473a7b605fe30591c6e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/nominal/resolver/engine/support.rs",
+          "blob": "366f7f89740e0f5eebe4b4f980e75f491061be68"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/nominal/resolver/engine/traversal.rs",
+          "blob": "dfebff3ceccfe420f2afb1b6cadcaca83aaa4534"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "3d47469056440f6439209799150817c5f978c0f4"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "2a977d32deead7d3cf7b9474de8928b237bf359a54bf3a2c4067c3909e928e61",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T13:18:32.7930936Z"
+    },
+    "declarationPublication": {
+      "version": 1,
+      "commit": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+      "parent": "3cada521ecac205c76744b09613b9cf519d5ccb5",
+      "tree": "fa4fc51da593b9e8201f94c345121021925949b7",
+      "remote": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/src/style.rs",
+          "blob": "b0c4d12a7fe94a76aba4927759c0365990a56dc1"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product.rs",
+          "blob": "6af746685f9cf3b3830bb9550fb19abcd98fe90d"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/style_tokens.rs",
+          "blob": "e2fe5a2f1123b237213685c5ac726b9f8c2a0203"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item.rs",
+          "blob": "c0d408a3a4ca466d38dbaf3f7f7995344df1bd2f"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/host.rs",
+          "blob": "96611b59cba699b4f23a10986e690aa0dcdf7f4c"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "07974caac2986ba95a53e36e26b9404315d41a3f16468eb338a3454e890b342d",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T13:33:51.9917180Z"
+    },
+    "publication": {
+      "version": 1,
+      "commit": "c8fbbd4b1bc92266fc34026138661c71459a945b",
+      "parent": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+      "tree": "7d516ec72935c5178fc2414baee629629e756821",
+      "remote": "c8fbbd4b1bc92266fc34026138661c71459a945b",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "269f3569ee5c8ded58f060a15c7f90407c355af6"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/style_tokens.rs",
+          "blob": "8f00a0ce394295e5d39d5569f14d394b65a76da7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis.rs",
+          "blob": "c1a21fd8fe5fdb217d69f13e2677f6dc79f4b1c4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "2600866da9dfd8098be032bcd837a148f3bfb2ff"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/style.rs",
+          "blob": "07f6a5e042cf343b1a72530e8257ca5e8d24761f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/style.rs",
+          "blob": "61b61c7f25b63b00d6aee043f7c75c604db78002"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+          "blob": "39ab951ba0c72a93aa379cfeb9092a52eb458894"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+          "blob": "dc0408f2802ddc265f96dffbe7602054f4adecef"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "blob": "ff1977240f41a31a3d30a60ba280dde508326035"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model/style.rs",
+          "blob": "a45139d2a265dfb757d5ffc7e62e8b2d74f3ef4b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+          "blob": "0315b82adb6737cc5b318fda4867e5868077b0f9"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "blob": "e6a872a7b80d41baaba41ba72dacdfa2b4c42538"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+          "blob": "b0ec0c75e95ecde0abd4d6fd8c622a14e82cdbf6"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/style_types.rs",
+          "blob": "ce69ae192139d69ddbdafff3b42eefbb346f5c0d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+          "blob": "2eb4c6d03b9c873e2988001bdde7a57ee57a3ccc"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types.rs",
+          "blob": "9a134c01bd15661cf99ae41f00caea7833f68856"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "552660793f9b6a0efc00af769013d0f58e72f77f"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "116c33139967a30ab80b3288aed33ca0c39163b01384e71170e1f91b518de7cf",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T14:06:16.5712454Z"
+    },
+    "model": "All 25 native token annotations use the original Style item/token ordinal/HIR type node, semantic-only nominal report and distinct cache identity. HIR projects normalized zero-depth token identity once. Compiler transports checked native values and original whole-declaration source ranges. Style construction operands retain native font/system-color values and original sheet/token/initializer identities; exact type/value-kind validation and transcript tag 0x0226 preserve previous tags and version 1. Token names use the existing typed HIR path/select chain and original evaluation topology, never raw Source or runtime qualifier evaluation. Lookup work is bounded by the longest declared name in that sheet. Native ViewStyleSheet retains authority over token graph/type/cycle/depth validation and runtime cascade.",
+    "ownerReview": {
+      "context": {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/style.rs",
+        "bytes": 8409,
+        "physicalLoc": 229
+      },
+      "checker": {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/style.rs",
+        "bytes": 15696,
+        "physicalLoc": 365
+      },
+      "operand": {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/model/style.rs",
+        "bytes": 3761,
+        "physicalLoc": 117
+      },
+      "disposition": "Cohesive source-only ownership context, checker, and checked operand model. Existing Color/Length checking moved out of the general expression module into the same Style checker. ViewSpecifiedValue remains the sole complete native value algebra. No I/O, dependency or layer-direction changes; no runtime frame/snapshot admission. The 365-line new checker received the >300-growth ownership review; no public visibility was widened solely for file splitting."
+    },
+    "annotationOwner": {
+      "version": 1,
+      "base": "87c383fe24caca020fed8f5361971c4e9374a696",
+      "run": "style-token-annotation-20261108.owner-r1.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.136s] 4 tests run: 4 passed, 1390 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 1390,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3906,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T13:12:34.9193947Z"
+    },
+    "declarationOwner": {
+      "version": 1,
+      "base": "3cada521ecac205c76744b09613b9cf519d5ccb5",
+      "run": "style-token-publication-20261108.owner-r1.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.101s] 1 test run: 1 passed, 97 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 97,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3907,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T13:32:16.0699810Z"
+    },
+    "firstConstructionOwner": {
+      "version": 1,
+      "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+      "run": "style-token-construction-20261108.owner-r2.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.375s] 12 tests run: 9 passed, 3 failed, 1674 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 12,
+      "passed": 9,
+      "failed": 3,
+      "skipped": 1674,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3909,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::style_types::style_construction_operands_retain_the_original_sheet_and_declaration"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::view_product",
+          "test": "style_tokens::source_token_references_font_stacks_and_palette_values_reach_the_real_resolver"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::view_product",
+          "test": "style_tokens::source_style_construction_rejects_wrong_scopes_types_arity_and_token_graphs"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-08T13:47:29.0119821Z"
+    },
+    "finalConstructionOwner": {
+      "version": 1,
+      "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+      "run": "style-token-construction-20261108.owner-r3.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.646s] 12 tests run: 12 passed, 1674 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 1674,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3909,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T13:53:39.0267942Z"
+    },
+    "corrections": "Development check failures preserve missing exhaustive diagnostics/module paths, wrong lifetime/HIR argument projections, a missing test import, a misplaced raw-string test block and incorrect test property names. The first construction catalog failed after moving an import. First executed construction run: 9 pass/3 fail. Dotted token references were being sent through ordinary prepared selection before the Style checker; Style now owns that contextual decision first and marks token qualifiers static. Original typed Path/Select structure is checked against the actual declaration. The cross-sheet rejection fixture now separates its two source declarations with newlines and includes a valid control. Final 12-case selection passes without assertion/budget/filter weakening.",
+    "quality": [
+      {
+        "version": 1,
+        "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+        "command": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3909,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T13:55:00.1740559Z",
+        "finishedAt": "2026-11-08T13:55:59.0579922Z"
+      },
+      {
+        "version": 1,
+        "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+        "command": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3909,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T13:55:59.4873229Z",
+        "finishedAt": "2026-11-08T13:57:36.5051326Z"
+      },
+      {
+        "version": 1,
+        "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/style-token-construction-20261108.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3909,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T13:57:36.9513133Z",
+        "finishedAt": "2026-11-08T13:57:40.7837984Z"
+      },
+      {
+        "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+        "paths": [
+          "crates/arcweft-compiler/src/lower.rs",
+          "crates/arcweft-compiler/src/style.rs",
+          "crates/arcweft-compiler/tests/callable_execution/string_operations.rs",
+          "crates/arcweft-compiler/tests/view_product.rs",
+          "crates/arcweft-compiler/tests/view_product/style_tokens.rs",
+          "crates/arcweft-core/src/awbc/verify/code/string_tests.rs",
+          "crates/arcweft-core/src/value/string.rs",
+          "crates/arcweft-lang-hir/src/item.rs",
+          "crates/arcweft-lang-hir/src/item/host.rs",
+          "crates/arcweft-lang-sema/src/final_analysis.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/style.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer/preparation.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer/style.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/model/style.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/tests/style_types.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+          "crates/arcweft-lang-sema/src/nominal.rs",
+          "crates/arcweft-lang-sema/src/nominal/cache.rs",
+          "crates/arcweft-lang-sema/src/nominal/diagnostic.rs",
+          "crates/arcweft-lang-sema/src/nominal/input.rs",
+          "crates/arcweft-lang-sema/src/nominal/model.rs",
+          "crates/arcweft-lang-sema/src/nominal/resolver/engine/support.rs",
+          "crates/arcweft-lang-sema/src/nominal/resolver/engine/traversal.rs",
+          "crates/arcweft-lang-sema/src/types.rs",
+          "crates/arcweft-lang-sema/src/types/style.rs"
+        ],
+        "exitCode": 0,
+        "sourceDrift": 0
+      }
+    ],
+    "graph": {
+      "version": 1,
+      "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+      "metadataSha256": "8b88955abee574d331bea19cbefc12d92e23f8fb39c140cee39ea5de658cdadd",
+      "workspacePackages": 98,
+      "owners": [
+        "arcweft-lang-sema",
+        "arcweft-compiler"
+      ],
+      "selection": "rdeps(=arcweft-lang-sema)",
+      "packages": [
+        {
+          "name": "arcweft-adapter-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp-client",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-repl",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-runner",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+        },
+        {
+          "name": "arcweft-cli",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+        },
+        {
+          "name": "arcweft-compiler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-player-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+        },
+        {
+          "name": "arcweft-player-scene",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+        },
+        {
+          "name": "arcweft-player-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+        },
+        {
+          "name": "arcweft-project-loader",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-driver",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-host",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-plan",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+        },
+        {
+          "name": "arcweft-test",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+        },
+        {
+          "name": "arcweft-tooling",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+        },
+        {
+          "name": "arcweft-verify",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-oxiz",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-z3",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+        }
+      ],
+      "packageCount": 22,
+      "nonCliFeaturePoint": "workspace except CLI, all features, lib/tests",
+      "cliFeaturePoint": "CLI defaults, lib/tests; actual main executable pinned in place"
+    },
+    "reverseDependencyTree": {
+      "version": 1,
+      "command": "cargo tree --locked --workspace --invert arcweft-lang-sema --target all --all-features --prefix none",
+      "exitCode": 0,
+      "packageCount": 22,
+      "packages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "metadataTreeDrift": 0
+    },
+    "consumerScope": "Metadata and target-all invert tree agree on the 22-package Sema reverse-dependency closure. Owner tests and whole-workspace quality gates do not replace the still-pending complete consumer execution for these Style bytes. Prior String 8089-case totals remain scoped to Source 70a050cc9cd0b94d83b79a295ec688bccd3b1d3b.",
+    "nativeSourceProbe": {
+      "version": 1,
+      "base": "32277ec5e8bff06feef249e981e3f038c3153ebb",
+      "main": {
+        "path": "D:/git/arcweft/target/debug/arcw.exe",
+        "sha256": "be3eac18fce81261dab58ed104b661f5b727a6586ee536dfacc4c9f354f4ea33"
+      },
+      "sourceInputs": 3909,
+      "sourceDrift": 0,
+      "binaryDrift": 0,
+      "checkCommand": [
+        "check",
+        "--manifest-path",
+        "samples/native-text-input/arcw.toml",
+        "--json"
+      ],
+      "checkExitCode": 0,
+      "startedAt": "2026-11-08T14:04:42.1833682Z",
+      "finishedAt": "2026-11-08T14:04:52.6612903Z",
+      "scope": "Actual CLI Source check, not interactive Native/Web acceptance",
+      "bundleCommand": [
+        "bundle",
+        "--manifest-path",
+        "samples/native-text-input/arcw.toml",
+        "--profile",
+        "main",
+        "--output",
+        "D:/git/arcweft/target/arcweft/native-text-input-style.awfb",
+        "--json"
+      ],
+      "bundleExitCode": 0,
+      "artifact": {
+        "path": "D:/git/arcweft/target/arcweft/native-text-input-style.awfb",
+        "bytes": 81840,
+        "sha256": "2e348be119a21fda294a11f2e2379537ffb16f3e437cba10a351979946701cd6"
+      }
+    },
+    "pending": "Finish remaining static value/factory families, unannotated-token inference, typed composition/conversions and Environment Source publication, complete consumer execution and Native/Web interactive acceptance. Preserve every sample style, control, branch and original action. Generic Match, retained input, named Action, String and other bounded accepted cuts remain accepted.",
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-style-token-source-checkpoint.raw.zip",
+      "entries": 111,
+      "bytes": 5157502,
+      "sha256": "fe2ef204634c6c3a18647d34de3a63b8052470d785846489f399dc912137640d",
+      "containsExecutables": false,
+      "containsGeneratedBundles": false
+    }
   }
 }

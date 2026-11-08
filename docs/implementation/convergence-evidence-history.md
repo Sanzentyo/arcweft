@@ -15708,3 +15708,13 @@ Source `c4824f38ebce38305adb7f8ac757e13edb4b8e4e` はStyle指定値と構築oper
 これは型基盤の中間公開で、Style token／FontFamilyListや残る値・factoryのSource接続、compiler token guardの除去、sample全体とNative／Web表示の受入は継続する。先行String全件runを新しいStyle Sourceの全件PASSへ読み替えず、Generic Match・保持入力・Action等の既受入も戻さない。既存141 recordの値を全件照合して保持した。
 
 原本 `docs/implementation/acceptance-evidence/task-style-specified-type-checkpoint.raw.zip` は40 entry／2133673 bytes、SHA256 `64a56907424d23fab66a548b382bf4444138bb20a3eecfb7903f66ab6f59c9fb`。実行ファイルと生成AWFBは含まない。詳細はregistryの `specifiedStyleTypeCheckpoint`。
+
+## 2026-11-08 — Style token・font／palette Source接続のcheckpoint
+
+annotation Source `3cada521ecac205c76744b09613b9cf519d5ccb5` は全25 native kindを元Style／token ordinal／型nodeに束縛し、通常のnominal lookupからreport purposeとcache identityを分離した。宣言公開Source `32277ec5e8bff06feef249e981e3f038c3153ebb` はnonempty-token一律拒否を除去し、正規化済みHIR ID・checked ViewSpecifiedValue・元宣言source rangeをcodecへ接続した。構築Source `c8fbbd4b1bc92266fc34026138661c71459a945b` は元sheetに属するtoken参照、順序付きfont stack、system font、symbolic paletteを、通常runtime値から分かれた型付きoperandとして保持する。既存Color／Length処理も同じSource専用checkerへ移し、完成値・graph・cascadeのauthorityは既存Viewに維持した。
+
+annotation owner 4件、宣言／codec owner 1件がPASS。構築の初回listは移動時のimport不足で失敗し、初回実行12件は9 PASS／3 FAIL。typed Selectを通常の値として先に評価していたため、Styleのcontextual判定をprepared selectionより前に置き、qualifierをstaticとして扱った。元Path／Selectの正規化された名前と実宣言・元initializer・型の一致を再検証し、別sheet拒否fixtureは宣言を改行で分離し正常な対照も置いた。修正後12／12 PASS、1674 explicit-filter SKIP、3909 Source／catalog／実EXE drift0。全98 workspaceのlocked・全target・全feature check／Clippy、構造gate、fmtも終了0（警告あり）。development compile失敗を含む原本は削除・成功への読み替えをしていない。
+
+native-text-inputは元のfont stack・focus ring・入力欄を保った実CLI checkとmain-profile AWFB生成まで進んだ。この具体的な検証により、旧現状行の「FontFamilyList型・Style token未達」を訂正し、現在のStyle範囲を専用1行に集約した。過去のslot41失敗とそのSource SHAは元記録に残す。これは全Style・全sample・Native／Web表示の受入ではなく、未annotation推論、残る値／factory、composition／Environment、22逆依存全件を継続する。先行Stringの8089件をこのSourceの全件合格へ転用せず、Generic Match等の既受入も未完了へ戻さない。
+
+既存142 registry recordの値を全件照合して保持した。原本 `docs/implementation/acceptance-evidence/task-style-token-source-checkpoint.raw.zip` は111 entry／5157502 bytes、SHA256 `fe2ef204634c6c3a18647d34de3a63b8052470d785846489f399dc912137640d`。実行ファイルと生成AWFBは元のbuild pathに置き、ZIPには含めない。詳細はregistryの `styleTokenSourceCheckpoint`。
