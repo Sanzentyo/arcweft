@@ -54011,5 +54011,718 @@
     },
     "integration": "Owner and workspace gates passed. Complete reverse consumers, CLI Source probe, old sample migration, Scroll and Native/Web capture are not yet accepted.",
     "preservedPriorRecords": 132
+  },
+  "viewNamedActionConsumers": {
+    "version": 1,
+    "date": "2026-11-08",
+    "productionSource": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+    "additionalTestPublication": {
+      "version": 1,
+      "commit": "566abae1e89210630dd6b096c625f08dd7be3e24",
+      "parent": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+      "tree": "bb1e99643183d4467eebe456d11030898b31b9f7",
+      "remote": "566abae1e89210630dd6b096c625f08dd7be3e24",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "blob": "ebce04c642d08b586f4fc8b999680e5284424508"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-flow-registry-execution.json",
+          "blob": "f585ef5522d9ca8084031cfd7878971ca78cd15e"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-view-action-ingress-owner.raw.zip",
+          "blob": "c5db362eb44f5a921eb084f64e57619863709cf6"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "7d8e7e4b11e6232f6ef3145735e614d7a9a8b989"
+        },
+        {
+          "path": "docs/implementation/current-status.md",
+          "blob": "cc9dc9de041082fa4f1615edf00ef124a8eaf1a5"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "418c6edd8e34c0328a1c13251d1191ae06cd5eaae03a2a50accda416b57743b1",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T06:10:06.4243046Z"
+    },
+    "nonCli": {
+      "version": 1,
+      "base": "566abae1e89210630dd6b096c625f08dd7be3e24",
+      "run": "view-action-ingress-integrated-20261108.noncli-r2.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 927.776s] 7361 tests run: 7361 passed (10 slow), 18 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7361,
+      "passed": 7361,
+      "failed": 0,
+      "skipped": 18,
+      "selectedPackages": 0,
+      "matchedPackages": 49,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T06:45:02.4846750Z"
+    },
+    "cli": {
+      "version": 1,
+      "base": "566abae1e89210630dd6b096c625f08dd7be3e24",
+      "run": "view-action-ingress-integrated-20261108.cli.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 539.282s] 711 tests run: 707 passed (28 slow), 4 failed, 23 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 711,
+      "passed": 707,
+      "failed": 4,
+      "skipped": 23,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3922,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-08T06:58:03.3037312Z"
+    },
+    "mainExecutable": {
+      "version": 1,
+      "path": "D:/git/arcweft/target/debug/arcw.exe",
+      "sha256": "2ff8199bee8c358320376393480a5c664ee0618a4c28d05542c6836455a00f6d",
+      "runtimeStartedAt": "2026-11-08T06:48:58.7796107Z",
+      "runtimeFinishedAt": "2026-11-08T06:58:01.0444604Z",
+      "beforeRuntime": true,
+      "binaryDrift": 0,
+      "recordedAt": "2026-11-08T06:58:01.3769815Z"
+    },
+    "freshUniqueExecuted": 8072,
+    "passed": 8068,
+    "failed": 4,
+    "skipped": 41,
+    "featurePoints": [
+      "workspace except CLI, all-features, lib/tests, rdeps(Core)",
+      "CLI default, lib/tests"
+    ],
+    "priorCliFailureIds": [
+      "arcweft-cli::check::agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+      "arcweft-cli::check::spec_valid_run_edge_fixture_now_executes",
+      "arcweft-cli::check::verify_json_records_required_solver_checks",
+      "arcweft-cli::check::verify_json_reports_missing_promotion_proof"
+    ],
+    "cliFailureIdChanges": [],
+    "failureComparison": "IDs only; read actual diagnostics before inferring cause equivalence or repair.",
+    "failedPreparation": {
+      "version": 1,
+      "base": "566abae1e89210630dd6b096c625f08dd7be3e24",
+      "command": [
+        "nextest",
+        "list",
+        "--locked",
+        "--workspace",
+        "--exclude",
+        "arcweft-cli",
+        "--all-features",
+        "--lib",
+        "--tests",
+        "-E",
+        "rdeps(=arcweft-core)",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-action-ingress-integrated-20261108.noncli.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-08T06:11:49.9586569Z",
+      "finishedAt": "2026-11-08T06:18:00.5691175Z"
+    },
+    "preparationCause": "E0786 mmap Core rlib failed with Windows OS1455 (paging file); delayed ICE/import/rlib errors followed. No runtime in that attempt. Retry reused completed build products without changing source/features/profile/jobs/budgets.",
+    "graph": {
+      "version": 1,
+      "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+      "metadata": "retained-text-input-integrated-20261108.metadata.json",
+      "metadataSource": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "owners": [
+        "arcweft-core",
+        "arcweft-view",
+        "arcweft-lang-sema",
+        "arcweft-runtime-driver",
+        "arcweft-bundle",
+        "arcweft-compiler"
+      ],
+      "cargoInputsUnchanged": true,
+      "packages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "reverseCount": 53,
+      "edgeKinds": "normal/build/dev, all resolved features and target-specific edges"
+    },
+    "cliSourceProbe": {
+      "version": 1,
+      "source": "566abae1e89210630dd6b096c625f08dd7be3e24",
+      "production": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-action-ingress-probe/arcw.toml",
+        "--json"
+      ],
+      "sourceSha256": "d58fd60ba144ea8113f6c69539b26c0fb9173aae61c94014bcf6eb604ad6aa97",
+      "manifestSha256": "239126b8e5b28f03102f03e9c95b7ce00879f56198b3fb55b7cf4701d22232c8",
+      "baselineExit": 1,
+      "exitCode": 0,
+      "status": "ok",
+      "mainExecutableSha256": "2ff8199bee8c358320376393480a5c664ee0618a4c28d05542c6836455a00f6d",
+      "binaryDrift": 0,
+      "startedAt": "2026-11-08T06:50:10.6567290Z",
+      "finishedAt": "2026-11-08T06:50:12.0960640Z"
+    },
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-view-action-ingress-consumers.raw.zip",
+      "entries": 28,
+      "bytes": 1536870,
+      "sha256": "f35d9ddf14aa021dab1d7f4f5368c0e4d513b3a7ba581408651b5f0daaa04475",
+      "containsExecutables": false
+    },
+    "preservedPriorRecords": 133,
+    "scope": "Fresh reverse consumers; do not add focused owner repetitions or prior matrices. Source sample migration and actual Native/Web capture remain distinct acceptance boundaries.",
+    "coverageReview": {
+      "version": 1,
+      "base": "566abae1e89210630dd6b096c625f08dd7be3e24",
+      "baseline": "retained-text-input-integrated-20261108.noncli-r3",
+      "baselineSelected": 7351,
+      "currentSelected": 7361,
+      "added": [
+        "arcweft-compiler::action_channel::external_typed_action_ingress_uses_the_original_fifo_in_every_executor_tier",
+        "arcweft-compiler::view_product::text_input::named_action_bundle_rejects_a_substituted_payload_role",
+        "arcweft-compiler::view_product::text_input::named_action_core_capacity_refusal_keeps_the_complete_session_and_retry",
+        "arcweft-compiler::view_product::text_input::named_action_without_an_execution_session_keeps_view_state_and_leases",
+        "arcweft-compiler::view_product::text_input::retained_text_input_click_action_mailbox_survives_session_wire_restore",
+        "arcweft-compiler::view_product::text_input::retained_text_input_player_batch_changes_then_submits_without_losing_the_handler",
+        "arcweft-compiler::view_product::text_input::retained_text_input_player_handler_failure_preserves_the_complete_session",
+        "arcweft-compiler::view_product::text_input::retained_text_input_player_orders_click_change_and_submit_before_the_next_step",
+        "arcweft-compiler::view_product::text_input::retained_text_input_publishes_a_named_action_with_state",
+        "arcweft-core::awbc::product_step::tests::actions::external_action_ingress_rejects_wrong_role_and_value_without_session_changes"
+      ],
+      "removed": [],
+      "requiredOwnerCases": [
+        {
+          "case": "arcweft-compiler::action_channel::action_emission_without_session_authority_preserves_the_original_operand_register",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::altered_action_wait_key_or_source_is_rejected_without_replacing_the_session",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::cancellation_of_a_source_parked_action_receiver_never_fabricates_a_payload",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::changed_action_declaration_cannot_replace_a_session_holding_its_original_message",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::empty_action_receive_stays_blocked_without_replaying_or_requesting_host_work",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::external_typed_action_ingress_uses_the_original_fifo_in_every_executor_tier",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::source_action_emission_in_an_effectful_function_keeps_its_original_payload",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::source_action_emission_reaches_native_and_decoded_product_without_host_effects",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::source_action_receive_captures_an_aliased_channel_in_a_function",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::source_action_receive_consumes_the_exact_emitted_payload",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::source_action_receive_is_fifo_across_consecutive_needs",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::source_action_receive_keeps_equal_shaped_channels_separate",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::action_channel::source_action_receiver_waits_for_a_thread_sender_and_survives_cold_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::affine_view_parameter_is_rejected_even_when_its_initial_value_is_empty_or_unused",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_button_input_failures_preserve_authored_evaluation_order",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_button_inputs_use_typed_expression_execution",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_element_geometry_inputs_reach_typed_layout",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_element_geometry_refuses_units_without_a_layout_conversion",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_expression_programs_keep_distinct_operation_roots",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_keyed_iteration_reaches_the_retained_program",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_local_state_follows_repeat_keys_and_rolls_back_failed_initialization",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_local_state_identity_uses_name_and_scope_instead_of_initializer_or_position",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_local_state_initializes_once_per_mount_and_survives_cold_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_local_state_rejects_nonretained_and_latent_scopes",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_local_state_replacement_preserves_fields_rejects_types_and_removes_fields",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_local_state_scope_retirement_keeps_inactive_sources_and_retires_descendants",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_nested_views_pass_core_values_locals_aliases_and_defaults",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_text_expression_cache_and_restore_preserve_budget_failure",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_text_expression_executes_and_refreshes_typed_parameter_inputs",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_text_expression_rejects_unproven_dynamic_callback_suspension",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_view_block_locals_keep_patterns_scopes_and_cold_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_view_conditional_does_not_execute_the_unselected_arm_and_recovers_from_failure",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_view_conditionals_use_core_and_isolate_arm_locals",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_view_match_failures_publish_no_partial_frame_and_recover",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_view_match_pattern_families_share_the_core_selector",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::authored_view_matches_select_core_patterns_and_export_arm_bindings",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_defaults_execute_general_values_and_refresh_preceding_inputs",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflation",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_lowers_every_typed_view_into_one_validated_product",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_lowers_project_fx_view_binding_through_the_shared_catalog",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_lowers_project_views_in_canonical_module_and_source_order",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_lowers_view_fx_closed_and_reactive_bindings_from_checked_authority",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_qualifies_view_fx_parameter_slots_by_definition",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_rejects_affine_view_handler_capture_before_bundle_publication",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_rejects_every_unknown_text_control_and_scroll_policy_symbol",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_rejects_general_view_calls_at_the_unimplemented_runtime_boundary",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_rejects_invalid_builtin_view_arguments",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_rejects_nested_view_recovery_before_product_acceptance",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_source_maps_reject_a_file_outside_the_accepted_project_root",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::compiler_source_maps_use_project_coordinates_and_preserve_local_diagnostics",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::forged_state_write_cannot_retarget_another_same_typed_retained_field",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::handler_capture_abi_uses_canonical_inputs_instead_of_first_use_order",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::handler_local_captures_use_core_inputs_and_revoke_changed_or_restored_routes",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::keyed_iteration_failure_and_empty_source_are_cache_and_restore_transparent",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::keyed_iteration_uses_checked_ranges_discard_patterns_and_nested_scopes",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::admitted_view_awbc_keeps_original_source_through_owned_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::admitted_view_source_reaches_entry_flow_replacement_and_inert_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::complete_product_preflights_all_retained_sources_with_one_exact_allowance",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::decoded_view_source_binding_index_is_bounded_and_rejects_a_changed_product",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::decoded_view_source_reseals_exact_original_bindings_in_a_fresh_namespace",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::every_retained_semantic_field_and_original_coordinate_is_revalidated",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::retained_definitions_round_trip_and_match_only_their_original_checked_owner",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::retained_match_source_is_required_and_rejects_unknown_definition_fields",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::view_binding_join_rejects_missing_extra_duplicate_stale_and_foreign_coordinates",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::view_binding_limits_cover_all_source_bytes_and_failure_leaves_the_slot_unbound",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::view_source_assertions_reject_missing_duplicate_and_foreign_admissions",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::view_task_bindings_resolve_only_in_the_original_completed_core_plan",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::match_source::view_task_key_ignores_revision_only_replacement_and_tracks_exact_match_admission",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::nominal_default_constructed_from_scoped_input_keeps_its_origin",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::nominal_defaults_keep_distinct_scope_widths_and_share_equal_scopes",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::nominal_enum_default_constructed_from_scoped_input_keeps_its_origin",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::nonreturning_empty_match_keeps_frame_failure_atomic_after_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::repeated_retained_operations_keep_their_own_lexical_definitions",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::retained_keyed_transition_updates_one_cell_and_restores_without_replaying_handler",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::retained_nested_transition_early_return_matches_native_and_decoded_awbc",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::retained_state_handler_publishes_update_only_on_routed_event",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::retained_transition_failure_leaves_every_cell_and_route_unchanged",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::retained_transition_refreshes_unchanged_routes_and_keeps_other_mounts_independent",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::spacing::integer_pixel_spacing_reaches_canonical_style_and_physical_child_layout",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::spacing::spacing_conversion_has_exact_nonnegative_fixed_point_bounds",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::spacing::spacing_uses_the_typed_scalar_and_physical_flow_admission",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::named_action_bundle_rejects_a_substituted_payload_role",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::named_action_without_an_execution_session_keeps_view_state_and_leases",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_bundle_rejects_redirecting_writes_to_readonly_state",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_click_action_mailbox_survives_session_wire_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_handler_failure_keeps_value_routes_and_retry_intact",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_keyed_occurrences_keep_distinct_targets_and_values",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_kinds_enforce_privacy_selection_revision_and_capacity",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_player_batch_changes_then_submits_without_losing_the_handler",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_player_handler_failure_preserves_the_complete_session",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_player_orders_click_change_and_submit_before_the_next_step",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_publishes_a_named_action_with_state",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_rejects_nonwritable_or_transient_value_sources",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::retained_text_input_updates_and_submits_the_current_value_across_cold_restore",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::uninhabited_view_match_keeps_an_empty_case_inventory",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::view_match_catalog_distinguishes_equal_authored_sites_in_one_program",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::view_match_catalog_keeps_stable_sites_exact_admissions_and_current_product_stamps",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::view_or_patterns_refuse_inconsistent_binding_positions",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-core::action::tests::inert_action_messages_require_original_roles_before_restore_materialization",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-core::action::tests::original_action_messages_keep_fifo_and_isolate_other_channels",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-core::action::tests::refused_action_emission_preserves_the_candidate_and_mailbox_and_first_failure",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-core::awbc::product_step::tests::actions::action_checkpoint_restores_consumed_and_added_messages_together_with_the_fiber",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-core::awbc::product_step::tests::actions::action_messages_survive_product_wire_save_and_cold_restore_in_order",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-core::awbc::product_step::tests::actions::external_action_ingress_rejects_wrong_role_and_value_without_session_changes",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-core::awbc::product_step::tests::actions::forged_action_row_is_rejected_without_changing_the_live_session",
+          "matches": 1
+        },
+        {
+          "case": "arcweft-compiler::view_product::text_input::named_action_core_capacity_refusal_keeps_the_complete_session_and_retry",
+          "matches": 1
+        }
+      ],
+      "requiredCaseCount": 106,
+      "requiredMissingOrDuplicate": 0,
+      "note": "Catalog selection only; final runtime terminal is separate. Prior complete cases retained, current owners selected once."
+    },
+    "observedDiagnostics": [
+      "Scroll: sema.final_analysis shared callable resolution, original expression slot 15",
+      "Voice: active dialogue has no voice",
+      "Both promotion fixtures: sema.final_analysis, no solver/promotion proof result"
+    ]
   }
 }
