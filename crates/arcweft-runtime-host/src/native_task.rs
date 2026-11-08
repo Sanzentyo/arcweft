@@ -2129,8 +2129,8 @@ mod tests {
     };
     use arcweft_core::task::{
         CancelScopeId, GenerationId, HostTaskRequest, LogicalEpoch, Progress, SystemInfoKind,
-        SystemInfoRequest, TaskClass, TaskDispatchIdentity, TaskDispatchStart, TaskId, TaskKey,
-        TaskOutcomeContract, TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,
+        SystemInfoRequest, TaskClass, TaskDispatchIdentity, TaskDispatchStart, TaskOutcomeContract,
+        TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,
     };
     use arcweft_core::value::runtime_sequence_dense_u8;
     use std::sync::Mutex;

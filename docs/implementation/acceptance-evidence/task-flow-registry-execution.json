@@ -51003,5 +51003,131 @@
         }
       ]
     }
+  },
+  "existingConsumerFixtureCheckpoint": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "c96539d2fa8107fac34b03bf7568cbb4ce7b16a5",
+    "originalHeldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "adopted": [
+      "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+      "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+      "crates/arcweft-runtime-host/src/native_task.rs",
+      "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+      "samples/agent-script/cli-read-resource-smoke.awfagent",
+      "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+      "samples/agent-script/native-choice-dispatch.arcw",
+      "samples/agent-script/native-project-graph-relations.arcw",
+      "samples/agent-script/native-visual-regression.arcw"
+    ],
+    "remainingHeld": [
+      "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+      "samples/rich-text-full-grammar.arcw",
+      "samples/rich-text-windows-fonts.arcw"
+    ],
+    "remainingHeldPatchSha256": "caee0866442e352ac79356ffac8679f2432a11a385eda3ef0f4e5016a5a799fd",
+    "beforeFiles": [
+      {
+        "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+        "sha256": "06a51fa84d1c524be50bf310aff6ddf8451a620a76193ceddbd329e73d2e790d"
+      },
+      {
+        "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+        "sha256": "fbef984fc58503f621828d34b49031a870dd803c24630d7dd02b37a86f788169"
+      },
+      {
+        "path": "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+        "sha256": "218dead97f656989bf32cb6de98e8b6618512f6d1aed9f607d6bfd3bbb6ff005"
+      },
+      {
+        "path": "crates/arcweft-runtime-host/src/native_task.rs",
+        "sha256": "1565a2fb349d8871e1cd4e6561ea0e4b0e233509c07ed0c0ec76a6ba387dfa8a"
+      },
+      {
+        "path": "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+        "sha256": "6d35acc42641f80464c8a5de987a2b4c0693a91aca7fa15cd21db4c74f5461ac"
+      },
+      {
+        "path": "samples/agent-script/cli-read-resource-smoke.awfagent",
+        "sha256": "ca7e221393117be87128cb8696e328a239c61c4b449b6e40524d353d2d3245f1"
+      },
+      {
+        "path": "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+        "sha256": "09da18e738ac038221b317ed465b489083e5e4ce52ccef0948aaff32fd80b523"
+      },
+      {
+        "path": "samples/agent-script/native-choice-dispatch.arcw",
+        "sha256": "89432207a184ca286203287f8290a4f1f85295adbae1eb8bb3df75078ff3db59"
+      },
+      {
+        "path": "samples/agent-script/native-project-graph-relations.arcw",
+        "sha256": "ca9f2318675fb2761b40cdb3e2f1db8c656333c3bd1df7760abf1ca6713697c5"
+      },
+      {
+        "path": "samples/agent-script/native-visual-regression.arcw",
+        "sha256": "b563a6c3e3598e3f78b91ff3f435e3abe521f3936e5023e528a46b14e8669ace"
+      },
+      {
+        "path": "samples/rich-text-full-grammar.arcw",
+        "sha256": "ed62eec83a0b9fd32e422f6a4ecd28bb471e8fcb0a28ef3683bd403c7c4e90fa"
+      },
+      {
+        "path": "samples/rich-text-windows-fonts.arcw",
+        "sha256": "025474ae5424e2249e0afc00e2e8e512dbf5f5ed494c4c1c1505990529e8a868"
+      }
+    ],
+    "scope": "Checkpoint nine pre-existing consumer fixture/API migrations without editing their source bytes. Resource scripts consume typed Result/body variants and assert actual metadata; CLI profiles execute real initializers/reducers/measured flows and assert nonzero work; graph metadata expectations come from accepted semantic APIs. Sample Flow results are explicit. Runtime-host changes remove two unused test imports.",
+    "validation": "These bytes already participated in the recorded 711-case CLI corpus (707 pass / four separately tracked failures), unchanged original WIP hash c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c, and current workspace gates. No extra intermediate-commit test run is required by the user. New AWBC source reverse runtime remains independently in progress and is not claimed complete.",
+    "sourceFreeze": "The running non-CLI epoch remains frozen at its recorded composite source. This Git checkpoint changes no Rust/sample input bytes. The subsequent CLI epoch additionally inventories .awfagent inputs. Earlier raw held=14 labels and 12/6 WIP observations remain historical, not the new live inventory.",
+    "documentation": {
+      "removed": [
+        "docs/implementation/2026-10-09-cli-bench-repair.md",
+        "docs/implementation/2026-10-09-cli-observe-repair.md"
+      ],
+      "reason": "Dated pending lists (98/166 baseline failures and old first-boundary plans) were superseded by item-level current-status and complete newer runtime records. Remove their misleading current-state surface; preserve every original byte, test result, and full SHA in this raw history. Generic Match and all earlier accepted cuts stay accepted.",
+      "originalUntracked": 6,
+      "remainingUntracked": 4
+    },
+    "raw": {
+      "path": "task-existing-consumer-fixture-checkpoint.raw.zip",
+      "sha256": "7569b0f5aca12a0592f52cf2cbce1a0e340d2b363a8424aa557900aad5f54ac9",
+      "entries": [
+        {
+          "entry": "original-held.patch",
+          "bytes": 29605,
+          "sha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c"
+        },
+        {
+          "entry": "adopted.patch",
+          "bytes": 22203,
+          "sha256": "1bea64b71ad8357ef0e5fbb8e78ec8acb422170a51f8bf3fe549d8e3d505fc8f"
+        },
+        {
+          "entry": "remaining-held.patch",
+          "bytes": 7402,
+          "sha256": "caee0866442e352ac79356ffac8679f2432a11a385eda3ef0f4e5016a5a799fd"
+        },
+        {
+          "entry": "input-before.json",
+          "bytes": 5381,
+          "sha256": "4a3322f5fe2c5c34b195036016c14ef6bb1ef2d06056bbc14ddfaf55d5c4a52a"
+        },
+        {
+          "entry": "prepare-checkpoint.ps1",
+          "bytes": 12307,
+          "sha256": "fd15e40aeb8053c9e78d757c0d40dfb6ed9101af6674a1cf7bee3f002fd2f64b"
+        },
+        {
+          "entry": "historical/2026-10-09-cli-bench-repair.md",
+          "bytes": 44712,
+          "sha256": "950a9b981f523ec75b732c44c461c436a859f7d1e17b8598c350f8a878fa444d"
+        },
+        {
+          "entry": "historical/2026-10-09-cli-observe-repair.md",
+          "bytes": 23589,
+          "sha256": "144da5bd821a03b495ed632e9dcacf53e55cf0aa30d1dd40f894c1339f880100"
+        }
+      ]
+    }
   }
 }

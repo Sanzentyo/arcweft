@@ -6,7 +6,11 @@ effects { agent.resource.read }
     expect(resource.kind == "observation_latest")
     expect(resource.mime_type == "application/json")
     expect(resource.hash == "cli-resource")
-    expect(resource.body.kind == "json")
+    expect(match resource.body {
+        .Json(_) => true
+        .Text(_) => false
+        .BytesBase64(_) => false
+    })
     return Ok(())
 }
 

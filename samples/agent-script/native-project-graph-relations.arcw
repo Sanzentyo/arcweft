@@ -1,4 +1,4 @@
-pub flow intro {
+pub flow intro() -> String effects {} {
     return "intro"
 }
 
@@ -10,6 +10,6 @@ flow opening {
     goto @flow.next
 }
 
-flow next {
+flow next() -> String effects {} {
     return "next"
 }

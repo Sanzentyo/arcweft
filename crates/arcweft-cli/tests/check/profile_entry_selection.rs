@@ -6,7 +6,7 @@ extern capability cli {
 
 entry cli @entry.cli.main { goto @flow.main }
 
-flow main() {
+flow main() -> Vec<String> effects {} {
     return cli.args()
 }
 "
@@ -14,8 +14,6 @@ flow main() {
 
 fn profiled_test_source() -> &'static str {
     r#"
-mod crate
-
 struct TestState {
     passed: bool
 }
@@ -27,17 +25,17 @@ enum TestEvent {
 fn initial_test_state() -> TestState
 effects {}
 {
-    initial_test_state()
+    TestState { passed = true }
 }
 
 fn reduce_test(state: &TestState, event: TestEvent)
     -> Result<Reduction<TestState>, ReducerError>
 effects {}
 {
-    reduce_test(state, event)
+    Ok(Reduction.unchanged(state))
 }
 
-entry test @entry.test.opening {
+entry test @entry.validation.opening {
     state = TestState
     initializer = initial_test_state
     event = TestEvent
@@ -50,7 +48,7 @@ test @test.opening scenario {
     expect.no_assertion_failures()
 }
 
-flow opening(state: TestState) {
+flow opening(state: TestState) -> String effects {} {
     return "done"
 }
 "#
@@ -58,17 +56,14 @@ flow opening(state: TestState) {
 
 fn profiled_bench_source() -> &'static str {
     r#"
-mod crate
+entry bench @entry.measurement.opening { goto @flow.bench_profile }
 
-entry bench @entry.bench.opening { goto @flow.bench_profile }
-
-flow bench_profile {
+flow bench_profile() -> String effects {} {
     return "done"
 }
 
 bench @bench.opening {
-    setup { let state = fixture<GameState>("opening.json") }
-    measure iterations = 1 { opening_choices() }
+    measure iterations = 1 { goto @flow.bench_profile }
 }
 "#
 }
@@ -89,12 +84,12 @@ adapter = "native-cli"
 
 [profiles."test.opening"]
 kind = "test"
-entry = "@entry.test.opening"
+entry = "@entry.validation.opening"
 source = "src/opening_test.arcw"
 
 [profiles."bench.opening"]
 kind = "bench"
-entry = "@entry.bench.opening"
+entry = "@entry.measurement.opening"
 source = "src/opening_bench.arcw"
 "#
 }
@@ -158,6 +153,23 @@ fn cli_test_and_bench_profiles_use_profile_sources() {
         String::from_utf8_lossy(&test.stderr)
     );
 
+    let test_json: serde_json::Value =
+        serde_json::from_slice(&test.stdout).expect("test profile output is structured JSON");
+    let tests = test_json["tests"]
+        .as_array()
+        .expect("profile scenario inventory");
+    assert_eq!(tests.len(), 1);
+    assert_eq!(tests[0]["id"], "test.opening");
+    assert_eq!(tests[0]["kind"], "scenario");
+    assert_eq!(tests[0]["status"], "passed");
+    assert_eq!(tests[0]["final_status"], "done Return(\"done\")");
+    assert!(
+        tests[0]["steps_run"]
+            .as_u64()
+            .is_some_and(|steps| steps > 0)
+    );
+    assert_eq!(tests[0]["diagnostics"], serde_json::json!([]));
+
     let bench = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("bench")
         .arg("--manifest")
@@ -173,4 +185,20 @@ fn cli_test_and_bench_profiles_use_profile_sources() {
         "bench profile should run, stderr: {}",
         String::from_utf8_lossy(&bench.stderr)
     );
+    let bench_json: serde_json::Value =
+        serde_json::from_slice(&bench.stdout).expect("bench profile output is structured JSON");
+    let benches = bench_json["benches"]
+        .as_array()
+        .expect("profile bench inventory");
+    assert_eq!(benches.len(), 1);
+    assert_eq!(benches[0]["id"], "bench.opening");
+    assert_eq!(benches[0]["status"], "measured");
+    assert_eq!(benches[0]["sections"][0]["status"], "measured");
+    assert!(
+        benches[0]["sections"][0]["measurement"]["deterministic"]["executed_ops_median"]
+            .as_u64()
+            .is_some_and(|ops| ops > 0),
+        "the selected bench source must execute its measured flow: {bench_json}",
+    );
+    assert_eq!(benches[0]["diagnostics"], serde_json::json!([]));
 }

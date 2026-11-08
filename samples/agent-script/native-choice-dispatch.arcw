@@ -38,12 +38,12 @@ flow opening(state: GameState) effects { signal.write } {
     }
 }
 
-flow alice_intro effects { signal.write } {
+flow alice_intro() -> String effects { signal.write } {
     signal.set(@signal.current_flow, @flow.alice_intro)
     return "alice_intro"
 }
 
-flow quiet_intro effects { signal.write } {
+flow quiet_intro() -> String effects { signal.write } {
     signal.set(@signal.current_flow, @flow.quiet_intro)
     return "quiet_intro"
 }

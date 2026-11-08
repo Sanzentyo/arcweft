@@ -627,3 +627,7 @@ examplesのindexからリンクを除去した。現行のlayer仕様が参照�
 
 現状一覧は `current-status.md` に維持し、旧検証のSource・件数・失敗と訂正理由は
 収束検証履歴・受入原本に保持する。Generic Matchの受入行は変更しない。
+
+## 2026-11-08 — 旧CLI修復メモ2件
+
+2026-10-09-cli-bench-repair.md と 2026-10-09-cli-observe-repair.md の途中状態・残作業列挙は、後続の項目別受入と全CLI終端で置き換わったため削除した。実際の検証結果・full SHA・元本文は [checkpoint原本](acceptance-evidence/task-existing-consumer-fixture-checkpoint.raw.zip) に保全した。現状は [現状一覧](current-status.md) を参照する。

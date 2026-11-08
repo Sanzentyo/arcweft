@@ -167,6 +167,17 @@ fn agent_script_run_persists_debug_session_and_script_run() {
     ));
     let run_id = format!("run.debug.{}", std::process::id());
     let second_run_id = format!("run.debug.second.{}", std::process::id());
+    let expected_project = arcweft_compiler::source::compile_source(
+        &fs::read_to_string(agent_script_cli_run_smoke_path()).expect("read Agent fixture"),
+    )
+    .expect("compile accepted Agent project inventory");
+    let expected_index = expected_project.analysis.semantic_index();
+    let expected_entities =
+        arcweft_compiler::agent_project::agent_required_entities_from_project(expected_index)
+            .expect("accepted Agent entities");
+    let expected_graph =
+        arcweft_compiler::agent_project::agent_project_graph_from_project(expected_index)
+            .expect("accepted Agent project graph");
     let _ = fs::remove_file(&trace_path);
     let _ = fs::remove_file(&second_trace_path);
     let _ = fs::remove_file(&debug_db_path);
@@ -225,7 +236,7 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         .expect("script session persisted");
     assert_eq!(session.status, DebugSessionStatus::Finished);
     assert_eq!(session.metadata["last_run_id"], second_run_id.as_str());
-    assert_agent_script_project_metadata(&session.metadata);
+    assert_agent_script_project_metadata(&session.metadata, &expected_entities, &expected_graph);
     assert_stale_script_session_abandoned(&store, &stale_session_id);
     let expected_trace_path = trace_path.display().to_string();
     let persisted_run = store
@@ -249,32 +260,82 @@ fn agent_script_run_persists_debug_session_and_script_run() {
         "second run should be appended after the first run sequence range"
     );
     assert_eq!(persisted_run.metadata["steps"], report["steps"]);
-    assert_agent_script_project_metadata(&persisted_run.metadata);
-    assert_agent_script_project_metadata(&second_persisted_run.metadata);
+    assert_agent_script_project_metadata(
+        &persisted_run.metadata,
+        &expected_entities,
+        &expected_graph,
+    );
+    assert_agent_script_project_metadata(
+        &second_persisted_run.metadata,
+        &expected_entities,
+        &expected_graph,
+    );
     assert_eq!(store.stats().expect("stats").script_runs, 2);
     assert!(store.stats().expect("stats").debug_events > 0);
 
-    assert_debug_db_runs_report(&debug_db_path, &second_run_id);
+    assert_debug_db_runs_report(
+        &debug_db_path,
+        &second_run_id,
+        &expected_entities,
+        &expected_graph,
+    );
 }
 
-fn assert_agent_script_project_metadata(metadata: &BTreeMap<String, serde_json::Value>) {
+fn assert_agent_script_project_metadata(
+    metadata: &BTreeMap<String, serde_json::Value>,
+    expected_entities: &[arcweft_agent_protocol::artifact::RequiredEntity],
+    expected_graph: &arcweft_agent_protocol::protocol::AgentProjectGraph,
+) {
+    assert_eq!(expected_entities.len(), 1);
+    assert_eq!(expected_entities[0].kind, "entry");
+    let mut expected_entity_kinds = BTreeMap::<&str, usize>::new();
+    for entity in expected_entities {
+        *expected_entity_kinds
+            .entry(entity.kind.as_str())
+            .or_default() += 1;
+    }
     let entities = &metadata["project_entities"];
-    assert_eq!(entities["count"], 0);
-    assert_eq!(entities["kind_counts"].as_object().unwrap().len(), 0);
+    assert_eq!(entities["count"], expected_entities.len());
+    assert_eq!(
+        entities["kind_counts"],
+        serde_json::json!(expected_entity_kinds)
+    );
 
+    let mut expected_symbol_kinds = BTreeMap::<&str, usize>::new();
+    for symbol in &expected_graph.symbols {
+        *expected_symbol_kinds
+            .entry(symbol.kind.as_str())
+            .or_default() += 1;
+    }
+    let mut expected_edge_kinds = BTreeMap::<&str, usize>::new();
+    for edge in &expected_graph.edges {
+        *expected_edge_kinds
+            .entry(edge.edge_kind.as_str())
+            .or_default() += 1;
+    }
+    let expected_summary = expected_graph
+        .symbols
+        .iter()
+        .find_map(|symbol| symbol.project_summary.as_ref())
+        .expect("accepted project summary");
     let graph = &metadata["project_graph"];
     assert_eq!(graph["summary_symbol_id"], "project:summary");
-    assert_eq!(graph["symbol_count"], 1);
-    assert_eq!(graph["edge_count"], 0);
-    assert_eq!(graph["symbol_kind_counts"]["project_summary"], 1);
-    assert_eq!(graph["edge_kind_counts"].as_object().unwrap().len(), 0);
-    assert_eq!(graph["project_summary"]["entity_count"], 0);
-    assert_eq!(graph["project_summary"]["agent_action_count"], 0);
-    assert_eq!(graph["project_summary"]["project_callable_count"], 0);
-    assert_eq!(graph["project_summary"]["relation_count"], 0);
-    assert_eq!(graph["project_summary"]["dependency_edge_count"], 0);
-    assert_eq!(graph["project_summary"]["dynamic_control_flow_count"], 0);
-    assert_eq!(graph["project_summary"]["debug_query_count"], 0);
+    assert_eq!(graph["symbol_count"], expected_graph.symbols.len());
+    assert_eq!(graph["edge_count"], expected_graph.edges.len());
+    assert_eq!(
+        graph["symbol_kind_counts"],
+        serde_json::json!(expected_symbol_kinds)
+    );
+    assert_eq!(
+        graph["edge_kind_counts"],
+        serde_json::json!(expected_edge_kinds)
+    );
+    assert_eq!(
+        graph["project_summary"],
+        serde_json::json!(expected_summary)
+    );
+    assert_eq!(graph["project_summary"]["entity_count"], 1);
+    assert_eq!(graph["project_summary"]["project_callable_count"], 1);
 }
 
 fn seed_stale_script_session(debug_db_path: &Path) -> SessionId {
@@ -309,7 +370,12 @@ fn assert_stale_script_session_abandoned(store: &DebugStore, stale_session_id: &
     );
 }
 
-fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
+fn assert_debug_db_runs_report(
+    debug_db_path: &Path,
+    second_run_id: &str,
+    expected_entities: &[arcweft_agent_protocol::artifact::RequiredEntity],
+    expected_graph: &arcweft_agent_protocol::protocol::AgentProjectGraph,
+) {
     let runs_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("debug")
         .arg("db")
@@ -339,9 +405,24 @@ fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
         runs[0]["metadata"]["project_graph"]["summary_symbol_id"],
         "project:summary"
     );
-    assert_eq!(runs[0]["project"]["entity_count"], 0);
-    assert_eq!(runs[0]["project"]["graph_symbol_count"], 1);
-    assert_eq!(runs[0]["project"]["graph_edge_count"], 0);
+    assert_eq!(runs[0]["project"]["entity_count"], expected_entities.len());
+    assert_eq!(
+        runs[0]["project"]["graph_symbol_count"],
+        expected_graph.symbols.len(),
+    );
+    assert_eq!(
+        runs[0]["project"]["graph_edge_count"],
+        expected_graph.edges.len(),
+    );
+    let expected_summary = expected_graph
+        .symbols
+        .iter()
+        .find_map(|symbol| symbol.project_summary.as_ref())
+        .expect("accepted source project summary");
+    assert_eq!(
+        runs[0]["project"]["project_summary"],
+        serde_json::json!(expected_summary),
+    );
     assert_eq!(
         runs[0]["project"]["graph_summary_symbol_id"],
         "project:summary"
@@ -566,7 +647,7 @@ fn agent_script_run_json_executes_read_resource_smoke() {
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("read_resource run output is JSON");
     assert_eq!(json["ok"], true);
-    assert_eq!(json["host_calls"], 2);
+    assert_eq!(json["host_calls"], 4);
     assert_eq!(json["responses"][0]["kind"], "resource");
     assert_eq!(
         json["responses"][0]["response"]["uri"],
@@ -576,12 +657,39 @@ fn agent_script_run_json_executes_read_resource_smoke() {
         json["responses"][0]["response"]["kind"],
         "observation_latest"
     );
-    assert_eq!(json["responses"][1]["kind"], "unit");
-    assert_eq!(json["trace_records"], 8);
+    assert_eq!(
+        json["responses"][0]["response"]["body"],
+        serde_json::json!({
+            "body_kind": "json",
+            "body": {
+                "source": "arcw agent script run",
+                "uri": "arcweft://session/cli/observation/latest.json"
+            }
+        })
+    );
+    assert_eq!(
+        json["responses"].as_array().expect("host responses").len(),
+        4
+    );
+    for response in json["responses"].as_array().unwrap().iter().skip(1) {
+        assert_eq!(response["kind"], "unit");
+    }
+    assert_eq!(json["trace_records"], 14);
     let trace: serde_json::Value = serde_json::from_slice(
         &fs::read(&trace_path).expect("agent script run writes read_resource .arcwx trace"),
     )
     .expect("read_resource trace is JSON");
+    let assertions = trace
+        .as_array()
+        .expect("trace is array")
+        .iter()
+        .filter(|record| record["kind"] == "assertion_evaluated")
+        .collect::<Vec<_>>();
+    assert_eq!(assertions.len(), 2);
+    for assertion in assertions {
+        assert_eq!(assertion["payload"]["kind"], "expect");
+        assert_eq!(assertion["payload"]["passed"], true);
+    }
     let resource_record = trace
         .as_array()
         .expect("trace is array")
@@ -592,10 +700,7 @@ fn agent_script_run_json_executes_read_resource_smoke() {
         resource_record["payload"]["uri"],
         "arcweft://session/cli/observation/latest.json"
     );
-    assert_eq!(
-        json["final_status"],
-        "Done(Return(\"{\\\"source\\\":\\\"arcw agent script run\\\",\\\"uri\\\":\\\"arcweft://session/cli/observation/latest.json\\\"}\"))"
-    );
+    assert_eq!(json["final_status"], "Done(Return(\".Ok(...)\"))");
 }
 
 #[test]
@@ -632,12 +737,7 @@ fn agent_script_run_executes_read_resource_metadata_projection_smoke() {
         "application/json"
     );
     assert_eq!(json["responses"][0]["response"]["hash"], "cli-resource");
-    assert!(
-        json["final_status"]
-            .as_str()
-            .is_some_and(|status| status.contains("cli-resource")),
-        "final status should return projected resource hash: {json}"
-    );
+    assert_eq!(json["final_status"], "Done(Return(\".Ok(...)\"))");
 }
 
 #[test]
@@ -2114,13 +2214,27 @@ fn agent_script_run_json_executes_read_resource_value_smoke() {
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("read_resource value run output is JSON");
     assert_eq!(json["ok"], true);
-    assert_eq!(json["host_calls"], 1);
+    assert_eq!(json["host_calls"], 3);
+    assert_eq!(
+        json["responses"].as_array().expect("host responses").len(),
+        3
+    );
+    for response in json["responses"].as_array().unwrap().iter().skip(1) {
+        assert_eq!(response["kind"], "unit");
+    }
     assert_eq!(json["responses"][0]["kind"], "resource");
     assert_eq!(
         json["responses"][0]["response"]["body"]["body"]["source"],
         "arcw agent script run"
     );
-    assert_eq!(json["final_status"], "Done(Return(\"record/2\"))");
+    assert_eq!(
+        json["responses"][0]["response"]["body"]["body"],
+        serde_json::json!({
+            "source": "arcw agent script run",
+            "uri": "arcweft://session/cli/observation/latest.json"
+        })
+    );
+    assert_eq!(json["final_status"], "Done(Return(\".Ok(...)\"))");
 }
 
 fn assert_agent_script_build(bundle_path: &Path) {
@@ -2153,7 +2267,9 @@ fn assert_agent_script_build(bundle_path: &Path) {
     let agent = bundle.agent.expect("selected Agent manifest");
     assert_eq!(agent.entry_id.as_str(), "entry.agent.main");
     assert_eq!(
-        build_json["controller_id"].as_str().expect("checked controller identity"),
+        build_json["controller_id"]
+            .as_str()
+            .expect("checked controller identity"),
         agent.controller_id.as_str()
     );
 }
@@ -4241,7 +4357,7 @@ fn agent_rag_query_uses_debug_db_graph_and_history_channels() {
 
     assert_agent_rag_debug_store_item(
         &db_path,
-        "uses_dialogue_view",
+        "uses_view",
         Some("2"),
         "graph_summary",
         "graph:2",

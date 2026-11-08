@@ -15517,3 +15517,10 @@ CLI初回は362件のpartial status後、実process・terminal summary・receipt
 Source **17e34d99e32c4618ac6ed866a7ee9ccdcff441c5** は、取消入力をstepの一時値から読む経路を削除し、元activationの保留packetに移した。修復前probeはNative PASS／保存AWBC FAILで、AWBCは元512 step後もbody logのみ・Actor未解放。修復後owner-r4は**3／3 PASS・136 SKIP**で、一度だけの取消入力を3回の0-operation stepと毎step公開JSON保存／cold restoreにまたがって保持し、元cleanup・解放・2 revealを完了する。occurrence／owner fiber／重複／消費済み履歴の4改変は、実行公開前に拒否し元snapshotを保持した。
 
 live／inert共有検査の並び順・再送・65537件上限は、同じhistory ownerのowner-r3でPASSし、別runとして保持する。owner-r2の新testのprivate tuple constructor指定は準備失敗101でruntimeではない。owner-r3の新forgery testはsource bindとrestore admissionを混同して1失敗し、最終testを実際の二段階APIに合わせ、復元拒否・元状態不変・原本の継続実行を検査した。受入条件は緩めない。現Sourceの全workspace gate／Core逆依存／CLIは未完了で、先行625deea6d6051469fc0c60a4e6808727fb42c21dの8052件を転用しない。Generic Match等の既受入は保持する。[全実測・訂正理由・公開receipt・raw](acceptance-evidence/task-flow-registry-execution.json)。raw 48 entries、SHA-256 70cce0f05bcdbf06bf5b4b672f957bddf23a33f7a14689469b49c6b2b88ce7dd。Source後の補足変更は借用input APIへ移行後の未使用import削除だけである。
+
+
+## 2026-11-08 — 既存consumer差分のcheckpoint・旧CLI現状メモの整理
+
+確認Source **c96539d2fa8107fac34b03bf7568cbb4ce7b16a5**。旧12 tracked WIPの全patch SHA-256 **c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c** を確認し、そのうちresource API／CLI profile／sample Flowの契約同期9ファイルを、内容を変更せず独立checkpointへ採用した。元12ファイルと採用9・保留3のpatch、各file hashをrawへ保全する。実行中のAWBC全逆依存は同じ物理Source入力を使い、checkpointを新しいテスト実行や全体完了とはしない。
+
+旧untrackedの2026-10-09-cli-bench-repair.md／2026-10-09-cli-observe-repair.mdは、98／166 baseline失敗や途中first-boundaryを現在の残作業に見せる資料で、後続の完了監査・公開SHA・全CLI終端により置き換わったため現状資料から削除する。元の全本文・実測・full SHAをrawへ保存し、既存126 recordは変更しない。現状一覧はcurrent-status.md一か所を維持し、Generic Match等の既受入を戻さない。保留は3 tracked／4 actual untracked、元ファイル内容は保持する。[元差分・訂正理由・旧記録](acceptance-evidence/task-flow-registry-execution.json)。raw7 entries、SHA-256 7569b0f5aca12a0592f52cf2cbce1a0e340d2b363a8424aa557900aad5f54ac9。

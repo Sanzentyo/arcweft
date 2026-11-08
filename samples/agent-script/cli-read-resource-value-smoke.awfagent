@@ -1,7 +1,13 @@
 fn read_resource_value_smoke() -> Result<Unit, AgentError>
 effects { agent.resource.read }
 {
-    let resource = read_resource("arcweft://session/cli/observation/latest.json")
+    let resource = try read_resource("arcweft://session/cli/observation/latest.json")
+    expect(resource.uri == "arcweft://session/cli/observation/latest.json")
+    expect(match resource.body {
+        .Json(_) => true
+        .Text(_) => false
+        .BytesBase64(_) => false
+    })
     return Ok(())
 }
 
