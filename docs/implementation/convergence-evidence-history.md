@@ -15782,3 +15782,25 @@ Source ef2679347c14dccee649e5fb716d3a37510cac1f をmainへ通常公開し、pare
 全98 workspaceのlocked／all-target／all-feature check・Clippy、構造gate、明示18 Rust pathのfmtが終了0。後からCompiler新test1 pathだけのraw文字列delimiter／等価method closureを整理し、最終対象Clippy／fmtが終了0。本番Source／assertion／fixture／budget差分0で、このscopeを分離した。metadataとtarget-all invert treeはView逆依存41 packageで一致する。全consumer runtimeは次に実行し、owner55件を最終matrixに転用しない。既知CLI4件、残るsampleと実Native／Webは具体的な別境界として継続する。
 
 現状一覧のEnvironmentを実装未達からowner検証・公開へ更新した。全consumerはpendingと明記し、構築・推論やGeneric Match等の既受入を維持する。以前のSource／失敗／full SHA／実測は保持し、旧現状の重複は履歴へ集約した。既存148 registry propertyの値を全件照合して保持し、styleEnvironmentSourceCheckpointを追加した。原本 docs/implementation/acceptance-evidence/task-style-environment-checkpoint.raw.zip は47 entry／2604752 bytes、SHA256 a20e0fecc2fbd74206eaca0a40fff50401de51202ced0452a709b358b259f68b。EXE／AWFB等のbuild artifactをZIPへコピーしていない。
+
+## 2026-11-09 — Style Environmentの全View consumer検証
+
+Source ef2679347c14dccee649e5fb716d3a37510cac1f、記録base c5a4c901473354a3cc87d122b85ac47096fb1b6e を固定した。最終test表記まで含むView逆依存41 packageを、非CLI全feature40＋CLI既定1で実行した。非CLIは4686／4686 PASS・18 SKIP・416.657秒、37 packageにruntime caseがあり、arcweft／bundle-assets／render-webの3 packageはcompile証拠のみ。3920入力／catalog／実EXE差分0。前回View4677件と後続Sema3622件はそれぞれ欠落0、重複する和集合4681件の欠落／重複0、追加5件はCompiler3／Sema1／View1。renameはない。
+
+CLIは Summary [ 524.277s] 711 tests run: 707 passed (26 slow), 4 failed, 23 skipped。先行の4失敗IDと実診断を照合し、Scrollのshared callable Expr15、voice不在、promotion2件のsolver前type-check Expr8拒否は継続し、新しい失敗はない。3944入力／catalog／実EXE差分0。元target/debug/arcw.exeの前後pinはSHA256 b33af81ae4d876bc5be2dc83ba8300165006d2e5585379760ab738f83edae61e で一致する。今回の最終2 run／2 feature pointは5397実行／5393 PASS／4 FAIL／41 SKIPで、owner55件・旧run・別Source probeを加算しない。
+
+同じ実CLIを追加buildなしで使い、native-text-input checkはstatus ok、main-profile bundleは終了0・89命令・81840 bytes。元path D:/git/arcweft/target/arcweft/native-text-input-environment.awfb のSHA256 2e348be119a21fda294a11f2e2379537ffb16f3e437cba10a351979946701cd6 は前回と一致し、3920入力／実CLI差分0。Source受付・生成物の検証であり、実Native／Web操作・画像parityの受入とは区別する。
+
+並行した一時Source fixtureの調査では、modern-feedbackの現行API移行案がcheckを通る一方、GameState付き自己gotoはAWBCで要求1引数／実際0引数となる別の未達を再現した。同じformalを持つ空Flowの対照は13命令のbundle生成に成功する。この別入力の失敗は5397件の集計へ混ぜず、原本とCLI pinを保持して別項目として調査・修復する。引数なしgoto、Style、Generic Matchなどの既受入を未完了に戻さない。
+
+現状一覧のEnvironmentを「全consumer実行中」から今回の終端結果へ訂正した。以前のSource／失敗／full SHA／実測を保持し、旧現状の重複は履歴へ集約した。既存149 registry propertyの値を全件照合して保持し、styleEnvironmentConsumersを追加した。原本 docs/implementation/acceptance-evidence/task-style-environment-consumers.raw.zip は32 entry／1210802 bytes、SHA256 d160e975a43889ebcc898cf1a58b8c84b015f6697f10b731b6ec7cdb0ba648fe。EXE／AWFB等のbuild artifactをZIPへコピーしていない。
+
+## 2026-11-09 — 引数を持つFlowへのgotoの新しい未達
+
+観察base c5a4c901473354a3cc87d122b85ac47096fb1b6e、production Source ef2679347c14dccee649e5fb716d3a37510cac1f の固定CLI SHA256 b33af81ae4d876bc5be2dc83ba8300165006d2e5585379760ab738f83edae61e を使った独立Source probeで、stateful Flowの自己gotoがSource checkを通り、AWBCでformal引数を失う問題を確認した。同じGameState formal／typed startupの空Flowはcheckと13命令のAWFB生成が終了0だが、自己gotoだけを追加するとblock0で要求1／実際0引数となる。元pathの対照AWFB hashは原本へ保持する。全modern-feedback移行案もcheckを通るが同じ問題でblock25に停止した。Refへのcallはnon-callable、bare Flow名のcallはunknown targetで拒否され、値渡しを接続できていない。
+
+SemaはGotoをHirOwned／structuralとして扱い、RuntimePlan final_flowのstatic Gotoはtargetのみ、AWBC lowerは空argsを構築する。元のcomplete formal／invocation、stateful entryとの契約を確認し、引数評価・所有とcleanup・Native／AWBCへ接続する必要がある。state formalの削除、callerを蓄積する自己再帰、元のlifecycleの置換を解決としない。引数なしgotoと既受入cleanup、Generic Match等は戻さず、この具体的なparameterized transfer境界だけを現状一覧に追加した。別入力のprobeをEnvironment5397件へ加算していない。
+
+modern-feedbackの準備は一時fixtureに留め、実repo Sourceは変更していない。旧image宣言を現行Handle factoryへ、入力／Action／mount／receiveを現行APIへ移す案を作り、画像・metadata・全Style property・元font stack・target／label／placeholder／IME・Action identity／payload・2 scope・対話／分岐／自己gotoを保持する。Flow削減だけではExpr525が残り、4つの旧closure-style patchを診断用に省くと通過した。最終候補r5では全表現を戻し、現行Ref<Style>契約の2共有sheetを同じText nodeへ適用して現CLI checkを通した。削減fixtureを受入としない。
+
+CLI main rebuildの間に行ったpreliminary r6／r7は前後pinを持たなかったため、推測Source帰属を未検証へ訂正し、元の推測値と理由・rawを保持した。固定した現CLIでr5／r6／r7と最小2入力を再実行し、前後hash一致を確認した。以前のSource／失敗／full SHAと既存150 registry propertyの値を保持し、statefulGotoArgumentInvestigationを追加した。原本 docs/implementation/acceptance-evidence/task-stateful-goto-investigation.raw.zip は56 entry／52659 bytes、SHA256 4da19a2deb6103b9e5278bd2d84d7eda93978d930ddcdfd13a91b5f5c40a6096。zipにはfixture Source／manifestと実測だけを含め、EXE／AWFB等をコピーしていない。
