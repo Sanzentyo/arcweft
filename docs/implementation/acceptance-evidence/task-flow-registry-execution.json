@@ -58939,5 +58939,1506 @@
       "sha256": "da57b3abfeb81973fe327957d5023dbd2f3bc0254ffa5bf89b391c8897cd6575",
       "containsExecutables": false
     }
+  },
+
+  "stringReadOperations": {
+    "version": 1,
+    "date": "2026-11-08",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "f77771ebe6d62f35129e491116dc14611f12bdba",
+      "parent": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+      "tree": "5fd6eadf1fe15703cbe96fb1a02fbbf843536f5a",
+      "remote": "f77771ebe6d62f35129e491116dc14611f12bdba",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "30112e92c179d6f6f11ec8af6a897238bbbb7169"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+          "blob": "2e08ca524f14d4701a3cb854898d0fa7a7e21225"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution/string_operations.rs",
+          "blob": "9652981c740732fda3960b2c136f3fc434773b65"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "blob": "cedc8bc9e2f5cdd15dd0d577267c01c8874a23ca"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code/string_tests.rs",
+          "blob": "23311799b43ee12aaa9dc9f040402effb07a7c8e"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "318f0b7a6354f7c0cff9abfcc6da555f1d42315a"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "blob": "631c96b218d3fb74c1e16a13235abf631c50009a"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower/value_tests.rs",
+          "blob": "0baa0294e91e2ac0f3a7647478b8d1198810954f"
+        },
+        {
+          "path": "crates/arcweft-core/src/tests/value.rs",
+          "blob": "659307167be79c23893ba064a13d183c8257cd2b"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "e49ed546b21634fe06e33bce23cd1fcdef3b590c"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/string.rs",
+          "blob": "7dca30ff89020ebbe69b57a95d7d1d5f3838c89b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/checked_application.rs",
+          "blob": "be22ae11006735398a3587a7b8875a8b84554cdc"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/digest.rs",
+          "blob": "5b8d3b573bd088eb08dc52f7b51ac2123cdd8db3"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+          "blob": "bf38b5686750bcc5680920645248fa55e3e289d1"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/join.rs",
+          "blob": "f23bc69dd907af1b2e118b977766b1b8f9d8dd09"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/outcome.rs",
+          "blob": "fdce42bbab771614265cf79f546072403c251115"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/prepared_identity.rs",
+          "blob": "0424f4c8eb41b4963120c78760d7428c9cc227f9"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/resolution.rs",
+          "blob": "8077930641e4b17855162ef1002f44e2565a05e9"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/schema.rs",
+          "blob": "ed20ea8236e653238585d6ca143592e2947f79c7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+          "blob": "4e43b276420a41b6033289f315c13490153090b4"
+        },
+        {
+          "path": "docs/01-language/standard-types-and-prelude.md",
+          "blob": "f0e6a71c3fc9dd347378b698eab8c3c89154e9ea"
+        },
+        {
+          "path": "samples/text-submit-flow/src/main.arcw",
+          "blob": "59ca279dd31dfcf6fb6a650ddfb427ff7f026364"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a0a2d229cfce2729ccff278c4f17800b148d81c0d4c04e9c13b4149529f8653a",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T11:25:36.0068599Z"
+    },
+    "samplePublication": {
+      "version": 1,
+      "commit": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+      "parent": "f77771ebe6d62f35129e491116dc14611f12bdba",
+      "tree": "a6c54187d9263a5c57c6739400d8572bc010ed77",
+      "remote": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+      "paths": [
+        {
+          "path": "samples/text-submit-flow/README.md",
+          "blob": "e47c630479b0984ad346f3ccfdf0d591da67fbdb"
+        },
+        {
+          "path": "samples/text-submit-flow/src/main.arcw",
+          "blob": "1af36045aae8538c831b4ab0ae2e7203659b7e5c"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "c93bea67ca8f43f0d9031dcff6bea8ae74fdf1a8735ec971d39520e12347f74c",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T11:28:20.0770682Z"
+    },
+    "testCleanupPublication": {
+      "version": 1,
+      "commit": "85f9b5b48c3ac78986f6c275990984fcba62e153",
+      "parent": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+      "tree": "d4719d1aeec4119e6087482f796e8278b403e765",
+      "remote": "85f9b5b48c3ac78986f6c275990984fcba62e153",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution/string_operations.rs",
+          "blob": "b1385033a266f92a146ff7425fdae0347f398e70"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower/value_tests.rs",
+          "blob": "43738b8ac89df631dc53f00bd8427e138f1d0bc1"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "f3b16302f1dd403f7a0363a2ae3d722abd67eb36863292353dc2746d465c3274",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T11:34:09.3296912Z"
+    },
+    "testPublication": {
+      "version": 1,
+      "commit": "70a050cc9cd0b94d83b79a295ec688bccd3b1d3b",
+      "parent": "85f9b5b48c3ac78986f6c275990984fcba62e153",
+      "tree": "254404afb4932250b5a2661a3476e58b25d0a531",
+      "remote": "70a050cc9cd0b94d83b79a295ec688bccd3b1d3b",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/tests.rs",
+          "blob": "7cfa7663851f8189d02c28bc8e63395abdb7390d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "de7ade37785e23418b23e09ef3937a39e1a1a527"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "abab4d576695de4f71f17a2ec280065a35601b91609ea931a1a2bbdfe2fb27ab",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T12:06:59.4884160Z"
+    },
+    "acceptance": "Read-only String trim/to_string/scalar_count, exact typed ABI admission, Native/decoded compact AWBC execution and per-op public AWBC cold restore with captured String are accepted. Complete sample interactive Native/Web acceptance remains open.",
+    "ownership": "Core RuntimeStringOperation is the final authority for source vocabulary, result contract, intrinsic identity/tags and evaluation. Sema seals this operation directly, outside Capacity; Compiler projects the checked identity. Native construction and AWBC verification reject wrong receiver/arity/result (including u64 versus usize). The VM evaluates deterministic String intrinsics without an application host resolver. Obsolete flat String intrinsic and Capacity cases are deleted.",
+    "semanticScope": "scalar_count counts Unicode scalar values, including decomposed marks and emoji-sequence scalars; empty text is zero. It does not allocate a character sequence or count bytes/grapheme/TextCluster units. trim/to_string return owned String values and retain the receiver.",
+    "focused": {
+      "version": 1,
+      "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+      "run": "string-read-operations-20261108.owner-r4.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.578s] 5 tests run: 5 passed, 2844 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 2844,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3903,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T11:13:56.9251326Z"
+    },
+    "nonCli": {
+      "version": 1,
+      "base": "70a050cc9cd0b94d83b79a295ec688bccd3b1d3b",
+      "run": "string-read-operations-integrated-20261108.noncli-r2.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 213.652s] 7378 tests run: 7378 passed (3 slow), 18 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7378,
+      "passed": 7378,
+      "failed": 0,
+      "skipped": 18,
+      "selectedPackages": 0,
+      "matchedPackages": 49,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3903,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T12:12:02.3352653Z"
+    },
+    "cli": {
+      "version": 1,
+      "base": "70a050cc9cd0b94d83b79a295ec688bccd3b1d3b",
+      "run": "string-read-operations-integrated-20261108.cli.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 547.699s] 711 tests run: 707 passed (26 slow), 4 failed, 23 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 711,
+      "passed": 707,
+      "failed": 4,
+      "skipped": 23,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3927,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-08T12:26:59.8893081Z"
+    },
+    "mainExecutable": {
+      "version": 1,
+      "path": "D:/git/arcweft/target/debug/arcw.exe",
+      "sha256": "12f686bfb02bf612af8760361930bc52cd3a0cd5bab86f525b6d511e69956bde",
+      "runtimeStartedAt": "2026-11-08T12:17:46.2681636Z",
+      "runtimeFinishedAt": "2026-11-08T12:26:57.5142251Z",
+      "beforeRuntime": true,
+      "binaryDrift": 0,
+      "recordedAt": "2026-11-08T12:26:57.8784092Z"
+    },
+    "freshUniqueExecuted": 8089,
+    "passed": 8085,
+    "failed": 4,
+    "skipped": 41,
+    "featurePoints": 2,
+    "coverage": {
+      "version": 1,
+      "base": "70a050cc9cd0b94d83b79a295ec688bccd3b1d3b",
+      "baseline": "ime-purpose-enter-key-integrated-20261108.noncli.catalog.inventory.json",
+      "baselineProjection": "Prior ID closure projected onto the current Core reverse-dependency package set; all-features non-CLI lib/tests in both runs.",
+      "selection": "rdeps(=arcweft-core)",
+      "closurePackages": 53,
+      "baselineProjectedCases": 7368,
+      "selectedCases": 7378,
+      "missing": [],
+      "added": [
+        {
+          "package": "arcweft-compiler",
+          "binary": "arcweft-compiler::callable_execution",
+          "test": "string_operations::readonly_string_methods_preserve_the_receiver_and_count_unicode_scalars",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-compiler",
+          "binary": "arcweft-compiler::callable_execution",
+          "test": "string_operations::string_operations_and_captures_survive_each_awbc_step_public_cold_restore",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-compiler",
+          "binary": "arcweft-compiler::callable_execution",
+          "test": "string_operations::string_scalar_count_rejects_wrong_receivers_arity_and_result_kind",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-compiler",
+          "binary": "arcweft-compiler::view_product",
+          "test": "text_input::placeholder::placeholder_and_label_round_trip_in_authored_order_without_becoming_retained_value",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-compiler",
+          "binary": "arcweft-compiler::view_product",
+          "test": "text_input::placeholder::reordering_text_arguments_is_a_semantic_replacement",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-compiler",
+          "binary": "arcweft-compiler::view_product",
+          "test": "text_input::placeholder::text_argument_errors_observe_authored_evaluation_order",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-compiler",
+          "binary": "arcweft-compiler::view_product",
+          "test": "text_input::placeholder::text_input_rejects_wrong_placeholder_types_duplicates_and_forged_text_roles",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-core",
+          "binary": "arcweft-core",
+          "test": "awbc::verify::code::string_tests::string_intrinsic_signatures_require_exact_receiver_result_and_purity",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-core",
+          "binary": "arcweft-core",
+          "test": "plan::construction::lower::value_tests::string_intrinsic_construction_checks_exact_abi_before_executable_publication",
+          "ignored": false,
+          "status": "matches"
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "binary": "arcweft-render-wgpu::geometry_runtime_control_styles",
+          "test": "label_is_never_painted_as_placeholder_and_nonempty_value_wins",
+          "ignored": false,
+          "status": "matches"
+        }
+      ],
+      "duplicateCases": 0,
+      "renamedCases": [
+        {
+          "package": "arcweft-lang-sema",
+          "old": "final_analysis::tests::production_analyzer_routes_string_preserving_value_methods_through_capacity_family",
+          "new": "final_analysis::tests::production_analyzer_routes_string_preserving_value_methods_through_string_family",
+          "reason": "The same String-preserving test now asserts the final Core-owned String family instead of obsolete Capacity membership. Two calls, candidate uniqueness, String results and unresolved-dot nominal-coordinate checks remain, with exact Trim/ToString identities added."
+        }
+      ],
+      "note": "Only the final integrated run counts as new execution; the first 3-failure matrix, focused owner repetitions and older consumer runs are not added."
+    },
+    "graph": {
+      "version": 1,
+      "base": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+      "metadataSha256": "8b88955abee574d331bea19cbefc12d92e23f8fb39c140cee39ea5de658cdadd",
+      "workspacePackages": 98,
+      "owners": [
+        "arcweft-core",
+        "arcweft-lang-sema",
+        "arcweft-compiler"
+      ],
+      "selection": "rdeps(=arcweft-core)",
+      "packages": [
+        {
+          "name": "arcweft",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-desktop",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp-client",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-policy",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-protocol",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-repl",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-runner",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+        },
+        {
+          "name": "arcweft-browser-bench",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle-assets",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+        },
+        {
+          "name": "arcweft-character-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+        },
+        {
+          "name": "arcweft-cli",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+        },
+        {
+          "name": "arcweft-compiler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+        },
+        {
+          "name": "arcweft-core",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-sqlite",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+        },
+        {
+          "name": "arcweft-dialogue",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+        },
+        {
+          "name": "arcweft-glyphon",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+        },
+        {
+          "name": "arcweft-host-adapter",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-jit-cranelift",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-launch",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+        },
+        {
+          "name": "arcweft-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-player-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+        },
+        {
+          "name": "arcweft-player-scene",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+        },
+        {
+          "name": "arcweft-player-text-input",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+        },
+        {
+          "name": "arcweft-player-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+        },
+        {
+          "name": "arcweft-project",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+        },
+        {
+          "name": "arcweft-project-loader",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+        },
+        {
+          "name": "arcweft-rag",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+        },
+        {
+          "name": "arcweft-render-text",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+        },
+        {
+          "name": "arcweft-render-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+        },
+        {
+          "name": "arcweft-render-wgpu",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-manifest",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0"
+        },
+        {
+          "name": "arcweft-resource-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-accelerator",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-codegen",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-driver",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-host",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-plan",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-scheduler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0"
+        },
+        {
+          "name": "arcweft-save",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0"
+        },
+        {
+          "name": "arcweft-test",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+        },
+        {
+          "name": "arcweft-text-layout",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+        },
+        {
+          "name": "arcweft-text-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+        },
+        {
+          "name": "arcweft-tooling",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+        },
+        {
+          "name": "arcweft-verify",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-oxiz",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-z3",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+        },
+        {
+          "name": "arcweft-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+        }
+      ],
+      "packageCount": 53,
+      "nonCliFeaturePoint": "workspace except CLI, all features, lib/tests",
+      "cliFeaturePoint": "CLI defaults, lib/tests; actual main executable pinned in place"
+    },
+    "cliFailureIdChanges": 0,
+    "observedDiagnostics": [
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "observedCause": "sema.final_analysis shared callable resolution, expression slot 15",
+        "logStartLine": 2505,
+        "firstLines": [
+          "        FAIL [   5.964s] (431/711) arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 5.91s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering' (71272) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:2720:5:",
+          "    authored Scroll live observe should succeed, stderr: error[sema.final_analysis]: shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr })",
+          "",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          ""
+        ],
+        "diagnosticLines": [
+          "    authored Scroll live observe should succeed, stderr: error[sema.final_analysis]: shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr })"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes",
+        "observedCause": "active dialogue has no voice",
+        "logStartLine": 2752,
+        "firstLines": [
+          "        FAIL [   0.643s] (643/711) arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test spec_valid_run_edge_fixture_now_executes ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        spec_valid_run_edge_fixture_now_executes",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.51s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'spec_valid_run_edge_fixture_now_executes' (50732) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:7789:5:",
+          "    D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\tests/fixtures/arcw/spec_should_pass/check/011_dialogue_line_value_and_handle_discard.arcw should now execute, stdout: {",
+          "      \"host_system\": {",
+          "        \"physical_cores\": 12,",
+          "        \"logical_threads\": 20,",
+          "        \"available_parallelism\": 20",
+          "      },",
+          "      \"executor\": \"bytecode_vm\",",
+          "      \"executor_stats\": {",
+          "        \"aot_fast_path_ops\": 0,",
+          "        \"pure_config\": {",
+          "          \"backend\": \"auto\",",
+          "          \"workers\": \"auto\",",
+          "          \"resolved_workers\": 20,",
+          "          \"worker_pool_active\": false,",
+          "          \"batch_min_len\": 1024,",
+          "          \"emit_object_artifacts\": false,",
+          "          \"math_backend\": \"auto\",",
+          "          \"math_wgpu_min_elements\": 67108864",
+          "        },",
+          "        \"pure_acceleration\": {",
+          "          \"annotated\": 0,",
+          "          \"inferred\": 0,"
+        ],
+        "diagnosticLines": [
+          "          \"fiber_status\": \"failed active dialogue has no voice\",",
+          "            \"active dialogue has no voice\"",
+          "      \"final_status\": \"failed active dialogue has no voice\""
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks",
+        "observedCause": "type-check denied: sema.final_analysis, expression slot 8 has no admissible final type; solver phase was not reached",
+        "logStartLine": 3170,
+        "firstLines": [
+          "        FAIL [   0.495s] (655/711) arcweft-cli::check verify_json_records_required_solver_checks",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test verify_json_records_required_solver_checks ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        verify_json_records_required_solver_checks",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.35s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'verify_json_records_required_solver_checks' (72444) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:381:5:",
+          "    JSON report should include the required solver check: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"type-check\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"type-check\",",
+          "          \"diagnostic\": {",
+          "            \"severity\": \"error\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+          "            \"span\": null,",
+          "            \"labels\": [],",
+          "            \"notes\": [],",
+          "            \"suggestions\": [],",
+          "            \"commands\": []",
+          "          }",
+          "        }",
+          "      ]",
+          "    }",
+          ""
+        ],
+        "diagnosticLines": [
+          "      \"stage\": \"type-check\",",
+          "          \"stage\": \"type-check\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof",
+        "observedCause": "type-check denied: sema.final_analysis, expression slot 8 has no admissible final type; solver phase was not reached",
+        "logStartLine": 3214,
+        "firstLines": [
+          "        FAIL [   0.367s] (660/711) arcweft-cli::check verify_json_reports_missing_promotion_proof",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test verify_json_reports_missing_promotion_proof ... FAILED",
+          "",
+          "    failures:",
+          "",
+          "    failures:",
+          "        verify_json_reports_missing_promotion_proof",
+          "",
+          "    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 493 filtered out; finished in 0.23s",
+          "",
+          "  stderr ───",
+          "",
+          "    thread 'verify_json_reports_missing_promotion_proof' (37652) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:348:5:",
+          "    JSON report should include the promotion obligation: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"type-check\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"type-check\",",
+          "          \"diagnostic\": {",
+          "            \"severity\": \"error\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\",",
+          "            \"span\": null,",
+          "            \"labels\": [],",
+          "            \"notes\": [],",
+          "            \"suggestions\": [],",
+          "            \"commands\": []",
+          "          }",
+          "        }",
+          "      ]",
+          "    }",
+          ""
+        ],
+        "diagnosticLines": [
+          "      \"stage\": \"type-check\",",
+          "          \"stage\": \"type-check\",",
+          "            \"code\": \"sema.final_analysis\",",
+          "            \"message\": \"semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type\","
+        ]
+      }
+    ],
+    "quality": [
+      {
+        "check": "check",
+        "receipt": {
+          "version": 1,
+          "base": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+          "command": [
+            "check",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3903,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T11:28:27.2833144Z",
+          "finishedAt": "2026-11-08T11:29:24.6672443Z"
+        }
+      },
+      {
+        "check": "clippy",
+        "receipt": {
+          "version": 1,
+          "base": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+          "command": [
+            "clippy",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3903,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T11:29:25.0545049Z",
+          "finishedAt": "2026-11-08T11:31:34.3242914Z"
+        }
+      },
+      {
+        "check": "structure",
+        "receipt": {
+          "version": 1,
+          "base": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/string-read-operations-20261108.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3903,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T11:31:34.7988207Z",
+          "finishedAt": "2026-11-08T11:31:39.8781696Z"
+        }
+      },
+      {
+        "check": "fmt",
+        "receipt": {
+          "base": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+          "paths": [
+            "crates/arcweft-compiler/src/lower.rs",
+            "crates/arcweft-compiler/tests/callable_execution.rs",
+            "crates/arcweft-compiler/tests/callable_execution/string_operations.rs",
+            "crates/arcweft-core/src/awbc/verify/code.rs",
+            "crates/arcweft-core/src/awbc/verify/code/string_tests.rs",
+            "crates/arcweft-core/src/awbc/vm.rs",
+            "crates/arcweft-core/src/plan/construction/lower.rs",
+            "crates/arcweft-core/src/plan/construction/lower/value_tests.rs",
+            "crates/arcweft-core/src/tests/value.rs",
+            "crates/arcweft-core/src/value.rs",
+            "crates/arcweft-core/src/value/string.rs",
+            "crates/arcweft-lang-sema/src/callable/checked_application.rs",
+            "crates/arcweft-lang-sema/src/callable/digest.rs",
+            "crates/arcweft-lang-sema/src/callable/identity.rs",
+            "crates/arcweft-lang-sema/src/callable/join.rs",
+            "crates/arcweft-lang-sema/src/callable/resolver/outcome.rs",
+            "crates/arcweft-lang-sema/src/callable/resolver/prepared_identity.rs",
+            "crates/arcweft-lang-sema/src/callable/resolver/resolution.rs",
+            "crates/arcweft-lang-sema/src/callable/schema.rs",
+            "crates/arcweft-lang-sema/src/callable/schema/families.rs"
+          ],
+          "exitCode": 0,
+          "sourceDrift": 0
+        }
+      }
+    ],
+    "testCleanupClippy": {
+      "version": 1,
+      "base": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-compiler",
+        "--all-targets",
+        "--all-features"
+      ],
+      "exitCode": 0,
+      "scope": "Only tests changed after the full production workspace gates; no production changes.",
+      "paths": [
+        "crates/arcweft-compiler/tests/callable_execution/string_operations.rs",
+        "crates/arcweft-core/src/plan/construction/lower/value_tests.rs"
+      ],
+      "startedAt": "2026-11-08T11:32:18.2052353Z",
+      "finishedAt": "2026-11-08T11:33:47.4654130Z"
+    },
+    "testCleanupFmt": {
+      "version": 1,
+      "base": "208b3b5315ab00272fe3a9524a67b9c1642d8c50",
+      "exitCode": 0,
+      "paths": [
+        "crates/arcweft-core/src/plan/construction/lower/value_tests.rs",
+        "crates/arcweft-compiler/tests/callable_execution/string_operations.rs"
+      ]
+    },
+    "testOracleClippy": {
+      "version": 1,
+      "base": "85f9b5b48c3ac78986f6c275990984fcba62e153",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "--all-targets",
+        "--all-features"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 3903,
+      "sourceDrift": 0,
+      "scope": "Two existing test files only; production bytes are unchanged from the full workspace gates.",
+      "startedAt": "2026-11-08T12:05:20.6248137Z",
+      "finishedAt": "2026-11-08T12:06:53.5173496Z"
+    },
+    "testOracleFmt": {
+      "version": 1,
+      "base": "85f9b5b48c3ac78986f6c275990984fcba62e153",
+      "paths": [
+        "crates/arcweft-core/src/plan/construction/source/expression/tests.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/tests.rs"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 3903,
+      "sourceDrift": 0
+    },
+    "qualityReuse": "Workspace production gates are for Source 208b3b5315ab00272fe3a9524a67b9c1642d8c50. Only test files then changed: immutable local builders, explicit unchanged default budget types, a documented intentional non-NFC fixture expectation, and three stale semantic assertions. Those final files pass affected all-target/all-feature Clippy and fmt; the final full consumer matrix executes their bytes. No production contract changed after the full gates.",
+    "firstNonCli": {
+      "version": 1,
+      "base": "85f9b5b48c3ac78986f6c275990984fcba62e153",
+      "run": "string-read-operations-integrated-20261108.noncli.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 756.007s] 7378 tests run: 7375 passed (9 slow), 3 failed, 18 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7378,
+      "passed": 7375,
+      "failed": 3,
+      "skipped": 18,
+      "selectedPackages": 0,
+      "matchedPackages": 49,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3903,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "plan::construction::source::expression::tests::expression_intrinsic_source_tags_are_closed_and_preserve_all_original_semantic_coordinates"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::production_analyzer_routes_single_string_preserving_value_method"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::production_analyzer_routes_string_preserving_value_methods_through_capacity_family"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-08T12:01:02.3273091Z"
+    },
+    "oracleFocused": {
+      "version": 1,
+      "base": "85f9b5b48c3ac78986f6c275990984fcba62e153",
+      "run": "string-read-operations-20261108.test-oracles-owner.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.106s] 3 tests run: 3 passed, 3720 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 3720,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3903,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T12:04:47.8298539Z"
+    },
+    "oracleCorrection": "First full Core closure: 7378 run/7375 pass/3 fail/18 skip. Two Sema tests still expected obsolete Capacity membership; one Core codec test expected 94 intrinsic tags instead of 95. The final tests retain receiver/result/unique-candidate/nominal-coordinate and all-tag round-trip checks, and add exact Trim/ToString identities and tags 18/19/94. One test name is updated one-to-one from capacity_family to string_family, explicitly mapped in the coverage audit. The failing full run remains historical and is not added to final execution totals.",
+    "sampleCheck": {
+      "version": 1,
+      "base": "f77771ebe6d62f35129e491116dc14611f12bdba",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "samples/text-submit-flow/arcw.toml",
+        "--json"
+      ],
+      "exitCode": 0,
+      "sourceSha256": "6d5a8c760771b5a2ed405ab68bb38ca25232c85f605f86d92d3ab21225791962",
+      "manifestSha256": "3e9ac64d77ea8e5db47cc5b8bce6b720e2bc0095b93689000240d9c5acd58f52",
+      "mainSha256": "8ee378f2a8a43611eb03ffb2764a9c7a25810a0706386bacff3dc584089c5dcf",
+      "sourceDrift": 0,
+      "binaryDrift": 0,
+      "startedAt": "2026-11-08T11:26:41.3924018Z",
+      "finishedAt": "2026-11-08T11:26:42.4683300Z"
+    },
+    "sampleBundle": {
+      "version": 1,
+      "base": "f77771ebe6d62f35129e491116dc14611f12bdba",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "bundle",
+        "--manifest-path",
+        "samples/text-submit-flow/arcw.toml",
+        "--profile",
+        "main",
+        "--output",
+        "target/arcweft/text-submit-flow.awfb",
+        "--json"
+      ],
+      "exitCode": 0,
+      "inputs": [
+        {
+          "path": "D:/git/arcweft/target/debug/arcw.exe",
+          "sha256": "8ee378f2a8a43611eb03ffb2764a9c7a25810a0706386bacff3dc584089c5dcf"
+        },
+        {
+          "path": "samples/text-submit-flow/src/main.arcw",
+          "sha256": "6d5a8c760771b5a2ed405ab68bb38ca25232c85f605f86d92d3ab21225791962"
+        },
+        {
+          "path": "samples/text-submit-flow/arcw.toml",
+          "sha256": "3e9ac64d77ea8e5db47cc5b8bce6b720e2bc0095b93689000240d9c5acd58f52"
+        }
+      ],
+      "inputDrift": 0,
+      "artifact": {
+        "path": "D:/git/arcweft/target/arcweft/text-submit-flow.awfb",
+        "bytes": 85776,
+        "sha256": "1983682f593a09c3d1f34a8042139a8437171ec596735bfc578f2484fd61ce91"
+      },
+      "startedAt": "2026-11-08T11:27:56.4052892Z",
+      "finishedAt": "2026-11-08T11:27:57.0708252Z"
+    },
+    "finalSourceProbe": {
+      "version": 1,
+      "base": "70a050cc9cd0b94d83b79a295ec688bccd3b1d3b",
+      "inputs": [
+        {
+          "path": "D:/git/arcweft/target/debug/arcw.exe",
+          "sha256": "12f686bfb02bf612af8760361930bc52cd3a0cd5bab86f525b6d511e69956bde"
+        },
+        {
+          "path": "samples/text-submit-flow/src/main.arcw",
+          "sha256": "6d5a8c760771b5a2ed405ab68bb38ca25232c85f605f86d92d3ab21225791962"
+        },
+        {
+          "path": "samples/text-submit-flow/arcw.toml",
+          "sha256": "3e9ac64d77ea8e5db47cc5b8bce6b720e2bc0095b93689000240d9c5acd58f52"
+        }
+      ],
+      "checkCommand": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "samples/text-submit-flow/arcw.toml",
+        "--json"
+      ],
+      "checkExitCode": 0,
+      "status": "ok",
+      "bundleCommand": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "bundle",
+        "--manifest-path",
+        "samples/text-submit-flow/arcw.toml",
+        "--profile",
+        "main",
+        "--output",
+        "D:/git/arcweft/target/arcweft/text-submit-flow-final.awfb",
+        "--json"
+      ],
+      "bundleExitCode": 0,
+      "artifact": {
+        "path": "D:/git/arcweft/target/arcweft/text-submit-flow-final.awfb",
+        "bytes": 85776,
+        "sha256": "1983682f593a09c3d1f34a8042139a8437171ec596735bfc578f2484fd61ce91"
+      },
+      "matchesPriorCanonicalBundle": true,
+      "inputDrift": 0,
+      "startedAt": "2026-11-08T12:27:32.6874827Z",
+      "finishedAt": "2026-11-08T12:27:33.9631819Z",
+      "scope": "Actual final tested CLI Source check and main-profile bundle generation. Not another nextest test or interactive Native/Web acceptance. Both generated bundles remain at their original build paths."
+    },
+    "sampleCorrection": "The genuine HIR source API mapped refused expression 173 to the returned submitted String. Declaring -> String exposed a separate local feedback variable hiding the Action namespace. Naming the internal state feedback_text preserves original input/Action IDs and payloads. Actual CLI check and main-profile AWFB generation now pass; every response branch and counting threshold remains. Old README input factories, handlers, receive syntax and unsupported trace assumptions were replaced with current Source and verified commands; the reason is retained here.",
+    "preservedFailures": [
+      {
+        "phase": "dev-check-r1",
+        "receipt": {
+          "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+          "exitCode": 101
+        },
+        "reason": "Missing new Core enum import in a test and u8 versus u16 digest tag; fixed before dev-check-r2."
+      },
+      {
+        "phase": "dev-check-r2",
+        "receipt": {
+          "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+          "exitCode": 0
+        },
+        "reason": "Earlier development workspace check passed; not counted as the final frozen gates."
+      },
+      {
+        "phase": "owner-r1",
+        "receipt": {
+          "version": 1,
+          "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+          "run": "string-read-operations-20261108.owner-r1.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.262s] 4 tests run: 3 passed, 1 failed, 2844 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 4,
+          "passed": 3,
+          "failed": 1,
+          "skipped": 2844,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3903,
+          "sourceDrift": 0,
+          "held": 0,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "string_operations::readonly_string_methods_preserve_the_receiver_and_count_unicode_scalars"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T11:01:16.7837867Z"
+        },
+        "reason": "3 pass/1 fail: decoded compact AWBC delegated String operations to an unresolved application host. Production Core VM dispatch was fixed, preserving the failing host behavior in the test."
+      },
+      {
+        "phase": "owner-r2",
+        "receipt": {
+          "version": 1,
+          "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+          "run": "string-read-operations-20261108.owner-r2.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.453s] 4 tests run: 4 passed, 2844 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "skipped": 2844,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3903,
+          "sourceDrift": 0,
+          "held": 0,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-08T11:05:15.1390111Z"
+        },
+        "reason": "4 pass before adding capture and per-op public cold restore; not added to final execution totals."
+      },
+      {
+        "phase": "owner-r3",
+        "receipt": {
+          "version": 1,
+          "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--test",
+            "callable_execution",
+            "-E",
+            "test(string_intrinsic_) | test(string_operations::)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/string-read-operations-20261108.owner-r3.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 3903,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T11:13:09.1811024Z",
+          "finishedAt": "2026-11-08T11:13:12.1862302Z"
+        },
+        "reason": "Test preparation failed: seal_flow_invocation consumes the plan. Each fresh cold executor now receives its own cloned plan."
+      },
+      {
+        "phase": "sample-r1",
+        "receipt": {
+          "version": 1,
+          "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+          "command": [
+            "D:/git/arcweft/target/debug/arcw.exe",
+            "check",
+            "--manifest-path",
+            "samples/text-submit-flow/arcw.toml",
+            "--json"
+          ],
+          "exitCode": 1,
+          "sourceSha256": "b6f91cd2680a1e3cd90c4286da5d1cae4defdcdf616ff52dfba78174464ba998",
+          "manifestSha256": "3e9ac64d77ea8e5db47cc5b8bce6b720e2bc0095b93689000240d9c5acd58f52",
+          "mainSha256": "8ee378f2a8a43611eb03ffb2764a9c7a25810a0706386bacff3dc584089c5dcf",
+          "sourceDrift": 0,
+          "binaryDrift": 0,
+          "startedAt": "2026-11-08T11:23:39.6141626Z",
+          "finishedAt": "2026-11-08T11:23:42.6257343Z"
+        },
+        "reason": "Final expression 173 had no admissible type; original returned String now explicit."
+      },
+      {
+        "phase": "sample-r2",
+        "receipt": {
+          "version": 1,
+          "base": "f77771ebe6d62f35129e491116dc14611f12bdba",
+          "command": [
+            "D:/git/arcweft/target/debug/arcw.exe",
+            "check",
+            "--manifest-path",
+            "samples/text-submit-flow/arcw.toml",
+            "--json"
+          ],
+          "exitCode": 1,
+          "sourceSha256": "e70879969517917e4eafc98c6d58de249a55429c9ae29f04b7f55df295519dde",
+          "manifestSha256": "3e9ac64d77ea8e5db47cc5b8bce6b720e2bc0095b93689000240d9c5acd58f52",
+          "mainSha256": "8ee378f2a8a43611eb03ffb2764a9c7a25810a0706386bacff3dc584089c5dcf",
+          "sourceDrift": 0,
+          "binaryDrift": 0,
+          "startedAt": "2026-11-08T11:26:09.6249636Z",
+          "finishedAt": "2026-11-08T11:26:10.5892638Z"
+        },
+        "reason": "Local feedback state hid Action namespace; internal variable renamed."
+      },
+      {
+        "phase": "sample-bundle",
+        "receipt": {
+          "version": 1,
+          "base": "f77771ebe6d62f35129e491116dc14611f12bdba",
+          "command": [
+            "D:/git/arcweft/target/debug/arcw.exe",
+            "bundle",
+            "--manifest-path",
+            "samples/text-submit-flow/arcw.toml",
+            "--output",
+            "target/arcweft/text-submit-flow.awfb",
+            "--json"
+          ],
+          "exitCode": 2,
+          "inputs": [
+            {
+              "path": "D:/git/arcweft/target/debug/arcw.exe",
+              "sha256": "8ee378f2a8a43611eb03ffb2764a9c7a25810a0706386bacff3dc584089c5dcf"
+            },
+            {
+              "path": "samples/text-submit-flow/src/main.arcw",
+              "sha256": "6d5a8c760771b5a2ed405ab68bb38ca25232c85f605f86d92d3ab21225791962"
+            },
+            {
+              "path": "samples/text-submit-flow/arcw.toml",
+              "sha256": "3e9ac64d77ea8e5db47cc5b8bce6b720e2bc0095b93689000240d9c5acd58f52"
+            }
+          ],
+          "inputDrift": 0,
+          "artifact": null,
+          "startedAt": "2026-11-08T11:27:24.9894696Z",
+          "finishedAt": "2026-11-08T11:27:25.4388339Z"
+        },
+        "reason": "Invocation omitted required profile/source selection; corrected to --profile main."
+      }
+    ],
+    "ownerMeasurements": {
+      "version": 1,
+      "base": "cdc47088f9a67bd42c6b1a8a2b857a295fd345cf",
+      "observedSource": "70a050cc9cd0b94d83b79a295ec688bccd3b1d3b",
+      "trackedImplementationDirty": 0,
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "bytes": 458983,
+          "physicalLoc": 10747,
+          "baseLoc": 10746,
+          "growth": 1,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+          "bytes": 61635,
+          "physicalLoc": 2103,
+          "baseLoc": 2101,
+          "growth": 2,
+          "classification": "test"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution/string_operations.rs",
+          "bytes": 5434,
+          "physicalLoc": 152,
+          "baseLoc": 0,
+          "growth": 152,
+          "classification": "test"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "bytes": 281307,
+          "physicalLoc": 7144,
+          "baseLoc": 7093,
+          "growth": 51,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code/string_tests.rs",
+          "bytes": 2687,
+          "physicalLoc": 73,
+          "baseLoc": 0,
+          "growth": 73,
+          "classification": "test"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "bytes": 255109,
+          "physicalLoc": 6336,
+          "baseLoc": 6328,
+          "growth": 8,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "bytes": 276578,
+          "physicalLoc": 6415,
+          "baseLoc": 6376,
+          "growth": 39,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower/value_tests.rs",
+          "bytes": 38311,
+          "physicalLoc": 1035,
+          "baseLoc": 967,
+          "growth": 68,
+          "classification": "test"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/tests.rs",
+          "bytes": 50736,
+          "physicalLoc": 1429,
+          "baseLoc": 1417,
+          "growth": 12,
+          "classification": "test"
+        },
+        {
+          "path": "crates/arcweft-core/src/tests/value.rs",
+          "bytes": 58489,
+          "physicalLoc": 1664,
+          "baseLoc": 1664,
+          "growth": 0,
+          "classification": "test"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "bytes": 176272,
+          "physicalLoc": 4828,
+          "baseLoc": 4827,
+          "growth": 1,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/string.rs",
+          "bytes": 2891,
+          "physicalLoc": 94,
+          "baseLoc": 0,
+          "growth": 94,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/checked_application.rs",
+          "bytes": 183388,
+          "physicalLoc": 4912,
+          "baseLoc": 4910,
+          "growth": 2,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/digest.rs",
+          "bytes": 47535,
+          "physicalLoc": 1212,
+          "baseLoc": 1208,
+          "growth": 4,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+          "bytes": 61832,
+          "physicalLoc": 1987,
+          "baseLoc": 1986,
+          "growth": 1,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/join.rs",
+          "bytes": 82832,
+          "physicalLoc": 2154,
+          "baseLoc": 2150,
+          "growth": 4,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/outcome.rs",
+          "bytes": 53120,
+          "physicalLoc": 1457,
+          "baseLoc": 1452,
+          "growth": 5,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/prepared_identity.rs",
+          "bytes": 24914,
+          "physicalLoc": 580,
+          "baseLoc": 571,
+          "growth": 9,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/resolution.rs",
+          "bytes": 45592,
+          "physicalLoc": 1212,
+          "baseLoc": 1198,
+          "growth": 14,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/schema.rs",
+          "bytes": 180651,
+          "physicalLoc": 4886,
+          "baseLoc": 4885,
+          "growth": 1,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+          "bytes": 124791,
+          "physicalLoc": 3204,
+          "baseLoc": 3194,
+          "growth": 10,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "bytes": 388412,
+          "physicalLoc": 11078,
+          "baseLoc": 11055,
+          "growth": 23,
+          "classification": "test"
+        }
+      ]
+    },
+    "structureDisposition": "The new small Core String module owns the complete closed operation algebra. Existing large value/VM/plan construction/verification owners retain their existing value, instruction, construction and dataflow responsibilities; the added String ABI/dispatch belongs to those algorithms, with no new unrelated state, I/O or duplicated resolver. Sema identity/schema/sealing/canonical transcript and Compiler lowering retain their existing respective boundaries. Child tests follow admission and Source execution ownership. The existing large final semantic test owner retains its HIR/generation/production-analyzer acceptance responsibility; only its two existing String cases changed, with no new unrelated state or widened helper API. Exact size/growth and dependency fan-in/out are in the raw measurements and canonical report; no file grew by 300 LOC. No dependency/feature/unsafe/version changes were introduced.",
+    "tier2": "No protocol, capture, rendering, device or production-limit boundary changed. Stateless read-only String operations are exercised through real Native/AWBC and one-op public cold restore; unrelated ignored Tier2 families were not rerun.",
+    "scope": "Only final integrated non-CLI and CLI runs count as fresh unique execution. All earlier failed preparation, owner repetitions and previous feature matrices remain historical evidence. Generic Match and every other accepted bounded cut remain accepted; known Scroll/voice/promotion failures and Style/sample/display work remain distinct.",
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-string-read-operations.raw.zip",
+      "entries": 153,
+      "bytes": 7849904,
+      "sha256": "acca30f7adcf66c6be2e88794c0e35dbc4973a562ad2508908437393bbea30f8",
+      "containsExecutables": false,
+      "containsGeneratedBundles": false
+    }
   }
 }

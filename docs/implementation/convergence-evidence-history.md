@@ -15682,3 +15682,19 @@ Source `63cc0ff8e713e69ce5ae84faf87fb7e0caf9fca5` はNative Text InputとText Su
 初回wrapperがJSON前のテキスト診断を誤ってJSON parseした事実と、調査toolの初回compile失敗もrawに保持する。Source checkの拒否をruntime test失敗や受入へ読み替えない。既存139 recordと既受入Generic Match／View cutを変更せず、現状のsample継続条件だけを具体化した。
 
 原本 `docs/implementation/acceptance-evidence/task-input-sample-retained-checkpoint.raw.zip` は28 entry／18996 bytes、SHA256 `da57b3abfeb81973fe327957d5023dbd2f3bc0254ffa5bf89b391c8897cd6575`。実行ファイル・生成AWFBは含まない。詳細はregistryの `retainedInputSampleCheckpoint`。
+
+## 2026-11-08 — String読取り操作と送信sampleの型拒否を修復
+
+Source `f77771ebe6d62f35129e491116dc14611f12bdba` は、trim／to_stringをCapacity familyからCoreの単一String operationへ移し、scalar_countのUnicode scalar計数、Sema seal／canonical transcript、Native構築／AWBC受入の正確なABI、Core VMの直接純粋評価を揃えた。旧flat intrinsicとCapacity経路は削除した。byte数や表示cluster数との取り違えを防ぐため、結合文字・emoji・空String・元receiver保持をNativeと実decode後AWBCで確認し、捕捉Stringを含む実行は1 opごとに公開JSON保存／新規executorへのcold restoreを通過した。
+
+最初のownerは3 PASS／1 FAILで、AWBCがStringをapplication hostへ委譲していた実不具合を示した。host stubを増やさずCore VMの共通評価へ修復した。後続4件PASSの後、captureと公開cold restoreを加えた準備がplanのmoveでcompile失敗し、元planを各executorへcloneする形に訂正して5／5 PASS。初期workspace checkのimport／tag幅失敗も原本へ残す。全98 workspace gateは終了0で、後続のtest整理と旧期待値修復も対象Clippy／fmtと全consumerで通過した（test Source `70a050cc9cd0b94d83b79a295ec688bccd3b1d3b`）。assertion、実行予算、feature条件は弱めていない。
+
+送信sampleはString.lenの拒否を越えた後、HIRの元Source APIが式173をreturn submittedに対応づけた。戻り型をStringと明示するとlocal feedbackがAction namespaceを隠す次の拒否が現れ、内部変数をfeedback_textへ変更した。Source `208b3b5315ab00272fe3a9524a67b9c1642d8c50` は元入力／Action ID・payload・空／短／長の全分岐を保持し、実CLI checkとmain-profile AWFB生成（133命令、85776 bytes）を通過した。初回bundle probeのprofile指定漏れ（終了2）も保持する。古いinput factory／handler／receiveと未確認traceのREADME記述は、現行Sourceと実行確認済みコマンドへ置き換えた。Native／Webの操作・表示を検証したという意味ではない。
+
+初回のCore逆依存runは7378実行／7375 PASS／3 FAIL／18 SKIPで、Coreのintrinsic総数を旧94件とするassertionと、StringをCapacity familyとするSemaの2 assertionが失敗した。全tagの往復、候補一意性、String戻り型、元nominal座標の検証は保持し、総数95件とTrim／ToString／ScalarCountの正確なidentityを検証する形へ訂正した。Capacityという旧名称を含む1件はStringへ改名し、coverage監査で一対一対応を確認した。
+
+最終Core逆依存53 packageは非CLI 7378 PASS／18 SKIP、CLI既定は711実行の707 PASS／4 FAIL／23 SKIP。新規unique 8089実行の8085 PASS／4 FAIL／41 SKIPだけを集計する。先行ID closureを今回のpackage集合へ投影した7368件に欠落0、追加10件・重複0（名称訂正1件を対応付け）。4件のCLI失敗は同じID・元診断で、Scroll・voice・promotionの別境界として残る。初回3失敗のrun、owner反復、開発check、過去5365件／10246件は今回の実行件数へ加算しない。
+
+訂正理由は、text-submitの現在の拒否を解消した具体的なSource変更と実CLI結果であり、以前の拒否記録を改変するものではない。既存140 recordは値を全件照合して保持し、Stringの受入だけを追加した。Generic Match等の受入済み項目は変更していない。現状はcurrent-status.mdだけへ集約する。
+
+原本 `docs/implementation/acceptance-evidence/task-string-read-operations.raw.zip` は153 entry／7849904 bytes、SHA256 `acca30f7adcf66c6be2e88794c0e35dbc4973a562ad2508908437393bbea30f8`。ビルド実行ファイル・生成AWFBは含まない。詳細はregistryの `stringReadOperations`。
