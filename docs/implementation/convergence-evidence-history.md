@@ -15672,3 +15672,13 @@ Generic Matchと既受入のbounded cutは変更していない。全体goalの�
 
 原本は `acceptance-evidence/task-view-placeholder-separation.raw.zip`（113 entry、4649065 bytes、SHA-256 `43a01d49c39504147dc9c33c018ae8f3b3d59f56f701060c5ba6a125418cbc89`）。
 実行ファイル・AWFBは含めず、実EXEは元pathのhashで照合した。詳細は `acceptance-evidence/task-flow-registry-execution.json` の `viewPlaceholderSeparation`。
+
+## 2026-11-08 — 入力sampleの保持値／mount移行checkpoint
+
+Source `63cc0ff8e713e69ce5ae84faf87fb7e0caf9fca5` はNative Text InputとText Submitの2 Sourceだけの中間移行で、sample全体の受入ではない。元の入力ID・3種のcontrol・hint・Style・Action・送信後の分岐を保ち、保持Stringと実mount／await receiveへ揃えた。
+
+元の4 sampleはいずれもsyntax／HIR段階で拒否されていた。移行後はNativeがFontFamilyList型の解決拒否、text-submitがString.lenのunknown methodへ進んだ。Nativeの複数行埋込みは同じ関数呼出しをinlineで保持し、HIRの型／元Source APIで次の拒否のslot 41を特定した。文字数分岐やfont tokenを除去する回避は行わない。現行compilerは非空Style tokenを明示拒否するため、その正規の型付き経路を完成させる。
+
+初回wrapperがJSON前のテキスト診断を誤ってJSON parseした事実と、調査toolの初回compile失敗もrawに保持する。Source checkの拒否をruntime test失敗や受入へ読み替えない。既存139 recordと既受入Generic Match／View cutを変更せず、現状のsample継続条件だけを具体化した。
+
+原本 `docs/implementation/acceptance-evidence/task-input-sample-retained-checkpoint.raw.zip` は28 entry／18996 bytes、SHA256 `da57b3abfeb81973fe327957d5023dbd2f3bc0254ffa5bf89b391c8897cd6575`。実行ファイル・生成AWFBは含まない。詳細はregistryの `retainedInputSampleCheckpoint`。

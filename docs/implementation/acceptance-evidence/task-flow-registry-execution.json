@@ -58817,5 +58817,127 @@
       "sha256": "43a01d49c39504147dc9c33c018ae8f3b3d59f56f701060c5ba6a125418cbc89",
       "containsExecutables": false
     }
+  },
+
+  "retainedInputSampleCheckpoint": {
+    "version": 1,
+    "date": "2026-11-08",
+    "publication": {
+      "version": 1,
+      "commit": "63cc0ff8e713e69ce5ae84faf87fb7e0caf9fca5",
+      "parent": "e1d1885c8f18b3c3ffed5236310f2022d8da629c",
+      "tree": "923048d4df5f079bb03e90a5a8a6dfff154255fa",
+      "remote": "63cc0ff8e713e69ce5ae84faf87fb7e0caf9fca5",
+      "paths": [
+        {
+          "path": "samples/native-text-input/src/main.arcw",
+          "blob": "90bbc189ecd64b13d843257aa64df623f9fb807d"
+        },
+        {
+          "path": "samples/text-submit-flow/src/main.arcw",
+          "blob": "af9b3bcf868295f4a1cb8a1419450f9e53e4d4bb"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "78a18bcfd2f063666b0b2fabdb7aa71c56101d51f85a3b4efe35558ed65fafff",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T10:35:11.5620697Z"
+    },
+    "acceptance": "Checkpoint only; the complete Source samples are not accepted.",
+    "baseline": [
+      {
+        "sample": "native-text-input",
+        "receipt": {
+          "version": 1,
+          "base": "e1d1885c8f18b3c3ffed5236310f2022d8da629c",
+          "sample": "native-text-input",
+          "exitCode": 1,
+          "status": null,
+          "main": "de2ca2e2c65a5e07ca39bb26559a88a20815f2bbc6867427b084e7be1a79d973",
+          "source": "9d5fff4a8d28caa36f55be7a3276473d78a706c3e670cb62947000febeea3fd0",
+          "manifest": "d2af66ce752344f43f30cd483fbf390fc2ac73adcc719219342cae165070e830"
+        },
+        "rawDiagnostic": "error[hir.project.analysis]: HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis\r\n"
+      },
+      {
+        "sample": "text-submit-flow",
+        "receipt": {
+          "version": 1,
+          "base": "e1d1885c8f18b3c3ffed5236310f2022d8da629c",
+          "sample": "text-submit-flow",
+          "exitCode": 1,
+          "status": null,
+          "main": "de2ca2e2c65a5e07ca39bb26559a88a20815f2bbc6867427b084e7be1a79d973",
+          "source": "4e55c1c8b0e55c935151e1b188b93ff5ffb26e463e9fc2333ae1b0d7faaa2ae8",
+          "manifest": "3e9ac64d77ea8e5db47cc5b8bce6b720e2bc0095b93689000240d9c5acd58f52"
+        },
+        "rawDiagnostic": "error[hir.project.analysis]: HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis\r\n"
+      },
+      {
+        "sample": "modern-feedback-view",
+        "receipt": {
+          "version": 1,
+          "base": "e1d1885c8f18b3c3ffed5236310f2022d8da629c",
+          "sample": "modern-feedback-view",
+          "exitCode": 1,
+          "status": null,
+          "main": "de2ca2e2c65a5e07ca39bb26559a88a20815f2bbc6867427b084e7be1a79d973",
+          "source": "65840f7160c66e029c7271fab0b1983525bd4ded86038ffeebb857dc608d4fe7",
+          "manifest": "ed52b65a7d45ca29a8c0c0129dff62d6dd36ddc28c4ac6e3e399ad5b15c66c0b"
+        },
+        "rawDiagnostic": "error: source `samples/modern-feedback-view\\src\\main.arcw` has syntax errors: [\"unexpected top-level item\"]\r\n"
+      },
+      {
+        "sample": "focus-navigation-controller-dsl",
+        "receipt": {
+          "version": 1,
+          "base": "e1d1885c8f18b3c3ffed5236310f2022d8da629c",
+          "sample": "focus-navigation-controller-dsl",
+          "exitCode": 1,
+          "status": null,
+          "main": "de2ca2e2c65a5e07ca39bb26559a88a20815f2bbc6867427b084e7be1a79d973",
+          "source": "6c982c6d564425b8e08211c2b917606194c29c87b3173782d6501e67e16866ca",
+          "manifest": "50d8a704a6b0d8421b460433dddc56efd8e51b6e3e7d3ace10e6c665f0b650e1"
+        },
+        "rawDiagnostic": "error: source `samples/focus-navigation-controller-dsl\\src\\main.arcw` has syntax errors: [\"View body values must use the typed View expression grammar\"]\r\n"
+      }
+    ],
+    "baselineWrapperCorrection": "All four CLI checks emitted text diagnostics before JSON reporting. The initial wrapper incorrectly attempted ConvertFrom-Json; status is null in those receipts. Exit code 1, exact original Source/manifest/main hashes and the actual text diagnostics remain authoritative. These are Source-check denials, not executed Rust/runtime test failures.",
+    "finalNative": {
+      "version": 1,
+      "base": "e1d1885c8f18b3c3ffed5236310f2022d8da629c",
+      "exitCode": 1,
+      "sourceSha256": "dd5aef5b95579f69e59753a5de1f1cee7ed7875980849f0060b544b1ca02bbe8"
+    },
+    "finalNativeDiagnostic": "error[sema.final_analysis]: nominal type resolution did not produce one complete type for TypeId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 41, kind: Type })\r\n",
+    "finalSubmit": {
+      "version": 1,
+      "base": "e1d1885c8f18b3c3ffed5236310f2022d8da629c",
+      "sample": "text-submit-flow",
+      "exitCode": 1,
+      "source": "285a734ef72dcd8a0627fb90072ffe3b8425c70c304a41161531d3e8bb4d6d32"
+    },
+    "finalSubmitDiagnostic": "error[sema.call.unknown_target]: unknown method `len`\r\n  |\r\n  = note: source text is unavailable; span labels were omitted\r\n",
+    "diagnosis": [
+      "Native multiline embedded expression was a required HIR recovery. The same function call is now written in one inline expression; both authored iterations and narrative content remain. Final HIR is admitted and the next refusal is nominal type slot 41, mapped by the genuine HIR type/source API to FontFamilyList.",
+      "String.len is intentionally unavailable in the current collection signature schema. The text-submit sample must keep its empty/short/long branches and use an explicitly defined text-counting unit, not drop or literal-stub the counter.",
+      "Style tokens are retained in HIR but compiler/style.rs rejects nonempty token inventories. The current Style expression checker handles Length and Color; FontFamilyList, font/system palette values and typed token dependency resolution need completion. Do not inline away the authored font stacks or remove Style to make the sample pass."
+    ],
+    "migrations": [
+      "Native three controls and feedback form use owned local state mut String fields with original input PublicIds, labels, placeholders, purpose and Enter-key hints. SecureField remains secure.",
+      "Both views use actual mount handles. Submit and click return the original feedback.submit Action with the retained field, and the flow awaits the original typed channel.",
+      "The Send button retains enabled=true. The removed focusable(true) spelling is represented by the existing enabled action-control keyboard focus behavior; no disabled/false focus setting was removed. Existing Style and every response branch remain."
+    ],
+    "next": "Complete canonical read-only String operations/counting, typed Style values and token resolution; then finish the four samples and actual runtime/display verification. Scroll/Panel products and focus-navigation Source grammar remain independent necessary boundaries.",
+    "preservedAcceptance": "Generic Match, retained String input, public target, IME hint, placeholder/label separation and all other accepted cuts remain accepted. Their previous test runs retain their original Source scope.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-input-sample-retained-checkpoint.raw.zip",
+      "entries": 28,
+      "bytes": 18996,
+      "sha256": "da57b3abfeb81973fe327957d5023dbd2f3bc0254ffa5bf89b391c8897cd6575",
+      "containsExecutables": false
+    }
   }
 }
