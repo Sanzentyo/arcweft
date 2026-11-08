@@ -50449,5 +50449,559 @@
         }
       ]
     }
+  },
+  "awbcDialogueInputIngress": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "17e34d99e32c4618ac6ed866a7ee9ccdcff441c5",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "17e34d99e32c4618ac6ed866a7ee9ccdcff441c5",
+      "parent": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+      "tree": "11d8f002f9c8eca0068e3c49d4cb8718e148a78d",
+      "remote": "17e34d99e32c4618ac6ed866a7ee9ccdcff441c5",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects/ordinary_defer.rs",
+          "blob": "f6a4768248236497cd7a08a494aebfccc6a87d11"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "f051acb44159c3361f4b8906a4d8b5ee1c65c83c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "2c7bf11dbc4359b4ad2eabc2e5d4f3ed201791df"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "aa94a6b7f4ef5d374a77632f4af615fe092a4862"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "23cb540bc10b2b8fe28e93d3784ef8902e225bb1"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "blob": "ec000cf15aadc53b2d685e509da263fa8e341f74"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task.rs",
+          "blob": "74baf87b743fd6028b64443fb69384bc8f9d5895"
+        },
+        {
+          "path": "docs/02-runtime/runtime-step-and-executors.md",
+          "blob": "84169f875a5a10bd01df0dc5fff70dd6cc69c1c1"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "8807cfaa80b1b4ddccc125a678cce7d9ddfd4cf5e0a08f2cf2775aaa87fa7a17",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T02:45:14.3913364Z"
+    },
+    "problem": "A real cancellation packet delivered once at max_ops=0 was lost by Product AWBC: after 512 original one-op steps only body was logged and the held Actor was not released. Native completed the same input. This adds a concrete zero-budget ingress condition and does not reopen Generic Match, root defer or earlier Line/init acceptance.",
+    "owner": "The original dialogue activation frame retains pending input actions. Product ingress borrows RuntimeStepInputRef, validates packet length and the actual live reducer/activation, combines pending and new identities through the sole LineTaskReducerView inspector, preflights revisions, then retains the packet. The reducer consumes that packet once. Version-one public save, private rollback, metadata admission and constructors all carry the same field; the old ephemeral resume parameter is deleted.",
+    "validation": [
+      {
+        "attempt": "probe",
+        "catalog": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(retains_cancellation_during_zero_operation_steps)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-dialogue-input-zero-budget-20261108.probe.catalog.log",
+          "exitCode": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T02:32:05.9179223Z",
+          "finishedAt": "2026-11-08T02:32:30.1958502Z"
+        },
+        "terminal": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "run": "awbc-dialogue-input-zero-budget-20261108.probe.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   9.337s] 2 tests run: 1 passed, 1 failed, 136 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2,
+          "passed": 1,
+          "failed": 1,
+          "skipped": 136,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::evaluated_effects",
+              "test": "ordinary_defer::saved_awbc_deferred_dialogue_retains_cancellation_during_zero_operation_steps"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T02:32:43.026193Z"
+        }
+      },
+      {
+        "attempt": "fixed-r1",
+        "catalog": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(retains_cancellation_during_zero_operation_steps)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-dialogue-input-zero-budget-20261108.fixed-r1.catalog.log",
+          "exitCode": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T02:34:11.9395609Z",
+          "finishedAt": "2026-11-08T02:37:22.4317192Z"
+        },
+        "terminal": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "run": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.734s] 2 tests run: 2 passed, 136 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 136,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-08T02:37:26.8679746Z"
+        }
+      },
+      {
+        "attempt": "owner-r2",
+        "catalog": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(retains_cancellation_during_zero_operation_steps) | test(forged_pending_cancellation_packets) | test(input_admission_share_order_replay_and_limit_checks)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-dialogue-input-zero-budget-20261108.owner-r2.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T02:38:07.0883826Z",
+          "finishedAt": "2026-11-08T02:39:38.7753946Z"
+        },
+        "terminal": null
+      },
+      {
+        "attempt": "owner-r3",
+        "catalog": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(retains_cancellation_during_zero_operation_steps) | test(forged_pending_cancellation_packets) | test(input_admission_share_order_replay_and_limit_checks)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-dialogue-input-zero-budget-20261108.owner-r3.catalog.log",
+          "exitCode": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T02:39:59.7098902Z",
+          "finishedAt": "2026-11-08T02:42:34.820946Z"
+        },
+        "terminal": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "run": "awbc-dialogue-input-zero-budget-20261108.owner-r3.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.693s] 4 tests run: 3 passed, 1 failed, 2657 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 4,
+          "passed": 3,
+          "failed": 1,
+          "skipped": 2657,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::evaluated_effects",
+              "test": "ordinary_defer::saved_awbc_deferred_dialogue_rejects_forged_pending_cancellation_packets"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T02:42:39.9180897Z"
+        }
+      },
+      {
+        "attempt": "owner-r4",
+        "catalog": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "evaluated_effects",
+            "-E",
+            "test(retains_cancellation_during_zero_operation_steps) | test(forged_pending_cancellation_packets)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-dialogue-input-zero-budget-20261108.owner-r4.catalog.log",
+          "exitCode": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T02:43:56.7153419Z",
+          "finishedAt": "2026-11-08T02:45:01.7904397Z"
+        },
+        "terminal": {
+          "version": 1,
+          "base": "4654e0d186e7e1d80ac41556adc815f40ceacddf",
+          "run": "awbc-dialogue-input-zero-budget-20261108.owner-r4.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.794s] 3 tests run: 3 passed, 136 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 136,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3417,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-08T02:45:06.0988454Z"
+        }
+      }
+    ],
+    "accepted": "Source owner-r4: 3/3 pass, 136 filtered out. Native and publicly saved/cold-restored AWBC each retain one cancellation packet through three zero-operation steps, then finish the original 512-step/one-op flow with body/cancelled/released logs, two actual reveals and held Actor release. Four public-save forgeries (occurrence, owner_fiber, duplicate, consumed-history conflict) are rejected before execution publication; each rejection preserves the original snapshot, and the original run finishes.",
+    "sharedHistory": {
+      "path": "crates/arcweft-core/src/line_task.rs",
+      "sha256": "b3062fb2ba27b65980f08a72d9932580f015793299dc9da6d68958d3722db7d3",
+      "run": "owner-r3",
+      "test": "line_task::retained_reducer_tests::live_and_inert_input_admission_share_order_replay_and_limit_checks",
+      "passed": true,
+      "scope": "The unchanged history owner checks ordered normalization, duplicate/replay refusal and the 65537th borrowed event limit against live and inert storage. Its earlier run is retained separately, not merged into owner-r4."
+    },
+    "corrections": [
+      "owner-r2 is preparation exit101 only: the new test used private tuple constructors for InputEpoch/InputSequence; their public new constructors repaired the fixture.",
+      "owner-r3 has 3 pass / 1 fail: the new forgery test incorrectly required source binding to perform full restore admission. The final test follows both binding and restoration, rejects any execution publication and checks the unchanged snapshot. This is a test-contract correction, not evidence that a forged executable was admitted.",
+      "The source checkpoint and owner-r4 retain their actual recorded timestamps and frozen input hashes; the checkpoint was committed after the runtime terminal, while its result was being recovered. The follow-up removes only an unused LogicalDuration import after the borrowed-input signature migration. Full workspace gates and reverse consumers are still running/not yet accepted here."
+    ],
+    "remaining": "Fresh all-feature Core reverse consumers, separate default CLI, workspace check/Clippy/structure/fmt, Native public Save, platform/Tier2 and final Native-Web parity retain their separate scope. Earlier 8052-case Source625 matrix is not relabeled as this new source.",
+    "raw": {
+      "path": "task-awbc-dialogue-input-ingress.raw.zip",
+      "sha256": "70cce0f05bcdbf06bf5b4b672f957bddf23a33f7a14689469b49c6b2b88ce7dd",
+      "entries": [
+        {
+          "entry": "audit-nextest-final-result.ps1",
+          "bytes": 5266,
+          "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.admission.rs",
+          "bytes": 1644,
+          "sha256": "e40113d2ef541a7d50d3b1176a39819b2a3cdf52ddec71185c9f5e848399cc28"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.binaries-before.json",
+          "bytes": 230,
+          "sha256": "c028482cc88b378f7cb533acbc1f2d81f0c2dc534c22d9e564bde0f29d8bc831"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.catalog.inventory.json",
+          "bytes": 35178,
+          "sha256": "cafd9192d5847760ff4af33fc680adf27890e30e7accd9ae710ee542977a6706"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.catalog.json",
+          "bytes": 644,
+          "sha256": "fe587833fab7b715ad278fdad7a599e3aa5c36be19a0e0f6e14cef49b882ef38"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.catalog.log",
+          "bytes": 114790,
+          "sha256": "5dd3aee0229cc68fb25d70935c91edc67abde97d48a3557f40f832fc3b2d8c04"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.runtime.json",
+          "bytes": 736,
+          "sha256": "05259948e5518b80e8c1258ec53a937e7923f6b2632bd82c2728afde56c5de87"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.runtime.log",
+          "bytes": 130146,
+          "sha256": "f8e464cd74562048b34a8ca215bd73e79274064a45ff9216642892dbff61d25b"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "b41deee6a891add822f7e53e8d1b7fee40b2b9b91b6086d21a79629a8106f7d9"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.fixed-r1.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "87052812ba16bfb7e538b57bd3c751fca201134ebf35d87df6f7ff1536a04524"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.forgery.rs",
+          "bytes": 1959,
+          "sha256": "1cda37b27ce82dc5b7b5be7297093b067ba68fa0845510f3f89fcc062b27972a"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r2.catalog.json",
+          "bytes": 796,
+          "sha256": "bb091f27fd03e18f24ea837993522c643cdc29dd3afa7d8c7c1c9a9f36e1ef7d"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r2.catalog.log",
+          "bytes": 95259,
+          "sha256": "5bd67da9aed34ebff5f42872d8b071049f985ef0e3f3fc56a0dac2d49c94ca89"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r2.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "4225bc5c1901e11d3568537e856cd6f9528f41252038f55749298d767e4ea95f"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.binaries-before.json",
+          "bytes": 680,
+          "sha256": "b923c5419b326caa6c7bbefd5a577f1275ed31b6ff23f6ea8860c781a86f7563"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.catalog.inventory.json",
+          "bytes": 679580,
+          "sha256": "418b44d954434cc717ab5befc5ebb7c89128aeb277310480d9fb47ae042ea7c3"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.catalog.json",
+          "bytes": 794,
+          "sha256": "f666c059b3b09b24a44d90894ab7c52eac3af98da1801172a50559022faadd3a"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.catalog.log",
+          "bytes": 617598,
+          "sha256": "cd47e7b008d8da7d39d6b5c4d3edf6233df91c905a42714d01a38a363797e7bc"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.runtime.json",
+          "bytes": 888,
+          "sha256": "b460418266d3a5c49922e14756e093e6822bc3513a9e23f88f5476fcd8387a9b"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.runtime.log",
+          "bytes": 914071,
+          "sha256": "61fecf7cb8f68749d2d8271b5116aaa5dff8024270e21642e1c32dffa587fb14"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.runtime.terminal-audit.json",
+          "bytes": 850,
+          "sha256": "ebaa6e9c7db295cf480e5636d5a1f0cd7e784636696aa60cb404e36ecb6706cf"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r3.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "5491acda99018487ce66aeedb58c724dc976706506334bf07f8a81dcb5781f9d"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.binaries-before.json",
+          "bytes": 230,
+          "sha256": "d63ac3b09370500892cf8f4e068e599577f94ccec05f6a2a0e13d48a43f6ab19"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.catalog.inventory.json",
+          "bytes": 35446,
+          "sha256": "31d8864a9b8b172912745ef47f6d25b83e6c0f5c9f3526bd410380a6e1063f86"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.catalog.json",
+          "bytes": 688,
+          "sha256": "4c34d64a518ffa2386eb127f291361847098f102e4b436a6ae6ad7a34427176d"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.catalog.log",
+          "bytes": 114238,
+          "sha256": "1c7bfabd89093baa3797ceaead33119b063d9c3598556a906ee0ac2dab88680f"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.runtime.json",
+          "bytes": 780,
+          "sha256": "127a625091578ab758b464133eb84b04986b4dcf7a6d75bfc9c98d3ba4acd683"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.runtime.log",
+          "bytes": 129749,
+          "sha256": "f6f402e1ade51fc104538d3e569c8a1360cf1f73410a7af28e17aa0e44797f8d"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "b8df77a3a48dfce2262d9355e7cb3cfb2427915242cd4257bbd3a84625d9b173"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.owner-r4.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "7e3c97531456ec4e6c28addc9d93f972615e15718960161cabdf4662bce342ea"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.binaries-before.json",
+          "bytes": 230,
+          "sha256": "813800633ad8286e0783c0927dcd5fa88e1cf2a8c6530b5cd811a93dd58ac2a0"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.catalog.inventory.json",
+          "bytes": 35178,
+          "sha256": "cafd9192d5847760ff4af33fc680adf27890e30e7accd9ae710ee542977a6706"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.catalog.json",
+          "bytes": 641,
+          "sha256": "9367fc225626670f49b03067b0665b8cbd5a69d46cce8d94ebf79493e533cb82"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.catalog.log",
+          "bytes": 112297,
+          "sha256": "cae767ef3c51f49d39c9277993eedfd5d7c96ec47fa988a85290b175740195e5"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.runtime.json",
+          "bytes": 735,
+          "sha256": "dfa84ab28fbc89b9e8a5c04cf66ae878e1d41699c7d86b1ebf6e2ea5c6df2ae4"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.runtime.log",
+          "bytes": 130678,
+          "sha256": "bbf0f7d9e6f76e9d5483bd560777b421cf1fa53e15be55df8380d0b262eed6b6"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.runtime.terminal-audit.json",
+          "bytes": 850,
+          "sha256": "abced97585c8c5eff38baed6b7e57b86d200a1ee89d0a32dfbc3b28c722bceaf"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.probe.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "5349d3c39561032fb2e969580f652f28f1fefda45b56194b0e7431ab4402eec4"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.regression.rs",
+          "bytes": 1779,
+          "sha256": "304cc8c89b570782bbee13ef2ad3eac59d903f30fc6608ea59cae30d706bcafb"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.source.message.txt",
+          "bytes": 69,
+          "sha256": "caa5bf61ca2a7cc5ed3eb6d223bbe260a0be0e7990e02f8ef903cd4ff0d44984"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.source.owned.txt",
+          "bytes": 410,
+          "sha256": "2c526a1278c0f34298ec6f11b3597e85268d7b4c77d2e07f715e6eacdd097f30"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.source.pathspec",
+          "bytes": 402,
+          "sha256": "e6b39cbde49f791fef6e399832d58eacb5a89dfba18a77b5b989aec3e585bdbb"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.source.prepared.json",
+          "bytes": 2279,
+          "sha256": "2cde72ea0feccda49b0041f5e3400b1a3d62d804b9b8c60cca25a3599bef931d"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.source.reviewed.patch",
+          "bytes": 30714,
+          "sha256": "8807cfaa80b1b4ddccc125a678cce7d9ddfd4cf5e0a08f2cf2775aaa87fa7a17"
+        },
+        {
+          "entry": "awbc-dialogue-input-zero-budget-20261108.source.verified.json",
+          "bytes": 1681,
+          "sha256": "d4dbe70c7a5348ce3b764199b32e1233ebe25d1d07ae1707d6c6da78315d85b2"
+        },
+        {
+          "entry": "record-awbc-dialogue-input-owner-20261108.ps1",
+          "bytes": 9946,
+          "sha256": "e5ec789973d023a5d217fdfbc4560774a1055b2d474db2fff0e0f01f2788760b"
+        },
+        {
+          "entry": "run-source-frozen-matrix-20261108.ps1",
+          "bytes": 3811,
+          "sha256": "67f96bdfcde81833569bd75776269dca7c5dcedb6111214943296e6da62ca191"
+        }
+      ]
+    }
   }
 }

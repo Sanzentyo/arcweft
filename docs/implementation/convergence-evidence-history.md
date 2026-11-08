@@ -15510,3 +15510,10 @@ generic監査のselectedPackages=0は明示-p引数の件数で、--workspace選
 production **625deea6d6051469fc0c60a4e6808727fb42c21d** の入力で、非CLI Source **316e420431d3941387b1f4e71e47159a5309f9f9** とCLI Source **09871682de53a76817911739a027d955bd147f31** のRust bytesを照合し、**8052件中8048 PASS／4 FAIL／41 SKIP**。非CLI7341 PASS／18 SKIP、CLI711件中707 PASS／4 FAIL／23 SKIP、2 run／2 feature point・重複0。Core逆依存53中50 packageを実行し3 packageはcompile-only。先行focused2330／166件を重ねない。既定jobs／profile／assertion／budget／除外を変更せず、生成物の移動・コピー・退避もない。
 
 CLI初回は362件のpartial status後、実process・terminal summary・receiptがないことを確認した。中断理由は未観測で、完了扱いや件数合算をしない。ソース・binaryのhashを再照合し、同じ711件を新epochで再実行した。全3617入力と実CLI本体・test executableの前後drift0。以前の原本は上書きしていない。再実行後の補助scriptはJSONのUTC時刻をDateTimeへ自動変換後に再Parseした比較で誤って拒否したため、原時刻をDateKind String／DateTimeOffsetで比較し直してpinの先行と実hash不変を確認した。これは検証本体の失敗や再実行ではない。最終4失敗はScroll入力生成、実音声なしの必須VoiceHandle、旧receiverless promotion入力2件の同じIDで、新規失敗0。Generic Matchなど既受入cutは維持する。[各終端・実選択・中断原本・full SHA](acceptance-evidence/task-flow-registry-execution.json)。raw ZIP 24 entries、SHA-256 c8a496dd55e1ffc72935275dbf086a6fe29283e34dae062d6695ea86c8bbf26f。
+
+
+## 2026-11-08 — AWBC対話入力の予算0保留と公開保存
+
+Source **17e34d99e32c4618ac6ed866a7ee9ccdcff441c5** は、取消入力をstepの一時値から読む経路を削除し、元activationの保留packetに移した。修復前probeはNative PASS／保存AWBC FAILで、AWBCは元512 step後もbody logのみ・Actor未解放。修復後owner-r4は**3／3 PASS・136 SKIP**で、一度だけの取消入力を3回の0-operation stepと毎step公開JSON保存／cold restoreにまたがって保持し、元cleanup・解放・2 revealを完了する。occurrence／owner fiber／重複／消費済み履歴の4改変は、実行公開前に拒否し元snapshotを保持した。
+
+live／inert共有検査の並び順・再送・65537件上限は、同じhistory ownerのowner-r3でPASSし、別runとして保持する。owner-r2の新testのprivate tuple constructor指定は準備失敗101でruntimeではない。owner-r3の新forgery testはsource bindとrestore admissionを混同して1失敗し、最終testを実際の二段階APIに合わせ、復元拒否・元状態不変・原本の継続実行を検査した。受入条件は緩めない。現Sourceの全workspace gate／Core逆依存／CLIは未完了で、先行625deea6d6051469fc0c60a4e6808727fb42c21dの8052件を転用しない。Generic Match等の既受入は保持する。[全実測・訂正理由・公開receipt・raw](acceptance-evidence/task-flow-registry-execution.json)。raw 48 entries、SHA-256 70cce0f05bcdbf06bf5b4b672f957bddf23a33f7a14689469b49c6b2b88ce7dd。Source後の補足変更は借用input APIへ移行後の未使用import削除だけである。
