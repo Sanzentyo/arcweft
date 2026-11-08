@@ -8,11 +8,11 @@ use crate::{
         DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp,
         RuntimeCallTarget, RuntimeEntityReference, RuntimeEnv, RuntimeEvalError,
         RuntimeExpressionFailure, RuntimeFmtParameterId, RuntimeIntrinsic, RuntimeIterator,
-        RuntimeLocalBinding, RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp,
-        RuntimeValue, RuntimeValueNestingError, evaluate_binary, evaluate_capacity_intrinsic,
-        evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
-        evaluate_std_float_intrinsic, evaluate_string_intrinsic, runtime_sequence_dense_bool,
-        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        RuntimeLocalBinding, RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq,
+        RuntimeStringOperation, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
+        evaluate_binary, evaluate_capacity_intrinsic, evaluate_core_iter_collect_intrinsic,
+        evaluate_index_intrinsic, evaluate_std_float_intrinsic, evaluate_string_intrinsic,
+        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
@@ -1239,7 +1239,7 @@ fn std_float_intrinsics_use_native_semantics_and_explicit_bit_conversion() {
 fn string_intrinsics_preserve_typed_receiver_semantics() {
     assert_eq!(
         evaluate_string_intrinsic(
-            RuntimeIntrinsic::StringTrim,
+            RuntimeIntrinsic::String(RuntimeStringOperation::Trim),
             &[RuntimeValue::String(" alice \n".to_owned())]
         )
         .expect("trim evaluates"),
@@ -1247,7 +1247,7 @@ fn string_intrinsics_preserve_typed_receiver_semantics() {
     );
     assert_eq!(
         evaluate_string_intrinsic(
-            RuntimeIntrinsic::StringToString,
+            RuntimeIntrinsic::String(RuntimeStringOperation::ToString),
             &[RuntimeValue::String("alice".to_owned())]
         )
         .expect("to_string evaluates"),

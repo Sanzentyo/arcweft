@@ -48,6 +48,8 @@ mod capacity_tests;
 mod collection_tests;
 #[cfg(test)]
 mod index_tests;
+#[cfg(test)]
+mod string_tests;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FlowState {
@@ -1876,6 +1878,7 @@ fn apply_instruction(
                 verify_ownership_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_capacity_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_index_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
+                verify_string_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_collection_intrinsic_signature(
                     program,
                     *identity,
@@ -6508,6 +6511,54 @@ fn verify_ownership_intrinsic_signature(
             .is_some_and(|effects| effects.effects.is_empty())
     {
         return invalid_type(at, "ownership guard requires a pure identity signature");
+    }
+    Ok(())
+}
+
+fn verify_string_intrinsic_signature(
+    program: &AwbcProgram,
+    intrinsic: RuntimeIntrinsic,
+    signature_id: AwbcSignatureId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let RuntimeIntrinsic::String(operation) = intrinsic else {
+        return Ok(());
+    };
+    let signature = program
+        .signatures
+        .get(signature_id.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "String intrinsic has no signature".to_owned(),
+        })?;
+    let [receiver] = signature.params.as_slice() else {
+        return invalid_type(at, "String intrinsic requires one receiver");
+    };
+    let Some(result) = signature.result else {
+        return invalid_type(at, "String intrinsic requires a result type");
+    };
+    if !matches!(
+        runtime_shape(program, *receiver),
+        Some(AwbcRuntimeTypeShape::String)
+    ) {
+        return invalid_type(at, "String intrinsic requires a String receiver");
+    }
+    let result_matches = match operation.result_kind() {
+        crate::value::RuntimeStringResultKind::String => matches!(
+            runtime_shape(program, result),
+            Some(AwbcRuntimeTypeShape::String)
+        ),
+        crate::value::RuntimeStringResultKind::USize => matches!(
+            runtime_shape(program, result),
+            Some(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize))
+        ),
+    };
+    let pure = program
+        .effect_sets
+        .get(signature.effects.index())
+        .is_some_and(|effects| effects.effects.is_empty());
+    if !result_matches || !pure {
+        return invalid_type(at, "String intrinsic has an invalid typed signature");
     }
     Ok(())
 }

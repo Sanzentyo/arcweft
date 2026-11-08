@@ -739,7 +739,7 @@ fn sum_construction_rejects_a_forged_result_matching_the_source_width() {
     }
 }
 
-fn collection_intrinsic_call_seed(
+fn intrinsic_call_seed(
     intrinsic: crate::value::RuntimeIntrinsic,
     result: u8,
     arguments: Vec<RuntimeExprSeed>,
@@ -867,7 +867,7 @@ fn collection_intrinsic_construction_admits_exact_sequence_and_array_results() {
                 ),
             ] {
                 let lowered = builder
-                    .lower_expression(collection_intrinsic_call_seed(
+                    .lower_expression(intrinsic_call_seed(
                         intrinsic,
                         result,
                         vec![collection_receiver_seed(value.clone())],
@@ -880,6 +880,82 @@ fn collection_intrinsic_construction_admits_exact_sequence_and_array_results() {
                 assert_eq!(callee.as_intrinsic(), Some(intrinsic));
                 assert_eq!(args.len(), 1);
             }
+        }
+    }
+}
+
+#[test]
+fn string_intrinsic_construction_checks_exact_abi_before_executable_publication() {
+    use crate::value::{RuntimeIntrinsic, RuntimeStringOperation, RuntimeStringResultKind};
+    let fixture = || {
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    seed(1, Type::String),
+                    seed(2, Type::Unsigned(RuntimeUnsignedIntWidth::USize)),
+                    seed(3, Type::Unsigned(RuntimeUnsignedIntWidth::U64)),
+                    seed(4, Type::Bool),
+                ],
+                [],
+            )
+            .unwrap();
+        builder
+    };
+    let receiver = || {
+        RuntimeExprSeed::new(
+            semantic(1),
+            RuntimeExprSeedKind::Value(RuntimeValue::String("Aé🦀".to_owned())),
+        )
+    };
+    for operation in RuntimeStringOperation::ALL {
+        let result = match operation.result_kind() {
+            RuntimeStringResultKind::String => 1,
+            RuntimeStringResultKind::USize => 2,
+        };
+        let mut builder = fixture();
+        assert!(
+            builder
+                .lower_expression(intrinsic_call_seed(
+                    RuntimeIntrinsic::String(operation),
+                    result,
+                    vec![receiver()]
+                ))
+                .is_ok()
+        );
+        let mut builder = fixture();
+        assert!(matches!(
+            builder.lower_expression(intrinsic_call_seed(
+                RuntimeIntrinsic::String(operation),
+                3,
+                vec![receiver()]
+            )),
+            Err(RuntimePlanBuildError::InvalidTypeProjection {
+                context: "String intrinsic result",
+                ..
+            })
+        ));
+        let mut builder = fixture();
+        let wrong_receiver = RuntimeExprSeed::new(
+            semantic(4),
+            RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+        );
+        assert!(matches!(
+            builder.lower_expression(intrinsic_call_seed(
+                RuntimeIntrinsic::String(operation),
+                result,
+                vec![wrong_receiver]
+            )),
+            Err(RuntimePlanBuildError::InvalidTypeProjection {
+                context: "String intrinsic receiver",
+                ..
+            })
+        ));
+        for count in [0, 2] {
+            let mut builder = fixture();
+            assert!(
+                matches!(builder.lower_expression(intrinsic_call_seed(RuntimeIntrinsic::String(operation), result, (0..count).map(|_| receiver()).collect())), Err(RuntimePlanBuildError::CallableAbiArity { context: "String intrinsic", expected: 1, actual }) if actual == count)
+            );
         }
     }
 }
@@ -908,11 +984,9 @@ fn collection_intrinsic_construction_rejects_wrong_receiver_and_result_types() {
     let scalar = builder
         .resolve_seed_type("test scalar receiver", semantic(1))
         .unwrap();
-    assert!(
-        matches!(builder.lower_expression(collection_intrinsic_call_seed(
+    assert!(matches!(builder.lower_expression(intrinsic_call_seed(
         RuntimeIntrinsic::CoreSeqLen,4,vec![RuntimeExprSeed::new(semantic(1),RuntimeExprSeedKind::Value(RuntimeValue::i32(7)))],
-    )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:"collection intrinsic receiver",ty}) if ty==scalar)
-    );
+    )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:"collection intrinsic receiver",ty}) if ty==scalar));
     for (intrinsic, result, context) in [
         (RuntimeIntrinsic::CoreSeqSum, 1, "collection sum result"),
         (RuntimeIntrinsic::CoreSeqLen, 3, "collection length result"),
@@ -920,11 +994,9 @@ fn collection_intrinsic_construction_rejects_wrong_receiver_and_result_types() {
         let actual = builder
             .resolve_seed_type("test forged result", semantic(result))
             .unwrap();
-        assert!(
-            matches!(builder.lower_expression(collection_intrinsic_call_seed(
+        assert!(matches!(builder.lower_expression(intrinsic_call_seed(
             intrinsic,result,vec![collection_receiver_seed(RuntimeValue::i32(7))],
-        )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:actual_context,ty}) if actual_context==context && ty==actual)
-        );
+        )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:actual_context,ty}) if actual_context==context && ty==actual));
     }
 }
 
@@ -952,16 +1024,12 @@ fn collection_intrinsic_construction_rejects_noninteger_sum_and_wrong_arity() {
     let item = builder
         .resolve_seed_type("test bool element", semantic(1))
         .unwrap();
-    assert!(
-        matches!(builder.lower_expression(collection_intrinsic_call_seed(
+    assert!(matches!(builder.lower_expression(intrinsic_call_seed(
         RuntimeIntrinsic::CoreSeqSum,3,vec![collection_receiver_seed(RuntimeValue::Bool(true))],
-    )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:"collection sum element",ty}) if ty==item)
-    );
+    )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:"collection sum element",ty}) if ty==item));
     for count in [0, 2] {
-        assert!(
-            matches!(builder.lower_expression(collection_intrinsic_call_seed(
+        assert!(matches!(builder.lower_expression(intrinsic_call_seed(
             RuntimeIntrinsic::CoreSeqLen,4,(0..count).map(|_|collection_receiver_seed(RuntimeValue::Bool(true))).collect(),
-        )),Err(RuntimePlanBuildError::CallableAbiArity {context:"collection intrinsic",expected:1,actual}) if actual==count)
-        );
+        )),Err(RuntimePlanBuildError::CallableAbiArity {context:"collection intrinsic",expected:1,actual}) if actual==count));
     }
 }

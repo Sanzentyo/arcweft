@@ -1091,6 +1091,7 @@ pub enum IntrinsicCallableCandidateTag {
     Drop,
     Promotion,
     RecordConstructor,
+    StringMethod,
 }
 
 impl IntrinsicCallableCandidateTag {
@@ -1119,6 +1120,7 @@ impl IntrinsicCallableCandidateTag {
             Self::Drop => 20,
             Self::Promotion => 21,
             Self::RecordConstructor => 23,
+            Self::StringMethod => 24,
         }
     }
 
@@ -1139,6 +1141,7 @@ impl IntrinsicCallableCandidateTag {
             CallableCandidateId::CollectionMethod(_) => Self::CollectionMethod,
             CallableCandidateId::PresentationHandleMethod(_) => Self::PresentationHandleMethod,
             CallableCandidateId::IntegerMethod(_) => Self::IntegerMethod,
+            CallableCandidateId::StringMethod(_) => Self::StringMethod,
             CallableCandidateId::DomainMethod(_) => Self::DomainMethod,
             CallableCandidateId::CapacityMethod(_) => Self::CapacityMethod,
             CallableCandidateId::StageMethod(_) => Self::StageMethod,
@@ -2143,6 +2146,7 @@ fn callable_family_tag(family: CallableFamily) -> u8 {
         CallableFamily::Promotion => 22,
         CallableFamily::Content => 23,
         CallableFamily::RecordConstructor => 24,
+        CallableFamily::StringMethod => 25,
     }
 }
 

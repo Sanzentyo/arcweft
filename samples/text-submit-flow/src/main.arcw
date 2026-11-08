@@ -67,7 +67,7 @@ flow text_submit_flow(state: GameState) {
 
   let event = await receive(feedback.submit)
   let submitted = event.value
-  let character_count = submitted.len()
+  let character_count = submitted.scalar_count()
 
   if character_count == 0usize {
     narrator: Nothing was submitted.
@@ -82,7 +82,7 @@ flow text_submit_flow(state: GameState) {
   }
 
   if character_count >= 5usize {
-    narrator: The submitted text has #[character_count] character(s), so it takes the longer branch.
+    narrator: The submitted text has #[character_count] Unicode scalar value(s), so it takes the longer branch.
   }
 
   return submitted

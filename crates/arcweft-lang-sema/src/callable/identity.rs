@@ -1168,8 +1168,6 @@ impl CapacityMethodId {
         use super::CheckedCapacityOperation;
         match self.method().as_str() {
             "with_capacity" => CheckedCapacityOperation::WithCapacity,
-            "trim" => CheckedCapacityOperation::Trim,
-            "to_string" => CheckedCapacityOperation::ToString,
             "pop" => CheckedCapacityOperation::Pop,
             "pop_front" => CheckedCapacityOperation::PopFront,
             "push" => CheckedCapacityOperation::Push,
@@ -1187,7 +1185,6 @@ impl CapacityMethodId {
     fn supports_shape(receiver: &TypeKind, method: &str, arity: usize) -> bool {
         match (receiver, method, arity) {
             (TypeKind::String | TypeKind::Bytes | TypeKind::Vec(_), "with_capacity", 1) => true,
-            (TypeKind::String, "trim" | "to_string", 0) => true,
             (TypeKind::Vec(_), "pop" | "pop_front", 0) => true,
             (TypeKind::Vec(_), "push", 1) => true,
             (TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes, "reserve" | "shrink_to", 1) => {
@@ -1224,7 +1221,6 @@ impl CapacityMethodId {
     pub(crate) fn result_type(&self) -> TypeKind {
         match (self.receiver(), self.method().as_str()) {
             (receiver, "with_capacity") => receiver.clone(),
-            (TypeKind::String, "trim" | "to_string") => TypeKind::String,
             (TypeKind::Vec(item), "pop" | "pop_front") => TypeKind::Option(item.clone()),
             (TypeKind::Vec(_), "push") => TypeKind::Unit,
             (
@@ -1867,6 +1863,7 @@ pub enum CallableCandidateId {
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
     RecordConstructor(RecordConstructorSignatureId),
+    StringMethod(arcweft_core::value::RuntimeStringOperation),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1896,11 +1893,12 @@ pub enum CallableFamily {
     Drop,
     Promotion,
     RecordConstructor,
+    StringMethod,
 }
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::FxConstructor,
         Self::EnumConstructor,
         Self::ResultConstructor,
@@ -1926,6 +1924,7 @@ impl CallableFamily {
         Self::Promotion,
         Self::Content,
         Self::RecordConstructor,
+        Self::StringMethod,
     ];
 }
 
@@ -1956,6 +1955,7 @@ impl CallableCandidateId {
             Self::Drop(_) => CallableFamily::Drop,
             Self::Promotion(_) => CallableFamily::Promotion,
             Self::RecordConstructor(_) => CallableFamily::RecordConstructor,
+            Self::StringMethod(_) => CallableFamily::StringMethod,
         }
     }
 }
@@ -1983,4 +1983,5 @@ pub enum LanguageCallableFamily {
     Assume,
     Content,
     RecordConstructor,
+    StringMethod,
 }

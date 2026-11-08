@@ -59,6 +59,7 @@ pub(crate) enum PreparedLanguageCallableIdentity {
     LineSchedule(LineScheduleCallableId),
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
+    String(arcweft_core::value::RuntimeStringOperation),
 }
 
 impl PreparedLanguageCallableIdentity {
@@ -159,6 +160,11 @@ impl PreparedLanguageCallableIdentity {
                 CallableCandidateId::IntegerMethod(candidate),
                 CallableFamily::IntegerMethod,
             ) if &id == candidate => CheckedLanguageCallableIdentity::Integer(id),
+            (
+                Self::String(operation),
+                CallableCandidateId::StringMethod(candidate),
+                CallableFamily::StringMethod,
+            ) if &operation == candidate => CheckedLanguageCallableIdentity::String(operation),
             (
                 Self::Domain(id),
                 CallableCandidateId::DomainMethod(candidate),
@@ -431,6 +437,9 @@ fn language_identity(
         ) => PreparedLanguageCallableIdentity::PresentationHandle(*id),
         (CallableCandidateId::IntegerMethod(id), LanguageCallableFamily::IntegerMethod) => {
             PreparedLanguageCallableIdentity::Integer(*id)
+        }
+        (CallableCandidateId::StringMethod(operation), LanguageCallableFamily::StringMethod) => {
+            PreparedLanguageCallableIdentity::String(*operation)
         }
         (CallableCandidateId::DomainMethod(id), LanguageCallableFamily::DomainMethod) => {
             PreparedLanguageCallableIdentity::Domain(id.clone())

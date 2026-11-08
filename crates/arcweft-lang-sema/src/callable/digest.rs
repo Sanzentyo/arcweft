@@ -585,6 +585,7 @@ impl CanonicalEncoder {
             CallableValidator::Collection(_) => 11,
             CallableValidator::PresentationHandle(_) => 12,
             CallableValidator::Integer(_) => 13,
+            CallableValidator::String(_) => 28,
             CallableValidator::Domain(_) => 14,
             CallableValidator::Method(_) => 15,
             CallableValidator::Capacity(_) => 16,
@@ -598,6 +599,9 @@ impl CanonicalEncoder {
             CallableValidator::BuiltinFx(_) => 24,
             CallableValidator::Format => 25,
         });
+        if let CallableValidator::String(operation) = validator {
+            self.tag(u16::from(operation.semantic_tag()));
+        }
         if let CallableValidator::RecordConstructor(id) = validator {
             self.bytes(id.owner().as_bytes());
         }

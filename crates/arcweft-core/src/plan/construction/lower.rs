@@ -1094,6 +1094,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 if let Some(intrinsic) = callee.as_intrinsic() {
                     self.validate_ownership_intrinsic_signature(intrinsic, &args, ty)?;
                     self.validate_collection_intrinsic_signature(intrinsic, &args, ty)?;
+                    self.validate_string_intrinsic_signature(intrinsic, &args, ty)?;
                 }
                 if let crate::value::RuntimeCallTarget::PresentationSlot(call) = &callee {
                     if args.len() != call.inputs().len() {
@@ -2216,6 +2217,44 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 }
             }
             _ => unreachable!("the closed collection intrinsic family was selected above"),
+        }
+        Ok(())
+    }
+
+    fn validate_string_intrinsic_signature(
+        &self,
+        intrinsic: crate::value::RuntimeIntrinsic,
+        args: &[RuntimeCallArgument],
+        result: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let crate::value::RuntimeIntrinsic::String(operation) = intrinsic else {
+            return Ok(());
+        };
+        let inputs = self.expanded_argument_types(args)?;
+        let [receiver] = inputs.as_slice() else {
+            return Err(RuntimePlanBuildError::CallableAbiArity {
+                context: "String intrinsic",
+                expected: 1,
+                actual: inputs.len(),
+            });
+        };
+        if !matches!(
+            self.projection(*receiver)?,
+            RuntimePlanTypeProjection::String
+        ) {
+            return invalid_projection("String intrinsic receiver", *receiver);
+        }
+        let result_matches = match operation.result_kind() {
+            crate::value::RuntimeStringResultKind::String => {
+                matches!(self.projection(result)?, RuntimePlanTypeProjection::String)
+            }
+            crate::value::RuntimeStringResultKind::USize => matches!(
+                self.projection(result)?,
+                RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::USize)
+            ),
+        };
+        if !result_matches {
+            return invalid_projection("String intrinsic result", result);
         }
         Ok(())
     }

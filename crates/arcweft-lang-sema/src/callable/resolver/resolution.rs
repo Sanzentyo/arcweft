@@ -489,6 +489,20 @@ fn resolve_selected_call(
     }
 
     check_query_step(request)?;
+    if receiver_type == &TypeKind::String
+        && let Some(operation) =
+            arcweft_core::value::RuntimeStringOperation::from_source_name(method.as_str())
+    {
+        candidates.push(prepare_language_method(
+            request,
+            CallableCandidateId::StringMethod(operation),
+            LanguageCallableFamily::StringMethod,
+            CallableSignatureSchema::string_method(operation),
+            receiver.value_instantiation(),
+        )?);
+    }
+
+    check_query_step(request)?;
     if let Some(id) = DomainMethodId::resolve(receiver_type, method)
         && let Some(schema) = id.signature_schema(receiver_type)
     {

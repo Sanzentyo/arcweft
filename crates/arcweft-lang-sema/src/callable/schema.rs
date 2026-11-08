@@ -2127,6 +2127,7 @@ pub enum CallableValidator {
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
     ViewModifier(super::ViewModifierId),
+    String(arcweft_core::value::RuntimeStringOperation),
 }
 
 /// Complete callable-owned role for a standard `Need` producer.

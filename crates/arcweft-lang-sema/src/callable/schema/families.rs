@@ -1203,6 +1203,16 @@ impl IntegerMethodId {
     }
 }
 
+impl CallableSignatureSchema {
+    pub(crate) fn string_method(operation: arcweft_core::value::RuntimeStringOperation) -> Self {
+        let result = match operation.result_kind() {
+            arcweft_core::value::RuntimeStringResultKind::String => TypeKind::String,
+            arcweft_core::value::RuntimeStringResultKind::USize => TypeKind::USize,
+        };
+        empty(result, &[], CallableValidator::String(operation))
+    }
+}
+
 impl DomainMethodId {
     pub(crate) fn signature_schema(&self, receiver: &TypeKind) -> Option<CallableSignatureSchema> {
         let validator = CallableValidator::Domain(self.clone());

@@ -156,6 +156,27 @@ Generic type arguments, including explicit call arguments, retain their resolved
 type and alias identity. They select a type instantiation and are not evaluated
 as runtime values. Value-bearing type positions require a closed runtime carrier.
 
+## String operations
+
+The read-only String methods keep the receiver available after the call:
+
+| Method | Result | Meaning |
+|---|---|---|
+| `value.trim()` | `String` | Owned text with leading and trailing Unicode whitespace removed. |
+| `value.to_string()` | `String` | An owned copy of the same text. |
+| `value.scalar_count()` | `usize` | The number of Unicode scalar values in the UTF-8 string. |
+
+`scalar_count` returns zero for empty text. Combining marks and every scalar in
+an emoji sequence each contribute to the count. It counts without allocating a
+sequence of characters. Display-oriented text units belong to `TextCluster`;
+this API does not measure rendered or grapheme clusters.
+
+```arcw
+let text: String = "Aé🦀é"
+let count: usize = text.scalar_count() // 5
+let copied = text.to_string()
+```
+
 ## Collections
 
 Arcweft uses Rust-like collection names for the default surface vocabulary:

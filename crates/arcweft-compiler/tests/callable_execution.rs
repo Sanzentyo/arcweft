@@ -14,6 +14,8 @@ use std::sync::Arc;
 mod execution;
 #[path = "callable_execution/rich_text_factories.rs"]
 mod rich_text_factories;
+#[path = "callable_execution/string_operations.rs"]
+mod string_operations;
 use execution::{
     assert_awbc_return, assert_native_return, bind_character_dialogue_schema,
     execute_decoded_awbc_character_dialogue_calls, execute_native_character_dialogue_calls,

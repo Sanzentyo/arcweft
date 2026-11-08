@@ -1208,6 +1208,10 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
                 LanguageCallableFamily::IntegerMethod
             )
             | (
+                CallableCandidateId::StringMethod(_),
+                LanguageCallableFamily::StringMethod
+            )
+            | (
                 CallableCandidateId::DomainMethod(_),
                 LanguageCallableFamily::DomainMethod
             )
@@ -1266,6 +1270,7 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             CallableCandidateId::CollectionMethod(_)
             | CallableCandidateId::PresentationHandleMethod(_)
             | CallableCandidateId::IntegerMethod(_)
+            | CallableCandidateId::StringMethod(_)
             | CallableCandidateId::DomainMethod(_)
             | CallableCandidateId::StageMethod(_)
             | CallableCandidateId::LineContextMethod(_)

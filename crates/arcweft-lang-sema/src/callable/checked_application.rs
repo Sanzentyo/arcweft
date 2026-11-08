@@ -322,8 +322,6 @@ pub enum CheckedDomainMethodIdentity {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedCapacityOperation {
     WithCapacity,
-    Trim,
-    ToString,
     Pop,
     PopFront,
     Push,
@@ -402,6 +400,7 @@ pub enum CheckedLanguageCallableIdentity {
     LineSchedule(LineScheduleCallableId),
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
+    String(arcweft_core::value::RuntimeStringOperation),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3416,6 +3415,7 @@ fn language_family(identity: &CheckedLanguageCallableIdentity) -> LanguageCallab
             LanguageCallableFamily::PresentationHandleMethod
         }
         CheckedLanguageCallableIdentity::Integer(_) => LanguageCallableFamily::IntegerMethod,
+        CheckedLanguageCallableIdentity::String(_) => LanguageCallableFamily::StringMethod,
         CheckedLanguageCallableIdentity::Domain(_) => LanguageCallableFamily::DomainMethod,
         CheckedLanguageCallableIdentity::Capacity(_) => LanguageCallableFamily::CapacityMethod,
         CheckedLanguageCallableIdentity::Stage(_) => LanguageCallableFamily::StageMethod,
@@ -4253,6 +4253,10 @@ impl CheckedCallCanonicalEncoder {
                 self.tag(10);
                 self.tag(integer_tag(*id));
             }
+            CheckedLanguageCallableIdentity::String(operation) => {
+                self.tag(20);
+                self.tag(operation.semantic_tag());
+            }
             CheckedLanguageCallableIdentity::Domain(id) => {
                 self.tag(11);
                 self.domain(id);
@@ -4826,8 +4830,6 @@ const fn integer_tag(id: IntegerMethodId) -> u8 {
 const fn capacity_tag(id: CheckedCapacityOperation) -> u8 {
     match id {
         CheckedCapacityOperation::WithCapacity => 0,
-        CheckedCapacityOperation::Trim => 1,
-        CheckedCapacityOperation::ToString => 2,
         CheckedCapacityOperation::Pop => 3,
         CheckedCapacityOperation::PopFront => 4,
         CheckedCapacityOperation::Push => 6,

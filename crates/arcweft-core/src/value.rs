@@ -41,6 +41,8 @@ mod canonical_transform;
 pub use canonical_transform::{RuntimeValueMergeError, RuntimeValueNormalizationError};
 mod character_dialogue;
 mod collection;
+mod string;
+pub use string::{RuntimeStringOperation, RuntimeStringResultKind};
 mod color;
 mod quantity;
 pub(crate) use collection::evaluate_collection_intrinsic;
@@ -861,8 +863,7 @@ pub enum RuntimeIntrinsic {
     StdResultContext,
     StdResultWithContext,
     CoreIndex,
-    StringTrim,
-    StringToString,
+    String(RuntimeStringOperation),
     VecWithCapacity,
     StringWithCapacity,
     BytesWithCapacity,
@@ -970,6 +971,12 @@ impl RuntimeIntrinsic {
         })
     }
     pub fn from_label(label: &str) -> Option<Self> {
+        if let Some(operation) = label
+            .strip_prefix("string.")
+            .and_then(RuntimeStringOperation::from_source_name)
+        {
+            return Some(Self::String(operation));
+        }
         match label {
             "add" => Some(Self::Add),
             "core.range" => Some(Self::CoreRange),
@@ -993,8 +1000,6 @@ impl RuntimeIntrinsic {
             "std.result.context" => Some(Self::StdResultContext),
             "std.result.with_context" => Some(Self::StdResultWithContext),
             "core.index" => Some(Self::CoreIndex),
-            "string.trim" => Some(Self::StringTrim),
-            "string.to_string" => Some(Self::StringToString),
             "vec.with_capacity" => Some(Self::VecWithCapacity),
             "string.with_capacity" => Some(Self::StringWithCapacity),
             "bytes.with_capacity" => Some(Self::BytesWithCapacity),
@@ -1093,8 +1098,7 @@ impl RuntimeIntrinsic {
             Self::StdResultContext => "std.result.context",
             Self::StdResultWithContext => "std.result.with_context",
             Self::CoreIndex => "core.index",
-            Self::StringTrim => "string.trim",
-            Self::StringToString => "string.to_string",
+            Self::String(operation) => operation.intrinsic_label(),
             Self::VecWithCapacity => "vec.with_capacity",
             Self::StringWithCapacity => "string.with_capacity",
             Self::BytesWithCapacity => "bytes.with_capacity",
@@ -3178,13 +3182,10 @@ pub fn evaluate_string_intrinsic(
     args: &[RuntimeValue],
 ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
     let value = match (intrinsic, args) {
-        (RuntimeIntrinsic::StringTrim, [RuntimeValue::String(value)]) => {
-            RuntimeValue::String(value.trim().to_owned())
+        (RuntimeIntrinsic::String(operation), [RuntimeValue::String(value)]) => {
+            operation.evaluate(value)?
         }
-        (RuntimeIntrinsic::StringToString, [RuntimeValue::String(value)]) => {
-            RuntimeValue::String(value.clone())
-        }
-        (RuntimeIntrinsic::StringTrim | RuntimeIntrinsic::StringToString, _) => {
+        (RuntimeIntrinsic::String(_), _) => {
             return Err(RuntimeEvalError::UnsupportedPure {
                 name: intrinsic.as_label().to_owned(),
                 reason: "expected one String receiver".to_owned(),
@@ -4504,8 +4505,7 @@ impl RuntimeIntrinsic {
             Self::StdResultContext => 15,
             Self::StdResultWithContext => 16,
             Self::CoreIndex => 17,
-            Self::StringTrim => 18,
-            Self::StringToString => 19,
+            Self::String(operation) => operation.intrinsic_tag(),
             Self::VecWithCapacity => 20,
             Self::StringWithCapacity => 21,
             Self::BytesWithCapacity => 22,
@@ -4584,6 +4584,9 @@ impl RuntimeIntrinsic {
     }
 
     pub(crate) const fn from_source_tag(tag: u8) -> Option<Self> {
+        if let Some(operation) = RuntimeStringOperation::from_intrinsic_tag(tag) {
+            return Some(Self::String(operation));
+        }
         match tag {
             0 => Some(Self::Add),
             1 => Some(Self::CoreRange),
@@ -4603,8 +4606,6 @@ impl RuntimeIntrinsic {
             15 => Some(Self::StdResultContext),
             16 => Some(Self::StdResultWithContext),
             17 => Some(Self::CoreIndex),
-            18 => Some(Self::StringTrim),
-            19 => Some(Self::StringToString),
             20 => Some(Self::VecWithCapacity),
             21 => Some(Self::StringWithCapacity),
             22 => Some(Self::BytesWithCapacity),

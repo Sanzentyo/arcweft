@@ -10527,6 +10527,9 @@ const fn runtime_agent_probe_comparison(
 fn runtime_intrinsic(
     candidate: &arcweft_lang_sema::callable::CallableCandidateId,
 ) -> Option<RuntimeIntrinsic> {
+    if let CallableCandidateId::StringMethod(operation) = candidate {
+        return Some(RuntimeIntrinsic::String(*operation));
+    }
     if let CallableCandidateId::CollectionMethod(method) = candidate {
         return match method {
             CollectionMethodId::Len => Some(RuntimeIntrinsic::CoreSeqLen),
@@ -10540,8 +10543,6 @@ fn runtime_intrinsic(
     }
     if let arcweft_lang_sema::callable::CallableCandidateId::CapacityMethod(method) = candidate {
         return match (method.receiver(), method.method().as_str()) {
-            (TypeKind::String, "trim") => Some(RuntimeIntrinsic::StringTrim),
-            (TypeKind::String, "to_string") => Some(RuntimeIntrinsic::StringToString),
             (TypeKind::Vec(_), "with_capacity") => Some(RuntimeIntrinsic::VecWithCapacity),
             (TypeKind::String, "with_capacity") => Some(RuntimeIntrinsic::StringWithCapacity),
             (TypeKind::Bytes, "with_capacity") => Some(RuntimeIntrinsic::BytesWithCapacity),

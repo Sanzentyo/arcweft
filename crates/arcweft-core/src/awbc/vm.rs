@@ -1974,6 +1974,14 @@ fn execute_instruction(
                 }
                 return Ok(InstructionControl::Continue);
             }
+            if let Some(identity) = identity
+                && let Some(value) = crate::value::evaluate_string_intrinsic(identity, &args)?
+            {
+                if let Some(dst) = dst {
+                    fiber.active_frame_mut()?.set_register(*dst, value)?;
+                }
+                return Ok(InstructionControl::Continue);
+            }
             if let Some(
                 identity @ (crate::value::RuntimeIntrinsic::CoreRequireUnrestricted
                 | crate::value::RuntimeIntrinsic::CoreFanoutInputs),
