@@ -94,8 +94,12 @@ impl BundleViewRuntime {
             EventKind::TextChange
         };
         let route = self.event_tokens.iter().find_map(|(route, token)| {
-            (token.owner == *owner && token.event == event && token.target == *input.target())
-                .then_some(*route)
+            (token.owner == *owner
+                && token.seal.path == seal_key.0
+                && token.seal.instruction == seal_key.1
+                && token.event == event
+                && token.target == *input.target())
+            .then_some(*route)
         });
         if route.is_none()
             && mounted.handler_seals.keys().any(|key| {

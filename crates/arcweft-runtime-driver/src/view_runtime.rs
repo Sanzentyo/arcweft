@@ -832,6 +832,24 @@ impl Default for BundleViewRuntime {
 }
 
 impl BundleViewInstancePath {
+    /// Qualifies a node's interaction identity by its accepted structural
+    /// occurrence. A repeated declaration must not reuse another item's target.
+    fn qualify_target(&self, authored: &str) -> String {
+        if self.0.is_empty() {
+            return authored.to_owned();
+        }
+        let mut digest = blake3::Hasher::new();
+        digest.update(b"arcweft.view.occurrence-target.v1\0");
+        let words = self.style_path_words();
+        digest.update(&(words.len() as u64).to_le_bytes());
+        for word in words {
+            digest.update(&word.to_le_bytes());
+        }
+        digest.update(&(authored.len() as u64).to_le_bytes());
+        digest.update(authored.as_bytes());
+        format!("node.occurrence.{}", digest.finalize().to_hex())
+    }
+
     #[must_use]
     pub fn segments(&self) -> &[BundleViewInstancePathSegment] {
         &self.0

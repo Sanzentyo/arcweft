@@ -29,7 +29,11 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
             )
         };
         let (path, ordinal, target) = builder.last_node.as_ref().ok_or_else(invalid)?;
-        let ViewProgramInstruction::OpenElement { element, .. } = self
+        let ViewProgramInstruction::OpenElement {
+            element,
+            target: authored_target,
+            ..
+        } = self
             .program
             .instructions
             .get(*ordinal as usize)
@@ -93,7 +97,7 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
             .transpose()?;
         let bounds = self
             .program
-            .text_control_bounds_for(target)
+            .text_control_bounds_for(authored_target.as_deref().ok_or_else(invalid)?)
             .unwrap_or_else(|| {
                 ViewRuntimeTextControlBounds::new(
                     48_000,

@@ -5694,8 +5694,9 @@ view Main() {
     let input = writes[0].input();
     let other = fields
         .into_iter()
-        .find(|field| *field != writes[0].field())
-        .unwrap();
+        .find(|field| field.field != writes[0].field())
+        .unwrap()
+        .field;
     let role = ViewHandlerResultRole::StateTransition {
         value: *value,
         writes: vec![arcweft_view::ViewHandlerStateWrite::try_new(input, other).unwrap()]

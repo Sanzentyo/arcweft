@@ -4015,7 +4015,7 @@ impl Analyzer<'_, '_, '_> {
             }
             HirExprKind::Call(call) => {
                 if let Some(checked) =
-                    self.check_view_call_expression(context, module, expression, call)?
+                    self.check_view_call_expression(context, module, owner, expression, call)?
                 {
                     Ok(checked)
                 } else {
@@ -4532,6 +4532,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
+        owner: ExprId,
         expression: &HirExpr,
         call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
@@ -4679,13 +4680,45 @@ impl Analyzer<'_, '_, '_> {
             }
             effects.union_with(checked.effects());
             if let Some(role) = role {
-                arguments.push(crate::final_analysis::CheckedViewElementArgument::new(
-                    role,
-                    argument.value(),
-                ));
+                if role == arcweft_view::ViewElementArgumentRole::Value {
+                    let place = checked
+                        .complete()
+                        .and_then(|checked| checked.mutable_place())
+                        .filter(|place| place.fields().is_empty())
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?;
+                    let declaration = self
+                        .topology
+                        .module(place.local().module())
+                        .and_then(|module| module.local_origins().binding(place.local()))
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?;
+                    if !declaration.is_mutable_binding()
+                        || declaration.storage()
+                            != arcweft_lang_hir::stmt::HirBindingStorage::RetainedState
+                    {
+                        return Err(AnalyzerExpressionError::rejected(argument.value()));
+                    }
+                    arguments.push(
+                        crate::final_analysis::CheckedViewElementArgument::retained_string_input(
+                            argument.value(),
+                            place.local(),
+                        ),
+                    );
+                } else {
+                    arguments.push(crate::final_analysis::CheckedViewElementArgument::new(
+                        role,
+                        argument.value(),
+                    ));
+                }
             }
         }
         if let CheckedViewCall::Element(element) = &mut classification {
+            if element.element().is_text_input()
+                && !arguments
+                    .iter()
+                    .any(|argument| argument.retained_input().is_some())
+            {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
             *element =
                 crate::final_analysis::CheckedViewElementCall::new(element.element(), arguments);
         }

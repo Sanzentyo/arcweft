@@ -289,10 +289,13 @@ impl ViewProgramCatalog {
                     if let arcweft_view::ViewBindingLifetime::Retained { fields } =
                         &program.lifetime
                     {
-                        if let Some(value_type) = fields
-                            .iter()
-                            .zip(&program.outputs)
-                            .find_map(|(id, output)| (*id == field).then_some(output.value_type))
+                        if let Some(value_type) =
+                            fields
+                                .iter()
+                                .zip(&program.outputs)
+                                .find_map(|(declaration, output)| {
+                                    (declaration.field == field).then_some(output.value_type)
+                                })
                         {
                             return Some(value_type);
                         }

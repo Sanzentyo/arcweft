@@ -144,13 +144,28 @@ impl ViewMatchRanges {
 #[serde(transparent)]
 pub struct ViewStateFieldId(pub [u8; 32]);
 
+/// Access belongs to the retained declaration, never to a consumer asking to write.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewStateFieldAccess {
+    ReadOnly,
+    ReadWrite,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewRetainedField {
+    pub field: ViewStateFieldId,
+    pub access: ViewStateFieldAccess,
+}
+
 /// Retained fields use declaration identities, independently of the Core
 /// initializer program and its transient output coordinates.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ViewBindingLifetime {
     Derived,
-    Retained { fields: Box<[ViewStateFieldId]> },
+    Retained { fields: Box<[ViewRetainedField]> },
 }
 
 /// Owned binding outputs are transported by Core in this exact order.
@@ -171,6 +186,7 @@ impl ViewBindingProgram {
                     && fields.len() == self.outputs.len()
                     && fields
                         .iter()
+                        .map(|field| field.field)
                         .collect::<std::collections::BTreeSet<_>>()
                         .len()
                         == fields.len()

@@ -15553,3 +15553,11 @@ Scrollのinput.text型判定は引き続き失敗として追跡する。sample�
 未実装の input.text／input.secure を別の保持値 authority として増設せず、既存 local state mut の String フィールドへ TextField／TextArea／SecureField を結び付ける。Bundle は派生 local・別 element・型の異なる入力を拒否し、実行時は mount/session・privacy・UTF-8 selection を検査する。String は借用状態で容量・型を検査してから構築する。text handler は更新候補を読み、入力値と handler 出力を同じ state 公開で commit する。Input control の表示 String は投影である。cold restore／replacement／成功 frame の除去後は以前の入力 session を失効させる。仕様は view-reactive.md の一か所で維持する。
 
 途中の check r1／r2 は新しい variant と output field の consumer 移行、および modifier の import 修正中に 101 で終了した。r3 の compiler／runtime-driver 全 target・全 feature check は終了 0（後続 handler 修正前の入力）。新規 compiler 回帰 3 件の nextest はビルド中。この checkpoint で受入や現行全体の検証完了を宣言しない。ユーザーの「途中 commit の正常動作は必須にしない」という明示指示に従い、入力境界の実装を一度保存して、同じ作業として検証と修復を続ける。Generic Match その他の受入済み境界、既存 CLI 4 失敗の判定は維持する。
+
+## 2026-11-08 保持入力の checked 宣言・権限・keyed identity 修復
+
+checkpoint は `1e2fb3efa929afefbd5acb0ad20c8d21c0a84400`。最初の owner run は新規3／3 PASS（72 skip）。追加した keyed 回帰は owner-r3 の5件中4 PASS／1 FAILで、異なる key の target が双方 view_mount_0.node.view.Main.1 になることを再現した。accepted structural path から入力 target を区別し、seal の元 path／instruction とも照合した。owner-r5 は6件中5 PASS／1 FAILで、readonly String state への入力先差し替えが受理されることを再現した。保持フィールドの identity と ReadOnly／ReadWrite を一つの宣言 record に保持し、input と通常 handler の書き込みを同じ元宣言に照合するよう修復した。
+
+入力先の root・String 型・retained storage・mutability は Sema が checked argument に封じ、semantic transcript は元 binding coordinate を保持する。Compiler の重複した place／storage 判定は削除した。owner-r2 はテストで RuntimeValue::Vec という存在しない variant を使用、owner-r4 は検証済み wrapper と resource を混同したため準備101。実行成功として数えない。check-r4 の Result error 型推論不足も修正した。原本 log／receipt／frozen input は同名 epoch に保存し、後続 raw archive に収録する。
+
+最終 owner-r6 は compiler view_product 全78／78 PASS、2 slow、0 skip、79.011秒。新規6件が各1回、catalog／終端の対応差分0、3418入力 drift0、実 test EXE を前後照合した。raw helper の held=14 は古い template 名の残りで、実際の protected tracked WIP は0、保存中の untracked cache は4。workspace／逆依存の終端照合と旧 input factory sample の移行は、この owner 成功で完了扱いにしない。Generic Match と既受入の意味判定は維持する。

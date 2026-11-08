@@ -1755,10 +1755,23 @@ impl AuthoredViewBodyLowerer<'_> {
                             .binding_outputs()
                             .iter()
                             .map(|binding| {
-                                self.analysis
+                                let field = self
+                                    .analysis
                                     .retained_state_field_identity(self.module, binding.local())
                                     .map(arcweft_view::ViewStateFieldId)
-                                    .map_err(|_| invalid())
+                                    .map_err(|_| invalid())?;
+                                let origin = self
+                                    .analysis
+                                    .local_binding_origin(binding.local())
+                                    .map_err(|_| invalid())?;
+                                Ok::<_, ViewProjectLowerError>(arcweft_view::ViewRetainedField {
+                                    field,
+                                    access: if origin.declaration().is_mutable_binding() {
+                                        arcweft_view::ViewStateFieldAccess::ReadWrite
+                                    } else {
+                                        arcweft_view::ViewStateFieldAccess::ReadOnly
+                                    },
+                                })
                             })
                             .collect::<Result<Vec<_>, _>>()?;
                         arcweft_view::ViewBindingLifetime::Retained {
@@ -1966,25 +1979,10 @@ impl AuthoredViewBodyLowerer<'_> {
                 .iter()
                 .find(|argument| argument.role() == arcweft_view::ViewElementArgumentRole::Value)
                 .ok_or_else(invalid)?;
-            let checked = self
-                .analysis
-                .expression(value.value())
+            let local = self
+                .locals
+                .get(&value.retained_input().ok_or_else(invalid)?)
                 .ok_or_else(invalid)?;
-            let place = checked
-                .mutable_place()
-                .filter(|place| place.fields().is_empty())
-                .ok_or_else(invalid)?;
-            let origin = self
-                .analysis
-                .local_binding_origin(place.local())
-                .map_err(|_| invalid())?;
-            if !origin.declaration().is_mutable_binding()
-                || origin.declaration().storage()
-                    != arcweft_lang_hir::stmt::HirBindingStorage::RetainedState
-            {
-                return Err(invalid());
-            }
-            let local = self.locals.get(&place.local()).ok_or_else(invalid)?;
             let value = arcweft_view::ViewExecutionInput {
                 source: arcweft_view::ViewExecutionInputSource::Local(local.coordinate),
                 value_type: local.value_type,

@@ -2944,6 +2944,9 @@ fn write_resolution_payload(
                 for argument in element.arguments() {
                     transcript_update!(hasher, &[argument.role().semantic_tag()]);
                     write_child_expression_digest(hasher, expression_digests, argument.value())?;
+                    if let Some(local) = argument.retained_input() {
+                        write_bytes(hasher, &coordinates.binding(local)?.canonical_bytes()?)?;
+                    }
                 }
             }
             if let super::CheckedViewCall::ContainerBody(application) = view {

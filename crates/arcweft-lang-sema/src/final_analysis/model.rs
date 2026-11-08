@@ -1919,8 +1919,19 @@ pub struct CheckedViewElementCall {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedViewElementArgument {
-    role: arcweft_view::ViewElementArgumentRole,
-    value: ExprId,
+    value: CheckedViewElementArgumentValue,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CheckedViewElementArgumentValue {
+    Property {
+        role: arcweft_view::ViewElementArgumentRole,
+        expression: ExprId,
+    },
+    RetainedInput {
+        expression: ExprId,
+        local: LocalId,
+    },
 }
 
 impl CheckedViewElementCall {
@@ -1943,13 +1954,42 @@ impl CheckedViewElementCall {
 
 impl CheckedViewElementArgument {
     pub(crate) const fn new(role: arcweft_view::ViewElementArgumentRole, value: ExprId) -> Self {
-        Self { role, value }
+        assert!(!matches!(
+            role,
+            arcweft_view::ViewElementArgumentRole::Value
+        ));
+        Self {
+            value: CheckedViewElementArgumentValue::Property {
+                role,
+                expression: value,
+            },
+        }
+    }
+    pub(crate) const fn retained_string_input(expression: ExprId, local: LocalId) -> Self {
+        Self {
+            value: CheckedViewElementArgumentValue::RetainedInput { expression, local },
+        }
     }
     pub const fn role(&self) -> arcweft_view::ViewElementArgumentRole {
-        self.role
+        match self.value {
+            CheckedViewElementArgumentValue::Property { role, .. } => role,
+            CheckedViewElementArgumentValue::RetainedInput { .. } => {
+                arcweft_view::ViewElementArgumentRole::Value
+            }
+        }
     }
     pub const fn value(&self) -> ExprId {
-        self.value
+        match self.value {
+            CheckedViewElementArgumentValue::Property { expression, .. }
+            | CheckedViewElementArgumentValue::RetainedInput { expression, .. } => expression,
+        }
+    }
+    /// The writable retained String declaration authenticated by final sema.
+    pub const fn retained_input(&self) -> Option<LocalId> {
+        match self.value {
+            CheckedViewElementArgumentValue::RetainedInput { local, .. } => Some(local),
+            CheckedViewElementArgumentValue::Property { .. } => None,
+        }
     }
 }
 

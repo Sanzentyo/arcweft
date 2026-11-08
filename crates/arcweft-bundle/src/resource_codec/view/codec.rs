@@ -148,7 +148,7 @@ impl Default for ViewResourceBudget {
 #[derive(Clone, Copy)]
 struct ScopedViewLocalDeclaration {
     value_type: arcweft_id::RuntimeSemanticTypeId,
-    retained_field: Option<arcweft_view::ViewStateFieldId>,
+    retained_field: Option<arcweft_view::ViewRetainedField>,
 }
 
 impl ScopedViewLocalDeclaration {
@@ -745,7 +745,11 @@ impl ViewProgramResource {
                             .iter()
                             .rev()
                             .find_map(|scope| scope.get(&coordinate))
-                            .is_none_or(|local| local.retained_field.is_none())
+                            .is_none_or(|local| {
+                                local.retained_field.is_none_or(|field| {
+                                    field.access != arcweft_view::ViewStateFieldAccess::ReadWrite
+                                })
+                            })
                             || !program.runtime_types.iter().any(|ty| {
                                 ty.semantic_identity() == value.value_type()
                                     && matches!(
@@ -1433,7 +1437,7 @@ impl ViewProgramResource {
                         }
                         if let arcweft_view::ViewBindingLifetime::Retained { fields } =
                             &program.lifetime
-                            && fields.iter().any(|field| !state_fields.insert(*field))
+                            && fields.iter().any(|field| !state_fields.insert(field.field))
                         {
                             return Err(SectionCodecError::NonCanonicalTable("view_state_fields"));
                         }
@@ -1838,7 +1842,7 @@ impl ViewProgramResource {
                         else {
                             return Err(invalid());
                         };
-                        if locals.iter().rev().find_map(|scope| scope.get(&coordinate)).is_none_or(|local| local.retained_field.is_none())
+                        if locals.iter().rev().find_map(|scope| scope.get(&coordinate)).is_none_or(|local| local.retained_field.is_none_or(|field| field.access != arcweft_view::ViewStateFieldAccess::ReadWrite))
                             || !target.is_some_and(|node| matches!(self.instructions.get(node as usize), Some(ViewProgramInstruction::OpenElement { element, .. }) if element.is_text_input()) && text_input_targets.insert(node)) {
                             return Err(invalid());
                         }
@@ -1887,7 +1891,13 @@ impl ViewProgramResource {
                                     .iter()
                                     .rev()
                                     .find_map(|scope| scope.get(&coordinate))
-                                    .is_none_or(|local| local.retained_field != Some(write.field()))
+                                    .is_none_or(|local| {
+                                        local.retained_field.is_none_or(|field| {
+                                            field.field != write.field()
+                                                || field.access
+                                                    != arcweft_view::ViewStateFieldAccess::ReadWrite
+                                        })
+                                    })
                                 {
                                     return Err(invalid());
                                 }

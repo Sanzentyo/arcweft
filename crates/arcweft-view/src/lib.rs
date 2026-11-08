@@ -59,7 +59,8 @@ pub use element_argument::ViewElementArgumentRole;
 pub use expression_program::{
     ViewBindingLifetime, ViewBindingProgram, ViewExecutionInput, ViewExecutionInputSource,
     ViewExpressionProgram, ViewExpressionValue, ViewLocalCoordinate, ViewLocalOutput, ViewMatchArm,
-    ViewMatchProgram, ViewMatchRanges, ViewRepeatKey, ViewRepeatProgram, ViewStateFieldId,
+    ViewMatchProgram, ViewMatchRanges, ViewRepeatKey, ViewRepeatProgram, ViewRetainedField,
+    ViewStateFieldAccess, ViewStateFieldId,
 };
 pub use image::{
     ViewImagePresentationMetadata, ViewImageSource, ViewImageSourceTable, ViewResolvedImageFrame,

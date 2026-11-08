@@ -2042,7 +2042,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         fields
                             .iter()
                             .map(|field| {
-                                mounted.local_state.get(&(structural_path.clone(), *field))
+                                mounted
+                                    .local_state
+                                    .get(&(structural_path.clone(), field.field))
                             })
                             .collect::<Vec<_>>()
                     });
@@ -2093,8 +2095,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         for ((field, output), value) in
                             fields.iter().zip(&binding.outputs).zip(&mut values)
                         {
-                            if let Some(saved) =
-                                mounted.local_state.get(&(structural_path.clone(), *field))
+                            if let Some(saved) = mounted
+                                .local_state
+                                .get(&(structural_path.clone(), field.field))
                             {
                                 if saved.value_type != output.value_type {
                                     return Err(EvaluationFailure::new(
@@ -2109,13 +2112,13 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             }
                             if !mounted
                                 .local_state
-                                .contains_key(&(structural_path.clone(), *field))
+                                .contains_key(&(structural_path.clone(), field.field))
                             {
                                 mounted.local_state.insert(
-                                    (structural_path.clone(), *field),
+                                    (structural_path.clone(), field.field),
                                     super::BundleViewStateFieldSnapshot {
                                         path: structural_path.clone(),
-                                        field: *field,
+                                        field: field.field,
                                         value_type: output.value_type,
                                         value: copy_retained(value, output.value_type)?,
                                     },
@@ -2132,7 +2135,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     })?;
                     for (index, (output, value)) in binding.outputs.iter().zip(values).enumerate() {
                         let retained =
-                            fields.map(|fields| (structural_path.clone(), fields[index]));
+                            fields.map(|fields| (structural_path.clone(), fields[index].field));
                         if scope
                             .insert(
                                 output.coordinate,
@@ -2247,6 +2250,15 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     part,
                     ..
                 } => {
+                    let occurrence_target;
+                    let target = if element.is_text_input() {
+                        occurrence_target = target
+                            .as_deref()
+                            .map(|target| structural_path.qualify_target(target));
+                        &occurrence_target
+                    } else {
+                        target
+                    };
                     builder.retain_node(
                         structural_path,
                         instruction_ordinal(cursor)?,

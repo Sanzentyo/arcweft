@@ -151,6 +151,9 @@ Copy として保持値を複製しない。
 `value` に対応する。通常の `let`、parameter、一時 String、読み取り専用の
 state は入力先にならない。現在の入力契約はフィールド全体を扱い、レコード内の
 部分フィールドや式から書き込み先を推測しない。表示名は `label = String式` で指定する。
+Sema は入力先の宣言を checked argument に保持し、compiler はその fact を消費する。
+保持フィールドの bundle 宣言は identity と ReadOnly／ReadWrite を一つの record に持つ。
+入力や handler の書き込み要求から権限を作らず、元の ReadWrite 宣言と照合する。
 
 ```arcw
 view Feedback() {
