@@ -1,27 +1,29 @@
 # Modern Feedback View
 
-This sample exercises the current View and style authoring path with a flow that
-waits for typed semantic actions emitted by player-rendered text controls and
-buttons.
+This sample authors two scoped retained text views and waits for typed Actions
+returned by their player-rendered controls. Source checking passes. Bundling
+currently encounters the parameterized Flow transfer gap. Execution and capture
+acceptance are tracked in the [current status](../../docs/implementation/current-status.md).
 
 It demonstrates:
 
-- a bundled, project-authored background image rendered behind the view
-  controls;
+- an ordinary `glass_bg()` factory returning an owned `Handle<ImageSurface>`
+  for the project-authored background image;
 - `pub style modern_feedback_panel` with tokens, element selectors, hover,
   active, disabled, focus-visible states, translucent fills, `box-shadow`, and
   style-authored control depth;
-- one ordered named-sheet application on each View root, with inline title and
-  description patches layered at their exact producer nodes;
-- `pub view ModernFeedbackPanel()` with `Panel`, `Column`, `Row`, `Text`,
-  `TextField`, `TextArea`, and player-rendered `Button` actions;
-- view-owned `TextField` and `TextArea` resources referenced by typed
-  `pub action feedback.*` submit routes;
-- explicit `let panel = view(@view:.ModernFeedbackPanel)` scope-owned mounting
-  from the flow, so the view declaration is reusable, scoped, and does not
+- one named-sheet application on each panel, with heading and caption sheets
+  applied to the original Text nodes;
+- `ModernFeedbackNamePanel()` and `ModernFeedbackBriefPanel()` with `Panel`,
+  `Column`, `Row`, `Text`, `TextField`, `TextArea`, and player-rendered `Button` actions;
+- retained local `String` state for `TextField` and `TextArea`, with original
+  targets, labels, placeholders, IME hints, and `feedback.*` Action payloads;
+- explicit `mount(ModernFeedbackNamePanel())` and `mount(ModernFeedbackBriefPanel())`
+  scope-owned mounting from the flow, so the view declaration is reusable and does not
   display by declaration alone;
-- a flow that waits on `receive action(...)`, branches on submitted text
-  length, and returns the submitted brief.
+- a flow that uses `await receive(feedback.submit_name)` and
+  `await receive(feedback.submit_brief)`, preserves both empty/nonempty branches,
+  and transfers back to its beginning after the final dialogue.
 
 ## Check
 

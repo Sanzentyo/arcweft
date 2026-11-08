@@ -2,18 +2,21 @@ pub character concierge {
   display = "Arcweft Concierge"
 }
 
-pub image glass_bg {
-  asset = @asset:.bg.glass_lights
-  target = @target.modern.glass_bg
-  layer = @layer.background
-  x = 0px
-  y = 0px
-  width = 1280px
-  height = 720px
-  fit = cover
-  opacity = 1
-  depth = -1000
-  visible = true
+pub fn glass_bg() -> Handle<ImageSurface> {
+  image(
+    asset = @asset:.bg.glass_lights,
+    id = "image.glass_bg",
+    target = @target.modern.glass_bg,
+    layer = @layer.background,
+    x = 0px,
+    y = 0px,
+    width = 1280px,
+    height = 720px,
+    fit = "cover",
+    opacity = 1,
+    depth = -1000,
+    visible = true
+  )
 }
 
 pub action feedback.submit_name(value: String)
@@ -46,6 +49,21 @@ entry game @entry.modern_feedback_view {
   event = GameEvent
   reducer = reduce_game
   goto @flow.modern_feedback_view
+}
+
+style modern_feedback_heading {
+  Text {
+    color = rgba(244, 247, 251, 255)
+    font-size = 36px
+    font-weight = 720
+  }
+}
+
+style modern_feedback_caption {
+  Text {
+    color = rgba(164, 176, 194, 255)
+    font-size = 16px
+  }
 }
 
 pub style modern_feedback_panel {
@@ -160,39 +178,23 @@ pub style modern_feedback_panel {
 }
 
 pub view ModernFeedbackNamePanel() {
-  let visitor_name = input.text(@input:.visitor_name, initial = "")
+  local state mut visitor_name: String = ""
 
   Panel {
     Column {
       Text("Control deck")
-        .style {
-          color = rgba(244, 247, 251, 255)
-          font-size = 36px
-          font-weight = 720
-        }
+        .style(@style:.modern_feedback_heading)
 
       Text("A one-line player-rendered view scoped to the name receive step.")
-        .style {
-          color = rgba(164, 176, 194, 255)
-          font-size = 16px
-      }
+        .style(@style:.modern_feedback_caption)
 
       Row {
-        TextField(visitor_name)
-          .label("Name")
-          .placeholder("Your name")
-          .purpose(.name)
-          .enter_key(.send)
-          .on_submit {
-            action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
-          }
+        TextField(visitor_name, target = @input:.visitor_name, label = "Name",
+                  placeholder = "Your name", purpose = .name, enter_key = .send)
+          .on_submit(|| feedback.submit_name(value = visitor_name))
 
-        Button(@button:.submit_name, label = "Continue")
-          .enabled(true)
-          .focusable(true)
-          .on_click {
-            action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
-          }
+        Button("Continue", target = @button:.submit_name, enabled = true)
+          .on_click(|| feedback.submit_name(value = visitor_name))
       }
     }
   }
@@ -200,42 +202,25 @@ pub view ModernFeedbackNamePanel() {
 }
 
 pub view ModernFeedbackBriefPanel() {
-  let product_brief = input.text(@input:.product_brief, initial = "")
+  local state mut product_brief: String = ""
 
   Panel {
     Column {
       Text("Control deck")
-        .style {
-          color = rgba(244, 247, 251, 255)
-          font-size = 36px
-          font-weight = 720
-        }
+        .style(@style:.modern_feedback_heading)
 
       Text("A multi-line player-rendered view scoped to the brief receive step.")
-        .style {
-          color = rgba(164, 176, 194, 255)
-          font-size = 16px
-      }
+        .style(@style:.modern_feedback_caption)
 
-      TextArea(product_brief)
-        .label("Product brief")
-        .placeholder("Write one sharp product idea")
-        .purpose(.text)
-        .on_submit {
-          action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
-        }
+      TextArea(product_brief, target = @input:.product_brief, label = "Product brief",
+               placeholder = "Write one sharp product idea", purpose = .text)
+        .on_submit(|| feedback.submit_brief(value = product_brief))
 
       Row {
-        Button(@button:.send_brief, label = "Send brief")
-          .enabled(true)
-          .focusable(true)
-          .on_click {
-            action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
-          }
+        Button("Send brief", target = @button:.send_brief, enabled = true)
+          .on_click(|| feedback.submit_brief(value = product_brief))
 
-        Button(@button:.draft_status, label = "Draft saved")
-          .enabled(false)
-          .focusable(false)
+        Button("Draft saved", target = @button:.draft_status, enabled = false)
       }
     }
   }
@@ -243,16 +228,16 @@ pub view ModernFeedbackBriefPanel() {
 }
 
 flow modern_feedback_view(state: GameState) {
-    image(@image.glass_bg)
+    let background = glass_bg()
 
     concierge:
         Welcome to the Modern Feedback View sample. This is a translucent one-line view panel with a normal Arcweft flow.[p]
         Fill the name field, then submit it with Enter, IME send, or the Continue button.
 
     let visitor_name = {
-        let name_panel = view(@view:.ModernFeedbackNamePanel)
+        let name_panel = mount(ModernFeedbackNamePanel())
         
-        let name_event = receive action(@action:.feedback.submit_name)
+        let name_event = await receive(feedback.submit_name)
         name_event.value
     }
         
@@ -267,9 +252,9 @@ flow modern_feedback_view(state: GameState) {
         Use Enter for brief line breaks, then submit with the Send brief button.
 
     let brief = {
-        let brief_panel = view(@view:.ModernFeedbackBriefPanel)
+        let brief_panel = mount(ModernFeedbackBriefPanel())
         
-        let brief_event = receive action(@action:.feedback.submit_brief)
+        let brief_event = await receive(feedback.submit_brief)
         brief_event.value
     }
     
