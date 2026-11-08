@@ -863,6 +863,55 @@ pub(crate) trait LineTaskReducerView {
         &self,
     ) -> impl ExactSizeIterator<Item = &RuntimeDialogueInputActionEvent>;
     fn cleanup_started(&self) -> bool;
+
+    /// Admits borrowed ingress against the actual live or inert history before
+    /// an executor retains a packet. No live value or reducer is reconstructed.
+    fn inspect_input_action_events<'event>(
+        &self,
+        events: impl IntoIterator<Item = &'event RuntimeDialogueInputActionEvent>,
+    ) -> Result<RuntimePreparedLineInputActions<'event>, LineRuntimeError> {
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        let history = self.consumed_input_actions();
+        let history_len = history.len();
+        let mut accepted = Vec::new();
+        for event in events
+            .into_iter()
+            .filter(|event| event.activation() == self.activation())
+        {
+            let count = history_len
+                .checked_add(accepted.len())
+                .and_then(|count| count.checked_add(1));
+            if count.is_none_or(|count| !limits.permits_sequence_items(count)) {
+                return Err(LineRuntimeError::InputActionHistoryLimitExceeded);
+            }
+            accepted.push(event);
+        }
+        accepted.sort_by(|left, right| {
+            (left.epoch(), left.sequence(), left.action()).cmp(&(
+                right.epoch(),
+                right.sequence(),
+                right.action(),
+            ))
+        });
+        let mut batch = BTreeSet::new();
+        for event in &accepted {
+            if !batch.insert(*event) {
+                return Err(LineRuntimeError::DuplicateInputActionEvent {
+                    event: (*event).clone(),
+                });
+            }
+        }
+        if !batch.is_empty() {
+            for event in history {
+                if batch.contains(event) {
+                    return Err(LineRuntimeError::ConsumedInputActionEvent {
+                        event: event.clone(),
+                    });
+                }
+            }
+        }
+        Ok(RuntimePreparedLineInputActions { events: accepted })
+    }
 }
 
 impl<A, S, R, E, I> LineTaskReducerView for LineTaskReducerState<A, S, R, E, I>
@@ -1454,49 +1503,6 @@ impl LineTaskLiveState {
         self.consumed_input_actions
             .extend(prepared.events.into_iter().cloned());
         Ok(actions)
-    }
-
-    pub(crate) fn inspect_input_action_events<'event>(
-        &self,
-        events: impl IntoIterator<Item = &'event RuntimeDialogueInputActionEvent>,
-    ) -> Result<RuntimePreparedLineInputActions<'event>, LineRuntimeError> {
-        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
-        let mut accepted = Vec::new();
-        for event in events
-            .into_iter()
-            .filter(|event| event.activation() == &self.activation)
-        {
-            let count = self
-                .consumed_input_actions
-                .len()
-                .checked_add(accepted.len())
-                .and_then(|count| count.checked_add(1));
-            if count.is_none_or(|count| !limits.permits_sequence_items(count)) {
-                return Err(LineRuntimeError::InputActionHistoryLimitExceeded);
-            }
-            accepted.push(event);
-        }
-        accepted.sort_by(|left, right| {
-            (left.epoch(), left.sequence(), left.action()).cmp(&(
-                right.epoch(),
-                right.sequence(),
-                right.action(),
-            ))
-        });
-        let mut batch = BTreeSet::new();
-        for event in &accepted {
-            if !batch.insert(*event) {
-                return Err(LineRuntimeError::DuplicateInputActionEvent {
-                    event: (*event).clone(),
-                });
-            }
-            if self.consumed_input_actions.contains(*event) {
-                return Err(LineRuntimeError::ConsumedInputActionEvent {
-                    event: (*event).clone(),
-                });
-            }
-        }
-        Ok(RuntimePreparedLineInputActions { events: accepted })
     }
 
     fn complete_work(
@@ -2520,5 +2526,62 @@ mod retained_reducer_tests {
             failure
         );
         assert_eq!(serde_json::to_vec(&reducer).unwrap(), before);
+    }
+    #[test]
+    fn live_and_inert_input_admission_share_order_replay_and_limit_checks() {
+        use arcweft_interaction_model::input::{InputEpoch, InputSequence};
+        let event = |sequence| {
+            RuntimeDialogueInputActionEvent::new(
+                activation(),
+                InputActionId::new("input.cancel").unwrap(),
+                InputEpoch::new(1),
+                InputSequence::new(sequence),
+            )
+        };
+        let first = event(1);
+        let second = event(2);
+        fn check(
+            reducer: &impl LineTaskReducerView,
+            first: &RuntimeDialogueInputActionEvent,
+            second: &RuntimeDialogueInputActionEvent,
+        ) {
+            let admitted = reducer
+                .inspect_input_action_events([second, first])
+                .unwrap()
+                .into_pending_events();
+            assert_eq!(admitted, [first.clone(), second.clone()]);
+            assert!(matches!(
+                reducer
+                    .inspect_input_action_events([first, first])
+                    .err()
+                    .unwrap(),
+                LineRuntimeError::DuplicateInputActionEvent { .. }
+            ));
+            assert_eq!(
+                reducer
+                    .inspect_input_action_events(std::iter::repeat_n(first, 65_537))
+                    .err()
+                    .unwrap(),
+                LineRuntimeError::InputActionHistoryLimitExceeded
+            );
+        }
+        let mut live = LineTaskLiveState::new(&group(1), activation());
+        check(&live, &first, &second);
+        check(&live.snapshot(), &first, &second);
+        live.accept_input_action_events(std::slice::from_ref(&first))
+            .unwrap();
+        let inert = live.snapshot();
+        for failure in [
+            live.inspect_input_action_events([&first]).err().unwrap(),
+            inert.inspect_input_action_events([&first]).err().unwrap(),
+        ] {
+            assert_eq!(
+                failure,
+                LineRuntimeError::ConsumedInputActionEvent {
+                    event: first.clone()
+                }
+            );
+        }
+        assert_eq!(live.snapshot(), inert);
     }
 }

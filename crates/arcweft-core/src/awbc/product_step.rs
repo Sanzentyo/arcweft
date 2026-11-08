@@ -453,6 +453,7 @@ pub struct AwbcProductActiveDialogue<V, O, E, P, H> {
     pub phase: P,
     pub elapsed_nanos: u64,
     pub pending_content_events: Vec<crate::step::RuntimeDialogueContentEventKind>,
+    pub pending_input_actions: Vec<RuntimeDialogueInputActionEvent>,
     pub pending_advance: bool,
     pub pending_line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
     pub pending_activation_host_call: Option<H>,
@@ -2498,20 +2499,16 @@ impl AwbcProductStepExecutor {
         &mut self,
         input: &mut RuntimeStepInput,
     ) -> Result<Vec<crate::line_task::LineRuntimeError>, ProductStepError> {
-        let content_events = std::mem::take(&mut input.dialogue_content_events);
-        let advances = std::mem::take(&mut input.dialogue_advances);
-        let line_outcomes = std::mem::take(&mut input.line_outcomes);
         let foreground = self
             .dialogue_dispatch()?
             .and_then(dialogue::ProductDialogueDispatch::foreground);
-        let diagnostics = self.dialogues.latch_step_input(
-            &self.program,
-            foreground,
-            input.dt,
-            &content_events,
-            &advances,
-            &line_outcomes,
-        )?;
+        let diagnostics =
+            self.dialogues
+                .latch_step_input(&self.program, foreground, input.as_view())?;
+        input.dialogue_content_events.clear();
+        input.dialogue_advances.clear();
+        input.dialogue_input_actions.clear();
+        input.line_outcomes.clear();
         self.fiber.advance_duration_wait(&self.program, input.dt)?;
         for child in &mut self.child_fibers {
             child.fiber.advance_duration_wait(&self.program, input.dt)?;
@@ -4907,7 +4904,6 @@ impl AwbcProductStepExecutor {
                     return self.resume_dialogue(
                         activation,
                         resume,
-                        input.dialogue_input_actions.as_slice(),
                         &mut input.host_call_results,
                         output,
                         pure_backend,
@@ -5358,6 +5354,7 @@ impl AwbcProductStepExecutor {
             },
             elapsed_nanos: 0,
             pending_content_events: Vec::new(),
+            pending_input_actions: Vec::new(),
             pending_advance: false,
             pending_line_outcomes: Vec::new(),
             pending_activation_host_call: None,
@@ -5377,7 +5374,6 @@ impl AwbcProductStepExecutor {
         &mut self,
         activation: DialogueActivationId,
         resume: AwbcResumePointId,
-        input_actions: &[RuntimeDialogueInputActionEvent],
         host_call_results: &mut Vec<crate::step::RuntimeHostCallResult>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -5536,11 +5532,12 @@ impl AwbcProductStepExecutor {
         }
         line::settle_scoped_defer_releases(&mut transaction, &mut self.child_fibers);
         let elapsed = LogicalDuration::from_nanos(transaction.frame().elapsed_nanos);
-        let (content, content_events, advance) = {
+        let (content, content_events, input_actions, advance) = {
             let active = transaction.frame_mut();
             (
                 active.content,
                 std::mem::take(&mut active.pending_content_events),
+                std::mem::take(&mut active.pending_input_actions),
                 std::mem::take(&mut active.pending_advance),
             )
         };
@@ -5600,7 +5597,7 @@ impl AwbcProductStepExecutor {
             })
             .collect::<Vec<_>>();
         let accepted_input_actions = match transaction.frame_mut().line_task_mut() {
-            Some(line_task) => match line_task.accept_input_action_events(input_actions) {
+            Some(line_task) => match line_task.accept_input_action_events(&input_actions) {
                 Ok(actions) => actions,
                 Err(error) => {
                     return self
@@ -6089,6 +6086,7 @@ impl AwbcProductStepExecutor {
                 state: closing_state,
             });
             frame.pending_content_events.clear();
+            frame.pending_input_actions.clear();
             frame.pending_advance = false;
             frame
         });

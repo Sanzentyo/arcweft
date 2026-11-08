@@ -3,7 +3,7 @@ use crate::effect::RuntimeDropPolicy;
 use crate::engine::DialogueRuntimePhase;
 pub(crate) use crate::engine::defer::NativeLexicalDeferScope as DialogueActivationScope;
 use crate::line_task::{
-    LineRuntimeError, LineTaskLiveState, RuntimeDialogueAbandonedCommitProof,
+    LineRuntimeError, LineTaskLiveState, LineTaskReducerView, RuntimeDialogueAbandonedCommitProof,
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationState,
     RuntimeDialogueActivationTransaction, RuntimeDialogueCommitProof, RuntimeDialogueCommitReceipt,
     RuntimeDialoguePublishedCommitProof, RuntimeHandleDropReceipt, RuntimeLineHandleLedger,

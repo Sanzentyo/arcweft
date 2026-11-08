@@ -455,6 +455,139 @@ fn saved_awbc_deferred_dialogue_cancellation_returns_to_the_owning_cleanup() {
 }
 
 #[test]
+fn native_deferred_dialogue_retains_cancellation_during_zero_operation_steps() {
+    with_native_line_handle_steps(
+        &deferred_dialogue_cancellation_source(),
+        assert_deferred_cancellation_across_zero_operation_steps,
+    );
+}
+
+#[test]
+fn saved_awbc_deferred_dialogue_retains_cancellation_during_zero_operation_steps() {
+    with_saved_awbc_steps(
+        &deferred_dialogue_cancellation_source(),
+        assert_deferred_cancellation_across_zero_operation_steps,
+    );
+}
+
+#[test]
+fn saved_awbc_deferred_dialogue_rejects_forged_pending_cancellation_packets() {
+    let mut checked = false;
+    with_saved_awbc_steps_checking(
+        &deferred_dialogue_cancellation_source(),
+        |mut executor, save| {
+            if checked {
+                return executor;
+            }
+            for (index, entry) in save["dialogues"]["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+            {
+                let Some(packet) = entry.pointer("/Active/frame/pending_input_actions/0") else {
+                    continue;
+                };
+                let before = executor.snapshot().unwrap();
+                for mutation in 0..4 {
+                    let mut forged = save.clone();
+                    let frame = &mut forged["dialogues"]["entries"][index]["Active"]["frame"];
+                    match mutation {
+                        0 | 1 => {
+                            let field = if mutation == 0 {
+                                "occurrence"
+                            } else {
+                                "owner_fiber"
+                            };
+                            let value = &mut frame["pending_input_actions"][0]["activation"][field];
+                            *value = (value.as_u64().unwrap() + 1).into();
+                        }
+                        2 => frame["pending_input_actions"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(packet.clone()),
+                        3 => frame["phase"]["Reducing"]["line_task"]["consumed_input_actions"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(packet.clone()),
+                        _ => unreachable!(),
+                    }
+                    let saved = serde_json::from_value(forged).unwrap();
+                    match executor.bind_product_save_snapshot(saved) {
+                        Err(_) => {}
+                        Ok(bound) => {
+                            let Err(rejected) = executor.restore_snapshot(
+                                arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                                    bound,
+                                ),
+                            ) else {
+                                panic!(
+                                    "forged pending input mutation {mutation} reached execution"
+                                );
+                            };
+                            let (unchanged, _) = rejected.into_parts();
+                            executor = unchanged;
+                        }
+                    }
+                    assert_eq!(executor.snapshot().unwrap(), before);
+                }
+                checked = true;
+                break;
+            }
+            executor
+        },
+        assert_deferred_cancellation_across_zero_operation_steps,
+    );
+    assert!(
+        checked,
+        "the original unconsumed packet reached public save"
+    );
+}
+
+fn assert_deferred_cancellation_across_zero_operation_steps(
+    step: &mut dyn FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+) {
+    let mut packets = 0;
+    execute_nested_line_handle_transfer(
+        2,
+        false,
+        true,
+        &["body", "cancelled", "released"],
+        |mut input, options| {
+            if !input.dialogue_input_actions.is_empty() {
+                packets += 1;
+                let tick = input.tick;
+                let mut zero = options;
+                zero.budget.max_ops = 0;
+                for _ in 0..3 {
+                    let result = step(input, zero);
+                    assert_eq!(result.stats.executed_ops, 0);
+                    assert!(
+                        result.output.diagnostics.is_empty(),
+                        "{:?}",
+                        result.output.diagnostics
+                    );
+                    assert!(result.output.flow_events.is_empty());
+                    assert!(result.output.requests.line_commands.is_empty());
+                    input = arcweft_core::step::RuntimeStepInput {
+                        tick,
+                        ..Default::default()
+                    };
+                }
+            }
+            step(input, options)
+        },
+    );
+    assert_eq!(
+        packets, 1,
+        "one actual cancellation packet, with no resubmission"
+    );
+}
+
+#[test]
 fn saved_awbc_deferred_dialogue_rejects_missing_or_replaced_receiver() {
     let mut checked = false;
     assert_saved_awbc_checking(

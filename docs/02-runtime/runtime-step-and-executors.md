@@ -218,6 +218,19 @@ owning frames even with a zero-op budget, so later replies in the same packet
 survive budget exhaustion and private rollback. A Host waiter with no reply is
 not an executable operation.
 
+Dialogue action packets also enter their addressed activation during ingress,
+including steps with `max_ops = 0`. The activation retains the packet until its
+line reducer can consume it; another foreground dialogue or a yielded cleanup
+child cannot consume or discard that packet. Consuming the packet records its
+epoch, sequence, and action identity exactly once. Ingress authenticates the
+original activation and live reducer, and checks the combined pending and
+consumed history against the sequence limit before retaining copied identities.
+Duplicate or replayed identities, and input addressed to a stale or unavailable
+activation, reject ingress.
+Product public save and both executors' private rollback retain pending packets;
+restore validates their owning activation, reducer phase, and unconsumed
+identities before publishing restored state.
+
 Retained child scopes remain executor work after the parent finishes, including
 detached line work. Local join policy governs the parent return gate and does
 not discard that executor ownership. A blocked child at the front of the queue

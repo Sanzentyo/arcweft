@@ -3,14 +3,13 @@ use crate::awbc::fiber::{FiberState, FiberStateError};
 use crate::awbc::schema::{AwbcResumePointId, AwbcTypeId};
 use crate::effect::{RuntimeRegistryOwner, RuntimeScopeRegistry};
 use crate::line_task::{
-    LineRuntimeError, PreparedRuntimeParentFiberReconciliation,
+    LineRuntimeError, LineTaskReducerView, PreparedRuntimeParentFiberReconciliation,
     RuntimeDialogueAbandonedCommitProof, RuntimeDialogueActivationRegistry,
     RuntimeDialogueActivationState, RuntimeDialogueActivationTransaction,
     RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
     RuntimeDialogueRegistryCommitReceipt, RuntimeLineHandleLedger,
 };
 use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeLineHandleToken};
-use crate::step::RuntimeDialogueContentEvent;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::{RuntimeValue, RuntimeValueView, ownership::RuntimeOwnedSlotId};
@@ -31,6 +30,38 @@ pub(super) struct ProductDialogueStore {
 
 pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
+
+impl<V, O, E, F, L, P, H>
+    super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>
+{
+    pub(super) fn validate_pending_input_actions(&self) -> Result<(), LineRuntimeError>
+    where
+        L: LineTaskReducerView,
+    {
+        if self.pending_input_actions.is_empty() {
+            return Ok(());
+        }
+        if self
+            .pending_input_actions
+            .iter()
+            .any(|event| event.activation() != &self.activation)
+        {
+            return Err(LineRuntimeError::WrongActivation);
+        }
+        let super::AwbcProductDialoguePhase::Reducing { line_task } = &self.phase else {
+            return Err(LineRuntimeError::DialogueIngressNotReady {
+                activation: self.activation,
+            });
+        };
+        if line_task.phase() != crate::line_task::LineTaskPhase::Active {
+            return Err(LineRuntimeError::DialogueIngressNotReady {
+                activation: self.activation,
+            });
+        }
+        line_task.inspect_input_action_events(self.pending_input_actions.iter())?;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ProductDialogueReceiver {
@@ -570,11 +601,13 @@ impl ProductDialogueStore {
         &mut self,
         program: &crate::awbc::schema::AwbcProgram,
         foreground: Option<DialogueActivationId>,
-        dt: LogicalDuration,
-        content_events: &[RuntimeDialogueContentEvent],
-        advances: &[DialogueActivationId],
-        line_outcomes: &[crate::presentation::RuntimeLineHostOutcome],
+        input: crate::step::RuntimeStepInputRef<'_>,
     ) -> Result<Vec<LineRuntimeError>, ProductStepError> {
+        let dt = input.dt();
+        let content_events = input.dialogue_content_events();
+        let advances = input.dialogue_advances();
+        let input_actions = input.dialogue_input_actions();
+        let line_outcomes = input.line_outcomes();
         // Validate the complete ingress before updating the foreground clock
         // or advancing any activation revision.
         // Published ledgers are copyable metadata and are staged separately.
@@ -634,6 +667,32 @@ impl ProductDialogueStore {
                 .into());
             }
         }
+        if !crate::entry::RuntimeSchemaLimits::engine_default()
+            .permits_sequence_items(input_actions.len())
+        {
+            return Err(LineRuntimeError::InputActionHistoryLimitExceeded.into());
+        }
+        let mut borrowed_actions = BTreeMap::<DialogueActivationId, Vec<_>>::new();
+        for event in input_actions {
+            borrowed_actions
+                .entry(*event.activation())
+                .or_default()
+                .push(event);
+        }
+        let mut action_packets = BTreeMap::new();
+        for (activation, events) in borrowed_actions {
+            let frame = self
+                .registry
+                .active_frame(&activation)
+                .filter(|frame| frame.is_ingress_ready())
+                .ok_or(LineRuntimeError::DialogueIngressNotReady { activation })?;
+            let live = frame
+                .line_task()
+                .ok_or(LineRuntimeError::DialogueIngressNotReady { activation })?;
+            let prepared =
+                live.inspect_input_action_events(frame.pending_input_actions.iter().chain(events))?;
+            action_packets.insert(activation, prepared.into_pending_events());
+        }
         let mut seen_outcomes = BTreeSet::new();
         for outcome in line_outcomes {
             let activation = outcome.command().activation();
@@ -659,6 +718,7 @@ impl ProductDialogueStore {
             .filter(|_| dt.as_nanos() != 0)
             .chain(content_events.iter().map(|event| event.activation()))
             .chain(advances)
+            .chain(action_packets.keys())
             .chain(seen_outcomes.iter().map(|command| command.activation()))
         {
             let count = revisions.entry(*activation).or_default();
@@ -706,6 +766,11 @@ impl ProductDialogueStore {
         for activation in advances {
             let mut transaction = self.ready_transaction(activation)?;
             transaction.frame_mut().pending_advance = true;
+            self.registry.commit(transaction)?;
+        }
+        for (activation, events) in action_packets {
+            let mut transaction = self.ready_transaction(&activation)?;
+            transaction.frame_mut().pending_input_actions = events;
             self.registry.commit(transaction)?;
         }
         for outcome in line_outcomes {

@@ -829,6 +829,7 @@ impl Clone for AwbcProductActiveDialogueSaveSnapshot {
             phase: self.phase.clone(),
             elapsed_nanos: self.elapsed_nanos,
             pending_content_events: self.pending_content_events.clone(),
+            pending_input_actions: self.pending_input_actions.clone(),
             pending_advance: self.pending_advance,
             pending_line_outcomes: self.pending_line_outcomes.clone(),
             pending_activation_host_call: self.pending_activation_host_call.clone(),
@@ -921,6 +922,7 @@ impl<V, O, E, N, B, R, G, L, P, H>
             &self.voice,
             self.elapsed_nanos,
             &self.pending_content_events,
+            &self.pending_input_actions,
             self.pending_advance,
             &self.pending_line_outcomes,
         ))?;
@@ -1162,6 +1164,8 @@ impl super::ActiveDialogue {
             reducer.admit_retained(&view, admission)?;
             line.restore_admit_reducer(&self.activation, &view, reducer)?;
         }
+        self.validate_pending_input_actions()
+            .map_err(|error| invalid(error.to_string()))?;
         Ok(())
     }
 }
@@ -1273,6 +1277,8 @@ impl AwbcProductActiveDialogueSaveSnapshot {
                 .ok_or_else(|| invalid("active dialogue line task graph is malformed"))?;
             reducer.admit_retained(&view, admission)?;
         }
+        self.validate_pending_input_actions()
+            .map_err(|error| invalid(&error.to_string()))?;
         Ok(())
     }
 
@@ -1853,6 +1859,7 @@ fn snapshot_active_dialogue(
         phase: snapshot_dialogue_phase_for_save(&active.phase, owner)?,
         elapsed_nanos: active.elapsed_nanos,
         pending_content_events: active.pending_content_events.clone(),
+        pending_input_actions: active.pending_input_actions.clone(),
         pending_advance: active.pending_advance,
         pending_line_outcomes: active.pending_line_outcomes.clone(),
         pending_activation_host_call: active.pending_activation_host_call.as_ref().map(|pending| {
@@ -4186,6 +4193,7 @@ impl AwbcProductStepExecutor {
                         })?,
                     elapsed_nanos: active.elapsed_nanos,
                     pending_content_events: active.pending_content_events,
+                    pending_input_actions: active.pending_input_actions,
                     pending_advance: active.pending_advance,
                     pending_line_outcomes: active.pending_line_outcomes,
                     pending_activation_host_call: active.pending_activation_host_call.map(
@@ -4492,6 +4500,7 @@ mod tests {
             ),
             elapsed_nanos: 0,
             pending_content_events: Vec::new(),
+            pending_input_actions: Vec::new(),
             pending_advance: false,
             pending_line_outcomes: Vec::new(),
             pending_activation_host_call: None,
