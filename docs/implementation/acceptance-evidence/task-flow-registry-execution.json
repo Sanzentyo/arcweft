@@ -45362,5 +45362,360 @@
         }
       ]
     }
+  },
+  "scopedLineChildDialogueReceivers": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "c7ad0e974c297fc51c47557790489e78fd1b42b5",
+    "priorSource": "5f3e6deedf4dca6d9251b72530f5edb354655e4c",
+    "probeBase": "a477f60f2d07f0704bda1db6b1b574245274b94c",
+    "accepted": "Saved AWBC initial-input scoped defer child can start and receive an inner dialogue, wait normally and cancel the explicitly targeted inner dialogue. The original 1-op/512-step, ordered logs, 3 reveals and one Actor acquisition/release are maintained with public JSON save/cold restore at every step.",
+    "implementation": "Product derives Fiber, Activation or LineChild receiver from the actual frame owner. Existing borrowed receiver topology drives live dispatch and saved admission, authenticates parent activation and physical receiver, and dispatches nested Line child dialogue before its waiting parent. Handoff withdraws/restores the exact child suspension inside the existing rollback transaction; result publication resumes that physical receiver.",
+    "validation": {
+      "owners": {
+        "version": 1,
+        "base": "a477f60f2d07f0704bda1db6b1b574245274b94c",
+        "run": "line-scoped-dialogue-20261108.owners-r3.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [  10.192s] 164 tests run: 163 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 164,
+        "passed": 163,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3416,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "ordinary_defer::native_initial_owned_line_init_defer_preserves_explicit_scope"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-08T00:59:23.0095334Z"
+      },
+      "coreReceiverTopology": {
+        "version": 1,
+        "base": "a477f60f2d07f0704bda1db6b1b574245274b94c",
+        "run": "line-scoped-dialogue-20261108.receiver-auth.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.050s] 3 tests run: 3 passed, 2325 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 2325,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3416,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T00:56:14.9216777Z"
+      },
+      "forgeries": "Missing child suspension, forged inner activation occurrence, forged parent activation occurrence, wrong parent fiber, duplicate child: all rejected; original executor snapshot unchanged and original execution completes.",
+      "gates": "Fresh all-target/all-feature workspace check/Clippy, canonical structure gate and 8-path rustfmt exit 0; warnings retained",
+      "sourceInputs": 3416,
+      "sourceDrift": 0,
+      "scope": "The Core 3-case topology run and Compiler 164-case owner run are separate package/feature selections. This cut does not claim the earlier full Core53 runtime matrix for its changed source."
+    },
+    "history": "First Core check failed E0425 for a missing type import and was repaired. First 163-case owner run passed 162 with only Native explicit scope failing. A preparation invocation misspelled scoped_defer as scoped_unwind and failed before compilation/runtime; its catalog log and exit 101 are retained. Corrected final catalog ran 164 cases after adding the 5-forgery case, passing 163 with the same one Native failure. No runtime rerun is invented for the preparation failure.",
+    "remaining": "Only Native explicit init scope result binding remains failing in this owner selection. Native public Save, final all-Core53 runtime consumers, other platforms/Tier2 and full Native-Web parity are not accepted by this bounded cut.",
+    "preserved": "121 older ledger records preserved. Original WIP remains 12 tracked / 6 actual untracked. Historical wrapper held=14 labels are not the actual WIP count. Generic Match, root defer and other accepted boundaries stay accepted.",
+    "raw": {
+      "path": "task-line-scoped-dialogue-receivers.raw.zip",
+      "sha256": "9080ba334b7f1bf0107d9f9e9ce3dff47a192dbc98b1588d6efd342c80742178",
+      "entries": [
+        {
+          "entry": "line-scoped-dialogue-20261108.check-r1.exit",
+          "bytes": 5,
+          "sha256": "bdc830287616dae1818ced3e7c186e1387155900ad30d5983ec02da1519c4a95"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.check-r1.log",
+          "bytes": 12146,
+          "sha256": "17691484e3bf85f8e4e35300b295b02f377e963c0765f9ef2cc10f8b4422c50a"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.check-r2.exit",
+          "bytes": 3,
+          "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.check-r2.log",
+          "bytes": 73522,
+          "sha256": "14ca69228f71ec7ee2c88ffa7fd11a4c40995db57878c06585b8a11189d93a39"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.binaries-before.json",
+          "bytes": 477,
+          "sha256": "1b529bee355d0afea5920d265d1a3930316e95b0f5591427d17f2dd4aeb93fcf"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.catalog.inventory.json",
+          "bytes": 40894,
+          "sha256": "51973d0a9c77b64a400611ec4de40221e25ed99e9d2aaa9f7d0f64bdf879d8ea"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.catalog.json",
+          "bytes": 619,
+          "sha256": "9b766c4136a8ed410d69d10dd9657d44ee7b9866e1913fcee0d9d7f80a5021eb"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.catalog.log",
+          "bytes": 114449,
+          "sha256": "fbc3f72cb27e23a7b91b17edc0f255a4f7f42e2cf013bffaec6d473b3f7081d1"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.runtime.json",
+          "bytes": 713,
+          "sha256": "f6a07b9dbb265b8baf5a64310116e9b313e1005bfb295a25bb11f490655ae85e"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.runtime.log",
+          "bytes": 135912,
+          "sha256": "f025794807f976a932e80db6ba4c2f1420ad6b8d379284ad3485ac976524ec81"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.runtime.terminal-audit.json",
+          "bytes": 831,
+          "sha256": "08234dc7fcd9ee9f09d62630ae71dc3955eb42e74974a59b8596dd75509e3b87"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r1.source-freeze.json",
+          "bytes": 683429,
+          "sha256": "0b975e1ad1c09a0065b256d83cacef9ab70bf917b2b90286aa8a351abf943333"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r2.catalog.json",
+          "bytes": 622,
+          "sha256": "6988c5d673bb4ac30b0d96b4da91b2f269eec61f139c36adf4ce64bcf2cc7e5a"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r2.catalog.log",
+          "bytes": 1076,
+          "sha256": "f5b3d4871e16d406d5f083b9ec2606750c72eb04b396f8e5888ced7114ed1600"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r2.source-freeze.json",
+          "bytes": 683429,
+          "sha256": "1783e973521583ba1117f3cb3db031a609418ad679e8991abf67bbf3f620038d"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.binaries-before.json",
+          "bytes": 477,
+          "sha256": "e009ae5ba1f34073d009c8737e2bcaee141c0c1f347eeab6522d18f1e0a0e3f2"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.catalog.inventory.json",
+          "bytes": 41164,
+          "sha256": "275d7fe09e3085ce05c34461918bea335bfe04680c75b0602faa7927b2a6b625"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.catalog.json",
+          "bytes": 619,
+          "sha256": "4561c9bdfb4caac943c40e8c582b7fbdd06e570f0892f6b63dbaeed48404f73b"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.catalog.log",
+          "bytes": 113037,
+          "sha256": "844d1d0d132620d36b7d2b21b07973c56b569ecf584a75d1d306cd3637cf392d"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.runtime.json",
+          "bytes": 713,
+          "sha256": "388bf0c35b246bbca519eaa087f5823b7a85ae3cfb53182913b6fd49f0922905"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.runtime.log",
+          "bytes": 136238,
+          "sha256": "d7e9f87ec91a4cd369c374b4fecf074c34e6ff049dde112b628666f840f9461d"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.runtime.terminal-audit.json",
+          "bytes": 831,
+          "sha256": "a9d29d83cebfde297f28bfaa6654064e4ab579c2c3b1529371d2d41c4c8d9d58"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.owners-r3.source-freeze.json",
+          "bytes": 683429,
+          "sha256": "a42030b7df33eb9049f52abe560238ce555203f6ef881db321c51510351bfc85"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.ownership-review.json",
+          "bytes": 2866,
+          "sha256": "a699782f72c1851cdd994e70d054b1f2b501f25cb7326cec55966dfe555b9f85"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.binaries-before.json",
+          "bytes": 202,
+          "sha256": "fa5243d7359d6522984b0bb58eb3189c351f29dec098a60f856dd1f72dfa3c72"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.catalog.inventory.json",
+          "bytes": 595139,
+          "sha256": "9e932cff521a0154dc1d6a8aef788f8fad80a845a57f709228863c8e1f0b5027"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.catalog.json",
+          "bytes": 625,
+          "sha256": "1010fce6d4c613252f519ddb380b8447d5ef9a098687ac6ee257780dca9d536b"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.catalog.log",
+          "bytes": 491662,
+          "sha256": "e04a7badf4b4d3a6e54c8c914b0206655842da611b8e2db9d0576f87946f4a8d"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.runtime.json",
+          "bytes": 717,
+          "sha256": "9d18b733b712d0dee798c5fc5ae9548b553f5e641cb85489e7d991ba1f92d1af"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.runtime.log",
+          "bytes": 750703,
+          "sha256": "92568a6c758b4de99ac0fd114f9c7d19bca8d3fd9cc3d1b5177acefc7a4ff245"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.runtime.terminal-audit.json",
+          "bytes": 626,
+          "sha256": "46109dd3e2421cda4e7912e43ff2f75bbd595d7440cc9c7065e89bf484c9ca6d"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.receiver-auth.source-freeze.json",
+          "bytes": 683429,
+          "sha256": "2b629e904c4cdcaaff5373db64b183bdb155c42daa2ef7de3004d045f06e5a4b"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.source.message.txt",
+          "bytes": 78,
+          "sha256": "07cbe6a213ad0e36c6799732eb4263ebf33d476bbe3fc7e83cd0dcb50a6296a2"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.source.owned.txt",
+          "bytes": 468,
+          "sha256": "3e096f0413075b757d67467c15e25a486faf0fb464a627398e3a5ac501886a9c"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.source.pathspec",
+          "bytes": 460,
+          "sha256": "bcc008fa768115190cd0968099d12f2f62191d27e0cab7c035c89529f70d13c0"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.source.prepared.json",
+          "bytes": 2337,
+          "sha256": "599ca22cf6a8a1a176db9492cb02f2e2844aed42264d5c9ff1329026c7e182d8"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.source.reviewed.patch",
+          "bytes": 37692,
+          "sha256": "f1bf115ac6b00eb9996c9038ff7e18c956cb92235caf5939bd9571fac9bdff14"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.source.verified.json",
+          "bytes": 1739,
+          "sha256": "9c37a3dc20e5fba36a7d8894eab5d2fe2c12114ef5d8c8fa7037b83c2661853c"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.check.log",
+          "bytes": 113577,
+          "sha256": "700bbdac6d7b8fc6b47e8dc19b9e078a1e147f5f7aed78191d6ce963f5d81702"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.check.receipt.json",
+          "bytes": 338,
+          "sha256": "bd8232ceb16ef37f83abc3e2520fc35e3f7d7eb7196725b0099b32f30baccb58"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.clippy.log",
+          "bytes": 9177672,
+          "sha256": "9809e5097bf6dafd65cb73f65962428fc35d56a1a77f6ac45c412c102c8d5a88"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "b86a305209f356d8b7bc85601fe65fbf7330dbf87c2b6cf7341546031b065fdc"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.fmt.receipt.json",
+          "bytes": 642,
+          "sha256": "dd34e113e4d757af2db33590d3c2a55dbac1a71ba43396e3260b1abbf627c6fe"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.source.json",
+          "bytes": 605889,
+          "sha256": "f0faec965bc1be791d937da334c804b5d7c6f0fa3edf6eb29bd44d2163a9b56f"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.structure.log",
+          "bytes": 66008,
+          "sha256": "c49c2d9481528cfc6bbdc9cb276eaa30f485066f4718d11752dd2538587e7d3e"
+        },
+        {
+          "entry": "line-scoped-dialogue-20261108.workspace-quality-r1.structure.receipt.json",
+          "bytes": 513,
+          "sha256": "5430ed1709b92c4c9536981bef6e6178c7a9f3db36f05ebda80d34afda406496"
+        },
+        {
+          "entry": "record-line-scoped-dialogue-receivers-20261108.ps1",
+          "bytes": 12667,
+          "sha256": "11d48038c700a39adf7088c193730f59b4be00f056d2d602a380e1697b6b471c"
+        },
+        {
+          "entry": "run-line-root-frozen-nextest-20261108.ps1",
+          "bytes": 3803,
+          "sha256": "5cbce63b02812b6192755720659bff3e7d0bf18eadf87ee97d53143589b016b8"
+        },
+        {
+          "entry": "run-line-scoped-dialogue-workspace-quality-20261108.ps1",
+          "bytes": 2034,
+          "sha256": "6adf6ed235a6859f66c8a0b852e6ec3f94182526a1bc619ab15d6420c016098e"
+        },
+        {
+          "entry": "structure-report/dependency_edges.csv",
+          "bytes": 78209,
+          "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+        },
+        {
+          "entry": "structure-report/file_metrics.csv",
+          "bytes": 342426,
+          "sha256": "2795ee04a871c8d4c01aa0bece7ac3226c2cf53d88b0a8b1e8188ed95438d472"
+        },
+        {
+          "entry": "structure-report/findings.md",
+          "bytes": 124120,
+          "sha256": "e6ba5f0cc799ca6da6411e350c81c9ec7d48336d7496f0a89e685f218adb39b2"
+        },
+        {
+          "entry": "structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+        },
+        {
+          "entry": "structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "faa5ddc30be32585bf47b6c06a3e68eef4b0d7b67083510d5e7e71f04a36f290"
+        }
+      ]
+    }
   }
 }

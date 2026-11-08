@@ -15479,3 +15479,11 @@ Nativeの既存DialogueStepInboxが実activationのinput identityを保持し、
 最終Coreはinbox原子性1件と相補input／schema／ingress6件が各PASS。同じ実行ファイルpath／SHA256を照合し、全Core unitへ拡張しない。最終Compiler evaluated_effects／scoped_deferは **163件中161 PASS／2 FAIL**。bounded refactor前後の163件は別epochとして残す。残る実失敗はNativeの明示init scope結果受取りと、保存AWBC init-defer子の対話待機。後者の取消し枝は最初の通常枝で停止したため未実行。Nativeの入れ子登録／待機／内側取消しが通過した根拠で現状行を更新し、root deferやGeneric Match等の既受入を戻さない。
 
 workspace全target／全feature check／Clippy、canonical構造gateと7 Rust path fmtは終了0、3416入力drift0。Core53／CLIの新runtime matrixではない。7ファイルのbyte／LOC／embedded tests／増分とownerの責任をrawへ保持し、Cargo依存・I/O・live値のcopy・永続side table・compatibility reader・version bumpを足さない。既存12 tracked／6 actual untrackedは保持した。[全記録・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは100 entries、SHA-256 c2e2f082c0d55ad87123e771cb9ea5ec2e9d9084b5b28917eae14e37539ac1bd。
+
+## 2026-11-08 — 保存AWBCのscoped子対話receiver
+
+Source **c7ad0e974c297fc51c47557790489e78fd1b42b5** は、初期Actorを捕捉したscoped defer子の対話を実際のchild frameへ接続した。既存の借用receiver graphをlive dispatchと保存admissionで共有し、親activation／実fiber／元対話packetを認証する。子対話を親cleanupのjoinより先に進め、結果を同じphysical receiverへ返す。永続side table・値clone・旧walker・version変更は足さない。
+
+通常と2番目の実内側対話の取消しは、元の1-op／512-step、3 reveal、Actor取得・解放各1回、log順を維持し、AWBCの各step公開JSON save／cold restoreでPASS。受取先欠落・inner occurrence・parent occurrence・parent fiber・child重複の5改変は拒否され、元snapshot不変で継続完了する。Core topology 3／3 PASS。Compiler最終owner選択は **164件中163 PASS／1 FAIL・除外0** で、唯一の失敗はNative明示init scopeの結果受取り。既受入root deferとGeneric Matchは維持する。
+
+初回Core compileのE0425、追加forgery前の163件中162 PASS／1 FAIL、scoped_defer targetの指定誤りでruntime前に終了したcatalog失敗も保持する。誤指定をruntime失敗や別runの合計に含めない。全workspace all-target／all-feature check／Clippy、canonical構造gate、8 path fmtは終了0、3416 Rust／Cargo／config／toolchain入力drift0。Cargo graphは不変で、旧Core53 runtime結果を新Sourceの全件合格にはしない。8ファイルのbyte／LOC／embedded tests／増分・構造責任、実exe path／SHA256と全full SHAを[台帳・原本](acceptance-evidence/task-flow-registry-execution.json)へ保持。raw ZIPは56 entries、SHA-256 9080ba334b7f1bf0107d9f9e9ce3dff47a192dbc98b1588d6efd342c80742178。
