@@ -682,10 +682,11 @@ impl BundleSession {
     ) -> Result<(), BundleViewEventDispatchError> {
         let format_context = RuntimeFormatContext::new(self.active_locale.clone());
         let mut backend = self.make_pure_backend(format_context.clone());
-        if let Some(input) = self.view_runtime.dispatch_invocation_with_backend(
+        if let Some(input) = self.view_runtime.dispatch_invocation_in_session(
             invocation,
             &format_context,
             &mut backend,
+            Some(&mut self.executor),
         )? {
             self.pending_presentation_inputs.push(input);
         }
@@ -733,10 +734,11 @@ impl BundleSession {
         let format_context = RuntimeFormatContext::new(self.active_locale.clone());
         let mut backend = self.make_pure_backend(format_context.clone());
         if retained {
-            if let Some(action) = self.view_runtime.dispatch_text_input_with_backend(
+            if let Some(action) = self.view_runtime.dispatch_text_input_in_session(
                 write_back,
                 &format_context,
                 &mut backend,
+                Some(&mut self.executor),
             )? {
                 self.pending_presentation_inputs.push(action);
             }

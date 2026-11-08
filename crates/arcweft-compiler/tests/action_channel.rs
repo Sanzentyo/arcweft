@@ -130,6 +130,85 @@ fn source_action_emission_reaches_native_and_decoded_product_without_host_effect
 }
 
 #[test]
+fn external_typed_action_ingress_uses_the_original_fifo_in_every_executor_tier() {
+    use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
+    use arcweft_core::value::{RuntimeInt, RuntimeValue};
+    let (compiled, program) = compile(
+        "flow main() -> i64 { let a = await receive(submit); let b = await receive(submit); return a.value * 1000i64 + b.value }",
+    );
+    let row = program
+        .runtime_types
+        .iter()
+        .find(|row| {
+            row.nominal_declaration()
+                .and_then(|declaration| declaration.action())
+                .is_some()
+        })
+        .unwrap();
+    let payload_type = row.semantic_identity();
+    let plan = std::sync::Arc::new(compiled.plan);
+    let mut executors = [
+        ArcweftRuntimeExecutor::from_runtime_plan(
+            plan.clone(),
+            ArcweftExecutionTier::RuntimePlanVm,
+        )
+        .unwrap(),
+        ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::StructuredAot)
+            .unwrap(),
+        ArcweftRuntimeExecutor::from_awbc_product(program.clone(), AwbcEntryId(0)).unwrap(),
+    ];
+    for executor in &mut executors {
+        if executor.tier() != ArcweftExecutionTier::AwbcProduct {
+            executor
+                .start_structured_entry(
+                    &arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
+                        .unwrap(),
+                )
+                .unwrap();
+        }
+        let payload = |value| {
+            executor
+                .program_owner()
+                .types()
+                .try_record_value(
+                    payload_type,
+                    vec![RuntimeValue::Int(RuntimeInt::I64(value))],
+                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .unwrap()
+        };
+        let first = payload(1);
+        let second = payload(2);
+        executor.emit_action(payload_type, first).unwrap();
+        assert!(
+            executor
+                .emit_action(payload_type, RuntimeValue::Bool(false))
+                .is_err()
+        );
+        executor.emit_action(payload_type, second).unwrap();
+        let mut finished = false;
+        for _ in 0..64 {
+            let step = executor.step(RuntimeStepInput::default(), options());
+            assert!(
+                step.output.diagnostics.is_empty(),
+                "{:?}",
+                step.output.diagnostics
+            );
+            assert!(step.output.requests.host_calls.is_empty());
+            if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+                assert_eq!(
+                    step.fiber_status,
+                    FlowFiberStatus::Done(FlowExit::Return("1002".into()))
+                );
+                finished = true;
+                break;
+            }
+        }
+        assert!(finished, "{:?}", executor.tier());
+    }
+}
+
+#[test]
 fn source_action_emission_in_an_effectful_function_keeps_its_original_payload() {
     assert_source_emission(
         "fn send(value: submit) -> Unit effects { action.emit } { emit(value) }\nflow main() -> i64 { send(submit(value = 42i64)); return 42i64 }",

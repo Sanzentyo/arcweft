@@ -969,6 +969,16 @@ impl ViewProgramResource {
                             .first()
                             .and_then(|ty| program.runtime_types.get(ty.index()))
                             .is_some_and(|ty| match value {
+                                arcweft_view::ViewHandlerTransitionValueRole::Action {
+                                    payload_type,
+                                } => {
+                                    ty.semantic_identity() == *payload_type
+                                        && arcweft_core::program_types::RuntimeProgramTypes::Awbc(
+                                            program,
+                                        )
+                                        .action_declaration(*payload_type)
+                                        .is_ok()
+                                }
                                 arcweft_view::ViewHandlerTransitionValueRole::Unit => matches!(
                                     ty.shape(),
                                     arcweft_core::awbc::schema::AwbcRuntimeTypeShape::Unit

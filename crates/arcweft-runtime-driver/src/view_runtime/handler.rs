@@ -45,6 +45,16 @@ impl BundleViewRuntime {
         format_context: &RuntimeFormatContext,
         backend: &mut B,
     ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
+        self.dispatch_text_input_in_session(input, format_context, backend, None)
+    }
+
+    pub(crate) fn dispatch_text_input_in_session<B: RuntimeCallBackend>(
+        &mut self,
+        input: &arcweft_presentation::text_input::TextControlWriteBack,
+        format_context: &RuntimeFormatContext,
+        backend: &mut B,
+        executor: Option<&mut arcweft_core::executor::ArcweftRuntimeExecutor>,
+    ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
         let invalid = || BundleViewEventDispatchError::InvalidTextInput;
         let (owner, mounted, seal_key, seal) = self
             .mounts
@@ -123,9 +133,14 @@ impl BundleViewRuntime {
                 format_context,
                 backend,
                 Some(update),
+                executor,
             )?
         } else {
-            self.publish_state_updates(&update.owner, vec![(update.address, update.value)])?;
+            self.publish_state_updates(
+                &update.owner,
+                vec![(update.address, update.value)],
+                || Ok(()),
+            )?;
             None
         };
         let seal = self
@@ -164,6 +179,16 @@ impl BundleViewRuntime {
         format_context: &RuntimeFormatContext,
         backend: &mut B,
     ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
+        self.dispatch_invocation_in_session(invocation, format_context, backend, None)
+    }
+
+    pub(crate) fn dispatch_invocation_in_session<B: RuntimeCallBackend>(
+        &mut self,
+        invocation: &ViewHandlerInvocation,
+        format_context: &RuntimeFormatContext,
+        backend: &mut B,
+        executor: Option<&mut arcweft_core::executor::ArcweftRuntimeExecutor>,
+    ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
         self.dispatch_handler_with_input(
             invocation.route(),
             invocation.event(),
@@ -171,6 +196,7 @@ impl BundleViewRuntime {
             format_context,
             backend,
             None,
+            executor,
         )
     }
 
@@ -183,6 +209,7 @@ impl BundleViewRuntime {
         format_context: &RuntimeFormatContext,
         backend: &mut B,
         input_update: Option<PreparedTextInputUpdate>,
+        executor: Option<&mut arcweft_core::executor::ArcweftRuntimeExecutor>,
     ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
         let published = self
             .event_tokens
@@ -328,11 +355,20 @@ impl BundleViewRuntime {
         }
         let mut results = results.into_iter();
         let value = results.next().ok_or_else(invalid_result)?;
+        let mut named_action = None;
         let action = match value_role {
             ViewHandlerTransitionValueRole::Unit if matches!(value, RuntimeValue::Unit) => None,
             ViewHandlerTransitionValueRole::Unit => return Err(invalid_result()),
             ViewHandlerTransitionValueRole::DialogueAction => {
                 RuntimeDialogueActionToken::try_from_runtime_value(value)?.presentation_input()?
+            }
+            ViewHandlerTransitionValueRole::Action { payload_type } => {
+                owner
+                    .types()
+                    .action_declaration(*payload_type)
+                    .map_err(|_| invalid_result())?;
+                named_action = Some((*payload_type, value));
+                None
             }
         };
         let mut updates = writes
@@ -382,7 +418,15 @@ impl BundleViewRuntime {
                 updates.push((update.address, update.value));
             }
         }
-        self.publish_state_updates(&occurrence, updates)?;
+        self.publish_state_updates(&occurrence, updates, || {
+            if let Some((payload_type, payload)) = named_action {
+                executor
+                    .ok_or(BundleViewEventDispatchError::ActionContextRequired)?
+                    .emit_action(payload_type, payload)
+                    .map_err(|source| BundleViewEventDispatchError::ActionEmission { source })?;
+            }
+            Ok(())
+        })?;
         Ok(action)
     }
 
@@ -390,6 +434,7 @@ impl BundleViewRuntime {
         &mut self,
         occurrence: &super::ViewOccurrenceKey,
         updates: Vec<(StateAddress, RuntimeValue)>,
+        publish_action: impl FnOnce() -> Result<(), BundleViewEventDispatchError>,
     ) -> Result<(), BundleViewEventDispatchError> {
         let mounted = self
             .mounts
@@ -438,6 +483,9 @@ impl BundleViewRuntime {
         } else {
             Vec::new()
         };
+        // Both owners have finished View preflight. A refused Core emission
+        // leaves every View value, revision and event lease untouched.
+        publish_action()?;
         // No execution, allocation, or fallible validation remains in this
         // commit. The exclusive runtime retains every prepared address/owner.
         let mounted = self

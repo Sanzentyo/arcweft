@@ -2715,7 +2715,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 source: Box::new(source),
             })?;
         let transition = modifier != arcweft_lang_sema::callable::ViewModifierId::OnActivate
-            || handler_value_role == arcweft_view::ViewHandlerTransitionValueRole::Unit
+            || handler_value_role != arcweft_view::ViewHandlerTransitionValueRole::DialogueAction
             || input_abi.inputs().iter().any(|input| {
                 input.role() == &arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
                     && input.uses().iter().any(|usage| {

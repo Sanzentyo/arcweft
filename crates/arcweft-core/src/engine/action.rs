@@ -84,6 +84,25 @@ impl NativeActionReceiveState {
 }
 
 impl Engine {
+    pub(crate) fn emit_external_action(
+        &mut self,
+        payload_type: crate::pattern::RuntimeSemanticTypeId,
+        payload: crate::value::RuntimeValue,
+    ) -> Result<(), crate::executor::RuntimeActionEmissionError> {
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            RuntimeProgramOwner::Plan(self.plan.clone()),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_live_retained_values(&mut admission)
+            .map_err(Box::new)?;
+        let prepared = self
+            .actions
+            .prepare_emit_in_admitted_group(payload_type, (&payload).into(), &mut admission)
+            .map_err(Box::new)?;
+        prepared.commit(RuntimePayload::new(payload));
+        Ok(())
+    }
+
     pub(super) fn execute_action_receive(
         &mut self,
         source: &NativeSourceOperation,

@@ -498,3 +498,153 @@ fn retained_text_input_player_handler_failure_preserves_the_complete_session() {
     assert_eq!(labels(&updated.presentation.view), ["good", "good"]);
     assert_eq!(updated.text_control_write_backs.len(), 1);
 }
+
+#[test]
+fn retained_text_input_publishes_a_named_action_with_state() {
+    let source = SOURCE.replace(
+        "submitted = caption; ()",
+        "submitted = caption; hold(value = caption)",
+    );
+    let (mut session, initial) = player_session(&source);
+    let control = &initial.presentation.text_inputs[0];
+    session
+        .queue_text_control_write_back(&write(control, "京都", 1, true))
+        .unwrap();
+    assert_eq!(labels(&session.presentation().view), ["京都", "京都"]);
+    assert!(matches!(
+        session.export_session_save_bytes(),
+        Err(arcweft_runtime_driver::session_save::BundleSessionSaveError::NonQuiescent { .. })
+    ));
+    assert_named_action_finishes(&mut session, 2);
+}
+
+#[test]
+fn retained_text_input_click_action_mailbox_survives_session_wire_restore() {
+    let source = SOURCE.replace(
+        "Column {",
+        "Column { Button(\"Send\").on_click(|| { submitted = caption; hold(value = caption) })",
+    );
+    let (mut session, initial) = player_session(&source);
+    session
+        .queue_text_control_write_back(&write(
+            &initial.presentation.text_inputs[0],
+            "京都",
+            1,
+            false,
+        ))
+        .unwrap();
+    let changed = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(changed.diagnostics.is_empty(), "{:?}", changed.diagnostics);
+    let before = session.snapshot_session().unwrap();
+    let click = changed.presentation.view.mounts[0]
+        .events
+        .iter()
+        .find(|event| event.event() == EventKind::Activate)
+        .unwrap();
+    session
+        .queue_view_handler_invocation(&retained_transition_invocation(click))
+        .unwrap();
+    let after = session.snapshot_session().unwrap();
+    assert_eq!(
+        after.runtime, before.runtime,
+        "Action ingress does not advance the session clock"
+    );
+    assert_eq!(labels(&after.presentation.view), ["京都", "京都"]);
+    let bytes = session.export_session_save_bytes().unwrap();
+    session
+        .import_session_save_bytes(&bytes, &Default::default())
+        .unwrap();
+    assert_named_action_finishes(&mut session, 3);
+}
+
+fn assert_named_action_finishes(session: &mut BundleSession, first_tick: u64) {
+    for tick in first_tick..first_tick + 64 {
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(tick, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        assert!(step.requested_host_calls.is_empty());
+        if step.finished {
+            assert_eq!(
+                step.fiber_status,
+                arcweft_core::engine::FlowFiberStatus::Done(
+                    arcweft_core::engine::FlowExit::Return("京都".into())
+                )
+            );
+            return;
+        }
+    }
+    panic!("the typed mailbox must resume the waiting receive");
+}
+
+#[test]
+fn named_action_without_an_execution_session_keeps_view_state_and_leases() {
+    let source = SOURCE
+        .replace("entry cli", "pub action submit(value: String)\nentry cli")
+        .replace(
+            "submitted = caption; ()",
+            "submitted = caption; submit(value = caption)",
+        );
+    let (mut runtime, handle) = runtime(&source);
+    let initial = frame(&mut runtime, &handle);
+    let before = runtime.snapshot().unwrap();
+    let rejected = dispatch(
+        &mut runtime,
+        &write(&initial.mounts[0].text_inputs[0], "京都", 1, true),
+    );
+    assert_eq!(
+        rejected.unwrap_err(),
+        arcweft_runtime_driver::view_runtime::BundleViewEventDispatchError::ActionContextRequired
+    );
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    let retry = frame(&mut runtime, &handle);
+    assert_eq!(labels(&retry), ["first", "none"]);
+    assert_eq!(retry.mounts[0].text_inputs, initial.mounts[0].text_inputs);
+}
+
+#[test]
+fn named_action_bundle_rejects_a_substituted_payload_role() {
+    let source = SOURCE
+        .replace("entry cli", "pub action submit(value: String)\nentry cli")
+        .replace(
+            "submitted = caption; ()",
+            "submitted = caption; submit(value = caption)",
+        );
+    let mut artifact = bundle(&source);
+    let handler = artifact
+        .view_program
+        .as_mut()
+        .unwrap()
+        .handlers
+        .first_mut()
+        .unwrap();
+    let arcweft_view::ViewHandlerResultRole::StateTransition { writes, .. } = handler.result.role()
+    else {
+        panic!("event-time Action")
+    };
+    handler.result = arcweft_view::ViewHandlerResult::new(
+        arcweft_view::ViewHandlerResultRole::StateTransition {
+            value: arcweft_view::ViewHandlerTransitionValueRole::Action {
+                payload_type: arcweft_view::ViewHandlerValueTypeId::from_semantic_digest(
+                    [0xa5; 32],
+                ),
+            },
+            writes: writes.clone(),
+        },
+        handler.result.value_type(),
+    );
+    assert!(
+        artifact
+            .to_format_bytes(BundleFormat::Awfb)
+            .map_or(true, |bytes| ArcweftBundle::from_format_slice(
+                BundleFormat::Awfb,
+                &bytes
+            )
+            .is_err()),
+        "the role cannot substitute the verified result's original Action type"
+    );
+}

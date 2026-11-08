@@ -131,6 +131,17 @@ pub enum ArcweftRuntimeExecutorBuildError {
     TierRequiresAwbc { tier: &'static str },
 }
 
+/// Refusal of an external typed Action before mailbox or execution changes.
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum RuntimeActionEmissionError {
+    #[error(transparent)]
+    Value(#[from] Box<crate::value::AwbcRuntimeValueSnapshotError>),
+    #[error("Action ingress retained execution is invalid: {diagnostic:?}")]
+    Execution {
+        diagnostic: crate::step::RuntimeDiagnostic,
+    },
+}
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ArcweftRuntimeExecutorGenerationError {
     #[error("runtime generation cannot move backward (current {current}, requested {requested})")]
@@ -799,6 +810,29 @@ impl ArcweftRuntimeExecutor {
             }
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 crate::task::RuntimeProgramOwner::Awbc(executor.vm.program_arc())
+            }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
+        }
+    }
+
+    /// Moves one original Action record into this session's existing FIFO.
+    /// The complete retained execution and candidate are admitted before queue
+    /// publication. This neither advances the clock nor executes a Flow.
+    pub fn emit_action(
+        &mut self,
+        payload_type: crate::pattern::RuntimeSemanticTypeId,
+        payload: crate::value::RuntimeValue,
+    ) -> Result<(), RuntimeActionEmissionError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine.emit_external_action(payload_type, payload)
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor
+                .vm
+                .engine
+                .emit_external_action(payload_type, payload),
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.emit_external_action(payload_type, payload)
             }
             ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }

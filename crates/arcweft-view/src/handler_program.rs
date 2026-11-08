@@ -35,6 +35,10 @@ pub struct ViewParameterInput {
 pub enum ViewHandlerTransitionValueRole {
     Unit,
     DialogueAction,
+    /// One exact original project Action payload, delivered at event time.
+    Action {
+        payload_type: ViewHandlerValueTypeId,
+    },
 }
 
 /// One updated input root returned after the transition value. The accepted

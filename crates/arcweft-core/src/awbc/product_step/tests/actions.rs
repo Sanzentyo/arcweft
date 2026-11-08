@@ -90,10 +90,8 @@ fn emit(executor: &mut AwbcProductStepExecutor, value: bool) {
         crate::entry::TypeLayoutHash::from_bytes(*layout),
         vec![RuntimeValue::Bool(value)],
     )));
-    let mut admission = admission(executor);
     executor
-        .actions
-        .emit(semantic(81), payload, &mut admission)
+        .emit_external_action(semantic(81), payload.into_value())
         .unwrap();
 }
 
@@ -163,4 +161,25 @@ fn forged_action_row_is_rejected_without_changing_the_live_session() {
     assert!(saved.into_live_for_program(&executor.program).is_err());
     assert_eq!(executor.snapshot().unwrap(), before);
     assert_eq!(receive(&mut executor), Some(true));
+}
+
+#[test]
+fn external_action_ingress_rejects_wrong_role_and_value_without_session_changes() {
+    let mut executor = fixture();
+    emit(&mut executor, true);
+    let before = executor.snapshot().unwrap();
+    assert!(
+        executor
+            .emit_external_action(semantic(82), RuntimeValue::Bool(false))
+            .is_err()
+    );
+    assert_eq!(executor.snapshot().unwrap(), before);
+    assert!(
+        executor
+            .emit_external_action(semantic(81), RuntimeValue::Bool(false))
+            .is_err()
+    );
+    assert_eq!(executor.snapshot().unwrap(), before);
+    assert_eq!(receive(&mut executor), Some(true));
+    assert_eq!(receive(&mut executor), None);
 }

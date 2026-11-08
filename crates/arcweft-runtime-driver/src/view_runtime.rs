@@ -394,6 +394,12 @@ pub enum BundleViewEventDispatchError {
     HandlerRevisionExhausted,
     #[error("text-control write-back does not match its active retained input seal")]
     InvalidTextInput,
+    #[error("a named Action handler requires its live execution session")]
+    ActionContextRequired,
+    #[error("View Action publication failed: {source}")]
+    ActionEmission {
+        source: arcweft_core::executor::RuntimeActionEmissionError,
+    },
 }
 
 /// Public owner and part identity projected from an accepted exported-part boundary.

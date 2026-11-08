@@ -203,6 +203,20 @@ impl ViewModifierId {
         if *ty == TypeKind::Unit {
             return Some(arcweft_view::ViewHandlerTransitionValueRole::Unit);
         }
+        if let TypeKind::ProjectNominal(nominal) = ty
+            && nominal.arguments().is_empty()
+            && matches!(
+                nominal.declaration().kind(),
+                arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { .. }
+            )
+        {
+            let identity = ty.semantic_identity_digest().ok()?;
+            return Some(arcweft_view::ViewHandlerTransitionValueRole::Action {
+                payload_type: arcweft_view::ViewHandlerValueTypeId::from_semantic_digest(
+                    *identity.as_bytes(),
+                ),
+            });
+        }
         let action = crate::dialogue_view::DialogueRuntimeValueRole::Action.exact_owner();
         ty.semantic_identity_digest()
             .ok()

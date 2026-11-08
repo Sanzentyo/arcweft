@@ -216,6 +216,32 @@ impl RuntimeActionMailbox {
         payload_type: RuntimeSemanticTypeId,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<crate::entry::RuntimeNominalDeclarationId, AwbcRuntimeValueSnapshotError> {
+        self.admit_messages(admission)?;
+        self.reserve_emission_header(payload_type, admission)
+    }
+
+    /// The execution owner has already admitted this mailbox with all other
+    /// live roots in the same allowance. Do not count its values a second time.
+    pub(crate) fn prepare_emit_in_admitted_group(
+        &mut self,
+        payload_type: RuntimeSemanticTypeId,
+        payload: crate::value::RuntimeBorrowedValue<'_>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<PreparedActionEmission<'_>, AwbcRuntimeValueSnapshotError> {
+        let declaration = self.reserve_emission_header(payload_type, admission)?;
+        admission.validate_owned_typed_borrowed(payload, payload_type)?;
+        Ok(PreparedActionEmission {
+            mailbox: self,
+            payload_type,
+            declaration,
+        })
+    }
+
+    fn reserve_emission_header(
+        &mut self,
+        payload_type: RuntimeSemanticTypeId,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<crate::entry::RuntimeNominalDeclarationId, AwbcRuntimeValueSnapshotError> {
         let result = (|| {
             Self::validate_destination(payload_type, admission)?;
             let count = self
@@ -224,7 +250,6 @@ impl RuntimeActionMailbox {
                 .checked_add(1)
                 .ok_or(AwbcRuntimeValueSnapshotError::RetainedCollectionLengthOverflow)?;
             admission.validate_metadata_collection(count)?;
-            self.admit_messages(admission)?;
             self.messages.try_reserve(1).map_err(|_| {
                 AwbcRuntimeValueSnapshotError::RetainedCollectionAllocation { count }
             })?;

@@ -68,7 +68,7 @@ impl<'a> RuntimeProgramTypes<'a> {
 
     /// Authenticates the original payload role without copying metadata or
     /// expanding its fields. This borrowed row alone grants no execution right.
-    pub(crate) fn action_declaration(
+    pub fn action_declaration(
         self,
         semantic_type: RuntimeSemanticTypeId,
     ) -> Result<&'a RuntimeNominalDeclarationId, RuntimeProgramTypeError> {

@@ -146,6 +146,8 @@ identity と型のフィールドを保持し、新規フィールドを初回�
 を宣言できない。affine resource は実際の custody と cleanup authority が必要であり、
 Copy として保持値を複製しない。
 
+## 保持 String 入力
+
 `TextField`、`TextArea`、`SecureField` の `value` は、同じ View の
 `local state mut` が所有する String フィールドを指定する。第1位置引数も
 `value` に対応する。通常の `let`、parameter、一時 String、読み取り専用の
@@ -183,8 +185,7 @@ flow operation budget は進めない。再評価には通常の View 評価予�
 成功した frame で入力欄を除去した場合と cold restore／replacement の後は、
 古い session を受け付けない。保持値は通常の state の保存規則に従う。
 SecureField の adapter 投影と write-back は sensitive な値として扱い、診断や
-trace へ平文を出さない。以前の例にあった未実装の `input.text`／`input.secure` は
-専用の並行状態を作るため採用せず、この保持フィールド契約へ置き換える。
+trace へ平文を出さない。
 
 View の `if` 式・statement、`else if` は通常の checked bool 式を条件に使う。
 条件は同じ Core program／input ABI／評価予算で評価し、選択した arm だけを実行する。
@@ -656,15 +657,13 @@ scope を出ても値を失わない。入力 snapshot が変われば新しい 
 View 全体の invariant は compiler/test が retained tree と action inventory を
 直接検査し、global callback を挟まない。
 
-Text-control の change/submit callback は ViewInput の型付き program 参照が所有する。
-program section 単体の codec は通常イベントの lexical binding を検証し、完全な
-bundle の受理時に ViewInput と合わせて全 handler の owner と AWBC の入力・結果 ABI
-を認証する。owner のない handler と実行本体のない参照は拒否する。現在の text
-write-back packet は lexical capture を運ばないため、この経路の callback は
-capture-free でなければならない。入力値の更新は runtime text-control overlay が
-所有し、callback の Unit 応答は編集値を保持・複製する意味を持たない。
+Text-control の change/submit callback も、通常イベントと同じ programme・capture ABI・
+mount-owned seal が所有する。[保持 String 入力](#保持-string-入力)の binding と同じ
+element／instruction／field を認証し、packet から capture を再構築しない。callback は
+seal の捕捉と保持値を読み、text overlay はその値の adapter 投影として扱う。
 
-Handler の結果は Unit または言語所有の DialogueAction とし、選択済み call slot の
+Handler の結果は Unit、言語所有の DialogueAction、または元の非generic Action 宣言の
+payload record とし、選択済み call slot の
 解決済み型と effect 証拠で検証する。retained state を変更する callback は、通常の
 値抽出とは異なる owned mutation body として同じ checked execution ABI へ接続する。
 ABI は canonical capture 順に変更対象 root を一度だけ列挙し、結果を
@@ -672,6 +671,18 @@ ABI は canonical capture 順に変更対象 root を一度だけ列挙し、結
 root と完全な型付き place path に属する。通常の値抽出は外部 place の変更を認めない。
 cleanup は独立した capture frame を所有するため、callback の出力 ABI を理由に
 cleanup から caller の root へ書き戻すことはできない。
+
+named Action は純粋な constructor で作る返却値であり、callback 内で送信効果を
+実行しない。例えば `.on_submit(|| submit(value = draft))` は、そのイベント時点の
+draft を持つ Action を返す。bundle は返却型と Action 宣言の identity を元の Core 型表で
+照合する。named Action の callback は、書込みがなくてもイベント時に評価する。
+View の更新先・値・新 revision を全て検査した後、実行 session が Core の既存 FIFO と
+保持中の実行全体・候補 payload を検査して受け取る。その後の View 値と lease の公開は
+失敗しない。Core の拒否は View と mailbox をともに変更しない。実行 session のない
+View 評価だけでは named Action を送信できず、同じ原子的な拒否となる。
+送信は VM 時計を進めず、待機中の `receive` は次の通常 step で再開する。
+メールボックスは既存の version 1 save／restore に属する。未処理の adapter write-back
+などに対する session の静止条件は、Action の送信後も適用する。
 
 state writer は input ordinal と retained field identity を持つ。compiler と bundle
 検証は lexical binding の型・lifetime・field を一緒に認証し、同じ型の別 field への

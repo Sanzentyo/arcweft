@@ -4,6 +4,7 @@
 //! the shared `RuntimeStepResult` boundary. It is Sans I/O: every host action is
 //! returned as typed data and no structured bytecode fallback is reachable.
 
+mod action;
 mod admission;
 mod audio;
 mod checkpoint;
