@@ -15730,3 +15730,13 @@ metadataとtarget-all treeが一致するHIR逆依存23 packageを、全feature�
 全98 workspaceのlocked／全target／全feature check・Clippy、構造gate、明示24 Rust pathのfmtが終了0。2 test修復後のCompiler／RuntimePlan Clippyと2 pathのfmtも終了0。native-text-inputは同じ実CLIでcheckとmain-profile AWFB生成を再確認した。残る5 value kind、Clip／Mask factory、token composition／変換・未annotation推論・Environment、残るsample移行とNative／Web操作／表示は別の未達として保持し、全体goalを理由にGeneric Match等の既受入を戻さない。
 
 既存143 registry recordを値の全件照合で保持した。原本 `docs/implementation/acceptance-evidence/task-style-native-primitives.raw.zip` は82 entry／4327446 bytes、SHA256 `bff7531160db48792cbba66964ae0387eeeb7acf1ec8c90da1e9c07bac8978f5`。実行ファイルと生成AWFBは元build pathへ保持し、ZIPには含めない。詳細はregistryの `styleNativePrimitives`。
+
+## 2026-11-09 — 明示型付きStyle複合値のSource構築
+
+Source eb4b9a820e7e74a106e4ca17405e50b642cb579b をmainへ通常公開し、parent／tree／20 pathのblobとpatchを照合した。5つの複合value kindと非None Clip／Maskを既存native値へ接続した。typed signatureが引数順・名前・既定値を所有し、list順序、symbolic system color、exact whole-msとu32範囲、native transitionabilityを保持する。token定数は元sheet／宣言／initializerを使い、循環とnative深さ64を検査する。通常の同kind参照を保持し、BorderRadii文脈だけLengthをuniform cornersへ変換する。runtime cascadeの別resolverや値代数は作っていない。
+
+初回owner45件は43 PASS／2 FAIL。テストがborder-radiusをBorderRadiiと誤認したが、既存registryと実resolverはLength shorthandを指定するため、symbolic Length参照と実cascadeを検証する期待へ訂正した。重複named argumentは既存HIR readinessで拒否されるため専用testで検証し、positional/named重複その他はtype-check拒否を維持した。production driftは0で新Compiler test pathだけを修正し、最終全46件がPASS（4.861秒、2559 filter SKIP、3914入力／catalog／実EXE drift0）。初回43件とsubsetの合算ではない。
+
+全98 workspaceのlocked／all-target／all-feature check・Clippy、構造gate、fmtが終了0。その後の変更は構築moduleのimport整理1 pathだけで、Sema all-target／all-feature Clippyと明示19 Rust pathのfmtが終了0。metadataとtarget-all treeで一致したView逆依存41 packageの実行は後続で行い、owner46件を統合runと記さない。前回現状の「残る5 kind／factory／token合成」は今回の実装とowner結果で解消したため現状一覧から外した。未annotation token推論、Environment、sample移行と実Native／Web受入は未達として保持し、Generic Matchその他の既受入は変更しない。過去の数値／型／font/token結果と全SHAは履歴として保持した。
+
+同日の明示依頼による全体cargo cleanは終了0、294059 files／399.1 GiBを削除した。旧EXE／AWFBの元pathはこのcleanで削除済みで、hashと実測は履歴に保持する。source・検証記録を消していない。既存144 registry propertyを値の全件照合で保持し、styleCompositeSourceCheckpointを追加した。原本 docs/implementation/acceptance-evidence/task-style-composite-source-checkpoint.raw.zip は53 entry／2797031 bytes、SHA256 4a26f9a3ff8b033397912318239b0d13a0249da743675954e8e9f305e1f00d49。build artifactをZIPへコピーしていない。
