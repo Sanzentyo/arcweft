@@ -1,9 +1,8 @@
 # Modern Feedback View
 
 This sample authors two scoped retained text views and waits for typed Actions
-returned by their player-rendered controls. Source checking passes. Bundling
-currently encounters the parameterized Flow transfer gap. Execution and capture
-acceptance are tracked in the [current status](../../docs/implementation/current-status.md).
+returned by their player-rendered controls. Current check, bundle, execution, and
+capture acceptance are tracked in the [current status](../../docs/implementation/current-status.md).
 
 It demonstrates:
 
