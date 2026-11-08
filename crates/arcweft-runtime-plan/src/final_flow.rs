@@ -5916,6 +5916,7 @@ enum RuntimeFlowValueContinuation {
         statement: StmtId,
     },
     Return,
+    Goto,
     CommitDialogueResult,
     ExitScope {
         owner: ExprId,
@@ -6891,13 +6892,7 @@ impl<'a> FinalFlowLowerer<'a> {
                         arcweft_core::plan::RuntimeFlowTransfer::static_without_arguments(target),
                     )])
                 } else {
-                    Ok(vec![RuntimeFlowOpSeed::Goto(
-                        arcweft_core::plan::RuntimeFlowTransfer::dynamic_without_arguments(
-                            self.expr_lowerer()
-                                .lower(*target)
-                                .map_err(RuntimePlanLowerError::new)?,
-                        ),
-                    )])
+                    self.lower_flow_value(*target, RuntimeFlowValueContinuation::Goto)
                 }
             }
             HirStmtKind::Expression { expression: thread } => {
@@ -9015,6 +9010,9 @@ impl<'a> FinalFlowLowerer<'a> {
                     None => value,
                 })]
             }
+            RuntimeFlowValueContinuation::Goto => vec![RuntimeFlowOpSeed::Goto(
+                arcweft_core::plan::RuntimeFlowTransfer::dynamic_without_arguments(value),
+            )],
             RuntimeFlowValueContinuation::CommitDialogueResult => {
                 vec![RuntimeFlowOpSeed::CommitDialogueResult { value }]
             }

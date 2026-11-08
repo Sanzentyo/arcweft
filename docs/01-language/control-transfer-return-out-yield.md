@@ -212,6 +212,12 @@ target's formal coordinates. The application does not return a value to the
 transferring Flow. A Flow reference does not grant ordinary returning-call rights;
 the same application outside a Goto target is rejected.
 
+A dynamic Goto operand must produce a `Ref<Flow>`. A returning function in
+`goto choose_route(arguments)` is evaluated normally, including its arguments
+and effects, before the resulting Flow reference selects the transfer target.
+Strings, numbers, booleans, and values from other reference families are not
+Flow targets.
+
 `out` is only valid for line-plan, cue-block, and content-scope outputs. These scopes may also be labeled:
 
 ```arcw

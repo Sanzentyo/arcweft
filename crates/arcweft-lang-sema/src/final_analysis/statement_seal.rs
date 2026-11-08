@@ -44,6 +44,7 @@ pub(crate) struct CheckedStatementSeal<'a, 'project, 'coordinate> {
     scrutinees: BTreeMap<StmtId, PreparedStatementScrutineeProof>,
     locals: &'a BTreeMap<LocalId, CheckedBinding>,
     callables: &'a CheckedCallableCatalog,
+    calls: &'a BTreeMap<ExprId, crate::callable::CallTargetFacts>,
     coordinates: &'coordinate SemanticCoordinateIndex<'coordinate, 'coordinate>,
     structural_edges: &'coordinate super::match_edges::CheckedStructuralEdgeDraft,
     project: HirAnalysisProjectView<'project>,
@@ -59,6 +60,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         ingress: PreparedStatementIngressSeal,
         locals: &'a BTreeMap<LocalId, CheckedBinding>,
         callables: &'a CheckedCallableCatalog,
+        calls: &'a BTreeMap<ExprId, crate::callable::CallTargetFacts>,
         coordinates: &'coordinate SemanticCoordinateIndex<'coordinate, 'coordinate>,
         structural_edges: &'coordinate super::match_edges::CheckedStructuralEdgeDraft,
         project: HirAnalysisProjectView<'project>,
@@ -72,6 +74,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             scrutinees,
             locals,
             callables,
+            calls,
             coordinates,
             structural_edges,
             project,
@@ -623,9 +626,25 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                 let checked = expressions.get(target).ok_or(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
                 )?;
+                if let Some(call) = self.calls.get(target) {
+                    // A selected Flow application owns its parameter binding.
+                    // A failed call keeps its original tooling diagnostic.
+                    if call.selected_application().is_some_and(|application| {
+                        application
+                            .core()
+                            .candidates()
+                            .selected()
+                            .id()
+                            .is_flow_transfer()
+                    }) || call.selected_application().is_none() && !call.diagnostics().is_empty()
+                    {
+                        return self.structural(owner);
+                    }
+                }
                 if let super::CheckedExpressionResolution::Value(
                     super::CheckedValueResolution::ProjectItem(flow),
                 ) = checked.resolution()
+                    && flow.flow_owner().is_some()
                 {
                     let source_span = module
                         .source_anchor(HirSourceQuery::Expr {
@@ -636,6 +655,19 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                         .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
                     self.callables
                         .validate_empty_flow_transfer(flow, *target, source_span)?;
+                }
+                let actual = checked.value_type().ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
+                )?;
+                if !matches!(actual, TypeKind::Never)
+                    && !matches!(actual, TypeKind::Ref(entity) if entity.kind() == &crate::types::EntityKind::Flow)
+                {
+                    return Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
+                        statement: owner,
+                        owner: *target,
+                        expected: Box::new(TypeKind::entity_ref(crate::types::EntityKind::Flow)),
+                        actual: Box::new(actual.clone()),
+                    });
                 }
                 self.structural(owner)
             }

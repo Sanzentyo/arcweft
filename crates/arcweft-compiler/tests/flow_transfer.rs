@@ -2,11 +2,16 @@ use std::sync::Arc;
 
 use arcweft_compiler::source::compile_source;
 use arcweft_core::{
-    awbc::{codec::AwbcDecodeBudget, product_step::AwbcProductStepExecutor, schema::AwbcProgram},
+    awbc::{
+        codec::AwbcDecodeBudget,
+        product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductProgram},
+        schema::AwbcProgram,
+        verify::{AwbcVerifyBudget, AwbcVerifyContext},
+    },
     engine::{Engine, FlowExit, FlowFiberStatus},
-    plan::RuntimeEntryTarget,
-    pure::VmRuntimePureCallBackend,
-    step::{RuntimeStepInput, RuntimeStepOptions},
+    executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor},
+    plan::{RuntimeEntryTarget, RuntimeTaskSourceArtifactLimits},
+    step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
@@ -32,6 +37,17 @@ fn sources() -> Vec<String> {
          flow main() -> i64 { goto @flow.next(3i64) }\n\
          flow next(remaining: i64) -> i64 { if remaining > 0i64 { goto @flow.next(remaining - 1i64) }; return 42i64 }\n".to_owned()
     );
+    for selected in [true, false] {
+        let next = if selected { 42 } else { 99 };
+        let other = if selected { 99 } else { 42 };
+        cases.push(format!(
+            "entry cli @entry.main {{ goto @flow.main }}\n\
+             fn choose(flag: bool) -> Ref<Flow> {{ if flag {{ @flow.next }} else {{ @flow.other }} }}\n\
+             flow main() -> i64 {{ goto choose({selected}) }}\n\
+             flow next() -> i64 {{ return {next}i64 }}\n\
+             flow other() -> i64 {{ return {other}i64 }}\n"
+        ));
+    }
     cases
 }
 #[test]
@@ -47,6 +63,7 @@ fn explicit_flow_inputs_reach_the_native_receiving_root() {
         let mut engine = Engine::for_flow(compiled.plan.clone(), flow).unwrap();
         for _ in 0..256 {
             let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+            assert!(result.stats.executed_ops <= 1);
             assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
             match &engine.fiber().frame.status {
                 FlowFiberStatus::Running => {}
@@ -71,6 +88,9 @@ fn explicit_flow_inputs_reach_the_decoded_awbc_receiving_root() {
         let [entry] = compiled.plan.entries() else {
             panic!("one authored entry");
         };
+        let RuntimeEntryTarget::Flow(flow) = &entry.target else {
+            panic!("the authored entry selects its Flow");
+        };
         let bytes = AwbcLowerer::for_entry(
             &compiled.plan,
             &compiled.dialogue_content,
@@ -82,25 +102,61 @@ fn explicit_flow_inputs_reach_the_decoded_awbc_receiving_root() {
         .program
         .encode_canonical()
         .unwrap();
-        let program = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
-        let mut executor = AwbcProductStepExecutor::for_entry_arc(
-            Arc::new(program),
-            arcweft_core::awbc::schema::AwbcEntryId(0),
-            1,
-        )
-        .unwrap();
-        let mut backend = VmRuntimePureCallBackend::default();
+        let fresh = || {
+            let program =
+                AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+            let admitted = AwbcProductProgram::admit(
+                Arc::new(program),
+                AwbcVerifyBudget::default(),
+                AwbcVerifyContext::default(),
+                RuntimeTaskSourceArtifactLimits::default(),
+                None,
+            )
+            .unwrap();
+            ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
+                admitted,
+                compiled
+                    .plan
+                    .clone()
+                    .seal_flow_invocation(flow.clone(), [])
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        let mut executor = fresh();
+        let mut saves = 0;
         for _ in 0..256 {
-            let result = executor.step_with_pure_backend(
+            let result = executor.step(
                 RuntimeStepInput::default(),
-                RuntimeStepOptions::default(),
-                &mut backend,
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::OneOp,
+                    budget: RuntimeStepBudget { max_ops: 1 },
+                    ..Default::default()
+                },
             );
             assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
+            assert!(result.stats.executed_ops <= 1);
+            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
+                executor.snapshot().unwrap();
+            let saved = AwbcProductExecutorSaveSnapshot::from_live(
+                &snapshot,
+                executor.admitted_product_awbc_program().unwrap(),
+            )
+            .unwrap();
+            let decoded = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+            assert_eq!(saved, decoded);
+            drop(executor);
+            let cold = fresh();
+            let bound = cold.bind_product_save_snapshot(decoded).unwrap();
+            executor = cold
+                .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                .unwrap();
+            saves += 1;
             match &executor.fiber().frame.status {
                 FlowFiberStatus::Running => {}
                 FlowFiberStatus::Done(exit) => {
                     assert_eq!(exit, &FlowExit::Return("42".to_owned()));
+                    assert!(saves > 1);
                     break;
                 }
                 status => panic!("transfer stopped: {status:?}"),

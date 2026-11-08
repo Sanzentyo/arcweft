@@ -1610,6 +1610,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
                 statement_ingress,
                 &locals,
                 checked_callables.as_ref(),
+                &calls,
                 &coordinates,
                 &structural_edges,
                 project,

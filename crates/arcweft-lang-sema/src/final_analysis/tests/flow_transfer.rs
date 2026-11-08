@@ -129,3 +129,34 @@ fn a_self_transfer_is_not_returning_callable_recursion() {
     let analysis = analyze(&world).expect("a transfer replaces the current Flow invocation");
     assert!(analysis.call_diagnostics().next().is_none());
 }
+
+#[test]
+fn goto_rejects_values_from_other_target_domains() {
+    for target in ["7i64", "true", "\"flow.next\"", "choose()"] {
+        let world = fixture(
+            &format!("fn choose() -> i64 {{ 7i64 }}\nflow main {{ goto {target} }}\n"),
+            None,
+        );
+        let error = analyze(&world).expect_err("Goto requires an actual Flow reference");
+        assert!(
+            matches!(
+                error,
+                FinalSemanticAnalysisError::StatementOperandTypeMismatch { .. }
+            ),
+            "{target}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn a_returning_route_selection_keeps_its_call_effects() {
+    let world = fixture(
+        "fn choose() -> Ref<Flow> effects { log.write } { log.info(\"route\"); @flow.next }\nflow main effects {} { goto choose() }\nflow next {}\n",
+        None,
+    );
+    let error = analyze(&world).expect_err("route selection still runs in the source scope");
+    let FinalSemanticAnalysisError::EffectUpperBoundExceeded { missing, .. } = error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(missing.to_labels(), ["log.write"]);
+}

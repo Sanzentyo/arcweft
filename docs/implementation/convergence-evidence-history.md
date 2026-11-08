@@ -15889,3 +15889,14 @@ Sema lib check終了0／1分02秒、Compiler対象check終了0／1分12秒。そ
 r3／r4は149d7b8a59d207b4bcce5195ee0f6d82a4d0c9fa＋各tracked patch＋Compiler fixtureで再現する。r1／r2の元Rust全入力／実行時EXE pinは未記録で、実Source入力と診断は元終端ログに保持した。r4のbefore pin採取はJSON property名の誤りで空となったため無効であり、終了後に元pathで観測した実EXE hashだけを明記した。binary drift 0は主張しない。EXE／AWFBのコピー・移動・退避は行っていない。registry153 propertyとGeneric Matchの現状行を維持し、重複した先行47件等の説明は既存履歴へ残して、現状一覧のgoto行を今回の対象範囲へ整理した。
 
 原本 docs/implementation/acceptance-evidence/task-flow-transfer-source-wip5.raw.zip：35 entries／1180003 bytes／SHA256 5c0a41292bf054f285df5c363ef092cb3a3cda688066149121774c150b3f7480。内容はsource、patch、log、catalog、metadataのみ。
+## Goto転送先の型と通常call継続（WIP6、2026-11-09）
+
+確認基点はmain／origin/mainの20d63c52450beeac011b3436e469f3ace4f57bcc（親149d7b8a59d207b4bcce5195ee0f6d82a4d0c9fa、tree 76914a1359c8306eaa4d35952599ea7738742252、公開patch SHA256 f8597d2de7c9ec1c7fc1f8586c04d2b57494dac697678a47ee676ddc73a9033a）。16 pathの非forced公開・blob・patchを照合し、index空、tracked dirty 0、保持cache4を確認した。WIP5のSource明示入力は対象11件までの結果であり、全体受入に読み替えない。
+
+Gotoのstatement sealerは元のCallTargetFactsを借用し、選択済みのFlow適用と、実Ref<Flow>を返す普通の式を区別する。不正なcallは元のcall診断を保持する。文字列・数値・真偽値・i64を返す普通の関数をtargetにした場合はStatementOperandTypeMismatchで拒否する。Flow以外のProjectItemをFlowの引数検査へ誤送しない。RuntimePlanのGoto継続は通常のvalue/call loweringを使い、choose_route等の戻る関数の実入力・frame・効果・戻り値を完了してから動的転送を作る。戻る関数全体を静的Flow適用とみなす構文上の分解や、仮のcalleeを作っていない。
+
+r1の元Source5 path＋基点patchで、Sema11件＋Compiler2件の13／13 PASS、1400 filter等SKIP、0.607秒。Compilerは先行4 caseに、戻る関数が実際に選ぶ2分岐の異なるFlowを追加し、各backend6 Source case。戻る選択関数のlog.writeは呼出し元のeffect上限で拒否される。r2では同じ6 caseのAWBCを各step後にversion 1公開JSONへ保存し、元runtimeをdrop、新規canonical decode／admissionから実cold restoreして続ける。終了stepも保存し、同じ42へ到達する。OneOp／max_ops=1／256 ticksを変えず、Nativeも各step1 op以下を検査した。r2は13／13 PASS、1400 filter等SKIP、1.335秒。二runの件数は加算しない。
+
+両runとも元pathの実EXEを実行前後に採取し、binary drift 0。r1とr2で異なるSource patch、source hash、catalog、before/after pinを保持した。r2の3 owner（Sema／RuntimePlan／Compiler）locked／all-targets／all-features Clippyは終了0／19.69秒、警告あり。変更5 Rust pathの限定fmt check終了0。Source closure23とCore closure53、workspace gateは未実行で、前回のmetadataを再利用する。動的な明示引数適用、generic／default／spread／型の完全admission、affine入力のcall-frame横断と全取消し／失敗matrix、Native公開save・実Native／Web parityは未達または未検証。Generic Match等の受入状態は変更していない。
+
+原本 docs/implementation/acceptance-evidence/task-flow-transfer-target-wip6.raw.zip：20 entries／850843 bytes／SHA256 c276cf16f0fcf33c945248d81391cd60fcf9876504576dd7c9423b5efb5c5673。source、patch、log、catalog、metadataのみを保存し、EXE／AWFBを移動・コピーしていない。現状の重複した11件の途中説明はWIP5履歴へ残し、goto行を今回の正確な対象範囲へ更新した。
