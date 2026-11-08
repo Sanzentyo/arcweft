@@ -1814,60 +1814,84 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             FlowOp::Continue { depth } => {
                 self.lower_continue(frame, body, *depth, path);
             }
-            FlowOp::Goto(target) => {
-                self.emit_format_attempt_abandons(0);
-                if let Some(function) = self.prepare_flow_target(target, path) {
-                    self.close_active_scopes_for_terminator(frame);
-                    body.terminate(
-                        self.inventory,
-                        AwbcTerminator::GotoStatic {
-                            function,
-                            args: Vec::new(),
-                        },
-                        AwbcSafePointKind::CallableBoundary,
-                    );
-                } else {
-                    let target = target.canonical_label();
-                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                        path,
-                        format!("static goto targets missing accepted Flow `{target}`"),
-                    ));
-                    let message = self.inventory.intern_string(&format!(
-                        "static goto targets missing accepted Flow `{target}`"
-                    ));
-                    self.close_active_scopes_for_terminator(frame);
-                    body.terminate(
-                        self.inventory,
-                        AwbcTerminator::Trap {
-                            code: AwbcTrapCode::MissingDynamicTarget,
-                            message: Some(message),
-                        },
-                        AwbcSafePointKind::CallableBoundary,
-                    );
+            FlowOp::Goto(transfer) => {
+                let order = match transfer.input_order() {
+                    Ok(order) => order,
+                    Err(error) => {
+                        self.inventory
+                            .diagnostic(AwbcLowerDiagnostic::error(path, error.to_string()));
+                        return;
+                    }
+                };
+                let stable_target = match &transfer.target {
+                    arcweft_core::plan::RuntimeFlowTransferTarget::Static(_) => None,
+                    arcweft_core::plan::RuntimeFlowTransferTarget::Dynamic(expr) => {
+                        for flow in self.plan.flows() {
+                            let _ = self.prepare_flow_target(&flow.id, path);
+                        }
+                        let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                            .lower(expr);
+                        let target = frame.root_temp(self.inventory.dynamic_ty());
+                        self.inventory.push_instruction(AwbcInstruction::Move {
+                            dst: target,
+                            src: value,
+                        });
+                        Some(target)
+                    }
+                };
+                let mut arguments = vec![None; order.slots().len()];
+                for argument in &transfer.arguments {
+                    let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                        .lower(&argument.value);
+                    let ty = admitted_plan_type(self.inventory, self.plan, argument.value.ty());
+                    let retained = frame.root_temp(ty);
+                    self.inventory.push_instruction(AwbcInstruction::Move {
+                        dst: retained,
+                        src: value,
+                    });
+                    arguments[argument.parameter.position() as usize] = Some(retained);
                 }
-            }
-            FlowOp::GotoExpr(expr) => {
-                // A runtime-selected Flow can name any admitted Flow. Reserve
-                // these original sites through the same dependency work queue.
-                let plan = self.plan;
-                for flow in plan.flows() {
-                    let _ = self.prepare_flow_target(&flow.id, path);
-                }
+                let arguments = arguments
+                    .into_iter()
+                    .map(|argument| {
+                        argument.expect("the admitted transfer order covers every formal parameter")
+                    })
+                    .collect();
                 self.emit_format_attempt_abandons(0);
-                let target =
-                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
-                let stable_target = frame.root_temp(self.inventory.dynamic_ty());
-                self.inventory.push_instruction(AwbcInstruction::Move {
-                    dst: stable_target,
-                    src: target,
-                });
+                let terminator = match &transfer.target {
+                    arcweft_core::plan::RuntimeFlowTransferTarget::Static(target) => {
+                        if let Some(function) = self.prepare_flow_target(target, path) {
+                            AwbcTerminator::GotoStatic {
+                                function,
+                                args: arguments,
+                            }
+                        } else {
+                            let target = target.canonical_label();
+                            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                                path,
+                                format!("static goto targets missing accepted Flow `{target}`"),
+                            ));
+                            let message = self.inventory.intern_string(&format!(
+                                "static goto targets missing accepted Flow `{target}`"
+                            ));
+                            AwbcTerminator::Trap {
+                                code: AwbcTrapCode::MissingDynamicTarget,
+                                message: Some(message),
+                            }
+                        }
+                    }
+                    arcweft_core::plan::RuntimeFlowTransferTarget::Dynamic(_) => {
+                        AwbcTerminator::GotoDynamic {
+                            target: stable_target
+                                .expect("dynamic target is retained before operands"),
+                            args: arguments,
+                        }
+                    }
+                };
                 self.close_active_scopes_for_terminator(frame);
                 body.terminate(
                     self.inventory,
-                    AwbcTerminator::GotoDynamic {
-                        target: stable_target,
-                        args: Vec::new(),
-                    },
+                    terminator,
                     AwbcSafePointKind::CallableBoundary,
                 );
             }

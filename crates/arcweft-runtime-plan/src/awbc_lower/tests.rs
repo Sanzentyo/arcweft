@@ -1505,7 +1505,11 @@ fn selected_entry_lowering_keeps_its_static_flow_closure() {
         [
             (
                 selected_flow.clone(),
-                vec![RuntimeFlowOpSeed::Goto(shared.clone())],
+                vec![RuntimeFlowOpSeed::Goto(
+                    arcweft_core::plan::RuntimeFlowTransfer::static_without_arguments(
+                        shared.clone(),
+                    ),
+                )],
             ),
             (
                 shared.clone(),
@@ -1551,7 +1555,11 @@ fn dynamic_goto_keeps_all_accepted_flow_targets() {
         [
             (
                 selected_flow.clone(),
-                vec![RuntimeFlowOpSeed::GotoExpr(string_expr("other"))],
+                vec![RuntimeFlowOpSeed::Goto(
+                    arcweft_core::plan::RuntimeFlowTransfer::dynamic_without_arguments(
+                        string_expr("other"),
+                    ),
+                )],
             ),
             (
                 other.clone(),
@@ -2233,7 +2241,12 @@ fn typed_runtime_ids_drive_static_goto_and_server_route_targets() {
     let plan = build_plan(
         type_id(1),
         [
-            (main, vec![RuntimeFlowOpSeed::Goto(next.clone())]),
+            (
+                main,
+                vec![RuntimeFlowOpSeed::Goto(
+                    arcweft_core::plan::RuntimeFlowTransfer::static_without_arguments(next.clone()),
+                )],
+            ),
             (
                 next.clone(),
                 vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("ok"))],

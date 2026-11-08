@@ -49,7 +49,6 @@ impl NativeFlowExecutionFrame {
                         return match operations.first() {
                             Some(
                                 FlowOp::Goto(_)
-                                | FlowOp::GotoExpr(_)
                                 | FlowOp::Effect(crate::effect::LineEffectRequest::Goto(_)),
                             ) => true,
                             None | Some(FlowOp::Return(_) | FlowOp::ReturnExpr(_)) => {

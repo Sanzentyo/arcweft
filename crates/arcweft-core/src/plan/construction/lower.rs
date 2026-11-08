@@ -4241,8 +4241,9 @@ impl RuntimePlanBodyConstruction<'_> {
                     .transpose()?,
             },
             RuntimeFlowOpSeed::Continue { depth } => FlowOp::Continue { depth },
-            RuntimeFlowOpSeed::Goto(target) => FlowOp::Goto(target),
-            RuntimeFlowOpSeed::GotoExpr(target) => FlowOp::GotoExpr(self.lower_expression(target)?),
+            RuntimeFlowOpSeed::Goto(transfer) => {
+                FlowOp::Goto(transfer.try_map(|expression| self.lower_expression(expression))?)
+            }
             RuntimeFlowOpSeed::Return(value) => FlowOp::Return(value),
             RuntimeFlowOpSeed::ReturnExpr(value) => {
                 FlowOp::ReturnExpr(self.lower_expression(value)?)
@@ -5896,7 +5897,12 @@ impl RuntimePlanBodyConstruction<'_> {
                         self.validate_expression_locals(value, scope, used)?;
                     }
                 }
-                FlowOp::GotoExpr(target) | FlowOp::ReturnExpr(target) => {
+                FlowOp::Goto(transfer) => {
+                    for expression in transfer.expressions() {
+                        self.validate_expression_locals(expression, scope, used)?;
+                    }
+                }
+                FlowOp::ReturnExpr(target) => {
                     self.validate_expression_locals(target, scope, used)?;
                 }
                 FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
@@ -5913,7 +5919,6 @@ impl RuntimePlanBodyConstruction<'_> {
                     }
                 }
                 FlowOp::Continue { .. }
-                | FlowOp::Goto(_)
                 | FlowOp::Return(_)
                 | FlowOp::CancelCleanup { .. }
                 | FlowOp::Noop => {}

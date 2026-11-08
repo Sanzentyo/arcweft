@@ -141,8 +141,7 @@ impl AotLinearOp {
             | FlowOp::Scope { .. }
             | FlowOp::Break { .. }
             | FlowOp::Continue { .. }
-            | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_) => None,
+            | FlowOp::Goto(_) => None,
         }
     }
 }
@@ -302,8 +301,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Scope { .. }
         | FlowOp::Break { .. }
         | FlowOp::Continue { .. }
-        | FlowOp::Goto(_)
-        | FlowOp::GotoExpr(_) => false,
+        | FlowOp::Goto(_) => false,
     }
 }
 
@@ -361,10 +359,7 @@ impl AotOpClass {
             | FlowOp::ApplyGroup { .. } => Self::Await,
             FlowOp::Choice { .. } => Self::Choice,
             FlowOp::Dialogue { .. } => Self::Dialogue,
-            FlowOp::Break { .. }
-            | FlowOp::Continue { .. }
-            | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_) => Self::Jump,
+            FlowOp::Break { .. } | FlowOp::Continue { .. } | FlowOp::Goto(_) => Self::Jump,
         }
     }
 }
@@ -423,7 +418,6 @@ impl AotProgramStats {
                 | FlowOp::Break { .. }
                 | FlowOp::Continue { .. }
                 | FlowOp::Goto(_)
-                | FlowOp::GotoExpr(_)
                 | FlowOp::Return(_)
                 | FlowOp::ReturnExpr(_)
                 | FlowOp::Effect(_)

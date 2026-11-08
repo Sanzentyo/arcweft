@@ -573,8 +573,7 @@ pub enum RuntimeFlowOpSeed {
     Continue {
         depth: u32,
     },
-    Goto(FlowRuntimeId),
-    GotoExpr(RuntimeExprSeed),
+    Goto(super::super::RuntimeFlowTransfer<RuntimeExprSeed>),
     Return(String),
     ReturnExpr(RuntimeExprSeed),
     Effect(RuntimeLineEffectSeed),
@@ -1074,7 +1073,6 @@ fn collect_terminal_or_effect_free_locals(
             bound.push(result.clone());
         }
         RuntimeFlowOpSeed::Continue { .. }
-        | RuntimeFlowOpSeed::Goto(_)
         | RuntimeFlowOpSeed::Return(_)
         | RuntimeFlowOpSeed::CancelCleanup { .. }
         | RuntimeFlowOpSeed::EnterScope { .. }
@@ -1092,8 +1090,12 @@ fn collect_terminal_or_effect_free_locals(
                 value.collect_free_locals(bound, locals);
             }
         }
-        RuntimeFlowOpSeed::GotoExpr(value)
-        | RuntimeFlowOpSeed::ReturnExpr(value)
+        RuntimeFlowOpSeed::Goto(transfer) => {
+            for expression in transfer.expressions() {
+                expression.collect_free_locals(bound, locals);
+            }
+        }
+        RuntimeFlowOpSeed::ReturnExpr(value)
         | RuntimeFlowOpSeed::CommitDialogueResult { value }
         | RuntimeFlowOpSeed::SelectDialogueResult { value } => {
             value.collect_free_locals(bound, locals);

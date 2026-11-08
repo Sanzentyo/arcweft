@@ -1092,7 +1092,6 @@ impl super::RuntimePlanInventory {
             | FlowOp::Break { .. }
             | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_)
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::Effect(_)

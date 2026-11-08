@@ -6877,12 +6877,16 @@ impl<'a> FinalFlowLowerer<'a> {
                         .flow_runtime_identity()
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
                 {
-                    Ok(vec![RuntimeFlowOpSeed::Goto(target)])
+                    Ok(vec![RuntimeFlowOpSeed::Goto(
+                        arcweft_core::plan::RuntimeFlowTransfer::static_without_arguments(target),
+                    )])
                 } else {
-                    Ok(vec![RuntimeFlowOpSeed::GotoExpr(
-                        self.expr_lowerer()
-                            .lower(*target)
-                            .map_err(RuntimePlanLowerError::new)?,
+                    Ok(vec![RuntimeFlowOpSeed::Goto(
+                        arcweft_core::plan::RuntimeFlowTransfer::dynamic_without_arguments(
+                            self.expr_lowerer()
+                                .lower(*target)
+                                .map_err(RuntimePlanLowerError::new)?,
+                        ),
                     )])
                 }
             }

@@ -321,19 +321,29 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                 )
             };
             Some(match case {
-                GotoCase::Static | GotoCase::CleanupFailure => RuntimeFlowOpSeed::Goto(target),
-                GotoCase::Dynamic => RuntimeFlowOpSeed::GotoExpr(RuntimeExprSeed::new(
-                    string,
-                    RuntimeExprSeedKind::If {
-                        condition: Box::new(registry_result()),
-                        then_expr: Box::new(target_label(&alternate)),
-                        else_expr: Box::new(target_label(&target)),
-                    },
-                )),
+                GotoCase::Static | GotoCase::CleanupFailure => RuntimeFlowOpSeed::Goto(
+                    crate::plan::RuntimeFlowTransfer::static_without_arguments(target),
+                ),
+                GotoCase::Dynamic => RuntimeFlowOpSeed::Goto(
+                    crate::plan::RuntimeFlowTransfer::dynamic_without_arguments(
+                        RuntimeExprSeed::new(
+                            string,
+                            RuntimeExprSeedKind::If {
+                                condition: Box::new(registry_result()),
+                                then_expr: Box::new(target_label(&alternate)),
+                                else_expr: Box::new(target_label(&target)),
+                            },
+                        ),
+                    ),
+                ),
                 GotoCase::Effect => RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(
                     LineEffectRequest::Goto(target.canonical_label()),
                 )),
-                GotoCase::InvalidAbi => RuntimeFlowOpSeed::GotoExpr(target_label(&needs_argument)),
+                GotoCase::InvalidAbi => RuntimeFlowOpSeed::Goto(
+                    crate::plan::RuntimeFlowTransfer::dynamic_without_arguments(target_label(
+                        &needs_argument,
+                    )),
+                ),
                 GotoCase::Choice | GotoCase::ChoiceFailure | GotoCase::ChoiceContinue => {
                     RuntimeFlowOpSeed::Choice {
                         id: Some("test.choice".into()),

@@ -236,13 +236,14 @@ pub struct RuntimeBinding {
     pub value: RuntimeValue,
 }
 
-/// One adapter-supplied value addressed by the checked Flow parameter ABI.
+/// One value or operand addressed by the checked Flow parameter ABI.
 ///
 /// Route adapters use this carrier after a checked route binding has resolved
 /// the external request source to an exact target parameter coordinate. The
 /// diagnostic parameter name is deliberately absent and cannot become a
 /// second execution authority.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeFlowParameterBinding<V = RuntimeValue> {
     pub parameter: FlowParameterCoordinate,
     pub value: V,

@@ -230,7 +230,7 @@ fn admit_ops(name: &str, ops: &[FlowOp], depth: usize) -> Result<(), RuntimeEval
                     Some("scope result pattern")
                 }
             }
-            FlowOp::Goto(_) | FlowOp::GotoExpr(_) => Some("flow transfer"),
+            FlowOp::Goto(_) => Some("flow transfer"),
             FlowOp::Return(_) => Some("flow label return"),
             FlowOp::ReceiveAction { .. }
             | FlowOp::Effect(_)

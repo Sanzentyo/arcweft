@@ -229,7 +229,6 @@ impl FlowOp {
             Self::Break { .. } => 31,
             Self::Continue { .. } => 32,
             Self::Goto(_) => 33,
-            Self::GotoExpr(_) => 34,
             Self::Return(_) => 35,
             Self::ReturnExpr(_) => 36,
             Self::Effect(_) => 37,
@@ -284,11 +283,18 @@ impl FlowOp {
             | FlowOp::Assign { value, .. }
             | FlowOp::CommitDialogueResult { value }
             | FlowOp::SelectDialogueResult { value }
-            | FlowOp::GotoExpr(value)
             | FlowOp::ReturnExpr(value)
             | FlowOp::Break {
                 value: Some(value), ..
             } => expression(Role::Value, value, visitor)?,
+            FlowOp::Goto(transfer) => {
+                if let super::RuntimeFlowTransferTarget::Dynamic(target) = &transfer.target {
+                    expression(Role::Target, target, visitor)?;
+                }
+                for (ordinal, argument) in transfer.arguments.iter().enumerate() {
+                    expression(Role::Argument { ordinal }, &argument.value, visitor)?;
+                }
+            }
             FlowOp::Dialogue { target, result, .. } => {
                 expression(Role::Target, target, visitor)?;
                 visitor(Role::Result, Node::Pattern(result.pattern()))?;
@@ -452,7 +458,6 @@ impl FlowOp {
             | FlowOp::Scope { .. }
             | FlowOp::Break { value: None, .. }
             | FlowOp::Continue { .. }
-            | FlowOp::Goto(_)
             | FlowOp::Return(_)
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
@@ -526,7 +531,6 @@ impl FlowOp {
             | FlowOp::Break { .. }
             | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_)
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::Effect(_)

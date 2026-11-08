@@ -996,7 +996,6 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             | Op::Break { .. }
             | Op::Continue { .. }
             | Op::Goto(_)
-            | Op::GotoExpr(_)
             | Op::Return(_)
             | Op::ReturnExpr(_)
             | Op::Effect(_)

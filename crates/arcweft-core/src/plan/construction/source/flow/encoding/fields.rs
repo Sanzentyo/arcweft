@@ -337,7 +337,6 @@ impl Writer {
             | FlowOp::SelectDialogueResult { .. }
             | FlowOp::If { .. }
             | FlowOp::While { .. }
-            | FlowOp::GotoExpr(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
@@ -569,7 +568,19 @@ impl Writer {
                 self.flag(value.is_some())?;
             }
             FlowOp::Continue { depth } => self.count(*depth as usize)?,
-            FlowOp::Goto(flow) => self.path(flow)?,
+            FlowOp::Goto(transfer) => {
+                match &transfer.target {
+                    crate::plan::RuntimeFlowTransferTarget::Static(flow) => {
+                        self.byte(0)?;
+                        self.path(flow)?;
+                    }
+                    crate::plan::RuntimeFlowTransferTarget::Dynamic(_) => self.byte(1)?,
+                }
+                self.count(transfer.arguments.len())?;
+                for argument in &transfer.arguments {
+                    self.count(argument.parameter.position() as usize)?;
+                }
+            }
             FlowOp::Return(text) | FlowOp::CancelCleanup { key: text } => self.text(text)?,
             FlowOp::Effect(effect) => self.effect(effect, counts, resources, meter)?,
             FlowOp::EvaluatedEffect(effect) => {

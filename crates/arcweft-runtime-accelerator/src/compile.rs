@@ -861,7 +861,6 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
             | FlowOp::Break { .. }
             | FlowOp::Continue { .. }
             | FlowOp::Goto(_)
-            | FlowOp::GotoExpr(_)
             | FlowOp::Return(_)
             | FlowOp::Effect(_)
             | FlowOp::EvaluatedEffect(_)

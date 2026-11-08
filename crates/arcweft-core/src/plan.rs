@@ -17,9 +17,11 @@ mod dialogue_content;
 pub mod entry_inventory;
 mod executable_body;
 mod flow_ops;
+mod flow_transfer;
 pub(crate) use flow_ops::{
     RuntimeFlowBodyLocation, RuntimeFlowLocationStep, RuntimeFlowTreeEvent, try_visit_ops_events,
 };
+pub use flow_transfer::{RuntimeFlowTransfer, RuntimeFlowTransferTarget};
 mod flows;
 mod format_attempt;
 mod function_inputs;
@@ -1183,8 +1185,7 @@ pub enum FlowOp {
     Continue {
         depth: u32,
     },
-    Goto(FlowRuntimeId),
-    GotoExpr(RuntimeExpr),
+    Goto(RuntimeFlowTransfer<RuntimeExpr>),
     Return(String),
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),

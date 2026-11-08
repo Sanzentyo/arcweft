@@ -1045,8 +1045,34 @@ impl Reader<'_, '_, '_> {
             32 => Op::Continue {
                 depth: self.metadata.u32()?,
             },
-            33 => Op::Goto(self.path()?),
-            34 => Op::GotoExpr(self.expression()?),
+            33 => {
+                let target = match self.metadata.byte()? {
+                    0 => crate::plan::RuntimeFlowTransferTarget::Static(self.path()?),
+                    1 => crate::plan::RuntimeFlowTransferTarget::Dynamic(self.expression()?),
+                    tag => {
+                        return Err(Error::Tag {
+                            kind: "Flow transfer target",
+                            tag,
+                        });
+                    }
+                };
+                let count = self.metadata.u32()? as usize;
+                self.counts
+                    .array::<crate::value::RuntimeFlowParameterBinding<RuntimeExprSeed>>(count)?;
+                let mut arguments = Vec::with_capacity(count);
+                for _ in 0..count {
+                    arguments.push(crate::value::RuntimeFlowParameterBinding {
+                        parameter: crate::entry::FlowParameterCoordinate::from_position(
+                            self.metadata.u32()?,
+                        ),
+                        value: self.expression()?,
+                    });
+                }
+                Op::Goto(crate::plan::RuntimeFlowTransfer {
+                    target,
+                    arguments: arguments.into_boxed_slice(),
+                })
+            }
             35 => Op::Return(self.text()?),
             36 => Op::ReturnExpr(self.expression()?),
             37 => Op::Effect(self.effect()?),

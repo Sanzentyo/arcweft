@@ -63,7 +63,7 @@ pub(super) fn preflight(
             reader.expression()?;
         }
         6 => reader.line_operation()?,
-        7 | 8 | 34 | 36 => reader.expression()?,
+        7 | 8 | 36 => reader.expression()?,
         9 => {
             reader
                 .metadata
@@ -264,7 +264,35 @@ pub(super) fn preflight(
             reader.metadata.u32()?;
         }
         43 | 46 => (),
-        33 => reader.path()?,
+        33 => {
+            match reader.metadata.byte()? {
+                0 => reader.path()?,
+                1 => reader.expression()?,
+                tag => {
+                    return Err(Error::Tag {
+                        kind: "Flow transfer target",
+                        tag,
+                    });
+                }
+            }
+            let count = reader.metadata.u32()? as usize;
+            reader
+                .counts
+                .array::<crate::value::RuntimeFlowParameterBinding<crate::plan::RuntimeExprSeed>>(
+                    count,
+                )?;
+            for _ in 0..count {
+                let coordinate = reader.metadata.u32()?;
+                if coordinate as usize >= count {
+                    return Err(Error::Reference {
+                        kind: "Flow transfer parameter",
+                        actual: coordinate,
+                        maximum: count.saturating_sub(1),
+                    });
+                }
+                reader.expression()?;
+            }
+        }
         35 | 41 => {
             reader.text()?;
         }

@@ -200,7 +200,7 @@ fn admit_ops(ops: &[FlowOp], depth: usize) -> Result<(), CraneliftCodegenError> 
                     Some("scope result pattern")
                 }
             }
-            FlowOp::Goto(_) | FlowOp::GotoExpr(_) => Some("flow transfer"),
+            FlowOp::Goto(_) => Some("flow transfer"),
             FlowOp::Return(_) => Some("flow label return"),
             FlowOp::ReceiveAction { .. }
             | FlowOp::Effect(_)

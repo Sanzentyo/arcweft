@@ -459,7 +459,10 @@ fn native_goto_selects_the_targeted_typed_flow() {
             ),
             crate::plan::RuntimeExecutableBodySeed {
                 effects: crate::plan::RuntimeEffectSet::empty(),
-                ops: (vec![RuntimeFlowOpSeed::Goto(ending.clone())]).into_boxed_slice(),
+                ops: (vec![RuntimeFlowOpSeed::Goto(
+                    crate::plan::RuntimeFlowTransfer::static_without_arguments(ending.clone()),
+                )])
+                .into_boxed_slice(),
             },
         ),
         RuntimeFlowSeed::new(
@@ -1417,7 +1420,9 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
             &target_site,
             RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                 effects: RuntimeEffectSet::empty(),
-                ops: Box::new([RuntimeFlowOpSeed::Goto(target.clone())]),
+                ops: Box::new([RuntimeFlowOpSeed::Goto(
+                    crate::plan::RuntimeFlowTransfer::static_without_arguments(target.clone()),
+                )]),
             }),
         )
         .expect("goto target site defines");
@@ -2411,12 +2416,16 @@ fn imported_flow_goto_requires_exact_admitted_identity_and_never_falls_back_to_p
             (
                 entry.clone(),
                 [0x71; 32],
-                vec![RuntimeFlowOpSeed::GotoExpr(RuntimeExprSeed::new(
-                    reference_ty,
-                    RuntimeExprSeedKind::EntityRef(RuntimeEntityReference::ImportedProject(
-                        reference,
-                    )),
-                ))],
+                vec![RuntimeFlowOpSeed::Goto(
+                    crate::plan::RuntimeFlowTransfer::dynamic_without_arguments(
+                        RuntimeExprSeed::new(
+                            reference_ty,
+                            RuntimeExprSeedKind::EntityRef(
+                                RuntimeEntityReference::ImportedProject(reference),
+                            ),
+                        ),
+                    ),
+                )],
             ),
             (
                 target.clone(),

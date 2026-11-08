@@ -332,7 +332,20 @@ impl RuntimeBodySemanticContext<'_> {
                 encoder.tag(u8::from(value.is_some()));
             }
             FlowOp::Continue { depth } => encoder.count(*depth as usize),
-            FlowOp::Goto(target) => self.write_flow_target(encoder, target)?,
+            FlowOp::Goto(transfer) => {
+                match &transfer.target {
+                    crate::plan::RuntimeFlowTransferTarget::Static(target) => {
+                        encoder.tag(0);
+                        self.write_flow_target(encoder, target)?;
+                    }
+                    crate::plan::RuntimeFlowTransferTarget::Dynamic(_) => encoder.tag(1),
+                }
+                encoder.count(transfer.arguments.len());
+                for argument in &transfer.arguments {
+                    encoder.enter_element();
+                    encoder.count(argument.parameter.position() as usize);
+                }
+            }
             FlowOp::Return(value) | FlowOp::CancelCleanup { key: value } => encoder.string(value),
             FlowOp::Effect(effect) => effect.encode_body_metadata(encoder)?,
             FlowOp::EvaluatedEffect(effect) => effect.encode_body_metadata(encoder),
@@ -373,7 +386,6 @@ impl RuntimeBodySemanticContext<'_> {
             | FlowOp::If { .. }
             | FlowOp::While { .. }
             | FlowOp::Scope { .. }
-            | FlowOp::GotoExpr(_)
             | FlowOp::ReturnExpr(_)
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope

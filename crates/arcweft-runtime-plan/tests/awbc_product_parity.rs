@@ -346,7 +346,9 @@ fn plan_with_observed_producer_entry(
                 ),
                 RuntimeExecutableBodySeed {
                     effects: RuntimeEffectSet::empty(),
-                    ops: Box::new([RuntimeFlowOpSeed::Goto(flow)]),
+                    ops: Box::new([RuntimeFlowOpSeed::Goto(
+                        arcweft_core::plan::RuntimeFlowTransfer::static_without_arguments(flow),
+                    )]),
                 },
             ))
             .expect("launch flow admits");
