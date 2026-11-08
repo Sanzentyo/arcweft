@@ -15524,3 +15524,10 @@ live／inert共有検査の並び順・再送・65537件上限は、同じhistor
 確認Source **c96539d2fa8107fac34b03bf7568cbb4ce7b16a5**。旧12 tracked WIPの全patch SHA-256 **c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c** を確認し、そのうちresource API／CLI profile／sample Flowの契約同期9ファイルを、内容を変更せず独立checkpointへ採用した。元12ファイルと採用9・保留3のpatch、各file hashをrawへ保全する。実行中のAWBC全逆依存は同じ物理Source入力を使い、checkpointを新しいテスト実行や全体完了とはしない。
 
 旧untrackedの2026-10-09-cli-bench-repair.md／2026-10-09-cli-observe-repair.mdは、98／166 baseline失敗や途中first-boundaryを現在の残作業に見せる資料で、後続の完了監査・公開SHA・全CLI終端により置き換わったため現状資料から削除する。元の全本文・実測・full SHAをrawへ保存し、既存126 recordは変更しない。現状一覧はcurrent-status.md一か所を維持し、Generic Match等の既受入を戻さない。保留は3 tracked／4 actual untracked、元ファイル内容は保持する。[元差分・訂正理由・旧記録](acceptance-evidence/task-flow-registry-execution.json)。raw7 entries、SHA-256 7569b0f5aca12a0592f52cf2cbce1a0e340d2b363a8424aa557900aad5f54ac9。
+
+
+## 2026-11-08 — 対話入力修復後の全非CLI逆依存とworkspace gate
+
+Rust Source **c96539d2fa8107fac34b03bf7568cbb4ce7b16a5**、内容不変のconsumer checkpoint **3ec9934b355c88193229818b84a4ef20b16f07c9** で、非CLI全feature lib／testsの**49 package・7345／7345 PASS・18 SKIP**。Core逆依存53は新Cargo graphでも差分0。compile-only3はarcweft／arcweft-bundle-assets／arcweft-render-web。4新regressionを各1回含み、先行owner結果を重ねない。実test executable 315本を元pathで前後照合し、3417入力drift0。全workspace check／Clippy・構造gate・7 Rust path fmtも同じ入力で終了0。
+
+初回は既存arcweft_bundle rlibのmmapがWindowsページングファイル不足OS1455で拒否され、player-native lib test／player-scene scroll_regionsの準備が101で停止した。テスト失敗・metadata破損とみなさず、原本を保持して同条件・既定jobsで再試行し回復した。生成物を移動・コピー・退避せず、clean・profile／assertion／budget／除外変更もない。generic labelのselectedPackages=0は明示-p件数、held=14は旧templateで、実49 package／現在3 tracked・4 actual untrackedとは区別する。Source checkpoint後も元12ファイルの内容は同一。CLI711件は別途ビルド・実行中で、この非CLI結果へ加えない。旧Sourceの8052件と失敗4件、全SHAは保持する。Generic Match等は受入のまま。[構造の実測・失敗原本・各終端・公開receipt](acceptance-evidence/task-flow-registry-execution.json)。raw 40 entries、SHA-256 dd7f5e10f1a97fa3bfb2ca00c47b68f56e9f0ba6f1d49faa6f9e9d4b5a6fc84b。
