@@ -117,6 +117,7 @@ pub struct ResolvedAliasReference {
 /// Typed resolution fact for one authored structural type node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeNameResolution {
+    SpecifiedStyle(arcweft_view::style::ViewStyleValueKind),
     Structural(StructuralTypeNodeKind),
     Builtin(BuiltinTypeConstructor),
     EntityFamily(EntityKind),
@@ -157,6 +158,7 @@ pub enum StructuralTypeNodeKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedTypeNodePurpose {
     ValueType,
+    StyleAnnotation,
     ConstantArgument,
     EntityFamilyArgument(EntityKind),
     TypeArgument,
@@ -314,6 +316,7 @@ pub enum DetachedNominalReason {
 /// Typed reason that one nominal node failed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeResolutionFailure {
+    InvalidStyleAnnotation,
     Unknown {
         path: HirPath,
     },
@@ -716,6 +719,7 @@ impl ResolvedTypeNode {
                 ResolvedTypeNodePurpose::EntityFamilyArgument(family.clone())
             }
             TypeNameResolution::TraitHead(_) => ResolvedTypeNodePurpose::TraitPredicate,
+            TypeNameResolution::SpecifiedStyle(_) => ResolvedTypeNodePurpose::StyleAnnotation,
             _ => ResolvedTypeNodePurpose::ValueType,
         };
         Self {

@@ -312,6 +312,13 @@ impl Analyzer<'_, '_, '_> {
             )
         }
         .map_err(|_| FinalSemanticAnalysisError::TypeResolutionInput { owner })?;
+        let input = if let Some((style, token)) = self.styles.annotation_owner(owner) {
+            input
+                .with_style_token_annotation(style, token)
+                .map_err(|_| FinalSemanticAnalysisError::TypeResolutionInput { owner })?
+        } else {
+            input
+        };
         let mut report = resolve_type_ref(&input)
             .map_err(|_| FinalSemanticAnalysisError::TypeResolutionFailed { owner })?;
         if root_purpose == ResolvedTypeNodePurpose::TypeArgument {

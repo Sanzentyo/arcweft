@@ -44,64 +44,89 @@ impl Resolver<'_, '_> {
             poison
         });
 
-        let mut value = match kind {
-            HirTypeKind::Never => self.finish_node(
-                context,
-                owner,
-                NodeValue::typed(TypeKind::Never, []),
-                TypeNameResolution::Builtin(BuiltinTypeConstructor::Never),
-            ),
-            HirTypeKind::ConstInt(value) => self.finish_node(
-                context,
-                owner,
-                NodeValue::constant(value),
-                TypeNameResolution::Structural(StructuralTypeNodeKind::ConstInt),
-            ),
-            HirTypeKind::Path(path) => {
-                let result = self.resolve_name(context, owner, &path, Vec::new(), depth)?;
-                self.finish_node(context, owner, result.value, result.outcome)
-            }
-            HirTypeKind::Tuple(items) => self.resolve_tuple(context, owner, &items, depth)?,
-            HirTypeKind::Function(function) => {
-                self.resolve_function(context, owner, &function, depth)?
-            }
-            HirTypeKind::Choice(alternatives) => {
-                self.resolve_choice(context, owner, &alternatives, depth)?
-            }
-            HirTypeKind::Generic(generic) => {
-                self.resolve_generic(context, owner, &generic, depth)?
-            }
-            HirTypeKind::TraitBound(bound) => {
-                self.resolve_trait_bound(context, owner, &bound, depth)?
-            }
-            HirTypeKind::Projection(projection) => self.resolve_projection(
-                context,
-                owner,
-                projection.subject(),
-                projection.associated().as_str(),
-                depth,
-            )?,
-            HirTypeKind::Reference(reference) => {
-                self.resolve_reference(context, owner, &reference, depth)?
-            }
-            HirTypeKind::Slice(item) => self.resolve_slice(context, owner, item, depth)?,
-            HirTypeKind::Recovery(_) => {
-                let poison = self_poison.unwrap_or_else(|| {
-                    let poison = self.allocate_poison();
-                    self.record_poison(
-                        poison,
-                        TypePoisonOrigin::SyntaxTypeDiagnostic,
-                        context.evidence(owner, true),
-                        true,
-                    );
-                    poison
-                });
-                return Ok(self.finish_node(
+        let mut value = if owner == self.input.root() && self.input.style_annotation().is_some() {
+            let selected = match &kind {
+                HirTypeKind::Path(path) => super::direct_name(path)
+                    .and_then(arcweft_view::style::ViewStyleValueKind::from_source_name),
+                _ => None,
+            };
+            match selected {
+                Some(kind) => self.finish_node(
                     context,
                     owner,
-                    NodeValue::error(poison, []),
-                    TypeNameResolution::Poisoned(poison),
-                ));
+                    NodeValue::typed(
+                        TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(kind)),
+                        [],
+                    ),
+                    TypeNameResolution::SpecifiedStyle(kind),
+                ),
+                None => self.failed_node(
+                    context,
+                    owner,
+                    TypeResolutionFailure::InvalidStyleAnnotation,
+                    Vec::new(),
+                ),
+            }
+        } else {
+            match kind {
+                HirTypeKind::Never => self.finish_node(
+                    context,
+                    owner,
+                    NodeValue::typed(TypeKind::Never, []),
+                    TypeNameResolution::Builtin(BuiltinTypeConstructor::Never),
+                ),
+                HirTypeKind::ConstInt(value) => self.finish_node(
+                    context,
+                    owner,
+                    NodeValue::constant(value),
+                    TypeNameResolution::Structural(StructuralTypeNodeKind::ConstInt),
+                ),
+                HirTypeKind::Path(path) => {
+                    let result = self.resolve_name(context, owner, &path, Vec::new(), depth)?;
+                    self.finish_node(context, owner, result.value, result.outcome)
+                }
+                HirTypeKind::Tuple(items) => self.resolve_tuple(context, owner, &items, depth)?,
+                HirTypeKind::Function(function) => {
+                    self.resolve_function(context, owner, &function, depth)?
+                }
+                HirTypeKind::Choice(alternatives) => {
+                    self.resolve_choice(context, owner, &alternatives, depth)?
+                }
+                HirTypeKind::Generic(generic) => {
+                    self.resolve_generic(context, owner, &generic, depth)?
+                }
+                HirTypeKind::TraitBound(bound) => {
+                    self.resolve_trait_bound(context, owner, &bound, depth)?
+                }
+                HirTypeKind::Projection(projection) => self.resolve_projection(
+                    context,
+                    owner,
+                    projection.subject(),
+                    projection.associated().as_str(),
+                    depth,
+                )?,
+                HirTypeKind::Reference(reference) => {
+                    self.resolve_reference(context, owner, &reference, depth)?
+                }
+                HirTypeKind::Slice(item) => self.resolve_slice(context, owner, item, depth)?,
+                HirTypeKind::Recovery(_) => {
+                    let poison = self_poison.unwrap_or_else(|| {
+                        let poison = self.allocate_poison();
+                        self.record_poison(
+                            poison,
+                            TypePoisonOrigin::SyntaxTypeDiagnostic,
+                            context.evidence(owner, true),
+                            true,
+                        );
+                        poison
+                    });
+                    return Ok(self.finish_node(
+                        context,
+                        owner,
+                        NodeValue::error(poison, []),
+                        TypeNameResolution::Poisoned(poison),
+                    ));
+                }
             }
         };
         if let Some(poison) = self_poison {

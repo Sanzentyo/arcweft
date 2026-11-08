@@ -297,7 +297,7 @@ struct Analyzer<'project, 'catalog, 'control> {
     control: FinalSemanticAnalysisControl<'control>,
     topology: Arc<HirProjectEvaluationTopology>,
     modules: BTreeMap<HirModuleId, &'project HirModule>,
-    style_value_kinds: BTreeMap<ExprId, arcweft_view::style::ViewStyleValueKind>,
+    styles: style::StyleAnalysisContext,
     types: BTreeMap<TypeId, TypeKind>,
     type_reports: BTreeMap<TypeId, TypeResolutionReport>,
     facts: SemanticFactState,
@@ -544,54 +544,6 @@ enum CandidateSelection {
     Rejected { primary: usize },
 }
 
-fn collect_style_value_kinds(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-) -> Result<BTreeMap<ExprId, arcweft_view::style::ViewStyleValueKind>, FinalSemanticAnalysisError> {
-    let mut values = BTreeMap::new();
-    for module in modules.values() {
-        for (_, item) in module.items() {
-            let HirItemKind::Style(style) = item.kind() else {
-                continue;
-            };
-            collect_style_body_value_kinds(style.body(), &mut values)?;
-        }
-    }
-    Ok(values)
-}
-
-fn collect_style_body_value_kinds(
-    body: &[HirStyleBodyItem],
-    values: &mut BTreeMap<ExprId, arcweft_view::style::ViewStyleValueKind>,
-) -> Result<(), FinalSemanticAnalysisError> {
-    for item in body {
-        match item {
-            HirStyleBodyItem::Rule(rule) => {
-                for declaration in rule.declarations() {
-                    let Some(property) = declaration.property().as_str() else {
-                        continue;
-                    };
-                    let Some(property) =
-                        arcweft_view::style::ViewPropertyKind::from_source_name(property)
-                    else {
-                        continue;
-                    };
-                    if values
-                        .insert(declaration.value(), property.value_kind())
-                        .is_some()
-                    {
-                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                    }
-                }
-            }
-            HirStyleBodyItem::Environment(environment) => {
-                collect_style_body_value_kinds(environment.body(), values)?;
-            }
-            HirStyleBodyItem::Recovered(_) => {}
-        }
-    }
-    Ok(())
-}
-
 impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
     fn new(
         executable: HirAnalysisProjectView<'project>,
@@ -621,7 +573,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .modules()
             .map(|(_, module)| (module.module_id(), module.as_ref()))
             .collect();
-        let style_value_kinds = collect_style_value_kinds(&modules)?;
+        let styles = style::StyleAnalysisContext::from_modules(&modules)?;
         Ok(Self {
             executable,
             project,
@@ -630,7 +582,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             control,
             topology,
             modules,
-            style_value_kinds,
+            styles,
             types: BTreeMap::new(),
             type_reports: BTreeMap::new(),
             facts: SemanticFactState::new(),
@@ -658,6 +610,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         mut mutation: M,
     ) -> Result<FinalSemanticAnalysis, super::FinalSemanticProjectError> {
         self.resolve_region_types(None)?;
+        self.styles.complete_annotations(&self.type_reports)?;
         self.seed_local_types(None)?;
         let entry_roots =
             crate::entry::prepare_entry_root_seeds(self.executable, self.symbols, &self.types)
@@ -1122,6 +1075,8 @@ mod expressions;
 mod function_value_use;
 #[path = "analyzer/fx_definition.rs"]
 mod fx_definition;
+#[path = "analyzer/style.rs"]
+mod style;
 #[path = "analyzer/view_fx.rs"]
 mod view_fx;
 pub(super) use fx_definition::PreparedFxDefinitionBodyObligations;

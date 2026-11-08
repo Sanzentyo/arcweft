@@ -59,6 +59,7 @@ pub struct CheckedTypeReferenceCacheKey {
     catalog: AcceptedNominalCatalogDigest,
     schema: NominalResolverSchemaVersion,
     limits: NominalResolutionLimits,
+    style_annotation: Option<super::StyleTokenTypeAnnotation>,
 }
 
 /// Snapshot-local cache whose entries never cross an accepted key component.
@@ -96,6 +97,7 @@ impl CheckedTypeReferenceCacheKey {
             catalog: environment.nominal_catalog().digest(),
             schema: NominalResolverSchemaVersion::CURRENT,
             limits: input.limits(),
+            style_annotation: input.style_annotation(),
         })
     }
 

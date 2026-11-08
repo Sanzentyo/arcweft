@@ -27,11 +27,13 @@ pub enum NominalTypeDiagnosticCode {
     SelfUnavailable,
     Limit,
     WorkOverflow,
+    InvalidStyleAnnotation,
 }
 
 /// Typed payload of one semantic nominal diagnostic.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NominalTypeDiagnosticKind {
+    InvalidStyleAnnotation,
     Unknown {
         path: HirPath,
     },
@@ -133,6 +135,7 @@ impl NominalTypeDiagnosticCode {
             Self::SelfUnavailable => "sema.nominal.self_unavailable",
             Self::Limit => "sema.nominal.limit",
             Self::WorkOverflow => "sema.nominal.work_overflow",
+            Self::InvalidStyleAnnotation => "sema.style.type_annotation",
         }
     }
 }
@@ -151,11 +154,15 @@ impl NominalTypeDiagnosticKind {
             Self::SelfUnavailable => NominalTypeDiagnosticCode::SelfUnavailable,
             Self::Limit { .. } => NominalTypeDiagnosticCode::Limit,
             Self::WorkOverflow { .. } => NominalTypeDiagnosticCode::WorkOverflow,
+            Self::InvalidStyleAnnotation => NominalTypeDiagnosticCode::InvalidStyleAnnotation,
         }
     }
 
     fn message(&self) -> String {
         match self {
+            Self::InvalidStyleAnnotation => {
+                "Style token annotation requires an exact native Style value kind".to_owned()
+            }
             Self::Unknown { path } => format!("unknown type `{}`", format_hir_path(path)),
             Self::Ambiguous { path, .. } => {
                 format!("type `{}` is ambiguous", format_hir_path(path))
@@ -481,6 +488,7 @@ const fn diagnostic_rank(kind: &NominalTypeDiagnosticKind) -> u8 {
         NominalTypeDiagnosticKind::SelfUnavailable => 7,
         NominalTypeDiagnosticKind::Limit { .. } => 8,
         NominalTypeDiagnosticKind::WorkOverflow { .. } => 9,
+        NominalTypeDiagnosticKind::InvalidStyleAnnotation => 10,
     }
 }
 

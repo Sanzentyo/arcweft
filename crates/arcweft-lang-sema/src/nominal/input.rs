@@ -4,7 +4,7 @@ use core::hash::Hasher;
 use std::{collections::BTreeMap, hash::Hash, ptr};
 
 use arcweft_lang_hir::{
-    identity::{HirSnapshotId, IdResolveError, TypeId},
+    identity::{HirSnapshotId, IdResolveError, ItemId, TypeId},
     lowering::HirModuleKey,
     module::HirModule,
     project::HirProjectView,
@@ -121,11 +121,24 @@ pub struct TypeResolutionInput<'a> {
     self_scope: SelfTypeScope,
     associated: Option<AssociatedTypeScope>,
     limits: NominalResolutionLimits,
+    style_annotation: Option<StyleTokenTypeAnnotation>,
+}
+
+/// Original Style declaration and token ordinal that own a native type annotation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StyleTokenTypeAnnotation {
+    style: ItemId,
+    token: u32,
 }
 
 /// Infrastructure mismatch that prevents authoritative type resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeResolutionInputError {
+    InvalidStyleTokenAnnotation {
+        root: TypeId,
+        style: ItemId,
+        token: u32,
+    },
     StaleWorld {
         symbol_world: Box<ProjectSymbolWorldId>,
         environment_world: Box<ProjectSymbolWorldId>,
@@ -507,6 +520,7 @@ impl<'a> TypeResolutionInput<'a> {
             self_scope,
             associated: None,
             limits,
+            style_annotation: None,
         })
     }
 
@@ -586,6 +600,7 @@ impl<'a> TypeResolutionInput<'a> {
             self_scope,
             associated: None,
             limits,
+            style_annotation: None,
         })
     }
 
@@ -608,11 +623,47 @@ impl<'a> TypeResolutionInput<'a> {
             self_scope,
             associated: None,
             limits,
+            style_annotation: None,
         })
     }
 
     pub const fn root(&self) -> TypeId {
         self.root
+    }
+
+    /// Selects the closed native Style annotation grammar at its original owner.
+    pub fn with_style_token_annotation(
+        mut self,
+        style: ItemId,
+        token: u32,
+    ) -> Result<Self, TypeResolutionInputError> {
+        let valid = match self.module {
+            TypeResolutionModule::Published(module) => {
+                module.resolve_item(style).is_ok_and(|item| {
+                    let arcweft_lang_hir::item::HirItemKind::Style(style) = item.kind() else {
+                        return false;
+                    };
+                    usize::try_from(token)
+                        .ok()
+                        .and_then(|index| style.tokens().get(index))
+                        .is_some_and(|token| token.value_type() == Some(self.root))
+                })
+            }
+            TypeResolutionModule::ProofReturnHeader(_) => false,
+        };
+        if !valid {
+            return Err(TypeResolutionInputError::InvalidStyleTokenAnnotation {
+                root: self.root,
+                style,
+                token,
+            });
+        }
+        self.style_annotation = Some(StyleTokenTypeAnnotation { style, token });
+        Ok(self)
+    }
+
+    pub const fn style_annotation(&self) -> Option<StyleTokenTypeAnnotation> {
+        self.style_annotation
     }
 
     pub const fn module(&self) -> TypeResolutionModule<'a> {

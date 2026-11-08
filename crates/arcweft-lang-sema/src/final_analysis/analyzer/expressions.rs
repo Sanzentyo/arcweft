@@ -4848,7 +4848,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
-        let Some(expected) = self.style_value_kinds.get(&owner).copied() else {
+        let Some(expected) = self.styles.value_kind(owner) else {
             return Ok(None);
         };
         match expected {

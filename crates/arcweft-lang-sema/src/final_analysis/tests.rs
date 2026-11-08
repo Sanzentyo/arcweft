@@ -113,6 +113,8 @@ mod higher_order_effects;
 mod local_use;
 #[path = "tests/match_coverage.rs"]
 mod match_coverage;
+#[path = "tests/style_types.rs"]
+mod style_types;
 
 #[path = "tests/presentation.rs"]
 mod presentation;

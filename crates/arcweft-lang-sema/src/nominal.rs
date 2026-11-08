@@ -20,8 +20,8 @@ pub use index::{NominalResolutionIndex, NominalResolutionIndexError, NominalType
 pub use input::{
     AssociatedTypeScope, AssociatedTypeScopeFingerprint, GenericTypeBinding, GenericTypeScope,
     GenericTypeScopeError, GenericTypeScopeFingerprint, SelfTypeScope, SelfTypeScopeFingerprint,
-    TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule, TypeResolutionProject,
-    TypeResolutionWorld,
+    StyleTokenTypeAnnotation, TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule,
+    TypeResolutionProject, TypeResolutionWorld,
 };
 pub use limits::{
     AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits,

@@ -313,6 +313,13 @@ operands, such as a font family, shadow, filter, transition, or property selecto
 have distinct semantic types. They cannot substitute for a complete property
 value or enter a Core runtime frame or snapshot.
 
+Token type annotations use the case-sensitive native names in
+`ViewStyleValueKind`. The type resolver binds an annotation to its original
+Style declaration, token ordinal, and HIR type node. Its report records a
+semantic-only `StyleAnnotation` purpose; this is separate from ordinary nominal
+lookup and its cache identity. Unknown names and structural or generic types do
+not fall back to ordinary runtime types in this annotation grammar.
+
 A specified Style `Length` belongs to the physical layout profile and uses px
 thousandths. Ordinary registered `Length` quantities retain their own type and
 unit; they do not implicitly become specified Style values. Likewise a Style

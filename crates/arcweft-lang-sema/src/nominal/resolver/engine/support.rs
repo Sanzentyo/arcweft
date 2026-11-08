@@ -127,6 +127,9 @@ pub(super) fn open_expectation(arity: OpenNominalArity) -> TypeArityExpectation 
 
 pub(super) fn diagnostic_kind(failure: &TypeResolutionFailure) -> NominalTypeDiagnosticKind {
     match failure {
+        TypeResolutionFailure::InvalidStyleAnnotation => {
+            NominalTypeDiagnosticKind::InvalidStyleAnnotation
+        }
         TypeResolutionFailure::Unknown { path } => {
             NominalTypeDiagnosticKind::Unknown { path: path.clone() }
         }
