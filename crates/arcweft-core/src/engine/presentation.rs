@@ -489,7 +489,7 @@ impl Engine {
         self.commit_presentation_return(scopes, detached, &escaping)
     }
 
-    fn presentation_return_tokens<'value>(
+    pub(super) fn presentation_return_tokens<'value>(
         values: impl IntoIterator<Item = &'value RuntimeValue>,
     ) -> Result<Vec<crate::runtime_id::RuntimePresentationHandleToken>, RuntimeEvalError> {
         values
@@ -620,6 +620,84 @@ impl Engine {
             escaping,
             &[],
         )?;
+        Ok(())
+    }
+
+    /// Admits the complete old contour and actual receiving root while the
+    /// continuation still owns every transfer input. This does not issue grants.
+    pub(super) fn preflight_flow_presentation_root(
+        &self,
+        receiving: &mut crate::value::RuntimeEnv,
+        escaping: &[crate::runtime_id::RuntimePresentationHandleToken],
+    ) -> Result<(), RuntimeEvalError> {
+        use crate::presentation::resources::PresentationScopeExit;
+        if self.presentation.is_none() && escaping.is_empty() {
+            return Ok(());
+        }
+        let destination = receiving.presentation_scope_target()?;
+        self.presentation
+            .as_ref()
+            .ok_or(RuntimePresentationError::MissingLedger)?
+            .preflight_scope_transition(
+                &self.fiber.frame.program,
+                self.fiber
+                    .frame
+                    .env
+                    .presentation_scope_refs()
+                    .rev()
+                    .map(|scope| PresentationScopeExit {
+                        execution: self.fiber.execution,
+                        fiber: self.fiber.persistent_id,
+                        scope,
+                    })
+                    .collect(),
+                Some(PresentationScopeExit {
+                    execution: self.fiber.execution,
+                    fiber: self.fiber.persistent_id,
+                    scope: destination.as_ref(),
+                }),
+                escaping,
+                &[],
+            )?;
+        Ok(())
+    }
+
+    pub(super) fn commit_flow_presentation_root(
+        &mut self,
+        receiving: &mut crate::value::RuntimeEnv,
+        escaping: &[crate::runtime_id::RuntimePresentationHandleToken],
+    ) -> Result<(), RuntimeEvalError> {
+        use crate::presentation::resources::PresentationScopeExit;
+        if self.presentation.is_none() && escaping.is_empty() {
+            return Ok(());
+        }
+        let count = self.fiber.frame.env.scope_depth();
+        let (targets, _) = self
+            .fiber
+            .frame
+            .env
+            .presentation_scope_exit_targets(count, true)?;
+        self.presentation
+            .as_mut()
+            .ok_or(RuntimePresentationError::MissingLedger)?
+            .transition_scope_contour(
+                &self.fiber.frame.program,
+                targets
+                    .into_iter()
+                    .map(|scope| PresentationScopeExit {
+                        execution: self.fiber.execution,
+                        fiber: self.fiber.persistent_id,
+                        scope,
+                    })
+                    .collect(),
+                Some(PresentationScopeExit {
+                    execution: self.fiber.execution,
+                    fiber: self.fiber.persistent_id,
+                    scope: receiving.presentation_scope_target()?,
+                }),
+                escaping,
+                &[],
+            )?;
         Ok(())
     }
 

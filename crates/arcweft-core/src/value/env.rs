@@ -356,6 +356,17 @@ impl<V> RuntimeEnv<V> {
             .filter_map(|scope| scope.presentation_scope.as_ref())
     }
 
+    pub(crate) fn presentation_scope_refs(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = crate::presentation::resources::PresentationScopeRef<'_>>
+    {
+        self.scopes.iter().map(|scope| {
+            crate::presentation::resources::PresentationScopeRef::native(
+                scope.presentation_scope.as_ref(),
+            )
+        })
+    }
+
     pub(crate) fn presentation_scope_binding(
         &self,
     ) -> Option<&crate::presentation::resources::RuntimePresentationScopeBinding> {
@@ -744,6 +755,23 @@ impl RuntimeEnv {
         for binding in bindings {
             root.set(binding.local, binding.value);
         }
+    }
+
+    /// Installs the actual receiving root after its source contour and resource
+    /// grants have transitioned. Per-step discard authorization remains owned
+    /// by this environment until the enclosing execution transaction publishes.
+    pub(crate) fn install_flow_root(&mut self, mut receiving: Self) {
+        assert_eq!(
+            receiving.scopes.len(),
+            1,
+            "a receiving Flow owns exactly its prepared root"
+        );
+        self.spare_scopes
+            .extend(self.scopes.drain(..).map(|mut scope| {
+                scope.clear();
+                scope
+            }));
+        self.scopes = std::mem::take(&mut receiving.scopes);
     }
 
     pub(crate) fn value_matches_type(

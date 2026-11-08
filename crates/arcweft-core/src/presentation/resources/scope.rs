@@ -205,6 +205,13 @@ pub(crate) struct PresentationScopeRef<'scope> {
 }
 
 impl<'scope> PresentationScopeRef<'scope> {
+    pub(crate) fn native(binding: Option<&'scope RuntimePresentationScopeBinding>) -> Self {
+        Self {
+            binding,
+            anchor: PresentationScopeAnchor::Native,
+        }
+    }
+
     pub(crate) fn awbc(
         binding: Option<&'scope RuntimePresentationScopeBinding>,
         frame: crate::runtime_id::RuntimeFrameInstanceId,

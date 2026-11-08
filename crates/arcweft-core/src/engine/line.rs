@@ -8,6 +8,20 @@ use super::{
 use crate::plan::{FlowOp, FlowRuntimeId};
 use crate::pure::RuntimeCallBackend;
 
+/// Exclusive preparation for the actual receiving root; no value is copied and
+/// no presentation grant is issued until the existing continuation commits.
+pub(super) struct NativePreparedFlowRoot {
+    plan: std::sync::Arc<crate::plan::RuntimePlan>,
+    target: FlowRuntimeId,
+    site: crate::runtime_id::RuntimeFunctionSiteId,
+    receiving: crate::value::RuntimeEnv,
+    pending_ops: std::collections::VecDeque<super::NativePendingWork>,
+    input_order: crate::value::RuntimeInputOrder,
+    type_instantiation:
+        Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+    escaping: Vec<crate::runtime_id::RuntimePresentationHandleToken>,
+}
+
 impl Engine {
     pub(super) fn step_line_only(
         &mut self,
@@ -151,26 +165,73 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) {
+        let prepared = match self.prepare_flow_transfer_root(&transfer, type_instantiation) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        self.commit_flow_transfer_root(transfer, source, prepared, output, backend);
+    }
+
+    pub(super) fn prepare_flow_transfer_root(
+        &self,
+        transfer: &crate::plan::RuntimeFlowTransfer<crate::value::RuntimeValue>,
+        type_instantiation: Option<
+            std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
+        >,
+    ) -> Result<NativePreparedFlowRoot, crate::value::RuntimeEvalError> {
         let crate::plan::RuntimeFlowTransferTarget::Static(target) = &transfer.target else {
             unreachable!("a prepared transition retains its resolved original Flow");
         };
         let target = target.clone();
         let plan = std::sync::Arc::clone(&self.plan);
         let (declaration, input_order) = plan
-            .validate_flow_transfer_inputs(&target, &transfer)
-            .expect("unchanged prepared inputs retain their admitted original target ABI");
-        assert_eq!(
-            declaration.type_instantiation, type_instantiation,
-            "prepared transfer retains its original function instantiation"
-        );
-        let pending_ops = self
-            .prepare_function_root_work(declaration.site())
-            .expect("the immutable receiving body was admitted before moving any input");
-        self.fiber.frame.await_observer = None;
-        if let Err(error) = self.unwind_control_stack(output, backend) {
-            self.fail_eval(error, output);
-            return;
+            .validate_flow_transfer_inputs(&target, transfer)
+            .map_err(|error| crate::value::RuntimeEvalError::FlowInvocation(Box::new(error)))?;
+        if declaration.type_instantiation != type_instantiation {
+            return Err(
+                crate::value::RuntimeFunctionApplyError::InvalidEffectInstantiation {
+                    site: declaration.site(),
+                }
+                .into(),
+            );
         }
+        if self.fiber.frame.has_scope_defer_work() {
+            return Err(crate::scope::RuntimeScopeExitError::DeferredWorkPending.into());
+        }
+        let site = declaration.site();
+        let pending_ops = self.prepare_function_root_work(site)?;
+        let escaping = Self::presentation_return_tokens(
+            transfer.arguments.iter().map(|argument| &argument.value),
+        )?;
+        let mut receiving = crate::value::RuntimeEnv::default();
+        self.preflight_flow_presentation_root(&mut receiving, &escaping)?;
+        Ok(NativePreparedFlowRoot {
+            plan,
+            target,
+            site,
+            receiving,
+            pending_ops,
+            input_order,
+            type_instantiation,
+            escaping,
+        })
+    }
+
+    pub(super) fn commit_flow_transfer_root(
+        &mut self,
+        transfer: crate::plan::RuntimeFlowTransfer<crate::value::RuntimeValue>,
+        source: Option<&NativeGotoOrigin>,
+        mut prepared: NativePreparedFlowRoot,
+        output: &mut RuntimeStepOutput,
+        backend: &mut impl RuntimeCallBackend,
+    ) {
+        let (declaration, _) = prepared
+            .plan
+            .validate_flow_transfer_inputs(&prepared.target, &transfer)
+            .expect("exclusive root preparation retains the admitted input ABI and patterns");
         let mut arguments = vec![None; transfer.arguments.len()];
         for argument in transfer.arguments {
             arguments[argument.parameter.position() as usize] = Some(argument.value);
@@ -184,22 +245,31 @@ impl Engine {
                 body: crate::value::RuntimeCallableBodyReference::Plan(declaration.site()),
                 captures: Vec::new(),
                 arguments,
-                input_order,
+                input_order: prepared.input_order,
             })
             .expect("the unchanged input patterns were admitted before any Move or cleanup");
+        prepared
+            .receiving
+            .bind_root_function(prepared.site, prepared.type_instantiation, staged);
+        self.commit_flow_presentation_root(&mut prepared.receiving, &prepared.escaping)
+            .expect("exclusive root transition retains its preflighted actual source and destination grants");
+        self.fiber.frame.await_observer = None;
+        self.unwind_control_stack(output, backend)
+            .expect("the admitted contour has no deferred work and its presentation grants have already transitioned");
         if let Some(FlowOp::Effect(effect @ LineEffectRequest::Goto(_))) =
             source.and_then(|source| match source {
-                NativeGotoOrigin::Operation(source) => source.operation(&plan),
+                NativeGotoOrigin::Operation(source) => source.operation(&prepared.plan),
                 NativeGotoOrigin::Choice { .. } => None,
             })
         {
             self.emit_line_effect(effect.clone(), output, backend);
         }
-        output.flow_events.push(FlowEvent::Goto { target });
-        self.fiber
-            .frame
-            .bind_root_function(declaration.site(), type_instantiation, staged);
-        self.fiber.frame.pending_ops = pending_ops;
+        output.flow_events.push(FlowEvent::Goto {
+            target: prepared.target,
+        });
+        self.fiber.frame.env.install_flow_root(prepared.receiving);
+        self.fiber.frame.enter_function_body(prepared.site);
+        self.fiber.frame.pending_ops = prepared.pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
     }
 

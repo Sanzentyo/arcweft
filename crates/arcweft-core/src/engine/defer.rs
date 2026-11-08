@@ -931,6 +931,36 @@ impl super::Engine {
         let closing = self.fiber.owner.requests_scope_close();
         let index = self.fiber.frame.control_stack.len().checked_sub(1);
         if let Some(index) = index {
+            if !terminal
+                && failure.is_none()
+                && let Some(exit) = &self.fiber.frame.lexical_exit
+                && exit.target == index
+                && let NativeLexicalExitAction::Goto {
+                    transfer,
+                    type_instantiation,
+                    ..
+                } = &exit.action
+            {
+                // Every fallible check runs while the continuation and its
+                // original scope still own the entire packet. A rejected
+                // receiver leaves them available for the failure cleanup.
+                let prepared =
+                    self.prepare_flow_transfer_root(transfer, type_instantiation.clone())?;
+                let exit = self
+                    .fiber
+                    .frame
+                    .lexical_exit
+                    .take()
+                    .expect("prepared exact Flow exit");
+                let NativeLexicalExitAction::Goto {
+                    source, transfer, ..
+                } = exit.action
+                else {
+                    unreachable!()
+                };
+                self.commit_flow_transfer_root(transfer, Some(&source), prepared, output, backend);
+                return Ok(());
+            }
             // A typed result stays in the continuation until its receiving
             // invocation can take it. Relocate only leases owned by this scope.
             if let Some(NativeLexicalExit {
@@ -1015,20 +1045,9 @@ impl super::Engine {
                                 self.finish(output, backend);
                             }
                         }
-                        NativeLexicalExitAction::Goto {
-                            source,
-                            transfer,
-                            type_instantiation,
-                            source_instantiation: _,
-                        } => {
-                            self.activate_flow_transfer(
-                                transfer,
-                                Some(&source),
-                                type_instantiation,
-                                output,
-                                backend,
-                            );
-                        }
+                        NativeLexicalExitAction::Goto { .. } => unreachable!(
+                            "the exact Flow exit commits its prepared root before unwinding"
+                        ),
                     }
                 }
             }
