@@ -948,16 +948,26 @@ fn with_saved_awbc_steps_checking<R>(
 
 #[test]
 fn native_initial_owned_line_init_defer_preserves_nested_scopes() {
-    for (source, expected) in initial_owned_line_scoped_defer_sources() {
-        native_line_handle_execution(&source, 2, false, false, expected);
-    }
+    let [(source, expected), _] = initial_owned_line_scoped_defer_sources();
+    native_line_handle_execution(&source, 2, false, false, expected);
 }
 
 #[test]
 fn saved_awbc_initial_owned_line_init_defer_preserves_nested_scopes() {
-    for (source, expected) in initial_owned_line_scoped_defer_sources() {
-        assert_saved_awbc_with_reveals(&source, 2, expected);
-    }
+    let [(source, expected), _] = initial_owned_line_scoped_defer_sources();
+    assert_saved_awbc_with_reveals(&source, 2, expected);
+}
+
+#[test]
+fn native_initial_owned_line_init_defer_preserves_explicit_scope() {
+    let [_, (source, expected)] = initial_owned_line_scoped_defer_sources();
+    native_line_handle_execution(&source, 2, false, false, expected);
+}
+
+#[test]
+fn saved_awbc_initial_owned_line_init_defer_preserves_explicit_scope() {
+    let [_, (source, expected)] = initial_owned_line_scoped_defer_sources();
+    assert_saved_awbc_with_reveals(&source, 2, expected);
 }
 
 fn initial_owned_line_scoped_defer_sources() -> [(String, &'static [&'static str]); 2] {
@@ -1159,11 +1169,11 @@ fn saved_awbc_initial_line_init_defer_rejects_forged_capture_custody() {
 #[test]
 fn native_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits() {
     for cancel in [false, true] {
-        native_line_handle_execution(
+        native_line_handle_execution_at(
             &initial_owned_line_waiting_init_defer_source(),
             3,
             false,
-            cancel,
+            cancel.then_some(2),
             &[
                 "body",
                 if cancel { "cancelled" } else { "nested" },
@@ -1178,10 +1188,10 @@ fn native_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogu
 fn saved_awbc_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits() {
     for cancel in [false, true] {
         with_saved_awbc_steps(&initial_owned_line_waiting_init_defer_source(), |step| {
-            execute_nested_line_handle_transfer(
+            execute_nested_line_handle_transfer_at(
                 3,
                 false,
-                cancel,
+                cancel.then_some(2),
                 &[
                     "body",
                     if cancel { "cancelled" } else { "nested" },

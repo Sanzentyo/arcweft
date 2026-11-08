@@ -5247,6 +5247,8 @@ pub enum LineRuntimeError {
     ConsumedInputActionEvent {
         event: crate::step::RuntimeDialogueInputActionEvent,
     },
+    #[error("dialogue input action history exceeds the retained sequence limit")]
+    InputActionHistoryLimitExceeded,
     #[error("dialogue content event arrived outside a live line-task reducer: {event:?}")]
     ContentEventOutsideLiveLineTask {
         event: crate::step::RuntimeDialogueContentEventKind,

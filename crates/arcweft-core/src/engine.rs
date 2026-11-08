@@ -3347,11 +3347,13 @@ impl Engine {
             .extend(deferred_root_events);
         let dialogue_content_events = std::mem::take(&mut input.dialogue_content_events);
         let dialogue_advances = std::mem::take(&mut input.dialogue_advances);
+        let dialogue_input_actions = std::mem::take(&mut input.dialogue_input_actions);
         let line_outcomes = std::mem::take(&mut input.line_outcomes);
         let dialogue_ingress = match self.dialogue_activations.latch_step_input(
             input.dt,
             &dialogue_content_events,
             &dialogue_advances,
+            &dialogue_input_actions,
             &line_outcomes,
         ) {
             Ok(receipt) => receipt,

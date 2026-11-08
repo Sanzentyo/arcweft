@@ -222,6 +222,7 @@ impl Engine {
         };
         let content_events = transaction.take_content_events();
         let advance = transaction.take_advance();
+        let input_actions = transaction.take_input_actions();
         let (frame, line) = transaction.parts_mut();
         let mut start = None;
         let mut callback_sites = Vec::new();
@@ -272,14 +273,13 @@ impl Engine {
                 })
                 .collect::<Vec<_>>();
             callback_sites = requested_effects;
-            let input_actions =
-                match line_task.accept_input_action_events(&input.dialogue_input_actions) {
-                    Ok(actions) => actions,
-                    Err(error) => {
-                        self.begin_dialogue_failure(transaction, error.into(), output);
-                        return;
-                    }
-                };
+            let input_actions = match line_task.accept_input_action_events(&input_actions) {
+                Ok(actions) => actions,
+                Err(error) => {
+                    self.begin_dialogue_failure(transaction, error.into(), output);
+                    return;
+                }
+            };
             let ready = accepted_content.ready().with_input_actions(&input_actions);
             if let Some((action, cancelled)) = cancel_live_line_task_group(group, ready, line_task)
             {

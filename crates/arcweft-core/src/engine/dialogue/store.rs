@@ -416,6 +416,11 @@ impl DialogueActivationStoreRollbackImage {
         )?;
         self.registry.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
+            active.inbox.validate_input_actions(
+                activation,
+                active.frame.phase,
+                &active.frame.line_task,
+            )?;
             active.frame.admit_scoped_defer_registrations(line)?;
             active.frame.admit_reducer(activation, line, admission)
         })?;
@@ -783,8 +788,41 @@ pub(crate) struct PendingActivationHostCall {
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 struct DialogueStepInbox {
     content_events: Vec<RuntimeDialogueContentEventKind>,
+    input_actions: Vec<crate::step::RuntimeDialogueInputActionEvent>,
     line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
     advance: bool,
+}
+
+impl DialogueStepInbox {
+    fn validate_input_actions(
+        &self,
+        activation: &DialogueActivationId,
+        phase: DialogueRuntimePhase,
+        line_task: &DialogueLineTaskState,
+    ) -> Result<(), LineRuntimeError> {
+        if self.input_actions.is_empty() {
+            return Ok(());
+        }
+        if self
+            .input_actions
+            .iter()
+            .any(|event| event.activation() != activation)
+        {
+            return Err(LineRuntimeError::WrongActivation);
+        }
+        let DialogueLineTaskState::Live(live) = line_task else {
+            return Err(LineRuntimeError::DialogueIngressNotReady {
+                activation: *activation,
+            });
+        };
+        if phase != DialogueRuntimePhase::Ready {
+            return Err(LineRuntimeError::DialogueIngressNotReady {
+                activation: *activation,
+            });
+        }
+        live.inspect_input_action_events(self.input_actions.iter())?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1051,6 +1089,16 @@ impl DialogueActivationStore {
             return false;
         };
         let frame = &active.frame;
+        // Admitted ingress is work for this exact activation even while its
+        // receiving fiber is a Line child. Waiting for its reducer to close
+        // before polling would leave the queued advance or host outcome idle.
+        if active.inbox.advance
+            || !active.inbox.content_events.is_empty()
+            || !active.inbox.input_actions.is_empty()
+            || !active.inbox.line_outcomes.is_empty()
+        {
+            return true;
+        }
         if line.has_pending_commands()
             || line.deferred_inflight().is_some()
             || frame.scopes.iter().any(|scope| scope.inflight.is_some())
@@ -1133,6 +1181,11 @@ impl DialogueActivationStore {
         contour.admit_retained(admission)?;
         contour.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
+            active.inbox.validate_input_actions(
+                activation,
+                active.frame.phase,
+                &active.frame.line_task,
+            )?;
             active.frame.admit_scoped_defer_registrations(line)?;
             active.frame.admit_reducer(activation, line, admission)
         })?;
@@ -1395,6 +1448,12 @@ impl DialogueActivationTransaction {
         std::mem::take(&mut self.inner.frame_mut().inbox.content_events)
     }
 
+    pub(crate) fn take_input_actions(
+        &mut self,
+    ) -> Vec<crate::step::RuntimeDialogueInputActionEvent> {
+        std::mem::take(&mut self.inner.frame_mut().inbox.input_actions)
+    }
+
     pub(crate) fn take_advance(&mut self) -> bool {
         std::mem::take(&mut self.inner.frame_mut().inbox.advance)
     }
@@ -1455,6 +1514,7 @@ impl DialogueActivationStore {
         dt: LogicalDuration,
         content_events: &[RuntimeDialogueContentEvent],
         advances: &[DialogueActivationId],
+        input_actions: &[crate::step::RuntimeDialogueInputActionEvent],
         line_outcomes: &[crate::presentation::RuntimeLineHostOutcome],
     ) -> Result<DialogueIngressReceipt, DialogueIngressError> {
         let published = self
@@ -1539,6 +1599,48 @@ impl DialogueActivationStore {
             }
             seen_advances.push(activation.clone());
             *revision_steps.entry(activation.clone()).or_default() += 1;
+        }
+        if !crate::entry::RuntimeSchemaLimits::engine_default()
+            .permits_sequence_items(input_actions.len())
+        {
+            return Err(DialogueIngressError {
+                activation: None,
+                source: LineRuntimeError::InputActionHistoryLimitExceeded,
+            });
+        }
+        let mut borrowed_action_packets = BTreeMap::<
+            DialogueActivationId,
+            Vec<&crate::step::RuntimeDialogueInputActionEvent>,
+        >::new();
+        for event in input_actions {
+            borrowed_action_packets
+                .entry(*event.activation())
+                .or_default()
+                .push(event);
+        }
+        let mut action_packets = BTreeMap::new();
+        for (activation, events) in borrowed_action_packets {
+            let active = self
+                .registry
+                .active_frame(&activation)
+                .filter(|active| active.frame.phase == DialogueRuntimePhase::Ready)
+                .ok_or_else(|| {
+                    DialogueIngressError::for_activation(
+                        &activation,
+                        LineRuntimeError::DialogueIngressNotReady { activation },
+                    )
+                })?;
+            let DialogueLineTaskState::Live(live) = &active.frame.line_task else {
+                return Err(DialogueIngressError::for_activation(
+                    &activation,
+                    LineRuntimeError::DialogueIngressNotReady { activation },
+                ));
+            };
+            let prepared = live
+                .inspect_input_action_events(active.inbox.input_actions.iter().chain(events))
+                .map_err(|source| DialogueIngressError::for_activation(&activation, source))?;
+            action_packets.insert(activation, prepared.into_pending_events());
+            *revision_steps.entry(activation).or_default() += 1;
         }
         let mut seen_outcomes: Vec<crate::presentation::RuntimeLineCommandId> = Vec::new();
         for outcome in line_outcomes {
@@ -1651,6 +1753,14 @@ impl DialogueActivationStore {
             transaction.inner.frame_mut().inbox.advance = true;
             next.commit_transaction(transaction)
                 .map_err(|source| DialogueIngressError::for_activation(advance, source))?;
+        }
+        for (activation, events) in action_packets {
+            let mut transaction = next
+                .ready_transaction(&activation)
+                .map_err(|source| DialogueIngressError::for_activation(&activation, source))?;
+            transaction.inner.frame_mut().inbox.input_actions = events;
+            next.commit_transaction(transaction)
+                .map_err(|source| DialogueIngressError::for_activation(&activation, source))?;
         }
         for outcome in line_outcomes {
             let command = outcome.command();
@@ -2255,6 +2365,149 @@ mod tests {
     }
 
     #[test]
+    fn input_action_ingress_is_atomic_retained_and_consumed_once() {
+        use crate::step::RuntimeDialogueInputActionEvent;
+        use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
+        let id = activation(2);
+        let group = crate::line_task::LineTaskGroup::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([79; 32]),
+            crate::plan::RuntimeEffectSet::empty(),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+            RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            Box::new([]),
+            crate::runtime_id::RuntimeLineTaskNodeId::from_zero_based(0).unwrap(),
+            vec![crate::line_task::LineTaskNode::Action(Box::new([]))].into_boxed_slice(),
+            Box::new([]),
+            crate::line_task::LineTaskCleanup::default(),
+        );
+        let mut ready = frame(test_program(), DialogueRuntimePhase::Ready);
+        ready.line_task = DialogueLineTaskState::Live(LineTaskLiveState::new(&group, id));
+        let mut store = DialogueActivationStore::default();
+        store.begin(id, ready).unwrap();
+        let event = RuntimeDialogueInputActionEvent::new(
+            id,
+            InputActionId::new("SkipLine").unwrap(),
+            InputEpoch::new(1),
+            InputSequence::new(1),
+        );
+        let before_revision = store.registry.active_revision(&id).unwrap();
+        assert!(!store.has_internal_work(&id, false));
+        let oversized =
+            vec![
+                event.clone();
+                crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize + 1
+            ];
+        assert!(matches!(
+            store.latch_step_input(LogicalDuration::from_nanos(7), &[], &[], &oversized, &[]),
+            Err(DialogueIngressError {
+                source: LineRuntimeError::InputActionHistoryLimitExceeded,
+                ..
+            })
+        ));
+        assert_eq!(store.registry.active_revision(&id), Some(before_revision));
+        assert_eq!(
+            store.registry.active_frame(&id).unwrap().frame.elapsed,
+            LogicalDuration::default()
+        );
+        assert_eq!(
+            store.registry.active_frame(&id).unwrap().inbox,
+            DialogueStepInbox::default()
+        );
+        assert!(matches!(
+            store.latch_step_input(
+                LogicalDuration::from_nanos(7),
+                &[],
+                &[],
+                &[event.clone(), event.clone()],
+                &[]
+            ),
+            Err(DialogueIngressError {
+                source: LineRuntimeError::DuplicateInputActionEvent { .. },
+                ..
+            })
+        ));
+        assert_eq!(store.registry.active_revision(&id), Some(before_revision));
+        assert_eq!(
+            store.registry.active_frame(&id).unwrap().frame.elapsed,
+            LogicalDuration::default()
+        );
+        assert_eq!(
+            store.registry.active_frame(&id).unwrap().inbox,
+            DialogueStepInbox::default()
+        );
+        store
+            .latch_step_input(
+                LogicalDuration::from_nanos(7),
+                &[],
+                &[],
+                std::slice::from_ref(&event),
+                &[],
+            )
+            .unwrap();
+        assert!(store.has_internal_work(&id, false));
+        let active = store.registry.active_frame(&id).unwrap();
+        active
+            .inbox
+            .validate_input_actions(&id, active.frame.phase, &active.frame.line_task)
+            .unwrap();
+        let mut forged = active.inbox.clone();
+        forged.input_actions[0] = RuntimeDialogueInputActionEvent::new(
+            activation(3),
+            event.action().clone(),
+            event.epoch(),
+            event.sequence(),
+        );
+        assert!(matches!(
+            forged.validate_input_actions(&id, active.frame.phase, &active.frame.line_task),
+            Err(LineRuntimeError::WrongActivation)
+        ));
+        let queued_revision = store.registry.active_revision(&id).unwrap();
+        assert!(matches!(
+            store.latch_step_input(
+                LogicalDuration::from_nanos(9),
+                &[],
+                &[],
+                std::slice::from_ref(&event),
+                &[]
+            ),
+            Err(DialogueIngressError {
+                source: LineRuntimeError::DuplicateInputActionEvent { .. },
+                ..
+            })
+        ));
+        assert_eq!(store.registry.active_revision(&id), Some(queued_revision));
+        let mut transaction = store.begin_transaction(&id).unwrap();
+        assert_eq!(transaction.frame().elapsed, LogicalDuration::from_nanos(7));
+        let events = transaction.take_input_actions();
+        assert_eq!(events, [event.clone()]);
+        assert_eq!(transaction.take_input_actions(), []);
+        let DialogueLineTaskState::Live(live) = &mut transaction.frame_mut().line_task else {
+            unreachable!()
+        };
+        assert_eq!(
+            live.accept_input_action_events(&events).unwrap(),
+            [event.action().clone()]
+        );
+        store.commit_transaction(transaction).unwrap();
+        assert!(!store.has_internal_work(&id, false));
+        let consumed_revision = store.registry.active_revision(&id).unwrap();
+        assert!(matches!(
+            store.latch_step_input(LogicalDuration::from_nanos(9), &[], &[], &[event], &[]),
+            Err(DialogueIngressError {
+                source: LineRuntimeError::ConsumedInputActionEvent { .. },
+                ..
+            })
+        ));
+        assert_eq!(store.registry.active_revision(&id), Some(consumed_revision));
+        assert_eq!(
+            store.registry.active_frame(&id).unwrap().frame.elapsed,
+            LogicalDuration::from_nanos(7)
+        );
+    }
+
+    #[test]
     fn ingress_is_atomic_durable_and_step_scoped() {
         let id = activation(2);
         let site = RuntimeDialogueEffectSiteId::from_zero_based(0).expect("effect site");
@@ -2275,10 +2528,11 @@ mod tests {
                 std::slice::from_ref(&event),
                 &[],
                 &[],
+                &[],
             )
             .expect("first ingress");
         assert!(matches!(
-            store.latch_step_input(LogicalDuration::from_nanos(9), &[event], &[], &[]),
+            store.latch_step_input(LogicalDuration::from_nanos(9), &[event], &[], &[], &[]),
             Err(DialogueIngressError {
                 source: LineRuntimeError::DuplicateContentEvent { .. },
                 ..
@@ -2308,7 +2562,7 @@ mod tests {
         let id = activation(3);
         let mut store = DialogueActivationStore::default();
         store
-            .latch_step_input(LogicalDuration::from_nanos(11), &[], &[], &[])
+            .latch_step_input(LogicalDuration::from_nanos(11), &[], &[], &[], &[])
             .expect("empty ingress");
         store
             .begin(
@@ -2428,7 +2682,7 @@ mod tests {
             },
         );
         assert!(matches!(
-            store.latch_step_input(LogicalDuration::default(), &[], &[], &[mismatch]),
+            store.latch_step_input(LogicalDuration::default(), &[], &[], &[], &[mismatch]),
             Err(DialogueIngressError {
                 source: LineRuntimeError::StageOutcomeMismatch,
                 ..
@@ -2444,7 +2698,7 @@ mod tests {
         );
         assert_eq!(
             store
-                .latch_step_input(LogicalDuration::default(), &[], &[], &[released])
+                .latch_step_input(LogicalDuration::default(), &[], &[], &[], &[released])
                 .expect("release outcome")
                 .into_diagnostics(),
             Vec::new()

@@ -4404,6 +4404,25 @@ fn execute_nested_line_handle_transfer(
     expect_look: bool,
     cancel_last: bool,
     expected_logs: &[&str],
+    step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+) {
+    execute_nested_line_handle_transfer_at(
+        expected_lines,
+        expect_look,
+        cancel_last.then_some(expected_lines),
+        expected_logs,
+        step,
+    );
+}
+
+fn execute_nested_line_handle_transfer_at(
+    expected_lines: usize,
+    expect_look: bool,
+    cancel_reveal: Option<usize>,
+    expected_logs: &[&str],
     mut step: impl FnMut(
         arcweft_core::step::RuntimeStepInput,
         arcweft_core::step::RuntimeStepOptions,
@@ -4440,7 +4459,7 @@ fn execute_nested_line_handle_transfer(
         effects.extend(result.output.effects.line);
         for event in result.output.flow_events {
             if let FlowEvent::DialogueLine { activation, .. } = event {
-                if cancel_last && lines.len() + 1 == expected_lines {
+                if cancel_reveal == Some(lines.len() + 1) {
                     input
                         .dialogue_input_actions
                         .push(RuntimeDialogueInputActionEvent::new(
@@ -4535,7 +4554,10 @@ fn execute_nested_line_handle_transfer(
             status => panic!("nested line handle stopped at tick {tick}: {status:?}"),
         }
     }
-    panic!("nested line handle transfer did not finish");
+    panic!(
+        "nested line handle transfer did not finish; revealed: {lines:?}; logs: {:?}; actor released: {released}",
+        log_messages(&effects)
+    );
 }
 
 #[test]
@@ -5076,6 +5098,22 @@ fn native_line_handle_execution(
     cancel_last: bool,
     expected_logs: &[&str],
 ) {
+    native_line_handle_execution_at(
+        source,
+        expected_lines,
+        expect_look,
+        cancel_last.then_some(expected_lines),
+        expected_logs,
+    );
+}
+
+fn native_line_handle_execution_at(
+    source: &str,
+    expected_lines: usize,
+    expect_look: bool,
+    cancel_reveal: Option<usize>,
+    expected_logs: &[&str],
+) {
     use arcweft_core::{
         effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
         task::RuntimeProgramOwner,
@@ -5100,10 +5138,10 @@ fn native_line_handle_execution(
     let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
-    execute_nested_line_handle_transfer(
+    execute_nested_line_handle_transfer_at(
         expected_lines,
         expect_look,
-        cancel_last,
+        cancel_reveal,
         expected_logs,
         |input, options| {
             let result = native.step_with_pure_backend(input, options, &mut backend);

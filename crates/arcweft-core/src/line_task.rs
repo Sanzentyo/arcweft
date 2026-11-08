@@ -1195,6 +1195,17 @@ impl LineTaskExecutionLane {
     }
 }
 
+/// Borrowed, bounded identities admitted before a reducer or inbox retains them.
+pub(crate) struct RuntimePreparedLineInputActions<'event> {
+    events: Vec<&'event RuntimeDialogueInputActionEvent>,
+}
+
+impl RuntimePreparedLineInputActions<'_> {
+    pub(crate) fn into_pending_events(self) -> Vec<RuntimeDialogueInputActionEvent> {
+        self.events.into_iter().cloned().collect()
+    }
+}
+
 impl LineTaskLiveState {
     #[must_use]
     pub(crate) fn new<P: LineTaskPlanView>(group: &P, activation: DialogueActivationId) -> Self {
@@ -1429,12 +1440,42 @@ impl LineTaskLiveState {
         &mut self,
         events: &[RuntimeDialogueInputActionEvent],
     ) -> Result<Vec<InputActionId>, LineRuntimeError> {
-        let mut batch = BTreeSet::new();
-        let mut accepted = events
+        let prepared = self.inspect_input_action_events(events.iter())?;
+        let mut seen_actions = BTreeSet::new();
+        let actions = prepared
+            .events
             .iter()
+            .filter_map(|event| {
+                seen_actions
+                    .insert(event.action())
+                    .then(|| event.action().clone())
+            })
+            .collect();
+        self.consumed_input_actions
+            .extend(prepared.events.into_iter().cloned());
+        Ok(actions)
+    }
+
+    pub(crate) fn inspect_input_action_events<'event>(
+        &self,
+        events: impl IntoIterator<Item = &'event RuntimeDialogueInputActionEvent>,
+    ) -> Result<RuntimePreparedLineInputActions<'event>, LineRuntimeError> {
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        let mut accepted = Vec::new();
+        for event in events
+            .into_iter()
             .filter(|event| event.activation() == &self.activation)
-            .cloned()
-            .collect::<Vec<_>>();
+        {
+            let count = self
+                .consumed_input_actions
+                .len()
+                .checked_add(accepted.len())
+                .and_then(|count| count.checked_add(1));
+            if count.is_none_or(|count| !limits.permits_sequence_items(count)) {
+                return Err(LineRuntimeError::InputActionHistoryLimitExceeded);
+            }
+            accepted.push(event);
+        }
         accepted.sort_by(|left, right| {
             (left.epoch(), left.sequence(), left.action()).cmp(&(
                 right.epoch(),
@@ -1442,28 +1483,20 @@ impl LineTaskLiveState {
                 right.action(),
             ))
         });
+        let mut batch = BTreeSet::new();
         for event in &accepted {
-            if !batch.insert(event.clone()) {
+            if !batch.insert(*event) {
                 return Err(LineRuntimeError::DuplicateInputActionEvent {
-                    event: event.clone(),
+                    event: (*event).clone(),
                 });
             }
-            if self.consumed_input_actions.contains(event) {
+            if self.consumed_input_actions.contains(*event) {
                 return Err(LineRuntimeError::ConsumedInputActionEvent {
-                    event: event.clone(),
+                    event: (*event).clone(),
                 });
             }
         }
-        self.consumed_input_actions.extend(batch);
-        let mut seen_actions = BTreeSet::new();
-        let actions = accepted
-            .iter()
-            .filter_map(|event| {
-                let action = event.action().clone();
-                seen_actions.insert(action.clone()).then_some(action)
-            })
-            .collect();
-        Ok(actions)
+        Ok(RuntimePreparedLineInputActions { events: accepted })
     }
 
     fn complete_work(
