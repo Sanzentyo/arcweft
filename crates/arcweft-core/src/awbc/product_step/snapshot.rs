@@ -2604,7 +2604,7 @@ impl AwbcProductExecutorSnapshot {
                             }
                         }
                         for deferred in &scope.defers {
-                            for capture in &deferred.captures {
+                            for (ordinal, capture) in deferred.captures.iter().enumerate() {
                                 for handle in
                                     capture.view().affine_line_handles().map_err(|error| {
                                         AwbcProductStepBuildError::RestoreSnapshot {
@@ -2612,8 +2612,27 @@ impl AwbcProductExecutorSnapshot {
                                         }
                                     })?
                                 {
-                                    if handle.token().activation() != &active.activation
-                                        || scope_defer_tokens
+                                    if handle.token().activation() != &active.activation {
+                                        let slot = crate::value::ownership::RuntimeOwnedSlotId::AwbcDeferCapture {
+                                            execution: super::PRODUCT_EXECUTION_ID,
+                                            fiber: fiber.instance,
+                                            frame: frame.instance,
+                                            scope: scope_id,
+                                            registration: deferred.id,
+                                            ordinal: u32::try_from(ordinal).map_err(|_| AwbcProductStepBuildError::RestoreSnapshot {
+                                                message: "scoped defer capture ordinal overflows".into(),
+                                            })?,
+                                        };
+                                        snapshot.dialogues.published_lease(handle.token())
+                                            .ok_or(crate::line_task::LineRuntimeError::UnknownHandle)
+                                            .and_then(|lease| lease.validate_deferred_capture(
+                                                &handle,
+                                                &crate::line_task::RuntimeHandleOwnerSlot::parent_fiber(super::PRODUCT_EXECUTION_ID, slot),
+                                            ))
+                                            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() })?;
+                                        continue;
+                                    }
+                                    if scope_defer_tokens
                                             .insert(
                                                 handle.token().clone(),
                                                 crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(deferred.id),

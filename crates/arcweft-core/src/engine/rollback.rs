@@ -1320,10 +1320,7 @@ impl<N, P, R, V, FP, O, C, A, S, D>
         let mut scoped_tokens = BTreeSet::new();
         for child in self.session_fibers() {
             if let Some(exit) = &child.frame.lexical_exit
-                && matches!(
-                    exit.action,
-                    NativeLexicalExitAction::Goto { .. } | NativeLexicalExitAction::Return { .. }
-                )
+                && matches!(exit.action, NativeLexicalExitAction::Goto { .. })
                 && !child.owner.owns_flow_defers()
             {
                 return Err(invalid());
@@ -1387,17 +1384,27 @@ impl<N, P, R, V, FP, O, C, A, S, D>
                             .line_handle_projection()
                             .map_err(|_| invalid())?
                         {
-                            let (lease, expected) = if let Some((_, line)) = line {
+                            let (lease, expected) = if let Some((activation, line)) = line
+                                && handle.token().activation() == &activation
+                            {
                                 (
                                     line.ledger().lease(handle.token()),
                                     RuntimeHandleOwnerSlot::ScopedDefer(registration.packet.id()),
                                 )
                             } else {
-                                let slot = crate::value::ownership::RuntimeOwnedSlotId::NativeDeferCapture {
-                                    execution: child.execution,
-                                    fiber: child.persistent_id,
-                                    registration: registration.packet.id(),
-                                    ordinal,
+                                let slot = match line {
+                                    Some((activation, _)) => crate::value::ownership::RuntimeOwnedSlotId::LineDeferCapture {
+                                        execution: child.execution,
+                                        activation,
+                                        registration: registration.packet.id(),
+                                        ordinal,
+                                    },
+                                    None => crate::value::ownership::RuntimeOwnedSlotId::NativeDeferCapture {
+                                        execution: child.execution,
+                                        fiber: child.persistent_id,
+                                        registration: registration.packet.id(),
+                                        ordinal,
+                                    },
                                 };
                                 (
                                     published(handle.token()),
@@ -1409,8 +1416,7 @@ impl<N, P, R, V, FP, O, C, A, S, D>
                             };
                             if !scoped_tokens.insert(handle.token().clone())
                                 || lease.is_none_or(|lease| {
-                                    lease.owner() != &expected
-                                        || lease.resource().kind() != handle.kind()
+                                    lease.validate_deferred_capture(&handle, &expected).is_err()
                                 })
                             {
                                 return Err(invalid());

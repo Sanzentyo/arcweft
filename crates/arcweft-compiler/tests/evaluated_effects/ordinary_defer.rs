@@ -945,3 +945,265 @@ fn with_saved_awbc_steps_checking<R>(
         result
     })
 }
+
+#[test]
+fn native_initial_owned_line_init_defer_preserves_nested_scopes() {
+    for (source, expected) in initial_owned_line_scoped_defer_sources() {
+        native_line_handle_execution(&source, 2, false, false, expected);
+    }
+}
+
+#[test]
+fn saved_awbc_initial_owned_line_init_defer_preserves_nested_scopes() {
+    for (source, expected) in initial_owned_line_scoped_defer_sources() {
+        assert_saved_awbc_with_reveals(&source, 2, expected);
+    }
+}
+
+fn initial_owned_line_scoped_defer_sources() -> [(String, &'static [&'static str]); 2] {
+    let source = initial_owned_line_init_defer_source();
+    [
+        (
+            source.replace(
+                "defer { let _ = actor; log.info(\"init cleanup\") }",
+                r#"defer {
+                    defer { let _ = actor; log.info("init cleanup") }
+                    log.info("nested body")
+                }"#,
+            ),
+            &["body", "nested body", "init cleanup", "cleanup"],
+        ),
+        (
+            source.replace(
+                "defer { let _ = actor; log.info(\"init cleanup\") }",
+                r#"scope cleanup {
+                    defer { let _ = actor; log.info("init cleanup") }
+                    log.info("scope body")
+                }"#,
+            ),
+            &["body", "scope body", "init cleanup", "cleanup"],
+        ),
+    ]
+}
+
+#[test]
+fn native_initial_owned_line_init_defer_preserves_outcome_filters() {
+    for outcome in ["completed", "failed"] {
+        let source = initial_owned_line_init_defer_source().replace(
+            "defer { let _ = actor;",
+            &format!("defer on {outcome} {{ let _ = actor;"),
+        );
+        let expected: &[&str] = if outcome == "completed" {
+            &["body", "init cleanup", "cleanup"]
+        } else {
+            &["body", "cleanup"]
+        };
+        native_line_handle_execution(&source, 2, false, false, expected);
+    }
+}
+
+#[test]
+fn saved_awbc_initial_owned_line_init_defer_preserves_outcome_filters() {
+    for outcome in ["completed", "failed"] {
+        let source = initial_owned_line_init_defer_source().replace(
+            "defer { let _ = actor;",
+            &format!("defer on {outcome} {{ let _ = actor;"),
+        );
+        let expected: &[&str] = if outcome == "completed" {
+            &["body", "init cleanup", "cleanup"]
+        } else {
+            &["body", "cleanup"]
+        };
+        assert_saved_awbc_with_reveals(&source, 2, expected);
+    }
+}
+
+#[test]
+fn saved_awbc_initial_line_init_defer_rejects_forged_capture_custody() {
+    use arcweft_core::executor::ArcweftRuntimeExecutorSnapshot;
+    let mut checked = false;
+    assert_saved_awbc_checking(
+        &initial_owned_line_init_defer_source(),
+        2,
+        &["body", "init cleanup", "cleanup"],
+        |mut executor, save| {
+            if checked {
+                return executor;
+            }
+            for (entry_index, entry) in save["dialogues"]["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+            {
+                let Some(leases) = entry
+                    .pointer("/PublishedHandles/handles/ledger/leases")
+                    .and_then(serde_json::Value::as_object)
+                else {
+                    continue;
+                };
+                for (key, lease) in leases {
+                    let Some(slot) = lease
+                        .pointer("/owner/ParentFiber/slot")
+                        .filter(|slot| slot["kind"] == "awbc_defer_capture")
+                    else {
+                        continue;
+                    };
+                    if !save["dialogues"]["entries"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|entry| {
+                            entry.pointer("/Active/frame/phase/Activating/fiber/instance")
+                                == Some(&slot["fiber"])
+                        })
+                    {
+                        continue;
+                    }
+                    let before = executor.snapshot().unwrap();
+                    let mut mutations = Vec::new();
+                    for field in [
+                        "execution",
+                        "fiber",
+                        "frame",
+                        "scope",
+                        "registration",
+                        "ordinal",
+                    ] {
+                        let mut forged = save.clone();
+                        let value = &mut forged["dialogues"]["entries"][entry_index]["PublishedHandles"]
+                            ["handles"]["ledger"]["leases"][key]["owner"]["ParentFiber"]["slot"]
+                            [field];
+                        *value = if field == "scope" {
+                            if value.is_null() {
+                                0.into()
+                            } else {
+                                serde_json::Value::Null
+                            }
+                        } else if let Some(value) = value.as_str() {
+                            (value.parse::<u64>().unwrap() + 1).to_string().into()
+                        } else {
+                            (value.as_u64().unwrap() + 1).into()
+                        };
+                        mutations.push(forged);
+                    }
+                    for duplicate in [false, true] {
+                        let mut forged = save.clone();
+                        let receiver = forged["dialogues"]["entries"]
+                            .as_array_mut()
+                            .unwrap()
+                            .iter_mut()
+                            .find(|entry| {
+                                entry.pointer("/Active/frame/phase/Activating/fiber/instance")
+                                    == Some(&slot["fiber"])
+                            })
+                            .unwrap();
+                        let frame =
+                            receiver["Active"]["frame"]["phase"]["Activating"]["fiber"]["frames"]
+                                .as_array_mut()
+                                .unwrap()
+                                .iter_mut()
+                                .find(|frame| frame["instance"] == slot["frame"])
+                                .unwrap();
+                        let deferred = if slot["scope"].is_null() {
+                            &mut frame["root_deferred"]
+                        } else {
+                            &mut frame["scopes"]
+                                .as_array_mut()
+                                .unwrap()
+                                .iter_mut()
+                                .find(|scope| scope["id"] == slot["scope"])
+                                .unwrap()["deferred"]
+                        };
+                        let packets = deferred["defers"].as_array_mut().unwrap();
+                        let index = packets
+                            .iter()
+                            .position(|packet| packet["id"] == slot["registration"])
+                            .unwrap();
+                        if duplicate {
+                            packets.push(packets[index].clone());
+                        } else {
+                            packets.remove(index);
+                        }
+                        mutations.push(forged);
+                    }
+                    for forged in mutations {
+                        let forged = serde_json::from_value(forged).unwrap();
+                        match executor.bind_product_save_snapshot(forged) {
+                            Err(_) => {}
+                            Ok(bound) => {
+                                let Err(rejected) = executor.restore_snapshot(
+                                    ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound),
+                                ) else {
+                                    panic!("forged scoped custody must be refused");
+                                };
+                                let (unchanged, _) = rejected.into_parts();
+                                executor = unchanged;
+                            }
+                        }
+                        assert_eq!(executor.snapshot().unwrap(), before);
+                    }
+                    checked = true;
+                    return executor;
+                }
+            }
+            executor
+        },
+    );
+    assert!(
+        checked,
+        "the received init-defer packet reached a public save"
+    );
+}
+
+#[test]
+fn native_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits() {
+    for cancel in [false, true] {
+        native_line_handle_execution(
+            &initial_owned_line_waiting_init_defer_source(),
+            3,
+            false,
+            cancel,
+            &[
+                "body",
+                if cancel { "cancelled" } else { "nested" },
+                "init cleanup",
+                "cleanup",
+            ],
+        );
+    }
+}
+
+#[test]
+fn saved_awbc_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits() {
+    for cancel in [false, true] {
+        with_saved_awbc_steps(&initial_owned_line_waiting_init_defer_source(), |step| {
+            execute_nested_line_handle_transfer(
+                3,
+                false,
+                cancel,
+                &[
+                    "body",
+                    if cancel { "cancelled" } else { "nested" },
+                    "init cleanup",
+                    "cleanup",
+                ],
+                step,
+            );
+        });
+    }
+}
+
+fn initial_owned_line_waiting_init_defer_source() -> String {
+    initial_owned_line_init_defer_source().replace(
+        "defer { let _ = actor; log.info(\"init cleanup\") }",
+        r#"defer {
+            defer { let _ = actor; log.info("init cleanup") }
+            let received = alice()[Inner[p]] with {
+                cancel on input(.SkipLine) { out "cancelled" }
+                out "nested"
+            }
+            log.info(received)
+        }"#,
+    )
+}

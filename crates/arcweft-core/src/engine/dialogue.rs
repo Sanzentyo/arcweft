@@ -1785,12 +1785,11 @@ impl Engine {
         }
         let source_slots =
             super::defer::defer_source_slots(self.fiber.execution, &frame.execution, captures)?;
-        let scoped_registration = super::defer::register_line_defer(
+        let prepared = super::defer::inspect_line_defer(
             &self.plan,
-            &mut frame.execution.env,
+            &frame.execution.env,
             activation,
             site,
-            outcome,
             captures,
             super::defer::NativeDeferCaptureOwner::Activation(owner_kind),
             |handle, ordinal| {
@@ -1801,6 +1800,13 @@ impl Engine {
                 )
             },
         )?;
+        let scoped_registration = prepared.commit(
+            &mut frame.execution.env,
+            activation,
+            site,
+            outcome,
+            captures,
+        );
         if let Some(registration) = scoped_registration {
             frame
                 .scopes

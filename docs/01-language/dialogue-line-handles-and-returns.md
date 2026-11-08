@@ -378,11 +378,13 @@ the line only borrows it or moves one field. Inside the line, the input starts
 initialized in that line's frame and may be borrowed, consumed, or returned with
 `out`. Copy inputs remain available in the caller.
 
-A reached line-root `defer` may take an owned initial input. The registration
-then owns that value until its cleanup starts; cleanup receives the same value
-once, on normal completion or cancellation. Moving a received handle into that
-registration preserves the original issuing line's resource authority. The
-receiving line waits for its cleanup before completing.
+A reached `defer` in the line root, `init`, or a nested lexical scope may take
+an owned initial input. Its sole capture packet retains that value until cleanup
+starts; cleanup receives it once when the frozen scope outcome matches the
+registration's filter. A skipped registration releases its owned packet. Moving
+a received handle into another registration preserves the original issuing
+line's resource authority. Scope completion, result binding, and return wait for
+the applicable cleanup, including a cleanup suspended in another dialogue.
 
 Initial inputs and inputs shared after reveal have different lifetimes. Only
 the root values actually used by unscheduled line work are shared at reveal,

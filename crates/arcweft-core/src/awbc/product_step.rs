@@ -3959,7 +3959,15 @@ impl AwbcProductStepExecutor {
             }
             return true;
         }
-        if let Some(before_flow_owners) = before_flow_owners.as_ref() {
+        if let Some(before_flow_owners) = before_flow_owners.as_ref()
+            && !observations.iter().any(|observation| {
+                matches!(
+                    observation,
+                    VmObservation::ScopedDeferRegistration { .. }
+                        | VmObservation::ScopedDeferUnwind { .. }
+                ) && owner.line_activation().is_some()
+            })
+        {
             let mut batch = line::empty_activation_batch(self);
             let prepared = match if owner.line_activation().is_none() {
                 self.prepare_flow_defer_step(&child.fiber, &mut observations, &batch)
@@ -4251,7 +4259,7 @@ impl AwbcProductStepExecutor {
                 {
                     return Err(LineRuntimeError::InvalidActivationOperation.into());
                 }
-                let staged = match observation {
+                let mut staged = match observation {
                     VmObservation::ScopedDeferRegistration { .. } => {
                         PreparedChildScopedDeferStep::Register(
                             self.inspect_child_scoped_defer_registration(
@@ -4287,6 +4295,11 @@ impl AwbcProductStepExecutor {
                     }
                     _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
                 };
+                let received = match &mut staged {
+                    PreparedChildScopedDeferStep::Register(prepared) => prepared.take_received(),
+                    PreparedChildScopedDeferStep::Unwind(prepared) => prepared.take_received(),
+                };
+                transaction.stage_received_handles(received);
                 return Ok(Some((index, staged)));
             }
             let line = transaction.line_mut();

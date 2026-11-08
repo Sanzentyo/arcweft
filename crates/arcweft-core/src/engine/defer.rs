@@ -67,6 +67,11 @@ pub(super) struct NativeDeferScopeContext {
     pub(super) owner: NativeDeferParent,
 }
 
+pub(super) struct NativeDeferRegistrationReceipt {
+    pub(super) local_tokens: std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+    pub(super) received: Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativeLexicalExit<V> {
     pub(super) target: usize,
@@ -668,11 +673,10 @@ impl super::Engine {
                 value => crate::value::runtime_value_label(&value),
             })
         };
-        if self.fiber.owner.owns_flow_defers()
-            && let Some(target) = self
-                .fiber
-                .frame
-                .defer_target(NativeDeferBoundary::Invocation)
+        if let Some(target) = self
+            .fiber
+            .frame
+            .defer_target(NativeDeferBoundary::Invocation)
         {
             self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
                 target,
@@ -952,10 +956,7 @@ impl super::Engine {
         >,
         tag: &crate::line_task::LineTaskWorkTag,
         source: NativeSourceOperation,
-    ) -> Result<
-        std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
-        super::dialogue::DialogueExecutionError,
-    > {
+    ) -> Result<NativeDeferRegistrationReceipt, super::dialogue::DialogueExecutionError> {
         use super::FlowControlStackEntryKind;
         use crate::line_task::LineRuntimeError;
         let Some(FlowOp::RegisterDefer {
@@ -983,12 +984,11 @@ impl super::Engine {
         if defers.exit.is_some() {
             return Err(LineRuntimeError::InvalidDeferredTransition.into());
         }
-        let packet = register_line_defer(
+        let mut prepared = inspect_line_defer(
             &self.plan,
-            &mut child.frame.env,
+            &child.frame.env,
             line,
             *site,
-            *outcome,
             captures,
             NativeDeferCaptureOwner::Child(tag),
             |handle, ordinal| {
@@ -998,21 +998,47 @@ impl super::Engine {
                     source_slots[ordinal],
                 )
             },
-        )?
-        .expect("child defer always registers in a lexical scope");
-        let mut captured = std::collections::BTreeSet::new();
-        for value in packet.captures() {
-            captured.extend(
-                super::dialogue::unique_affine_line_handles(value)?
-                    .into_iter()
-                    .map(|handle| handle.token().clone()),
-            );
-        }
+        )?;
+        let received = if prepared.received_captures.is_empty() {
+            None
+        } else {
+            let mut before = std::collections::BTreeMap::new();
+            let mut after = std::collections::BTreeMap::new();
+            for (token, ordinal) in &prepared.received_captures {
+                before.insert(token.clone(), source_slots[*ordinal]);
+                after.insert(
+                    token.clone(),
+                    crate::value::ownership::RuntimeOwnedSlotId::LineDeferCapture {
+                        execution: child.execution,
+                        activation: *tag.activation_id(),
+                        registration: prepared.registration.id(),
+                        ordinal: u32::try_from(*ordinal)
+                            .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?,
+                    },
+                );
+            }
+            Some(
+                self.dialogue_activations
+                    .inspect_parent_fiber_reconciliation(
+                        self.published_receiver_execution(),
+                        &before,
+                        &after,
+                        &Default::default(),
+                    )?,
+            )
+        };
+        let captured = std::mem::take(&mut prepared.local_tokens);
+        let packet = prepared
+            .commit(&mut child.frame.env, line, *site, *outcome, captures)
+            .expect("child defer always registers in a lexical scope");
         defers.deferred.push(NativeLexicalDeferred {
             packet,
             source: NativeDeferSource::Control(source),
         });
-        Ok(captured)
+        Ok(NativeDeferRegistrationReceipt {
+            local_tokens: captured,
+            received,
+        })
     }
 
     pub(super) fn step_line_defer_scope(
@@ -1238,21 +1264,57 @@ pub(super) fn defer_source_slots(
         .collect()
 }
 
-pub(super) fn register_line_defer(
+pub(super) struct NativePreparedLineDefer {
+    registration: crate::scope::RuntimePreparedDeferredRegistration,
+    ledger: crate::line_task::RuntimeLineHandleLedger,
+    owner: RuntimeDeferOwner,
+    local_tokens: std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+    received_captures: std::collections::BTreeMap<crate::runtime_id::RuntimeLineHandleToken, usize>,
+}
+
+impl NativePreparedLineDefer {
+    pub(super) fn commit(
+        self,
+        env: &mut crate::value::RuntimeEnv,
+        activation: &mut crate::line_task::RuntimeDialogueActivationState<
+            crate::runtime_id::RuntimePlanTypeId,
+        >,
+        site: RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: &[crate::value::RuntimeExpr],
+    ) -> Option<RuntimeLineDeferredRegistration> {
+        let values = take_defer_captures(env, captures);
+        let packet = match self.owner {
+            RuntimeDeferOwner::CurrentScope => Some(activation.commit_deferred_registration(
+                site,
+                outcome,
+                values,
+                self.registration,
+            )),
+            RuntimeDeferOwner::LineRoot => {
+                activation.register_deferred_prepared(site, outcome, values, self.registration);
+                None
+            }
+        };
+        activation.commit_ledger(self.ledger);
+        packet
+    }
+}
+
+pub(super) fn inspect_line_defer(
     plan: &crate::plan::RuntimePlan,
-    env: &mut crate::value::RuntimeEnv,
-    activation: &mut crate::line_task::RuntimeDialogueActivationState<
+    env: &crate::value::RuntimeEnv,
+    activation: &crate::line_task::RuntimeDialogueActivationState<
         crate::runtime_id::RuntimePlanTypeId,
     >,
     site: RuntimeDeferSiteId,
-    outcome: crate::line_task::RuntimeDeferOutcomeFilter,
     captures: &[crate::value::RuntimeExpr],
     owner: NativeDeferCaptureOwner<'_>,
     inspect_received: impl FnMut(
         &crate::value::ownership::RuntimeAffineLineHandle,
         usize,
     ) -> Result<(), crate::line_task::LineRuntimeError>,
-) -> Result<Option<RuntimeLineDeferredRegistration>, super::dialogue::DialogueExecutionError> {
+) -> Result<NativePreparedLineDefer, super::dialogue::DialogueExecutionError> {
     use super::dialogue::unique_affine_line_handles;
     use crate::line_task::{LineRuntimeError, RuntimeHandleOwnerSlot};
     use crate::value::{RuntimeExprKind, RuntimeLocalReadMode};
@@ -1261,7 +1323,8 @@ pub(super) fn register_line_defer(
     let mut ledger = activation.ledger().clone();
     let mut captured_handles = std::collections::BTreeSet::new();
     let mut scoped_transfers = Vec::new();
-    for (capture, value) in captures.iter().zip(&capture_refs) {
+    let mut received_captures = std::collections::BTreeMap::new();
+    for (ordinal, (capture, value)) in captures.iter().zip(&capture_refs).enumerate() {
         let RuntimeExprKind::Local(read) = capture.kind() else {
             unreachable!("defer capture was checked as a local");
         };
@@ -1275,6 +1338,7 @@ pub(super) fn register_line_defer(
             let Some(lease) = ledger.lease(handle.token()) else {
                 // The registration preflight below authenticates received
                 // handles through their issuer and original capture slot.
+                received_captures.insert(handle.token().clone(), ordinal);
                 continue;
             };
             if lease.resource().kind() != handle.kind() {
@@ -1322,14 +1386,18 @@ pub(super) fn register_line_defer(
             RuntimeHandleOwnerSlot::ScopedDefer(prepared.id()),
         )?;
     }
-    let values = take_defer_captures(env, captures);
-    let scoped_registration = match owner.is_scoped() {
-        true => Some(activation.commit_deferred_registration(site, outcome, values, prepared)),
-        false => {
-            activation.register_deferred_prepared(site, outcome, values, prepared);
-            None
-        }
-    };
-    activation.commit_ledger(ledger);
-    Ok(scoped_registration)
+    Ok(NativePreparedLineDefer {
+        registration: prepared,
+        ledger,
+        owner: if owner.is_scoped() {
+            RuntimeDeferOwner::CurrentScope
+        } else {
+            RuntimeDeferOwner::LineRoot
+        },
+        local_tokens: captured_handles
+            .into_iter()
+            .filter(|token| !received_captures.contains_key(token))
+            .collect(),
+        received_captures,
+    })
 }

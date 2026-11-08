@@ -4792,16 +4792,17 @@ impl Engine {
                         crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
                     );
                 }
-                let captured = self.register_control_defer(
+                let receipt = self.register_control_defer(
                     &mut child,
                     transaction.line_mut(),
                     &owner.tag,
                     source,
                 )?;
+                transaction.stage_received_handles(receipt.received);
                 let before = before_tokens
                     .as_mut()
                     .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
-                for token in captured {
+                for token in receipt.local_tokens {
                     if !before.remove(&token) {
                         return Err(crate::line_task::LineRuntimeError::WrongOwner.into());
                     }
