@@ -45717,5 +45717,610 @@
         }
       ]
     }
+  },
+  "nativeActivationScopeResults": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "625deea6d6051469fc0c60a4e6808727fb42c21d",
+    "priorSource": "c7ad0e974c297fc51c47557790489e78fd1b42b5",
+    "probeBase": "b028f834e50ec94193a5ffbe1b821f58b762e342",
+    "accepted": "The remaining Native explicit init-scope regression now passes. Native and saved AWBC also pass Actor scope-result binding/discard across normal and explicitly targeted inner-dialogue cancellation: 2 backends x 2 destinations x 2 outcomes, preserving 1-op/512-step, 3 unique reveals, ordered logs, one acquire/release and release only after suspended cleanup completes. AWBC saves/cold restores public JSON at every step.",
+    "implementation": "ExitScopeBind evaluates once into the actual activation-owned pending cell, reconciles its custody and parks the operation. Existing lexical defer progress drains cleanup, then one complete preflight transfers the result to the original pattern or drops it with current locals. Failed/cancelled scope exit discards the pending value. The sole physical cell is included in live/inert roots, rollback mapping and exact original-issuer slot inventory; original operation/type/depth/phase are checked in the shared admission allowance. Binary slot tag 23 is version 1; unknown tag test advances to 24 without a new schema or legacy reader.",
+    "validation": {
+      "owners": {
+        "version": 1,
+        "base": "625deea6d6051469fc0c60a4e6808727fb42c21d",
+        "run": "native-scope-result-20261108.final-owners.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  10.294s] 166 tests run: 166 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 166,
+        "passed": 166,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3417,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T01:32:37.9528582Z"
+      },
+      "coreAllFeaturesLibrary": {
+        "version": 1,
+        "base": "625deea6d6051469fc0c60a4e6808727fb42c21d",
+        "run": "native-scope-result-20261108.final-core.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  16.927s] 2330 tests run: 2330 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2330,
+        "passed": 2330,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3417,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T01:31:26.8372347Z"
+      },
+      "finalSource": "After review restored the existing explicit Default drop boundary in the moved scope owner, source 625deea6d6051469fc0c60a4e6808727fb42c21d was published as a coherent checkpoint under the user authorization for intermediate commits. The complete 2330-case Core library, 166-case Compiler owners and workspace gates are then rerun on those published Rust bytes.",
+      "forgeries": "Retained operation, scope depth, original result type and enclosing frontier/depth are refused. The shared max_nodes=0 boundary refuses the same inert value. A separate Bool pending-result test executes both failed and cancelled scope exits without publishing it. The slot codec checks exact 61-byte tag-23 shape, human JSON, ordering/rendering, all truncated prefixes and trailing bytes.",
+      "gates": "Fresh all-target/all-feature workspace check/Clippy, canonical structure gate and 9 Rust path fmt exit 0; warnings retained",
+      "sourceInputs": 3417,
+      "sourceDrift": 0,
+      "scope": "Core all-feature 2330-case library and Compiler 166-case selections are separate invocations. Compiler test IDs each execute binding/discard and normal/inner-cancel branches. The Core failed/cancelled result case uses Bool, not an Actor failure-path claim. Native public Save was not added. A new full Core53 runtime matrix is still separate."
+    },
+    "history": "Initial Core check passed and the original Compiler 164 cases all passed after the Native implementation. The new Core admission fixture initially failed as an orphan line task group; the corrected attached fixture then exposed two missing test imports before runtime. Final 3-case Core run passed all. Compiler 166-case run passed 164 with two new fixtures rejected at HIR readiness; a diagnostic-only Native probe reproduced the same failure. The fixture used an invented cancellation spelling and was corrected to the existing cancel on input(.SkipLine) grammar without budget/assertion reduction. A 166-case run passed all before final review. Review then restored the original explicit Default boundary authorization for scope drops; the final published source reran the full 2330-case Core library, 166 Compiler owners and workspace gates. Each original source epoch, actual executable identity, failure and compile-only preparation result is retained separately.",
+    "remaining": "The concrete Native explicit scope condition in the initial-input row is resolved. Other accepted features stay accepted. The broader goal still has its independently tracked Native public Save, final full Core53/CLI consumer acceptance, platform/Tier2 and full Native-Web parity conditions; none are claimed by this owner cut.",
+    "preserved": "122 older ledger records preserved. Original WIP is 12 tracked / 6 actual untracked, independently verified. Historical focused-wrapper held=14 labels are not actual WIP counts. Generic Match and all earlier accepted boundaries remain accepted.",
+    "raw": {
+      "path": "task-native-activation-scope-results.raw.zip",
+      "sha256": "90c15237995c3fa04e357b01a36ca696389ade2c671edda4f4b8892d59d38ae9",
+      "entries": [
+        {
+          "entry": "native-scope-result-20261108.affine-probe.binaries-before.json",
+          "bytes": 230,
+          "sha256": "0afd18f815192d18229279f4465dc956dd90be9dc1ae32768c9542390ea364e5"
+        },
+        {
+          "entry": "native-scope-result-20261108.affine-probe.catalog.inventory.json",
+          "bytes": 34635,
+          "sha256": "6d14ca67d9e4de263ecb1f7a60402103771840e74ddeda1f0d2fa9401a11f2b6"
+        },
+        {
+          "entry": "native-scope-result-20261108.affine-probe.catalog.json",
+          "bytes": 670,
+          "sha256": "f9055a276fd6c114b0e287c639334947e867c0775684f0a9b921ee214ae94612"
+        },
+        {
+          "entry": "native-scope-result-20261108.affine-probe.catalog.log",
+          "bytes": 111950,
+          "sha256": "09e625007398d1301c500205f22c4734254697e0d877056600476a23508c0ef1"
+        },
+        {
+          "entry": "native-scope-result-20261108.affine-probe.runtime.json",
+          "bytes": 764,
+          "sha256": "a9525f784ac1a8b66e441dfe4f3f5f35f4c568e9e4c4f6d8a654e5b8a19b2b9d"
+        },
+        {
+          "entry": "native-scope-result-20261108.affine-probe.runtime.log",
+          "bytes": 136379,
+          "sha256": "7793e954a7fb919696b1e52d603a8229cd3927fd74b8815f6f6edfe021b48bba"
+        },
+        {
+          "entry": "native-scope-result-20261108.affine-probe.runtime.terminal-audit.json",
+          "bytes": 826,
+          "sha256": "e6e0ec5178b5d2a65682d1486f4bab0c5bbf9e746220be793ec05155535e4129"
+        },
+        {
+          "entry": "native-scope-result-20261108.affine-probe.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "7cbd23d6b5f73c88ec8f22f52248f2ce127ee4eb03d2408063b6fddb303386f7"
+        },
+        {
+          "entry": "native-scope-result-20261108.check-r1.log",
+          "bytes": 73522,
+          "sha256": "16e7cde886b88301dfd531543f68258dc1444221139079b6fd335d04af683299"
+        },
+        {
+          "entry": "native-scope-result-20261108.check-r1.receipt.json",
+          "bytes": 328,
+          "sha256": "9adce972b297c40f83949fe7c9a7b3f9f1a08265ef5f74efcac0304c7866bed0"
+        },
+        {
+          "entry": "native-scope-result-20261108.check-r1.source.json",
+          "bytes": 606055,
+          "sha256": "4aa7f9d1436782dd1319bcc6d22f2ce966a251ce3abd5803bbacdffb02d617d2"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.binaries-before.json",
+          "bytes": 202,
+          "sha256": "dc310a16b4411ed65ed585af0930f1ff2f2bc673f7991dba72ce2c6e1acea04b"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.catalog.inventory.json",
+          "bytes": 593315,
+          "sha256": "021ed70abfd61add313cecab2ffc38df233cf590a3ace71504da61eac56c025d"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.catalog.json",
+          "bytes": 552,
+          "sha256": "b81b471b457cdb7f6735dfe162a0b1b9fbb7daa7d6d2e5236ed1ab04bc94373a"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.catalog.log",
+          "bytes": 438527,
+          "sha256": "7639633a219f338eea89d424d448ca6ebcb3f4ff79d6ec52b9f3d575c59375dc"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.runtime.json",
+          "bytes": 644,
+          "sha256": "04a0936d1c965c4beb941fef85129e9004e54cd23d1e145689a47b9ac7ae1fab"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.runtime.log",
+          "bytes": 751328,
+          "sha256": "fba28c86f215ee3d19c7f74cc9b083146fccae57d09618bde010f03508b6d330"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.runtime.terminal-audit.json",
+          "bytes": 628,
+          "sha256": "8bf5cc14e7b3329e882c440e72fcada5636a993a267e91be67b4d6cd1baa1198"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-core.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "616b6ec3cf12442c72a9c87e3e6902d29c1a76c43afa5608074c71ad373e0a62"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.binaries-before.json",
+          "bytes": 477,
+          "sha256": "df0bcf32488e1574d5c359ac47eb8e6579f51c157be82635e19dd60ddbbdb1af"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.catalog.inventory.json",
+          "bytes": 41678,
+          "sha256": "8a7592bd4f065deab7f87066371860b575236fc7de039722593f8c7123d01f80"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.catalog.json",
+          "bytes": 621,
+          "sha256": "5ab893b86b611757b03255eef0326401a1598a1ad66a927f86e3202857abacd8"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.catalog.log",
+          "bytes": 114906,
+          "sha256": "8766f23a81f8fb5ab69efe7e99f53bb5cfe1d704c9e7a6559db2137d3cc76c4d"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.runtime.json",
+          "bytes": 713,
+          "sha256": "caa6330126080ebe709da9dd1ac4c639e154acc7dfe62eb939e803ccba41f041"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.runtime.log",
+          "bytes": 135968,
+          "sha256": "4e1d6aae1e18704aa854d20e825767897b9171fd2903e8261731a08cffbaee62"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.runtime.terminal-audit.json",
+          "bytes": 626,
+          "sha256": "cf6436c92264113d7a3fdd768e5e760afd38d3ae50c12721157257c190ec8583"
+        },
+        {
+          "entry": "native-scope-result-20261108.final-owners.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "664a191ad44be12def006af20d65ac602c1c7c3499ad91c4b8d09b7ca3708857"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.binaries-before.json",
+          "bytes": 477,
+          "sha256": "dd9cc4e8ca7924acf7aabebc0c4b6f0026313b608ea4a7320364b0a269dd8a84"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.catalog.inventory.json",
+          "bytes": 41164,
+          "sha256": "275d7fe09e3085ce05c34461918bea335bfe04680c75b0602faa7927b2a6b625"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.catalog.json",
+          "bytes": 618,
+          "sha256": "a65c455153939ba033cfe748485185d2ecfb61362f3e9eeb5b050f6ede1cccb8"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.catalog.log",
+          "bytes": 114610,
+          "sha256": "f893b8bf9a3ab7830a332a3aff79cf27d44bde741ebcfc0885349361fea73508"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.runtime.json",
+          "bytes": 710,
+          "sha256": "0e45041320a61a16264a8b51cc0e183be3e103edd49a1fb67667c38e4aa5add3"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.runtime.log",
+          "bytes": 135368,
+          "sha256": "23deecab3eb9cceefdb80cb73e8c560814fe50a5c20e094e89e58cacafeccc6c"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.runtime.terminal-audit.json",
+          "bytes": 623,
+          "sha256": "f8ede8f7bacc89099aefa5f332598e755a8a621f48bc7fafb89d4578a9f8005a"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r1.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "c58f57fd9d4874ace80552c67b754543bfbc11dc939d7cc3f761050db2ab988a"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.binaries-before.json",
+          "bytes": 477,
+          "sha256": "3f97ea3235eb003216cecdc73489f14b0d35b7810da56dcaf863103e1fa877c8"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.catalog.inventory.json",
+          "bytes": 41678,
+          "sha256": "8a7592bd4f065deab7f87066371860b575236fc7de039722593f8c7123d01f80"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.catalog.json",
+          "bytes": 618,
+          "sha256": "c8cb949b52bc33918147c91cebc0df4ee527490467aa5adbee89ad1fe0b060f9"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.catalog.log",
+          "bytes": 114906,
+          "sha256": "891ca900cf8488714b4884e1490059f58b9730f0357853840ede128aa999e9af"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.runtime.json",
+          "bytes": 712,
+          "sha256": "a21377e7aeb621e951ccec42a25e273427c167c37d4f8f4d4b8522d35fb49c10"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.runtime.log",
+          "bytes": 139577,
+          "sha256": "e6017cfbeda6bb231a67be6bc9d0006bb066d126b68a9812dcdac9179dee59a6"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.runtime.terminal-audit.json",
+          "bytes": 1021,
+          "sha256": "f6bcb6c6f255f5327b897488893cae2094809cd44b0bf46a93217ad6edb4e5cd"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r2.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "e23636d36f38ef22b26a69ed60a4ba6ca6961228b0db7c28ffce19c5eb9c6a47"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.binaries-before.json",
+          "bytes": 477,
+          "sha256": "9a958c55d040b6747651ac0c168a63da1a037b15e069638b0f5c1b00ce950dde"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.catalog.inventory.json",
+          "bytes": 41678,
+          "sha256": "8a7592bd4f065deab7f87066371860b575236fc7de039722593f8c7123d01f80"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.catalog.json",
+          "bytes": 618,
+          "sha256": "5e111246ea00b63b798d351b5174a561809b3b52ebd158654063bdf1ebc14482"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.catalog.log",
+          "bytes": 113333,
+          "sha256": "7d5e12f46441b5b419616afaedb0926dabe5cc3c0b810806e4c09d98f0730c8e"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.runtime.json",
+          "bytes": 710,
+          "sha256": "45105f2279988da4497269f10df9de3f729d70de178ead42a2cab2264c152106"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.runtime.log",
+          "bytes": 135968,
+          "sha256": "c1a2ce62cee2c6a3d10df576c1a0b6c4d67b5cca025c4caaff0e81ba6dc2762e"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.runtime.terminal-audit.json",
+          "bytes": 623,
+          "sha256": "7cc664f85664bf149dec18fa89ebf8051981dd41fe7a6b9d5bdc5ab56bcc9bd6"
+        },
+        {
+          "entry": "native-scope-result-20261108.owners-r3.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "d9576063da512fe00723747e3d642267a6ea53f264c85c288346f1f5c70eb827"
+        },
+        {
+          "entry": "native-scope-result-20261108.ownership-review.json",
+          "bytes": 4362,
+          "sha256": "2edd23f95aac1b12e1f7e5e165bf291584d4b3172c0c70fbbd49b39bf92b5e9f"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.binaries-before.json",
+          "bytes": 202,
+          "sha256": "e3cae334f0c24afda3f8598510b537a706e721a618f38862867187af30e046d0"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.catalog.inventory.json",
+          "bytes": 595401,
+          "sha256": "9b2b3bcf2eff976e50ed2fb46373d0ec9750d49f1087defc92ffcbeafa29e408"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.catalog.json",
+          "bytes": 728,
+          "sha256": "e9aa2ab5cfba38e102eb7b88fda7dc2e7c076cb56027b3e773bb614c3ad2829e"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.catalog.log",
+          "bytes": 491886,
+          "sha256": "0d60a48f977d361893499a29e94ec1bffa843480a8d4b020ac2731e2c6bba03f"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.runtime.json",
+          "bytes": 822,
+          "sha256": "193b8dce2237e7617535349dc124da8ee20af336c56a7852c39957cf088d686f"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.runtime.log",
+          "bytes": 751912,
+          "sha256": "19951aca5c51603d41d660bf37a52b4424af7ce9f2b97d44e68e1aee8048461f"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.runtime.terminal-audit.json",
+          "bytes": 839,
+          "sha256": "191285014dfa3b955280288ebc5a935658a2bd4d37b208dc9867e4bffcdd67cc"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r1.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "3edac9c73fd273884a5cb1068cbf0a770d2b1a21254a7ee2f53415a3ee415260"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r2.catalog.json",
+          "bytes": 685,
+          "sha256": "71c2a039337f1470c11affce11bfce8afca4b03c7d5d1a32e7ac158c784f4620"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r2.catalog.log",
+          "bytes": 14361,
+          "sha256": "1f8e48817790e7374aa54f620b312f2a19746df79166149c35f326acef9ef919"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r2.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "a18e369ac33a33c7dbf3968d443f6b9cecfd588ffe26b166701ba2c123152e55"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.binaries-before.json",
+          "bytes": 202,
+          "sha256": "3cc6ea3ab0069d027ddc984de760b940bda0752618ff2ed024338ab742843185"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.catalog.inventory.json",
+          "bytes": 595645,
+          "sha256": "f1cdc4f1f9cb9679026ef72a46c7ec89a3a93ff43e79ca36bbc82c45b0c171a8"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.catalog.json",
+          "bytes": 683,
+          "sha256": "b477d875d5a875410583547013fb0fccf8ddbe158db2bb648e31e9482ac27811"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.catalog.log",
+          "bytes": 492048,
+          "sha256": "45fa4e131041bd962c90e8c49715f5322b5e99617f8f26c7115753a5f4275f02"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.runtime.json",
+          "bytes": 775,
+          "sha256": "ea6b30a6b358d42a6ac522e5c0ffdea1998f05dbd3b2629a6fa09167d500ac95"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.runtime.log",
+          "bytes": 751307,
+          "sha256": "e1ba3ecc8eda0184a3f67d4445411bb209d126403153efd7f670264e9c05a0e2"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.runtime.terminal-audit.json",
+          "bytes": 625,
+          "sha256": "f50f82e4bd39c2045a4760b016fa2c586b9e6fdcdd0b56f2b23e02476da7337b"
+        },
+        {
+          "entry": "native-scope-result-20261108.scope-auth-r3.source-freeze.json",
+          "bytes": 683618,
+          "sha256": "93d3fe545ce5c60ab1d78d651959537ba8d2d56f03ac87734e7426c3e95fa490"
+        },
+        {
+          "entry": "native-scope-result-20261108.source.message.txt",
+          "bytes": 68,
+          "sha256": "84706f95dc1dff3ffa51ebe18c45b6554bfaeaaded3a8353c2bfc27226e4fd18"
+        },
+        {
+          "entry": "native-scope-result-20261108.source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "native-scope-result-20261108.source.owned.txt",
+          "bytes": 518,
+          "sha256": "06ceefad0b9c8ddb014330f92d1683ce5e719c26f4375faf885180389dabf0ec"
+        },
+        {
+          "entry": "native-scope-result-20261108.source.pathspec",
+          "bytes": 508,
+          "sha256": "0a1add450dbaabaaf65dbef482184442ee0105ae34ce8440b79b95a4ee457be8"
+        },
+        {
+          "entry": "native-scope-result-20261108.source.prepared.json",
+          "bytes": 2567,
+          "sha256": "32dc610687ec2a20e065294ee778d1ff4d7b68afc8d609c0ce89230d4e2f08d9"
+        },
+        {
+          "entry": "native-scope-result-20261108.source.reviewed.patch",
+          "bytes": 58291,
+          "sha256": "b59d50f7d90e9f0af3237a29c6060dbfaee64e66e447dce3114f5f186d7a286b"
+        },
+        {
+          "entry": "native-scope-result-20261108.source.verified.json",
+          "bytes": 1969,
+          "sha256": "952df442ec4675dfa949c592e9baef828e2e5283fcf2d17656a20d71706c0f73"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.check.log",
+          "bytes": 113577,
+          "sha256": "161efc6d5ef4b4611a5817f9bc253e36981369e991c4a3c44575eb1631a30f3a"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.check.receipt.json",
+          "bytes": 338,
+          "sha256": "7855dde351f65363ebfac9203ba6521c53345daf2fefdbefa52bafd387ceb8d2"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.clippy.log",
+          "bytes": 9184151,
+          "sha256": "1f4658d382ff826bde77eadaece1fecb72c8aada35e8d4722c5c80041f446653"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "9dc5d60c2912a2fc3bd26a102e12bb8a2948ee1dc32d3d69f9d129b1c872e8fd"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.fmt.receipt.json",
+          "bytes": 644,
+          "sha256": "57f860b8a0ff45112878a7ecb580ac96e3542bd328bf4017cb56d15bdf04a86e"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.source.json",
+          "bytes": 606055,
+          "sha256": "b5717bd1258e1ac4e4fa443957238135cd2c8f8ca90c61c9e9a6de9fdc8aec7f"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.structure.log",
+          "bytes": 66007,
+          "sha256": "913cf9a25cfb01fef51358aeb4fc379c49c0db6578929097541a251627a39eaa"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r1.structure.receipt.json",
+          "bytes": 512,
+          "sha256": "9361773fc7c31e36d9afa034175ab20735af34f620936ffabef07d1c5d0511f0"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.check.log",
+          "bytes": 113577,
+          "sha256": "ccc9e9d6123566e3108cd8a78f92de5aa40b34b98bb1c5c7735bf149fd9ab6b5"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.check.receipt.json",
+          "bytes": 338,
+          "sha256": "754b108d42980a674966aa6e5b825d99a3ce1fa15c9e12aec9c1e3292b45aba8"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.clippy.log",
+          "bytes": 9184069,
+          "sha256": "5e4799f48b58d350e814696a9e7f83f95218e42482d6a4e27ff4682a4e800bf5"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "ec52ec730fb516ff4e353deca328dbf05b5b8134eea8819bf8aeaa80dd2421f0"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.fmt.receipt.json",
+          "bytes": 644,
+          "sha256": "fa327268da51d5a383237039683262c0ec5d12506b290417f47ad89fc59073f6"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.source.json",
+          "bytes": 606055,
+          "sha256": "1b5ba3ce476a04fe1358a077cc510a50705ed547f4a227fd5464be7aef1c7258"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.structure.log",
+          "bytes": 66010,
+          "sha256": "25d8b10e92077092bdea17b7462a12d30300522fc7a12702ca8f83ba55e3fe5e"
+        },
+        {
+          "entry": "native-scope-result-20261108.workspace-quality-r2.structure.receipt.json",
+          "bytes": 515,
+          "sha256": "dac21ea271fd695e7b186432323f700655e760994b2cb13b32c7258d2d820660"
+        },
+        {
+          "entry": "record-native-scope-results-20261108.ps1",
+          "bytes": 16607,
+          "sha256": "7ef560fb5d8cab59218cc30d8207d2e1d7c40b3df15d9340fd8fa252ffba6b6d"
+        },
+        {
+          "entry": "run-line-root-frozen-nextest-20261108.ps1",
+          "bytes": 3803,
+          "sha256": "5cbce63b02812b6192755720659bff3e7d0bf18eadf87ee97d53143589b016b8"
+        },
+        {
+          "entry": "run-native-scope-check-20261108.ps1",
+          "bytes": 1333,
+          "sha256": "ea80f4cf2d6930d293563828764d2cdb8198b6ffcf85c799530c9cb2e00cff4a"
+        },
+        {
+          "entry": "run-native-scope-final-validation-20261108.ps1",
+          "bytes": 893,
+          "sha256": "d70de4a8159cd3704d853ad2dd94156b5d4276f5a86dfc312a2d84da72137732"
+        },
+        {
+          "entry": "run-native-scope-workspace-quality-20261108.ps1",
+          "bytes": 2108,
+          "sha256": "2d88c056f87d6856d6b1e2e9c19fd45a93ae5cd97ca0c89c3fede0216f72d58a"
+        },
+        {
+          "entry": "run-native-scope-workspace-quality-r2-20261108.ps1",
+          "bytes": 2111,
+          "sha256": "f681adcf90cb2eb751395e9cbb258bda0d79fc56bdc38c5a1849e5cd479a5d7d"
+        },
+        {
+          "entry": "structure-report/dependency_edges.csv",
+          "bytes": 78209,
+          "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+        },
+        {
+          "entry": "structure-report/file_metrics.csv",
+          "bytes": 342524,
+          "sha256": "bf447de8829c91489efabd9016b6d885e076a4a5dbab608586ade3fdab7992a9"
+        },
+        {
+          "entry": "structure-report/findings.md",
+          "bytes": 124120,
+          "sha256": "6347384f69d8eca1f9cf5284fb4ddbddb02ad0565aebf2cc66bbd0da38547704"
+        },
+        {
+          "entry": "structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+        },
+        {
+          "entry": "structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "faa5ddc30be32585bf47b6c06a3e68eef4b0d7b67083510d5e7e71f04a36f290"
+        }
+      ]
+    }
   }
 }

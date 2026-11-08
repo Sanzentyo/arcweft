@@ -15487,3 +15487,13 @@ Source **c7ad0e974c297fc51c47557790489e78fd1b42b5** は、初期Actorを捕捉�
 通常と2番目の実内側対話の取消しは、元の1-op／512-step、3 reveal、Actor取得・解放各1回、log順を維持し、AWBCの各step公開JSON save／cold restoreでPASS。受取先欠落・inner occurrence・parent occurrence・parent fiber・child重複の5改変は拒否され、元snapshot不変で継続完了する。Core topology 3／3 PASS。Compiler最終owner選択は **164件中163 PASS／1 FAIL・除外0** で、唯一の失敗はNative明示init scopeの結果受取り。既受入root deferとGeneric Matchは維持する。
 
 初回Core compileのE0425、追加forgery前の163件中162 PASS／1 FAIL、scoped_defer targetの指定誤りでruntime前に終了したcatalog失敗も保持する。誤指定をruntime失敗や別runの合計に含めない。全workspace all-target／all-feature check／Clippy、canonical構造gate、8 path fmtは終了0、3416 Rust／Cargo／config／toolchain入力drift0。Cargo graphは不変で、旧Core53 runtime結果を新Sourceの全件合格にはしない。8ファイルのbyte／LOC／embedded tests／増分・構造責任、実exe path／SHA256と全full SHAを[台帳・原本](acceptance-evidence/task-flow-registry-execution.json)へ保持。raw ZIPは56 entries、SHA-256 9080ba334b7f1bf0107d9f9e9ce3dff47a192dbc98b1588d6efd342c80742178。
+
+## 2026-11-08 — Native activation scopeの結果保持
+
+Source **625deea6d6051469fc0c60a4e6808727fb42c21d** は、初期所有入力の残条件だったNative明示init scopeの結果受取りを修復した。既存scope終了をdialogue/scope ownerへ移し、元ExitScopeBindを一度評価して実activationの単一pending cellへMoveする。cleanup待機中は結果を保持し、全scope-local dropと結果の束縛／破棄を一つのissuer proofで事前検査してからscopeをpopする。失敗・取消しexitは結果を公開しない。live／inert inventoryとprivate rollbackも同じcellを扱い、元operation／型／scope深さ／phaseを共有allowanceで検査する。NativeDialogueScopeResultはbinary tag 23、契約versionは1のまま、unknown tag拒否は24へ進める。
+
+元の164件は全PASS。追加のActor結果は束縛／破棄×通常／実内側対話取消し×Native／保存AWBCの8条件で、元の1-op／512-step、3つの一度だけのreveal、Actor取得・解放各1回とlog順を維持し、cleanup完了前の解放を拒否した。AWBCは各step公開JSON save／cold restore。最終Compiler ownerは **166／166 PASS・除外0**。Core全feature libraryは関連3件を含む2330／2330 PASS。Coreの失敗・取消しexit unitはBool結果を使う範囲であり、Actorの失敗経路やNative公開Saveを検証したとはしない。
+
+Core admission fixtureのorphan group失敗、紐付け後の2 import不足によるcompile失敗、追加Compiler fixtureのHIR readiness拒否2件と診断probe1件を保持。取消し構文を既存のcancel on input(.SkipLine)へ訂正し、予算・host assertionを緩めず166件全PASSとした。最終差分で移設前の明示Default drop許可を保持するよう訂正し、Source 625deea6d6051469fc0c60a4e6808727fb42c21d を途中checkpointとしてpushした。その公開Rust bytesでCore全2330件・Compiler166件・全workspace gateを再実行し、先行の3件runや166件runと異なるepochを一runへ合成しない。
+
+全workspace all-target／all-feature check／Clippy、canonical構造gateと9 Rust path fmtは終了0。3417 Rust／Cargo／config／toolchain入力drift0。新scope ownerを含む9 Rustファイルのbyte／LOC／embedded tests／増分と構造責任を保持し、Cargo変更・I/O・unsafe・永続side table・legacy reader・version bumpはない。全Core53／CLI runtimeは別の最終検証として継続する。既受入Generic Match・root defer等を戻さず、現状の追加init／scoped条件を通過根拠で更新した。[各run・公開full SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは107 entries、SHA-256 90c15237995c3fa04e357b01a36ca696389ade2c671edda4f4b8892d59d38ae9。
