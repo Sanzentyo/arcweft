@@ -99,6 +99,18 @@ pub struct ViewEnvironmentMatch {
 }
 
 impl ViewEnvironmentClause {
+    pub const fn new(
+        test: ViewEnvironmentTest,
+        wrapper: ViewEnvironmentWrapperIndex,
+        source: ViewStyleSourceId,
+    ) -> Self {
+        Self {
+            test,
+            wrapper,
+            source,
+        }
+    }
+
     pub const fn color_scheme(
         value: ColorScheme,
         wrapper: ViewEnvironmentWrapperIndex,
@@ -153,12 +165,7 @@ impl ViewEnvironmentClause {
     }
 
     pub const fn field(self) -> PresentationEnvironmentField {
-        match self.test {
-            ViewEnvironmentTest::ColorScheme(_) => PresentationEnvironmentField::ColorScheme,
-            ViewEnvironmentTest::Contrast(_) => PresentationEnvironmentField::Contrast,
-            ViewEnvironmentTest::ReducedMotion(_) => PresentationEnvironmentField::ReducedMotion,
-            ViewEnvironmentTest::TextScale { .. } => PresentationEnvironmentField::TextScale,
-        }
+        self.test.field()
     }
 
     pub const fn source(self) -> ViewStyleSourceId {
@@ -170,7 +177,22 @@ impl ViewEnvironmentClause {
     }
 
     const fn matches(self, environment: PresentationEnvironment) -> bool {
-        match self.test {
+        self.test.matches(environment)
+    }
+}
+
+impl ViewEnvironmentTest {
+    pub const fn field(self) -> PresentationEnvironmentField {
+        match self {
+            ViewEnvironmentTest::ColorScheme(_) => PresentationEnvironmentField::ColorScheme,
+            ViewEnvironmentTest::Contrast(_) => PresentationEnvironmentField::Contrast,
+            ViewEnvironmentTest::ReducedMotion(_) => PresentationEnvironmentField::ReducedMotion,
+            ViewEnvironmentTest::TextScale { .. } => PresentationEnvironmentField::TextScale,
+        }
+    }
+
+    const fn matches(self, environment: PresentationEnvironment) -> bool {
+        match self {
             ViewEnvironmentTest::ColorScheme(expected) => {
                 environment.color_scheme() as u8 == expected as u8
             }

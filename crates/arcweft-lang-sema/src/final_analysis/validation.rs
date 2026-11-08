@@ -1215,6 +1215,12 @@ fn validate_expression_resolution(
             if ty != &TypeKind::CompileTimeStyle(operand.style_type()) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
+            if let super::CheckedStyleOperand::Environment(environment) = operand {
+                let module = resolve_module(modules, owner.module())?;
+                if !environment.matches_source(module, owner) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
             if let super::CheckedStyleOperand::Number(number) = operand {
                 let expression = resolve_module(modules, owner.module())?.resolve_expr(owner).map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
                 let HirExprKind::Literal(literal) = expression.kind() else { return Err(FinalSemanticAnalysisError::WrongPayloadFamily); };

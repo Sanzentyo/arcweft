@@ -186,6 +186,48 @@ impl ViewStyleTransition {
     }
 }
 
+impl crate::style::ViewEnvironmentTest {
+    /// Canonical identity of a native environment test, without product source IDs.
+    pub fn semantic_digest(self) -> ViewStyleOperandSemanticDigest {
+        use crate::style::{ViewEnvironmentTest, ViewTextScaleComparison};
+        use arcweft_presentation::appearance::{ColorScheme, ContrastPreference};
+        let mut encoder = SemanticEncoder::operand(3);
+        match self {
+            ViewEnvironmentTest::ColorScheme(value) => {
+                encoder.u8(0);
+                encoder.u8(match value {
+                    ColorScheme::Light => 0,
+                    ColorScheme::Dark => 1,
+                });
+            }
+            ViewEnvironmentTest::Contrast(value) => {
+                encoder.u8(1);
+                encoder.u8(match value {
+                    ContrastPreference::Standard => 0,
+                    ContrastPreference::More => 1,
+                });
+            }
+            ViewEnvironmentTest::ReducedMotion(value) => {
+                encoder.u8(2);
+                encoder.bool(value);
+            }
+            ViewEnvironmentTest::TextScale { comparison, value } => {
+                encoder.u8(3);
+                encoder.u8(match comparison {
+                    ViewTextScaleComparison::Equal => 0,
+                    ViewTextScaleComparison::NotEqual => 1,
+                    ViewTextScaleComparison::Less => 2,
+                    ViewTextScaleComparison::LessOrEqual => 3,
+                    ViewTextScaleComparison::Greater => 4,
+                    ViewTextScaleComparison::GreaterOrEqual => 5,
+                });
+                encoder.u16(value.value());
+            }
+        }
+        encoder.finish_operand()
+    }
+}
+
 impl ViewClip {
     /// Stable semantic tag in declaration order.
     pub const fn semantic_tag(self) -> u8 {

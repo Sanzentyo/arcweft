@@ -3012,6 +3012,9 @@ fn write_resolution_payload(
                 CheckedStyleOperand::ResourceId(id) => {
                     write_bytes(hasher, id.canonical_identity_bytes())?;
                 }
+                CheckedStyleOperand::Environment(environment) => {
+                    transcript_update!(hasher, environment.test().semantic_digest().as_bytes());
+                }
             }
         }
         CheckedExpressionResolution::ViewPartName(name) => {

@@ -9,6 +9,74 @@ use crate::types::CompileTimeStyleType;
 use arcweft_view::style::ViewStyleValueKind;
 
 #[test]
+fn style_environment_operands_keep_original_clause_owners_and_cannot_be_runtime_values() {
+    use arcweft_lang_hir::{item::HirStyleBodyItem, source_index::HirStyleBodyPath};
+    let fixture = fixture(
+        "style Environment {\n Panel { opacity = 1 }\n when environment(color-scheme == dark, text-scale >= 125%) {\n when environment(reduced-motion == true) { Panel { opacity = 0.5 } }\n }\n}\n",
+        None,
+    );
+    let report = analyze(&fixture).unwrap();
+    let project = fixture.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let (owner, style) = module
+        .items()
+        .find_map(|(owner, item)| match item.kind() {
+            HirItemKind::Style(style) => Some((owner, style)),
+            _ => None,
+        })
+        .unwrap();
+    let HirStyleBodyItem::Environment(environment) = &style.body()[1] else {
+        panic!("original wrapper")
+    };
+    let HirStyleBodyItem::Environment(nested) = &environment.body()[0] else {
+        panic!("original nested wrapper")
+    };
+    for (path, ordinal, clauses) in [
+        (HirStyleBodyPath::root(), 1, environment.clauses()),
+        (
+            HirStyleBodyPath::from_ordinals(vec![1].into_boxed_slice()),
+            0,
+            nested.clauses(),
+        ),
+    ] {
+        for (index, original) in clauses.iter().enumerate() {
+            let checked = report.expression(original.value()).unwrap();
+            assert_eq!(
+                checked.value_type(),
+                Some(&TypeKind::CompileTimeStyle(
+                    CompileTimeStyleType::Environment
+                ))
+            );
+            assert!(checked.effects().is_empty());
+            let CheckedExpressionResolution::StyleOperand(CheckedStyleOperand::Environment(
+                environment,
+            )) = checked.resolution()
+            else {
+                panic!("source-bound environment operand")
+            };
+            assert_eq!(environment.value(), original.value());
+            assert!(environment.matches_clause(
+                owner,
+                &path,
+                ordinal,
+                index as u32,
+                original.value()
+            ));
+            assert!(!environment.matches_clause(
+                owner,
+                &path,
+                ordinal,
+                (index + 1) as u32,
+                original.value()
+            ));
+            assert!(environment.matches_source(module, original.value()));
+            let ty = checked.value_type().unwrap();
+            assert!(!ty.accepts(&TypeKind::Named(ty.source_label())));
+        }
+    }
+}
+
+#[test]
 fn unannotated_style_token_facts_keep_original_initializers_without_fabricated_annotations() {
     let fixture = fixture(
         "style A {\n token amount = 0.5\n token alias = token(amount)\n token face = .Normal\n Panel { opacity = token(alias); font-style = token(face) }\n}\nstyle B {\n token face = .Normal\n Panel { blend-mode = token(face) }\n}\n",

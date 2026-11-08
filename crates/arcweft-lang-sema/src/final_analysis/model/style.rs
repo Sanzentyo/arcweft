@@ -13,6 +13,10 @@ use crate::types::CompileTimeStyleType;
 mod number;
 pub use number::{CheckedStyleNumber, CheckedStyleNumberError};
 
+#[path = "style_environment.rs"]
+mod environment;
+pub use environment::CheckedStyleEnvironmentTest;
+
 /// A reference issued from the original sheet-local token declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedStyleTokenReference {
@@ -115,6 +119,7 @@ pub enum CheckedStyleOperand {
     Property(ViewPropertyKind),
     Duration(CheckedStyleDuration),
     ResourceId(arcweft_id::PublicId),
+    Environment(CheckedStyleEnvironmentTest),
 }
 
 impl CheckedStyleOperand {
@@ -131,6 +136,7 @@ impl CheckedStyleOperand {
             Self::Property(_) => CompileTimeStyleType::Property,
             Self::Duration(_) => CompileTimeStyleType::Duration,
             Self::ResourceId(_) => CompileTimeStyleType::ResourceId,
+            Self::Environment(_) => CompileTimeStyleType::Environment,
         }
     }
 }

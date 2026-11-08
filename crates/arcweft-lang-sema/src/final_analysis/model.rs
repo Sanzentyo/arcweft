@@ -975,8 +975,8 @@ impl CheckedContentApplication {
 #[path = "model/style.rs"]
 mod style;
 pub use style::{
-    CheckedStyleDuration, CheckedStyleDurationError, CheckedStyleNumber, CheckedStyleNumberError,
-    CheckedStyleOperand, CheckedStyleTokenReference,
+    CheckedStyleDuration, CheckedStyleDurationError, CheckedStyleEnvironmentTest,
+    CheckedStyleNumber, CheckedStyleNumberError, CheckedStyleOperand, CheckedStyleTokenReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

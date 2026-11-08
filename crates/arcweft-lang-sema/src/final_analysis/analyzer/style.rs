@@ -1,6 +1,6 @@
 //! Source ownership and contextual expectations for specified Style values.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_hir::{
     expr::{HirExprKind, HirSelectedMember},
@@ -8,16 +8,20 @@ use arcweft_lang_hir::{
     item::{HirItemKind, HirStyleBodyItem},
     leaf::{HirPathRoot, HirPathSegment},
     module::HirModule,
+    source_index::HirStyleBodyPath,
 };
-use arcweft_view::style::{ViewPropertyKind, ViewStyleTokenId, ViewStyleValueKind};
+use arcweft_presentation::appearance::PresentationEnvironmentField;
+use arcweft_view::style::{
+    ViewEnvironmentCondition, ViewPropertyKind, ViewStyleTokenId, ViewStyleValueKind,
+};
 
 use crate::{
     nominal::{ResolvedTypeRefOutcome, TypeResolutionReport},
     types::{CompileTimeStyleType, TypeKind},
 };
 
-use super::super::CheckedStyleTokenReference;
 use super::super::FinalSemanticAnalysisError;
+use super::super::{CheckedStyleEnvironmentTest, CheckedStyleTokenReference};
 
 #[path = "style/grammar.rs"]
 pub(super) mod grammar;
@@ -49,6 +53,7 @@ pub(super) struct StyleAnalysisContext {
     tokens: BTreeMap<ItemId, StyleTokenScope>,
     root_styles: BTreeMap<ExprId, ItemId>,
     constant_dependencies: Vec<ExprId>,
+    environments: BTreeMap<ExprId, CheckedStyleEnvironmentTest>,
 }
 
 impl StyleAnalysisContext {
@@ -61,6 +66,7 @@ impl StyleAnalysisContext {
             tokens: BTreeMap::new(),
             root_styles: BTreeMap::new(),
             constant_dependencies: Vec::new(),
+            environments: BTreeMap::new(),
         };
         for module in modules.values() {
             for (owner, item) in module.items() {
@@ -110,7 +116,13 @@ impl StyleAnalysisContext {
                         return Err(FinalSemanticAnalysisError::InvalidOwner);
                     }
                 }
-                context.collect_body(owner, style.body())?;
+                context.collect_body(
+                    module,
+                    owner,
+                    style.body(),
+                    &HirStyleBodyPath::root(),
+                    &BTreeSet::new(),
+                )?;
             }
         }
         Ok(context)
@@ -118,10 +130,13 @@ impl StyleAnalysisContext {
 
     fn collect_body(
         &mut self,
+        module: &HirModule,
         style: ItemId,
         body: &[HirStyleBodyItem],
+        path: &HirStyleBodyPath,
+        fields: &BTreeSet<PresentationEnvironmentField>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        for item in body {
+        for (ordinal, item) in body.iter().enumerate() {
             match item {
                 HirStyleBodyItem::Rule(rule) => {
                     for declaration in rule.declarations() {
@@ -143,7 +158,52 @@ impl StyleAnalysisContext {
                     }
                 }
                 HirStyleBodyItem::Environment(environment) => {
-                    self.collect_body(style, environment.body())?
+                    if environment.clauses().is_empty()
+                        || path.ordinals().len() >= ViewEnvironmentCondition::MAX_WRAPPERS
+                        || fields
+                            .len()
+                            .checked_add(environment.clauses().len())
+                            .is_none_or(|count| count > ViewEnvironmentCondition::MAX_CLAUSES)
+                    {
+                        return Err(FinalSemanticAnalysisError::InvalidOwner);
+                    }
+                    let ordinal = u32::try_from(ordinal)
+                        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                    let mut nested_fields = fields.clone();
+                    for (clause, original) in environment.clauses().iter().enumerate() {
+                        let checked = CheckedStyleEnvironmentTest::from_source(
+                            module,
+                            style,
+                            path.clone(),
+                            ordinal,
+                            u32::try_from(clause)
+                                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+                        )
+                        .ok_or(
+                            FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                owner: original.value(),
+                            },
+                        )?;
+                        if !nested_fields.insert(checked.test().field())
+                            || self
+                                .environments
+                                .insert(original.value(), checked)
+                                .is_some()
+                        {
+                            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                owner: original.value(),
+                            });
+                        }
+                    }
+                    let mut nested_path = path.ordinals().to_vec();
+                    nested_path.push(ordinal);
+                    self.collect_body(
+                        module,
+                        style,
+                        environment.body(),
+                        &HirStyleBodyPath::from_ordinals(nested_path.into_boxed_slice()),
+                        &nested_fields,
+                    )?
                 }
                 HirStyleBodyItem::Recovered(_) => {}
             }
@@ -160,6 +220,10 @@ impl StyleAnalysisContext {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         Ok(())
+    }
+
+    pub(super) fn environment(&self, owner: ExprId) -> Option<&CheckedStyleEnvironmentTest> {
+        self.environments.get(&owner)
     }
 
     pub(super) fn annotation_owner(&self, owner: TypeId) -> Option<(ItemId, u32)> {

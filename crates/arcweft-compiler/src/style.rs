@@ -9,29 +9,28 @@ use arcweft_bundle::resource_codec::{SourceRangeRef, view::ViewStyleResource};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     identity::ItemId,
-    item::{
-        HirItemKind, HirStyleAssignOperation, HirStyleBodyItem, HirStyleCombinator,
-        HirStyleSelector,
-    },
+    item::{HirItemKind, HirStyleCombinator, HirStyleSelector},
     module::HirModule,
     project::HirProject,
     source_index::{
-        HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStyleBodyPath,
-        HirStyleBodySourcePart, HirStyleSourceRole, HirStyleTokenSourcePart,
+        HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStyleSourceRole,
+        HirStyleTokenSourcePart,
     },
 };
 use arcweft_lang_sema::final_analysis::{CheckedExpressionResolution, FinalSemanticAnalysis};
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_source::{ProductSourceRef, SourceSpan};
 use arcweft_view::style::{
-    ViewPropertyKind, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleCombinator,
-    ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule, ViewStyleSelectorSequence,
+    ViewStyleApplicationTarget, ViewStyleCombinator, ViewStyleProgram, ViewStyleSelectorSequence,
     ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleTargetKind, ViewStyleToken,
     ViewStyleTokenId,
 };
 use thiserror::Error;
 
 const VIEW_STYLE_PROGRAM_ID: &str = "view.style.program";
+
+#[path = "style/body.rs"]
+mod body;
 
 /// Complete compiler-owned Style output for one accepted project generation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,6 +69,8 @@ pub enum ViewStyleLowerError {
     MissingStyleSource { owner: ItemId, role: &'static str },
     #[error(transparent)]
     Model(#[from] arcweft_view::style::ViewStyleModelError),
+    #[error(transparent)]
+    Environment(#[from] arcweft_view::style::ViewEnvironmentConditionError),
     #[error(transparent)]
     Product(#[from] arcweft_bundle::resource_codec::ViewProductBuildError),
     #[error(transparent)]
@@ -198,16 +199,14 @@ pub fn lower_project_view_styles(
                 source,
             )?);
         }
-        let mut source_order = 0_u32;
-        let rules = lower_style_body(
+        let rules = body::StyleBodyLowerer::new(
             module,
             owner,
-            style.body(),
             analysis,
             &mut product_sources,
             &mut source_ranges,
-            &mut source_order,
-        )?;
+        )
+        .lower(style.body())?;
         sheets.push(ViewStyleSheet::new(sheet_id, tokens, rules)?);
     }
 
@@ -224,110 +223,6 @@ pub fn lower_project_view_styles(
         applications: ViewStyleApplicationLookup::default(),
         sources,
     })
-}
-
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Style body lowering owns recursive source order and the one resource source table"
-)]
-fn lower_style_body(
-    module: &HirModule,
-    owner: ItemId,
-    body: &[HirStyleBodyItem],
-    analysis: &FinalSemanticAnalysis,
-    product_sources: &mut Vec<ProductSourceRef>,
-    source_ranges: &mut Vec<SourceRangeRef>,
-    source_order: &mut u32,
-) -> Result<Vec<ViewStyleRule>, ViewStyleLowerError> {
-    let mut rules = Vec::new();
-    for (rule_ordinal, item) in body.iter().enumerate() {
-        let HirStyleBodyItem::Rule(rule) = item else {
-            return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
-        };
-        let selector = lower_selector(rule.selector())
-            .ok_or(ViewStyleLowerError::MissingCheckedStyleProjection { owner })?;
-        let path = HirStyleBodyPath::root();
-        let rule_source = style_product_source(
-            module,
-            owner,
-            HirStyleSourceRole::Body {
-                path: path.clone(),
-                part: HirStyleBodySourcePart::RuleSelector {
-                    rule: u32::try_from(rule_ordinal).map_err(|_| {
-                        ViewStyleLowerError::MissingCheckedStyleProjection { owner }
-                    })?,
-                },
-            },
-            "rule selector",
-            product_sources,
-            source_ranges,
-        )?;
-        let mut declarations = Vec::new();
-        for (declaration_ordinal, declaration) in rule.declarations().iter().enumerate() {
-            let property = declaration
-                .property()
-                .as_str()
-                .and_then(ViewPropertyKind::from_source_name)
-                .ok_or(ViewStyleLowerError::MissingCheckedStyleProjection { owner })?;
-            let checked = analysis
-                .expression(declaration.value())
-                .ok_or(ViewStyleLowerError::MissingCheckedStyleProjection { owner })?;
-            let value = match checked.resolution() {
-                CheckedExpressionResolution::StyleValue(value)
-                    if value.kind() == property.value_kind()
-                        && checked.value_type()
-                            == Some(&arcweft_lang_sema::types::TypeKind::CompileTimeStyle(
-                                arcweft_lang_sema::types::CompileTimeStyleType::Value(value.kind()),
-                            )) =>
-                {
-                    value.clone()
-                }
-                _ => return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner }),
-            };
-            let declaration_source = style_product_source(
-                module,
-                owner,
-                HirStyleSourceRole::Body {
-                    path: path.clone(),
-                    part: HirStyleBodySourcePart::DeclarationWhole {
-                        rule: u32::try_from(rule_ordinal).map_err(|_| {
-                            ViewStyleLowerError::MissingCheckedStyleProjection { owner }
-                        })?,
-                        declaration: u32::try_from(declaration_ordinal).map_err(|_| {
-                            ViewStyleLowerError::MissingCheckedStyleProjection { owner }
-                        })?,
-                    },
-                },
-                "declaration",
-                product_sources,
-                source_ranges,
-            )?;
-            let op = match declaration.operation() {
-                HirStyleAssignOperation::Replace => ViewStyleAssignOp::Replace,
-                HirStyleAssignOperation::Append => ViewStyleAssignOp::Append,
-                HirStyleAssignOperation::Recovered(_) => {
-                    return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
-                }
-            };
-            declarations.push(ViewStyleDeclaration::new(
-                property,
-                value,
-                op,
-                declaration_source,
-            )?);
-        }
-        rules.push(ViewStyleRule::new(
-            selector,
-            None,
-            declarations,
-            *source_order,
-            rule_source,
-        )?);
-        *source_order = source_order
-            .checked_add(1)
-            .ok_or(ViewStyleLowerError::MissingCheckedStyleProjection { owner })?;
-    }
-    Ok(rules)
 }
 
 fn lower_selector(selector: &HirStyleSelector) -> Option<arcweft_view::style::ViewStyleSelector> {

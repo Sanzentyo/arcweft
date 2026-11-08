@@ -72,6 +72,7 @@ pub enum CompileTimeStyleType {
     NumericLiteral(StyleNumericType),
     Duration,
     ResourceId,
+    Environment,
 }
 
 impl CompileTimeStyleType {
@@ -89,6 +90,7 @@ impl CompileTimeStyleType {
             Self::NumericLiteral(_) => 9,
             Self::Duration => 10,
             Self::ResourceId => 11,
+            Self::Environment => 12,
         }
     }
 
@@ -102,7 +104,7 @@ impl CompileTimeStyleType {
             | Self::Shadow
             | Self::Filter
             | Self::Transition => None,
-            Self::Property | Self::Duration | Self::ResourceId => None,
+            Self::Property | Self::Duration | Self::ResourceId | Self::Environment => None,
         }
     }
 
@@ -119,6 +121,7 @@ impl CompileTimeStyleType {
             Self::Property => "StyleOperand<Property>".to_owned(),
             Self::Duration => "StyleOperand<Duration>".to_owned(),
             Self::ResourceId => "StyleOperand<ResourceId>".to_owned(),
+            Self::Environment => "StyleOperand<Environment>".to_owned(),
             Self::NumericLiteral(kind) => {
                 format!("StyleLiteral<{}>", kind.value_kind().source_name())
             }

@@ -384,6 +384,32 @@ supply composite operands and uniform radii; their dependencies use original
 HIR identities with cycle/depth checks. Same-kind top-level token references
 remain symbolic native references. System colors remain symbolic in either case.
 
+Style rules can be guarded by a nonempty conjunction:
+
+~~~arcw
+when environment(color-scheme == dark, text-scale >= 125%) {
+    Panel { opacity = 0.9 }
+}
+~~~
+
+The closed field grammars are `color-scheme == light|dark`,
+`contrast == standard|more`, and `reduced-motion == true|false`.
+These fields accept equality only. `text-scale` accepts `==`, `!=`, `<`, `<=`,
+`>`, and `>=`; its operand is an unsuffixed integer/decimal scale or a percent
+literal. It must represent an exact native milli scale in the inclusive range
+500..4000 (0.5..4.0 or 50%..400%). Rounding, clamping, runtime expressions,
+token references, other units, and numeric type suffixes are rejected.
+
+Nested wrappers contribute to the same native conjunction. A path can retain
+at most four wrappers and four clauses, and each environment field can occur
+only once along that path. Sibling wrappers are independent. Rules retain global
+authored order across guarded and unguarded bodies. Semantic analysis binds each
+checked test to its original sheet, body path, clause ordinal, and value ExprId.
+The compiler retains the exact clause and wrapper predicate/body/scope sources,
+then publishes the existing canonical native condition; clauses sort by field
+while preserving their contributing wrapper identity. Conditions remain
+presentation data and never enter the runtime value or task-plan domain.
+
 Retained View nodes and runtime controls use the single typed
 `arcweft-view::style::ViewStyleResolver`. `ViewStyleProgram` owns sheets and
 inline patches; the bundle codec validates and transports that program but does

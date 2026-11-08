@@ -12,6 +12,43 @@ fn public_id(value: &str) -> PublicId {
     PublicId::try_new(value).expect("test identity")
 }
 
+#[test]
+fn style_environment_component_identity_includes_field_value_and_comparison() {
+    use crate::style::{ViewEnvironmentTest, ViewTextScaleComparison};
+    use arcweft_presentation::appearance::{ColorScheme, ContrastPreference, TextScaleMilli};
+    let mut values = vec![
+        ViewEnvironmentTest::ColorScheme(ColorScheme::Light),
+        ViewEnvironmentTest::ColorScheme(ColorScheme::Dark),
+        ViewEnvironmentTest::Contrast(ContrastPreference::Standard),
+        ViewEnvironmentTest::Contrast(ContrastPreference::More),
+        ViewEnvironmentTest::ReducedMotion(false),
+        ViewEnvironmentTest::ReducedMotion(true),
+    ];
+    for comparison in [
+        ViewTextScaleComparison::Equal,
+        ViewTextScaleComparison::NotEqual,
+        ViewTextScaleComparison::Less,
+        ViewTextScaleComparison::LessOrEqual,
+        ViewTextScaleComparison::Greater,
+        ViewTextScaleComparison::GreaterOrEqual,
+    ] {
+        for scale in [500, 1250, 4000] {
+            values.push(ViewEnvironmentTest::TextScale {
+                comparison,
+                value: TextScaleMilli::try_new(scale).unwrap(),
+            });
+        }
+    }
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| value.semantic_digest())
+            .collect::<BTreeSet<_>>()
+            .len(),
+        values.len()
+    );
+}
+
 fn token(value: &str) -> ViewStyleTokenId {
     ViewStyleTokenId::try_new(value).expect("test token")
 }

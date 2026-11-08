@@ -32,6 +32,11 @@ impl Analyzer<'_, '_, '_> {
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+        if let Some(environment) = self.styles.environment(owner) {
+            return Ok(Some(Self::checked_style_operand(
+                CheckedStyleOperand::Environment(environment.clone()),
+            )));
+        }
         let style_type = self
             .styles
             .value_kind(owner)
