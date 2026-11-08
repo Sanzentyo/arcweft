@@ -15804,3 +15804,11 @@ SemaはGotoをHirOwned／structuralとして扱い、RuntimePlan final_flowのst
 modern-feedbackの準備は一時fixtureに留め、実repo Sourceは変更していない。旧image宣言を現行Handle factoryへ、入力／Action／mount／receiveを現行APIへ移す案を作り、画像・metadata・全Style property・元font stack・target／label／placeholder／IME・Action identity／payload・2 scope・対話／分岐／自己gotoを保持する。Flow削減だけではExpr525が残り、4つの旧closure-style patchを診断用に省くと通過した。最終候補r5では全表現を戻し、現行Ref<Style>契約の2共有sheetを同じText nodeへ適用して現CLI checkを通した。削減fixtureを受入としない。
 
 CLI main rebuildの間に行ったpreliminary r6／r7は前後pinを持たなかったため、推測Source帰属を未検証へ訂正し、元の推測値と理由・rawを保持した。固定した現CLIでr5／r6／r7と最小2入力を再実行し、前後hash一致を確認した。以前のSource／失敗／full SHAと既存150 registry propertyの値を保持し、statefulGotoArgumentInvestigationを追加した。原本 docs/implementation/acceptance-evidence/task-stateful-goto-investigation.raw.zip は56 entry／52659 bytes、SHA256 4da19a2deb6103b9e5278bd2d84d7eda93978d930ddcdfd13a91b5f5c40a6096。zipにはfixture Source／manifestと実測だけを含め、EXE／AWFB等をコピーしていない。
+
+## 2026-11-09 — modern-feedbackの現行Source APIへの移行checkpoint
+
+Source 8d9a57e08bdcbd207b322fd3cd80337688d23f49 をmainへ通常公開し、parent／tree／2 pathのblobとpatchを照合した。前回準備した全動作保持の候補を実repoへ反映し、旧image宣言をHandle factoryへ、input factoryを保持Stringへ、handlerを元Action record返却へ、view参照mount／receiveを現行APIへ移した。4つの旧closure-style patchは、全propertyを保持した2共有named Styleを同じText nodeへ適用する形にした。元の画像・metadata、全panel Style／font stack、input metadata、2 Action、2 lexical scope、rich dialogue／分岐／GameState formal／自己gotoを削除していない。
+
+READMEにあった存在しない単一view名、旧mount／receive、text length分岐とbrief返却の説明を、実際の2 view／empty-nonempty分岐／自己転送へ訂正した。Bundleとplayerの包括受入は主張せず、現在の未達を唯一の現状一覧へリンクした。実repo packageを、前回テスト済みの同じCLI SHA256 b33af81ae4d876bc5be2dc83ba8300165006d2e5585379760ab738f83edae61e で検証し、checkは終了0／status ok、Source／EXE差分0。main-profile bundleは既に最小化した同じparameterized gotoのblock25、要求1／実際0引数で終了1、出力なし。中間Source checkpointであってsample実行完了ではない。
+
+Engine matrixの3920入力との差分はsample main.arcwの1 pathだけで、Rust／Cargo差分0。以前の5397件はその入力の実測として保持し、今回のsampleを再実行した件数にはしない。現状一覧のsampleを一時候補から公開済みAPI移行／check成功へ更新し、goto一般境界の説明と重複していたsample詳細を専用行へ集約した。行追加で壊れやすい「次行」の参照を「専用行」へ訂正した。以前のfull SHA／失敗／実測と既存151 registry propertyの値を全件保持し、modernFeedbackSourceApiCheckpointを追加した。原本 docs/implementation/acceptance-evidence/task-modern-feedback-source-checkpoint.raw.zip は10 entry／11805 bytes、SHA256 24b62e8c51c905015730db135a7b195bdac0f6186af0d55725b5d28e65989396。EXE／AWFB等のbuild artifactをコピーしていない。

@@ -65335,5 +65335,72 @@
     "bytes": 52659,
     "sha256": "4da19a2deb6103b9e5278bd2d84d7eda93978d930ddcdfd13a91b5f5c40a6096"
   }
+},
+  "modernFeedbackSourceApiCheckpoint": {
+  "version": 1,
+  "date": "2026-11-09",
+  "publication": {
+    "version": 1,
+    "commit": "8d9a57e08bdcbd207b322fd3cd80337688d23f49",
+    "parent": "83629af1203e1dc4f7ccad1f0b97e11cb3e399fc",
+    "tree": "fd4f3a8c410162bfac23dcfab6286626a984c08e",
+    "remote": "8d9a57e08bdcbd207b322fd3cd80337688d23f49",
+    "paths": [
+      {
+        "path": "samples/modern-feedback-view/README.md",
+        "blob": "9484adad390871fd0dfd88902387934a3a4d6322"
+      },
+      {
+        "path": "samples/modern-feedback-view/src/main.arcw",
+        "blob": "b586a24b64f5fd2c17e4ca873e2deea787a921d3"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "4f38652c2e6f6f5843e88e1c640e1bbbad7344500ce02274d3edb1ac802c5aea",
+    "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-08T19:10:10.6791435Z"
+  },
+  "actualRepositoryProbe": {
+    "version": 1,
+    "base": "83629af1203e1dc4f7ccad1f0b97e11cb3e399fc",
+    "engineSource": "ef2679347c14dccee649e5fb716d3a37510cac1f",
+    "main": {
+      "path": "D:/git/arcweft/target/debug/arcw.exe",
+      "sha256": "b33af81ae4d876bc5be2dc83ba8300165006d2e5585379760ab738f83edae61e"
+    },
+    "source": {
+      "path": "samples/modern-feedback-view/src/main.arcw",
+      "sha256": "aa3a26e7f137513b0c57fbc3c451fd779b899ee370be597504b363e13aef33f5"
+    },
+    "sourceDrift": 0,
+    "binaryDrift": 0,
+    "checkExitCode": 0,
+    "bundleExitCode": 1,
+    "artifactExists": false,
+    "scope": "Repository sample current-API checkpoint. Source check only is passing; parameterized goto still blocks AWFB generation and interactive acceptance."
+  },
+  "status": "Repository modern-feedback Source migrated to current retained View/image/Action/Style APIs and passes actual package check. Main-profile AWFB generation still fails at the known parameterized goto ABI boundary; full sample execution is incomplete.",
+  "preserved": "Original image asset and image.glass_bg metadata, target/layer/bounds/fit/opacity/depth/visibility, complete panel token/rule inventory and font stack, every heading/caption property at the same Text nodes, original input IDs/labels/placeholders/IME roles, both Action declaration identities/payload fields, two lexical mounts, dialogue/rich text/empty and nonempty branches, GameState formal and self-goto.",
+  "migration": "Use ordinary glass_bg() -> Handle<ImageSurface>, retained local String state and current named input arguments, pure handlers returning original Actions, mount(View()) and await receive(Action). Replace unsupported closure-style patches with two shared typed named Style sheets at original node positions. Delete obsolete input factories, action.invoke, view-reference mounting and image declaration syntax. README now describes the two actual views and looping behavior rather than nonexistent single-view/returned-brief behavior, and links execution acceptance to the sole status ledger.",
+  "validation": "Actual original-path tested CLI b33af81ae4d876bc5be2dc83ba8300165006d2e5585379760ab738f83edae61e: package check0/status ok, Source/main hash drift0. Bundle1: block25 expected1/found0, same independently minimized and previously archived defect. Output artifact absent. No Native/Web operation or capture success is claimed.",
+  "engineMatrixReuse": {
+    "source": "ef2679347c14dccee649e5fb716d3a37510cac1f",
+    "freeze": "c5a4c901473354a3cc87d122b85ac47096fb1b6e",
+    "sourceInputs": 3920,
+    "changedPaths": [
+      "samples/modern-feedback-view/src/main.arcw"
+    ],
+    "engineRustCargoDrift": 0,
+    "scope": "Prior Engine View5397 matrix remains evidence for its recorded inputs. Do not claim it was rerun for the modified sample. No new Rust/Cargo gate invocation is needed or claimed for this Source/README-only cut."
+  },
+  "pending": "Repair typed parameterized Flow transfer admission and Native/AWBC argument/cleanup handling, then complete the sample bundle and real Native/Web operation/capture acceptance. Preserve other accepted cuts.",
+  "archive": {
+    "path": "docs/implementation/acceptance-evidence/task-modern-feedback-source-checkpoint.raw.zip",
+    "entries": 10,
+    "bytes": 11805,
+    "sha256": "24b62e8c51c905015730db135a7b195bdac0f6186af0d55725b5d28e65989396"
+  }
 }
 }
