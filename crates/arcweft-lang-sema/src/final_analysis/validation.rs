@@ -930,6 +930,10 @@ fn expression_resolution_matches(
     resolution: &CheckedExpressionResolution,
 ) -> bool {
     match (kind, resolution) {
+        (
+            HirExprKind::Literal(_) | HirExprKind::Unary(_),
+            CheckedExpressionResolution::StyleValue(_),
+        ) => true,
         (HirExprKind::Select(_), CheckedExpressionResolution::Value(_)) => {
             resolution.select_target_disposition().is_some()
         },
@@ -1203,6 +1207,13 @@ fn validate_expression_resolution(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
+        CheckedExpressionResolution::StyleValue(value) => {
+            (ty == &TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
+                value.kind(),
+            )))
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
         CheckedExpressionResolution::ViewPartName(_) => matches!(ty, TypeKind::CompileTimeScalar(scalar) if scalar.kind() == crate::types::CompileTimeScalarKind::PublicId)
             .then_some(()).ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
         CheckedExpressionResolution::ViewCall(super::CheckedViewCall::ContainerBody(
@@ -1537,7 +1548,6 @@ fn validate_expression_resolution(
         | CheckedExpressionResolution::PostfixBracket(_)
         | CheckedExpressionResolution::Effect(_)
         | CheckedExpressionResolution::ViewCall(_)
-        | CheckedExpressionResolution::StyleValue(_)
         | CheckedExpressionResolution::Structural
         | CheckedExpressionResolution::Scope(_)
         | CheckedExpressionResolution::Literal(_)

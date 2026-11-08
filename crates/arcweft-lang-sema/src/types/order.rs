@@ -192,6 +192,7 @@ impl TypeKind {
                     .declaration()
                     .cmp(right.declaration())
                     .then_with(|| left.kind().cmp(&right.kind())),
+                (Self::CompileTimeStyle(left), Self::CompileTimeStyle(right)) => left.cmp(right),
                 (Self::CompileTimeEnum(left), Self::CompileTimeEnum(right)) => left.cmp(right),
                 (Self::CompileTimeFx(left), Self::CompileTimeFx(right)) => left.cmp(right),
                 (Self::FixedVector(left), Self::FixedVector(right)) => left
@@ -506,5 +507,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::PresentationResource(_) => 101,
         TypeKind::SlotRef(_) => 102,
         TypeKind::Traversal { .. } => 103,
+        TypeKind::CompileTimeStyle(_) => 104,
     }
 }

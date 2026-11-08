@@ -239,22 +239,13 @@ fn lower_style_body(
                 .ok_or(ViewStyleLowerError::MissingCheckedStyleProjection { owner })?;
             let value = match checked.resolution() {
                 CheckedExpressionResolution::StyleValue(value)
-                    if property.value_kind() != arcweft_view::style::ViewStyleValueKind::Length =>
+                    if value.kind() == property.value_kind()
+                        && checked.value_type()
+                            == Some(&arcweft_lang_sema::types::TypeKind::CompileTimeStyle(
+                                arcweft_lang_sema::types::CompileTimeStyleType::Value(value.kind()),
+                            )) =>
                 {
                     value.clone()
-                }
-                CheckedExpressionResolution::CompileTimeScalar(scalar)
-                    if property.value_kind() == arcweft_view::style::ViewStyleValueKind::Length =>
-                {
-                    let Some(length) = scalar.length() else {
-                        return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
-                    };
-                    if length.unit != arcweft_primitives::LengthUnit::Px {
-                        return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
-                    }
-                    arcweft_view::style::ViewSpecifiedValue::Length {
-                        value: arcweft_view::style::ViewLengthMilli::new(length.milli),
-                    }
                 }
                 _ => return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner }),
             };

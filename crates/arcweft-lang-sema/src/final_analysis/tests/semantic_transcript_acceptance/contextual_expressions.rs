@@ -427,24 +427,29 @@ fn style_value_fact_is_outside_match_descendants() {
 }
 
 #[test]
-fn style_length_values_use_registered_roots_and_shared_scalar_reduction() {
+fn style_length_values_use_specified_values_and_shared_scalar_reduction() {
     let source = "pub style typography {\n Text {\n width = 720px\n height = 84px\n font-size = 42px\n line-height = 56.7px\n letter-spacing = -1.25px\n }\n}\nfn ordinary() -> i32 { 42 }\n";
     let world = super::super::fixture(source, None);
     let report = super::super::analyze(&world).expect("typed Style lengths are admitted");
     let mut values = report
         .expressions()
         .filter_map(|(_, checked)| {
-            let CheckedExpressionResolution::CompileTimeScalar(scalar) = checked.resolution()
-            else {
-                return None;
-            };
-            let crate::checked_text_proxy::CheckedCompileTimeScalar::Length(value) = scalar.value()
+            let CheckedExpressionResolution::StyleValue(
+                arcweft_view::style::ViewSpecifiedValue::Length { value },
+            ) = checked.resolution()
             else {
                 return None;
             };
             assert!(checked.effects().is_empty());
-            assert_eq!(value.unit, arcweft_primitives::LengthUnit::Px);
-            Some(value.milli)
+            assert_eq!(
+                checked.value_type(),
+                Some(&TypeKind::CompileTimeStyle(
+                    crate::types::CompileTimeStyleType::Value(
+                        arcweft_view::style::ViewStyleValueKind::Length,
+                    )
+                )),
+            );
+            Some(value.value())
         })
         .collect::<Vec<_>>();
     values.sort_unstable();

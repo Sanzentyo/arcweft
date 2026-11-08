@@ -305,6 +305,21 @@ version は `1` のままとする。
 
 ## Native computed Style resolution and projection
 
+Specified Style values form a compile-time domain owned by
+`arcweft-view::style::ViewSpecifiedValue`. Semantic checking retains the exact
+`ViewStyleValueKind`, including symbolic token and system-palette references;
+the compiler transports that checked value into the Style program. Construction
+operands, such as a font family, shadow, filter, transition, or property selector,
+have distinct semantic types. They cannot substitute for a complete property
+value or enter a Core runtime frame or snapshot.
+
+A specified Style `Length` belongs to the physical layout profile and uses px
+thousandths. Ordinary registered `Length` quantities retain their own type and
+unit; they do not implicitly become specified Style values. Likewise a Style
+`Color` can retain a system-palette reference until environment resolution, so it
+is not interchangeable with an ordinary runtime color value. The compiler uses
+the same specified-value path for Color, Length, and the other property kinds.
+
 Retained View nodes and runtime controls use the single typed
 `arcweft-view::style::ViewStyleResolver`. `ViewStyleProgram` owns sheets and
 inline patches; the bundle codec validates and transports that program but does

@@ -58,6 +58,7 @@ pub enum TypeMismatchPathSegment {
     FunctionReturn,
     CompileTimeCallable,
     CompileTimeScalar,
+    CompileTimeStyle,
     CompileTimeEnum,
     CompileTimeFx,
     FixedVectorDimensions,
@@ -925,6 +926,19 @@ impl TypeKind {
                         self,
                         actual,
                         TypeMismatchPathSegment::CompileTimeCallable,
+                        TypeMismatchReason::NonTypeParameter,
+                    )
+                })
+            }
+            Self::CompileTimeStyle(expected) => {
+                let Self::CompileTimeStyle(actual_style) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual_style).then(|| {
+                    TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::CompileTimeStyle,
                         TypeMismatchReason::NonTypeParameter,
                     )
                 })

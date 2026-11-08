@@ -259,6 +259,70 @@ fn accepted_scalar(name: &str, kind: CompileTimeScalarKind) -> TypeKind {
 }
 
 #[test]
+fn specified_style_values_and_operands_keep_exact_semantic_types() {
+    use super::CompileTimeStyleType;
+    use arcweft_view::style::ViewStyleValueKind;
+
+    let mut styles = ViewStyleValueKind::ALL
+        .iter()
+        .flat_map(|kind| {
+            [
+                CompileTimeStyleType::Value(*kind),
+                CompileTimeStyleType::Token(*kind),
+            ]
+        })
+        .collect::<Vec<_>>();
+    styles.extend([
+        CompileTimeStyleType::FontFamily,
+        CompileTimeStyleType::SystemFontFamily,
+        CompileTimeStyleType::SystemColor,
+        CompileTimeStyleType::Shadow,
+        CompileTimeStyleType::Filter,
+        CompileTimeStyleType::Transition,
+        CompileTimeStyleType::Property,
+    ]);
+    let types = styles
+        .into_iter()
+        .map(TypeKind::CompileTimeStyle)
+        .collect::<Vec<_>>();
+    let digests = types
+        .iter()
+        .map(|ty| ty.semantic_identity_digest().unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(digests.len(), types.len());
+    for expected in &types {
+        assert!(expected.accepts(expected));
+        assert!(!expected.accepts(&TypeKind::Named(expected.source_label())));
+        for actual in &types {
+            if expected != actual {
+                assert!(!expected.accepts(actual));
+                assert_eq!(
+                    expected.first_mismatch(actual).unwrap().path(),
+                    &[super::TypeMismatchPathSegment::CompileTimeStyle]
+                );
+                assert!(!expected.stable_ordering(actual).is_eq());
+            }
+        }
+    }
+    let specified =
+        TypeKind::CompileTimeStyle(CompileTimeStyleType::Value(ViewStyleValueKind::Length));
+    let ordinary = accepted_scalar("Length", CompileTimeScalarKind::Length);
+    assert!(!specified.accepts(&ordinary));
+    assert_ne!(
+        specified.semantic_identity_digest().unwrap(),
+        ordinary.semantic_identity_digest().unwrap()
+    );
+    let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
+    encoder.write_tag(104);
+    encoder.write_u8(CompileTimeStyleType::Value(ViewStyleValueKind::Length).semantic_tag());
+    encoder.write_u8(ViewStyleValueKind::Length.semantic_tag());
+    assert_eq!(
+        specified.semantic_identity_digest().unwrap().as_bytes(),
+        encoder.finish().as_bytes()
+    );
+}
+
+#[test]
 fn compile_time_scalar_digest_uses_tag_91_and_exact_declaration_kind() {
     let scalar = accepted_scalar("Milli", CompileTimeScalarKind::Milli);
     let mut expected = RuntimeSemanticTypeIdentityEncoder::new();

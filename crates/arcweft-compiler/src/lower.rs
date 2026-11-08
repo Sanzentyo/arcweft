@@ -5684,7 +5684,10 @@ fn runtime_type_scoped_at(
                 ),
             });
         }
-        TypeKind::CompileTimeEnum(_) | TypeKind::CompileTimeFx(_) | TypeKind::FixedVector(_) => {
+        TypeKind::CompileTimeStyle(_)
+        | TypeKind::CompileTimeEnum(_)
+        | TypeKind::CompileTimeFx(_)
+        | TypeKind::FixedVector(_) => {
             return Err(RuntimeSemanticProjectionError::Type {
                 reason: format!(
                     "compile-time presentation type `{}` cannot enter runtime projection",

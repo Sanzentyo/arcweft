@@ -79,6 +79,7 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::ViewValue
         | TypeKind::CompileTimeCallable(_)
         | TypeKind::CompileTimeScalar(_)
+        | TypeKind::CompileTimeStyle(_)
         | TypeKind::CompileTimeEnum(_)
         | TypeKind::CompileTimeFx(_)
         | TypeKind::CharacterNominal(_)

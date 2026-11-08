@@ -985,6 +985,13 @@ impl Encoder {
                 self.tag(102);
                 tasks.push(EncodingTask::Type(item, child_depth));
             }
+            TypeKind::CompileTimeStyle(style) => {
+                self.tag(104);
+                self.byte(style.semantic_tag());
+                if let Some(kind) = style.value_kind() {
+                    self.byte(kind.semantic_tag());
+                }
+            }
         }
         Ok(None)
     }

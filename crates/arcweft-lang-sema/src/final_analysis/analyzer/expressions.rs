@@ -4908,7 +4908,9 @@ impl Analyzer<'_, '_, '_> {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
             })?;
         Ok(Some(CheckedExpression::value(
-            TypeKind::Named("Color".to_owned()),
+            TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
+                arcweft_view::style::ViewStyleValueKind::Color,
+            )),
             CheckedTypeSelection::Inferred,
             effects,
             CheckedExpressionResolution::StyleValue(
@@ -4956,14 +4958,15 @@ impl Analyzer<'_, '_, '_> {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
         Ok(CheckedExpression::value(
-            ty,
+            TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
+                arcweft_view::style::ViewStyleValueKind::Length,
+            )),
             CheckedTypeSelection::Expected,
             checked.effects().clone(),
-            CheckedExpressionResolution::CompileTimeScalar(
-                super::super::CheckedCompileTimeScalarExpression::new(
-                    scalar,
-                    checked.resolution().clone(),
-                ),
+            CheckedExpressionResolution::StyleValue(
+                arcweft_view::style::ViewSpecifiedValue::Length {
+                    value: arcweft_view::style::ViewLengthMilli::new(length.milli),
+                },
             ),
         ))
     }

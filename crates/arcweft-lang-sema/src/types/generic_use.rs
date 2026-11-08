@@ -400,6 +400,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             | TypeKind::Error(_)
             | TypeKind::CompileTimeCallable(_)
             | TypeKind::CompileTimeScalar(_)
+            | TypeKind::CompileTimeStyle(_)
             | TypeKind::CompileTimeEnum(_)
             | TypeKind::CompileTimeFx(_) => Ok(()),
             TypeKind::FixedVector(vector) => self.visit_at(vector.component(), position),

@@ -461,6 +461,9 @@ where
         (TypeKind::CompileTimeScalar(expected), TypeKind::CompileTimeScalar(actual)) => {
             Ok(expected == actual)
         }
+        (TypeKind::CompileTimeStyle(expected), TypeKind::CompileTimeStyle(actual)) => {
+            Ok(expected == actual)
+        }
         (TypeKind::CompileTimeEnum(expected), TypeKind::CompileTimeEnum(actual)) => {
             Ok(expected.accepts(*actual))
         }

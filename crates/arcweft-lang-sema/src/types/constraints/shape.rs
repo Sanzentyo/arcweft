@@ -83,6 +83,7 @@ impl TypeKind {
             | Self::CharacterDialogue(_)
             | Self::CompileTimeCallable(_)
             | Self::CompileTimeScalar(_)
+            | Self::CompileTimeStyle(_)
             | Self::CompileTimeEnum(_)
             | Self::CompileTimeFx(_)
             | Self::ViewValue

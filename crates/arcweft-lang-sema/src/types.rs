@@ -22,6 +22,7 @@ mod openness;
 mod order;
 mod project_nominal_visit;
 mod projection_control;
+mod style;
 mod substitution;
 mod variant_payload;
 
@@ -61,6 +62,7 @@ pub use nominal::{
 pub(crate) use project_nominal_visit::visit_project_nominals;
 pub(crate) use projection_control::UnmeteredTypeProjection;
 pub use projection_control::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind};
+pub use style::CompileTimeStyleType;
 pub(crate) use substitution::TypeParameterSubstitutions;
 pub(crate) use substitution::contains_generic_parameter;
 pub(crate) use variant_payload::{
@@ -1116,6 +1118,8 @@ pub enum TypeKind {
     CompileTimeCallable(CompileTimeCallableType),
     /// Identity-bearing compile-time scalar selected by the accepted catalog.
     CompileTimeScalar(CompileTimeScalarType),
+    /// A specified Style value or construction operand; never a Core runtime value.
+    CompileTimeStyle(CompileTimeStyleType),
     /// Closed compile-time enum domain (optionally narrowed to one variant).
     CompileTimeEnum(CompileTimeEnumType),
     /// Exact or contextually open compile-time Fx value.
@@ -1385,6 +1389,7 @@ impl TypeKind {
             Self::CompileTimeScalar(scalar) => {
                 format!("CompileTimeScalar<{}>", scalar.source_label())
             }
+            Self::CompileTimeStyle(style) => style.source_label(),
             Self::CompileTimeEnum(enum_type) => {
                 format!("CompileTimeEnum<{}>", enum_type.source_label())
             }

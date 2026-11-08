@@ -617,13 +617,29 @@ fn named_action_bundle_rejects_a_substituted_payload_role() {
             "submitted = caption; submit(value = caption)",
         );
     let mut artifact = bundle(&source);
-    let handler = artifact
-        .view_program
-        .as_mut()
-        .unwrap()
+    let program = artifact.view_program.as_mut().unwrap();
+    let main = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == "view.Main")
+        .expect("the original authored View");
+    let body = &program.instructions[usize::try_from(main.body.start_instruction).unwrap()
+        ..usize::try_from(main.body.end_instruction).unwrap()];
+    let handlers = body
+        .iter()
+        .filter_map(|instruction| match instruction {
+            ViewProgramInstruction::BindHandler { handler, .. } => Some(handler.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [original_handler] = handlers.as_slice() else {
+        panic!("the original View binds exactly its submit handler");
+    };
+    let handler = program
         .handlers
-        .first_mut()
-        .unwrap();
+        .iter_mut()
+        .find(|handler| &handler.program == original_handler)
+        .expect("the originally bound event-time handler");
     let arcweft_view::ViewHandlerResultRole::StateTransition { writes, .. } = handler.result.role()
     else {
         panic!("event-time Action")

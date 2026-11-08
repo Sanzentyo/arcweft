@@ -139,6 +139,7 @@ impl TypeKind {
             atomic_type_kind_pattern!(Self::Error(_))
             | Self::CompileTimeCallable(_)
             | Self::CompileTimeScalar(_)
+            | Self::CompileTimeStyle(_)
             | Self::CompileTimeEnum(_)
             | Self::CompileTimeFx(_) => false,
             Self::FixedVector(vector) => vector.component().contains_dialogue_line_operation(),
@@ -208,6 +209,7 @@ impl TypeKind {
             atomic_type_kind_pattern!()
             | Self::CompileTimeCallable(_)
             | Self::CompileTimeScalar(_)
+            | Self::CompileTimeStyle(_)
             | Self::CompileTimeEnum(_)
             | Self::CompileTimeFx(_) => false,
             Self::FixedVector(vector) => vector.component().contains_nominal_poison(),

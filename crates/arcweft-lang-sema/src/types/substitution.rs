@@ -213,6 +213,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::CharacterDialogue(_)
         | TypeKind::CompileTimeCallable(_)
         | TypeKind::CompileTimeScalar(_)
+        | TypeKind::CompileTimeStyle(_)
         | TypeKind::CompileTimeEnum(_)
         | TypeKind::CompileTimeFx(_)
         | TypeKind::FixedVector(_)

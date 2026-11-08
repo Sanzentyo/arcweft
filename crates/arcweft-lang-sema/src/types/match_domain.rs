@@ -162,6 +162,7 @@ impl TypeKind {
             | Self::DialogueLine(_)
             | Self::CompileTimeCallable(_)
             | Self::CompileTimeScalar(_)
+            | Self::CompileTimeStyle(_)
             | Self::CompileTimeEnum(_)
             | Self::CompileTimeFx(_)
             | Self::FixedVector(_)

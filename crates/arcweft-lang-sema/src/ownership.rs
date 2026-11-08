@@ -1273,6 +1273,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             | TypeKind::SlotRef(_)
             | TypeKind::CompileTimeCallable(_)
             | TypeKind::CompileTimeScalar(_)
+            | TypeKind::CompileTimeStyle(_)
             | TypeKind::CompileTimeEnum(_)
             | TypeKind::CompileTimeFx(_)
             | TypeKind::FixedVector(_)
