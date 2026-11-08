@@ -15647,3 +15647,28 @@ CLI既定のlib／testsはretry-r2で711実行・707 PASS／4 FAIL／23 SKIP、2
 実CLI本体は元pathで前後SHA256 `b3dccecb0dc831419766fefcd41227aab18996b8ab4aeaf883551d4b0ced8b7a` を照合し、test binaryも差分0。同じ本体で公開target・保持String・named Actionとpurpose=.search／enter_key=.sendを持つSourceをcheckし、成功0／status okだった。Source SHA256 `61c01e0c8ae7cceba229c0fcfeaa99ea8237c0db974a9e14e403217266ee4e47`、Source／manifest／本体の前後差分0。このprobeをnextest件数へ加算しない。
 
 新規2 run／2 feature pointで10246実行・10242 PASS／4 FAIL／49 SKIP。先行5357件・論理被覆8076件とその2719件の再利用、focused owner342件を合算せず、元137件のJSON記録を変更せず追記した。[consumer原本](acceptance-evidence/task-ime-input-policy-consumers.raw.zip) は35 entry／1748758 bytes、SHA256 `93ea771e0b75034d1a8b6ea5c344de661391a888c55242d3e809b94ddf98cdaa`。全終端・入力／EXE pin・選択、実診断、準備失敗とretry、Source probeを保持し、実行ファイルや生成AWFBは含まない。現状一覧の「71 package実行中」を実測済みへ更新した。purpose／Enter-key hintの伝搬を、placeholder等の旧sample・Scroll・実Native／Web表示の継続条件と混同しない。既受入Generic Match、保持入力／target／Actionの判定は維持する。
+
+## 2026-11-08 — placeholderとアクセシビリティ名の分離
+
+実装Sourceは `84bcb1647b6453d43c79e57ae5431e886cc4db59`、描画testだけの訂正は `58ab00be89f2ee19242e39d66fe71b072f49a443`。
+Viewの順序付きtyped roleをSource／AWFB／driverへ通し、controlのlabelとplaceholderを別に保持する。
+静的placeholderをlabelへ補完する経路と、labelをplaceholderとして描く経路を削除した。
+3種の入力欄、動的再評価、空値submit、cold restore、stale session、実行エラーの記述順、semantic replacementを検証した。
+
+初回dev checkの不存在フィールド参照とowner準備のtest child path誤りは、実行前の失敗として保持する。
+owner-r2は4件中2 PASS／2 FAIL。Stringの加算を使ったfixtureは既存plannerの未対応演算だったため型付き条件式へ訂正し、
+製品の重複roleをAWBC接続前に通していた実不具合は構造admissionへ移した。owner-r3は4／4 PASS。
+初回consumer runは4654件中4653 PASS／1 FAIL。追加assertionが表示glyphの範囲と入力値のoffsetを混同していた。
+訂正後は表示範囲を保持したまま、実際のfocused IME geometryが空の保持値だけを指すことを検証する。色・spacing・semantic名のassertionも維持した。
+製品実装は変更せず、訂正した描画ownerと全逆依存を再実行した。途中の失敗を最終PASSへ上書きしない。
+
+最終の新規2 runは5365実行／5361 PASS／4 FAIL／41 SKIP。
+View逆依存の非CLI全feature 4654件とCLI既定711件を区別し、owner反復・失敗run・先行10246件は加算しない。
+先行の同じclosure 4649件は欠落0、追加5件も重複0。CLIの4失敗IDと実診断は先行と同じである。
+
+現状一覧の「placeholder等の旧sample移行」は、機能自体の未実装とsample移行を混同するため、今回の受入と旧sample・Scroll・実表示の継続条件へ分離した。
+旧IME Sourceの10246件と全SHAは元registryの履歴として保持し、異なるSourceの件数を現在の新規runとして重複掲載しない。
+Generic Matchと既受入のbounded cutは変更していない。全体goalの未達による再開も行わない。
+
+原本は `acceptance-evidence/task-view-placeholder-separation.raw.zip`（113 entry、4649065 bytes、SHA-256 `43a01d49c39504147dc9c33c018ae8f3b3d59f56f701060c5ba6a125418cbc89`）。
+実行ファイル・AWFBは含めず、実EXEは元pathのhashで照合した。詳細は `acceptance-evidence/task-flow-registry-execution.json` の `viewPlaceholderSeparation`。
