@@ -44,21 +44,21 @@ pub style primary_button {
 }
 
 pub view FeedbackForm() {
-  local state mut feedback: String = ""
+  local state mut feedback_text: String = ""
 
   Column {
-    TextField(feedback, target = @input:.feedback, label = "Message",
+    TextField(feedback_text, target = @input:.feedback, label = "Message",
               placeholder = "Type text, then press Enter or click Send",
               purpose = .text, enter_key = .send)
-      .on_submit(|| feedback.submit(value = feedback))
+      .on_submit(|| feedback.submit(value = feedback_text))
 
     Button("Send", target = @button:.feedback_send, enabled = true)
       .style(@style:.primary_button)
-      .on_click(|| feedback.submit(value = feedback))
+      .on_click(|| feedback.submit(value = feedback_text))
   }
 }
 
-flow text_submit_flow(state: GameState) {
+flow text_submit_flow(state: GameState) -> String {
   let panel = mount(FeedbackForm())
 
   narrator:
@@ -78,7 +78,7 @@ flow text_submit_flow(state: GameState) {
   }
 
   if character_count < 5usize {
-    narrator: The submitted text is short: #[character_count] character(s).
+    narrator: The submitted text is short: #[character_count] Unicode scalar value(s).
   }
 
   if character_count >= 5usize {

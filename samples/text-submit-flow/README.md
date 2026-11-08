@@ -1,59 +1,26 @@
-# text-submit-flow sample with View semantic submit action
+# Retained text submission
 
-This sample demonstrates the current View/action authoring surface:
+`FeedbackForm` owns one `local state mut feedback_text: String`. The text field
+binds that value to `@input:.feedback`, with a distinct label, placeholder and
+typed IME purpose / Enter-key hint. The flow mounts the view with
+`mount(FeedbackForm())` and awaits `receive(feedback.submit)`.
 
-- `flow text_submit_flow` explicitly mounts `view(@view:.FeedbackForm)`;
-- `let feedback = input.text(@input:.feedback, initial = "")` owns the text
-  input handle used by `TextField(feedback)`;
-- `pub action feedback.submit(value: String)` defines the semantic submit
-  route;
-- `TextField(feedback).on_submit { action.invoke(...) }` and
-  `Button(...).on_click { action.invoke(...) }` emit the same typed action;
-- the flow waits with `let event = receive action(@action:.feedback.submit)`.
-
-## Native smoke
+Both `.on_submit(|| feedback.submit(value = feedback_text))` and the Send
+button's `.on_click` return the same declared Action and its current String
+payload. The flow returns the submitted String. Its empty, short and long
+branches use `scalar_count()`, which counts Unicode scalar values, including
+combining marks and individual scalars in an emoji sequence.
 
 ```bash
-cargo run -p arcweft-cli -- bundle samples/text-submit-flow/src/main.arcw \
-  --output target/arcweft/text-submit-flow-button.awfb
-cargo run -p arcweft-player-native --bin arcweft-player-native -- \
-  target/arcweft/text-submit-flow-button.awfb
+cargo run -p arcweft-cli -- check \
+  --manifest-path samples/text-submit-flow/arcw.toml --json
+cargo run -p arcweft-cli -- bundle \
+  --manifest-path samples/text-submit-flow/arcw.toml --profile main \
+  --output target/arcweft/text-submit-flow.awfb --json
 ```
 
-To capture player text-input write-back traces, run through the native runner:
-
-```bash
-cargo run -p arcweft-cli -- run --runner native samples/text-submit-flow/src/main.arcw \
-  --text-input-trace-out target/arcweft/traces/text-submit-flow-native.jsonl
-```
-
-Trace file:
-
-```text
-target/arcweft/traces/text-submit-flow-native.jsonl
-```
-
-Expected entries:
-
-- presentation snapshot contains one `action_buttons` record with label `Send`;
-- button pointer activation emits `action.feedback.submit`;
-- text-field Enter/IME send writes `RuntimeTextControlWriteBackKind::Submit`
-  and resumes the same `receive action` wait through the submit handler;
-- text-field Enter/IME send reaches the same flow result.
-
-## Web smoke
-
-```bash
-cargo run -p arcweft-cli -- bundle samples/text-submit-flow/src/main.arcw \
-  --output target/arcweft/text-submit-flow-button.awfb
-wasm-pack test --headless --chrome crates/arcweft-player-web
-```
-
-Expected trace file:
-
-```text
-target/wasm32-unknown-unknown/debug/arcweft-player-web/text-submit-flow-web.jsonl
-```
-
-The web sample must not create a DOM `<button>`, hidden form submit, or platform
-widget. The button is player-rendered through the shared scene path.
+Interactive verification covers Enter / IME send and the Send button, the
+unchanged input and Action IDs, and all response branches. Native and Web use
+player-rendered controls through the shared scene path. Validation results and
+remaining acceptance belong to the single
+[current status](../../docs/implementation/current-status.md).
