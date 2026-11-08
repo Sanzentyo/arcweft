@@ -61,3 +61,71 @@ fn zero_input_static_dynamic_and_choice_transfers_remain_accepted() {
         analyze(&world).unwrap_or_else(|error| panic!("{transfer}: {error:?}"));
     }
 }
+
+#[test]
+fn explicit_goto_binds_the_original_flow_inputs() {
+    for arguments in ["7", "value = 7"] {
+        let world = fixture(
+            &format!(
+                "flow main {{ goto @flow.next({arguments}) }}\nflow next(value: i64) -> i64 {{ return value }}\n"
+            ),
+            None,
+        );
+        let analysis = analyze(&world).unwrap_or_else(|error| panic!("{arguments}: {error:?}"));
+        assert!(
+            analysis.call_diagnostics().next().is_none(),
+            "{:?}",
+            analysis.call_diagnostics().collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn an_inert_flow_reference_does_not_grant_returning_call_rights() {
+    let world = fixture(
+        "flow main -> i64 { let route = @flow.next; let result = route(7); return result }\nflow next(value: i64) -> i64 { return value }\n",
+        None,
+    );
+    analyze(&world).expect_err("FlowRef grants only reference and transfer semantics");
+}
+
+#[test]
+fn a_direct_flow_reference_application_is_only_admitted_as_a_goto_target() {
+    let world = fixture(
+        "flow main -> i64 { return @flow.next(7) }\nflow next(value: i64) -> i64 { return value }\n",
+        None,
+    );
+    if let Ok(analysis) = analyze(&world) {
+        assert!(analysis.call_diagnostics().next().is_some());
+    }
+}
+
+#[test]
+fn explicit_transfer_enters_the_targets_effect_scope() {
+    let world = fixture(
+        "flow main effects {} { goto @flow.next(7) }\nflow next(value: i64) effects { log.write } { log.info(\"target\") }\n",
+        None,
+    );
+    let analysis = analyze(&world).expect("target execution owns its own effects");
+    assert!(analysis.call_diagnostics().next().is_none());
+}
+
+#[test]
+fn explicit_transfer_arguments_still_require_the_current_effect_permission() {
+    let world = fixture(
+        "fn input() -> i64 effects { log.write } { log.info(\"argument\"); 7 }\nflow main effects {} { goto @flow.next(input()) }\nflow next(value: i64) {}\n",
+        None,
+    );
+    let error = analyze(&world).expect_err("argument evaluation precedes the Flow boundary");
+    let FinalSemanticAnalysisError::EffectUpperBoundExceeded { missing, .. } = error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(missing.to_labels(), ["log.write"]);
+}
+
+#[test]
+fn a_self_transfer_is_not_returning_callable_recursion() {
+    let world = fixture("flow main(value: i64) { goto @flow.main(value) }\n", None);
+    let analysis = analyze(&world).expect("a transfer replaces the current Flow invocation");
+    assert!(analysis.call_diagnostics().next().is_none());
+}

@@ -131,7 +131,7 @@ impl Analyzer<'_, '_, '_> {
         candidate: &PreparedResolvedCallable,
         current_group: CallableGroupIndex,
     ) -> Result<EffectSet, FinalSemanticAnalysisError> {
-        if candidate.next_group_for(current_group).is_some() {
+        if candidate.id().is_flow_transfer() || candidate.next_group_for(current_group).is_some() {
             return Ok(EffectSet::new());
         }
         let terminal_effects = self.source_callable_terminal_effects(candidate)?;
@@ -264,7 +264,8 @@ pub(in super::super) fn final_call_effects(
     current_group: CallableGroupIndex,
     checked: &CheckedCallableCatalog,
 ) -> Result<EffectRow, FinalSemanticAnalysisError> {
-    if candidate.base().next_group_for(current_group).is_some() {
+    if candidate.id().is_flow_transfer() || candidate.base().next_group_for(current_group).is_some()
+    {
         return Ok(EffectRow::closed(EffectSet::new()));
     }
     final_callable_effects(candidate, checked)

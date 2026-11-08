@@ -40,7 +40,7 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
         return ResolveCallOutcome::Rejected(ResolveCallError::InvalidResolvedCallable);
     }
     match request.callee.clone() {
-        PreparedCallCallee::ProjectView { declaration } => {
+        PreparedCallCallee::ProjectDeclaration { declaration } => {
             match resolve_exact_project_callable(declaration, None, &mut request) {
                 Ok(target) => ResolveCallOutcome::Resolved(target),
                 Err(error) => ResolveCallOutcome::Rejected(error),

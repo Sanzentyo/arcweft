@@ -205,6 +205,13 @@ initial state through its own typed binding; it does not implicitly supply state
 to later Flow transfers. Missing inputs are rejected during semantic analysis,
 before runtime-plan or AWBC generation.
 
+An explicit static transfer, such as `goto @flow.target(value, label = expression)`,
+binds inputs with the shared positional and named argument rules. Arguments are
+evaluated once in authored order in the current scope, then transferred to the
+target's formal coordinates. The application does not return a value to the
+transferring Flow. A Flow reference does not grant ordinary returning-call rights;
+the same application outside a Goto target is rejected.
+
 `out` is only valid for line-plan, cue-block, and content-scope outputs. These scopes may also be labeled:
 
 ```arcw

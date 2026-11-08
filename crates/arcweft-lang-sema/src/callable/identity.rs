@@ -1929,6 +1929,12 @@ impl CallableFamily {
 }
 
 impl CallableCandidateId {
+    /// Flow declarations selected as applications are non-returning transfer
+    /// targets. Ordinary Flow reference values do not grant call rights.
+    pub(crate) const fn is_flow_transfer(&self) -> bool {
+        matches!(self, Self::Project(CallableDeclarationKey::Flow(_)))
+    }
+
     pub(crate) const fn intrinsic_family(&self) -> CallableFamily {
         match self {
             Self::FxConstructor(_) => CallableFamily::FxConstructor,

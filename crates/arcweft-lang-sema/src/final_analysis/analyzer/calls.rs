@@ -1850,6 +1850,18 @@ impl Analyzer<'_, '_, '_> {
         })?;
         let presentation_character_owner =
             self.presentation_character_owner(context, source.call.arguments(), presentation_id)?;
+        let flow_transfer = self
+            .topology
+            .module(source.owner.module())
+            .and_then(|module| module.expression_uses().row(source.owner))
+            .and_then(arcweft_lang_hir::project::HirExpressionUseRow::statement_parent)
+            .filter(|(statement, role)| {
+                *role == arcweft_lang_hir::stmt::HirStatementChildRole::Target
+                    && source.module.resolve_stmt(*statement).is_ok_and(|statement| {
+                        matches!(statement.kind(), arcweft_lang_hir::stmt::HirStmtKind::Goto { target } if *target == source.owner)
+                    })
+            })
+            .map(|(statement, _)| statement);
         let prepared = prepare_final_call_callee(
             authority,
             source.owner,
@@ -1863,7 +1875,8 @@ impl Analyzer<'_, '_, '_> {
                 &self.type_reports,
                 &self.types,
                 function_value_origin,
-            ),
+            )
+            .with_flow_transfer(flow_transfer),
             dialogue_context,
             &self.catalogs.callable_limits,
         )

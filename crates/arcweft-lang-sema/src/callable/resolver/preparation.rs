@@ -118,6 +118,24 @@ where
         .resolve_expr(value)
         .map_err(|_| PrepareFinalCallCalleeError::InvalidCallExpression { expression: value })?;
 
+    if facts.flow_transfer.is_some()
+        && let Some(CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item))) =
+            facts
+                .expressions
+                .get(&value)
+                .and_then(PreparedExpressionFact::checked_resolution)
+        && let Some((declaration, _)) = item.flow_owner()
+    {
+        if function_origin.is_some() {
+            return Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
+                expression: value,
+            });
+        }
+        return Ok(PreparedFinalCallCallee::ProjectDeclaration {
+            declaration: Box::new(declaration.clone()),
+        });
+    }
+
     if let Some(TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::ProjectView(
         declaration,
     ))) = facts
@@ -144,7 +162,7 @@ where
                 expression: value,
             });
         }
-        return Ok(PreparedFinalCallCallee::ProjectView {
+        return Ok(PreparedFinalCallCallee::ProjectDeclaration {
             declaration: Box::new(declaration.clone()),
         });
     }
@@ -875,7 +893,7 @@ pub(super) fn classify_prepared_callee(
         }
         (
             PreparedCallCallee::Free { .. }
-            | PreparedCallCallee::ProjectView { .. }
+            | PreparedCallCallee::ProjectDeclaration { .. }
             | PreparedCallCallee::EnumConstructor { .. }
             | PreparedCallCallee::Dialogue { .. }
             | PreparedCallCallee::FunctionValue { .. }

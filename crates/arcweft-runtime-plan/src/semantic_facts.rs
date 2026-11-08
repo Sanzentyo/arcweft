@@ -4627,6 +4627,9 @@ impl RuntimeResolvedCall {
     /// must consume the shared source-order ANF materialization before they
     /// may interpret operands by semantic/ABI role.
     pub const fn requires_specialized_operand_anf(&self) -> bool {
+        if self.flow_transfer_target().is_some() {
+            return true;
+        }
         matches!(
             self.dispatch,
             RuntimeResolvedCallDispatch::Static(
@@ -4640,6 +4643,22 @@ impl RuntimeResolvedCall {
                     | RuntimeResolvedStaticCallTarget::Traverse
             )
         )
+    }
+
+    /// A Flow declaration application binds a non-returning transfer, rather
+    /// than constructing a returning project-function frame.
+    pub const fn flow_transfer_target(
+        &self,
+    ) -> Option<&arcweft_lang_hir::symbol::FlowDeclarationId> {
+        match &self.dispatch {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+                callable,
+            )) => match callable.declaration() {
+                CallableDeclarationKey::Flow(flow) => Some(flow),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }
 
@@ -12984,7 +13003,16 @@ fn validate_call(
         }
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
             callable,
-        )) => validate_callable(modules, callable)?,
+        )) => {
+            validate_callable(modules, callable)?;
+            if call.flow_transfer_target().is_some()
+                && !module_for(modules, expression.module())?.statements().any(|(_, statement)| {
+                    matches!(statement.kind(), HirStmtKind::Goto { target } if *target == expression)
+                })
+            {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression });
+            }
+        }
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) => {
             if let RuntimeResolvedHostCallOwner::ExternCapability { callable, .. } = host.owner() {
                 validate_callable(modules, callable)?;
@@ -13894,6 +13922,10 @@ fn validate_callable(
             HirCallableSourceOwner::Item,
             HirItemKind::Function(_)
         ) | (
+            CallableDeclarationOwner::Flow,
+            HirCallableSourceOwner::Item,
+            HirItemKind::Flow(_)
+        ) | (
             CallableDeclarationOwner::ExternCapability,
             HirCallableSourceOwner::ExternCapabilityFunction { .. },
             HirItemKind::ExternCapability(_)
@@ -13924,6 +13956,7 @@ fn validate_callable(
         let valid_item_family = matches!(
             (callable.declaration().owner(), item.kind()),
             (CallableDeclarationOwner::Function, HirItemKind::Function(_))
+                | (CallableDeclarationOwner::Flow, HirItemKind::Flow(_))
                 | (
                     CallableDeclarationOwner::ExternCapability,
                     HirItemKind::ExternCapability(_)

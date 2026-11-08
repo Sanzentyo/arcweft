@@ -63,12 +63,16 @@ pub(super) fn prepared_call_execution_rows(
             .next_group_for(application.completed_group())
             .is_none();
         let owner = node.site().expression();
-        let effects = terminal
-            .then(|| selected.schema().effects().fixed_row())
-            .flatten()
-            .map(|row| application.specialize_effect_row(row))
-            .transpose()
-            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+        let effects = if selected.id().is_flow_transfer() {
+            Some(EffectRow::closed(crate::effects::EffectSet::new()))
+        } else {
+            terminal
+                .then(|| selected.schema().effects().fixed_row())
+                .flatten()
+                .map(|row| application.specialize_effect_row(row))
+                .transpose()
+                .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?
+        };
         let receiver = node.prefix().receiver_evaluation();
         let row = crate::final_analysis::statement_effects::PreparedCallExecutionRow {
             effects,
@@ -113,6 +117,22 @@ impl<'a> CallableEffectGraph<'a> {
                 } => owner,
             };
             let selected = application.selected();
+            if selected.id().is_flow_transfer() {
+                if execution_by_expression
+                    .insert(
+                        owner,
+                        IndexedCallableExecution {
+                            suspension: IndexedCallableSuspension::NonSuspending,
+                            control:
+                                crate::final_analysis::CheckedExecutableControlRole::FlowRequired,
+                        },
+                    )
+                    .is_some()
+                {
+                    return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                }
+                continue;
+            }
             let immediate_map = selected
                 .next_group_for(application.completed_group())
                 .is_none()

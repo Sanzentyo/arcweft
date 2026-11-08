@@ -6872,6 +6872,16 @@ impl<'a> FinalFlowLowerer<'a> {
                 }
             }
             HirStmtKind::Goto { target } => {
+                if let Some(call) = self.call(*target).cloned()
+                    && let Some(flow) = call.flow_transfer_target()
+                {
+                    let flow = arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                        flow.semantic_digest().into_bytes(),
+                        flow.public_id().as_str(),
+                    )
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+                    return self.lower_flow_transfer_application(*target, &call, flow);
+                }
                 if let Some(RuntimeResolvedValue::Entity(entity)) = self.value(*target)
                     && let Some(target) = entity
                         .flow_runtime_identity()
@@ -7070,6 +7080,74 @@ impl<'a> FinalFlowLowerer<'a> {
                 "final-HIR statement {id:?} family {unsupported:?} has no checked core projection"
             ))),
         }
+    }
+
+    /// Evaluate the shared binder's original source row before moving its
+    /// distinct caller-owned temporaries into the receiving Flow ABI.
+    fn lower_flow_transfer_application(
+        &mut self,
+        owner: ExprId,
+        call: &RuntimeResolvedCall,
+        target: arcweft_core::plan::FlowRuntimeId,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let mut ops = Vec::new();
+        let mut arguments = Vec::new();
+        for (ordinal, operand) in call.operands().iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                RuntimePlanLowerError::new("Flow input ordinal exceeds checked limits")
+            })?;
+            let parameter = operand
+                .parameter()
+                .filter(|parameter| parameter.group() == 0)
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("Flow input has no original parameter coordinate")
+                })?;
+            if !matches!(
+                operand.projection(),
+                RuntimeResolvedCallOperandProjection::Scalar
+            ) {
+                return Err(RuntimePlanLowerError::new(
+                    "Flow input is not a scalar parameter binding",
+                ));
+            }
+            let local = self
+                .specialized_operand_locals
+                .get(&(owner, ordinal))
+                .cloned()
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("Flow input has no admitted source-order local")
+                })?;
+            let pattern = bind_seed(operand.ty(), local.clone());
+            match operand.source() {
+                RuntimeResolvedCallOperandSource::Expression(expression) => {
+                    ops.extend(self.lower_flow_value(
+                        expression,
+                        RuntimeFlowValueContinuation::Bind {
+                            pattern,
+                            tail: RuntimeFlowTail::None,
+                        },
+                    )?);
+                }
+                source @ RuntimeResolvedCallOperandSource::CompactNumericElement { .. } => {
+                    let expr = self
+                        .expr_lowerer()
+                        .lower_scalar_operand_source(source, operand.ty())
+                        .map_err(RuntimePlanLowerError::new)?;
+                    ops.push(RuntimeFlowOpSeed::Let { pattern, expr });
+                }
+            }
+            arguments.push(arcweft_core::value::RuntimeFlowParameterBinding {
+                parameter: FlowParameterCoordinate::from_position(parameter.parameter()),
+                value: local_seed(operand.ty(), local, RuntimeLocalReadMode::Move),
+            });
+        }
+        ops.push(RuntimeFlowOpSeed::Goto(
+            arcweft_core::plan::RuntimeFlowTransfer {
+                target: arcweft_core::plan::RuntimeFlowTransferTarget::Static(target),
+                arguments: arguments.into_boxed_slice(),
+            },
+        ));
+        Ok(ops)
     }
 
     fn lower_wait_statement(

@@ -15873,3 +15873,19 @@ Cargo／lock／featureは変わらず、前回のCore53推移的reverse closure�
 
 所有境界の確認：追加scope refは実ストレージの借用だけでgrantを発行しない。Envは元の認証状態を保持したroot設置、Native終了継続は保留入力、presentation bankは一括preflight／commitを所有する。既存の大きいEnvへ別のregistryやI/Oを増やさず、Rootの物理移動をそのownerへ置いた。新しいテストは専用の描画転送moduleに置き、関係のないscope／resource機能の設計変更は行わない。
 原本 docs/implementation/acceptance-evidence/task-flow-transfer-presentation-wip4.raw.zip：26 entries／877179 bytes／SHA256 96d9d13e1bee25c986380d0b86e5ff78d5a0415aef64a485dcf452c2710632a3。ソース・patch・ログ・catalog・metadataのみで、EXE／AWFBは含めない。
+
+## 静的Flow明示入力のSource接続（WIP5、2026-11-09）
+
+確認基点はmain／origin/mainの149d7b8a59d207b4bcce5195ee0f6d82a4d0c9fa（親10474f06766f05b4583ba45086f69115e38b3371、tree 9603cfd5e3511f7df34c319ee8f61a629fb79276、公開patch SHA256 01bc97f141869a23b8199c880ede75bc06c8f823959cf03dae34a172cb1dcd9d）。先行11 pathのblob・remote・patch照合を保持する。今回の開始時は前ターンのSemaテスト1 pathだけがtracked dirty、4 untracked cacheは保持した。全体cargo cleanは既に294059 files／399.1 GiBを削除して終了0であり、今回再実行していない。これは途中checkpointで、引数付き転送全体の受入ではない。
+
+訂正：Sema-only r1は5 PASS／1424 filter SKIP／0.148秒だったが、明示入力の正例がanalyze()のOkだけを見ており、返されたCallTargetFacts内のnon-callable診断を確認していなかった。実CompilerのSource→Native／AWBC回帰を追加すると、両方ともsema.call.non_callable_targetで2 FAIL／0 PASS／0.094秒となった。この実測で最初の成功解釈を撤回し、正例にcall_diagnosticsが空であるassertionを加えた。元の5 PASSを削除したり、実Source転送の成功へ再帰属したりしない。Generic Match等の受入済み項目を戻す判定でもない。
+
+HIRのexpression-use rowが、capture用のenclosing expressionとは独立に元statement／child roleを保持する。Semaはその正確なGoto targetだけで静的Flow宣言を共通resolver／argument binderへ渡し、FlowRef一般へ戻る呼出し権限を与えない。選択済みFlow宣言を返却callのeffect／recursion edgeへ入れず、引数の実行効果は現在scopeで検査する。RuntimePlanは同じ選択済み宣言と元Gotoを検査し、binderの記述順operandを既存CallOperand座標から発行した専用localへ一度評価し、元parameter座標のwhole-local Moveで転送する。別binder・偽のHIR ID・別ABI・互換readerを作らず、version 1を維持した。
+
+Sema lib check終了0／1分02秒、Compiler対象check終了0／1分12秒。その時点のr2は元Flow familyを関数用runtime fact検査が拒否して2 FAIL／0 PASS／0.147秒だった。元のFlow declaration／source ownerと、実Goto targetであることを検査するconsumerへ接続したr3は2／2 PASS／0 SKIP／0.251秒。位置、逆順名前付き、通常関数で計算した入力が、Nativeとcanonical decoded AWBCの実receiving Flowで42を返した。r4で有限の自己GotoとSemaのeffect／非returning検査を加え、先行listは1分26秒で終了0、選択はSema9件＋Compiler2件。runは11／11 PASS、1400 filter等SKIP、0.480秒。Compilerの各testは4 Source caseを実行するが、8 testと数え直さない。r1／r2／r3／r4は異なる入力であり件数を単一matrixへ加算しない。
+
+4 owner（HIR／Sema／RuntimePlan／Compiler）のlocked／all-targets／all-features Clippyは終了0／1分33秒、警告あり。変更12 Rust pathの限定fmt check終了0。Cargo／lock／featureが不変なので、前回のlocked all-features metadataを再利用し、normal／dev／build／target edgeのSource影響closureを23 workspace packageと算出した。全23のrun、先行Core変更を含む全53逆依存とworkspace gateは未実行。動的明示適用、generic／default／spreadと完全な型admission、affine入力のcall-frame／取消し／失敗matrix、Native公開save、実Native／Web parityは今回の11件へ含めない。
+
+r3／r4は149d7b8a59d207b4bcce5195ee0f6d82a4d0c9fa＋各tracked patch＋Compiler fixtureで再現する。r1／r2の元Rust全入力／実行時EXE pinは未記録で、実Source入力と診断は元終端ログに保持した。r4のbefore pin採取はJSON property名の誤りで空となったため無効であり、終了後に元pathで観測した実EXE hashだけを明記した。binary drift 0は主張しない。EXE／AWFBのコピー・移動・退避は行っていない。registry153 propertyとGeneric Matchの現状行を維持し、重複した先行47件等の説明は既存履歴へ残して、現状一覧のgoto行を今回の対象範囲へ整理した。
+
+原本 docs/implementation/acceptance-evidence/task-flow-transfer-source-wip5.raw.zip：35 entries／1180003 bytes／SHA256 5c0a41292bf054f285df5c363ef092cb3a3cda688066149121774c150b3f7480。内容はsource、patch、log、catalog、metadataのみ。

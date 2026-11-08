@@ -90,7 +90,7 @@ use super::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedCallCallee<'a> {
-    ProjectView {
+    ProjectDeclaration {
         declaration: &'a CallableDeclarationKey,
     },
     Free {
@@ -158,7 +158,7 @@ pub(crate) enum PreparedFreeCallContext {
 /// detached syntax node, or temporary label has to outlive preparation.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedFinalCallCallee<'a> {
-    ProjectView {
+    ProjectDeclaration {
         declaration: Box<CallableDeclarationKey>,
     },
     Free {
@@ -678,7 +678,7 @@ impl PreparedFinalCallCallee<'_> {
         match self {
             Self::FunctionValue { value } => Some(value.into_origin()),
             Self::Free { .. }
-            | Self::ProjectView { .. }
+            | Self::ProjectDeclaration { .. }
             | Self::EnumConstructor { .. }
             | Self::RecordConstructor { .. }
             | Self::Selected { .. }
@@ -690,7 +690,7 @@ impl PreparedFinalCallCallee<'_> {
 
     pub(crate) fn constraint_inputs(&self) -> PreparedCallCalleeConstraintInputs {
         match self {
-            Self::Free { .. } | Self::ProjectView { .. } => {
+            Self::Free { .. } | Self::ProjectDeclaration { .. } => {
                 PreparedCallCalleeConstraintInputs::Free
             }
             Self::EnumConstructor { .. } => PreparedCallCalleeConstraintInputs::EnumConstructor,
@@ -723,7 +723,9 @@ impl PreparedFinalCallCallee<'_> {
 
     pub(crate) fn as_borrowed(&self) -> PreparedCallCallee<'_> {
         match self {
-            Self::ProjectView { declaration } => PreparedCallCallee::ProjectView { declaration },
+            Self::ProjectDeclaration { declaration } => {
+                PreparedCallCallee::ProjectDeclaration { declaration }
+            }
             Self::Free {
                 path,
                 project,
@@ -774,6 +776,7 @@ impl PreparedFinalCallCallee<'_> {
 
 /// Immutable child facts needed to prepare one final-HIR call.
 pub(crate) struct FinalCallCalleeFacts<'a, P, U> {
+    flow_transfer: Option<arcweft_lang_hir::identity::StmtId>,
     expressions: &'a BTreeMap<ExprId, PreparedExpressionFact>,
     prepared_calls: super::PreparedCallGraphIngress<'a, P, U>,
     nominal_receivers: &'a BTreeMap<TypeId, TypeResolutionReport>,
@@ -790,12 +793,21 @@ impl<'a, P, U> FinalCallCalleeFacts<'a, P, U> {
         function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
     ) -> Self {
         Self {
+            flow_transfer: None,
             expressions,
             prepared_calls,
             nominal_receivers,
             types,
             function_value_origin,
         }
+    }
+
+    pub(crate) const fn with_flow_transfer(
+        mut self,
+        statement: Option<arcweft_lang_hir::identity::StmtId>,
+    ) -> Self {
+        self.flow_transfer = statement;
+        self
     }
 }
 

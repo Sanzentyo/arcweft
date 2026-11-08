@@ -1928,6 +1928,7 @@ impl HirExpressionUseParent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirExpressionUseRow {
     expression: ExprId,
+    statement_parent: Option<(StmtId, HirStatementChildRole)>,
     source_ordinal: u32,
     subtree_end_ordinal: u32,
     parent: Option<HirExpressionUseParent>,
@@ -1937,6 +1938,12 @@ pub struct HirExpressionUseRow {
 }
 
 impl HirExpressionUseRow {
+    /// Exact statement edge owning this expression, independently of the
+    /// enclosing expression region used for capture and placeholder lookup.
+    pub const fn statement_parent(&self) -> Option<(StmtId, HirStatementChildRole)> {
+        self.statement_parent
+    }
+
     pub const fn expression(&self) -> ExprId {
         self.expression
     }
@@ -5428,6 +5435,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 owner,
                 HirExpressionUseRow {
                     expression: owner,
+                    statement_parent: None,
                     source_ordinal,
                     subtree_end_ordinal: self.next_source_ordinal,
                     parent,
@@ -6094,8 +6102,12 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 access
             };
             match edge.child() {
-                HirStatementChild::Expression(owner) => {
-                    self.walk_expression(owner, &path, hops, owning_parent, child_access)?;
+                HirStatementChild::Expression(expression) => {
+                    self.walk_expression(expression, &path, hops, owning_parent, child_access)?;
+                    self.expression_uses
+                        .get_mut(&expression)
+                        .ok_or(HirSemanticPathError::UnresolvedOwner)?
+                        .statement_parent = Some((owner, edge.role()));
                 }
                 HirStatementChild::Statement(owner) => {
                     self.walk_statement(owner, &path, hops, owning_parent, child_access)?;
