@@ -17,6 +17,7 @@ pub enum ViewElementArgumentRole {
     Height,
     Spacing,
     Part,
+    Target,
 }
 
 impl ViewElementArgumentRole {
@@ -25,6 +26,7 @@ impl ViewElementArgumentRole {
     pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::Value => 8,
+            Self::Target => 9,
             Self::Label => 0,
             Self::Enabled => 1,
             Self::X => 2,
@@ -64,6 +66,7 @@ impl ViewElementArgumentRole {
             "height" => Some(Self::Height),
             "spacing" => Some(Self::Spacing),
             "part" => Some(Self::Part),
+            "target" => Some(Self::Target),
             _ => None,
         }
     }
@@ -74,7 +77,7 @@ impl ViewElementArgumentRole {
             Self::Label => element.is_action_control() || element.is_text_input(),
             Self::Enabled => element.is_action_control(),
             Self::Spacing => self.style_property(element).is_some(),
-            Self::X | Self::Y | Self::Width | Self::Height | Self::Part => true,
+            Self::X | Self::Y | Self::Width | Self::Height | Self::Part | Self::Target => true,
         }
     }
 
@@ -92,7 +95,7 @@ impl ViewElementArgumentRole {
                 }
                 Some(ViewPhysicalFlow::Overlay) | None => None,
             },
-            Self::Value | Self::Label | Self::Enabled | Self::Part => None,
+            Self::Value | Self::Label | Self::Enabled | Self::Part | Self::Target => None,
         }
     }
 
@@ -103,7 +106,12 @@ impl ViewElementArgumentRole {
             Self::Y => Some(ViewPropertyKind::Top),
             Self::Width => Some(ViewPropertyKind::Width),
             Self::Height => Some(ViewPropertyKind::Height),
-            Self::Value | Self::Label | Self::Enabled | Self::Spacing | Self::Part => None,
+            Self::Value
+            | Self::Label
+            | Self::Enabled
+            | Self::Spacing
+            | Self::Part
+            | Self::Target => None,
         }
     }
 }

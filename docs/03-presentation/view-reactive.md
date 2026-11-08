@@ -222,6 +222,13 @@ checked Copy 証拠で投影する。false なら次の候補、true なら選�
 失敗・unwind では guard を再実行せず、通常の scope／cleanup 境界に従う。
 guard／arm の失敗は部分 frame を公開せず、cache と restore はこの意味論と予算を保つ。
 
+builtin element の名前付き `target` 引数は compile-time PublicId を受け取る。
+たとえば `TextField(draft, target = @input:.feedback)` は、そのIDを入力欄・Style node・
+event route の共通targetにする。省略時はcompilerが宣言ごとのtargetを生成する。
+同じView定義内の異なる要素宣言は同じtargetを持てず、bundle admissionでも重複を拒否する。
+キー付き反復の入力欄は同じ宣言targetを構造的occurrenceで区別し、さらにmountごとの
+runtime targetを発行する。authored IDだけから入力sessionやevent leaseを生成しない。
+
 `Button` の label は String、enabled は bool であり、省略時の宣言値はそれぞれ
 空文字列と true。位置引数と名前付き引数は同じ typed role に束縛し、未知・重複・
 型不一致の引数を拒否する。supplied expression は authored order で評価し、

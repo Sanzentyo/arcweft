@@ -1960,7 +1960,28 @@ impl AuthoredViewBodyLowerer<'_> {
             .element_ordinal
             .checked_add(1)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
-        let target = format!("node.{}.{}", self.view.as_str(), ordinal);
+        let target = arguments
+            .iter()
+            .find(|argument| argument.role() == arcweft_view::ViewElementArgumentRole::Target)
+            .map(|argument| {
+                let invalid =
+                    || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
+                let Some(CheckedExpressionResolution::CompileTimeScalar(scalar)) = self
+                    .analysis
+                    .expression(argument.value())
+                    .map(|checked| checked.resolution())
+                else {
+                    return Err(invalid());
+                };
+                let arcweft_lang_sema::final_analysis::CheckedCompileTimeScalar::PublicId(target) =
+                    scalar.value()
+                else {
+                    return Err(invalid());
+                };
+                Ok(target.as_str().to_owned())
+            })
+            .transpose()?
+            .unwrap_or_else(|| format!("node.{}.{}", self.view.as_str(), ordinal));
         let node = self.output.instructions.len();
         self.output
             .instructions
@@ -2248,6 +2269,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     | ViewElementArgumentRole::Label
                     | ViewElementArgumentRole::Enabled
                     | ViewElementArgumentRole::Part
+                    | ViewElementArgumentRole::Target
             ) {
                 continue;
             }

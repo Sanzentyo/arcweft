@@ -246,7 +246,7 @@ fn retained_text_input_keyed_occurrences_keep_distinct_targets_and_values() {
     use arcweft_core::value::{RuntimeBinding, RuntimeValue};
     let source = SOURCE.replace("view Main()", "view Main(items: Vec<String>)")
         .replace("local state mut caption: String = \"first\"", "")
-        .replace("TextField(caption, label = \"Feedback\").on_submit(|| { submitted = caption; () })", "for item in items key = item { local state mut caption: String = item; TextField(caption, label = item) }")
+        .replace("TextField(caption, label = \"Feedback\").on_submit(|| { submitted = caption; () })", "for item in items key = item { local state mut caption: String = item; TextField(caption, label = item, target = @input:.feedback) }")
         .replace("Text(caption)", "");
     let (mut runtime, handle) = runtime(&source);
     let evaluate = |runtime: &mut BundleViewRuntime, keys: &[&str]| {
@@ -718,4 +718,125 @@ fn named_action_core_capacity_refusal_keeps_the_complete_session_and_retry() {
     );
     session.queue_view_handler_invocation(&click).unwrap();
     assert_eq!(labels(&session.presentation().view), ["two", "none"]);
+}
+
+#[test]
+fn authored_target_ids_reach_text_controls_style_nodes_and_event_routes() {
+    let source = SOURCE.replace("Column {", "Column(target = @view:.feedback_panel) { Button(\"Send\", target = @button:.send).on_click(|| { submitted = caption; () })")
+        .replace("TextField(caption, label = \"Feedback\")", "TextField(caption, label = \"Feedback\", target = @input:.feedback)");
+    let (mut runtime, handle) = runtime(&source);
+    let initial = frame(&mut runtime, &handle);
+    let mount = &initial.mounts[0];
+    let input_target = mount.scoped_id("input.feedback");
+    let button_target = mount.scoped_id("button.send");
+    assert_eq!(mount.text_inputs[0].target, input_target);
+    for target in ["view.feedback_panel", "input.feedback", "button.send"] {
+        assert_eq!(
+            mount
+                .style_nodes
+                .iter()
+                .filter(|node| matches!(
+                    &node.kind,
+                    arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind::Element {
+                        target: Some(id), ..
+                    } if id == target
+                ))
+                .count(),
+            1,
+            "the authored target must identify exactly one style node: {target}"
+        );
+    }
+    let click = mount
+        .events
+        .iter()
+        .find(|event| event.event() == EventKind::Activate)
+        .unwrap();
+    assert_eq!(click.target().id().as_str(), button_target);
+    dispatch(
+        &mut runtime,
+        &write(&mount.text_inputs[0], "東京", 1, false),
+    )
+    .unwrap();
+    let changed = frame(&mut runtime, &handle);
+    let click = changed.mounts[0]
+        .events
+        .iter()
+        .find(|event| event.event() == EventKind::Activate)
+        .unwrap();
+    runtime
+        .dispatch_invocation(&retained_transition_invocation(click))
+        .unwrap();
+    let submitted = frame(&mut runtime, &handle);
+    assert_eq!(labels(&submitted), ["東京", "東京"]);
+}
+
+#[test]
+fn authored_target_ids_reject_dynamic_wrong_typed_and_repeated_arguments() {
+    for target in [
+        "target = caption",
+        "target = 42",
+        "target = true",
+        "target = @input:.one, target = @input:.two",
+    ] {
+        let source = SOURCE.replace(
+            "TextField(caption, label = \"Feedback\")",
+            &format!("TextField(caption, label = \"Feedback\", {target})"),
+        );
+        let error = project_view_fixture_with_entry(&source, "arcweft-test://target-rejection")
+            .compile()
+            .expect_err("invalid target must not publish a product");
+        assert!(!error.diagnostics().is_empty(), "{target}: {error:?}");
+    }
+}
+
+#[test]
+fn authored_target_ids_reject_colliding_elements_before_publication() {
+    let source = SOURCE
+        .replace("Column {", "Column(target = @input:.feedback) {")
+        .replace(
+            "TextField(caption, label = \"Feedback\")",
+            "TextField(caption, label = \"Feedback\", target = @input:.feedback)",
+        );
+    assert!(
+        project_view_fixture_with_entry(&source, "arcweft-test://target-collision")
+            .compile()
+            .is_err(),
+        "a container and input cannot publish the same target"
+    );
+}
+
+#[test]
+fn authored_target_ids_reject_a_forged_collision_in_bundle_admission() {
+    let compiled =
+        project_view_fixture_with_entry(SOURCE, "arcweft-test://target-bundle-collision")
+            .compile()
+            .unwrap();
+    let product = compiled.view_product().product();
+    let mut forged = product.program().unwrap().resource().clone();
+    let mut original = None;
+    for instruction in &mut forged.instructions {
+        if let ViewProgramInstruction::OpenElement {
+            target: Some(target),
+            ..
+        } = instruction
+        {
+            match &original {
+                None => original = Some(target.clone()),
+                Some(original) => {
+                    target.clone_from(original);
+                    break;
+                }
+            }
+        }
+    }
+    assert!(forged.encode_canonical_section().is_err());
+    assert!(
+        ValidatedViewProduct::try_new(
+            Some(product.source_map().clone()),
+            Some(forged),
+            product.style().map(|style| style.resource().clone()),
+            ViewProductValidationLimits::default(),
+        )
+        .is_err()
+    );
 }

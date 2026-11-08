@@ -1559,8 +1559,23 @@ impl ViewProgramResource {
     ) -> Result<(), SectionCodecError> {
         for definition in &self.definitions {
             let mut depth = 0usize;
+            let mut targets = BTreeSet::new();
             for event in ScopedInstructions::new(&self.instructions, definition.body)? {
                 match event? {
+                    ScopeEvent::Instruction {
+                        instruction:
+                            ViewProgramInstruction::OpenElement {
+                                target: Some(target),
+                                ..
+                            },
+                        ..
+                    } => {
+                        if !targets.insert(target.as_str()) {
+                            return Err(SectionCodecError::DuplicatePublicId(format!(
+                                "view_element_targets:{target}"
+                            )));
+                        }
+                    }
                     ScopeEvent::Enter { .. }
                     | ScopeEvent::Instruction {
                         instruction: ViewProgramInstruction::BeginScope,

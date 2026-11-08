@@ -4618,7 +4618,8 @@ impl Analyzer<'_, '_, '_> {
                 | arcweft_view::ViewElementArgumentRole::Value => TypeKind::String,
                 arcweft_view::ViewElementArgumentRole::Enabled => TypeKind::Bool,
                 arcweft_view::ViewElementArgumentRole::Spacing => TypeKind::I32,
-                arcweft_view::ViewElementArgumentRole::Part => self
+                arcweft_view::ViewElementArgumentRole::Part
+                | arcweft_view::ViewElementArgumentRole::Target => self
                     .catalogs
                     .world
                     .environment()
@@ -4642,8 +4643,24 @@ impl Analyzer<'_, '_, '_> {
             } else {
                 context
             };
-            let checked =
-                self.evaluate_expression(argument_context, argument.value(), expected.as_ref())?;
+            let checked = if role == Some(arcweft_view::ViewElementArgumentRole::Target) {
+                let fact = self.evaluate_compile_time_scalar_source(
+                    argument_context,
+                    argument.value(),
+                    &crate::checked_compile_time::CompileTimeScalarSourceMode::PublicId,
+                )?;
+                self.materialize_compile_time_scalar_fact(
+                    module,
+                    argument.value(),
+                    &crate::checked_text_proxy::CheckedCompileTimeScalarKind::PublicId,
+                    expected
+                        .clone()
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?,
+                    fact,
+                )?
+            } else {
+                self.evaluate_expression(argument_context, argument.value(), expected.as_ref())?
+            };
             if let Some(expected) = &expected {
                 if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
                     return Err(AnalyzerExpressionError::rejected(argument.value()));
