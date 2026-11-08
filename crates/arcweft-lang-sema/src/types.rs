@@ -627,6 +627,24 @@ pub enum StyleCallableId {
 }
 
 impl StyleCallableId {
+    pub(crate) const ALL: [Self; 15] = [
+        Self::Rgba,
+        Self::Token,
+        Self::SystemColor,
+        Self::SystemFont,
+        Self::Radii,
+        Self::Shadow,
+        Self::InsetShadow,
+        Self::Blur,
+        Self::Brightness,
+        Self::Contrast,
+        Self::Opacity,
+        Self::RoundedRect,
+        Self::Mask,
+        Self::Transition,
+        Self::Resource,
+    ];
+
     /// Stable semantic tag in declaration order.
     pub const fn semantic_tag(self) -> u8 {
         match self {

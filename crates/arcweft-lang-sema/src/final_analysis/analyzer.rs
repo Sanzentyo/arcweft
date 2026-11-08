@@ -611,6 +611,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
     ) -> Result<FinalSemanticAnalysis, super::FinalSemanticProjectError> {
         self.resolve_region_types(None)?;
         self.styles.complete_annotations(&self.type_reports)?;
+        self.styles.infer_tokens(&self.modules)?;
         self.seed_local_types(None)?;
         let entry_roots =
             crate::entry::prepare_entry_root_seeds(self.executable, self.symbols, &self.types)

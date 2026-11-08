@@ -19,6 +19,11 @@ use crate::{
 use super::super::CheckedStyleTokenReference;
 use super::super::FinalSemanticAnalysisError;
 
+#[path = "style/grammar.rs"]
+pub(super) mod grammar;
+#[path = "style/inference.rs"]
+mod inference;
+
 struct StyleTokenDeclaration {
     ordinal: u32,
     value: ExprId,
@@ -42,6 +47,7 @@ pub(super) struct StyleAnalysisContext {
     values: BTreeMap<ExprId, ViewStyleValueKind>,
     annotations: BTreeMap<TypeId, StyleTokenAnnotationOwner>,
     tokens: BTreeMap<ItemId, StyleTokenScope>,
+    root_styles: BTreeMap<ExprId, ItemId>,
     constant_dependencies: Vec<ExprId>,
 }
 
@@ -53,6 +59,7 @@ impl StyleAnalysisContext {
             values: BTreeMap::new(),
             annotations: BTreeMap::new(),
             tokens: BTreeMap::new(),
+            root_styles: BTreeMap::new(),
             constant_dependencies: Vec::new(),
         };
         for module in modules.values() {
@@ -61,6 +68,9 @@ impl StyleAnalysisContext {
                     continue;
                 };
                 for (ordinal, token) in style.tokens().iter().enumerate() {
+                    if context.root_styles.insert(token.value(), owner).is_some() {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    }
                     let ordinal = u32::try_from(ordinal)
                         .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
                     let id = arcweft_id::PublicId::try_from(token)
@@ -100,7 +110,7 @@ impl StyleAnalysisContext {
                         return Err(FinalSemanticAnalysisError::InvalidOwner);
                     }
                 }
-                context.collect_body(style.body())?;
+                context.collect_body(owner, style.body())?;
             }
         }
         Ok(context)
@@ -108,6 +118,7 @@ impl StyleAnalysisContext {
 
     fn collect_body(
         &mut self,
+        style: ItemId,
         body: &[HirStyleBodyItem],
     ) -> Result<(), FinalSemanticAnalysisError> {
         for item in body {
@@ -122,10 +133,17 @@ impl StyleAnalysisContext {
                             continue;
                         };
                         self.insert_value(declaration.value(), kind.value_kind())?;
+                        if self
+                            .root_styles
+                            .insert(declaration.value(), style)
+                            .is_some()
+                        {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        }
                     }
                 }
                 HirStyleBodyItem::Environment(environment) => {
-                    self.collect_body(environment.body())?
+                    self.collect_body(style, environment.body())?
                 }
                 HirStyleBodyItem::Recovered(_) => {}
             }
@@ -213,8 +231,24 @@ impl StyleAnalysisContext {
         &self,
         module: &HirModule,
         style: ItemId,
-        mut expression: ExprId,
+        expression: ExprId,
     ) -> Option<CheckedStyleTokenReference> {
+        let token = self.lookup_token(module, style, expression)?;
+        Some(CheckedStyleTokenReference::new(
+            style,
+            token.ordinal,
+            token.value,
+            token.id.clone(),
+            self.value_kind(token.value)?,
+        ))
+    }
+
+    fn lookup_token(
+        &self,
+        module: &HirModule,
+        style: ItemId,
+        mut expression: ExprId,
+    ) -> Option<&StyleTokenDeclaration> {
         let scope = self.tokens.get(&style)?;
         let mut suffix = Vec::new();
         // No declared name can match after this exact scope-derived bound.
@@ -252,13 +286,6 @@ impl StyleAnalysisContext {
             }
         };
         name.extend(suffix.into_iter().rev());
-        let token = scope.declarations.get(&name)?;
-        Some(CheckedStyleTokenReference::new(
-            style,
-            token.ordinal,
-            token.value,
-            token.id.clone(),
-            self.value_kind(token.value)?,
-        ))
+        scope.declarations.get(&name)
     }
 }

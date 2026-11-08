@@ -3,14 +3,14 @@
 use super::{
     Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionExpectation,
     CheckedCompileTimeCallee, CheckedExpression, CheckedExpressionResolution, CheckedTypeSelection,
-    EffectSet, ExprId, FinalSemanticAnalysisError, HirCallArgument, HirExpr, HirExprKind,
-    HirIntegerLiteral, HirLiteral, HirModule, HirStringLiteral, TypeKind,
+    EffectSet, ExprId, FinalSemanticAnalysisError, HirExpr, HirExprKind, HirIntegerLiteral,
+    HirLiteral, HirModule, HirStringLiteral, TypeKind,
 };
+use crate::final_analysis::analyzer::style::grammar::{StyleFactorySignature, StyleSourceGrammar};
 use crate::{
     final_analysis::CheckedStyleOperand,
     types::{CompileTimeStyleType, StyleCallableId},
 };
-use arcweft_lang_hir::expr::HirCallCallee;
 use arcweft_lang_hir::project::{HirSemanticPathOwnerId, HirSemanticPathRoot};
 use arcweft_view::style::{
     ViewColorValue, ViewFontFamily, ViewFontFamilyList, ViewSpecifiedValue, ViewStyleValueKind,
@@ -81,50 +81,29 @@ impl Analyzer<'_, '_, '_> {
         let HirExprKind::Call(call) = expression.kind() else {
             return Ok(None);
         };
-        let HirCallCallee::Value { value: callee } = call.callee() else {
+        let Some((callee, StyleCallableId::Rgba)) = StyleSourceGrammar::callable(module, call)
+        else {
             return Ok(None);
         };
-        if Self::direct_callee_name(module, *callee)?.as_deref() != Some("rgba") {
-            return Ok(None);
-        }
-        let [red, green, blue, alpha] = call.arguments() else {
-            return Err(AnalyzerExpressionError::rejected(owner));
-        };
+        let signature = StyleFactorySignature::for_callable(StyleCallableId::Rgba);
         let mut effects = EffectSet::new();
-        let channels =
-            [red, green, blue, alpha].map(|argument| -> Result<u8, AnalyzerExpressionError> {
-                let HirCallArgument::Positional { .. } = argument else {
-                    return Err(AnalyzerExpressionError::rejected(owner));
-                };
-                let checked =
-                    self.evaluate_expression(context, argument.value(), Some(&TypeKind::U8))?;
-                effects.union_with(checked.effects());
-                style_u8_literal(module, argument.value())
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))
-            });
+        let mut channels = [0u8; 4];
+        for (index, argument) in signature
+            .bind(call)
+            .map_err(|_| AnalyzerExpressionError::rejected(owner))?
+        {
+            let checked = self.evaluate_expression(context, argument, Some(&TypeKind::U8))?;
+            effects.union_with(checked.effects());
+            channels[index] = style_u8_literal(module, argument)
+                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        }
         let [red, green, blue, alpha] = channels;
         let color = arcweft_view::style::ViewColorValue::Literal {
             color: arcweft_presentation::appearance::PresentationColor::rgba(
-                red?, green?, blue?, alpha?,
+                red, green, blue, alpha,
             ),
         };
-        self.facts
-            .publish_new_expression(
-                *callee,
-                CheckedExpression::value(
-                    TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::Style(
-                        crate::types::StyleCallableId::Rgba,
-                    )),
-                    CheckedTypeSelection::Inferred,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::CompileTimeCallee(
-                        CheckedCompileTimeCallee::Style(crate::types::StyleCallableId::Rgba),
-                    ),
-                ),
-            )
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
+        self.publish_style_callee(callee, StyleCallableId::Rgba)?;
         Ok(Some(CheckedExpression::value(
             TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
                 arcweft_view::style::ViewStyleValueKind::Color,
@@ -214,40 +193,48 @@ impl Analyzer<'_, '_, '_> {
         let HirExprKind::Call(call) = expression.kind() else {
             return Ok(None);
         };
-        let HirCallCallee::Value { value: callee } = call.callee() else {
+        let Some((callee, callable)) = StyleSourceGrammar::callable(module, call) else {
             return Ok(None);
         };
-        let (callable, argument_type) = match (
-            expected,
-            Self::direct_callee_name(module, *callee)?.as_deref(),
+        if !matches!(
+            callable,
+            StyleCallableId::Token | StyleCallableId::SystemColor | StyleCallableId::SystemFont
         ) {
-            (CompileTimeStyleType::Value(kind), Some("token")) => {
-                let [argument @ HirCallArgument::Positional { .. }] = call.arguments() else {
-                    return Err(AnalyzerExpressionError::rejected(owner));
-                };
-                let actual = self.style_token_reference(module, argument.value())?.kind();
+            return Ok(None);
+        }
+        let signature = StyleFactorySignature::for_callable(callable);
+        let binding = signature
+            .bind(call)
+            .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+        let [(_, argument)] = binding.as_slice() else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        let argument = *argument;
+        let argument_type = match (expected, callable) {
+            (CompileTimeStyleType::Value(kind), StyleCallableId::Token) => {
+                let actual = self.style_token_reference(module, argument)?.kind();
                 if actual != kind
                     && !(kind == ViewStyleValueKind::BorderRadii
                         && actual == ViewStyleValueKind::Length)
                 {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
-                (StyleCallableId::Token, CompileTimeStyleType::Token(actual))
+                CompileTimeStyleType::Token(actual)
             }
-            (CompileTimeStyleType::Value(ViewStyleValueKind::Color), Some("system_color")) => (
+            (
+                CompileTimeStyleType::Value(ViewStyleValueKind::Color),
                 StyleCallableId::SystemColor,
-                CompileTimeStyleType::SystemColor,
-            ),
-            (CompileTimeStyleType::FontFamily, Some("system_font")) => (
-                StyleCallableId::SystemFont,
-                CompileTimeStyleType::SystemFontFamily,
-            ),
+            )
+            | (CompileTimeStyleType::FontFamily, StyleCallableId::SystemFont) => {
+                let crate::final_analysis::analyzer::style::grammar::StyleArgumentType::Style(ty) =
+                    signature.parameters[0].ty
+                else {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                };
+                ty
+            }
             _ => return Ok(None),
         };
-        let [argument @ HirCallArgument::Positional { .. }] = call.arguments() else {
-            return Err(AnalyzerExpressionError::rejected(owner));
-        };
-        let argument = argument.value();
         let checked = self.evaluate_expression(
             context,
             argument,
@@ -293,7 +280,7 @@ impl Analyzer<'_, '_, '_> {
             }
             _ => return Err(AnalyzerExpressionError::rejected(owner)),
         };
-        self.publish_style_callee(*callee, callable)?;
+        self.publish_style_callee(callee, callable)?;
         Ok(Some(result))
     }
 

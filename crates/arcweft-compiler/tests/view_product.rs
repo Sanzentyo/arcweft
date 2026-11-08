@@ -17,6 +17,9 @@ mod style_primitives;
 #[path = "view_product/style_composites.rs"]
 mod style_composites;
 
+#[path = "view_product/style_inference.rs"]
+mod style_inference;
+
 #[path = "view_product/text_input.rs"]
 mod text_input;
 

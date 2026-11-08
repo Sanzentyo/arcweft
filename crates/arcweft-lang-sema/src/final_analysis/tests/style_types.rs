@@ -9,6 +9,51 @@ use crate::types::CompileTimeStyleType;
 use arcweft_view::style::ViewStyleValueKind;
 
 #[test]
+fn unannotated_style_token_facts_keep_original_initializers_without_fabricated_annotations() {
+    let fixture = fixture(
+        "style A {\n token amount = 0.5\n token alias = token(amount)\n token face = .Normal\n Panel { opacity = token(alias); font-style = token(face) }\n}\nstyle B {\n token face = .Normal\n Panel { blend-mode = token(face) }\n}\n",
+        None,
+    );
+    let report = analyze(&fixture).unwrap();
+    let project = fixture.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let styles = module
+        .items()
+        .filter_map(|(_, item)| match item.kind() {
+            HirItemKind::Style(style) => Some(style),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(styles.len(), 2);
+    for (style, kinds) in styles.into_iter().zip([
+        vec![
+            ViewStyleValueKind::Ratio,
+            ViewStyleValueKind::Ratio,
+            ViewStyleValueKind::FontStyle,
+        ],
+        vec![ViewStyleValueKind::BlendMode],
+    ]) {
+        for (token, kind) in style.tokens().iter().zip(kinds) {
+            assert!(
+                token.value_type().is_none(),
+                "original HIR has no annotation"
+            );
+            let checked = report.expression(token.value()).unwrap();
+            assert_eq!(
+                checked.value_type(),
+                Some(&TypeKind::CompileTimeStyle(CompileTimeStyleType::Value(
+                    kind
+                )))
+            );
+            assert!(checked.effects().is_empty());
+            assert!(
+                matches!(checked.resolution(), CheckedExpressionResolution::StyleValue(value) if value.kind() == kind)
+            );
+        }
+    }
+}
+
+#[test]
 fn style_composite_operands_keep_exact_roles_without_becoming_runtime_values() {
     let fixture = fixture(
         "style Composite {\n token shadows: ShadowList = [shadow(color = system_color(.CanvasText))]\n token filters: FilterList = [blur(1px), brightness(1), contrast(2), opacity(25%)]\n token transitions: Transition = [transition(\"color\", 1.25s, delay = 1ms)]\n token image: Resource = resource(\"image.background\")\n}\n",

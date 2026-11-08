@@ -320,6 +320,19 @@ semantic-only `StyleAnnotation` purpose; this is separate from ordinary nominal
 lookup and its cache identity. Unknown names and structural or generic types do
 not fall back to ordinary runtime types in this annotation grammar.
 
+An unannotated token infers its native kind from the shared Source construction
+grammar and typed uses in its original sheet. Unit literals and construction
+results provide principal kinds; numeric and enum literals can retain several
+candidates until property or factory-operand uses constrain them. Forward token
+aliases propagate the same principal kind through their declaration graph.
+Conflicting uses, an unresolved alias cycle, or an unused ambiguous value such
+as `1`, `0.5`, `.Normal`, or `[]` requires an annotation or is rejected. Token
+name prefixes do not select types. Inference publishes expectations only after
+all token domains are unique, then the ordinary Style checker validates every
+original initializer and its complete payload. It does not manufacture HIR type
+annotations or runtime values. Contextual Length-to-radii conversion does not
+change the inferred principal kind of a Length token or its aliases.
+
 `token(name)` resolves the normalized dotted name in the original owning sheet.
 Its checked operand retains that sheet, token ordinal, initializer, native token
 identity, and exact value kind; another sheet with the same name is independent.
