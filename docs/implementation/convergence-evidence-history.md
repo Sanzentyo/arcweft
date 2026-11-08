@@ -15698,3 +15698,13 @@ Source `f77771ebe6d62f35129e491116dc14611f12bdba` は、trim／to_stringをCapac
 訂正理由は、text-submitの現在の拒否を解消した具体的なSource変更と実CLI結果であり、以前の拒否記録を改変するものではない。既存140 recordは値を全件照合して保持し、Stringの受入だけを追加した。Generic Match等の受入済み項目は変更していない。現状はcurrent-status.mdだけへ集約する。
 
 原本 `docs/implementation/acceptance-evidence/task-string-read-operations.raw.zip` は153 entry／7849904 bytes、SHA256 `acca30f7adcf66c6be2e88794c0e35dbc4973a562ad2508908437393bbea30f8`。ビルド実行ファイル・生成AWFBは含まない。詳細はregistryの `stringReadOperations`。
+
+## 2026-11-08 — Style指定値の型とColor／Length投影checkpoint
+
+Source `c4824f38ebce38305adb7f8ac757e13edb4b8e4e` はStyle指定値と構築operandを、通常のruntime scalarとは別のsemantic型で保持する。値は既存ViewSpecifiedValueが所有し、Core runtime型／snapshotへの流入を拒否する。Colorの仮Named型とCompilerのStyle Length別readerを削除した。canonical identityは既存Traversalの103を維持し、新しい型に104を割当てる。型比較・診断・constraint・generic／nominal／substitutionの全leaf消費側を移行した。
+
+初期checkはSemaのexhaustive分岐10箇所、次のcheckはCompiler runtime投影1箇所の不足で失敗した。修復後は全98 workspaceのlocked／全target／全feature check・Clippy、構造gate、変更20 Rust pathのfmtが終了0、3904入力drift0。初回owner99件は98 PASS／1 FAILで、Action負例のhandlers先頭仮定が不正な対象を選んだ。元view.Mainの命令が束縛したhandler IDを辿る形へ直し、同じpayload型改変拒否を維持した。Style Lengthの精度・符号・不正単位／型／overflow拒否と普通の数値rootを残し、新しい指定値factへ移した。修正後の5件は全PASSで、全22逆依存の再確認はまだ行っていない。
+
+これは型基盤の中間公開で、Style token／FontFamilyListや残る値・factoryのSource接続、compiler token guardの除去、sample全体とNative／Web表示の受入は継続する。先行String全件runを新しいStyle Sourceの全件PASSへ読み替えず、Generic Match・保持入力・Action等の既受入も戻さない。既存141 recordの値を全件照合して保持した。
+
+原本 `docs/implementation/acceptance-evidence/task-style-specified-type-checkpoint.raw.zip` は40 entry／2133673 bytes、SHA256 `64a56907424d23fab66a548b382bf4444138bb20a3eecfb7903f66ab6f59c9fb`。実行ファイルと生成AWFBは含まない。詳細はregistryの `specifiedStyleTypeCheckpoint`。
