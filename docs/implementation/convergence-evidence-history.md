@@ -15740,3 +15740,13 @@ Source eb4b9a820e7e74a106e4ca17405e50b642cb579b をmainへ通常公開し、pare
 全98 workspaceのlocked／all-target／all-feature check・Clippy、構造gate、fmtが終了0。その後の変更は構築moduleのimport整理1 pathだけで、Sema all-target／all-feature Clippyと明示19 Rust pathのfmtが終了0。metadataとtarget-all treeで一致したView逆依存41 packageの実行は後続で行い、owner46件を統合runと記さない。前回現状の「残る5 kind／factory／token合成」は今回の実装とowner結果で解消したため現状一覧から外した。未annotation token推論、Environment、sample移行と実Native／Web受入は未達として保持し、Generic Matchその他の既受入は変更しない。過去の数値／型／font/token結果と全SHAは履歴として保持した。
 
 同日の明示依頼による全体cargo cleanは終了0、294059 files／399.1 GiBを削除した。旧EXE／AWFBの元pathはこのcleanで削除済みで、hashと実測は履歴に保持する。source・検証記録を消していない。既存144 registry propertyを値の全件照合で保持し、styleCompositeSourceCheckpointを追加した。原本 docs/implementation/acceptance-evidence/task-style-composite-source-checkpoint.raw.zip は53 entry／2797031 bytes、SHA256 4a26f9a3ff8b033397912318239b0d13a0249da743675954e8e9f305e1f00d49。build artifactをZIPへコピーしていない。
+
+## 2026-11-09 — Style複合値の全View consumer照合
+
+Source eb4b9a820e7e74a106e4ca17405e50b642cb579b、記録基点4907775d15b74747efe9154556c373ada7d01262の同じproduction／test／fixtureを固定した。metadataとtarget-all treeが一致するView逆依存41 packageを、非CLI全feature40 packageとCLI既定1 packageに分けた。非CLIは4677／4677 PASS・18 SKIP・772.782秒、37 packageにruntime caseがあり、arcweft／bundle-assets／render-webの3 packageはcompile evidenceとして区別する。Scopeを前回HIRの23 packageから置換した理由は、今回native View componentの共有APIを変更したためであり、HIR自身の旧テストを今回実行したとは記さない。
+
+CLIは711実行／707 PASS／4 FAIL／23 SKIP・536.146秒。同じ4失敗IDと、Scroll shared callable Expr15、voice absent、promotion Expr8の実診断を照合した。最終新規集計は5388実行／5384 PASS／4 FAIL／41 SKIP、2 run／2 feature pointだけで、owner46・初回owner失敗・旧Core／HIR件数を合算しない。旧Core範囲4657件と旧HIR範囲3612件は重複しており、今回へ投影した和集合4670件に欠落／重複0。過去のStyle Length改名1件を対応付け、追加はCompiler5／Sema1／View1の7件と確認した。
+
+3914／3938のSource入力とcatalog／実test EXEの差分0。実CLI本体 d84ab197818e9b8323542a4d2affe19bda37f773804ea65bb4f13521939ccd8b は元target pathで実行前後に照合した。同じ本体を追加buildせず使い、native-text-inputのSource checkとmain-profile AWFB生成が終了0。元生成path D:/git/arcweft/target/arcweft/native-text-input-composites.awfb は89命令／81840 bytes、SHA256 2e348be119a21fda294a11f2e2379537ffb16f3e437cba10a351979946701cd6 で以前のSource300生成物hashと一致する。これはinteractive Native／Web受入を意味しない。workspace gate・最終import Clippy／fmtはSource checkpointの有効な結果を再利用した。
+
+現状一覧の旧5302件・基本値時点のCLI／品質説明を今回の範囲へ更新し、過去の実測と全SHAは履歴・registryに保持した。Styleの重複した件数説明は横断行へ集約した。未annotation token推論、Environment、sample移行、Scroll／voice／promotionと実Native／Web条件は具体的な未達として保持し、Generic Match等の既受入を戻さない。既存145 registry propertyを値の全件照合で保持し、styleCompositeConsumersを追加した。原本 docs/implementation/acceptance-evidence/task-style-composite-consumers.raw.zip は33 entry／1214662 bytes、SHA256 ed41c6fde0c84facd41192d011623e49e729e1f82c6bbd6e9cf16c22e7617887。EXE／AWFBをZIPへコピーせず、元build pathで保持した。
