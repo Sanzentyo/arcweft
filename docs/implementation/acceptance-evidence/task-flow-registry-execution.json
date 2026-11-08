@@ -52051,5 +52051,778 @@
         }
       ]
     }
+  },
+  "retainedTextInputOwner": {
+    "version": 1,
+    "date": "2026-11-08",
+    "source": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+    "checkpoint": "1e2fb3efa929afefbd5acb0ad20c8d21c0a84400",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "parent": "1e2fb3efa929afefbd5acb0ad20c8d21c0a84400",
+      "tree": "0d42c3e7d8ec1f041482ec69aedcb291d4ee48ce",
+      "remote": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "paths": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "blob": "ea3ef6c30cecf9ab6fc7492c14fe29278f0a8773"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "blob": "ba6751eccb1a530d2dd90f50103facc27e25f00b"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product.rs",
+          "blob": "aca2f50a0f98115fb2ee5656f0dad93b91f12d3f"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "blob": "c286a51fadb097771d91dff5b4567989105e444b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "f3809c19f8ec19b8362197871b2a6954f9e1cc47"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "blob": "b4f1f8455bbfa1aefc786bfb91b28d4b55d39de5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "blob": "49a8ff4e3c26cb85a06add29e2589e09777382e3"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime.rs",
+          "blob": "ad22c42bcda51deafb8a573c0dd4f7a6d254e3fc"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+          "blob": "a5f69f5d70b61d9e6c22ff1e8ace7a7efe00104f"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+          "blob": "2402b2ac2f769c819e67c9286286a61fe886aecb"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+          "blob": "f2ad7b6ab1c452cd8b33827e4749f64fbb8ddf19"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/handler.rs",
+          "blob": "f75462b1518559603c0657a8a6009ead41ab3c11"
+        },
+        {
+          "path": "crates/arcweft-view/src/expression_program.rs",
+          "blob": "aab49789c6b5fba2fffd985dce571f44fedf7630"
+        },
+        {
+          "path": "crates/arcweft-view/src/lib.rs",
+          "blob": "04df24a86e86c7687a5abe693168a9cf32ce6383"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "22f0a903ed21fab9b9cbaf5a1f8e8648e3da1c0e"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "9afbaba2e348cf4544e2f3859ca5182f69a2993a"
+        },
+        {
+          "path": "docs/implementation/current-status.md",
+          "blob": "16409751a81f1b0a8dc7464f65aa76ff27736585"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "d2b0b47e22e3a4ee1d51b11d399f4840ebcdda6b6e5303fcbf93b31ee7e4d850",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T04:19:06.3007367Z"
+    },
+    "scope": "retained String text-input binding and event-time atomic state publication",
+    "authority": "Sema checked retained input; ViewRetainedField identity/access; exact mount/path/instruction/session",
+    "sourceInputCount": 3418,
+    "finalOwner": {
+      "version": 1,
+      "base": "1e2fb3efa929afefbd5acb0ad20c8d21c0a84400",
+      "run": "retained-text-input-20261108.owner-r6.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  79.011s] 78 tests run: 78 passed (2 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 78,
+      "passed": 78,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3418,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T04:16:54.3620906Z"
+    },
+    "developmentEpochs": [
+      {
+        "epoch": "retained-text-input-20261108.owner-r2",
+        "preparationExit": 101,
+        "terminal": null
+      },
+      {
+        "epoch": "retained-text-input-20261108.owner-r3",
+        "preparationExit": 0,
+        "terminal": {
+          "version": 1,
+          "base": "1e2fb3efa929afefbd5acb0ad20c8d21c0a84400",
+          "run": "retained-text-input-20261108.owner-r3.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.450s] 5 tests run: 4 passed, 1 failed, 72 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 5,
+          "passed": 4,
+          "failed": 1,
+          "skipped": 72,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3418,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::view_product",
+              "test": "text_input::retained_text_input_keyed_occurrences_keep_distinct_targets_and_values"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T04:05:20.5466696Z"
+        }
+      },
+      {
+        "epoch": "retained-text-input-20261108.owner-r4",
+        "preparationExit": 101,
+        "terminal": null
+      },
+      {
+        "epoch": "retained-text-input-20261108.owner-r5",
+        "preparationExit": 0,
+        "terminal": {
+          "version": 1,
+          "base": "1e2fb3efa929afefbd5acb0ad20c8d21c0a84400",
+          "run": "retained-text-input-20261108.owner-r5.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.383s] 6 tests run: 5 passed, 1 failed, 72 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 6,
+          "passed": 5,
+          "failed": 1,
+          "skipped": 72,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3418,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::view_product",
+              "test": "text_input::retained_text_input_bundle_rejects_redirecting_writes_to_readonly_state"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T04:10:49.9735303Z"
+        }
+      },
+      {
+        "epoch": "retained-text-input-20261108.owner-r6",
+        "preparationExit": 0,
+        "terminal": {
+          "version": 1,
+          "base": "1e2fb3efa929afefbd5acb0ad20c8d21c0a84400",
+          "run": "retained-text-input-20261108.owner-r6.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [  79.011s] 78 tests run: 78 passed (2 slow), 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 78,
+          "passed": 78,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3418,
+          "sourceDrift": 0,
+          "held": 14,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-08T04:16:54.3620906Z"
+        }
+      }
+    ],
+    "directPreliminaryOwner": {
+      "command": [
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "view_product",
+        "--all-features",
+        "-E",
+        "test(text_input::)"
+      ],
+      "passed": 3,
+      "skipped": 72,
+      "inputFreeze": "not recorded; development evidence only"
+    },
+    "resolvedFailures": [
+      "keyed controls reused one interaction target: owner-r3, 4 pass / 1 fail",
+      "readonly state could become a text-input write target: owner-r5, 5 pass / 1 fail"
+    ],
+    "actualProtectedTrackedWip": 0,
+    "preservedUntrackedCacheFiles": 4,
+    "historicalHelperLabel": "held=14 is copied from an older template, not observed current WIP",
+    "integration": "workspace check/Clippy/structure/fmt passed; full reverse consumers and obsolete input factory samples pending; no Scroll or Native/Web capture acceptance claim",
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-retained-text-input.raw.zip",
+      "entries": 41,
+      "bytes": 1108189,
+      "sha256": "558601689ae4cba87ac833f5a8e02bd68dec74dc40ddf5c5b637b0addaa4b4b6",
+      "containsExecutables": false,
+      "assemblyCorrection": "Before publication, Windows FileSystem -Filter [2-6] omitted owner epochs; rebuilt with explicit owner-r* inventory and checked every required receipt."
+    },
+    "preservedPriorRecords": 130,
+    "quality": [
+      {
+        "name": "check",
+        "receipt": {
+          "version": 1,
+          "base": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+          "command": [
+            "check",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3897,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T04:19:11.0697625Z",
+          "finishedAt": "2026-11-08T04:21:44.2299936Z"
+        }
+      },
+      {
+        "name": "clippy",
+        "receipt": {
+          "version": 1,
+          "base": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+          "command": [
+            "clippy",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3897,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T04:21:44.8611165Z",
+          "finishedAt": "2026-11-08T04:24:35.1121082Z"
+        }
+      },
+      {
+        "name": "structure",
+        "receipt": {
+          "version": 1,
+          "base": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/retained-text-input-20261108.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 3897,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T04:24:35.5104523Z",
+          "finishedAt": "2026-11-08T04:24:41.2715274Z"
+        }
+      },
+      {
+        "name": "fmt",
+        "receipt": {
+          "base": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+          "paths": [
+            "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+            "crates/arcweft-bundle/src/resource_codec/view/merge.rs",
+            "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+            "crates/arcweft-bundle/src/resource_codec/view/model/input.rs",
+            "crates/arcweft-bundle/src/resource_codec/view/semantic.rs",
+            "crates/arcweft-compiler/src/view.rs",
+            "crates/arcweft-compiler/tests/view_product.rs",
+            "crates/arcweft-compiler/tests/view_product/text_input.rs",
+            "crates/arcweft-core/src/value/borrowed.rs",
+            "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+            "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+            "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+            "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+            "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+            "crates/arcweft-player-scene/src/frame/surfaces.rs",
+            "crates/arcweft-player-scene/src/frame/view_geometry/tests.rs",
+            "crates/arcweft-player-scene/src/frame/view_style/tests.rs",
+            "crates/arcweft-player-scene/tests/scroll_regions.rs",
+            "crates/arcweft-player-web/src/inset_shadow_exact_capture.rs",
+            "crates/arcweft-runtime-driver/src/display/tests.rs",
+            "crates/arcweft-runtime-driver/src/session.rs",
+            "crates/arcweft-runtime-driver/src/view_projection.rs",
+            "crates/arcweft-runtime-driver/src/view_runtime.rs",
+            "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+            "crates/arcweft-runtime-driver/src/view_runtime/catalog/fingerprint.rs",
+            "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+            "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+            "crates/arcweft-runtime-driver/src/view_runtime/handler.rs",
+            "crates/arcweft-runtime-driver/src/view_runtime/replacement/reconcile.rs",
+            "crates/arcweft-view/src/element_argument.rs",
+            "crates/arcweft-view/src/expression_program.rs",
+            "crates/arcweft-view/src/lib.rs",
+            "crates/arcweft-view/src/program.rs"
+          ],
+          "exitCode": 0,
+          "sourceDrift": 0
+        }
+      }
+    ],
+    "qualityArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-retained-text-input-quality.raw.zip",
+      "entries": 23,
+      "bytes": 1401519,
+      "sha256": "6e8cf0dd5ca3fa411199dfb1f1e0a2751fdf9c253c40d92dbc0e7dce5e82202f"
+    },
+    "structureReview": {
+      "version": 1,
+      "source": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "baseline": "32445ffc35c7a4c49da00d94faf651c0f61ac3c1",
+      "workingTree": "production Rust clean; evidence documentation pending",
+      "files": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "owner": "arcweft-bundle",
+          "bytes": 105738,
+          "physicalLines": 2567,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 2476,
+          "growth": 91
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/merge.rs",
+          "owner": "arcweft-bundle",
+          "bytes": 38260,
+          "physicalLines": 1067,
+          "embeddedTestLines": 103,
+          "classification": "production",
+          "baselineLines": 1066,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "owner": "arcweft-bundle",
+          "bytes": 66452,
+          "physicalLines": 1980,
+          "embeddedTestLines": 55,
+          "classification": "production",
+          "baselineLines": 1968,
+          "growth": 12
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model/input.rs",
+          "owner": "arcweft-bundle",
+          "bytes": 20088,
+          "physicalLines": 625,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 568,
+          "growth": 57
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/semantic.rs",
+          "owner": "arcweft-bundle",
+          "bytes": 4984,
+          "physicalLines": 118,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 117,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 127036,
+          "physicalLines": 3135,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 3083,
+          "growth": 52
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 238233,
+          "physicalLines": 6164,
+          "embeddedTestLines": 0,
+          "classification": "test",
+          "baselineLines": 6160,
+          "growth": 4
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 13379,
+          "physicalLines": 350,
+          "embeddedTestLines": 0,
+          "classification": "test",
+          "baselineLines": 0,
+          "growth": 350
+        },
+        {
+          "path": "crates/arcweft-core/src/value/borrowed.rs",
+          "owner": "arcweft-core",
+          "bytes": 11049,
+          "physicalLines": 333,
+          "embeddedTestLines": 76,
+          "classification": "production",
+          "baselineLines": 323,
+          "growth": 10
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 9761,
+          "physicalLines": 268,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 247,
+          "growth": 21
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 46245,
+          "physicalLines": 1161,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 1164,
+          "growth": -3
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 259048,
+          "physicalLines": 6040,
+          "embeddedTestLines": 88,
+          "classification": "production",
+          "baselineLines": 6006,
+          "growth": 34
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 118622,
+          "physicalLines": 3516,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 3476,
+          "growth": 40
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 197919,
+          "physicalLines": 4836,
+          "embeddedTestLines": 333,
+          "classification": "production",
+          "baselineLines": 4833,
+          "growth": 3
+        },
+        {
+          "path": "crates/arcweft-player-scene/src/frame/surfaces.rs",
+          "owner": "arcweft-player-scene",
+          "bytes": 30213,
+          "physicalLines": 865,
+          "embeddedTestLines": 171,
+          "classification": "production",
+          "baselineLines": 863,
+          "growth": 2
+        },
+        {
+          "path": "crates/arcweft-player-scene/src/frame/view_geometry/tests.rs",
+          "owner": "arcweft-player-scene",
+          "bytes": 20152,
+          "physicalLines": 564,
+          "embeddedTestLines": 0,
+          "classification": "test",
+          "baselineLines": 563,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-player-scene/src/frame/view_style/tests.rs",
+          "owner": "arcweft-player-scene",
+          "bytes": 50038,
+          "physicalLines": 1425,
+          "embeddedTestLines": 0,
+          "classification": "test",
+          "baselineLines": 1424,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-player-scene/tests/scroll_regions.rs",
+          "owner": "arcweft-player-scene",
+          "bytes": 29723,
+          "physicalLines": 783,
+          "embeddedTestLines": 0,
+          "classification": "test",
+          "baselineLines": 782,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-player-web/src/inset_shadow_exact_capture.rs",
+          "owner": "arcweft-player-web",
+          "bytes": 28579,
+          "physicalLines": 800,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 799,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/display/tests.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 39915,
+          "physicalLines": 960,
+          "embeddedTestLines": 0,
+          "classification": "test",
+          "baselineLines": 959,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 78878,
+          "physicalLines": 1937,
+          "embeddedTestLines": 328,
+          "classification": "production",
+          "baselineLines": 1911,
+          "growth": 26
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_projection.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 21361,
+          "physicalLines": 597,
+          "embeddedTestLines": 208,
+          "classification": "production",
+          "baselineLines": 593,
+          "growth": 4
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 82405,
+          "physicalLines": 2073,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 2036,
+          "growth": 37
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/catalog.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 27320,
+          "physicalLines": 709,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 700,
+          "growth": 9
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/catalog/fingerprint.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 9254,
+          "physicalLines": 248,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 246,
+          "growth": 2
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 121551,
+          "physicalLines": 2836,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 2802,
+          "growth": 34
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/evaluator/text_input.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 4999,
+          "physicalLines": 129,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 0,
+          "growth": 129
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/handler.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 19690,
+          "physicalLines": 473,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 264,
+          "growth": 209
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/replacement/reconcile.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": 7417,
+          "physicalLines": 205,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 204,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "owner": "arcweft-view",
+          "bytes": 3727,
+          "physicalLines": 109,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 101,
+          "growth": 8
+        },
+        {
+          "path": "crates/arcweft-view/src/expression_program.rs",
+          "owner": "arcweft-view",
+          "bytes": 10067,
+          "physicalLines": 292,
+          "embeddedTestLines": 0,
+          "classification": "production",
+          "baselineLines": 276,
+          "growth": 16
+        },
+        {
+          "path": "crates/arcweft-view/src/lib.rs",
+          "owner": "arcweft-view",
+          "bytes": 8935,
+          "physicalLines": 190,
+          "embeddedTestLines": 0,
+          "classification": "facade",
+          "baselineLines": 189,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-view/src/program.rs",
+          "owner": "arcweft-view",
+          "bytes": 43178,
+          "physicalLines": 1272,
+          "embeddedTestLines": 254,
+          "classification": "production",
+          "baselineLines": 1259,
+          "growth": 13
+        }
+      ],
+      "packages": [
+        {
+          "package": "arcweft-bundle",
+          "manifest": "crates/arcweft-bundle/Cargo.toml",
+          "workspace_fan_in": "11",
+          "workspace_fan_out": "19",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-compiler",
+          "manifest": "crates/arcweft-compiler/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "25",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "10"
+        },
+        {
+          "package": "arcweft-core",
+          "manifest": "crates/arcweft-core/Cargo.toml",
+          "workspace_fan_in": "31",
+          "workspace_fan_out": "8",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "5"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+          "workspace_fan_in": "8",
+          "workspace_fan_out": "15",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-player-scene",
+          "manifest": "crates/arcweft-player-scene/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "14",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "4"
+        },
+        {
+          "package": "arcweft-player-web",
+          "manifest": "crates/arcweft-player-web/Cargo.toml",
+          "workspace_fan_in": "0",
+          "workspace_fan_out": "17",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "8"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "manifest": "crates/arcweft-runtime-driver/Cargo.toml",
+          "workspace_fan_in": "6",
+          "workspace_fan_out": "16",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "3"
+        },
+        {
+          "package": "arcweft-view",
+          "manifest": "crates/arcweft-view/Cargo.toml",
+          "workspace_fan_in": "15",
+          "workspace_fan_out": "5",
+          "development_workspace_fan_in": "5",
+          "development_workspace_fan_out": "0"
+        }
+      ],
+      "disposition": [
+        "Sema owns retained mutable String admission and its checked binding coordinate; compiler consumes the fact and deletes duplicate source/place checks. Existing expression/model owners remain cohesive.",
+        "ViewRetainedField owns identity and access in one declaration; bundle scope/ABI admission rejects readonly or foreign inputs and handler writes. All contracts remain version 1; no legacy reader.",
+        "MountedView owns retained values and input/handler seals. The text-input evaluator child projects these values; handler dispatch shares atomic state publication with ordinary handlers. No host I/O, unsafe, or dependency/feature changes.",
+        "Core borrowed str conversion grants scalar inspection only; shared typed/resource admission precedes runtime String construction.",
+        "The 350-line integration module groups source/codec-admission/privacy/keyed/restore/atomic-failure behavior of this input boundary. Existing broad owner modules are not split merely for LOC. Scene/Web fixture changes only supply the new empty typed output field."
+      ],
+      "gate": "canonical structure audit exit 0; no blocking dependency violation"
+    }
   }
 }
