@@ -15607,3 +15607,11 @@ CLI既定のlib／testsは711実行、707 PASS／4 FAIL／23 SKIP、28 slow、53
 新規2 run／2 feature pointで8072実行、8068 PASS／4 FAIL／41 SKIP。旧論理被覆8065件・7351件・focused owner106件を加算せず、今回は新規の全件実行として区別する。失敗IDは先行CLIと同じ4件。実診断もScrollのshared callable／Expr slot15、active dialogue has no voice、promotion2件のtype-check／Expr slot8のno admissible final typeと確認した。ID一致だけから原因や修復を推論せず、未移行のSourceやVoice／promotion条件を閉じない。全実測、初回準備失敗、選択／Source／EXE pin、Source probe、失敗診断は [task-view-action-ingress-consumers.raw.zip](acceptance-evidence/task-view-action-ingress-consumers.raw.zip) 28 entry／1536870 bytes、SHA256 `f35d9ddf14aa021dab1d7f4f5368c0e4d513b3a7ba581408651b5f0daaa04475` に保持する。元133件のJSON記録は値を変更せずconsumer記録を追記した。
 
 現状一覧から、重複していた旧「証明信頼ポリシー・依存報告の分割逆依存」行を削除した。Source `6b72d7ca42beb3661a7025598cf74a341d61fc21` の13選択／13実行・2034件中2027 PASS／7 FAILと初回メモリ不足・個別準備の実測は、[当該原本](acceptance-evidence/task-proof-trust-policy.json)と既存履歴に保持する。削除理由は古いrun件数と現状の重複を解消するためであり、別入力の全件結果への読み替えや、項目行にあるproof信頼契約の受入変更ではない。Generic Match、保持入力の既受入、通常Action emit／receiveを全体goal未達だけで戻さない。
+
+## 2026-11-08 Viewの公開target引数と衝突拒否
+
+Source `faa2d2aaf2eef6c7dbd6c76f6757c0e6a4d0b9c1`（親 `1397f15ae32400dd0194016a8376d4aab5ca552e`、6 path）を公開した。Viewの型付き引数roleにtargetを追加し、Semaは既存compile-time PublicId factを発行、Compilerはそのfactを直接消費する。省略時の宣言target生成は維持する。bundleの既存の有界lexical traversalが、同じ定義内の異なる要素宣言のtarget重複を公開前に拒否する。別の文字列解釈器やtarget台帳は作らず、Arcweft-owned versionは1を維持する。
+
+修復前のcollision-baselineは1実行・1 FAILで、コンテナと入力欄が同じtargetを持つ成果物を受理していた。修復後owner-r2はView全90／90 PASS、除外0、69.932秒。実AWFB encode/decode、正確なStyle node target、mount-scoped入力とclick route、日本語編集後の現在値参照、型違い・動的値・引数重複の拒否、bundle改変拒否を確認した。既存のkeyed入力テストもauthored targetを使う条件へ移行し、異なるtarget、編集・並べ替え、削除・再出現、古いsession拒否の全assertionを維持した。最初のfocused 1件PASSを90件へ加算しない。全98 workspace package・全target／全feature・locked check／Clippy、構造gateと変更Rust pathのfmtは終了0、3898入力drift0。既存警告は保持する。
+
+旧保持入力行の9件と12 packageの数値は先行Source `5a879a8dbd9d817e39db1d8125fb806fff046e7e` の履歴へ保持し、現状行を新しいowner条件へ更新した。全逆依存・CLI、旧sampleのpolicy／Scroll、実Native／Web表示はこのowner結果から受入済みとしない。Generic Matchと保持入力／Actionの既受入を戻す変更ではない。元134件のJSON記録は値を変更せず追記した。[owner原本](acceptance-evidence/task-view-authored-target-owner.raw.zip) は51 entry／1768883 bytes、SHA256 `b61fea79a0603d014ed2c17ad61e69b5965378922bc3d73af6056a5d07c1562d`。修復前後、Source公開patch／blob照合、元pathの実EXE pin、graph・構造責任・品質結果を含み、実行ファイルは含まない。

@@ -54724,5 +54724,452 @@
       "Voice: active dialogue has no voice",
       "Both promotion fixtures: sema.final_analysis, no solver/promotion proof result"
     ]
+  },
+  "viewAuthoredTargetOwner": {
+    "version": 1,
+    "date": "2026-11-08",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "faa2d2aaf2eef6c7dbd6c76f6757c0e6a4d0b9c1",
+      "parent": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+      "tree": "0cea05d1bc2c7034f0b484b45f4a4381849b28e5",
+      "remote": "faa2d2aaf2eef6c7dbd6c76f6757c0e6a4d0b9c1",
+      "paths": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "blob": "348524c9e0e3fc0e0c3e33c68bbe1649fe0603f5"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "blob": "5e45f6410c5bbb6eef9daa9b9d0c1be0d7ad46c2"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "blob": "e62e1c9e440f81fde10a4ffd51beaea479157a53"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "b0c12e433e7ea82ad0116309c92c9e18529d90a3"
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "blob": "fad24823e1a5b1fe3c477a9a46cf7eb48966f9dc"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "a67b610ca9f870a8cf8e847f5f914b01f396a810"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "79867d2816967d97a6818498203b9b46a6fc4a1203e9c4e2811365ed1175511c",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T07:14:23.9187684Z"
+    },
+    "scope": "Compile-time PublicId target argument on builtin View elements; checked scalar -> product -> runtime input/style/event identity",
+    "owner": {
+      "version": 1,
+      "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+      "run": "view-authored-target-20261108.owner-r2.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  69.932s] 90 tests run: 90 passed (1 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 90,
+      "passed": 90,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T07:11:11.5200635Z"
+    },
+    "collisionBeforeRepair": {
+      "version": 1,
+      "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+      "run": "view-authored-target-20261108.collision-baseline.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.131s] 1 test run: 0 passed, 1 failed, 88 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 88,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::view_product",
+          "test": "text_input::authored_target_ids_reject_colliding_elements_before_publication"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-08T07:08:53.9924662Z"
+    },
+    "firstFocusedRun": {
+      "version": 1,
+      "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+      "run": "view-authored-target-20261108.owner-r1.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.207s] 1 test run: 1 passed, 86 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 86,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T07:03:42.5862992Z"
+    },
+    "workspaceQuality": [
+      {
+        "version": 1,
+        "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+        "command": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3898,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T07:11:21.2512296Z",
+        "finishedAt": "2026-11-08T07:12:14.0886986Z"
+      },
+      {
+        "version": 1,
+        "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+        "command": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3898,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T07:12:14.5686988Z",
+        "finishedAt": "2026-11-08T07:13:39.9613982Z"
+      },
+      {
+        "version": 1,
+        "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/view-authored-target-20261108.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3898,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T07:13:40.4650710Z",
+        "finishedAt": "2026-11-08T07:13:47.2294692Z"
+      },
+      {
+        "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+        "paths": [
+          "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "crates/arcweft-compiler/src/view.rs",
+          "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "crates/arcweft-view/src/element_argument.rs",
+          "crates/arcweft-core/src/awbc/product_step/action.rs"
+        ],
+        "exitCode": 0,
+        "sourceDrift": 0
+      }
+    ],
+    "graph": {
+      "version": 1,
+      "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+      "metadata": "retained-text-input-integrated-20261108.metadata.json",
+      "owners": [
+        "arcweft-view",
+        "arcweft-lang-sema",
+        "arcweft-compiler",
+        "arcweft-bundle"
+      ],
+      "packages": [
+        {
+          "name": "arcweft",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+        },
+        {
+          "name": "arcweft-adapter-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-mcp-client",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-policy",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-protocol",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-repl",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+        },
+        {
+          "name": "arcweft-agent-runner",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+        },
+        {
+          "name": "arcweft-bundle-assets",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+        },
+        {
+          "name": "arcweft-character-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+        },
+        {
+          "name": "arcweft-cli",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+        },
+        {
+          "name": "arcweft-compiler",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+        },
+        {
+          "name": "arcweft-debug-sqlite",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+        },
+        {
+          "name": "arcweft-dialogue",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+        },
+        {
+          "name": "arcweft-glyphon",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+        },
+        {
+          "name": "arcweft-lang-sema",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+        },
+        {
+          "name": "arcweft-launch",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+        },
+        {
+          "name": "arcweft-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-player-native",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+        },
+        {
+          "name": "arcweft-player-scene",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+        },
+        {
+          "name": "arcweft-player-text-input",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+        },
+        {
+          "name": "arcweft-player-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+        },
+        {
+          "name": "arcweft-project-loader",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+        },
+        {
+          "name": "arcweft-rag",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+        },
+        {
+          "name": "arcweft-render-text",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+        },
+        {
+          "name": "arcweft-render-web",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+        },
+        {
+          "name": "arcweft-render-wgpu",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-driver",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-host",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+        },
+        {
+          "name": "arcweft-runtime-plan",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+        },
+        {
+          "name": "arcweft-test",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+        },
+        {
+          "name": "arcweft-text-layout",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+        },
+        {
+          "name": "arcweft-text-model",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+        },
+        {
+          "name": "arcweft-tooling",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+        },
+        {
+          "name": "arcweft-verify",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-lsp",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-oxiz",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+        },
+        {
+          "name": "arcweft-verify-z3",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+        },
+        {
+          "name": "arcweft-view",
+          "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+        }
+      ]
+    },
+    "structuralReview": {
+      "version": 1,
+      "base": "1397f15ae32400dd0194016a8376d4aab5ca552e",
+      "trackedState": "six explicit changed paths",
+      "files": [
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "owner": "arcweft-view",
+          "bytes": 3919,
+          "physicalLoc": 117,
+          "baselinePhysicalLoc": 109,
+          "classification": "production",
+          "embeddedTestLoc": 0,
+          "fanOut": 10,
+          "fanIn": 19
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 259880,
+          "physicalLoc": 6057,
+          "baselinePhysicalLoc": 6040,
+          "classification": "production",
+          "embeddedTestLoc": 0,
+          "fanOut": 19,
+          "fanIn": 12
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 128033,
+          "physicalLoc": 3157,
+          "baselinePhysicalLoc": 3135,
+          "classification": "production",
+          "embeddedTestLoc": 0,
+          "fanOut": 40,
+          "fanIn": 5
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 32912,
+          "physicalLoc": 842,
+          "baselinePhysicalLoc": 721,
+          "classification": "integration-test",
+          "embeddedTestLoc": 0,
+          "fanOut": 40,
+          "fanIn": 5
+        },
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "owner": "arcweft-bundle",
+          "bytes": 107004,
+          "physicalLoc": 2592,
+          "baselinePhysicalLoc": 2577,
+          "classification": "production",
+          "embeddedTestLoc": 0,
+          "fanOut": 30,
+          "fanIn": 11
+        }
+      ],
+      "disposition": {
+        "analysis": "Sema reuses the existing typed compile-time PublicId authority; no source spelling fallback or new runtime evaluator.",
+        "bundle": "The existing bounded lexical region traversal rejects duplicate element targets per definition before producer/decoder publication. No second target registry is retained.",
+        "grammar": "View owns the shared builtin argument role and its accepted element algebra; semantic tag 9 is additive inside version 1.",
+        "tests": "The retained input integration owner exercises real AWFB round trips, style-node identity, input and event dispatch, keyed lifetimes and malformed product rejection.",
+        "compiler": "The authored View emitter consumes the checked scalar; the generated target default is unchanged. Its cohesive responsibility and dependency direction are unchanged."
+      },
+      "dependenciesChanged": false,
+      "unsafeAdded": false,
+      "growthOver300": false
+    },
+    "behavior": [
+      "Real canonical AWFB round trip, exact style-node targets, mount-scoped text input and button event route, Japanese edit then click reads the current retained field.",
+      "Dynamic/non-PublicId/repeated arguments reject before product publication.",
+      "A real container/input collision compiled before the repair; the existing bounded bundle traversal now rejects collisions per definition for producers and decoded candidates. Forged canonical encoding and ValidatedViewProduct admission both reject.",
+      "The existing keyed-input lifetime test now uses an authored target and keeps all distinct-target, edit/reorder, removal/reintroduction and stale-session assertions."
+    ],
+    "corrections": "Replace generated-only target lowering with checked optional authored PublicId. This extends the retained input contract and does not reopen prior Generic Match, input, or Action acceptance.",
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-view-authored-target-owner.raw.zip",
+      "entries": 51,
+      "bytes": 1768883,
+      "sha256": "b61fea79a0603d014ed2c17ad61e69b5965378922bc3d73af6056a5d07c1562d",
+      "containsExecutables": false
+    },
+    "integration": "Owner and workspace gates passed. Complete reverse-consumer run is in progress; old samples, Scroll projection and Native/Web display remain separate acceptance boundaries.",
+    "preservedPriorRecords": 134
   }
 }

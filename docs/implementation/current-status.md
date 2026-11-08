@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日 2026-11-08。項目ごとの受入・公開Sourceと検証範囲を下表で独立して追跡する。既存差分12ファイルをcheckpointし、tracked WIPは0。4 actual untrackedのローカルcacheは保持している。
+確認日 2026-11-08、観察Source `faa2d2aaf2eef6c7dbd6c76f6757c0e6a4d0b9c1`。項目ごとの受入・公開Sourceと検証範囲を下表で独立して追跡する。既存差分12ファイルはcheckpoint済みで、当該Source公開後のtracked実装WIPは0。4 actual untrackedのローカルcacheは保持している。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画を、そのまま現在の残作業へ転記しない。
@@ -15,7 +15,7 @@
 
 | 項目・境界 | 状態 | 根拠と、別途区別する範囲 |
 |---|---|---|
-| View の保持 String 入力／text handler | **owner／codec／player batch 修復を統合検証・公開済み** | Source `5a879a8dbd9d817e39db1d8125fb806fff046e7e`。実AWFB encode/decode、change→submit、click→change→submit、完全session失敗原子性、VM時計／flow不変を含む新9／9 PASS。後続修復のRuntimeDriver逆依存12 packageは非CLI 1713／1713 PASS・除外0、CLIは下表の4失敗が継続。workspace gatesは終了0。旧sample移行、Scroll fixtureと実Native／Web表示は別の未達境界。named Action送信は次行で追跡する。[全実測・SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。Generic Match等の既受入の判定は維持する。 |
+| View の保持 String 入力／text handler・公開target | **保持入力とplayer batchの受入を維持。公開targetをowner検証・公開済み** | Source `faa2d2aaf2eef6c7dbd6c76f6757c0e6a4d0b9c1` はcompile-time PublicIdの `target` をStyle node・入力欄・event routeへ伝える。実AWFB往復、編集→click、型違い・重複引数、同一View内のtarget衝突とbundle改変の拒否、キー付き入力の並べ替え・再出現を含むView全90／90 PASS。workspace check／Clippy／fmt／構造gateは終了0。41 packageの逆依存は実行中で、下表の全件結果は先行Sourceの履歴として区別する。旧sample移行、Scroll fixtureと実Native／Web表示は継続条件。named Action送信は次行で追跡する。[修復前後・全SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。 |
 | Viewからのnamed Action送信 | **元Action返却／FIFO送信／原子的拒否は統合検証・公開済み。sample／実表示は継続** | Source `8c123e75092eedb0aa1893a4c5847ca93f422e74`、容量回帰 `566abae1e89210630dd6b096c625f08dd7be3e24`。純粋なhandlerの元Action recordを、保持値と既存Core FIFOへ一括公開する。実AWFB・BundleSession、VM／AOT／AWBC FIFO、click→save／restore→receive、Core本番上限拒否後の完全session保持とretryを検証。逆依存・品質・CLIの実測は下表へ集約した。同一Sourceの実CLI checkも旧拒否1→成功0。旧sampleのfactory／target／policyとScroll、実Native／Web表示は別の継続条件。[全原本・SHA・訂正理由](acceptance-evidence/task-flow-registry-execution.json)。 |
 | Entity参照のfamily／元宣言／payload型metadata・元Source証明 | **当該inert型・値admissionは検証・公開済み** | Source 2c1523bdc2d2159c77b11bfd28ecfa7b988d618a、共有契約f54050124603e4ace5fa59c87a17f79f9d07f3e5、Source証明2dbd62719e44c02d794aef4ee484f7715c3150dc。Coreの一つの型ownerが36 project family・元宣言・CharacterLook owner・payload型edgeを保持し、Sema／RuntimePlan／Native／AWBC／schema／codecへ接続した。異family・別Action宣言・同じ型IDで偽造したmetadataを拒否する。payload型edgeから値所有権や実行権限は作らない。新7件と旧受入subsetはPASS。古いAWBC fixtureとStyle型をCharacter factoryへ流用していたNative fixtureを最終契約へ修復し、後者は全63件PASS。全件run・再検証・CLIの範囲は下表へ集約する。emit／receive・実行channelの元program admission・停止保存は別境界。[実測・失敗・訂正理由・raw](acceptance-evidence/task-entity-reference-type-admission.json)。 |
 | Action宣言・payload record／型付きチャンネル値 | **受入・公開済み** | Source 7104b200150b9b85b31cd686c48573b92b2028d3。元Action PublicIdとproducer digestを持つRuntimeNominalDeclarationIdを、宣言・型・schema・Native・AWBCのversion 1契約で共有する。非genericのrecord payloadと元チャンネルidentityを保持し、別宣言・異family・競合identityを拒否する。[宣言identityの受入](acceptance-evidence/task-action-original-declaration-identity.json)、[修飾callの受入](acceptance-evidence/task-action-qualified-path.json)。 |
