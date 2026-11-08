@@ -13,7 +13,7 @@ use thiserror::Error;
 mod codec;
 mod semantic;
 
-pub use semantic::ViewSpecifiedValueSemanticDigest;
+pub use semantic::{ViewSpecifiedValueSemanticDigest, ViewStyleOperandSemanticDigest};
 
 /// Normalized ratio/progress value in thousandths.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -563,6 +563,17 @@ pub struct ViewBorderRadii {
     pub top_right: ViewLengthMilli,
     pub bottom_right: ViewLengthMilli,
     pub bottom_left: ViewLengthMilli,
+}
+
+impl From<ViewLengthMilli> for ViewBorderRadii {
+    fn from(radius: ViewLengthMilli) -> Self {
+        Self {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

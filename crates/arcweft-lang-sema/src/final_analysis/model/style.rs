@@ -3,7 +3,8 @@
 use arcweft_lang_hir::identity::{ExprId, ItemId};
 use arcweft_presentation::appearance::SystemColor;
 use arcweft_view::style::{
-    ViewFontFamily, ViewStyleTokenId, ViewStyleValueKind, ViewSystemFontFamily,
+    ViewFilter, ViewFontFamily, ViewPropertyKind, ViewShadow, ViewStyleTokenId,
+    ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
 };
 
 use crate::types::CompileTimeStyleType;
@@ -108,6 +109,12 @@ pub enum CheckedStyleOperand {
     SystemColor(SystemColor),
     Token(CheckedStyleTokenReference),
     Number(CheckedStyleNumber),
+    Shadow(ViewShadow),
+    Filter(ViewFilter),
+    Transition(ViewStyleTransition),
+    Property(ViewPropertyKind),
+    Duration(CheckedStyleDuration),
+    ResourceId(arcweft_id::PublicId),
 }
 
 impl CheckedStyleOperand {
@@ -118,6 +125,57 @@ impl CheckedStyleOperand {
             Self::SystemColor(_) => CompileTimeStyleType::SystemColor,
             Self::Token(token) => CompileTimeStyleType::Token(token.kind()),
             Self::Number(number) => CompileTimeStyleType::NumericLiteral(number.kind()),
+            Self::Shadow(_) => CompileTimeStyleType::Shadow,
+            Self::Filter(_) => CompileTimeStyleType::Filter,
+            Self::Transition(_) => CompileTimeStyleType::Transition,
+            Self::Property(_) => CompileTimeStyleType::Property,
+            Self::Duration(_) => CompileTimeStyleType::Duration,
+            Self::ResourceId(_) => CompileTimeStyleType::ResourceId,
         }
+    }
+}
+
+/// Exact whole milliseconds admitted by the native transition carrier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CheckedStyleDuration(u32);
+
+#[derive(Clone, Copy, Debug, Eq, thiserror::Error, PartialEq)]
+pub enum CheckedStyleDurationError {
+    #[error("expected a nonnegative Duration literal")]
+    WrongLiteral,
+    #[error("Style transition times must be exact whole milliseconds")]
+    PrecisionLoss,
+    #[error("Style transition time exceeds the native u32 millisecond range")]
+    OutOfRange,
+}
+
+impl CheckedStyleDuration {
+    pub(in crate::final_analysis) const ZERO: Self = Self(0);
+
+    pub const fn milliseconds(self) -> u32 {
+        self.0
+    }
+}
+
+impl TryFrom<&arcweft_lang_hir::leaf::HirLiteral> for CheckedStyleDuration {
+    type Error = CheckedStyleDurationError;
+
+    fn try_from(literal: &arcweft_lang_hir::leaf::HirLiteral) -> Result<Self, Self::Error> {
+        use arcweft_lang_hir::leaf::{HirDurationLiteral, HirLiteral};
+        let HirLiteral::Duration(HirDurationLiteral::Value(duration)) = literal else {
+            return Err(CheckedStyleDurationError::WrongLiteral);
+        };
+        let nanos = match duration.semantic_value().nanoseconds().limbs_le() {
+            [] => 0,
+            [low] => u64::from(*low),
+            [low, high] => u64::from(*low) | (u64::from(*high) << 32),
+            _ => return Err(CheckedStyleDurationError::OutOfRange),
+        };
+        if nanos % 1_000_000 != 0 {
+            return Err(CheckedStyleDurationError::PrecisionLoss);
+        }
+        u32::try_from(nanos / 1_000_000)
+            .map(Self)
+            .map_err(|_| CheckedStyleDurationError::OutOfRange)
     }
 }

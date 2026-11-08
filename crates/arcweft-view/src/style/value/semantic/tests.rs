@@ -59,6 +59,74 @@ fn families(values: Vec<ViewFontFamily>) -> ViewFontFamilyList {
     ViewFontFamilyList::new(values).expect("non-empty font family list")
 }
 
+#[test]
+fn component_semantic_identity_covers_native_fields_and_separates_component_roles() {
+    let base = shadow([1, 2, 3, 4], color(10, 20, 30, 255), false);
+    let mut shadows = vec![base];
+    for index in 0..4 {
+        let mut values = [1, 2, 3, 4];
+        values[index] += 1;
+        shadows.push(shadow(values, base.color, false));
+    }
+    shadows.extend([
+        ViewShadow {
+            color: color(10, 20, 31, 255),
+            ..base
+        },
+        ViewShadow {
+            color: ViewColorValue::System {
+                role: SystemColor::CanvasText,
+            },
+            ..base
+        },
+        ViewShadow {
+            inset: true,
+            ..base
+        },
+    ]);
+    let mut digests = shadows
+        .iter()
+        .map(|value| value.semantic_digest())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(digests.len(), shadows.len());
+    let filters = [
+        ViewFilter::Blur {
+            radius: ViewLengthMilli::new(1),
+        },
+        ViewFilter::Blur {
+            radius: ViewLengthMilli::new(2),
+        },
+        ViewFilter::Brightness {
+            amount: ViewScalarMilli::new(1),
+        },
+        ViewFilter::Brightness {
+            amount: ViewScalarMilli::new(2),
+        },
+        ViewFilter::Contrast {
+            amount: ViewScalarMilli::new(1),
+        },
+        ViewFilter::Opacity { amount: ratio(1) },
+    ];
+    digests.extend(filters.into_iter().map(ViewFilter::semantic_digest));
+    let transitions = [
+        transition(ViewPropertyKind::Color, 1, 2),
+        transition(ViewPropertyKind::Color, 2, 2),
+        transition(ViewPropertyKind::Color, 1, 3),
+        transition(ViewPropertyKind::Opacity, 1, 2),
+    ];
+    digests.extend(
+        transitions
+            .into_iter()
+            .map(ViewStyleTransition::semantic_digest),
+    );
+    assert_eq!(
+        digests.len(),
+        shadows.len() + filters.len() + transitions.len()
+    );
+    let uniform = ViewBorderRadii::from(ViewLengthMilli::new(-1250));
+    assert_eq!(uniform, radii([-1250; 4]));
+}
+
 fn representatives() -> Vec<ViewSpecifiedValue> {
     vec![
         ViewSpecifiedValue::Token {

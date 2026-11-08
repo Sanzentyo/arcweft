@@ -9,6 +9,37 @@ use crate::types::CompileTimeStyleType;
 use arcweft_view::style::ViewStyleValueKind;
 
 #[test]
+fn style_composite_operands_keep_exact_roles_without_becoming_runtime_values() {
+    let fixture = fixture(
+        "style Composite {\n token shadows: ShadowList = [shadow(color = system_color(.CanvasText))]\n token filters: FilterList = [blur(1px), brightness(1), contrast(2), opacity(25%)]\n token transitions: Transition = [transition(\"color\", 1.25s, delay = 1ms)]\n token image: Resource = resource(\"image.background\")\n}\n",
+        None,
+    );
+    let report = analyze(&fixture).unwrap();
+    let mut roles = BTreeMap::new();
+    for (_, checked) in report.expressions() {
+        if let CheckedExpressionResolution::StyleOperand(operand) = checked.resolution() {
+            let ty = TypeKind::CompileTimeStyle(operand.style_type());
+            assert_eq!(checked.value_type(), Some(&ty));
+            assert!(!ty.accepts(&TypeKind::Named(ty.source_label())));
+            assert!(checked.effects().is_empty());
+            *roles.entry(operand.style_type()).or_insert(0) += 1;
+        }
+    }
+    assert_eq!(
+        roles,
+        BTreeMap::from([
+            (CompileTimeStyleType::Shadow, 1),
+            (CompileTimeStyleType::Filter, 4),
+            (CompileTimeStyleType::Transition, 1),
+            (CompileTimeStyleType::SystemColor, 1),
+            (CompileTimeStyleType::Property, 1),
+            (CompileTimeStyleType::Duration, 2),
+            (CompileTimeStyleType::ResourceId, 1),
+        ])
+    );
+}
+
+#[test]
 fn style_numeric_operands_preserve_signed_minimum_magnitudes_without_runtime_types() {
     let fixture = fixture(
         "style Numeric {\n token integer_min: Integer = -2147483648\n token length_min: Length = -2147483.648px\n token angle_min: Angle = -2147483.648deg\n}\n",

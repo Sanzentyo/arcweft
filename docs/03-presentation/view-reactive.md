@@ -350,6 +350,27 @@ so the signed minimum can be checked without publishing its positive magnitude
 as a runtime or complete property value. Closed Style enums use the exact
 case-sensitive names from their native owner registry.
 
+Composite values use typed construction calls. `radii(top_left, top_right,
+bottom_right, bottom_left)` takes four px lengths; a single px length also
+constructs uniform radii. `shadow` and `inset_shadow` take `x`, `y`, `blur`,
+`spread`, and a required `color`; omitted length arguments are zero. Filter
+lists contain `blur(radius)`, `brightness(amount)`, `contrast(amount)`, and
+`opacity(amount)`. Brightness and contrast use Scalar, while opacity uses Ratio.
+Shadow, filter, and transition lists preserve authored order and may be empty.
+`rounded_rect(radii)` constructs a Clip; `resource(id)` takes a string containing
+a valid public identity, and `mask(resource)` constructs a resource Mask.
+
+`transition(property, duration, delay = 0ms)` uses the exact property source name
+as a string and accepts only properties marked transitionable by the native
+registry. Duration and delay must be nonnegative, exact whole milliseconds in
+the native u32 range; sub-millisecond precision and overflow are rejected.
+Construction calls accept positional arguments followed by named arguments,
+reject duplicate/unknown/missing arguments and type applications, and check
+authored expressions before applying defaults. Sheet-local token constants can
+supply composite operands and uniform radii; their dependencies use original
+HIR identities with cycle/depth checks. Same-kind top-level token references
+remain symbolic native references. System colors remain symbolic in either case.
+
 Retained View nodes and runtime controls use the single typed
 `arcweft-view::style::ViewStyleResolver`. `ViewStyleProgram` owns sheets and
 inline patches; the bundle codec validates and transports that program but does

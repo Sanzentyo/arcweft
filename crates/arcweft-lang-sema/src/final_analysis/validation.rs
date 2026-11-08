@@ -1222,6 +1222,23 @@ fn validate_expression_resolution(
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
             }
+            if let super::CheckedStyleOperand::Duration(duration) = operand {
+                let expression = resolve_module(modules, owner.module())?.resolve_expr(owner).map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let HirExprKind::Literal(literal) = expression.kind() else { return Err(FinalSemanticAnalysisError::WrongPayloadFamily); };
+                if super::CheckedStyleDuration::try_from(literal).as_ref() != Ok(duration) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
+            if matches!(operand, super::CheckedStyleOperand::Property(_) | super::CheckedStyleOperand::ResourceId(_)) {
+                let expression = resolve_module(modules, owner.module())?.resolve_expr(owner).map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let HirExprKind::Literal(arcweft_lang_hir::leaf::HirLiteral::String(arcweft_lang_hir::leaf::HirStringLiteral::Value(value))) = expression.kind() else { return Err(FinalSemanticAnalysisError::WrongPayloadFamily); };
+                let valid = match operand {
+                    super::CheckedStyleOperand::Property(property) => arcweft_view::style::ViewPropertyKind::from_source_name(value.as_ref()).as_ref() == Some(property),
+                    super::CheckedStyleOperand::ResourceId(id) => arcweft_id::PublicId::try_new(value.as_ref()).as_ref() == Ok(id),
+                    _ => false,
+                };
+                if !valid { return Err(FinalSemanticAnalysisError::WrongPayloadFamily); }
+            }
             if let super::CheckedStyleOperand::Token(reference) = operand {
                 use arcweft_lang_hir::project::{HirSemanticPathOwnerId, HirSemanticPathRoot};
                 let module = resolve_module(modules, owner.module())?;

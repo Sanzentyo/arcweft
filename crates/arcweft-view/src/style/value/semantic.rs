@@ -3,7 +3,7 @@
 use super::{
     ViewAlignment, ViewBlendMode, ViewBorderRadii, ViewClip, ViewColorValue, ViewFilter,
     ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontStyle, ViewMask, ViewShadow,
-    ViewSpecifiedValue, ViewSystemFontFamily,
+    ViewSpecifiedValue, ViewStyleTransition, ViewSystemFontFamily,
 };
 use arcweft_presentation::appearance::PresentationColor;
 
@@ -14,6 +14,16 @@ const DOMAIN: &[u8] = b"arcweft.view.specified-value-semantic.v1\0";
 pub struct ViewSpecifiedValueSemanticDigest([u8; 32]);
 
 impl ViewSpecifiedValueSemanticDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Semantic identity of a native component used to construct a Style value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewStyleOperandSemanticDigest([u8; 32]);
+
+impl ViewStyleOperandSemanticDigest {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -32,6 +42,17 @@ impl SemanticEncoder {
 
     fn finish(self) -> ViewSpecifiedValueSemanticDigest {
         ViewSpecifiedValueSemanticDigest(*self.hasher.finalize().as_bytes())
+    }
+
+    fn operand(tag: u8) -> Self {
+        let mut encoder = Self::new();
+        encoder.u8(255);
+        encoder.u8(tag);
+        encoder
+    }
+
+    fn finish_operand(self) -> ViewStyleOperandSemanticDigest {
+        ViewStyleOperandSemanticDigest(*self.hasher.finalize().as_bytes())
     }
 
     fn u8(&mut self, value: u8) {
@@ -129,6 +150,13 @@ impl ViewAlignment {
 }
 
 impl ViewFilter {
+    /// Canonical identity of this component, including its exact native payload.
+    pub fn semantic_digest(self) -> ViewStyleOperandSemanticDigest {
+        let mut encoder = SemanticEncoder::operand(1);
+        encode_filter(&mut encoder, self);
+        encoder.finish_operand()
+    }
+
     /// Stable semantic tag in declaration order.
     pub const fn semantic_tag(self) -> u8 {
         match self {
@@ -137,6 +165,24 @@ impl ViewFilter {
             Self::Contrast { .. } => 2,
             Self::Opacity { .. } => 3,
         }
+    }
+}
+
+impl ViewShadow {
+    /// Canonical identity of this component, including its symbolic color.
+    pub fn semantic_digest(self) -> ViewStyleOperandSemanticDigest {
+        let mut encoder = SemanticEncoder::operand(0);
+        encode_shadow(&mut encoder, self);
+        encoder.finish_operand()
+    }
+}
+
+impl ViewStyleTransition {
+    /// Canonical identity of this component's property, duration, and delay.
+    pub fn semantic_digest(self) -> ViewStyleOperandSemanticDigest {
+        let mut encoder = SemanticEncoder::operand(2);
+        encode_transition(&mut encoder, self);
+        encoder.finish_operand()
     }
 }
 
@@ -281,9 +327,7 @@ impl ViewSpecifiedValue {
             Self::Transition { value } => {
                 encoder.len(value.len());
                 for transition in value {
-                    encoder.u8(transition.property.semantic_tag());
-                    encoder.u32(transition.duration_millis);
-                    encoder.u32(transition.delay_millis);
+                    encode_transition(encoder, *transition);
                 }
             }
             Self::Resource { value } => encoder.bytes(value.as_str().as_bytes()),
@@ -336,6 +380,12 @@ fn encode_filter(encoder: &mut SemanticEncoder, filter: ViewFilter) {
         }
         ViewFilter::Opacity { amount } => encoder.u16(amount.value()),
     }
+}
+
+fn encode_transition(encoder: &mut SemanticEncoder, transition: ViewStyleTransition) {
+    encoder.u8(transition.property.semantic_tag());
+    encoder.u32(transition.duration_millis);
+    encoder.u32(transition.delay_millis);
 }
 
 #[cfg(test)]

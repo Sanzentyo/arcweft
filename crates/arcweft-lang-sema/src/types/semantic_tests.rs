@@ -280,6 +280,8 @@ fn specified_style_values_and_operands_keep_exact_semantic_types() {
         CompileTimeStyleType::Filter,
         CompileTimeStyleType::Transition,
         CompileTimeStyleType::Property,
+        CompileTimeStyleType::Duration,
+        CompileTimeStyleType::ResourceId,
     ]);
     styles.extend(StyleNumericType::ALL.map(CompileTimeStyleType::NumericLiteral));
     let types = styles

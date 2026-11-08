@@ -2994,6 +2994,24 @@ fn write_resolution_payload(
                     transcript_update!(hasher, &[number.kind().value_kind().semantic_tag()]);
                     transcript_update!(hasher, &number.magnitude().to_le_bytes());
                 }
+                CheckedStyleOperand::Shadow(shadow) => {
+                    transcript_update!(hasher, shadow.semantic_digest().as_bytes());
+                }
+                CheckedStyleOperand::Filter(filter) => {
+                    transcript_update!(hasher, filter.semantic_digest().as_bytes());
+                }
+                CheckedStyleOperand::Transition(transition) => {
+                    transcript_update!(hasher, transition.semantic_digest().as_bytes());
+                }
+                CheckedStyleOperand::Property(property) => {
+                    transcript_update!(hasher, &[property.semantic_tag()]);
+                }
+                CheckedStyleOperand::Duration(duration) => {
+                    transcript_update!(hasher, &duration.milliseconds().to_le_bytes());
+                }
+                CheckedStyleOperand::ResourceId(id) => {
+                    write_bytes(hasher, id.canonical_identity_bytes())?;
+                }
             }
         }
         CheckedExpressionResolution::ViewPartName(name) => {

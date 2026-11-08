@@ -20,6 +20,9 @@ use arcweft_view::style::{
 #[path = "style/primitives.rs"]
 mod primitives;
 
+#[path = "style/composites.rs"]
+mod composites;
+
 impl Analyzer<'_, '_, '_> {
     pub(super) fn check_style_expression_kind(
         &mut self,
@@ -45,8 +48,21 @@ impl Analyzer<'_, '_, '_> {
                 FinalSemanticAnalysisError::RecoveredOwner,
             ));
         }
+        if let HirExprKind::Call(call) = expression.kind()
+            && !matches!(
+                call.explicit_type_application(),
+                arcweft_lang_hir::expr::HirCallTypeApplication::Absent
+            )
+        {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
         if let Some(checked) =
             self.check_style_construction(context, module, owner, expression, style_type)?
+        {
+            return Ok(Some(checked));
+        }
+        if let Some(checked) =
+            self.check_style_composite(context, module, owner, expression, style_type)?
         {
             return Ok(Some(checked));
         }
@@ -131,21 +147,10 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
         let operand = match (expected, expression.kind()) {
             (CompileTimeStyleType::Token(kind), HirExprKind::Path(_) | HirExprKind::Select(_)) => {
-                let location = self
-                    .topology
-                    .semantic_path(HirSemanticPathOwnerId::Expression(owner))
-                    .map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                let HirSemanticPathRoot::Item { item, .. } = location.root() else {
+                let token = self.style_token_reference(module, owner)?;
+                if token.kind() != kind {
                     return Err(AnalyzerExpressionError::rejected(owner));
-                };
-                let token = self
-                    .styles
-                    .token(module, *item, owner)
-                    .filter(|token| token.kind() == kind)
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                }
                 Some(CheckedStyleOperand::Token(token))
             }
             (
@@ -217,7 +222,17 @@ impl Analyzer<'_, '_, '_> {
             Self::direct_callee_name(module, *callee)?.as_deref(),
         ) {
             (CompileTimeStyleType::Value(kind), Some("token")) => {
-                (StyleCallableId::Token, CompileTimeStyleType::Token(kind))
+                let [argument @ HirCallArgument::Positional { .. }] = call.arguments() else {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                };
+                let actual = self.style_token_reference(module, argument.value())?.kind();
+                if actual != kind
+                    && !(kind == ViewStyleValueKind::BorderRadii
+                        && actual == ViewStyleValueKind::Length)
+                {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                }
+                (StyleCallableId::Token, CompileTimeStyleType::Token(actual))
             }
             (CompileTimeStyleType::Value(ViewStyleValueKind::Color), Some("system_color")) => (
                 StyleCallableId::SystemColor,
@@ -247,10 +262,24 @@ impl Analyzer<'_, '_, '_> {
         }
         let result = match (callable, operand) {
             (StyleCallableId::Token, CheckedStyleOperand::Token(token)) => {
-                Self::checked_style_value(ViewSpecifiedValue::Token {
+                let value = ViewSpecifiedValue::Token {
                     token: token.id().clone(),
                     value_kind: token.kind(),
-                })
+                };
+                if expected == CompileTimeStyleType::Value(ViewStyleValueKind::BorderRadii)
+                    && token.kind() == ViewStyleValueKind::Length
+                {
+                    let ViewSpecifiedValue::Length { value } =
+                        self.resolve_style_constant(context, module, owner, value)?
+                    else {
+                        return Err(AnalyzerExpressionError::rejected(owner));
+                    };
+                    Self::checked_style_value(ViewSpecifiedValue::BorderRadii {
+                        value: value.into(),
+                    })
+                } else {
+                    Self::checked_style_value(value)
+                }
             }
             (StyleCallableId::SystemColor, CheckedStyleOperand::SystemColor(role)) => {
                 Self::checked_style_value(ViewSpecifiedValue::Color {
@@ -264,9 +293,18 @@ impl Analyzer<'_, '_, '_> {
             }
             _ => return Err(AnalyzerExpressionError::rejected(owner)),
         };
+        self.publish_style_callee(*callee, callable)?;
+        Ok(Some(result))
+    }
+
+    fn publish_style_callee(
+        &mut self,
+        callee: ExprId,
+        callable: StyleCallableId,
+    ) -> Result<(), AnalyzerExpressionError> {
         self.facts
             .publish_new_expression(
-                *callee,
+                callee,
                 CheckedExpression::value(
                     TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::Style(
                         callable,
@@ -280,8 +318,81 @@ impl Analyzer<'_, '_, '_> {
             )
             .map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
-        Ok(Some(result))
+            })
+    }
+
+    fn style_token_reference(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+    ) -> Result<crate::final_analysis::CheckedStyleTokenReference, AnalyzerExpressionError> {
+        let location = self
+            .topology
+            .semantic_path(HirSemanticPathOwnerId::Expression(owner))
+            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let HirSemanticPathRoot::Item { item, .. } = location.root() else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        self.styles
+            .token(module, *item, owner)
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))
+    }
+
+    fn resolve_style_constant(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        mut value: ViewSpecifiedValue,
+    ) -> Result<ViewSpecifiedValue, AnalyzerExpressionError> {
+        if !matches!(value, ViewSpecifiedValue::Token { .. }) {
+            return Ok(value);
+        }
+        let location = self
+            .topology
+            .semantic_path(HirSemanticPathOwnerId::Expression(owner))
+            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let HirSemanticPathRoot::Item { item: style, .. } = location.root() else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        let style = *style;
+        let depth = self.styles.constant_depth();
+        let result = (|| {
+            while let ViewSpecifiedValue::Token { token, value_kind } = value {
+                let initializer = self
+                    .styles
+                    .token_initializer(style, &token)
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                if !self.styles.enter_constant(initializer) {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                }
+                // Evaluate original HIR with its declared type; no synthetic sheet or source reconstruction.
+                let checked = self.evaluate_expression(
+                    context,
+                    initializer,
+                    Some(&TypeKind::CompileTimeStyle(CompileTimeStyleType::Value(
+                        value_kind,
+                    ))),
+                )?;
+                let Some(CheckedExpressionResolution::StyleValue(next)) =
+                    checked.checked_resolution()
+                else {
+                    return Err(AnalyzerExpressionError::rejected(initializer));
+                };
+                if !checked.effects().is_empty()
+                    || next.kind() != value_kind
+                    || module.resolve_expr(initializer).is_err()
+                {
+                    return Err(AnalyzerExpressionError::rejected(initializer));
+                }
+                value = next.clone();
+            }
+            Ok(value)
+        })();
+        self.styles.leave_constants(depth);
+        result
     }
 
     fn checked_style_operand(operand: CheckedStyleOperand) -> CheckedExpression {

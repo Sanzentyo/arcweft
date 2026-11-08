@@ -37,7 +37,11 @@ impl Analyzer<'_, '_, '_> {
         let CompileTimeStyleType::Value(kind) = expected else {
             return Ok(None);
         };
-        let numeric = StyleNumericType::try_from(kind).ok();
+        let numeric = if kind == ViewStyleValueKind::BorderRadii {
+            Some(StyleNumericType::Length)
+        } else {
+            StyleNumericType::try_from(kind).ok()
+        };
         if let Some(numeric) = numeric {
             let (literal, operand) = match expression.kind() {
                 HirExprKind::Literal(literal) => (literal, None),
@@ -75,6 +79,16 @@ impl Analyzer<'_, '_, '_> {
                     return Err(AnalyzerExpressionError::rejected(operand));
                 }
             }
+            let value = if kind == ViewStyleValueKind::BorderRadii {
+                let ViewSpecifiedValue::Length { value } = value else {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                };
+                ViewSpecifiedValue::BorderRadii {
+                    value: value.into(),
+                }
+            } else {
+                value
+            };
             return Ok(Some(Self::checked_style_value(value)));
         }
         if let (ViewStyleValueKind::Bool, HirExprKind::Literal(HirLiteral::Boolean(value))) =

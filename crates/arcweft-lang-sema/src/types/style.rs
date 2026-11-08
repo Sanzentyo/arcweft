@@ -70,6 +70,8 @@ pub enum CompileTimeStyleType {
     Token(ViewStyleValueKind),
     Property,
     NumericLiteral(StyleNumericType),
+    Duration,
+    ResourceId,
 }
 
 impl CompileTimeStyleType {
@@ -85,6 +87,8 @@ impl CompileTimeStyleType {
             Self::Token(_) => 7,
             Self::Property => 8,
             Self::NumericLiteral(_) => 9,
+            Self::Duration => 10,
+            Self::ResourceId => 11,
         }
     }
 
@@ -98,7 +102,7 @@ impl CompileTimeStyleType {
             | Self::Shadow
             | Self::Filter
             | Self::Transition => None,
-            Self::Property => None,
+            Self::Property | Self::Duration | Self::ResourceId => None,
         }
     }
 
@@ -113,6 +117,8 @@ impl CompileTimeStyleType {
             Self::Filter => "StyleOperand<Filter>".to_owned(),
             Self::Transition => "StyleOperand<Transition>".to_owned(),
             Self::Property => "StyleOperand<Property>".to_owned(),
+            Self::Duration => "StyleOperand<Duration>".to_owned(),
+            Self::ResourceId => "StyleOperand<ResourceId>".to_owned(),
             Self::NumericLiteral(kind) => {
                 format!("StyleLiteral<{}>", kind.value_kind().source_name())
             }

@@ -613,6 +613,17 @@ pub enum StyleCallableId {
     Token,
     SystemColor,
     SystemFont,
+    Radii,
+    Shadow,
+    InsetShadow,
+    Blur,
+    Brightness,
+    Contrast,
+    Opacity,
+    RoundedRect,
+    Mask,
+    Transition,
+    Resource,
 }
 
 impl StyleCallableId {
@@ -623,6 +634,17 @@ impl StyleCallableId {
             Self::Token => 1,
             Self::SystemColor => 2,
             Self::SystemFont => 3,
+            Self::Radii => 4,
+            Self::Shadow => 5,
+            Self::InsetShadow => 6,
+            Self::Blur => 7,
+            Self::Brightness => 8,
+            Self::Contrast => 9,
+            Self::Opacity => 10,
+            Self::RoundedRect => 11,
+            Self::Mask => 12,
+            Self::Transition => 13,
+            Self::Resource => 14,
         }
     }
 
@@ -633,6 +655,17 @@ impl StyleCallableId {
             Self::Token => "token",
             Self::SystemColor => "system_color",
             Self::SystemFont => "system_font",
+            Self::Radii => "radii",
+            Self::Shadow => "shadow",
+            Self::InsetShadow => "inset_shadow",
+            Self::Blur => "blur",
+            Self::Brightness => "brightness",
+            Self::Contrast => "contrast",
+            Self::Opacity => "opacity",
+            Self::RoundedRect => "rounded_rect",
+            Self::Mask => "mask",
+            Self::Transition => "transition",
+            Self::Resource => "resource",
         }
     }
 }

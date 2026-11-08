@@ -42,6 +42,7 @@ pub(super) struct StyleAnalysisContext {
     values: BTreeMap<ExprId, ViewStyleValueKind>,
     annotations: BTreeMap<TypeId, StyleTokenAnnotationOwner>,
     tokens: BTreeMap<ItemId, StyleTokenScope>,
+    constant_dependencies: Vec<ExprId>,
 }
 
 impl StyleAnalysisContext {
@@ -52,6 +53,7 @@ impl StyleAnalysisContext {
             values: BTreeMap::new(),
             annotations: BTreeMap::new(),
             tokens: BTreeMap::new(),
+            constant_dependencies: Vec::new(),
         };
         for module in modules.values() {
             for (owner, item) in module.items() {
@@ -172,6 +174,39 @@ impl StyleAnalysisContext {
 
     pub(super) fn value_kind(&self, owner: ExprId) -> Option<ViewStyleValueKind> {
         self.values.get(&owner).copied()
+    }
+
+    pub(super) fn token_initializer(&self, style: ItemId, id: &ViewStyleTokenId) -> Option<ExprId> {
+        let name = id
+            .public_id()
+            .as_str()
+            .split('.')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        self.tokens
+            .get(&style)?
+            .declarations
+            .get(&name)
+            .map(|token| token.value)
+    }
+
+    pub(super) fn constant_depth(&self) -> usize {
+        self.constant_dependencies.len()
+    }
+
+    pub(super) fn enter_constant(&mut self, initializer: ExprId) -> bool {
+        if self.constant_dependencies.len()
+            >= arcweft_view::style::ViewStyleSheet::MAX_TOKEN_REFERENCE_DEPTH
+            || self.constant_dependencies.contains(&initializer)
+        {
+            return false;
+        }
+        self.constant_dependencies.push(initializer);
+        true
+    }
+
+    pub(super) fn leave_constants(&mut self, depth: usize) {
+        self.constant_dependencies.truncate(depth);
     }
 
     pub(super) fn token(
