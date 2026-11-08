@@ -6,6 +6,7 @@
 //! complete candidate before publishing requests or child fibers; the registry
 //! and shared ledger remain separate owners in `store` and `line_task`.
 
+mod scope;
 mod store;
 
 pub use store::DialogueActivationStore;
@@ -1352,6 +1353,15 @@ impl Engine {
                     }
                 };
             }
+            FlowOp::ExitScopeBind { pattern, expr } => {
+                return self.execute_activation_scope_binding(
+                    slot,
+                    pattern,
+                    expr,
+                    &assignment_before,
+                    pure_backend,
+                );
+            }
             FlowOp::Let { pattern, expr } => {
                 self.bind_dialogue_let(
                     &activation_id,
@@ -1648,6 +1658,17 @@ impl Engine {
                 }
             }
         }
+        for (token, slot) in frame.scope_result_handle_slots(self.fiber.execution, activation)? {
+            let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(
+                self.published_receiver_execution(),
+                activation,
+                &token,
+                slot,
+            );
+            if owners.insert(token, owner).is_some() {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+            }
+        }
         Ok(owners)
     }
 
@@ -1819,110 +1840,6 @@ impl Engine {
                 });
         }
         Ok(())
-    }
-
-    /// Advances the top activation-owned lexical scope by at most one deferred
-    /// child. The fixed exit and any in-flight child remain in the cloned
-    /// activation frame until the whole transaction commits.
-    fn prepare_activation_scope_exit(
-        &self,
-        activation_id: &crate::runtime_id::DialogueActivationId,
-        frame: &mut DialogueActivationFrame,
-        activation: &mut NativeDialogueActivationState,
-        exit: ScopeExit,
-    ) -> Result<ActivationScopeStep, DialogueExecutionError> {
-        let scope = frame
-            .scopes
-            .last_mut()
-            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-        let progress = self.step_line_defer_scope(
-            activation_id,
-            activation,
-            scope,
-            super::defer::NativeDeferScopeContext {
-                parent: frame.parent,
-                execution: self.fiber.execution,
-                owner: super::defer::NativeDeferParent::Activation,
-            },
-            exit,
-        )?;
-        match progress.step {
-            super::defer::NativeDeferScopeStep::Waiting => {
-                return Ok(ActivationScopeStep::Waiting(progress.received));
-            }
-            super::defer::NativeDeferScopeStep::Deferred(batch) => {
-                return Ok(ActivationScopeStep::Deferred(batch, progress.received));
-            }
-            super::defer::NativeDeferScopeStep::Drained => {}
-        }
-        let received = self.release_activation_scope_locals(activation_id, frame, activation)?;
-        frame.scopes.pop();
-        Ok(ActivationScopeStep::Finished(received))
-    }
-
-    /// Releases lexical locals after all deferred callbacks have observed them.
-    /// A value already staged as the dialogue result has DialogueResult custody
-    /// and survives this scope exit; every remaining affine local is dropped
-    /// through the line command journal before reveal can start.
-    fn release_activation_scope_locals(
-        &self,
-        activation_id: &crate::runtime_id::DialogueActivationId,
-        frame: &mut DialogueActivationFrame,
-        activation: &mut NativeDialogueActivationState,
-    ) -> Result<
-        Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
-        DialogueExecutionError,
-    > {
-        let mut ledger = activation.ledger().clone();
-        let mut commands =
-            RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
-        let mut seen = std::collections::BTreeSet::new();
-        let mut received = std::collections::BTreeMap::new();
-        for (local, value) in frame.execution.env.current_scope_bindings() {
-            for handle in unique_affine_line_handles(value)? {
-                if !seen.insert(handle.token().clone()) {
-                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-                }
-                let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(
-                    self.published_receiver_execution(),
-                    activation_id,
-                    handle.token(),
-                    frame
-                        .execution
-                        .owned_local_slot(self.fiber.execution, local),
-                );
-                if matches!(owner, RuntimeHandleOwnerSlot::ParentFiber { .. }) {
-                    received.insert(handle.token().clone(), owner);
-                    continue;
-                }
-                let lease = ledger
-                    .lease(handle.token())
-                    .ok_or(LineRuntimeError::UnknownHandle)?;
-                if lease.resource().kind() != handle.kind() {
-                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
-                }
-                if matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_)) {
-                    continue;
-                }
-                ledger.drop_owned(handle.token(), &owner, &mut commands)?;
-            }
-        }
-        let received = self
-            .dialogue_activations
-            .inspect_received_fiber_reconciliation(
-                self.published_receiver_execution(),
-                &received,
-                &Default::default(),
-                &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
-                    RuntimeDropPolicy::Default,
-                )),
-                None,
-                None,
-            )?;
-        flush_commands(activation_id, activation, commands)?;
-        activation.commit_ledger(ledger);
-        let _ = frame.execution.env.pop_scope_bindings();
-        Ok(received)
     }
 
     fn evaluate_dialogue_expr(
@@ -3736,6 +3653,7 @@ mod tests {
             activation_pc: 0,
             exiting_for_result: false,
             scopes: Vec::new(),
+            pending_scope_result: None,
             pending_line_operation: None,
             pending_host_call: None,
             failure: None,

@@ -1293,3 +1293,88 @@ fn saved_awbc_initial_line_init_defer_rejects_forged_child_dialogue_receivers() 
         "the scoped child reached its live inner-dialogue receiver"
     );
 }
+
+#[test]
+fn native_init_scope_result_moves_only_after_suspended_cleanup() {
+    for discard in [false, true] {
+        let source = init_scope_owned_result_source(discard);
+        for cancel in [false, true] {
+            with_native_line_handle_steps(&source, |step| {
+                assert_scope_result_release_order(step, cancel)
+            });
+        }
+    }
+}
+
+#[test]
+fn saved_awbc_init_scope_result_moves_only_after_suspended_cleanup() {
+    for discard in [false, true] {
+        let source = init_scope_owned_result_source(discard);
+        for cancel in [false, true] {
+            with_saved_awbc_steps(&source, |step| {
+                assert_scope_result_release_order(step, cancel)
+            });
+        }
+    }
+}
+
+fn init_scope_owned_result_source(discard: bool) -> String {
+    let source = initial_owned_line_init_defer_source().replace(
+        "defer { let _ = actor; log.info(\"init cleanup\") }",
+        r#"let result = scope transfer {
+            defer {
+                let _ = alice()[Inner[p]] with {
+                    cancel on input(.SkipLine) { out "cancelled" }
+                    out "nested"
+                }
+                log.info("scope cleanup")
+            }
+            actor
+        }
+        let _ = result
+        log.info("scope bound")"#,
+    );
+    if discard {
+        source
+            .replace("let result = scope transfer", "let _ = scope transfer")
+            .replace("let _ = result", "")
+    } else {
+        source
+    }
+}
+
+fn assert_scope_result_release_order(
+    step: &mut dyn FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+    cancel: bool,
+) {
+    use arcweft_core::presentation::{RuntimeLineHostCommand, RuntimeStageCommand};
+    let mut cleanup_finished = false;
+    execute_nested_line_handle_transfer_at(
+        3,
+        false,
+        cancel.then_some(2),
+        &["body", "scope cleanup", "scope bound", "cleanup"],
+        |input, options| {
+            let result = step(input, options);
+            cleanup_finished |= log_messages(&result.output.effects.line)
+                .iter()
+                .any(|message| message == "scope cleanup");
+            for command in &result.output.requests.line_commands {
+                if matches!(
+                    command,
+                    RuntimeLineHostCommand::Stage(RuntimeStageCommand::ReleaseActor { .. })
+                ) {
+                    assert!(
+                        cleanup_finished,
+                        "the scope result must remain owned until suspended cleanup completes"
+                    );
+                }
+            }
+            result
+        },
+    );
+    assert!(cleanup_finished);
+}

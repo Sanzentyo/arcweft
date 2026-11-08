@@ -386,6 +386,11 @@ a received handle into another registration preserves the original issuing
 line's resource authority. Scope completion, result binding, and return wait for
 the applicable cleanup, including a cleanup suspended in another dialogue.
 
+A value-producing scope evaluates its result once and retains sole ownership
+while cleanup is suspended. Binding that result in the outer scope, or discarding
+it, happens after cleanup completes. A failed or cancelled scope exit discards
+the pending result instead of publishing it to the caller.
+
 Initial inputs and inputs shared after reveal have different lifetimes. Only
 the root values actually used by unscheduled line work are shared at reveal,
 and their complete value graphs must permit Copy. Scheduled children instead

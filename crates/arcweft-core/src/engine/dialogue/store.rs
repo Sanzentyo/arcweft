@@ -96,6 +96,8 @@ pub(crate) struct DialogueActivationFrame<
     /// Pre-reveal lexical scopes, retained with the activation transaction
     /// across host commands and deferred-child suspension.
     pub(in crate::engine) scopes: Vec<DialogueActivationScope<V>>,
+    pub(in crate::engine) pending_scope_result:
+        Option<super::scope::PendingActivationScopeResult<V>>,
     pub(in crate::engine) pending_line_operation: Option<PendingLineOperation<V>>,
     pub(in crate::engine) pending_host_call: Option<PendingActivationHostCall>,
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
@@ -119,6 +121,34 @@ type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
 impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    pub(in crate::engine) fn scope_result_handle_slots(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        activation: &DialogueActivationId,
+    ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, LineRuntimeError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        let mut slots = BTreeMap::new();
+        if let Some(pending) = &self.pending_scope_result {
+            for handle in pending
+                .value
+                .borrowed_view()
+                .line_handle_projection()
+                .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+            {
+                let slot = RuntimeOwnedSlotId::NativeDialogueScopeResult {
+                    execution,
+                    activation: *activation,
+                };
+                if slots.insert(handle.token().clone(), slot).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                }
+            }
+        }
+        Ok(slots)
+    }
+
     pub(in crate::engine) fn received_scoped_defer_slots(
         &self,
         execution: crate::runtime_id::ExecutionInstanceId,
@@ -236,6 +266,7 @@ impl Clone for NativeDialogueActivationFrameRollbackImage {
             activation_pc: self.activation_pc,
             exiting_for_result: self.exiting_for_result,
             scopes: self.scopes.clone(),
+            pending_scope_result: self.pending_scope_result.clone(),
             pending_line_operation: self.pending_line_operation.clone(),
             pending_host_call: self.pending_host_call.clone(),
             failure: self.failure.clone(),
@@ -427,9 +458,11 @@ impl DialogueActivationStoreRollbackImage {
         self.registry.try_visit_active(|_, active, _| {
             active
                 .frame
-                .admit_frame_roots(admission, |frame, admission| {
-                    frame.admit_owned_values(admission)
-                })
+                .admit_frame_roots(
+                    admission,
+                    active.frame.execution.env.function_instantiation(),
+                    |frame, admission| frame.admit_owned_values(admission),
+                )
                 .map_err(Into::into)
         })
     }
@@ -664,6 +697,17 @@ impl DialogueActivationFrame {
                 .iter()
                 .map(|scope| NativeDialogueScopeRollbackImage::from_live(scope, owner))
                 .collect::<Result<_, String>>()?,
+            pending_scope_result: self
+                .pending_scope_result
+                .as_ref()
+                .map(|pending| {
+                    Ok::<_, String>(super::scope::PendingActivationScopeResult {
+                        operation: pending.operation,
+                        scope_depth: pending.scope_depth,
+                        value: inert_dialogue_value(&pending.value, owner)?,
+                    })
+                })
+                .transpose()?,
             pending_line_operation: self
                 .pending_line_operation
                 .as_ref()
@@ -742,6 +786,16 @@ impl DialogueActivationFrame {
                 .into_iter()
                 .map(|scope| scope.into_live(owner))
                 .collect::<Result<_, String>>()?,
+            pending_scope_result: image
+                .pending_scope_result
+                .map(|pending| {
+                    Ok::<_, String>(super::scope::PendingActivationScopeResult {
+                        operation: pending.operation,
+                        scope_depth: pending.scope_depth,
+                        value: live_dialogue_value(pending.value, owner)?,
+                    })
+                })
+                .transpose()?,
             pending_line_operation: image
                 .pending_line_operation
                 .map(|pending| pending.into_live(owner))
@@ -917,6 +971,14 @@ impl DialogueActivationStore {
                     {
                         return Err(LineRuntimeError::DuplicateHandleOccurrence);
                     }
+                }
+            }
+            for (token, slot) in active
+                .frame
+                .scope_result_handle_slots(execution, activation)?
+            {
+                if token.activation() != activation && owners.insert(token, slot).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
                 }
             }
             Ok(())
@@ -1190,12 +1252,17 @@ impl DialogueActivationStore {
             active.frame.admit_reducer(activation, line, admission)
         })?;
         contour.try_visit_active(|activation, active, _| {
-            active
-                .frame
-                .admit_frame_roots(admission, |frame, admission| {
+            active.frame.admit_frame_roots(
+                admission,
+                executing_frame(activation)
+                    .unwrap_or(&active.frame.execution)
+                    .env
+                    .function_instantiation(),
+                |frame, admission| {
                     let frame = executing_frame(activation).unwrap_or(frame);
                     frame.admit_owned_values(admission)
-                })
+                },
+            )
         })?;
         Ok(contour)
     }
@@ -2050,6 +2117,7 @@ mod tests {
             activation_pc: 0,
             exiting_for_result: false,
             scopes: Vec::new(),
+            pending_scope_result: None,
             pending_line_operation: None,
             pending_host_call: None,
             failure: None,
@@ -2099,9 +2167,11 @@ mod tests {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         let first_value_error = first
-            .admit_frame_roots(&mut first_admission, |frame, admission| {
-                frame.admit_owned_values(admission)
-            })
+            .admit_frame_roots(
+                &mut first_admission,
+                first.execution.env.function_instantiation(),
+                |frame, admission| frame.admit_owned_values(admission),
+            )
             .unwrap_err()
             .to_string();
         let mut second = frame(owner.clone(), DialogueRuntimePhase::Ready);

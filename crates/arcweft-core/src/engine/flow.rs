@@ -694,6 +694,7 @@ impl Engine {
                     activation_pc: 0,
                     exiting_for_result: false,
                     scopes: Vec::new(),
+                    pending_scope_result: None,
                     pending_line_operation: None,
                     pending_host_call: None,
                     failure: None,

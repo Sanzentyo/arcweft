@@ -15,6 +15,7 @@ where
     pub(super) fn admit_frame_roots(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
         admit_execution: impl FnOnce(
             &E,
             &mut RuntimeRetainedValueAdmission,
@@ -69,6 +70,30 @@ where
                 admission,
                 crate::engine::defer::NativeDeferScopeOwner::Activation,
             )?;
+        }
+        if let Some(pending) = &self.pending_scope_result {
+            if !matches!(
+                self.phase,
+                crate::engine::DialogueRuntimePhase::Activating
+                    | crate::engine::DialogueRuntimePhase::Closing
+            ) || self.exiting_for_result
+                || self.pending_line_operation.is_some()
+                || self.pending_host_call.is_some()
+            {
+                return Err(invalid_shape(
+                    "dialogue scope result has no active scope exit",
+                    admission,
+                ));
+            }
+            pending
+                .admit(
+                    self.task_group,
+                    self.activation_pc,
+                    self.scopes.len(),
+                    binding,
+                    admission,
+                )
+                .inspect_err(|error| admission.retain_failure(error.clone()))?;
         }
         if let Some(pending) = &self.pending_line_operation {
             pending.admit_roots(admission)?;

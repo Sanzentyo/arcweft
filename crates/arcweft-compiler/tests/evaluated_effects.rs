@@ -5114,6 +5114,26 @@ fn native_line_handle_execution_at(
     cancel_reveal: Option<usize>,
     expected_logs: &[&str],
 ) {
+    with_native_line_handle_steps(source, |step| {
+        execute_nested_line_handle_transfer_at(
+            expected_lines,
+            expect_look,
+            cancel_reveal,
+            expected_logs,
+            step,
+        );
+    });
+}
+
+fn with_native_line_handle_steps<R>(
+    source: &str,
+    run: impl FnOnce(
+        &mut dyn FnMut(
+            arcweft_core::step::RuntimeStepInput,
+            arcweft_core::step::RuntimeStepOptions,
+        ) -> arcweft_core::step::RuntimeStepResult,
+    ) -> R,
+) -> R {
     use arcweft_core::{
         effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
         task::RuntimeProgramOwner,
@@ -5124,7 +5144,17 @@ fn native_line_handle_execution_at(
         Some(LINE_HANDLE_CHARACTER_MANIFEST),
         compile_project,
     )
-    .unwrap();
+    .unwrap_or_else(|error| {
+        let recovery = error.compilation_lease().map(|lease| {
+            lease
+                .tooling_lease()
+                .modules()
+                .iter()
+                .map(|module| module.hir().diagnostics())
+                .collect::<Vec<_>>()
+        });
+        panic!("{error:?}\nHIR diagnostics: {recovery:?}");
+    });
     let mut plan = compiled.runtime_plan().plan.clone();
     let flow = plan.flows()[0].id.clone();
     let artifact = blake3::hash(source.as_bytes());
@@ -5138,24 +5168,18 @@ fn native_line_handle_execution_at(
     let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
     );
-    execute_nested_line_handle_transfer_at(
-        expected_lines,
-        expect_look,
-        cancel_reveal,
-        expected_logs,
-        |input, options| {
-            let result = native.step_with_pure_backend(input, options, &mut backend);
-            assert!(
-                !matches!(
-                    native.fiber().frame.status,
-                    arcweft_core::engine::FlowFiberStatus::Failed(_)
-                ),
-                "native line handle frame failed: {:?}",
-                native.fiber().frame.status
-            );
-            result
-        },
-    );
+    run(&mut |input, options| {
+        let result = native.step_with_pure_backend(input, options, &mut backend);
+        assert!(
+            !matches!(
+                native.fiber().frame.status,
+                arcweft_core::engine::FlowFiberStatus::Failed(_)
+            ),
+            "native line handle frame failed: {:?}",
+            native.fiber().frame.status
+        );
+        result
+    })
 }
 
 #[test]
