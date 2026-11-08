@@ -15718,3 +15718,15 @@ annotation owner 4件、宣言／codec owner 1件がPASS。構築の初回list�
 native-text-inputは元のfont stack・focus ring・入力欄を保った実CLI checkとmain-profile AWFB生成まで進んだ。この具体的な検証により、旧現状行の「FontFamilyList型・Style token未達」を訂正し、現在のStyle範囲を専用1行に集約した。過去のslot41失敗とそのSource SHAは元記録に残す。これは全Style・全sample・Native／Web表示の受入ではなく、未annotation推論、残る値／factory、composition／Environment、22逆依存全件を継続する。先行Stringの8089件をこのSourceの全件合格へ転用せず、Generic Match等の既受入も未完了へ戻さない。
 
 既存142 registry recordの値を全件照合して保持した。原本 `docs/implementation/acceptance-evidence/task-style-token-source-checkpoint.raw.zip` は111 entry／5157502 bytes、SHA256 `fe2ef204634c6c3a18647d34de3a63b8052470d785846489f399dc912137640d`。実行ファイルと生成AWFBは元のbuild pathに置き、ZIPには含めない。詳細はregistryの `styleTokenSourceCheckpoint`。
+
+## 2026-11-09 — Style基本値・正確な数値演算と23逆依存統合
+
+Source `300162fe9b638be752b4661e1daf5bae85151081` は6 numeric／bool／11 closed enumを接続し、静的SourceはColor／FontFamilyListを含む20 native kindになった（Clip／MaskはNone）。decimal scalingをHIRの値型へ置き、普通のscalar reducerも同じ演算へ移した。普通のscalar profile上限は保持し、Style側はnative carrier全域を用いる。signed最小値の正のmagnitudeは構築専用型で保持してから符号を適用するため、runtime量や完成propertyへの誤出版を避ける。精度、符号、単位、範囲、suffix、native registryの全enum memberとcodec往復を確認した。type tag104／構築role9、既存StyleOperand tag0x0226とcontract version1を維持する。
+
+owner27件がPASS。初回非CLI4591件は4589 PASS／2 FAILで、対話プロファイルが旧CompileTimeScalar Lengthを期待し、RuntimePlan fixtureがruntime i64をStyle token型に使っていた。指定値・元px literal・型／effect・codec／source rangeを保つ期待へ移し、fixtureはLength／pxとColumn row-gapへ同期した。元のattributes／environment／local／全拒否条件と連続local ID確認は保持し、新しい負数構築operandのruntime流入も拒否する。production変更は0で、この2 test pathだけがworkspace gate後に変わった。修正後の非CLI全4591件は全PASS・9 SKIPで、初回の4589件と修正subsetを足した件数ではない。
+
+metadataとtarget-all treeが一致するHIR逆依存23 packageを、全feature非CLI22 packageとCLI既定へ分けた。最終CLIは711実行／707 PASS／4 FAIL／23 SKIPで、Scroll shared callable Expr15、voice absent、promotion Expr8の2件という元のID・実診断と一致する。全件の新規集計は5302実行／5298 PASS／4 FAIL／32 SKIP、最終2 run／2 feature pointのみ。旧Core範囲から3599件を投影して欠落／重複0、Style Length testの改名1件を対応付けた。追加992件には前のCore範囲に無かったHIR979件が含まれるため、新規作成992件とは記さない。元Source、catalog、実test EXE、実CLI本体を前後照合した。
+
+全98 workspaceのlocked／全target／全feature check・Clippy、構造gate、明示24 Rust pathのfmtが終了0。2 test修復後のCompiler／RuntimePlan Clippyと2 pathのfmtも終了0。native-text-inputは同じ実CLIでcheckとmain-profile AWFB生成を再確認した。残る5 value kind、Clip／Mask factory、token composition／変換・未annotation推論・Environment、残るsample移行とNative／Web操作／表示は別の未達として保持し、全体goalを理由にGeneric Match等の既受入を戻さない。
+
+既存143 registry recordを値の全件照合で保持した。原本 `docs/implementation/acceptance-evidence/task-style-native-primitives.raw.zip` は82 entry／4327446 bytes、SHA256 `bff7531160db48792cbba66964ae0387eeeb7acf1ec8c90da1e9c07bac8978f5`。実行ファイルと生成AWFBは元build pathへ保持し、ZIPには含めない。詳細はregistryの `styleNativePrimitives`。
