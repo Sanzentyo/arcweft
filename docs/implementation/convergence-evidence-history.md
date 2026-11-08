@@ -15457,3 +15457,13 @@ workspace一体の全feature catalogは2回ともOS1455／メモリ確保不足�
 4失敗のIDと診断は前Sourceと一致した。ScrollはExprId slot15のshared callable解決、fixture011は必須voiceなし、promotion2件は旧receiverなし入力がslot8の型判定で停止する。以前の8030件はそのSourceの実測として保持し、追加した5 testによる増分だけを今回の選択へ対応付けた。先行Core2327／Compiler152選択runは二重計上しない。最初の非CLI相補wrapperは、成功したcatalogの後に古い監査ファイル名を参照し、runtime前で停止した。元一覧と拒否を残し、別prefixのglobal-rest-r2で正しいgraphを照合して全件実行した。開始したとのcommentaryは、この拒否を観測した時点で訂正した。
 
 現状一覧の統合終端未確認という記載を、今回の実終端を根拠に置換した。受入済みGeneric Match／Native／Line-init／初期入力／root deferを全体goalの未達で戻さず、他platform／Tier2／Native公開save／全画像parityの最終受入は推定しない。[全選択・実binary・公開SHA・失敗・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは55 entries、SHA-256 d7c1e173c566f9d6a64fb423b58db745350b3065435c0acfd017e3c0375012e8。
+
+## 2026-11-08 — 初期所有入力のinit/scoped defer追加条件
+
+再現Source **e8d203f4e8b387c5b2ed2daaf513a0a2c986836b** の初回は0 PASS／2 FAIL／122 SKIP。Nativeはtick17の異activation拒否、保存AWBCは所有slot不一致で停止した。Native修復 **62adc6132c134a990e2dfdfef1b31b2c7501dff4** 後は154件中153 PASS／1保存AWBC FAIL、AWBCのscoped登録・unwind・保存admission修復後は **154 PASS**。元の発行元台帳と実packet／子入力の一致を、値の移動前に検証する。Source **53488624ba4d39e54a213eca28b3c84661d94761** はNativeの入れ子登録も同じprepared移送に揃え、returnが未実行cleanupを待つようにした。
+
+追加5件の初回は3 PASS／2 FAIL。Nativeの受取handle再登録と、改変保存が正しく拒否された診断を狭く限定していたテストが失敗した。後者はtyped保存の復元拒否と元snapshot一致を直接観測する形へ訂正した。次の159件は158 PASS／1 Native lexical cleanup FAIL。returnのcleanup待ちを修復すると、Nativeの明示init scope結果受取りがtick19で「active emitted lexical frameなし」へ進んだ。対話待機2件を追加した最終161件は **158 PASS／3 FAIL**。Nativeの待機は512-step内に完了せず、保存AWBCはtick51でdefer子の対話受取先を拒否する。両待機テストは最初の通常枝で停止し、取消し枝は未実行。さらに最後のrevealを取消す旧helper指定は内側対話を選ばないため、内側取消しの受入を主張する前に入力先を明示する。
+
+最終Sourceのworkspace全target／全feature check／Clippy、構造gateと8 Rust path fmtは終了0、3416入力drift0。Core53／CLIの新統合runではない。大きいscheduler／activation／AWBC line／snapshotは実スロットと取引を所有する既存境界に保ち、LOC／増分／embedded test数をrawへ保持した。既存12 tracked／6 actual untrackedは保持した。旧wrapperのheld=14 labelを現状WIP数に使わない。
+
+現状は一つの初期入力行を追加条件の結果で置換し、単純initの通過と残る3条件を混同しない。Generic Match、元のLine/init、通常deferと初期root deferの受入は維持する。過去の実測・全SHAと失敗原本を削除・上書きしない。[全記録・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは106 entries、SHA-256 959f9dad166ef6711d232385485c862ee701b52c1956ecb200da6ea3041a40e2。

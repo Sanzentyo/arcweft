@@ -44158,5 +44158,602 @@
         }
       ]
     }
+  },
+  "initialInputLineInitDefer": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "53488624ba4d39e54a213eca28b3c84661d94761",
+    "reproductionSource": "e8d203f4e8b387c5b2ed2daaf513a0a2c986836b",
+    "nativeSource": "62adc6132c134a990e2dfdfef1b31b2c7501dff4",
+    "accepted": "The additional simple initial-owned-input -> init defer condition now passes in Native and per-step public-save AWBC. The AWBC-only repair source epoch passed all 154 evaluated_effects/scoped_defer cases before additional cases were introduced. Always/completed/failed filters pass in Native and saved AWBC; saved AWBC also passes nested defer and explicit init scope cases. These bounded passes do not claim full additional-scope acceptance.",
+    "remaining": "Concrete additional conditions remain: Native explicit init scope result binding fails at tick 19 with no active emitted lexical frame; a Native init-defer child dialogue does not finish within the unchanged 512-step limit; saved AWBC init-defer child dialogue fails at tick 51 on an unsupported product-owned dialogue receiver. The waiting tests stop in their first normal branch, so their later cancellation branches did not execute. Their original cancellation selection also targets the last reveal rather than the inner dialogue and must be made explicit before claiming inner-dialogue cancellation.",
+    "initialFailure": "Initial 0 pass / 2 fail / 122 skip: Native tick 17 wrong activation; saved AWBC restore owned-slot mismatch. Native isolated followup passed, then all 154 owners had 153 pass / 1 saved-AWBC-init failure. After AWBC repair all 154 passed. The 5-case extra probe had 3 pass / 2 fail: Native nested ownership and an overly narrow test diagnostic predicate. Updating that predicate observes rejection plus unchanged state directly; it does not weaken a production acceptance condition. The next full 159-case run had 158 pass / 1 Native lexical-cleanup failure. Return cleanup then progressed to the additional explicit-scope boundary.",
+    "validation": {
+      "terminal": {
+        "version": 1,
+        "base": "62adc6132c134a990e2dfdfef1b31b2c7501dff4",
+        "run": "line-init-defer-20261108.scoped-owners-r3.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   8.845s] 161 tests run: 158 passed, 3 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 161,
+        "passed": 158,
+        "failed": 3,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3416,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "ordinary_defer::native_initial_owned_line_init_defer_preserves_nested_scopes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "ordinary_defer::native_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "ordinary_defer::saved_awbc_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-08T00:00:16.5791909Z"
+      },
+      "gates": "workspace all-target/all-feature check and Clippy, canonical structure gate, 8 Rust paths fmt exit 0; existing warnings retained",
+      "sourceInputs": 3416,
+      "sourceDrift": 0,
+      "scope": "This 161-case owner result is not a new full Core/Core53/CLI primary matrix."
+    },
+    "corrections": "No prior accepted boundary is reopened. Generic Match, original Line/init, ordinary defer and initial root-defer acceptance remain as recorded. The newly failing Source inputs identify the exact extra boundaries above. The forged-save test initially rejected a valid rejection diagnostic (fiber function/layout validation); all eight coordinate/removal/duplication mutations now require refusal and preserve the original snapshot, then complete the original execution.",
+    "originalWork": {
+      "tracked": 12,
+      "untracked": 6,
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "note": "Focused historical wrapper held=14 metadata is not the actual independently checked WIP count."
+    },
+    "raw": {
+      "path": "task-initial-line-init-defer.raw.zip",
+      "sha256": "959f9dad166ef6711d232385485c862ee701b52c1956ecb200da6ea3041a40e2",
+      "entries": [
+        {
+          "entry": "initial-input-line-init-defer-regressions.rs.fragment",
+          "bytes": 985,
+          "sha256": "b6fea555fb3f1a6c7d7511290c8c6fcc5af782b1445b527907c028df590fbec4"
+        },
+        {
+          "entry": "initial-input-line-scoped-defer-regressions.rs.fragment",
+          "bytes": 6809,
+          "sha256": "d7c94be083086acb6897116d1c7e57cb967025c8abe5c7b3765e6cbbea70d628"
+        },
+        {
+          "entry": "initial-input-line-scoped-wait-regressions.rs.fragment",
+          "bytes": 1368,
+          "sha256": "16f486a0cc2d45250bbdba744af53d1a178761e21ad7e9c41f140f9573542bd7"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-check-r1.exit",
+          "bytes": 3,
+          "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-check-r1.log",
+          "bytes": 73522,
+          "sha256": "7d2b87a7a1f4d44c7eb14aece014b0678332a08265e22c8d28e755cbbdbfb7e3"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.binaries-before.json",
+          "bytes": 477,
+          "sha256": "60e3bca4dc36a362b9a6348db2f6d3545668546ea912894ebd247cc9425a7730"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.catalog.inventory.json",
+          "bytes": 38515,
+          "sha256": "01123d004059b0f493b9e7dfbde44c345c1be4152c5e1308f97de14caf2ad822"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.catalog.json",
+          "bytes": 619,
+          "sha256": "e076ac7fdefed5bf74c20ebace8101ed3c1f1881f52d57a3b523dd41986b5e0f"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.catalog.log",
+          "bytes": 113051,
+          "sha256": "67299db8884d9dcee1f71c90eda87c09a8ef468d56cb5c37deaaedeeb97f6d59"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.runtime.json",
+          "bytes": 711,
+          "sha256": "43cd7889924e949d37c028f52d9ead18cda8020366bd84fc315fc00e7e603ff2"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.runtime.log",
+          "bytes": 132210,
+          "sha256": "1c46816aed8d22a2f13f380fef956808f97e281715bbade328fc5bec9fd54a62"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.runtime.terminal-audit.json",
+          "bytes": 624,
+          "sha256": "f07c71c9a15ec27113dde711b18eca1bfff254a330f6cc46b4519b863d6af341"
+        },
+        {
+          "entry": "line-init-defer-20261108.awbc-owners-r1.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "16ce8f77c0b51e87a0e6b6387b5850a9426278b2ae5b8daba12294c8f37ea535"
+        },
+        {
+          "entry": "line-init-defer-20261108.delivery-source.message.txt",
+          "bytes": 877,
+          "sha256": "6238d768b099f0ca8b1c0920f75d25846437ca11a98b0e956cccec511731ce3b"
+        },
+        {
+          "entry": "line-init-defer-20261108.delivery-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-init-defer-20261108.delivery-source.owned.txt",
+          "bytes": 438,
+          "sha256": "6cac6275fb51a9c7e10f2cc3b637f780dba2dd460e65456bb5520d48cbde2d13"
+        },
+        {
+          "entry": "line-init-defer-20261108.delivery-source.pathspec",
+          "bytes": 429,
+          "sha256": "abbf5da0b957a5b549a34dc4ca28d521487dba536d9db8018e5487662334f83b"
+        },
+        {
+          "entry": "line-init-defer-20261108.delivery-source.prepared.json",
+          "bytes": 2397,
+          "sha256": "02f35870b75512698a2db671ebc72b4ca093e94165b684d7b407beb4efe3cb3e"
+        },
+        {
+          "entry": "line-init-defer-20261108.delivery-source.reviewed.patch",
+          "bytes": 61974,
+          "sha256": "cf38842d7a5c31cb11b5350c5479bcf0f10001d5902b15609d332903b9551933"
+        },
+        {
+          "entry": "line-init-defer-20261108.delivery-source.verified.json",
+          "bytes": 1799,
+          "sha256": "72a7841fb6f785f985aa8f8a57b6e3b5f118bd1841fb3779440e2617bdd3e04c"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.binaries-before.json",
+          "bytes": 230,
+          "sha256": "2f0f3fc73209ed251b69a329bc6f69f6c6acd855d06509feda5d7eea167566c6"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.catalog.inventory.json",
+          "bytes": 31459,
+          "sha256": "fbfa204fcadae531637fcfe19621c1122e66d1af99989ef311f58a7f5cd26205"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.catalog.json",
+          "bytes": 649,
+          "sha256": "1adcac4a7919c716db6768bd8324469d30328594d025029ee286616093805757"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.catalog.log",
+          "bytes": 109576,
+          "sha256": "9c458e2c3c3c50f2e9679430998328a641684c2a1f32ef35644d26f689ecb401"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.runtime.json",
+          "bytes": 743,
+          "sha256": "f626176cbe76b22f41a43f52302187343f270e89274f26ddfde76496a39e1e1a"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.runtime.log",
+          "bytes": 126151,
+          "sha256": "d49eb098e5d4a5408c92c074bb2d34d694eaece7f4e7947913d8e8df1397ac93"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.runtime.terminal-audit.json",
+          "bytes": 1003,
+          "sha256": "5a9e7708c0be34550087875c4e532eda1379f2a632a746deefa4bd48bc52e89c"
+        },
+        {
+          "entry": "line-init-defer-20261108.first.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "d330a7433c114477c162b626e32bf28bbb5929df89c9040c0a6f30fd5f75d25b"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-check-r1.log",
+          "bytes": 12068,
+          "sha256": "63da4607dc8044fb058680550a42caddb3cc4e33d977447f7abaee05c9bb071d"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-check-r1.log.exit",
+          "bytes": 3,
+          "sha256": "16dc368a89b428b2485484313ba67a3912ca03f2b2b42429174a4f8b3dc84e44"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-clippy.exit",
+          "bytes": 3,
+          "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-clippy.log",
+          "bytes": 4957194,
+          "sha256": "614e469881076d0773b1979f061e9da589bf81d95c3124fef69c3a6535e1a1b9"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.binaries-before.json",
+          "bytes": 477,
+          "sha256": "3b192aae1e6a756e59aa7788d8f2f7fb27e0d9db78f66c57b3e71963bbac2ec0"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.catalog.inventory.json",
+          "bytes": 38515,
+          "sha256": "01123d004059b0f493b9e7dfbde44c345c1be4152c5e1308f97de14caf2ad822"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.catalog.json",
+          "bytes": 618,
+          "sha256": "b4f378fd040803ec6841e67ce2cfd657818eff9892df6b29dd88716493cdda8b"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.catalog.log",
+          "bytes": 111364,
+          "sha256": "ac2bd907c72a6fdd9674157fd8b3d2c04afe41306bf279fe6eca295afe1c4332"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.runtime.json",
+          "bytes": 712,
+          "sha256": "735200a00861b17f2fe2216906d080d67d7641a80d809d7a1b830e49bb8c7921"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.runtime.log",
+          "bytes": 132949,
+          "sha256": "95a5b0d40fe41732f1b4629e66df82c53b23436b29afc687f3cd44b82ff04127"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.runtime.terminal-audit.json",
+          "bytes": 829,
+          "sha256": "873eb8cb83b8203ba8154217a89ca6ef230c17ad232ececd36105922ef3badbb"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-owners.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "ae41284787ce074916efb8389ec65a57fddabbc1e86775becc825f489d022662"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.binaries-before.json",
+          "bytes": 230,
+          "sha256": "73afac3401ba48a8806d7eeba9fedbb8b8c1ac68721fcc78ce1ce6b4d7effa93"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.catalog.inventory.json",
+          "bytes": 31460,
+          "sha256": "496ad7c9221a49ef7a9a261798dfd91963ca4139cd63bc69172837c7a2f4c167"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.catalog.json",
+          "bytes": 660,
+          "sha256": "fbb9142b32c59535d1930ed84f134d888c5524187af3e807d9395694652dc889"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.catalog.log",
+          "bytes": 111278,
+          "sha256": "5a09d0d429a47cab9d4c438f95802d44ee63ab04f1a612bc850bc2b9c5bcf742"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.runtime.json",
+          "bytes": 752,
+          "sha256": "fdfaff67d72bd872a21833364247bfd26ff7fc0353b90719d06406c151cfa7d3"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.runtime.log",
+          "bytes": 124652,
+          "sha256": "86d806549863d92b45afdbe1924aff17ce952f729a39d46fe8daca7b140f877b"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.runtime.terminal-audit.json",
+          "bytes": 614,
+          "sha256": "148c67099ea3bb0836bdfa2b0eff8fd6a2c8c4cf4d1b121127989d7a0f177a7f"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-r1.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "163b403ddc1646a0f8db7d5d1a249bfe2cdd5caa876f199cc611098e78563b4e"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-source.message.txt",
+          "bytes": 559,
+          "sha256": "b41abb35ef319c1fb4fb8999079b0a5f032f9ff3d0b659803b9e232ade644cd5"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-source.owned.txt",
+          "bytes": 180,
+          "sha256": "de23af03d9c0d189ea8a0396b3e02cdf7b9282e339c93f27ccd296150bce9f5b"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-source.pathspec",
+          "bytes": 176,
+          "sha256": "9521543edce8da55fb55427214347b5e43f5de3805569e2286d7e202a58f8d84"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-source.prepared.json",
+          "bytes": 1689,
+          "sha256": "17147fdddc2ad080865f1f8efc79654adb247c9fb66641a0249336345c315ce4"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-source.reviewed.patch",
+          "bytes": 19539,
+          "sha256": "7bfd31cf65bf3c1d7d705b6af67de383fdcfc0710b4e2b10acd4d994879edc37"
+        },
+        {
+          "entry": "line-init-defer-20261108.native-source.verified.json",
+          "bytes": 1091,
+          "sha256": "bd60ae6bee45959ffc21aaab146124ff625660696dea6957b5a36439afc838cc"
+        },
+        {
+          "entry": "line-init-defer-20261108.nested-check-r1.exit",
+          "bytes": 3,
+          "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+        },
+        {
+          "entry": "line-init-defer-20261108.nested-check-r1.log",
+          "bytes": 73522,
+          "sha256": "f204173c46d1d6565b29ae8be5f1f858782eb312140385431e44e715d5d9e84d"
+        },
+        {
+          "entry": "line-init-defer-20261108.ownership-review.json",
+          "bytes": 2939,
+          "sha256": "2594c8b6baad8568487feb0f8a5af082a61b3472aa40a78bfcab5c86fc74148f"
+        },
+        {
+          "entry": "line-init-defer-20261108.regression-source.message.txt",
+          "bytes": 70,
+          "sha256": "35ad199d6355fb82decd6c87027a84613b8813216d962f893488e896c9bb1958"
+        },
+        {
+          "entry": "line-init-defer-20261108.regression-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-init-defer-20261108.regression-source.owned.txt",
+          "bytes": 66,
+          "sha256": "a08079b8dc10f2cf877aa1e758d416350226bda2b73b9f74383b0faf39f640a1"
+        },
+        {
+          "entry": "line-init-defer-20261108.regression-source.pathspec",
+          "bytes": 66,
+          "sha256": "5688552ed8f80d17630dc784942987f1ca8db1a06f7e9b1f20bce1957b47569c"
+        },
+        {
+          "entry": "line-init-defer-20261108.regression-source.prepared.json",
+          "bytes": 1306,
+          "sha256": "391724c05bef249d367478d9e7a314d78a5f5d54a458154c2ef769ca7bc08e0f"
+        },
+        {
+          "entry": "line-init-defer-20261108.regression-source.reviewed.patch",
+          "bytes": 1631,
+          "sha256": "c24498535ae8326159088f0f967805fe477a6daa7492051f6832c8e15916db36"
+        },
+        {
+          "entry": "line-init-defer-20261108.regression-source.verified.json",
+          "bytes": 708,
+          "sha256": "e788851ff799d0c0c32dbafb9f9c05fc5791f453f99286a8d227b35cd6f42268"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.binaries-before.json",
+          "bytes": 230,
+          "sha256": "814591033391aeb91272481631efb4497ec157c90e4fa135b822163c85ee5846"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.catalog.inventory.json",
+          "bytes": 32758,
+          "sha256": "c3f7d17061a1c2a4e1c648ef58a5f1f32f3233602f5ee0b20240b10aa67a6bde"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.catalog.json",
+          "bytes": 688,
+          "sha256": "5eca83da4984c35ad983c3057e52e7a23cbf11c07e5f024f10662b986595607b"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.catalog.log",
+          "bytes": 110594,
+          "sha256": "03ec7ef927b6488c1adf85e6223d512d4c4d579b94ff05102e02190c03662282"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.runtime.json",
+          "bytes": 782,
+          "sha256": "d7b1c596044dfa7a43c851ddf4957c99ea809b936b03d30435e61fdd7e2e5516"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.runtime.log",
+          "bytes": 127843,
+          "sha256": "7054143d45e165b430b4be3a7c028db4fd52b31814a98cecf5cede157faeee55"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.runtime.terminal-audit.json",
+          "bytes": 1021,
+          "sha256": "8fca9b323b0481c393cf723e794698882eab07e8129b604f7fb7670ba19226c0"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-auth-r1.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "31a6cc0413cc353d35b5529ac12c79d86e4e50fef3f509f2c4cd2d93af23b8b8"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.binaries-before.json",
+          "bytes": 477,
+          "sha256": "d15628d8392899c26b4e295a6133745adce4e1a21e21b1bf9d572ff2567dce52"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.catalog.inventory.json",
+          "bytes": 39812,
+          "sha256": "8e4ecf0213e9332babea554204c663e1692deb385b481e3c85621bb68f47dcfe"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.catalog.json",
+          "bytes": 621,
+          "sha256": "c6e0ebca971f79f37370bb39fab4099adbfec5b748c7cbc214eefe0673412687"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.catalog.log",
+          "bytes": 113803,
+          "sha256": "bb7843754893cd05913b0ef008a2fb80c30c3e51779db9495549126acab4372d"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.runtime.json",
+          "bytes": 715,
+          "sha256": "868d94476adb91ffac93dd6743b55e5c4a08da53ca91ad455ca799e250cf49a8"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.runtime.log",
+          "bytes": 134533,
+          "sha256": "e872e8831ae74d79ecd26c15047aac986b5458dd51776c4b9242d3c73215da57"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.runtime.terminal-audit.json",
+          "bytes": 832,
+          "sha256": "9643ece1278fb3017b110b5bf85ac5803654cc59955824fef303c8dd38b5cef3"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r2.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "1bbcc4a23a688f81124171cb72acaad8432f8303271445f2a139094fed1f9180"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.binaries-before.json",
+          "bytes": 477,
+          "sha256": "c08499d1da98733ad62237a86c8e3b734bd798838febd2a766cf61658880e4a5"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.catalog.inventory.json",
+          "bytes": 40376,
+          "sha256": "6741de900b25f0d47523eabf504099c4c459016d3690c715a5664260d33e0dd1"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.catalog.json",
+          "bytes": 621,
+          "sha256": "59e04736289dc4d8d9a5436af9709aa47ff9a88a5e3f6c6e6cb2bf1fb1b5ba27"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.catalog.log",
+          "bytes": 114149,
+          "sha256": "4cd480f338b01500e69ff67fde740a54f01fcfb80cf54bb706701040946644fd"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.runtime.json",
+          "bytes": 715,
+          "sha256": "6384d3dd81c7ce01854b1583f6a553791a62d0851ad987ef7eef9712ef5900ff"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.runtime.log",
+          "bytes": 137297,
+          "sha256": "b13ebfe29cc37ac245d7be309a9bddb290d62fd4c3ca141a5245fa68548256d6"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.runtime.terminal-audit.json",
+          "bytes": 1264,
+          "sha256": "2f7e8d2ebfcb3cc46be4ee0bdf01b78fb752d4053de01a3e01c158185c16ed0c"
+        },
+        {
+          "entry": "line-init-defer-20261108.scoped-owners-r3.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "9c1b98a9692561459337d8cd1345fab534aefaaee5d3aa284c58a2106e2dba58"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.check.log",
+          "bytes": 113577,
+          "sha256": "5256b913647233b2bc065b8618169556164ab591057ac16e06a45aefb6793b56"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.check.receipt.json",
+          "bytes": 338,
+          "sha256": "5ea65bbeed2c9caaa6a5ca30507dcd098870ae064b120c7641ec2e32b28deada"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.clippy.log",
+          "bytes": 9172546,
+          "sha256": "9237614ec3ad2d556c5ee790d23baff9cac8d3454c94eb4e7b1acb07a5679c78"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "546140929776b5fae75aee674aa41b69a9978116fd72d832ce6a67c642ffaec1"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.fmt.receipt.json",
+          "bytes": 557,
+          "sha256": "65050d689436c3c783e882b193fb549c2486d9425d0f979f90fb60fca3e50b63"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.source.json",
+          "bytes": 605889,
+          "sha256": "5d961ca337ebbf52550c2615bfd5a8258b0b219eb0004d665718fb5efae99769"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.structure.log",
+          "bytes": 65959,
+          "sha256": "f7111f3f17d19fbc556bfa27ab2a49150835aeae1755548b206f99a86ddfb6b6"
+        },
+        {
+          "entry": "line-init-defer-20261108.workspace-quality-r1.structure.receipt.json",
+          "bytes": 508,
+          "sha256": "0c3e252af9c356ffcca3b7b6c687282f9a9d9ef99e86b5687c5e60d5ab3348e9"
+        },
+        {
+          "entry": "record-line-init-defer-20261108.ps1",
+          "bytes": 14074,
+          "sha256": "a57115dd4a791e5be46dca3b0577676646df3f3bcd1f1caab3844f001ed2afe3"
+        },
+        {
+          "entry": "run-line-init-workspace-quality-20261108.ps1",
+          "bytes": 2028,
+          "sha256": "49f6ff063e7d16616b0ddf60a9751002335b0118de88a9885a4dfa196d800426"
+        },
+        {
+          "entry": "run-line-root-frozen-nextest-20261108.ps1",
+          "bytes": 3803,
+          "sha256": "5cbce63b02812b6192755720659bff3e7d0bf18eadf87ee97d53143589b016b8"
+        },
+        {
+          "entry": "structure-report/dependency_edges.csv",
+          "bytes": 78209,
+          "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+        },
+        {
+          "entry": "structure-report/file_metrics.csv",
+          "bytes": 342424,
+          "sha256": "226083c1b87c16c1d281d09593adda154345ddda14204f7d3d5c27bb04356079"
+        },
+        {
+          "entry": "structure-report/findings.md",
+          "bytes": 124015,
+          "sha256": "d5e70daad51198668083299314d464076799fe6ad6f3e0deb052e87ceaf465ca"
+        },
+        {
+          "entry": "structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+        },
+        {
+          "entry": "structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "faa5ddc30be32585bf47b6c06a3e68eef4b0d7b67083510d5e7e71f04a36f290"
+        }
+      ]
+    }
   }
 }
