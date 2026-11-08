@@ -56,27 +56,64 @@ impl Engine {
     pub(super) fn goto(
         &mut self,
         target: &FlowRuntimeId,
-        mut source: Option<NativeGotoOrigin>,
+        source: Option<NativeGotoOrigin>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        if self.flow_index(target).is_none() {
-            self.fiber.frame.status =
-                FlowFiberStatus::Failed(format!("missing goto target {target}"));
-            return;
-        }
+        self.start_flow_transfer(
+            &crate::plan::RuntimeFlowTransfer::static_without_arguments(target.clone()),
+            source,
+            output,
+            pure_backend,
+        );
+    }
+
+    pub(super) fn start_flow_transfer(
+        &mut self,
+        transfer: &crate::plan::RuntimeFlowTransfer<crate::value::RuntimeExpr>,
+        source: Option<NativeGotoOrigin>,
+        output: &mut RuntimeStepOutput,
+        backend: &mut impl RuntimeCallBackend,
+    ) {
+        let target = match &transfer.target {
+            crate::plan::RuntimeFlowTransferTarget::Static(target) => target.clone(),
+            crate::plan::RuntimeFlowTransferTarget::Dynamic(expression) => {
+                match self.evaluate_entity_target(expression, backend) {
+                    Ok(target) => target,
+                    Err(error) => {
+                        self.fail_format_aware_eval(error, output, backend);
+                        return;
+                    }
+                }
+            }
+        };
         let plan = std::sync::Arc::clone(&self.plan);
-        let declaration = match plan.validate_flow_invocation(target, &[]) {
-            Ok(declaration) => declaration,
+        let (site, _) = match plan.validate_flow_transfer_shape(&target, transfer) {
+            Ok(admission) => admission,
             Err(error) => {
-                self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());
+                self.fail_eval(
+                    crate::value::RuntimeEvalError::FlowInvocation(Box::new(error)),
+                    output,
+                );
                 return;
             }
         };
-        let pending_ops = match self.prepare_function_root_work(declaration.site()) {
-            Ok(work) => work,
+        // Original body construction is admitted while every source owner is
+        // still in its caller slot.
+        if let Err(error) = self.prepare_function_root_work(site) {
+            self.fail_eval(error, output);
+            return;
+        }
+        let source_instantiation = self.fiber.frame.env.function_instantiation_lease().cloned();
+        let (transfer, type_instantiation) = match self
+            .fiber
+            .frame
+            .env
+            .transfer_flow_inputs(&plan, &target, transfer)
+        {
+            Ok(inputs) => inputs,
             Err(error) => {
-                self.fail_eval(error, output);
+                self.fail_format_aware_eval(error, output, backend);
                 return;
             }
         };
@@ -87,33 +124,75 @@ impl Engine {
             self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
                 target: scope,
                 action: NativeLexicalExitAction::Goto {
-                    source: source.take().expect("the authored goto retains its source"),
-                    destination: target.clone(),
+                    source: source.expect("the authored transfer retains its original operation"),
+                    transfer,
+                    source_instantiation,
+                    type_instantiation,
                 },
             });
-            return;
+        } else {
+            self.activate_flow_transfer(transfer, source, type_instantiation, output, backend);
         }
+    }
+
+    pub(super) fn activate_flow_transfer(
+        &mut self,
+        transfer: crate::plan::RuntimeFlowTransfer<crate::value::RuntimeValue>,
+        source: Option<NativeGotoOrigin>,
+        type_instantiation: Option<
+            std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
+        >,
+        output: &mut RuntimeStepOutput,
+        backend: &mut impl RuntimeCallBackend,
+    ) {
+        let crate::plan::RuntimeFlowTransferTarget::Static(target) = &transfer.target else {
+            unreachable!("a prepared transition retains its resolved original Flow");
+        };
+        let target = target.clone();
+        let plan = std::sync::Arc::clone(&self.plan);
+        let (declaration, input_order) = plan
+            .validate_flow_transfer_inputs(&target, &transfer)
+            .expect("unchanged prepared inputs retain their admitted original target ABI");
+        assert_eq!(
+            declaration.type_instantiation, type_instantiation,
+            "prepared transfer retains its original function instantiation"
+        );
+        let pending_ops = self
+            .prepare_function_root_work(declaration.site())
+            .expect("the immutable receiving body was admitted before moving any input");
         self.fiber.frame.await_observer = None;
-        if let Err(error) = self.unwind_control_stack(output, pure_backend) {
+        if let Err(error) = self.unwind_control_stack(output, backend) {
             self.fail_eval(error, output);
             return;
         }
+        let mut arguments = vec![None; transfer.arguments.len()];
+        for argument in transfer.arguments {
+            arguments[argument.parameter.position() as usize] = Some(argument.value);
+        }
+        let arguments = arguments
+            .into_iter()
+            .map(|value| value.expect("the admitted input permutation covers every formal"))
+            .collect();
+        let staged = declaration
+            .stage_owned_inputs(crate::value::RuntimeCallableInvocation {
+                body: crate::value::RuntimeCallableBodyReference::Plan(declaration.site()),
+                captures: Vec::new(),
+                arguments,
+                input_order,
+            })
+            .expect("the unchanged input patterns were admitted before any Move or cleanup");
         if let Some(FlowOp::Effect(effect @ LineEffectRequest::Goto(_))) =
             source.as_ref().and_then(|source| match source {
                 NativeGotoOrigin::Operation(source) => source.operation(&plan),
                 NativeGotoOrigin::Choice { .. } => None,
             })
         {
-            self.emit_line_effect(effect.clone(), output, pure_backend);
+            self.emit_line_effect(effect.clone(), output, backend);
         }
-        output.flow_events.push(FlowEvent::Goto {
-            target: target.clone(),
-        });
-        self.fiber.frame.bind_root_function(
-            declaration.site(),
-            declaration.type_instantiation.clone(),
-            ([], crate::value::RuntimeInputOrder::canonical(0)),
-        );
+        output.flow_events.push(FlowEvent::Goto { target });
+        self.fiber
+            .frame
+            .bind_root_function(declaration.site(), type_instantiation, staged);
         self.fiber.frame.pending_ops = pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
     }

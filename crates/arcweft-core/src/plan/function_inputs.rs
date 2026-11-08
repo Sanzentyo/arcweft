@@ -145,6 +145,79 @@ impl std::ops::Deref for RuntimeFunctionInputAdmission<'_> {
 }
 
 impl RuntimePlan {
+    /// Restores only the retained input obligations, not an executable
+    /// activation. No live value or binding capability is materialized here.
+    pub(crate) fn admit_retained_flow_transfer_inputs<V: crate::value::RuntimeStoredValue>(
+        &self,
+        flow: &super::FlowRuntimeId,
+        transfer: &super::RuntimeFlowTransfer<V>,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        let work = admission.work();
+        let invalid = |message: String| {
+            work.failure().map_or_else(
+                || crate::value::AwbcRuntimeValueSnapshotError::Message { message },
+                crate::value::AwbcRuntimeValueSnapshotError::from,
+            )
+        };
+        let (site, _) = self
+            .validate_flow_transfer_shape(flow, transfer)
+            .map_err(|error| invalid(error.to_string()))?;
+        self.validate_function_instantiation(site, binding, &work)
+            .map_err(|error| invalid(error.to_string()))?;
+        let declaration = self
+            .function_sites()
+            .get(site)
+            .expect("Flow transfer shape admission retains the original function site");
+        admission.validate_metadata_collection(declaration.inputs().len())?;
+        let parameters = declaration.parameter_inputs().collect::<Vec<_>>();
+        if declaration.capture_inputs().next().is_some()
+            || parameters.len() != transfer.arguments.len()
+        {
+            return Err(invalid(
+                "retained Flow inputs differ from the complete function ABI".into(),
+            ));
+        }
+        for (index, parameter) in parameters.iter().enumerate() {
+            if !matches!(parameter.source(), RuntimeFunctionInputSource::Parameter { position, .. } if position as usize == index)
+            {
+                return Err(invalid(
+                    "Flow parameter rows are not in their original ABI order".into(),
+                ));
+            }
+        }
+        for argument in &transfer.arguments {
+            let parameter = parameters[argument.parameter.position() as usize];
+            let expected = self
+                .local_declarations()
+                .get(parameter.input_local())
+                .and_then(|local| self.type_table().get(local.ty()))
+                .ok_or_else(|| invalid("Flow input has no original local type".into()))?
+                .semantic_identity();
+            if parameter.ownership() == RuntimeValueOwnershipRequirement::Unrestricted {
+                admission.validate_typed_borrowed_in_invocation(
+                    argument.value.borrowed_value(),
+                    expected,
+                    binding,
+                )?;
+            } else {
+                admission.validate_owned_typed_borrowed_in_invocation(
+                    argument.value.borrowed_value(),
+                    expected,
+                    binding,
+                )?;
+            }
+            crate::pattern::admit_retained_pattern_inputs(
+                parameter.pattern(),
+                argument.value.borrowed_value(),
+                parameter.unrestricted_bindings(),
+                admission,
+            )?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate_function_instantiation(
         &self,
         site: RuntimeFunctionSiteId,

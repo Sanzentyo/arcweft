@@ -25,6 +25,27 @@ pub struct RuntimeFlowTransfer<E> {
 }
 
 impl<E> RuntimeFlowTransfer<E> {
+    pub(crate) fn borrowed(&self) -> RuntimeFlowTransfer<&E> {
+        let target = match &self.target {
+            RuntimeFlowTransferTarget::Static(target) => {
+                RuntimeFlowTransferTarget::Static(target.clone())
+            }
+            RuntimeFlowTransferTarget::Dynamic(target) => {
+                RuntimeFlowTransferTarget::Dynamic(target)
+            }
+        };
+        RuntimeFlowTransfer {
+            target,
+            arguments: self
+                .arguments
+                .iter()
+                .map(|argument| RuntimeFlowParameterBinding {
+                    parameter: argument.parameter,
+                    value: &argument.value,
+                })
+                .collect(),
+        }
+    }
     pub(crate) fn expressions(&self) -> impl Iterator<Item = &E> {
         let target = match &self.target {
             RuntimeFlowTransferTarget::Static(_) => None,
@@ -84,5 +105,35 @@ impl<E> RuntimeFlowTransfer<E> {
             })
             .collect::<Result<Box<[_]>, Error>>()?;
         Ok(RuntimeFlowTransfer { target, arguments })
+    }
+}
+
+impl RuntimeFlowTransfer<crate::value::RuntimeExpr> {
+    /// Argument evaluation is owned by caller operations. The transition
+    /// consumes complete, distinct slots only after joint admission succeeds.
+    pub(crate) fn input_local(
+        argument: &RuntimeFlowParameterBinding<crate::value::RuntimeExpr>,
+    ) -> Result<crate::runtime_id::RuntimeLocalDeclarationId, super::RuntimeFlowInvocationError>
+    {
+        if let crate::value::RuntimeExprKind::Local(read) = argument.value.kind()
+            && read.mode() == crate::value::RuntimeLocalReadMode::Move
+            && read.fields().is_empty()
+        {
+            return Ok(read.local());
+        }
+        Err(super::RuntimeFlowInvocationError::TransferInputSource {
+            parameter: argument.parameter,
+        })
+    }
+
+    pub(crate) fn validate_input_sources(&self) -> Result<(), super::RuntimeFlowInvocationError> {
+        let mut unique = std::collections::BTreeSet::new();
+        for argument in &self.arguments {
+            let local = Self::input_local(argument)?;
+            if !unique.insert(local) {
+                return Err(super::RuntimeFlowInvocationError::DuplicateTransferInput { local });
+            }
+        }
+        Ok(())
     }
 }

@@ -107,6 +107,27 @@ impl RuntimeValueOwnershipRequirement {
         }
         Ok(())
     }
+
+    /// Applies an additional custody obligation to an already admitted graph.
+    /// Relation work is shared; physical value quotas are not charged twice.
+    pub(crate) fn admit_admitted(
+        self,
+        value: super::RuntimeValueView<'_>,
+        work: &crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<(), RuntimeValueOwnershipAdmissionError> {
+        let mut affine = false;
+        crate::entry::schema::value_encoding::visit_admitted_storage::<
+            crate::entry::RuntimeSchemaError,
+        >(value, work, |node| {
+            affine |= !self.accepts(node.intrinsic_ownership());
+            Ok(())
+        })
+        .map_err(|error| RuntimeValueOwnershipAdmissionError::Resource(Box::new(error)))?;
+        if affine {
+            return Err(RuntimeValueOwnershipAdmissionError::AffineValue);
+        }
+        Ok(())
+    }
 }
 
 /// One typed affine line handle with its canonical path in the containing

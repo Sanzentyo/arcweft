@@ -808,12 +808,12 @@ fn native_goto_finishes_inner_and_caller_cleanup_before_transferring() {
             }
             let image = engine.inert_rollback_image().unwrap();
             if let Some(exit) = &image.fiber.frame.lexical_exit
-                && let NativeLexicalExitAction::Goto {
-                    destination: pending,
-                    ..
-                } = &exit.action
+                && let NativeLexicalExitAction::Goto { transfer, .. } = &exit.action
             {
-                assert_eq!(pending, &destination);
+                assert_eq!(
+                    transfer.target,
+                    crate::plan::RuntimeFlowTransferTarget::Static(destination.clone())
+                );
                 assert!(!transferred);
                 if engine.fiber.frame.active_function().is_some() {
                     if !observed_inside_call {
@@ -827,23 +827,24 @@ fn native_goto_finishes_inner_and_caller_cleanup_before_transferring() {
                             .target += 1;
                         assert!(Engine::from_rollback_image(wrong_scope, &owner).is_err());
                         let mut wrong_destination = image.clone();
-                        let NativeLexicalExitAction::Goto { destination, .. } =
-                            &mut wrong_destination
-                                .fiber
-                                .frame
-                                .lexical_exit
-                                .as_mut()
-                                .unwrap()
-                                .action
+                        let NativeLexicalExitAction::Goto { transfer, .. } = &mut wrong_destination
+                            .fiber
+                            .frame
+                            .lexical_exit
+                            .as_mut()
+                            .unwrap()
+                            .action
                         else {
                             unreachable!()
                         };
-                        *destination = FlowRuntimeId::canonical(if case == GotoCase::Dynamic {
-                            "test.goto_needs_argument"
-                        } else {
-                            "test.goto_alternate"
-                        })
-                        .unwrap();
+                        transfer.target = crate::plan::RuntimeFlowTransferTarget::Static(
+                            FlowRuntimeId::canonical(if case == GotoCase::Dynamic {
+                                "test.goto_needs_argument"
+                            } else {
+                                "test.goto_alternate"
+                            })
+                            .unwrap(),
+                        );
                         assert!(Engine::from_rollback_image(wrong_destination, &owner).is_err());
                     }
                     observed_inside_call = true;

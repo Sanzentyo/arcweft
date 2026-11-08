@@ -344,6 +344,19 @@ impl RuntimeRetainedValueAdmission {
         result.inspect_err(|error| self.retain_failure(error.clone()))
     }
 
+    /// A retained pattern can require Copy of one already admitted projection
+    /// without constructing a live capability or refreshing the value bank.
+    pub(crate) fn validate_admitted_unrestricted_borrowed(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        let result = crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
+            .admit_admitted(value.value, &self.work())
+            .map_err(AwbcRuntimeValueSnapshotError::from);
+        result.inspect_err(|error| self.retain_failure(error.clone()))
+    }
+
     /// An enclosing owning field may retain affine custody as inert data.
     /// This inspection grants no Copy entitlement and never constructs a value.
     pub(crate) fn validate_owned_borrowed(

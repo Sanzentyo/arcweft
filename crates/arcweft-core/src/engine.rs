@@ -1003,7 +1003,33 @@ fn flow_fiber_line_handle_owners(
                 value,
             )
         });
-    for (owner, value) in result.into_iter().chain(pending_return) {
+    let pending_flow_inputs = fiber
+        .frame
+        .lexical_exit
+        .as_ref()
+        .and_then(|exit| match &exit.action {
+            defer::NativeLexicalExitAction::Goto { transfer, .. } => {
+                Some(transfer.arguments.as_ref())
+            }
+            _ => None,
+        })
+        .into_iter()
+        .flatten()
+        .map(|argument| {
+            (
+                RuntimeOwnedSlotId::NativePendingFlowInput {
+                    execution: fiber.execution,
+                    fiber: fiber.persistent_id,
+                    parameter: argument.parameter,
+                },
+                &argument.value,
+            )
+        });
+    for (owner, value) in result
+        .into_iter()
+        .chain(pending_return)
+        .chain(pending_flow_inputs)
+    {
         for handle in value
             .view()
             .line_handle_projection()

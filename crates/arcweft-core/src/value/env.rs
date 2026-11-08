@@ -154,6 +154,72 @@ impl<V: PartialEq> PartialEq for RuntimeEnv<V> {
 }
 
 impl RuntimeEnv {
+    /// All value, pattern, permutation and source checks precede every Move.
+    /// Exclusive access makes the following slot removals infallible; argument
+    /// expressions have already run into caller-owned storage in source order.
+    pub(crate) fn transfer_flow_inputs(
+        &mut self,
+        plan: &crate::plan::RuntimePlan,
+        flow: &crate::plan::FlowRuntimeId,
+        transfer: &crate::plan::RuntimeFlowTransfer<super::RuntimeExpr>,
+    ) -> Result<
+        (
+            crate::plan::RuntimeFlowTransfer<RuntimeValue>,
+            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        ),
+        RuntimeEvalError,
+    > {
+        let invalid = |error| RuntimeEvalError::FlowInvocation(Box::new(error));
+        plan.validate_flow_transfer_shape(flow, transfer)
+            .map_err(invalid)?;
+        transfer.validate_input_sources().map_err(invalid)?;
+        let references = transfer
+            .arguments
+            .iter()
+            .map(|argument| {
+                let local =
+                    crate::plan::RuntimeFlowTransfer::input_local(argument).map_err(invalid)?;
+                let value = self
+                    .get(local)
+                    .ok_or(RuntimeEvalError::UninitializedLocal(local))?;
+                Ok(super::RuntimeFlowParameterBinding {
+                    parameter: argument.parameter,
+                    value,
+                })
+            })
+            .collect::<Result<Box<[_]>, RuntimeEvalError>>()?;
+        let borrowed = crate::plan::RuntimeFlowTransfer {
+            target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
+            arguments: references,
+        };
+        let (declaration, _) = plan
+            .validate_flow_transfer_inputs(flow, &borrowed)
+            .map_err(invalid)?;
+        let instantiation = declaration.type_instantiation.clone();
+        drop(borrowed);
+        let arguments = transfer
+            .arguments
+            .iter()
+            .map(|argument| {
+                let local = crate::plan::RuntimeFlowTransfer::input_local(argument)
+                    .expect("the complete input grammar was checked before any Move");
+                super::RuntimeFlowParameterBinding {
+                    parameter: argument.parameter,
+                    value: self
+                        .take(local)
+                        .expect("exclusive input admission retains every distinct source slot"),
+                }
+            })
+            .collect();
+        Ok((
+            crate::plan::RuntimeFlowTransfer {
+                target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
+                arguments,
+            },
+            instantiation,
+        ))
+    }
+
     #[cfg(test)]
     pub(crate) fn inert_rollback_image(
         &self,

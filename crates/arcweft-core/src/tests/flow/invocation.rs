@@ -28,6 +28,13 @@ use crate::value::{
 };
 
 fn string_inputs_plan(count: usize) -> (RuntimePlan, FlowRuntimeId) {
+    string_inputs_plan_with_last_literal(count, None)
+}
+
+fn string_inputs_plan_with_last_literal(
+    count: usize,
+    last_literal: Option<&str>,
+) -> (RuntimePlan, FlowRuntimeId) {
     let mut builder = RuntimePlanBuilder::new();
     let function = RuntimeSemanticTypeId::from_bytes([0xb1; 32]);
     let admitted = builder
@@ -88,9 +95,15 @@ fn string_inputs_plan(count: usize) -> (RuntimePlan, FlowRuntimeId) {
             input_local: local.clone(),
             pattern: RuntimePatternSeed::new(
                 string_type(),
-                RuntimePatternSeedKind::Bind {
-                    mutable: false,
-                    local: local.clone(),
+                if formal.coordinate.position() as usize + 1 == count && last_literal.is_some() {
+                    RuntimePatternSeedKind::Literal(RuntimeValue::String(
+                        last_literal.unwrap().into(),
+                    ))
+                } else {
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: local.clone(),
+                    }
                 },
             ),
             ownership: RuntimeValueOwnershipRequirement::Owned,
@@ -132,6 +145,215 @@ fn borrowed_bindings(
         parameter: FlowParameterCoordinate::from_position(u32::try_from(index).unwrap()),
         value: &values[index],
     })
+}
+
+fn transfer_input_reads(
+    plan: &RuntimePlan,
+    flow: &FlowRuntimeId,
+    order: [usize; 2],
+) -> crate::plan::RuntimeFlowTransfer<crate::value::RuntimeExpr> {
+    let function = plan
+        .function_sites()
+        .get(
+            plan.flows()
+                .iter()
+                .find(|candidate| &candidate.id == flow)
+                .unwrap()
+                .function_site(),
+        )
+        .unwrap();
+    let locals = function
+        .parameter_inputs()
+        .map(|input| input.input_local())
+        .collect::<Vec<_>>();
+    crate::plan::RuntimeFlowTransfer {
+        target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
+        arguments: order
+            .into_iter()
+            .map(|index| RuntimeFlowParameterBinding {
+                parameter: FlowParameterCoordinate::from_position(index as u32),
+                value: crate::value::RuntimeExpr::from_admitted_parts(
+                    plan.local_declarations().get(locals[index]).unwrap().ty(),
+                    crate::value::RuntimeExprKind::Local(
+                        crate::value::RuntimeLocalRead::from_admitted_parts(
+                            locals[index],
+                            RuntimeLocalReadMode::Move,
+                        ),
+                    ),
+                ),
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn flow_transfer_moves_the_complete_inventory_in_authored_order() {
+    let (plan, flow) = string_inputs_plan(2);
+    let transfer = transfer_input_reads(&plan, &flow, [1, 0]);
+    let mut env = crate::value::RuntimeEnv::default();
+    for argument in &transfer.arguments {
+        let local = crate::plan::RuntimeFlowTransfer::input_local(argument).unwrap();
+        env.set(
+            local,
+            RuntimeValue::String(format!("input{}", argument.parameter.position())),
+        );
+    }
+    let (values, binding) = env.transfer_flow_inputs(&plan, &flow, &transfer).unwrap();
+    assert!(binding.is_some());
+    assert_eq!(
+        values.input_order().unwrap(),
+        transfer.input_order().unwrap()
+    );
+    for (argument, original) in values.arguments.iter().zip(&transfer.arguments) {
+        assert_eq!(argument.parameter, original.parameter);
+        assert_eq!(
+            argument.value,
+            RuntimeValue::String(format!("input{}", argument.parameter.position()))
+        );
+        assert!(
+            env.get(crate::plan::RuntimeFlowTransfer::input_local(original).unwrap())
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn flow_transfer_rejects_a_later_bad_input_before_moving_the_first() {
+    let (plan, flow) = string_inputs_plan(2);
+    let transfer = transfer_input_reads(&plan, &flow, [0, 1]);
+    let first = crate::plan::RuntimeFlowTransfer::input_local(&transfer.arguments[0]).unwrap();
+    let second = crate::plan::RuntimeFlowTransfer::input_local(&transfer.arguments[1]).unwrap();
+    for later_value in [None, Some(RuntimeValue::Bool(false))] {
+        let mut env = crate::value::RuntimeEnv::default();
+        env.set(first, RuntimeValue::String("still owned by caller".into()));
+        if let Some(value) = &later_value {
+            env.set(second, value.clone());
+        }
+        let error = env
+            .transfer_flow_inputs(&plan, &flow, &transfer)
+            .unwrap_err();
+        match later_value {
+            None => assert!(
+                matches!(error, crate::value::RuntimeEvalError::UninitializedLocal(local) if local == second)
+            ),
+            Some(_) => assert!(matches!(
+                error,
+                crate::value::RuntimeEvalError::FlowInvocation(_)
+            )),
+        }
+        assert_eq!(
+            env.get(first),
+            Some(&RuntimeValue::String("still owned by caller".into()))
+        );
+        assert_eq!(env.get(second), later_value.as_ref());
+    }
+}
+
+#[test]
+fn flow_transfer_rejects_aliased_owners_before_reading_or_moving_values() {
+    let (plan, flow) = string_inputs_plan(2);
+    let mut transfer = transfer_input_reads(&plan, &flow, [0, 1]);
+    transfer.arguments[1].value = transfer.arguments[0].value.clone();
+    let local = crate::plan::RuntimeFlowTransfer::input_local(&transfer.arguments[0]).unwrap();
+    let (_registry, need) = crate::tests::pending_string_need(string_type());
+    let mut env = crate::value::RuntimeEnv::default();
+    env.set(local, RuntimeValue::NeedHandle(need));
+    assert!(matches!(env.transfer_flow_inputs(&plan, &flow, &transfer),
+        Err(crate::value::RuntimeEvalError::FlowInvocation(error))
+            if *error == RuntimeFlowInvocationError::DuplicateTransferInput { local }));
+    assert!(matches!(env.get(local), Some(RuntimeValue::NeedHandle(_))));
+}
+
+#[test]
+fn retained_flow_transfer_shares_one_value_budget_across_all_inputs() {
+    let (plan, flow) = string_inputs_plan(2);
+    let plan = std::sync::Arc::new(plan);
+    let owner = crate::task::RuntimeProgramOwner::Plan(plan.clone());
+    let values = [
+        RuntimeValue::String("first".into()),
+        RuntimeValue::String("second".into()),
+    ];
+    let live = crate::plan::RuntimeFlowTransfer {
+        target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
+        arguments: Box::new(borrowed_bindings(&values)),
+    };
+    let (declaration, _) = plan.validate_flow_transfer_inputs(&flow, &live).unwrap();
+    let retained = live
+        .try_map(|value| {
+            crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, &owner)
+        })
+        .unwrap();
+    let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+        owner,
+        RuntimeSchemaLimits {
+            max_nodes: 1,
+            ..RuntimeSchemaLimits::engine_default()
+        },
+    );
+    let error = plan
+        .admit_retained_flow_transfer_inputs(
+            &flow,
+            &retained,
+            declaration.type_instantiation.as_deref(),
+            &mut admission,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+            budget: "nodes"
+        })
+    ));
+    assert_eq!(admission.validate_metadata(&0u32).unwrap_err(), error);
+}
+
+#[test]
+fn retained_flow_transfer_rejects_a_forged_value_that_fails_its_original_pattern() {
+    let (plan, flow) = string_inputs_plan_with_last_literal(2, Some("required"));
+    let plan = std::sync::Arc::new(plan);
+    let owner = crate::task::RuntimeProgramOwner::Plan(plan.clone());
+    let valid = [
+        RuntimeValue::String("first".into()),
+        RuntimeValue::String("required".into()),
+    ];
+    let live = crate::plan::RuntimeFlowTransfer {
+        target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
+        arguments: Box::new(borrowed_bindings(&valid)),
+    };
+    let (declaration, _) = plan.validate_flow_transfer_inputs(&flow, &live).unwrap();
+    let mut retained = live
+        .try_map(|value| {
+            crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, &owner)
+        })
+        .unwrap();
+    plan.admit_retained_flow_transfer_inputs(
+        &flow,
+        &retained,
+        declaration.type_instantiation.as_deref(),
+        &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits::engine_default(),
+        ),
+    )
+    .unwrap();
+    retained.arguments[1].value =
+        crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
+            &RuntimeValue::String("forged".into()),
+            &owner,
+        )
+        .unwrap();
+    assert!(
+        plan.admit_retained_flow_transfer_inputs(
+            &flow,
+            &retained,
+            declaration.type_instantiation.as_deref(),
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner,
+                RuntimeSchemaLimits::engine_default()
+            )
+        )
+        .is_err()
+    );
 }
 
 #[test]

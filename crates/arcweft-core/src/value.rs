@@ -2811,6 +2811,8 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
     #[error(transparent)]
+    FlowInvocation(Box<crate::plan::RuntimeFlowInvocationError>),
+    #[error(transparent)]
     ExternalArguments(#[from] Box<crate::pure::RuntimeExternalCallArgumentError>),
     #[error(transparent)]
     Quantity(#[from] RuntimeOpaqueValueError),

@@ -1,6 +1,10 @@
 mod match_source;
 mod presentation;
 mod presentation_slot;
+mod retained_inputs;
+pub(crate) use retained_inputs::admit_retained_pattern_inputs;
+mod matching;
+use matching::{pattern_matches_view, pattern_matches_view_with_work};
 
 pub use presentation_slot::RuntimePresentationSlotRefDecodeError;
 
@@ -2074,73 +2078,6 @@ pub(crate) fn prepare_runtime_pattern_owned_view<'a>(
 
 fn pattern_matches_borrowed(pattern: &RuntimePattern, value: &RuntimeValue) -> bool {
     pattern_matches_view(pattern, value.view())
-}
-
-fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -> bool {
-    match pattern.kind() {
-        RuntimePatternKind::Or(alternatives) => alternatives
-            .iter()
-            .any(|pattern| pattern_matches_view(pattern, value)),
-        RuntimePatternKind::Bind { .. }
-        | RuntimePatternKind::Typed { .. }
-        | RuntimePatternKind::Discard => true,
-        RuntimePatternKind::Literal(expected) => runtime_value_views_equal(expected.view(), value),
-        RuntimePatternKind::Entity(expected) => matches!(value,
-            RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(actual)) if actual == expected),
-        RuntimePatternKind::Whole { pattern, .. } => pattern_matches_view(pattern, value),
-        RuntimePatternKind::Tuple(patterns) => matches!(value,
-            RuntimeValueView::Tuple(values) if patterns.len() == values.len()
-                && patterns.iter().enumerate().all(|(index, pattern)|
-                    values.get(index).is_some_and(|value| pattern_matches_view(pattern, value)))),
-        RuntimePatternKind::Record { fields, rest } => {
-            let count = match &value {
-                RuntimeValueView::Record(record) => record.len(),
-                RuntimeValueView::NominalRecord(record) => record.fields().len(),
-                _ => return false,
-            };
-            rest.accepts_len(fields.len(), count)
-                && fields.iter().all(|field| {
-                    let index = field.field().zero_based() as usize;
-                    match value {
-                        RuntimeValueView::Record(record) => {
-                            record.get(index).is_some_and(|(id, _, value)| {
-                                id == field.field() && pattern_matches_view(field.pattern(), value)
-                            })
-                        }
-                        RuntimeValueView::NominalRecord(record) => record
-                            .fields()
-                            .get(index)
-                            .is_some_and(|value| pattern_matches_view(field.pattern(), value)),
-                        _ => false,
-                    }
-                })
-        }
-        RuntimePatternKind::Sequence { items, rest } => {
-            let RuntimeValueView::Sequence(sequence) = value else {
-                return false;
-            };
-            if !sequence
-                .len()
-                .is_ok_and(|length| rest.accepts_len(items.len(), length))
-            {
-                return false;
-            }
-            items.iter().enumerate().all(|(index, pattern)| {
-                sequence
-                    .value_view(index)
-                    .is_some_and(|value| pattern_matches_view(pattern, value))
-            })
-        }
-        RuntimePatternKind::Variant {
-            ordinal, payload, ..
-        } => matches!(value,
-        RuntimeValueView::Variant(variant)
-            if *ordinal == variant.ordinal() && match (payload.as_deref(), variant.payload()) {
-                (Some(pattern), Some(value)) => pattern_matches_view(pattern, value),
-                (None, None) => true,
-                _ => false,
-            }),
-    }
 }
 
 fn check_owned_pattern_overlap_view(

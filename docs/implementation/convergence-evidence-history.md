@@ -15828,3 +15828,14 @@ owner6件は全PASS。workspace98 packageのlocked／全target／全feature chec
 静的GotoとGotoExprの二経路を、元Flow targetまたは動的operandと、記述順のFlowParameterCoordinate付きoperandを保持するRuntimeFlowTransferへ移行している。Source codecの既存version 1／op33を同じ形へ揃え、op34の旧readerを削除した。値root／free local／local validationとsemantic digestは動的target・全引数と座標を保持する。AWBC loweringはtargetを先に評価し、各引数を記述順にroot slotへ保持してformal順へ渡す形に移す。既存の引数なしproducerとJIT／AOTの機能分類も移行する。
 
 ユーザーの途中commit指示に従う作業保存であり、完了受入ではない。このcheckpointについてCargo／nextestを実行しておらず、正常動作やbuild成功を主張しない。Nativeの旧GotoExpr consumerと転送先検査が未移行であり、保留値の複数入力化・取消し／private rollback・failure atomicityと、Plan／codecの集約preflight・argument permutation admission、AWBCのcleanup失敗条件、Sourceの明示引数接続を継続する。直近完了matrix／CLI本体と原本はSource 978c45c75c4546b4ca6c6bcd98eaa5429eae4ff8に対する証拠として維持し、この途中Sourceへ帰属し直さない。Generic Match等の完了済み機能を未完了へ戻さない。
+
+## 2026-11-09 Native Flow入力の途中checkpoint（受入未了）
+
+基点・先行carrier公開Source cbbea7f86213bc10b2a72b37f8065b981abe741e、mainの既存checkoutで作業。今回もユーザーの途中commit指示による保存であり、明示引数gotoの完了受入ではない。式の評価と所有値の転送を分離した。callerが記述順に評価したdistinct whole-localだけを転送operandとし、全入力を借りて完全なABI・型・パターン・重複を検査した後でまとめてMoveする。入力ごとの途中Moveによる後続評価失敗時の所有値喪失を避けるためであり、言語の引数式をlocal構文へ制限する契約ではない。
+
+Native保留exitは全引数と元のsource／target instantiationを保持する。私有rollbackのinert入力検査は元Plan・全formal・記述順座標と照合し、live値／binding能力を再構築せず、一つの資源bankの型・構造パターン・Copy義務を検査する。構造パターンpredicateは既存matcherから一か所へ移した。借用子要素の投影は値ownerのAPIで元storage由来を保持する。保留line handleはparameter座標ごとの独立したowned slot（既存version 1のtag24）へ登録する。Sans-I/Oと依存方向は変えず、new helperはpatternの構造検査、Envの一括Move、PlanのABI、Nativeのcleanup継続にそれぞれ属する。一般pattern bindingのlive capabilityをinert readerへ流用しない。
+
+開発check r1は変更に起因する9 compile errorで終了101、非公開borrowed fieldの直接参照などを修復。r2のcargo check --locked -p arcweft-core --all-featuresはlib終了0／47.33秒・175警告。r3のall-targets checkはtest helperが存在しないPlan.flowを呼ぶ1 errorで終了101、既存Flow tableの行探索へ修復。その後のcargo nextest list --locked -p arcweft-core --all-featuresはtest build終了0（3分35秒）、選択52／全2392を点検。同じfilterのnextest run --no-tests failは52実行／52 PASS／2340 filter SKIP／0.537秒。新規5件は記述順転送、後続型違反／未初期化時の先行値保持、affine owner alias拒否、inert全入力の共有node上限、元パターンに反する保存値改変拒否。既存Goto／Choice／deferの復元と失敗filter、AWBCの既存入力検査、patternとslot codecも含む。dev runを直近完了Sema matrixや全逆依存受入へ加算しない。
+
+未実行の全逆依存／workspace品質gate、描画ハンドルの最終Flow root移管・取消し、引数付きprivate rollbackの完全matrix、Plan／codecの完全preflightとSourceの明示bindingを引き続き実装する。Native公開saveを対応済みとしない。既受入の引数なし拒否、Generic Match、Style等は維持する。現状一覧の「途中版は未検証」は今回の限定runに合わせて訂正し、「tracked WIPは0」という時点依存の重複記述を除いた。先行結果・失敗・SHAは削除しない。
+原本 docs/implementation/acceptance-evidence/task-flow-transfer-native-wip2.raw.zip：30 entries／465019 bytes／SHA256 f9904ee14944760afe69f0a73bea8bb025516393073654e7931f2f12735810cd。ソース・ログ・catalog・metadataのみを格納し、実行ファイル／AWFBは含めない。

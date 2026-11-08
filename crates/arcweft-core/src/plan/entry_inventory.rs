@@ -343,9 +343,104 @@ pub enum RuntimeFlowInvocationError {
     FunctionInputs(#[from] crate::value::RuntimeFunctionApplyError),
     #[error("runtime Flow invocation input admission failed: {0}")]
     InputAdmission(#[source] Box<crate::value::AwbcRuntimeValueSnapshotError>),
+    #[error(transparent)]
+    TransferInputOrder(#[from] crate::value::RuntimeInputOrderError),
+    #[error("runtime Flow transfer does not retain its resolved original target")]
+    TransferTarget,
+    #[error("Flow transfer parameter {parameter:?} must consume a pre-evaluated whole local input")]
+    TransferInputSource { parameter: FlowParameterCoordinate },
+    #[error("Flow transfer repeats owning input local {local}")]
+    DuplicateTransferInput {
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    },
+    #[error("Flow transfer input pattern admission failed: {0}")]
+    TransferPattern(#[source] Box<crate::value::RuntimeEvalError>),
 }
 
 impl RuntimePlan {
+    /// Admits the complete coordinate permutation before evaluating or staging
+    /// operands. The same original schema bounds all following input storage.
+    pub(crate) fn validate_flow_transfer_shape<E>(
+        &self,
+        flow: &FlowRuntimeId,
+        transfer: &super::RuntimeFlowTransfer<E>,
+    ) -> Result<(RuntimeFunctionSiteId, crate::value::RuntimeInputOrder), RuntimeFlowInvocationError>
+    {
+        let (runtime_flow, schema) = self.flow_invocation_contract(flow)?;
+        if matches!(&transfer.target, super::RuntimeFlowTransferTarget::Static(original) if original != flow)
+        {
+            return Err(RuntimeFlowInvocationError::TransferTarget);
+        }
+        if transfer.arguments.len() != schema.parameters.len() {
+            return Err(RuntimeFlowInvocationError::BindingCount {
+                flow: flow.canonical_label(),
+                expected: schema.parameters.len(),
+                actual: transfer.arguments.len(),
+            });
+        }
+        let order = transfer.input_order()?;
+        for argument in &transfer.arguments {
+            let parameter = argument.parameter;
+            if parameter
+                .index()
+                .ok()
+                .and_then(|index| schema.parameters.get(index))
+                .is_none_or(|formal| formal.coordinate != parameter)
+            {
+                return Err(RuntimeFlowInvocationError::UnknownParameter {
+                    flow: flow.canonical_label(),
+                    parameter,
+                });
+            }
+        }
+        Ok((runtime_flow.function_site(), order))
+    }
+
+    /// Source order is retained by the packet; only borrowed references are
+    /// projected into the canonical ABI for the shared joint input admission.
+    pub(crate) fn validate_flow_transfer_inputs<V: Borrow<crate::value::RuntimeValue>>(
+        &self,
+        flow: &FlowRuntimeId,
+        transfer: &super::RuntimeFlowTransfer<V>,
+    ) -> Result<
+        (
+            super::function_inputs::RuntimeFunctionInputAdmission<'_>,
+            crate::value::RuntimeInputOrder,
+        ),
+        RuntimeFlowInvocationError,
+    > {
+        let (_, order) = self.validate_flow_transfer_shape(flow, transfer)?;
+        let mut references = vec![None; transfer.arguments.len()];
+        for argument in &transfer.arguments {
+            references[argument.parameter.position() as usize] = Some(argument.value.borrow());
+        }
+        let bindings = references
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| RuntimeFlowParameterBinding {
+                parameter: FlowParameterCoordinate::from_position(index as u32),
+                value: value.expect("the checked transfer permutation covers every input"),
+            })
+            .collect::<Vec<_>>();
+        let declaration = self.validate_flow_invocation_with_work(
+            flow,
+            &bindings,
+            &crate::entry::schema::value_budget::ValidationWork::new(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )?;
+        declaration
+            .validate_owned_patterns(
+                &[],
+                &bindings
+                    .iter()
+                    .map(|binding| binding.value)
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|error| RuntimeFlowInvocationError::TransferPattern(Box::new(error)))?;
+        Ok((declaration, order))
+    }
+
     /// Consumes this immutable plan and seals a complete coordinate-addressed
     /// invocation for one exact Flow.
     ///

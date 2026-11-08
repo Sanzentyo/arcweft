@@ -64,6 +64,15 @@ impl<E> From<crate::entry::RuntimeSchemaError> for RuntimeBorrowedValueVisitErro
 }
 
 impl<'a> RuntimeBorrowedValue<'a> {
+    pub(crate) fn view(self) -> RuntimeValueView<'a> {
+        self.value
+    }
+
+    /// Projects only an actual codec descendant and retains its storage origin.
+    pub(crate) fn child_at(self, index: usize) -> Option<Self> {
+        self.value.child_at(index).map(|value| self.child(value))
+    }
+
     /// Visits the same logical codec graph after resource preflight. Traversal
     /// never constructs live values from inert or domain-owned storage.
     pub fn try_visit<E>(

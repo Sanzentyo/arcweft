@@ -4242,7 +4242,11 @@ impl RuntimePlanBodyConstruction<'_> {
             },
             RuntimeFlowOpSeed::Continue { depth } => FlowOp::Continue { depth },
             RuntimeFlowOpSeed::Goto(transfer) => {
-                FlowOp::Goto(transfer.try_map(|expression| self.lower_expression(expression))?)
+                let transfer = transfer.try_map(|expression| self.lower_expression(expression))?;
+                transfer
+                    .validate_input_sources()
+                    .map_err(RuntimePlanBuildError::FlowTransferInputs)?;
+                FlowOp::Goto(transfer)
             }
             RuntimeFlowOpSeed::Return(value) => FlowOp::Return(value),
             RuntimeFlowOpSeed::ReturnExpr(value) => {

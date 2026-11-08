@@ -64,6 +64,11 @@ pub enum RuntimeOwnedSlotId {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
     },
+    NativePendingFlowInput {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        parameter: crate::entry::FlowParameterCoordinate,
+    },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
         local: RuntimeLocalSlotId,
@@ -242,6 +247,7 @@ impl RuntimeOwnedSlotId {
             Self::AwbcEffectObservationArg { .. } => 15,
             Self::ProgramResult { .. } => 16,
             Self::NativePendingReturn { .. } => 17,
+            Self::NativePendingFlowInput { .. } => 24,
             Self::NativeDeferCapture { .. } => 18,
             Self::AwbcDeferCapture { .. } => 19,
         }
@@ -257,6 +263,7 @@ impl RuntimeOwnedSlotId {
             | Self::EnvironmentLocal { execution, .. }
             | Self::ProgramResult { execution, .. }
             | Self::NativePendingReturn { execution, .. }
+            | Self::NativePendingFlowInput { execution, .. }
             | Self::NativeDeferCapture { execution, .. }
             | Self::AwbcDeferCapture { execution, .. }
             | Self::ClosureCapture { execution, .. }
@@ -355,6 +362,15 @@ impl RuntimeOwnedSlotId {
                 format!(
                     "exec/{execution}/fiber/{}/native-pending-return",
                     fiber.get()
+                )
+            }
+            Self::NativePendingFlowInput {
+                fiber, parameter, ..
+            } => {
+                format!(
+                    "exec/{execution}/fiber/{}/native-pending-flow-input/{}",
+                    fiber.get(),
+                    parameter.position()
                 )
             }
             Self::EnvironmentLocal { local, .. } => {
@@ -577,6 +593,17 @@ impl Ord for RuntimeOwnedSlotId {
                     unreachable!("equal canonical tags select the same variant")
                 };
                 (left_execution, left_fiber).cmp(&(right_execution, right_fiber))
+            }
+            24 => {
+                let key = |slot| match slot {
+                    Self::NativePendingFlowInput {
+                        execution,
+                        fiber,
+                        parameter,
+                    } => (execution, fiber, parameter),
+                    _ => unreachable!("equal canonical tags select pending Flow inputs"),
+                };
+                key(*self).cmp(&key(*other))
             }
             18 => {
                 let key = |slot| match slot {
@@ -1139,6 +1166,11 @@ enum HumanOwnedSlot {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
     },
+    NativePendingFlowInput {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        parameter: crate::entry::FlowParameterCoordinate,
+    },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
         local: RuntimeLocalSlotId,
@@ -1285,6 +1317,11 @@ enum HumanOwnedSlotInput {
     NativePendingReturn {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
+    },
+    NativePendingFlowInput {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        parameter: crate::entry::FlowParameterCoordinate,
     },
     EnvironmentLocal {
         execution: ExecutionInstanceId,
@@ -1461,6 +1498,15 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
             RuntimeOwnedSlotId::NativePendingReturn { execution, fiber } => {
                 Self::NativePendingReturn { execution, fiber }
             }
+            RuntimeOwnedSlotId::NativePendingFlowInput {
+                execution,
+                fiber,
+                parameter,
+            } => Self::NativePendingFlowInput {
+                execution,
+                fiber,
+                parameter,
+            },
             RuntimeOwnedSlotId::EnvironmentLocal { execution, local } => {
                 Self::EnvironmentLocal { execution, local }
             }
@@ -1716,6 +1762,15 @@ impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
             HumanOwnedSlotInput::NativePendingReturn { execution, fiber } => {
                 Self::NativePendingReturn { execution, fiber }
             }
+            HumanOwnedSlotInput::NativePendingFlowInput {
+                execution,
+                fiber,
+                parameter,
+            } => Self::NativePendingFlowInput {
+                execution,
+                fiber,
+                parameter,
+            },
             HumanOwnedSlotInput::EnvironmentLocal { execution, local } => {
                 Self::EnvironmentLocal { execution, local }
             }

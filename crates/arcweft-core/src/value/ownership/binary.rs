@@ -150,6 +150,15 @@ pub(super) fn encode_owned_slot(slot: RuntimeOwnedSlotId) -> Vec<u8> {
             push_u64(&mut bytes, execution.get());
             bytes.extend_from_slice(&fiber.get().to_le_bytes());
         }
+        RuntimeOwnedSlotId::NativePendingFlowInput {
+            execution,
+            fiber,
+            parameter,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            bytes.extend_from_slice(&fiber.get().to_le_bytes());
+            push_raw_u32(&mut bytes, parameter.position());
+        }
         RuntimeOwnedSlotId::EnvironmentLocal { execution, local } => {
             push_u64(&mut bytes, execution.get());
             push_u64(&mut bytes, local.get());
@@ -344,7 +353,7 @@ pub(super) fn decode_owned_slot(
 ) -> Result<RuntimeOwnedSlotId, RuntimeOwnershipBinaryError> {
     let mut reader = Reader::new(bytes);
     let tag = reader.u8()?;
-    if tag > 23 {
+    if tag > 24 {
         return Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag });
     }
     let execution = ExecutionInstanceId::from_allocated(reader.nonzero_u64()?);
@@ -430,6 +439,11 @@ pub(super) fn decode_owned_slot(
         16 => RuntimeOwnedSlotId::ProgramResult {
             execution,
             fiber: RuntimePersistentFiberId::from_allocated(reader.u64()?),
+        },
+        24 => RuntimeOwnedSlotId::NativePendingFlowInput {
+            execution,
+            fiber: RuntimePersistentFiberId::from_allocated(reader.u64()?),
+            parameter: crate::entry::FlowParameterCoordinate::from_position(reader.u32()?),
         },
         17 => RuntimeOwnedSlotId::NativePendingReturn {
             execution,
@@ -958,6 +972,18 @@ mod tests {
         assert_eq!(hex(&bytes), "1101000000000000000200000000000000");
         assert_eq!(decode_owned_slot(&bytes).unwrap(), pending);
         assert_eq!(serde_json::to_string(&pending).unwrap(), pending_json);
+        let transfer_json =
+            r#"{"kind":"native_pending_flow_input","execution":"1","fiber":0,"parameter":7}"#;
+        let transfer: RuntimeOwnedSlotId = self::json(transfer_json);
+        let bytes = encode_owned_slot(transfer);
+        assert_eq!(hex(&bytes), "180100000000000000000000000000000007000000");
+        assert_eq!(decode_owned_slot(&bytes).unwrap(), transfer);
+        assert_eq!(serde_json::to_string(&transfer).unwrap(), transfer_json);
+        assert_eq!(
+            transfer.render_canonical(),
+            "exec/1/fiber/0/native-pending-flow-input/7"
+        );
+        assert!(decode_owned_slot(&bytes[..bytes.len() - 1]).is_err());
     }
 
     #[test]
@@ -987,8 +1013,8 @@ mod tests {
     #[test]
     fn binary_decoders_reject_unknown_zero_truncated_and_trailing_forms() {
         assert!(matches!(
-            decode_owned_slot(&[24]),
-            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 24 })
+            decode_owned_slot(&[25]),
+            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 25 })
         ));
         let mut invalid_defer_registration = encode_owned_slot(self::json(
             r#"{"kind":"native_defer_capture","execution":"1","fiber":2,"registration":"3","ordinal":4}"#,

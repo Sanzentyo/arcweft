@@ -520,6 +520,13 @@ impl Engine {
         &mut self,
         value: &RuntimeValue,
     ) -> Result<(), RuntimeEvalError> {
+        self.preserve_presentation_at_scope_exit(std::iter::once(value))
+    }
+
+    pub(super) fn preserve_presentation_at_scope_exit<'value>(
+        &mut self,
+        values: impl IntoIterator<Item = &'value RuntimeValue>,
+    ) -> Result<(), RuntimeEvalError> {
         let env = &self.fiber.frame.env;
         let Some(scope) = env.presentation_scope_binding() else {
             return Ok(());
@@ -529,7 +536,7 @@ impl Engine {
             .as_ref()
             .ok_or(RuntimePresentationError::Owner)?;
         let mut escaping = Vec::new();
-        for token in Self::presentation_return_tokens(std::iter::once(value))? {
+        for token in Self::presentation_return_tokens(values)? {
             if banks
                 .handle_scope(
                     &self.fiber.frame.program,
@@ -551,7 +558,14 @@ impl Engine {
         &mut self,
         value: &RuntimeValue,
     ) -> Result<(), RuntimeEvalError> {
-        let tokens = Self::presentation_return_tokens(std::iter::once(value))?;
+        self.discard_pending_values_presentation(std::iter::once(value))
+    }
+
+    pub(super) fn discard_pending_values_presentation<'value>(
+        &mut self,
+        values: impl IntoIterator<Item = &'value RuntimeValue>,
+    ) -> Result<(), RuntimeEvalError> {
+        let tokens = Self::presentation_return_tokens(values)?;
         if !tokens.is_empty() {
             self.presentation
                 .as_mut()

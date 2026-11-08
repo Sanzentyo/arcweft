@@ -696,6 +696,8 @@ pub enum RuntimePlanBuildError {
     InvalidFlowFunction { flow: String },
     #[error("Flow {flow} parameter schema differs from its function input contract")]
     FlowParameterContractMismatch { flow: String },
+    #[error(transparent)]
+    FlowTransferInputs(super::RuntimeFlowInvocationError),
 }
 
 #[derive(Debug)]

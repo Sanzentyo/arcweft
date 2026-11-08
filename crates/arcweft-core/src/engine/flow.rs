@@ -1041,13 +1041,9 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                 }
             }
-            FlowOp::Goto(target) => {
-                self.goto(target, Some(source_site.into()), output, pure_backend)
+            FlowOp::Goto(transfer) => {
+                self.start_flow_transfer(transfer, Some(source_site.into()), output, pure_backend)
             }
-            FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(expr, pure_backend) {
-                Ok(target) => self.goto(&target, Some(source_site.into()), output, pure_backend),
-                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
-            },
             FlowOp::Return(_) => {
                 let FlowOp::Return(value) = op.into_owned() else {
                     unreachable!("selected return value");

@@ -96,7 +96,11 @@ pub(super) enum NativeLexicalExitAction<V> {
     },
     Goto {
         source: NativeGotoOrigin,
-        destination: FlowRuntimeId,
+        transfer: crate::plan::RuntimeFlowTransfer<V>,
+        source_instantiation:
+            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        type_instantiation:
+            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     },
 }
 
@@ -122,42 +126,106 @@ impl NativeGotoOrigin {
         }
     }
 
-    fn admit_destination(
+    fn admit_transfer<V: RuntimeStoredValue>(
         &self,
-        destination: &FlowRuntimeId,
+        transfer: &crate::plan::RuntimeFlowTransfer<V>,
+        source_instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        type_instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        use crate::plan::RuntimeFlowTransferTarget;
         self.operation().admit_retained(admission)?;
+        let invalid = || AwbcRuntimeValueSnapshotError::Message {
+            message: "Native transfer inputs differ from their original source and destination ABI"
+                .into(),
+        };
+        let RuntimeFlowTransferTarget::Static(destination) = &transfer.target else {
+            return Err(invalid());
+        };
         admission.validate_metadata(destination)?;
+        admission.validate_metadata_collection(transfer.arguments.len())?;
+        admission.validate_metadata(&source_instantiation)?;
+        admission.validate_metadata(&type_instantiation)?;
         if let Self::Choice { option, .. } = self {
             admission.validate_metadata(option)?;
         }
         let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
-            unreachable!("admitted Native goto owns its Plan")
+            return Err(invalid());
         };
-        let agrees = match (self, self.operation().operation(plan)) {
-            (Self::Operation(_), Some(FlowOp::Goto(original))) => destination == original,
-            (Self::Operation(_), Some(FlowOp::GotoExpr(_))) => true,
+        let plan = std::sync::Arc::clone(plan);
+        match self.operation().owner() {
+            crate::plan::code::RuntimeCodeOwner::Function(site) => {
+                plan.validate_function_instantiation(site, source_instantiation, &admission.work())
+                    .map_err(|_| invalid())?;
+            }
+            crate::plan::code::RuntimeCodeOwner::LineTask { .. } => {
+                if source_instantiation.is_some_and(|binding| {
+                    !binding.is_valid_with_work(plan.as_ref(), &admission.work())
+                }) {
+                    return Err(invalid());
+                }
+            }
+        }
+        let original = match (self, self.operation().operation(&plan)) {
+            (Self::Operation(_), Some(FlowOp::Goto(original))) => {
+                let target_agrees = match &original.target {
+                    RuntimeFlowTransferTarget::Static(target) => target == destination,
+                    RuntimeFlowTransferTarget::Dynamic(_) => true,
+                };
+                if !target_agrees
+                    || original.arguments.len() != transfer.arguments.len()
+                    || !original
+                        .arguments
+                        .iter()
+                        .zip(&transfer.arguments)
+                        .all(|(source, value)| source.parameter == value.parameter)
+                {
+                    return Err(invalid());
+                }
+                original.validate_input_sources().map_err(|_| invalid())?;
+                Some(original)
+            }
             (
                 Self::Operation(_),
                 Some(FlowOp::Effect(crate::effect::LineEffectRequest::Goto(label))),
-            ) => plan
-                .resolve_flow_target_value(label)
-                .is_ok_and(|original| original == *destination),
-            (Self::Choice { option, .. }, Some(FlowOp::Choice { options, .. })) => {
-                options
-                    .get(*option)
-                    .and_then(|option| option.target.as_ref())
-                    == Some(destination)
+            ) if transfer.arguments.is_empty()
+                && plan
+                    .resolve_flow_target_value(label)
+                    .is_ok_and(|target| target == *destination) =>
+            {
+                None
             }
-            _ => false,
+            (Self::Choice { option, .. }, Some(FlowOp::Choice { options, .. }))
+                if transfer.arguments.is_empty()
+                    && options
+                        .get(*option)
+                        .and_then(|option| option.target.as_ref())
+                        == Some(destination) =>
+            {
+                None
+            }
+            _ => return Err(invalid()),
         };
-        if !agrees || plan.validate_flow_invocation(destination, &[]).is_err() {
-            return Err(AwbcRuntimeValueSnapshotError::Message {
-                message:
-                    "Native goto differs from its original operation or selected Choice target"
-                        .into(),
-            });
+        plan.admit_retained_flow_transfer_inputs(
+            destination,
+            transfer,
+            type_instantiation,
+            admission,
+        )?;
+        if let Some(original) = original {
+            for (source, argument) in original.arguments.iter().zip(&transfer.arguments) {
+                admission.validate_metadata(&argument.parameter)?;
+                let expected = plan
+                    .type_table()
+                    .get(source.value.ty())
+                    .ok_or_else(invalid)?
+                    .semantic_identity();
+                admission.validate_admitted_typed_borrowed_in_invocation(
+                    argument.value.borrowed_value(),
+                    expected,
+                    source_instantiation,
+                )?;
+            }
         }
         Ok(())
     }
@@ -237,17 +305,21 @@ impl<V> NativeLexicalExitAction<V> {
             Self::Fallthrough { site } => NativeLexicalExitAction::Fallthrough { site: *site },
             Self::Goto {
                 source,
-                destination,
+                transfer,
+                source_instantiation,
+                type_instantiation,
             } => NativeLexicalExitAction::Goto {
                 source: source.clone(),
-                destination: destination.clone(),
+                transfer: transfer.borrowed(),
+                source_instantiation: source_instantiation.clone(),
+                type_instantiation: type_instantiation.clone(),
             },
         }
     }
 
     fn try_map<W, E>(
         self,
-        map: impl FnOnce(V) -> Result<W, E>,
+        mut map: impl FnMut(V) -> Result<W, E>,
     ) -> Result<NativeLexicalExitAction<W>, E> {
         Ok(match self {
             Self::Emitted => NativeLexicalExitAction::Emitted,
@@ -276,10 +348,14 @@ impl<V> NativeLexicalExitAction<V> {
             Self::Fallthrough { site } => NativeLexicalExitAction::Fallthrough { site },
             Self::Goto {
                 source,
-                destination,
+                transfer,
+                source_instantiation,
+                type_instantiation,
             } => NativeLexicalExitAction::Goto {
                 source,
-                destination,
+                transfer: transfer.try_map(map)?,
+                source_instantiation,
+                type_instantiation,
             },
         })
     }
@@ -297,6 +373,20 @@ impl<V> NativeLexicalExitAction<V> {
             }) => Some(value),
             _ => None,
         }
+    }
+
+    /// Pending transfer operands remain in authored order. They are distinct
+    /// owners even when a receiving formal pattern discards its binding.
+    pub(super) fn values(&self) -> impl Iterator<Item = &V> {
+        let transfer = match self {
+            Self::Goto { transfer, .. } => Some(transfer),
+            _ => None,
+        };
+        self.value().into_iter().chain(
+            transfer
+                .into_iter()
+                .flat_map(|transfer| transfer.arguments.iter().map(|argument| &argument.value)),
+        )
     }
 }
 
@@ -364,10 +454,17 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
         }
         if let NativeLexicalExitAction::Goto {
             source,
-            destination,
+            transfer,
+            source_instantiation,
+            type_instantiation,
         } = &self.action
         {
-            return source.admit_destination(destination, admission);
+            return source.admit_transfer(
+                transfer,
+                source_instantiation.as_deref(),
+                type_instantiation.as_deref(),
+                admission,
+            );
         }
         let (source, transfer_target) = match &self.action {
             NativeLexicalExitAction::Emitted => return Ok(()),
@@ -837,7 +934,8 @@ impl super::Engine {
             // A typed result stays in the continuation until its receiving
             // invocation can take it. Relocate only leases owned by this scope.
             if let Some(NativeLexicalExit {
-                action: NativeLexicalExitAction::Return { .. },
+                action:
+                    NativeLexicalExitAction::Return { .. } | NativeLexicalExitAction::Goto { .. },
                 ..
             }) = &self.fiber.frame.lexical_exit
             {
@@ -848,8 +946,8 @@ impl super::Engine {
                         .lexical_exit
                         .take()
                         .expect("reached return");
-                    if let Some(value) = exit.action.value()
-                        && let Err(error) = self.discard_pending_return_presentation(value)
+                    if let Err(error) =
+                        self.discard_pending_values_presentation(exit.action.values())
                     {
                         self.fiber.frame.lexical_exit = Some(exit);
                         return Err(error);
@@ -870,11 +968,7 @@ impl super::Engine {
                         .lexical_exit
                         .take()
                         .expect("reached return");
-                    let transition = exit
-                        .action
-                        .value()
-                        .map(|value| self.preserve_presentation_at_return_scope(value))
-                        .transpose();
+                    let transition = self.preserve_presentation_at_scope_exit(exit.action.values());
                     self.fiber.frame.lexical_exit = Some(exit);
                     transition?;
                 }
@@ -923,9 +1017,17 @@ impl super::Engine {
                         }
                         NativeLexicalExitAction::Goto {
                             source,
-                            destination,
+                            transfer,
+                            type_instantiation,
+                            source_instantiation: _,
                         } => {
-                            self.goto(&destination, Some(source), output, backend);
+                            self.activate_flow_transfer(
+                                transfer,
+                                Some(source),
+                                type_instantiation,
+                                output,
+                                backend,
+                            );
                         }
                     }
                 }
