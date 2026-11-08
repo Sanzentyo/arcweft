@@ -258,6 +258,13 @@ pub enum CandidateFactTransactionViolation {
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
+    #[error("Flow transfer {owner:?} requires {expected} arguments, but supplies {actual}")]
+    FlowTransferArgumentCount {
+        owner: ExprId,
+        expected: usize,
+        actual: usize,
+        source_span: SourceSpan,
+    },
     #[error("callable reference {owner:?} could not be resolved: {error}")]
     CallableReferenceResolution {
         owner: ExprId,
@@ -758,6 +765,7 @@ impl FinalSemanticAnalysisError {
     /// Stable compiler/LSP diagnostic code owned by the final semantic authority.
     pub const fn diagnostic_code(&self) -> &'static str {
         match self {
+            Self::FlowTransferArgumentCount { .. } => "sema.goto.argument_count",
             Self::AssertionModeNotAllowed { .. } => "sema.assert.context",
             Self::SignalObservableType { .. } => "sema.signal.observable_type",
             Self::ReturnBoundaryUnavailable { .. } => "sema.return.boundary",
@@ -798,6 +806,17 @@ impl FinalSemanticAnalysisError {
     /// Source-backed semantic rejection retained by the final analyzer.
     pub fn source_diagnostic(&self) -> Option<Diagnostic> {
         match self {
+            Self::FlowTransferArgumentCount { source_span, .. } => Some(
+                Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(
+                        source_span.clone(),
+                        Some(
+                            "this transfer does not supply the target Flow's formal inputs"
+                                .to_owned(),
+                        ),
+                    )),
+            ),
             Self::IncompatibleCallableResults {
                 source_span,
                 result_sources,

@@ -1584,7 +1584,7 @@ fn validate_expression_resolution(
             coordinates,
         ),
         CheckedExpressionResolution::Choice(choice) => {
-            validate_choice(symbols, modules, owner, choice)
+            validate_choice(symbols, checked_callables, modules, owner, choice)
         }
         CheckedExpressionResolution::StageLook(look) => {
             let expression = resolve_module(modules, owner.module())?
@@ -1962,6 +1962,7 @@ fn validate_field_selection(
 
 fn validate_choice(
     symbols: &ProjectSymbolTable,
+    checked_callables: &crate::callable::CheckedCallableCatalog,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owner: ExprId,
     choice: &CheckedChoice,
@@ -2006,6 +2007,15 @@ fn validate_choice(
                 .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
             let target = super::choice_identity::goto(symbols, module, owner, ordinal, reference)?;
             validate_project_item(symbols, modules, &target)?;
+            let source_span = required_expression_source(
+                module,
+                owner,
+                HirExprSourceRole::ChoiceCompactArm {
+                    arm: ordinal,
+                    part: arcweft_lang_hir::source_index::HirChoiceCompactArmSourcePart::GotoTarget,
+                },
+            )?;
+            checked_callables.validate_empty_flow_transfer(&target, owner, source_span)?;
             gotos.push(super::CheckedChoiceGoto::new(ordinal, target));
         }
     }

@@ -116,6 +116,8 @@ mod match_coverage;
 #[path = "tests/style_types.rs"]
 mod style_types;
 
+#[path = "tests/flow_transfer.rs"]
+mod flow_transfer;
 #[path = "tests/presentation.rs"]
 mod presentation;
 #[path = "tests/project_callable_source.rs"]

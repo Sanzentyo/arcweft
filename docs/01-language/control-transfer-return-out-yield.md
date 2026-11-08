@@ -198,6 +198,13 @@ current scope. The target's body, argument contract, and entry capabilities
 remain checked. Returning calls, including ordinary function calls made by a
 Flow, require the callee's exposed effects to be covered by the caller's scope.
 
+A bare `goto @flow.target` and a compact Choice `-> @flow.target` supply no
+arguments. In these forms, a statically selected target must have no formal inputs,
+including unused or wildcard parameters. Stateful Entry startup supplies its
+initial state through its own typed binding; it does not implicitly supply state
+to later Flow transfers. Missing inputs are rejected during semantic analysis,
+before runtime-plan or AWBC generation.
+
 `out` is only valid for line-plan, cue-block, and content-scope outputs. These scopes may also be labeled:
 
 ```arcw

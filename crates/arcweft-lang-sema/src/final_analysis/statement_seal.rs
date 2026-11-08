@@ -619,7 +619,26 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                 ))
             }
             HirStmtKind::Out { .. } => self.control_transfer(owner, HirControlTransferKind::Out),
-            HirStmtKind::Goto { .. } => self.structural(owner),
+            HirStmtKind::Goto { target } => {
+                let checked = expressions.get(target).ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
+                )?;
+                if let super::CheckedExpressionResolution::Value(
+                    super::CheckedValueResolution::ProjectItem(flow),
+                ) = checked.resolution()
+                {
+                    let source_span = module
+                        .source_anchor(HirSourceQuery::Expr {
+                            owner: *target,
+                            role: HirExprSourceRole::Whole,
+                        })
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
+                    self.callables
+                        .validate_empty_flow_transfer(flow, *target, source_span)?;
+                }
+                self.structural(owner)
+            }
             HirStmtKind::Defer {
                 outcome,
                 expression,

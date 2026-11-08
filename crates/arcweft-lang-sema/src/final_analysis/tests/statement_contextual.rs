@@ -76,6 +76,25 @@ fn stateful_flow_fixture(body: &str, extra: &str) -> Fixture {
     )
 }
 
+#[test]
+fn stateful_startup_and_bare_goto_have_distinct_input_contracts() {
+    let control = stateful_flow_fixture("", "");
+    analyze(&control).expect("stateful Entry supplies the initial GameState");
+    let transfer = stateful_flow_fixture("goto @flow.shared", "");
+    let error = analyze(&transfer).expect_err("bare goto does not inject the root state");
+    assert!(
+        matches!(
+            error,
+            FinalSemanticAnalysisError::FlowTransferArgumentCount {
+                expected: 1,
+                actual: 0,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+}
+
 fn root_module(fixture: &Fixture) -> &HirModule {
     fixture
         .project

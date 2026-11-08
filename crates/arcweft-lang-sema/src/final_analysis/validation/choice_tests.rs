@@ -30,7 +30,14 @@ fn choice_seal_binds_header_options_and_complete_gotos_to_the_authored_owner() {
         .modules()
         .map(|(_, module)| (module.module_id(), module.as_ref()))
         .collect::<BTreeMap<_, _>>();
-    validate_choice(&world.symbols, &modules, owner, choice).unwrap();
+    validate_choice(
+        &world.symbols,
+        analysis.checked_callables(),
+        &modules,
+        owner,
+        choice,
+    )
+    .unwrap();
     let unrelated = arcweft_id::PublicId::try_new("choice.unrelated").unwrap();
     let header = CheckedChoice::new(
         Some(unrelated.clone()),
@@ -63,7 +70,13 @@ fn choice_seal_binds_header_options_and_complete_gotos_to_the_authored_owner() {
     );
     for invalid in [header, swapped_options, omitted_goto, changed_target] {
         assert_eq!(
-            validate_choice(&world.symbols, &modules, owner, &invalid),
+            validate_choice(
+                &world.symbols,
+                analysis.checked_callables(),
+                &modules,
+                owner,
+                &invalid
+            ),
             Err(FinalSemanticAnalysisError::WrongPayloadFamily)
         );
     }
@@ -94,7 +107,14 @@ fn choice_seal_rejects_foreign_same_source_flow_target_generation() {
         .modules()
         .map(|(_, module)| (module.module_id(), module.as_ref()))
         .collect::<BTreeMap<_, _>>();
-    validate_choice(&world.symbols, &modules, owner, choice).unwrap();
+    validate_choice(
+        &world.symbols,
+        analysis.checked_callables(),
+        &modules,
+        owner,
+        choice,
+    )
+    .unwrap();
     assert_ne!(
         choice.gotos(),
         foreign_choice.gotos(),
@@ -107,7 +127,13 @@ fn choice_seal_rejects_foreign_same_source_flow_target_generation() {
         choice.plan().cloned(),
     );
     assert_eq!(
-        validate_choice(&world.symbols, &modules, owner, &forged),
+        validate_choice(
+            &world.symbols,
+            analysis.checked_callables(),
+            &modules,
+            owner,
+            &forged
+        ),
         Err(FinalSemanticAnalysisError::WrongPayloadFamily)
     );
 }

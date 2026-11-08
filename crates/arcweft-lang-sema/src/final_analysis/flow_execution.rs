@@ -14,6 +14,44 @@ use super::{
 };
 use crate::effects::EffectSet;
 
+impl crate::callable::CheckedCallableCatalog {
+    /// Bare goto and compact Choice arms supply no arguments. Check their
+    /// complete declaration ABI, including unused and wildcard formals, before
+    /// publishing semantic success. Stateful Entry startup is a separate typed
+    /// invocation and must not enter this zero-input boundary.
+    pub(super) fn validate_empty_flow_transfer(
+        &self,
+        target: &super::CheckedProjectItem,
+        owner: arcweft_lang_hir::identity::ExprId,
+        source_span: arcweft_source::SourceSpan,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let (declaration, _) = target
+            .flow_owner()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let callable = self
+            .project_callable(declaration)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let expected = callable
+            .signature()
+            .groups()
+            .iter()
+            .try_fold(0usize, |count, group| {
+                count
+                    .checked_add(group.parameters().len())
+                    .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
+            })?;
+        if expected != 0 {
+            return Err(FinalSemanticAnalysisError::FlowTransferArgumentCount {
+                owner,
+                expected,
+                actual: 0,
+                source_span,
+            });
+        }
+        Ok(())
+    }
+}
+
 /// One accepted Flow contract. Exposed permissions can include unused or scoped
 /// members; body execution effects are retained independently in its ABI.
 #[derive(Debug)]
