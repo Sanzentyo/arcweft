@@ -1398,6 +1398,8 @@ fn expression_sources_bound_depth_and_reject_missing_children_before_scope_growt
 }
 #[test]
 fn expression_intrinsic_source_tags_are_closed_and_preserve_all_original_semantic_coordinates() {
+    use crate::value::RuntimeStringOperation;
+
     let mut count = 0;
     for tag in 0..=u8::MAX {
         if let Some(intrinsic) = RuntimeIntrinsic::from_source_tag(tag) {
@@ -1405,7 +1407,17 @@ fn expression_intrinsic_source_tags_are_closed_and_preserve_all_original_semanti
             count += 1;
         }
     }
-    assert_eq!(count, 94);
+    assert_eq!(count, 95);
+    for (tag, operation) in [
+        (18, RuntimeStringOperation::Trim),
+        (19, RuntimeStringOperation::ToString),
+        (94, RuntimeStringOperation::ScalarCount),
+    ] {
+        assert_eq!(
+            RuntimeIntrinsic::from_source_tag(tag),
+            Some(RuntimeIntrinsic::String(operation))
+        );
+    }
     assert_eq!(
         RuntimeIntrinsic::from_source_tag(92),
         Some(RuntimeIntrinsic::CoreRequireUnrestricted)

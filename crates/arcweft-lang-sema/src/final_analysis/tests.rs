@@ -9193,7 +9193,9 @@ fn vec_turbofish_path() { Vec::<i32>::with_capacity(6); }
 }
 
 #[test]
-fn production_analyzer_routes_string_preserving_value_methods_through_capacity_family() {
+fn production_analyzer_routes_string_preserving_value_methods_through_string_family() {
+    use arcweft_core::value::RuntimeStringOperation;
+
     let fixture = fixture(
         "fn normalize(name: String) -> String { name.trim().to_string() }\n",
         None,
@@ -9205,10 +9207,31 @@ fn production_analyzer_routes_string_preserving_value_methods_through_capacity_f
         facts.selected_application().is_some_and(|application| {
             matches!(
                 application.core().candidates().selected().id(),
-                CallableCandidateId::CapacityMethod(_)
+                CallableCandidateId::StringMethod(_)
             ) && application.core().candidates().candidates().len() == 1
         })
     }));
+    let operations = calls
+        .iter()
+        .map(|facts| {
+            let CallableCandidateId::StringMethod(operation) = selected_application(facts)
+                .core()
+                .candidates()
+                .selected()
+                .id()
+            else {
+                panic!("selected String operation");
+            };
+            *operation
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        operations,
+        std::collections::BTreeSet::from([
+            RuntimeStringOperation::Trim,
+            RuntimeStringOperation::ToString,
+        ])
+    );
     assert!(calls.iter().all(|facts| {
         facts
             .selected_application()
@@ -9258,7 +9281,7 @@ fn production_analyzer_routes_single_string_preserving_value_method() {
         Some(application)
             if matches!(
                 application.core().candidates().selected().id(),
-                CallableCandidateId::CapacityMethod(_)
+                CallableCandidateId::StringMethod(arcweft_core::value::RuntimeStringOperation::Trim)
             ) && application.core().candidates().candidates().len() == 1
     ));
     assert_eq!(
