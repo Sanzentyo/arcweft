@@ -15587,3 +15587,13 @@ Source `5a879a8dbd9d817e39db1d8125fb806fff046e7e` のRuntimeDriver逆依存12 pa
 同じSourceのCLIは711実行、707 PASS／4 FAIL／23 SKIP、26 slow、511.677秒、3921入力drift0。失敗IDは先行と同じ Scroll capture／release、spec_valid_run_edge_fixture_now_executes、verify_json_records_required_solver_checks、verify_json_reports_missing_promotion_proof。ID一致から原因解消や全CLI通過を推論しない。実CLI本体は元pathで前後SHA256 `a765021fc71a16f1f192a59cd9fc9057c2184acf950c66cbf92f812131abc96d`。
 
 影響外5641 PASSの再利用＋現Driver1713 PASS＋現CLI707 PASS／4 FAILで、論理的な重複なし被覆8065実行相当・8061 PASS／4 FAIL／41 SKIP。旧8056件と今回の各実行を合算せず、current-statusの横断行を最新入力へ更新した。元131件のJSON記録は値を変えず、新しいconsumer記録だけを追記した。新旧終端、準備失敗、9件ownerの修復前後、Source／EXE pin、graph、構造レビューと品質ログは [task-retained-text-input-consumers.raw.zip](acceptance-evidence/task-retained-text-input-consumers.raw.zip) 111 entry／4723361 bytes、SHA256 `8503e68ff851ec67b6ddc98f00275ed1a4a5e1d299cb0952bb31f75c82374a95` に保持する。実行ファイルは含めない。
+
+## 2026-11-08 Viewのnamed Action結果を元sessionのFIFOへ接続
+
+Source `8c123e75092eedb0aa1893a4c5847ca93f422e74`（親 `26a1afa28031a56f1c662a191fad8d68f87b1e8e`、17 path）を公開した。Semaは元の非generic Action宣言とpayload型を認証し、Compilerは書込みの有無にかかわらず既存event-time ABIで返却値を実行する。Bundleは元Core型表と正確なtuple結果を照合する。driverは全View出力とrevisionを事前検査し、Coreの保持中実行全体と既存mailbox・候補値のadmission成功後に、失敗しないView commitを行う。VM／AOT／AWBCは同じFIFOを使い、並行キューやambientな送信効果を作らない。
+
+owner-r4はView 85件とAction channel 13件の全98／98 PASS、除外0、71.105秒。CoreのAction関連7／7 PASS、2325件は明示filter外。3898入力・catalog・元pathの実EXE差分0。全98 workspace package・全target／全feature・locked check／Clippy、構造、変更Rustのfmtは終了0。警告は保持する。Source公開後に追加した本番上限の回帰は、1MiB文字列4 fieldを持つActionの2件目を、8MiBの共有encoded-byte上限が型付きencoded_bytesで拒否すること、前後の完全BundleSessionSnapshot一致、値を小さくしたretryを確認した。最終capacity-r2は1／1 PASS、0.512秒。後続testのみのClippy／fmtも別epochで終了0。106件のowner被覆であり、開発中の重複runは加算しない。
+
+失敗も保持する。owner-r1は10 PASS／1 FAILで、pending text write-backがある時点のsession saveを誤って要求した。静止条件は維持し、submit送信と、書戻しを処理した後のclick／mailbox save／restoreを別の実検証へ分けた。r2はprivate nominal constructorをtestが直接呼んだ準備101で、公開済みの元program付きtry_record_valueを使うよう修正した。r3は13 PASS／1 FAIL、Native facadeのentry未選択が原因で、実entryを明示的に開始した。OneOp、64 step、assertionと静止条件は弱めていない。
+
+仕様書の旧「text callbackはcapture-free、overlayが値の正本」という段落は、既に `7af6e561ffa90716501e1ee0f15a397b666bffde` の保持field／seal／capture ABIと矛盾していたため削除・訂正した。未実装factoryを採用しない理由は本履歴の先行記録に保持し、仕様書から過去形の説明を除いた。Generic Matchや既存Action emit／receiveなどの受入を戻さない。owner／品質／各準備失敗・修復、CLIのbaselineとUnit対照、Source公開SHA／patch・EXE pin・graph・構造レビューは [task-view-action-ingress-owner.raw.zip](acceptance-evidence/task-view-action-ingress-owner.raw.zip) 92 entry／3450001 bytes、SHA256 `398c85c1a14c9be7b22723deb83946f54e025b35f34c739229ac7551f8730987` に保持する。元132件のJSON記録は値を変えず、新しいowner記録だけを追記した。全逆依存・CLI・Source sample・実Native／Web表示の通過は、このowner結果から推論しない。

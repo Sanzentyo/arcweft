@@ -53291,5 +53291,725 @@
     },
     "scope": "Owner/codec/player-batch boundary validated. Old source factory samples, named Action UI bridge, Scroll fixture and actual Native/Web capture remain independent unmet boundaries. Generic Match and other accepted cuts stay accepted.",
     "preservedPriorRecords": 131
+  },
+  "viewNamedActionOwner": {
+    "version": 1,
+    "date": "2026-11-08",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+      "parent": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+      "tree": "b48bd029ef7853ecd9d1b6907aa197a1424d7676",
+      "remote": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+      "paths": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "blob": "c68d03c3411628a4e65ef6fed6bb2cb20950cffe"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "blob": "6de1a8da462fc0a01aa298d1264da23f781daaab"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/action_channel.rs",
+          "blob": "585003b5b305b1cbb0d3429d8449885fcfa7365d"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "blob": "75d39abef60de5aba8c3e3f73647bfd74c2d6914"
+        },
+        {
+          "path": "crates/arcweft-core/src/action.rs",
+          "blob": "f63d9baea0a63d3c14fc08404723ad5db04f4655"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "ee58a979732069ed4afed81c95506927d390f97b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/action.rs",
+          "blob": "de35e14438ffe8dbef896122a759874cf297c2bb"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/actions.rs",
+          "blob": "25d69d4f92bcbbd0e95c54a02ca8cf2f6a9d3f6b"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/action.rs",
+          "blob": "4d6d4e851e565b58085fd085f4075f6ddbc34004"
+        },
+        {
+          "path": "crates/arcweft-core/src/executor.rs",
+          "blob": "bd21d836b1bf16fb5af29e9223ab736127c4e3db"
+        },
+        {
+          "path": "crates/arcweft-core/src/program_types/action.rs",
+          "blob": "2ffcf468df5c1d8d9dc06176f5ac40bc20e55384"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "blob": "d6082ad9fbe39e967a32c786c8041b69e382b4f2"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session.rs",
+          "blob": "563dc1cb8da7d71ca854be83ee8e72568e41fc12"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime.rs",
+          "blob": "308d0d89f2178258e1486daf24ef364c6e32651f"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/handler.rs",
+          "blob": "de2a40ef7ccd3fa164cf1beb24e93375b7a969de"
+        },
+        {
+          "path": "crates/arcweft-view/src/handler_program.rs",
+          "blob": "b22b499c4a4dd04f4ef10f0a9def6d540505d1e9"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "4636a7ecd6f2162b27522738161c6ca35c0cf42f"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "b1990797626aee8414384b7e0e75f51b4b03d864b9fe483238eac9306e6a51c1",
+      "heldPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-08T06:02:24.5206580Z"
+    },
+    "scope": "View event-time named Action result -> original Core session FIFO, atomic with retained updates",
+    "owner": {
+      "version": 1,
+      "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+      "run": "view-action-ingress-20261108.owner-r4.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  71.105s] 98 tests run: 98 passed (1 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 98,
+      "passed": 98,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T05:55:12.0007968Z"
+    },
+    "core": {
+      "version": 1,
+      "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+      "run": "view-action-ingress-20261108.core-owner.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.113s] 7 tests run: 7 passed, 2325 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 2325,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T05:57:07.5305909Z"
+    },
+    "additionalProductionLimitCase": {
+      "version": 1,
+      "base": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+      "run": "view-action-ingress-20261108.capacity-r2.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.512s] 1 test run: 1 passed, 85 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 85,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 3898,
+      "sourceDrift": 0,
+      "held": 0,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-08T06:05:18.9215826Z"
+    },
+    "uniqueOwnerCases": 106,
+    "workspaceQuality": [
+      {
+        "version": 1,
+        "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+        "command": [
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3898,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T05:57:39.4126205Z",
+        "finishedAt": "2026-11-08T05:59:37.4394623Z"
+      },
+      {
+        "version": 1,
+        "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+        "command": [
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3898,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T05:59:37.8441717Z",
+        "finishedAt": "2026-11-08T06:01:49.9139088Z"
+      },
+      {
+        "version": 1,
+        "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/view-action-ingress-20261108.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3898,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T06:01:50.3655023Z",
+        "finishedAt": "2026-11-08T06:01:55.2020781Z"
+      },
+      {
+        "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+        "paths": [
+          "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "crates/arcweft-compiler/src/view.rs",
+          "crates/arcweft-compiler/tests/action_channel.rs",
+          "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "crates/arcweft-core/src/action.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/actions.rs",
+          "crates/arcweft-core/src/engine/action.rs",
+          "crates/arcweft-core/src/executor.rs",
+          "crates/arcweft-core/src/program_types/action.rs",
+          "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "crates/arcweft-runtime-driver/src/session.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime.rs",
+          "crates/arcweft-runtime-driver/src/view_runtime/handler.rs",
+          "crates/arcweft-view/src/handler_program.rs",
+          "crates/arcweft-core/src/awbc/product_step/action.rs"
+        ],
+        "exitCode": 0,
+        "sourceDrift": 0
+      }
+    ],
+    "additionalTestQuality": [
+      {
+        "version": 1,
+        "base": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+        "command": [
+          "clippy",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "view_product",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 3898,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-08T06:05:18.9436995Z",
+        "finishedAt": "2026-11-08T06:06:42.8202240Z"
+      },
+      {
+        "version": 1,
+        "base": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+        "paths": [
+          "crates/arcweft-compiler/tests/view_product/text_input.rs"
+        ],
+        "exitCode": 0
+      }
+    ],
+    "developmentEpochs": [
+      {
+        "epoch": "view-action-ingress-20261108.owner-r1",
+        "preparation": {
+          "version": 1,
+          "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "view_product",
+            "--all-features",
+            "-E",
+            "test(text_input::)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-action-ingress-20261108.owner-r1.catalog.log",
+          "exitCode": 0,
+          "sourceInputs": 3898,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T05:46:35.0240193Z",
+          "finishedAt": "2026-11-08T05:49:21.5632474Z"
+        },
+        "terminal": {
+          "version": 1,
+          "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+          "run": "view-action-ingress-20261108.owner-r1.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.487s] 11 tests run: 10 passed, 1 failed, 72 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 11,
+          "passed": 10,
+          "failed": 1,
+          "skipped": 72,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3898,
+          "sourceDrift": 0,
+          "held": 0,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::view_product",
+              "test": "text_input::retained_text_input_publishes_a_named_action_with_state_and_restores_its_mailbox"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T05:49:25.9423249Z"
+        }
+      },
+      {
+        "epoch": "view-action-ingress-20261108.owner-r2",
+        "preparation": {
+          "version": 1,
+          "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "view_product",
+            "--test",
+            "action_channel",
+            "--all-features",
+            "-E",
+            "test(text_input::) | test(external_typed_action_ingress)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-action-ingress-20261108.owner-r2.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 3898,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T05:50:48.4949853Z",
+          "finishedAt": "2026-11-08T05:51:04.3798344Z"
+        },
+        "terminal": null
+      },
+      {
+        "epoch": "view-action-ingress-20261108.owner-r3",
+        "preparation": {
+          "version": 1,
+          "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+          "command": [
+            "nextest",
+            "list",
+            "--locked",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "view_product",
+            "--test",
+            "action_channel",
+            "--all-features",
+            "-E",
+            "test(text_input::) | test(external_typed_action_ingress)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-action-ingress-20261108.owner-r3.catalog.log",
+          "exitCode": 0,
+          "sourceInputs": 3898,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-08T05:52:17.0994972Z",
+          "finishedAt": "2026-11-08T05:52:38.7358476Z"
+        },
+        "terminal": {
+          "version": 1,
+          "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+          "run": "view-action-ingress-20261108.owner-r3.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.627s] 14 tests run: 13 passed, 1 failed, 84 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 14,
+          "passed": 13,
+          "failed": 1,
+          "skipped": 84,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 3898,
+          "sourceDrift": 0,
+          "held": 0,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::action_channel",
+              "test": "external_typed_action_ingress_uses_the_original_fifo_in_every_executor_tier"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-08T05:52:43.4723771Z"
+        }
+      }
+    ],
+    "corrections": [
+      "Owner-r1: attempted session save before pending adapter text write-back was drained. Preserve quiescence; separate actual submit and drained-change/click/save/restore tests.",
+      "Owner-r2: test tried a private nominal constructor. Keep it private and use existing original-program try_record_value. No runtime tests executed.",
+      "Owner-r3: Native/AOT facade test did not select its entry. Start the real entry explicitly; keep OneOp and 64 steps unchanged."
+    ],
+    "capacity": "Use real max_string_bytes=1048576 and encoded-byte group limit=8388608; second four-field Action is refused with typed encoded_bytes, complete BundleSessionSnapshot equality, and smaller-payload retry succeeds.",
+    "graph": {
+      "version": 1,
+      "base": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+      "metadata": "retained-text-input-integrated-20261108.metadata.json",
+      "metadataSource": "7af6e561ffa90716501e1ee0f15a397b666bffde",
+      "owners": [
+        "arcweft-core",
+        "arcweft-view",
+        "arcweft-lang-sema",
+        "arcweft-runtime-driver",
+        "arcweft-bundle",
+        "arcweft-compiler"
+      ],
+      "cargoInputsUnchanged": true,
+      "packages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "reverseCount": 53,
+      "edgeKinds": "normal/build/dev, all resolved features and target-specific edges"
+    },
+    "structuralReview": {
+      "version": 1,
+      "source": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+      "baseline": "26a1afa28031a56f1c662a191fad8d68f87b1e8e",
+      "files": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/codec.rs",
+          "owner": "arcweft-bundle",
+          "bytes": "106342",
+          "physical_lines": "2577",
+          "code_lines": "2484",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "owner": "arcweft-compiler",
+          "bytes": "127046",
+          "physical_lines": "3135",
+          "code_lines": "3035",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/action_channel.rs",
+          "owner": "arcweft-compiler",
+          "bytes": "22970",
+          "physical_lines": "606",
+          "code_lines": "583",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+          "owner": "arcweft-compiler",
+          "bytes": "25324",
+          "physical_lines": "650",
+          "code_lines": "627",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-core/src/action.rs",
+          "owner": "arcweft-core",
+          "bytes": "14256",
+          "physical_lines": "388",
+          "code_lines": "336",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "owner": "arcweft-core",
+          "bytes": "282184",
+          "physical_lines": "6895",
+          "code_lines": "6586",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/action.rs",
+          "owner": "arcweft-core",
+          "bytes": "1080",
+          "physical_lines": "27",
+          "code_lines": "24",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/actions.rs",
+          "owner": "arcweft-core",
+          "bytes": "7004",
+          "physical_lines": "185",
+          "code_lines": "176",
+          "classification": "test",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/action.rs",
+          "owner": "arcweft-core",
+          "bytes": "8077",
+          "physical_lines": "206",
+          "code_lines": "195",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-core/src/executor.rs",
+          "owner": "arcweft-core",
+          "bytes": "46972",
+          "physical_lines": "1190",
+          "code_lines": "1016",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-core/src/program_types/action.rs",
+          "owner": "arcweft-core",
+          "bytes": "5026",
+          "physical_lines": "111",
+          "code_lines": "102",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": "10372",
+          "physical_lines": "282",
+          "code_lines": "253",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/session.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "80322",
+          "physical_lines": "1976",
+          "code_lines": "1854",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "328"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "82660",
+          "physical_lines": "2079",
+          "code_lines": "1896",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/view_runtime/handler.rs",
+          "owner": "arcweft-runtime-driver",
+          "bytes": "21836",
+          "physical_lines": "521",
+          "code_lines": "494",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        },
+        {
+          "path": "crates/arcweft-view/src/handler_program.rs",
+          "owner": "arcweft-view",
+          "bytes": "5276",
+          "physical_lines": "160",
+          "code_lines": "117",
+          "classification": "production",
+          "is_rust": "true",
+          "embedded_test_lines": "0"
+        }
+      ],
+      "packages": [
+        {
+          "package": "arcweft-bundle",
+          "manifest": "crates/arcweft-bundle/Cargo.toml",
+          "workspace_fan_in": "11",
+          "workspace_fan_out": "19",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-compiler",
+          "manifest": "crates/arcweft-compiler/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "25",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "10"
+        },
+        {
+          "package": "arcweft-core",
+          "manifest": "crates/arcweft-core/Cargo.toml",
+          "workspace_fan_in": "31",
+          "workspace_fan_out": "8",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "5"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+          "workspace_fan_in": "8",
+          "workspace_fan_out": "15",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "manifest": "crates/arcweft-runtime-driver/Cargo.toml",
+          "workspace_fan_in": "6",
+          "workspace_fan_out": "16",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "3"
+        },
+        {
+          "package": "arcweft-view",
+          "manifest": "crates/arcweft-view/Cargo.toml",
+          "workspace_fan_in": "15",
+          "workspace_fan_out": "5",
+          "development_workspace_fan_in": "5",
+          "development_workspace_fan_out": "0"
+        }
+      ],
+      "disposition": [
+        "Core owns original declaration lookup, complete live admission and the existing FIFO; Native/AOT and AWBC supply their actual retained execution contour. The new 27-line AWBC child names that ingress responsibility.",
+        "View owns the closed handler result algebra. Sema authenticates the Action declaration and exact payload semantic identity; Compiler uses the existing event-time mutation ABI. Bundle checks the tuple result against the original Core type table.",
+        "Driver owns the exclusive commit across admitted View updates and Core emission. It creates no second queue or callback catalog. Core refusal occurs before the infallible View commit.",
+        "Existing large owners retain their responsibility; no arbitrary source split, Cargo/feature/dependency change, unsafe or version marker change. All Arcweft-owned markers remain 1."
+      ],
+      "additionalTest": {
+        "path": "crates/arcweft-compiler/tests/view_product/text_input.rs",
+        "base": "8c123e75092eedb0aa1893a4c5847ca93f422e74",
+        "bytes": 28493,
+        "sha256": "28f2a9eb27002fc576c98f23e117bc86d43346c5db28a83268ce8ecfb587ae78",
+        "note": "One later test addition, compiled/run/linted/formatted separately. Prior workspace quality covers unchanged production; do not relabel its frozen test bytes."
+      }
+    },
+    "archive": {
+      "path": "docs/implementation/acceptance-evidence/task-view-action-ingress-owner.raw.zip",
+      "entries": 92,
+      "bytes": 3450001,
+      "sha256": "398c85c1a14c9be7b22723deb83946f54e025b35f34c739229ac7551f8730987",
+      "containsExecutables": false
+    },
+    "integration": "Owner and workspace gates passed. Complete reverse consumers, CLI Source probe, old sample migration, Scroll and Native/Web capture are not yet accepted.",
+    "preservedPriorRecords": 132
   }
 }

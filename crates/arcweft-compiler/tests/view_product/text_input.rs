@@ -648,3 +648,74 @@ fn named_action_bundle_rejects_a_substituted_payload_role() {
         "the role cannot substitute the verified result's original Action type"
     );
 }
+
+#[test]
+fn named_action_core_capacity_refusal_keeps_the_complete_session_and_retry() {
+    let source = SOURCE
+        .replace("entry cli", "pub action huge(value: String, a: String, b: String, c: String)\nentry cli")
+        .replace("Column {", "local state mut count: i64 = 0i64; Column { Button(\"Queue\").on_click(|| { count = count + 1i64; huge(value = caption, a = caption, b = caption, c = caption) })")
+        .replace("Text(caption)", "Text(match count { 0i64 => \"zero\", 1i64 => \"one\", 2i64 => \"two\", _ => \"unexpected\" })");
+    let (mut session, initial) = player_session(&source);
+    let text = "x".repeat(
+        arcweft_core::entry::RuntimeSchemaLimits::engine_default().max_string_bytes as usize,
+    );
+    session
+        .queue_text_control_write_back(&write(
+            &initial.presentation.text_inputs[0],
+            &text,
+            1,
+            false,
+        ))
+        .unwrap();
+    let changed = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(changed.diagnostics.is_empty(), "{:?}", changed.diagnostics);
+    let click = retained_transition_invocation(
+        changed.presentation.view.mounts[0]
+            .events
+            .iter()
+            .find(|event| event.event() == EventKind::Activate)
+            .unwrap(),
+    );
+    session.queue_view_handler_invocation(&click).unwrap();
+    let before = session.snapshot_session().unwrap();
+    assert_eq!(labels(&before.presentation.view), ["one", "none"]);
+    let refused = retained_transition_invocation(
+        session.presentation().view.mounts[0]
+            .events
+            .iter()
+            .find(|event| event.event() == EventKind::Activate)
+            .unwrap(),
+    );
+    let error = session.queue_view_handler_invocation(&refused).unwrap_err();
+    assert!(matches!(error,
+        arcweft_runtime_driver::view_runtime::BundleViewEventDispatchError::ActionEmission {
+            source: arcweft_core::executor::RuntimeActionEmissionError::Value(source),
+        } if matches!(*source, arcweft_core::value::AwbcRuntimeValueSnapshotError::Resource(
+            arcweft_core::entry::RuntimeSchemaError::BudgetExceeded { budget: "encoded_bytes" }
+        ))
+    ));
+    assert_eq!(
+        session.snapshot_session().unwrap(),
+        before,
+        "Core refusal changes neither mailbox, View state, leases, projection nor session clocks"
+    );
+    let retry = write(&session.presentation().text_inputs[0], "retry", 2, false);
+    session.queue_text_control_write_back(&retry).unwrap();
+    let changed = session.step_with_clock(
+        RuntimeClockStep::from_millis(3, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(changed.diagnostics.is_empty(), "{:?}", changed.diagnostics);
+    let click = retained_transition_invocation(
+        changed.presentation.view.mounts[0]
+            .events
+            .iter()
+            .find(|event| event.event() == EventKind::Activate)
+            .unwrap(),
+    );
+    session.queue_view_handler_invocation(&click).unwrap();
+    assert_eq!(labels(&session.presentation().view), ["two", "none"]);
+}
