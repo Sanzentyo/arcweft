@@ -15569,3 +15569,11 @@ owner の失敗、準備失敗、修復後78 PASS、元Source freeze、実 EXE h
 workspace 品質検証の log／receipt、3897入力の hash、構造scanner 5 report と変更ownerのbyte／LOC／growth／fan-in/out・責任境界の判断、新しいCargo metadataとhost／all-target逆依存treeは [task-retained-text-input-quality.raw.zip](acceptance-evidence/task-retained-text-input-quality.raw.zip) 23 entry／1401519 bytes、SHA256 `6e8cf0dd5ca3fa411199dfb1f1e0a2751fdf9c253c40d92dbc0e7dce5e82202f` に保持した。metadata はworkspace98／resolved846、Core逆依存53。host treeの52との差はWeb条件付きのarcweft-render-webで、--target allのtreeとは差分0。Cargo依存・feature・unsafeは変更していない。Semaが宣言と入力先、Viewがfield identity/access、Bundleがscope/ABI、MountedViewが保持値とsealを所有し、入力のadapter投影だけをevaluator childへ置く。既存の大きいownerは責任境界が同じためLOCだけを理由に分割しない。
 
 同じSourceの非CLI全逆依存は初回とnoncli-r2の両方で準備101、実テスト未開始。raw診断はOS error 1455（ページングファイル不足）によるarcweft_bundle rlibのmmap失敗を示し、型不整合や実行失敗としては数えない。再試行では未準備対象がNative playerのbin testに絞られたため、同じworkspace／全featureのまま当該binaryを先に準備してから、元の完全選択を再試行する。並列度・profile・assertion・budget・実行対象の受入条件は変更しない。この時点の結果はowner78 PASSと品質gate 0までであり、全consumer成功の主張ではない。
+
+## 2026-11-08 View入力の統合consumerとplayer batch境界
+
+Source `7af6e561ffa90716501e1ee0f15a397b666bffde` と同じRust入力の非CLI rdeps実行は、docs `46e23e5ff53b4954193e9a5bccf85367411db0c2` を基点とするnoncli-r3で全7351／7351 PASS、9 slow、18 skip、801.861秒。49実行package、実EXEを前後pinし、catalogと終端の差分0。初回とr2の準備101／OS1455、Native binの単独準備0も原本として保持し、実行件数に加えない。古いfocused helperの3418入力guardに加え、開始前のqualityで固定した完全3897入力を実行中・実行後に照合しdrift0。古いinventoryは変更していないCore dialogue/scope.rsを含まないため、この追加guardで対象範囲を明示した。
+
+その後、既存6回帰のruntimeを実AWFB encode/decodeの往復へ移した。追加した実BundleSessionのplayer batch回帰はowner-r7で7件中6 PASS／1 FAIL、change→submitがViewEvent(UnknownBinding)になることを再現した。Native/Webの実call-siteはともにqueue_text_control_write_backsを使用する。状態更新後に次のeventまでViewを再評価してsealと表示を公開し、元のVM時刻ではflowを実行しない。Text controlの旧投影はmoveで評価へ渡し、投影未更新時は元へ戻す。入力／handlerのadmission失敗後は再評価せず、完全sessionを保つ。
+
+owner-r8は7／7 PASS、r9はclick→change→submit／完全session失敗原子性を加え9／9 PASS、r10は投影Clone除去後9／9 PASS、r11は成功したclick後もruntime時計／sequenceとexecutorが不変で表示だけ更新されることを加え9／9 PASS（72 skip、0.561秒、3897入力 drift0）。後続のSource変更で先行7351件を再実行したことにはしない。Cargo入力不変のmetadataからRuntimeDriverの逆依存12 packageを確定し、後続修復はこのclosureとworkspace gates／CLIで検証する。旧sampleの未実装input factory等は移行前で、Scroll CLIの完了判定と既受入境界の状態は変更しない。

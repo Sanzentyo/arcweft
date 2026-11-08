@@ -8,7 +8,9 @@ use arcweft_presentation::{
     },
 };
 use arcweft_runtime_driver::{
+    clock::RuntimeClockStep,
     presentation_handles::{PresentationHandleRecord, PresentationResourceState},
+    session::{BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput},
     view_runtime::{BundleViewFrame, BundleViewTextValue},
 };
 
@@ -26,28 +28,76 @@ view Main() {
 }
 "#;
 
-fn runtime(source: &str) -> (BundleViewRuntime, PresentationHandleRecord) {
-    let compiled = project_view_fixture_with_entry(source, "arcweft-test://retained-text-input")
-        .compile()
-        .expect("typed retained text input");
-    let awbc = Arc::new(
-        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
-            AwbcLowerer::new(
-                &compiled.runtime_plan().plan,
-                &compiled.runtime_plan().dialogue_content_catalog,
-                "main.arcw",
-            )
-            .lower()
-            .unwrap()
-            .program,
-        )
-        .unwrap(),
+fn bundle(source: &str) -> ArcweftBundle {
+    let fixture = project_view_fixture_with_entry(source, "arcweft-test://retained-text-input");
+    let compiled = fixture.compile().expect("typed retained text input");
+    let awbc = AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let bundle = ArcweftBundle::try_new(
+        BundleManifest {
+            profile_id: None,
+            profile_kind: None,
+            locale: compiled.locale().clone(),
+            entry: Some("entry.main".to_owned()),
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                artifact_fingerprint: RuntimeArtifactFingerprint::try_from_bytes([0x8a; 32])
+                    .unwrap(),
+                entry_flow: Some("flow.main".to_owned()),
+                flows: compiled.runtime_plan().plan.flows().len(),
+                bytecode_instructions: awbc.instructions.len(),
+                line_task_groups: 0,
+                stream_plans: 0,
+            },
+        },
+        SourceMapSection::try_from_documents(&[fixture.document.as_ref()]).unwrap(),
+        awbc,
+        compiled.runtime_plan().dialogue_content_catalog.clone(),
+    )
+    .unwrap()
+    .try_with_validated_view_product(compiled.view_product().product())
+    .unwrap();
+    let bundle = bundle.with_view_text(compiled.view_product().text().unwrap().clone());
+    let bundle = if let Some(generation) = &compiled.runtime_plan().character_dialogue_generation {
+        bundle.with_character_dialogue_generation(generation.as_ref().clone())
+    } else {
+        bundle
+    };
+    let bytes = bundle
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("retained input encodes");
+    let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
+        .expect("retained input decodes");
+    assert_eq!(
+        decoded.to_format_bytes(BundleFormat::Awfb).unwrap(),
+        bytes,
+        "canonical input/field-access/handler encoding"
     );
+    decoded
+}
+
+fn runtime(source: &str) -> (BundleViewRuntime, PresentationHandleRecord) {
+    let bundle = bundle(source);
+    let product = ValidatedViewProduct::try_new(
+        Some(bundle.source_map.clone()),
+        bundle.view_program.clone(),
+        bundle.view_style.clone(),
+        ViewProductValidationLimits::default(),
+    )
+    .unwrap();
     (
         BundleViewRuntime::try_new_with_awbc(
-            compiled.view_product().product().as_ref().clone(),
-            compiled.view_product().text().cloned(),
-            awbc,
+            product,
+            bundle.view_text.clone(),
+            bundle.product_awbc().program_lease(),
         )
         .unwrap(),
         PresentationHandleRecord::new(
@@ -114,7 +164,7 @@ fn dispatch(
     )
 }
 
-fn labels(frame: &BundleViewFrame) -> Vec<&str> {
+fn labels<F>(frame: &BundleViewFrame<F>) -> Vec<&str> {
     frame.mounts[0]
         .text
         .iter()
@@ -347,4 +397,104 @@ fn retained_text_input_bundle_rejects_redirecting_writes_to_readonly_state() {
         .is_err()),
         "a typed input must not acquire write authority over readonly state"
     );
+}
+
+#[test]
+fn retained_text_input_player_batch_changes_then_submits_without_losing_the_handler() {
+    let (mut session, initial) = player_session(SOURCE);
+    assert_eq!(initial.presentation.text_inputs.len(), 1);
+    let control = &initial.presentation.text_inputs[0];
+    session
+        .queue_text_control_write_backs([
+            write(control, "東京", 1, false),
+            write(control, "京都", 2, true),
+        ])
+        .expect("player edit and submit batch");
+    let updated = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(updated.diagnostics.is_empty(), "{:?}", updated.diagnostics);
+    assert_eq!(labels(&updated.presentation.view), ["京都", "京都"]);
+    assert_eq!(updated.text_control_write_backs.len(), 2);
+}
+
+fn player_session(source: &str) -> (BundleSession, BundleSessionStep) {
+    let source = source.replace("flow main() -> String { return \"done\" }", "pub action hold(value: String)\nflow main() -> String { let panel = mount(Main()); let event = await receive(hold); return event.value }");
+    let bundle = bundle(&source);
+    let mut session = BundleSession::new(&bundle, BundleSessionOptions::default()).unwrap();
+    let initial = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(initial.diagnostics.is_empty(), "{:?}", initial.diagnostics);
+    (session, initial)
+}
+
+#[test]
+fn retained_text_input_player_orders_click_change_and_submit_before_the_next_step() {
+    let source = SOURCE.replace("Column {", "Column { Button(\"click\").on_click(|| { submitted = \"clicked\"; () })")
+        .replace(".on_submit(|| { submitted = caption; () })", ".on_change(|| { submitted = match submitted == \"clicked\" { true => \"changed\", false => \"missing click\" }; () }).on_submit(|| { submitted = match submitted == \"changed\" { true => \"both\", false => \"missing change\" }; () })");
+    let (mut session, initial) = player_session(&source);
+    let before_click = session.snapshot_session().unwrap();
+    let click = initial.presentation.view.mounts[0]
+        .events
+        .iter()
+        .find(|event| event.event() == EventKind::Activate)
+        .unwrap();
+    session
+        .queue_view_handler_invocation(&retained_transition_invocation(click))
+        .unwrap();
+    let after_click = session.snapshot_session().unwrap();
+    assert_eq!(
+        after_click.runtime, before_click.runtime,
+        "UI refresh does not advance session clocks or sequences"
+    );
+    assert_eq!(
+        after_click.executor, before_click.executor,
+        "UI refresh executes no flow operations"
+    );
+    assert_eq!(labels(&after_click.presentation.view), ["first", "clicked"]);
+    let control = &initial.presentation.text_inputs[0];
+    session
+        .queue_text_control_write_backs([
+            write(control, "東京", 1, false),
+            write(control, "京都", 2, true),
+        ])
+        .unwrap();
+    let updated = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(updated.diagnostics.is_empty(), "{:?}", updated.diagnostics);
+    assert_eq!(labels(&updated.presentation.view), ["京都", "both"]);
+    assert_eq!(updated.text_control_write_backs.len(), 2);
+}
+
+#[test]
+fn retained_text_input_player_handler_failure_preserves_the_complete_session() {
+    let source = SOURCE.replace("submitted = caption; ()", "let divisor = match caption == \"bad\" { true => 0i64, false => 1i64 }; let quotient = 1i64 / divisor; submitted = caption; ()");
+    let (mut session, initial) = player_session(&source);
+    let control = &initial.presentation.text_inputs[0];
+    let before = session.snapshot_session().unwrap();
+    assert!(
+        session
+            .queue_text_control_write_back(&write(control, "bad", 1, true))
+            .is_err()
+    );
+    assert_eq!(
+        session.snapshot_session().unwrap(),
+        before,
+        "rejected input changes no executor, View, presentation, queue, or clock"
+    );
+    session
+        .queue_text_control_write_back(&write(control, "good", 1, true))
+        .unwrap();
+    let updated = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(updated.diagnostics.is_empty(), "{:?}", updated.diagnostics);
+    assert_eq!(labels(&updated.presentation.view), ["good", "good"]);
+    assert_eq!(updated.text_control_write_backs.len(), 1);
 }

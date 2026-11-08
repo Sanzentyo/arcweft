@@ -175,6 +175,11 @@ adapter に渡す。入力値の正本は保持フィールドであり、表示
 保持値全体の型・容量を検査し、その後で runtime 値を構築する。
 handler は更新候補の入力値を読み、入力と handler の state 変更を一括で公開する。
 handler・型・予算の失敗は値、入力 revision、event lease を変更しない。
+driver は受理した View event／text write-back の後、次の adapter event より前に、
+同じ論理時刻で通常の View 評価を行う。保持値から表示と handler seal を再生成するため、
+同じ player batch の click、change、submit が順に最新の状態を使う。VM の時計や
+flow operation budget は進めない。再評価には通常の View 評価予算を使い、
+受理済みイベント後の描画失敗は View の診断として公開する。
 成功した frame で入力欄を除去した場合と cold restore／replacement の後は、
 古い session を受け付けない。保持値は通常の state の保存規則に従う。
 SecureField の adapter 投影と write-back は sensitive な値として扱い、診断や

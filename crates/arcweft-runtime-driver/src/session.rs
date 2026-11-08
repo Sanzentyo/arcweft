@@ -689,7 +689,27 @@ impl BundleSession {
         )? {
             self.pending_presentation_inputs.push(input);
         }
+        self.refresh_view_after_event(&mut backend);
         Ok(())
+    }
+
+    /// Publish the effects of an accepted UI event before the next adapter
+    /// event. The VM clock does not advance; retained roots and inputs remain
+    /// the authority used by ordinary frame evaluation.
+    fn refresh_view_after_event(
+        &mut self,
+        backend: &mut impl arcweft_core::pure::RuntimeCallBackend,
+    ) {
+        let previous_text_inputs = std::mem::take(&mut self.presentation.text_inputs);
+        if !self.update_view_presentation(
+            &[],
+            &previous_text_inputs,
+            None,
+            &mut Vec::new(),
+            backend,
+        ) {
+            self.presentation.text_inputs = previous_text_inputs;
+        }
     }
 
     pub fn queue_text_control_write_back(
@@ -709,9 +729,10 @@ impl BundleSession {
                 session: write_back.session().0,
             });
         }
-        if self.view_runtime.has_retained_text_input(target) {
-            let format_context = RuntimeFormatContext::new(self.active_locale.clone());
-            let mut backend = self.make_pure_backend(format_context.clone());
+        let retained = self.view_runtime.has_retained_text_input(target);
+        let format_context = RuntimeFormatContext::new(self.active_locale.clone());
+        let mut backend = self.make_pure_backend(format_context.clone());
+        if retained {
             if let Some(action) = self.view_runtime.dispatch_text_input_with_backend(
                 write_back,
                 &format_context,
@@ -742,6 +763,9 @@ impl BundleSession {
         }
         self.pending_text_control_write_backs
             .push(runtime_write_back);
+        if retained {
+            self.refresh_view_after_event(&mut backend);
+        }
         Ok(())
     }
 
@@ -1161,7 +1185,7 @@ impl BundleSession {
         clock_error: Option<BundleViewRuntimeError>,
         diagnostics: &mut Vec<String>,
         pure_backend: &mut impl arcweft_core::pure::RuntimeCallBackend,
-    ) {
+    ) -> bool {
         let previous_fx = self
             .presentation
             .view
@@ -1180,8 +1204,17 @@ impl BundleSession {
         {
             Ok(frame) => frame,
             Err(error) => {
-                diagnostics.push(error.to_string());
-                return;
+                let diagnostic = BundleViewDiagnostic {
+                    code: BundleViewDiagnosticCode::InputType,
+                    handle: None,
+                    mount: None,
+                    view: None,
+                    instruction: None,
+                    message: error.to_string(),
+                };
+                diagnostics.push(diagnostic.to_string());
+                self.presentation.view.diagnostics.push(diagnostic);
+                return false;
             }
         };
         let mut frame = self.view_runtime.evaluate_with_dialogue_and_backend(
@@ -1203,7 +1236,7 @@ impl BundleSession {
             });
         }
         diagnostics.extend(frame.diagnostics.iter().map(ToString::to_string));
-        if self.view_runtime.has_program() {
+        let replaced_resources = if self.view_runtime.has_program() {
             let projected = project_view_resources(
                 &frame,
                 &ViewProjectionInput {
@@ -1220,9 +1253,13 @@ impl BundleSession {
                 },
             );
             self.presentation.replace_view_resources(projected);
-        }
+            true
+        } else {
+            false
+        };
         self.presentation.replace_view_frame(frame);
         self.reconcile_view_fx(&previous_fx);
+        replaced_resources
     }
 
     fn reconcile_view_fx(
