@@ -411,7 +411,14 @@ fn empty_text_control_paints_current_placeholder_style() {
         letter_spacing_milli: Some(500),
         ..RenderControlVisualStyle::default()
     });
-    let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
+    let scene = scene(
+        vec![control],
+        Vec::new(),
+        InteractionVisualState {
+            focused: Some(target("input.placeholder")),
+            ..InteractionVisualState::default()
+        },
+    );
 
     let frame = prepare(&scene);
     let placeholder = frame
@@ -443,8 +450,15 @@ fn empty_text_control_paints_current_placeholder_style() {
             .interaction
             .character_bounds
             .iter()
-            .all(|character| character.source_range.start == 0 && character.source_range.end == 0)
+            .any(|character| character.source_range.end > 0)
     );
+    let input = frame
+        .focused_text_input_target()
+        .expect("focused placeholder control");
+    assert_eq!(input.snapshot.surrounding_text(), "");
+    assert_eq!(input.snapshot.selection().start().get(), 0);
+    assert_eq!(input.snapshot.selection().end().get(), 0);
+    assert!(input.geometry.viewport_character_bounds().iter().all(|character| character.range.start().get() == 0 && character.range.end().get() == 0));
 }
 
 #[test]
