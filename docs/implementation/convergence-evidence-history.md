@@ -15750,3 +15750,13 @@ CLIは711実行／707 PASS／4 FAIL／23 SKIP・536.146秒。同じ4失敗IDと�
 3914／3938のSource入力とcatalog／実test EXEの差分0。実CLI本体 d84ab197818e9b8323542a4d2affe19bda37f773804ea65bb4f13521939ccd8b は元target pathで実行前後に照合した。同じ本体を追加buildせず使い、native-text-inputのSource checkとmain-profile AWFB生成が終了0。元生成path D:/git/arcweft/target/arcweft/native-text-input-composites.awfb は89命令／81840 bytes、SHA256 2e348be119a21fda294a11f2e2379537ffb16f3e437cba10a351979946701cd6 で以前のSource300生成物hashと一致する。これはinteractive Native／Web受入を意味しない。workspace gate・最終import Clippy／fmtはSource checkpointの有効な結果を再利用した。
 
 現状一覧の旧5302件・基本値時点のCLI／品質説明を今回の範囲へ更新し、過去の実測と全SHAは履歴・registryに保持した。Styleの重複した件数説明は横断行へ集約した。未annotation token推論、Environment、sample移行、Scroll／voice／promotionと実Native／Web条件は具体的な未達として保持し、Generic Match等の既受入を戻さない。既存145 registry propertyを値の全件照合で保持し、styleCompositeConsumersを追加した。原本 docs/implementation/acceptance-evidence/task-style-composite-consumers.raw.zip は33 entry／1214662 bytes、SHA256 ed41c6fde0c84facd41192d011623e49e729e1f82c6bbd6e9cf16c22e7617887。EXE／AWFBをZIPへコピーせず、元build pathで保持した。
+
+## 2026-11-09 — 未annotation Style tokenの型推論
+
+Source f8c17506c05ee9df614581d8df12e46a2c178464 をmainへ通常公開し、parent／tree／12 pathのblobとpatchを照合した。構築signature・引数slot binding・数値／enum判定・sequence roleを一つのSource文法へ移し、旧composite schemaと重複parserを削除した。注釈なしtokenは文法由来のnative kind候補と元sheetの実利用を照合し、unannotated aliasの等式制約を単調queueで伝播する。Source名prefixや普通のruntime型にfallbackせず、曖昧／矛盾／未解決cycleを拒否する。principal LengthはRadii文脈の変換で再分類しない。全domainが一意になるまで期待型を公開せず、通常checkerが元initializerを検証する。HIR annotationやExprId、runtime値を作っていない。
+
+最初のdev checkはpath属性経由の子module探索先が異なり3 compile errorで停止し、明示child pathへ修正した。次のSema／Compiler tests checkは終了0。owner50件が全PASS・2559 filter SKIP・5.080秒で、3917入力／catalog／実EXE差分0。全25種類、typed useと別sheet同名、64段forward alias、曖昧値と衝突の拒否、元HIRが無annotationのままという条件を確認した。その後の変更はgrammarの引数数preflight（割当前に拒否）1 pathで、workspace gateに含めた。さらにinference.rsのconstant比較とsingleton判定だけをlint整理し、意味を変えていない。これらの差分scopeを分離し、owner50件を最終全consumer実行と記さない。
+
+全98 workspaceのlocked／all-target／all-feature check・Clippy、構造gate、fmtが終了0。最終Sema all-target／all-feature Clippyと明示11 Rust pathのfmtも終了0。今回のproduction ownerはprivate Source文法／SemaとCompiler testsなので、metadata／target-all tree一致のSema逆依存22 package（非CLI全feature21＋CLI既定1）を次に実行する。前回のnative componentを含むView逆依存41 packageの実測と受入は保ち、今回実行済みとは記さない。Environment、sample移行、実Native／Webと既知CLI4条件は別の未達として保持する。Generic Match等の完了を戻さない。
+
+現状一覧の未annotation推論を実装未達からowner検証・公開へ更新した根拠は今回のSourceと実測である。全consumerはpendingとして明記し、過去のSource／失敗／full SHAを保持した。既存146 registry propertyの値を全件照合して保持し、styleTokenInferenceCheckpointを追加した。原本 docs/implementation/acceptance-evidence/task-style-token-inference-checkpoint.raw.zip は42 entry／2317412 bytes、SHA256 7667257981baae5c2e3da64f3e0be313d9e3dbdcca2820a227bc52fd72676448。build artifactをZIPへコピーしていない。
