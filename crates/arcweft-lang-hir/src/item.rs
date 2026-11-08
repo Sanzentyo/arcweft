@@ -76,8 +76,8 @@ pub use self::host::{
     HirStyleEnvironment, HirStyleEnvironmentClause, HirStyleEnvironmentComparison,
     HirStyleEnvironmentComparisonIssue, HirStyleEnvironmentField, HirStyleEnvironmentFieldIssue,
     HirStyleItem, HirStyleName, HirStyleNameIssue, HirStyleRule, HirStyleSelector,
-    HirStyleSelectorIssue, HirStyleSelectorSequence, HirStyleToken, HirStyleTokenIssue,
-    HirTestItem, HirTestKind, HirTestKindIssue,
+    HirStyleSelectorIssue, HirStyleSelectorSequence, HirStyleToken, HirStyleTokenIdentityError,
+    HirStyleTokenIssue, HirTestItem, HirTestKind, HirTestKindIssue,
 };
 pub use self::nominal::{
     HirEnumItem, HirEnumVariant, HirEnumVariantField, HirEnumVariantPayload,

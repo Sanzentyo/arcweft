@@ -17,7 +17,7 @@ use arcweft_lang_hir::{
     project::HirProject,
     source_index::{
         HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStyleBodyPath,
-        HirStyleBodySourcePart, HirStyleSourceRole,
+        HirStyleBodySourcePart, HirStyleSourceRole, HirStyleTokenSourcePart,
     },
 };
 use arcweft_lang_sema::final_analysis::{CheckedExpressionResolution, FinalSemanticAnalysis};
@@ -26,7 +26,8 @@ use arcweft_source::{ProductSourceRef, SourceSpan};
 use arcweft_view::style::{
     ViewPropertyKind, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleCombinator,
     ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule, ViewStyleSelectorSequence,
-    ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleTargetKind,
+    ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleTargetKind, ViewStyleToken,
+    ViewStyleTokenId,
 };
 use thiserror::Error;
 
@@ -160,8 +161,42 @@ pub fn lower_project_view_styles(
         if sources.insert(sheet_id.clone(), sheet_source).is_some() {
             return Err(ViewStyleLowerError::InvalidStyleIdentity { owner });
         }
-        if !style.tokens().is_empty() {
-            return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
+        let mut tokens = Vec::with_capacity(style.tokens().len());
+        for (ordinal, token) in style.tokens().iter().enumerate() {
+            let id = PublicId::try_from(token)
+                .map_err(|_| ViewStyleLowerError::InvalidStyleIdentity { owner })?;
+            let checked = analysis
+                .expression(token.value())
+                .ok_or(ViewStyleLowerError::MissingCheckedStyleProjection { owner })?;
+            let CheckedExpressionResolution::StyleValue(value) = checked.resolution() else {
+                return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
+            };
+            if checked.value_type()
+                != Some(&arcweft_lang_sema::types::TypeKind::CompileTimeStyle(
+                    arcweft_lang_sema::types::CompileTimeStyleType::Value(value.kind()),
+                ))
+            {
+                return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
+            }
+            let source = style_product_source(
+                module,
+                owner,
+                HirStyleSourceRole::Token {
+                    ordinal: u32::try_from(ordinal).map_err(|_| {
+                        ViewStyleLowerError::MissingCheckedStyleProjection { owner }
+                    })?,
+                    part: HirStyleTokenSourcePart::Whole,
+                },
+                "token declaration",
+                &mut product_sources,
+                &mut source_ranges,
+            )?;
+            tokens.push(ViewStyleToken::new(
+                ViewStyleTokenId::from_public_id(id),
+                value.kind(),
+                value.clone(),
+                source,
+            )?);
         }
         let mut source_order = 0_u32;
         let rules = lower_style_body(
@@ -173,7 +208,7 @@ pub fn lower_project_view_styles(
             &mut source_ranges,
             &mut source_order,
         )?;
-        sheets.push(ViewStyleSheet::new(sheet_id, Vec::new(), rules)?);
+        sheets.push(ViewStyleSheet::new(sheet_id, tokens, rules)?);
     }
 
     let program = ViewStyleProgram::try_new(sheets, Vec::new())?;

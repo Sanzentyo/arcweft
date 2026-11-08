@@ -516,6 +516,29 @@ pub enum HirStyleTokenIssue {
     MalformedAssignment,
 }
 
+/// Failure to project one sheet-local token declaration identity.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirStyleTokenIdentityError {
+    #[error("Style token declaration requires a zero-depth local identity")]
+    NonLocal,
+    #[error(transparent)]
+    Invalid(#[from] arcweft_id::IdError),
+}
+
+impl TryFrom<&HirStyleToken> for arcweft_id::PublicId {
+    type Error = HirStyleTokenIdentityError;
+
+    fn try_from(token: &HirStyleToken) -> Result<Self, Self::Error> {
+        let Some(crate::leaf::HirIdRef::Relative(relative)) = token.id().as_resolved() else {
+            return Err(HirStyleTokenIdentityError::NonLocal);
+        };
+        if relative.parent_depth() != 0 {
+            return Err(HirStyleTokenIdentityError::NonLocal);
+        }
+        Ok(Self::try_new(relative.suffix().as_str().to_owned())?)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirStyleBodyItem {
     Rule(HirStyleRule),
