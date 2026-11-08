@@ -15467,3 +15467,15 @@ workspace一体の全feature catalogは2回ともOS1455／メモリ確保不足�
 最終Sourceのworkspace全target／全feature check／Clippy、構造gateと8 Rust path fmtは終了0、3416入力drift0。Core53／CLIの新統合runではない。大きいscheduler／activation／AWBC line／snapshotは実スロットと取引を所有する既存境界に保ち、LOC／増分／embedded test数をrawへ保持した。既存12 tracked／6 actual untrackedは保持した。旧wrapperのheld=14 labelを現状WIP数に使わない。
 
 現状は一つの初期入力行を追加条件の結果で置換し、単純initの通過と残る3条件を混同しない。Generic Match、元のLine/init、通常deferと初期root deferの受入は維持する。過去の実測・全SHAと失敗原本を削除・上書きしない。[全記録・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは106 entries、SHA-256 959f9dad166ef6711d232385485c862ee701b52c1956ecb200da6ea3041a40e2。
+
+## 2026-11-08 — Native init-defer子対話の入力保持
+
+Source **5f3e6deedf4dca6d9251b72530f5edb354655e4c** は、初期Actorを捕捉したinit-defer子の対話待機と、内側対話を指定した取消しをNativeで通過させた。1 testの通常／取消し2経路が、元の1-op／512-step、3つの一度だけのreveal、取得・解放各1回とlog順を保つ。受入済みSource **53488624ba4d39e54a213eca28b3c84661d94761** の初期scoped入力／filter／保存改変拒否は維持する。
+
+古い待機helperのcancel-lastは、init後にrevealする外側Lineを選んでいた。実際の内側Lineである2番目のrevealを明示する形に訂正し、予算・host assertionを緩めない。nested deferと明示init scopeを別test IDへ分けた6件の初回は3 PASS／3 FAIL。Native保持状態の診断probeとinbox-wakeupだけのprobeは各0 PASS／1 FAILで、入力actionを保持した後に対象1件が通過した。過去の複合testの失敗を、未実行の取消し成功や各枝の個別実測へ読み替えない。
+
+Nativeの既存DialogueStepInboxが実activationのinput identityを保持し、別ownerが先にstep予算を使っても失わない。poll時に一度だけ取り出し、共有LineTaskLiveStateがepoch／sequence／action順序と重複・消費済みidentityを検査する。prepared packetは既存identityを借用し、保持／複製前に既存sequence上限を確認する。消費履歴全体のcloneを削除し、live／private inert admissionでも対象activationとphaseを検査する。Native公開Saveの新設ではない。
+
+最終Coreはinbox原子性1件と相補input／schema／ingress6件が各PASS。同じ実行ファイルpath／SHA256を照合し、全Core unitへ拡張しない。最終Compiler evaluated_effects／scoped_deferは **163件中161 PASS／2 FAIL**。bounded refactor前後の163件は別epochとして残す。残る実失敗はNativeの明示init scope結果受取りと、保存AWBC init-defer子の対話待機。後者の取消し枝は最初の通常枝で停止したため未実行。Nativeの入れ子登録／待機／内側取消しが通過した根拠で現状行を更新し、root deferやGeneric Match等の既受入を戻さない。
+
+workspace全target／全feature check／Clippy、canonical構造gateと7 Rust path fmtは終了0、3416入力drift0。Core53／CLIの新runtime matrixではない。7ファイルのbyte／LOC／embedded tests／増分とownerの責任をrawへ保持し、Cargo依存・I/O・live値のcopy・永続side table・compatibility reader・version bumpを足さない。既存12 tracked／6 actual untrackedは保持した。[全記録・原本](acceptance-evidence/task-flow-registry-execution.json)。raw ZIPは100 entries、SHA-256 c2e2f082c0d55ad87123e771cb9ea5ec2e9d9084b5b28917eae14e37539ac1bd。

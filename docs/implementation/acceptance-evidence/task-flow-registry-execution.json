@@ -44755,5 +44755,612 @@
         }
       ]
     }
+  },
+  "initialLineDeferInputIngress": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "5f3e6deedf4dca6d9251b72530f5edb354655e4c",
+    "priorSource": "53488624ba4d39e54a213eca28b3c84661d94761",
+    "probeBase": "7b395a0fa0def969265b5875a6e1114626901d35",
+    "accepted": "Native initial-input init defer retains a received Actor packet while its child dialogue waits, then completes both normal and explicitly targeted inner-dialogue cancellation paths. One test executes both paths with the original 1-op/512-step, three unique reveals, one acquire/release and ordered logs.",
+    "correction": "The earlier waiting test selected cancellation at the last reveal, which is the receiving outer line after init completes. The harness now names the second reveal, the actual inner dialogue, without changing runtime budgets or host assertions. Nested and explicit init scopes have separate test IDs: Native nested defer passes, Native explicit scope result binding remains a concrete failure. Previous combined-test failures and all full SHAs are retained.",
+    "implementation": "Native latches input action identities in the existing activation inbox before selecting root/child work. The exact activation retains them when another owner consumes the step budget. Polling takes the packet once; the shared reducer rejects batch duplicates and consumed identities. Pending inboxes wake their actual receiving fiber. Borrowed admission checks batch/history sequence capacity before retaining identities and avoids consumed-history clones. Live/private inert admission rejects another activation or an invalid phase.",
+    "validation": {
+      "owners": {
+        "version": 1,
+        "base": "7b395a0fa0def969265b5875a6e1114626901d35",
+        "run": "line-init-dialogue-20261108.bounded-native-owners.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   8.908s] 163 tests run: 161 passed, 2 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 163,
+        "passed": 161,
+        "failed": 2,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3416,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "ordinary_defer::native_initial_owned_line_init_defer_preserves_explicit_scope"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "ordinary_defer::saved_awbc_initial_owned_line_init_defer_retains_its_packet_while_a_child_dialogue_waits"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-08T00:33:04.7740786Z"
+      },
+      "coreInbox": {
+        "version": 1,
+        "base": "7b395a0fa0def969265b5875a6e1114626901d35",
+        "run": "line-init-dialogue-20261108.bounded-inbox-auth.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.041s] 1 test run: 1 passed, 2327 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 2327,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3416,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T00:29:16.5809605Z"
+      },
+      "coreConsumers": {
+        "version": 1,
+        "base": "7b395a0fa0def969265b5875a6e1114626901d35",
+        "run": "line-init-dialogue-20261108.input-consumers.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.051s] 6 tests run: 6 passed, 2322 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 2322,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 3416,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-08T00:29:49.346001Z"
+      },
+      "coreBinary": {
+        "binary": "arcweft-core",
+        "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-663e4dfe2c66566f.exe",
+        "sha256": "0da4dddef84f2a55b7abf554418ed797127c7b8d7231931b0df083b08ad5e632"
+      },
+      "scope": "The Core 1-case and complementary 6-case runs share their actual executable path/hash. They are bounded owner evidence, not a full Core unit run. Compiler 163-case selection uses its own declared package/feature composition; no combined full-matrix total is claimed.",
+      "gates": "Fresh all-target/all-feature workspace check/Clippy, canonical structure gate and 7 Rust paths fmt exit 0; warnings retained",
+      "sourceInputs": 3416,
+      "sourceDrift": 0
+    },
+    "remaining": "Native explicit init scope result binding and saved AWBC init-defer child dialogue waiting remain the exact two failed cases in the 163-case owner terminal. The saved AWBC waiting test stops in its first normal branch, so its cancellation branch has not executed. Native public Save, all Core53 runtime consumers, other platforms/Tier2 and final parity are not newly accepted by this cut.",
+    "history": "The first six-case topology probe had 3 pass / 3 fail. The diagnostic Native-state probe and inbox-wakeup-only probe each had 0 pass / 1 fail. The input-action retention followup passed its two-path case. The first Core inbox probe passed; bounded/shared admission then passed the same case and six complementary input/schema/ingress cases. Owner suites before and after the bounded refactor each ran 163 with 161 pass / the same two fail. Each source epoch, skip count, actual executable hash and preparation log is kept separately.",
+    "preserved": "Original WIP remains 12 tracked / 6 actual untracked, independently checked; historical focused-wrapper held=14 labels do not describe the current WIP. Generic Match and all prior accepted boundaries remain accepted.",
+    "raw": {
+      "path": "task-initial-line-defer-ingress.raw.zip",
+      "sha256": "c2e2f082c0d55ad87123e771cb9ea5ec2e9d9084b5b28917eae14e37539ac1bd",
+      "entries": [
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.binaries-before.json",
+          "bytes": 202,
+          "sha256": "c506071d4847e34a106a1f5ba9f635d7330645d2a1316b868c5f9a4720f352cc"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.catalog.inventory.json",
+          "bytes": 595141,
+          "sha256": "ed548301f2e010a328e984cece84ae688ea0361b8b3d6f451a3ae5786a00192c"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.catalog.json",
+          "bytes": 642,
+          "sha256": "5a85b75e4fff6cddfd407c5e613b1aede66c3fe192795e9481516ca106528601"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.catalog.log",
+          "bytes": 491708,
+          "sha256": "0616d7999ee1da722fc58a4c19b1b3775d5541ef2822d9619cd370fe165c6e0d"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.runtime.json",
+          "bytes": 734,
+          "sha256": "e8d2228f9048ce45f217540f7190bf47b1c67e31e3fe31ec12f095049c916af7"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.runtime.log",
+          "bytes": 750725,
+          "sha256": "f23503dbb684b8bfe3efd8867dfc34d27bd6c75350113e62ead4ee99238e229e"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.runtime.terminal-audit.json",
+          "bytes": 628,
+          "sha256": "36f79efda62a84634bf110eff334eeef32ca2acc603bde26a0c03d98e39f2c21"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-inbox-auth.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "c37f87dc0d62a8ef1c461e5678b71061bb19fd3a995cb2f5667ac5d069747438"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-input-check.exit",
+          "bytes": 3,
+          "sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-input-check.log",
+          "bytes": 73522,
+          "sha256": "0a6a8a293650244eb9c6de85393ed428fc1fc110a229102d1f5eacf53a59c92f"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.binaries-before.json",
+          "bytes": 477,
+          "sha256": "616114e9cb74ac160758ec48f1a605cea3d966556827d80fd1a81b2e17e1dd6a"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.catalog.inventory.json",
+          "bytes": 40894,
+          "sha256": "51973d0a9c77b64a400611ec4de40221e25ed99e9d2aaa9f7d0f64bdf879d8ea"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.catalog.json",
+          "bytes": 629,
+          "sha256": "4a9e8aa2a31f1abfddf1f2a8b2d88fa17fb120c7e63c7647d907f133bd9d71d7"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.catalog.log",
+          "bytes": 114449,
+          "sha256": "a3cd5980e55387a1431aa478b7316f4b89e0564f0c9c2cc7e8207ffd3b906c39"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.runtime.json",
+          "bytes": 723,
+          "sha256": "49f0796a116bcbfe9e7641dd90c410840faed78a15493e798d9857cf6d5594e4"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.runtime.log",
+          "bytes": 137143,
+          "sha256": "09a734013a98e079c784dc8811d39c57cdd7400526f5a68a70e413a227f59350"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.runtime.terminal-audit.json",
+          "bytes": 1059,
+          "sha256": "fb4e4f15b7a1559184f309223d582f234c35eaf7e2326ed3944fd325225ebae3"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.bounded-native-owners.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "b0825cbb92184260f863de91c575429e04913a984f7e4d3e20909302a32bf951"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.binaries-before.json",
+          "bytes": 202,
+          "sha256": "c506071d4847e34a106a1f5ba9f635d7330645d2a1316b868c5f9a4720f352cc"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.catalog.inventory.json",
+          "bytes": 595136,
+          "sha256": "e5bec6f39009cb5805244e5215f7ec7e2adeb0c5cfc4f0cd12ee61020960399f"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.catalog.json",
+          "bytes": 762,
+          "sha256": "34784787962161c16b494554d21662be45035d11f3be0a3448c2bb00e6ade13d"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.catalog.log",
+          "bytes": 491521,
+          "sha256": "dfcb2bea83b4035a511558e1776bd391cd555746d6222d23eaf2042f36a66388"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.runtime.json",
+          "bytes": 854,
+          "sha256": "da45f07fdedc7e5ae9ffd3dc46531b552103e7b3bb1831c65b73ddcb1ee6511d"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.runtime.log",
+          "bytes": 750667,
+          "sha256": "4688a58c7251afacfb6df846a25717bf2e9e4ef6ce1936c5e26b584c83e34069"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.runtime.terminal-audit.json",
+          "bytes": 626,
+          "sha256": "4ec0be46adef1e9d96b4e678dfa32538e58c01e7044443e5a1e55db402fdb46d"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.input-consumers.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "8c1d52ef6864c409541bacb01cb69de6d39963dbff2146f63df16ac58adb47b4"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.binaries-before.json",
+          "bytes": 202,
+          "sha256": "cc8af841b294a74d1152b3df75d4aec618ed9ef5c6921cdc52e719a5625ef34a"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.catalog.inventory.json",
+          "bytes": 595141,
+          "sha256": "ed548301f2e010a328e984cece84ae688ea0361b8b3d6f451a3ae5786a00192c"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.catalog.json",
+          "bytes": 641,
+          "sha256": "141e3383d2f8b738befbbb142a660db1a54f48e1b4a22ddca7a9a357ee8b5a9f"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.catalog.log",
+          "bytes": 491708,
+          "sha256": "5989b50df632405742e1415ea531bd01b22e61bfd8035891fd8f5c546e9c21e4"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.runtime.json",
+          "bytes": 733,
+          "sha256": "1ab2656dc85f59c673d8a7a5ba89b5efca7c323d5e84d52b2ea0d95f54cd1b76"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.runtime.log",
+          "bytes": 750725,
+          "sha256": "47e6facac44488422ae461d9bb63102517e15a36b63cad188121db963a872e51"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.runtime.terminal-audit.json",
+          "bytes": 627,
+          "sha256": "a52589ca0cb51a8d05844a270d3705896ca6a51c3576161163ba80287ff2cdee"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-inbox-auth.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "bc667fd9de1d214bf95e6d97a84efcb32252a0ee2322070ad428506afb1b9e5f"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.binaries-before.json",
+          "bytes": 230,
+          "sha256": "f4216b0d93448b51e1b5e7d263cdfc44d9b773c64ae4e9d2377ba2e0c6eb8181"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.catalog.inventory.json",
+          "bytes": 33848,
+          "sha256": "6c6264f2412d0d9a484fbe9fbbb1a09f3aba85808728d477ce16bfbd7ee3201c"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.catalog.json",
+          "bytes": 696,
+          "sha256": "b57827512de36394d77baf1f4341400f733409a5a8804094bdb13d0e3a582117"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.catalog.log",
+          "bytes": 112997,
+          "sha256": "64fbf156f097fa82501b7634621edf063b4dad8c55099a1712984069cfb0ce01"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.runtime.json",
+          "bytes": 790,
+          "sha256": "b7e68a5e440033081a3ca6ffb6c897aa7dbe594ebd59d39689f0b39b25acfc62"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.runtime.log",
+          "bytes": 129099,
+          "sha256": "0f64996ac5dd87b7fc67aa4d9fbb46b8cc34fc261582560869dd14b789d26413"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.runtime.terminal-audit.json",
+          "bytes": 852,
+          "sha256": "528586ac11c4f9e4b262731c934cc0c5f0bc5cec2b418eb780e5f3948e5fb960"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-ingress.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "e6ff2e8151aa0213752be1ba34f9c92b42f3540fde667b6840cb9dd6792e3da3"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.binaries-before.json",
+          "bytes": 230,
+          "sha256": "a7d5bab52d648e5e01aad259ddcbf1bcbd66e40b3a604ef1fd4011eb3e0ea5b2"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.catalog.inventory.json",
+          "bytes": 33848,
+          "sha256": "6c6264f2412d0d9a484fbe9fbbb1a09f3aba85808728d477ce16bfbd7ee3201c"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.catalog.json",
+          "bytes": 702,
+          "sha256": "196d5d112db83dc0456695cbc19427573c4c280cffdcefb01099a4987e448c9b"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.catalog.log",
+          "bytes": 112997,
+          "sha256": "e6ab1458b858aaa436c485cf82c77b41f96d8c4cb8ef40f16eee1961fa6f8276"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.runtime.json",
+          "bytes": 794,
+          "sha256": "132f4238fe8fa7f3daa2f9dabbda9a3d04a06ce58494a1019cacf4eb1b4d150c"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.runtime.log",
+          "bytes": 127634,
+          "sha256": "c1cdfedc5fcb6b7896e03e62c8aaf3dd2ea1e666e5191ee7c0b65f9b59759083"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.runtime.terminal-audit.json",
+          "bytes": 628,
+          "sha256": "442ed86dcf5cc417ce021ea10833785be01a601a23446cd39d52458e7e83b73f"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-input-actions.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "6772d7ad8d34eda9bb0df5966bf8e9dd75c508dcc84874ed875ba40d064eaaff"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.binaries-before.json",
+          "bytes": 477,
+          "sha256": "c0fa9f6f8fc7f3cda741dcef2407396acd9a5f41b6406d778920664846f5dc68"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.catalog.inventory.json",
+          "bytes": 40894,
+          "sha256": "51973d0a9c77b64a400611ec4de40221e25ed99e9d2aaa9f7d0f64bdf879d8ea"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.catalog.json",
+          "bytes": 621,
+          "sha256": "5818abb55dc616fd5087eabd53d40bb693d2ac1fcf3579ecb38ee61816107d9f"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.catalog.log",
+          "bytes": 114449,
+          "sha256": "d4579bca246e2ff6c76ea41325a8e3dcbe318b9355a81ba9393a2642acf23bd2"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.runtime.json",
+          "bytes": 715,
+          "sha256": "f5fede2457715a0894b5ef1ccae37dc27dadc07329e1302d5eabc2cdf709fd5b"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.runtime.log",
+          "bytes": 137143,
+          "sha256": "2fc53699a02bff465e84c847e9b904c777e1526f0c79be2e0a48657d1a32ef1d"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.runtime.terminal-audit.json",
+          "bytes": 1051,
+          "sha256": "f25caf3a44f7b3c5d89346d0af78ce5de4d5e98a26ac9269bd238a6c3452091d"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-owners.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "95c122b20c14c789a3c618cf0fa4e4d8c96105c09b7f82cba61c93e5f2585d79"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-source.message.txt",
+          "bytes": 960,
+          "sha256": "9ee59090fdb33bf0ca7faeb7e26aab29dc723023e91b665622c41631cadb78e9"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-source.owned.txt",
+          "bytes": 330,
+          "sha256": "93a1cff84dfe326a882df49abf3da84cf57523347d7f7cfd318841fc87d3a923"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-source.pathspec",
+          "bytes": 323,
+          "sha256": "0ced4b3590027f87d7797d0bbeb524c5d203ec933bf8cb0cf482449d07b256e2"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-source.prepared.json",
+          "bytes": 2109,
+          "sha256": "a7092144e984921372c372563c183e7933c4727834666c7366fb1f6d73b81412"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-source.reviewed.patch",
+          "bytes": 29229,
+          "sha256": "ef46f1f5ac1a4de0ed1ab49c8b1a99d847e853d40b43c443d58e10fae5652600"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-source.verified.json",
+          "bytes": 1511,
+          "sha256": "7fd9a07f6ffa9ab363c00dcef0a1e0c27f2551e6a1251f46aacda5b5b42ecd6b"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.binaries-before.json",
+          "bytes": 230,
+          "sha256": "f1717d3d5aef4383ca21fab3bace443d002456c62b5ab1a19d62096be5682ed5"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.catalog.inventory.json",
+          "bytes": 33848,
+          "sha256": "6c6264f2412d0d9a484fbe9fbbb1a09f3aba85808728d477ce16bfbd7ee3201c"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.catalog.json",
+          "bytes": 694,
+          "sha256": "778e8e788aafccc0bd4f7ce33ed8c86842fe8ccf0d5c923a92a7b774a7a57b44"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.catalog.log",
+          "bytes": 111424,
+          "sha256": "862f17a0319a733ffaf60843bdd0988a2f04b1a2790d61b5ac119038411c03f5"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.runtime.json",
+          "bytes": 788,
+          "sha256": "8180869b50ce91fe388cadc905b090783d11082178e00df8c6488c9e49508a84"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.runtime.log",
+          "bytes": 2992741,
+          "sha256": "df237e33c1481046f6c08532d7777b0af610fc9ff287704289603a2d67f173e1"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.runtime.terminal-audit.json",
+          "bytes": 850,
+          "sha256": "e482fd61831c185a34423eca9c150a6b4dd6e6de51c7f02c54c2111ace4a3d61"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.native-state.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "33be208f75469e0a57b6979866ae30b0e1640875e09952c57941150b47cf764e"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.ownership-review.json",
+          "bytes": 2866,
+          "sha256": "14f01469214c306b133bb51404d0068a14bda7327c9bf9a4fa301cb2b0760e60"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.binaries-before.json",
+          "bytes": 230,
+          "sha256": "5b0202ee572dad638584bcbbd59eac7018da65a68d5f2947fd54ee018b846906"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.catalog.inventory.json",
+          "bytes": 33843,
+          "sha256": "bd64ac9925fde9756f408879f7917ee769b2cc324f32b8f604f19b551e996868"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.catalog.json",
+          "bytes": 761,
+          "sha256": "7508e40ec2c7be85478887714c3c70066ff0f733cc6ab14a806da4c3421ba07c"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.catalog.log",
+          "bytes": 111309,
+          "sha256": "8ce11d025911336cac8e629fe4b7e7388c2a272c362dad01d6618f9ccac2b051"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.runtime.json",
+          "bytes": 855,
+          "sha256": "15a6cfcbd274237b96444ac793a43342f206f3072717693f81a16fb46eb63032"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.runtime.log",
+          "bytes": 131108,
+          "sha256": "65915c41357480ec3cafe27037ef9e90616f933c64f577446e20ebb0c6b6a5f7"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.runtime.terminal-audit.json",
+          "bytes": 1262,
+          "sha256": "aadfe95e4d80133d361b93bca389d8c7554a80da78a10858249851768e4f1c0b"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.topology-first.source-freeze.json",
+          "bytes": 683428,
+          "sha256": "532963ed96bb0e69887101d470e8286d98deaa7a7e56deb309df1324b5e75245"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.check.log",
+          "bytes": 113577,
+          "sha256": "554dd437a09df0c28a04292925209e2f2d3bbb1daf5a3894afb97e6a87e747ab"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.check.receipt.json",
+          "bytes": 338,
+          "sha256": "1eb47f649d671c88b5ea48b51839c51bcc720298e10bd1be4d6ba5c50a2223cc"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.clippy.log",
+          "bytes": 9174164,
+          "sha256": "aa313ddfb447d07517a7dc071b3ee73d8fbd3e399ea2c77b474f9b10e002abbb"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "3ebae0054ad510ff5ceb9de0ec04faf2ecc2ef80d47bde4bdc8eddbba6202ea6"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.fmt.receipt.json",
+          "bytes": 497,
+          "sha256": "7768b8ae7414766cab1c402b08c5eec26ed661b74abbdc70525f0744e22eae6a"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.source.json",
+          "bytes": 605889,
+          "sha256": "7201f954ec494e76376852650c9966fb6170c9cc897eb2596fa2b486711e9d44"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.structure.log",
+          "bytes": 66006,
+          "sha256": "4e35cc7cdec24a23eeaf984bc487012c2b17f1ad73d2ab2fb0547ff93a9d1bc9"
+        },
+        {
+          "entry": "line-init-dialogue-20261108.workspace-quality-r1.structure.receipt.json",
+          "bytes": 511,
+          "sha256": "3259ddb99c4fdf74d8d9d996f534b64cc3820b342a662887d5e635a5c9225d79"
+        },
+        {
+          "entry": "native-dialogue-input-inbox-test.rs.fragment",
+          "bytes": 4212,
+          "sha256": "b0de687bdd78eb42d5ea6274c6c1d79179981ab8d83e69073c4e20fc2bdf5dfb"
+        },
+        {
+          "entry": "record-native-defer-dialogue-ingress-20261108.ps1",
+          "bytes": 15449,
+          "sha256": "49bf14a8708ba1eeb9f92233905e3ab2c5a0dbba57659ce1425eb27177a3ba49"
+        },
+        {
+          "entry": "run-line-init-dialogue-workspace-quality-20261108.ps1",
+          "bytes": 2035,
+          "sha256": "e094a7c8aa7f29ad89a256edcce1548f06b020285e50b68b4d45344ebdddc367"
+        },
+        {
+          "entry": "run-line-root-frozen-nextest-20261108.ps1",
+          "bytes": 3803,
+          "sha256": "5cbce63b02812b6192755720659bff3e7d0bf18eadf87ee97d53143589b016b8"
+        },
+        {
+          "entry": "structure-report/dependency_edges.csv",
+          "bytes": 78209,
+          "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+        },
+        {
+          "entry": "structure-report/file_metrics.csv",
+          "bytes": 342425,
+          "sha256": "e4cca55f99172a03c905e9b114143bef084c39fced2fc77e4f677c72986229e8"
+        },
+        {
+          "entry": "structure-report/findings.md",
+          "bytes": 124120,
+          "sha256": "0ebde79077d6d830adad16b67a198af32c54d4d5f8096dc9b60bc4c75a02a1ba"
+        },
+        {
+          "entry": "structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+        },
+        {
+          "entry": "structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "faa5ddc30be32585bf47b6c06a3e68eef4b0d7b67083510d5e7e71f04a36f290"
+        }
+      ]
+    }
   }
 }
