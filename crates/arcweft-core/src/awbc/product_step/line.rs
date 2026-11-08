@@ -1175,7 +1175,9 @@ impl super::AwbcProductStepExecutor {
             .collect::<BTreeMap<_, _>>();
         let receiver_instance = match &prepared.commit {
             ProductLineTaskCommit::Publication(PreparedDialoguePublication {
-                receiver: super::dialogue::ProductDialogueReceiver::Fiber(instance),
+                receiver:
+                    super::dialogue::ProductDialogueReceiver::Fiber(instance)
+                    | super::dialogue::ProductDialogueReceiver::LineChild { instance, .. },
                 ..
             }) => Some(*instance),
             _ => None,
@@ -1184,7 +1186,13 @@ impl super::AwbcProductStepExecutor {
         let mut cancelled = Vec::new();
         for child in &mut self.child_fibers {
             if Some(child.fiber.instance) == receiver_instance {
-                assert!(child.owner.line_activation().is_none());
+                let ProductLineTaskCommit::Publication(publication) = &prepared.commit else {
+                    unreachable!()
+                };
+                assert_eq!(
+                    child.owner.dialogue_receiver(child.fiber.instance),
+                    publication.receiver
+                );
                 ordinary_child_receiver = Some(&mut child.fiber);
             } else if matches!(
                 prepared.executor_actions.get(&child.fiber.instance),

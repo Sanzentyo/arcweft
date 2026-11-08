@@ -750,6 +750,18 @@ impl From<bool> for ProductStepProgress {
 }
 
 impl ProductChildFiberOwner {
+    fn dialogue_receiver(
+        &self,
+        instance: crate::runtime_id::RuntimeFiberInstanceId,
+    ) -> dialogue::ProductDialogueReceiver {
+        match self.presentation_role() {
+            crate::presentation::resources::PresentationExecutionRole::Dialogue(parent) => {
+                dialogue::ProductDialogueReceiver::LineChild { instance, parent }
+            }
+            _ => dialogue::ProductDialogueReceiver::Fiber(instance),
+        }
+    }
+
     fn line_activation(&self) -> Option<DialogueActivationId> {
         match self {
             Self::LineTask { tag, .. } => Some(*tag.activation_id()),
@@ -5152,26 +5164,27 @@ impl AwbcProductStepExecutor {
             .ok_or(ProductStepError::DialogueLineCursorOverflow)?;
         let owner = RuntimePersistentFiberId::from_allocated(fiber.instance.get().get());
         let quantum = fiber.budget.quantum.max(1);
-        if let dialogue::ProductDialogueReceiver::Activation(_) = receiver {
+        if receiver.parent_activation().is_some() {
             self.dialogues.preflight_nested_start()?;
             self.dialogues.preflight_receiver_edit(receiver)?;
         }
         let checkpoint = checkpoint::ProductSessionCheckpoint::capture(self)?;
         let before = self.published_flow_handle_owners(None)?;
         let started = (|| {
-            let mut parent = match receiver {
-                dialogue::ProductDialogueReceiver::Fiber(_) => None,
-                dialogue::ProductDialogueReceiver::Activation(id) => {
-                    Some(self.dialogues.begin_transaction(&id)?)
-                }
-            };
-            let suspension = match &mut parent {
-                None => receiver
+            let mut parent = receiver
+                .parent_activation()
+                .map(|id| self.dialogues.begin_transaction(&id))
+                .transpose()?;
+            let suspension = match receiver {
+                dialogue::ProductDialogueReceiver::Fiber(_)
+                | dialogue::ProductDialogueReceiver::LineChild { .. } => receiver
                     .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
                     .ok_or(invalid.clone())?
                     .suspension
                     .take(),
-                Some(parent) => parent
+                dialogue::ProductDialogueReceiver::Activation(_) => parent
+                    .as_mut()
+                    .expect("activation receiver retains its parent transaction")
                     .frame_mut()
                     .receiving_fiber_mut()
                     .ok_or(invalid.clone())?
@@ -5179,13 +5192,21 @@ impl AwbcProductStepExecutor {
                     .take(),
             }
             .expect("the original pending packet was admitted before withdrawal");
-            let activation =
-                self.present_dialogue(owner, quantum, parent.as_ref(), suspension.reason)?;
-            let fiber = match &mut parent {
-                None => receiver
+            let activation = self.present_dialogue(
+                owner,
+                quantum,
+                parent.as_ref(),
+                receiver,
+                suspension.reason,
+            )?;
+            let fiber = match receiver {
+                dialogue::ProductDialogueReceiver::Fiber(_)
+                | dialogue::ProductDialogueReceiver::LineChild { .. } => receiver
                     .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
                     .expect("admitted ordinary dialogue receiver"),
-                Some(parent) => parent
+                dialogue::ProductDialogueReceiver::Activation(_) => parent
+                    .as_mut()
+                    .expect("activation receiver retains its parent transaction")
                     .frame_mut()
                     .receiving_fiber_mut()
                     .expect("admitted dialogue receiver"),
@@ -5225,10 +5246,14 @@ impl AwbcProductStepExecutor {
             {
                 self.fail_with_error(error, output)
             }
-            dialogue::ProductDialogueReceiver::Fiber(_) if error.is_execution_refusal() => {
+            dialogue::ProductDialogueReceiver::Fiber(_)
+            | dialogue::ProductDialogueReceiver::LineChild { .. }
+                if error.is_execution_refusal() =>
+            {
                 self.record_error(error, output);
             }
-            dialogue::ProductDialogueReceiver::Fiber(_) => {
+            dialogue::ProductDialogueReceiver::Fiber(_)
+            | dialogue::ProductDialogueReceiver::LineChild { .. } => {
                 self.fail_flow_dialogue_receiver(receiver, error, output);
             }
             dialogue::ProductDialogueReceiver::Activation(_) if error.is_execution_refusal() => {
@@ -5250,6 +5275,7 @@ impl AwbcProductStepExecutor {
         owner: RuntimePersistentFiberId,
         quantum: u64,
         parent: Option<&dialogue::ProductDialogueTransaction>,
+        receiver: dialogue::ProductDialogueReceiver,
         packet: FiberSuspensionReason,
     ) -> Result<DialogueActivationId, ProductStepError> {
         let FiberSuspensionReason::Dialogue {
@@ -5337,7 +5363,7 @@ impl AwbcProductStepExecutor {
             pending_activation_host_call: None,
         };
         match parent {
-            Some(parent) => self.dialogues.begin_nested(parent, active)?,
+            Some(parent) => self.dialogues.begin_nested(parent, receiver, active)?,
             None => self.dialogues.begin(active)?,
         }
         self.dialogue_occurrences
@@ -6352,7 +6378,8 @@ impl AwbcProductStepExecutor {
                 {
                     self.terminate_with_trap(failure, output)
                 }
-                dialogue::ProductDialogueReceiver::Fiber(_) => {
+                dialogue::ProductDialogueReceiver::Fiber(_)
+                | dialogue::ProductDialogueReceiver::LineChild { .. } => {
                     let fiber = receiver
                         .flow_fiber_mut(&mut self.fiber, &mut self.child_fibers)
                         .expect("admitted ordinary dialogue receiver");

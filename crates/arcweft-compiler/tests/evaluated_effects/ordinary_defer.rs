@@ -1217,3 +1217,79 @@ fn initial_owned_line_waiting_init_defer_source() -> String {
         }"#,
     )
 }
+
+#[test]
+fn saved_awbc_initial_line_init_defer_rejects_forged_child_dialogue_receivers() {
+    use arcweft_core::executor::ArcweftRuntimeExecutorSnapshot;
+    let mut checked = false;
+    assert_saved_awbc_checking(
+        &initial_owned_line_waiting_init_defer_source(),
+        3,
+        &["body", "nested", "init cleanup", "cleanup"],
+        |mut executor, save| {
+            if checked {
+                return executor;
+            }
+            let Some(index) = save["child_fibers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|child| {
+                    child["owner"].get("ScopedDeferred").is_some()
+                        && child
+                            .pointer("/fiber/suspension/reason/DialogueActive")
+                            .is_some()
+                })
+            else {
+                return executor;
+            };
+            let before = executor.snapshot().unwrap();
+            for mutation in 0..5 {
+                let mut forged = save.clone();
+                let child = &mut forged["child_fibers"][index];
+                match mutation {
+                    0 => {
+                        child["fiber"]["suspension"] = serde_json::Value::Null;
+                        child["fiber"]["status"] = "Running".into();
+                    }
+                    1 | 2 => {
+                        let occurrence = if mutation == 1 {
+                            &mut child["fiber"]["suspension"]["reason"]["DialogueActive"]["activation"]
+                                ["occurrence"]
+                        } else {
+                            &mut child["owner"]["ScopedDeferred"]["activation"]["occurrence"]
+                        };
+                        *occurrence = (occurrence.as_u64().unwrap() + 1).into();
+                    }
+                    3 => {
+                        let owner = &mut child["owner"]["ScopedDeferred"]["owner"]["fiber"];
+                        *owner = (owner.as_str().unwrap().parse::<u64>().unwrap() + 1)
+                            .to_string()
+                            .into();
+                    }
+                    4 => {
+                        let children = forged["child_fibers"].as_array_mut().unwrap();
+                        children.push(children[index].clone());
+                    }
+                    _ => unreachable!(),
+                }
+                let forged = serde_json::from_value(forged).unwrap();
+                if let Ok(bound) = executor.bind_product_save_snapshot(forged) {
+                    let Err(rejected) = executor
+                        .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                    else {
+                        panic!("a scoped child must retain its exact dialogue receiver and parent");
+                    };
+                    (executor, _) = rejected.into_parts();
+                }
+                assert_eq!(executor.snapshot().unwrap(), before);
+            }
+            checked = true;
+            executor
+        },
+    );
+    assert!(
+        checked,
+        "the scoped child reached its live inner-dialogue receiver"
+    );
+}

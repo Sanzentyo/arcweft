@@ -162,7 +162,12 @@ fn dialogue_receiver_topology_checks_nested_edges_in_any_registry_order() {
     let mut receivers = ProductDialogueReceivers::default();
     receivers.register_dialogue(inner_id, &inner).unwrap();
     receivers.register_dialogue(outer_id, &outer).unwrap();
-    receivers.register_fiber(&image.fiber, false).unwrap();
+    receivers
+        .register_fiber(
+            &image.fiber,
+            super::super::dialogue::ProductDialogueReceiver::Fiber(image.fiber.instance),
+        )
+        .unwrap();
     assert_eq!(
         receivers.validate(&executor.program),
         Err(FiberStateError::InvalidDialogueReceiver {
@@ -170,10 +175,16 @@ fn dialogue_receiver_topology_checks_nested_edges_in_any_registry_order() {
         }),
     );
     receivers
-        .register_fiber(outer.activation_fiber().unwrap(), true)
+        .register_fiber(
+            outer.activation_fiber().unwrap(),
+            super::super::dialogue::ProductDialogueReceiver::Activation(outer_id),
+        )
         .unwrap();
     receivers
-        .register_fiber(inner.activation_fiber().unwrap(), true)
+        .register_fiber(
+            inner.activation_fiber().unwrap(),
+            super::super::dialogue::ProductDialogueReceiver::Activation(inner_id),
+        )
         .unwrap();
     receivers.validate(&executor.program).unwrap();
 

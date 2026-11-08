@@ -1,5 +1,5 @@
 use super::{ActiveDialogue, AwbcProductStepExecutor, ProductChildFiber, ProductStepError};
-use crate::awbc::fiber::{FiberState, FiberStateError, FiberSuspensionReason};
+use crate::awbc::fiber::{FiberState, FiberStateError};
 use crate::awbc::schema::{AwbcResumePointId, AwbcTypeId};
 use crate::effect::{RuntimeRegistryOwner, RuntimeScopeRegistry};
 use crate::line_task::{
@@ -32,28 +32,42 @@ pub(super) struct ProductDialogueStore {
 pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ProductDialogueReceiver {
     Fiber(RuntimeFiberInstanceId),
     Activation(DialogueActivationId),
+    LineChild {
+        instance: RuntimeFiberInstanceId,
+        parent: DialogueActivationId,
+    },
 }
 
 impl ProductDialogueReceiver {
+    pub(super) fn parent_activation(self) -> Option<DialogueActivationId> {
+        match self {
+            Self::Fiber(_) => None,
+            Self::Activation(parent) | Self::LineChild { parent, .. } => Some(parent),
+        }
+    }
+
     pub(super) fn flow_fiber<'a>(
         self,
         main: &'a FiberState,
         children: &'a VecDeque<ProductChildFiber>,
     ) -> Option<&'a FiberState> {
-        let Self::Fiber(instance) = self else {
-            return None;
+        let (instance, parent) = match self {
+            Self::Fiber(instance) => (instance, None),
+            Self::LineChild { instance, parent } => (instance, Some(parent)),
+            Self::Activation(_) => return None,
         };
-        if main.instance == instance {
+        if main.instance == instance && parent.is_none() {
             Some(main)
         } else {
             children
                 .iter()
                 .find(|child| {
-                    child.fiber.instance == instance && child.owner.line_activation().is_none()
+                    child.fiber.instance == instance
+                        && child.owner.dialogue_receiver(instance) == self
                 })
                 .map(|child| &child.fiber)
         }
@@ -64,16 +78,19 @@ impl ProductDialogueReceiver {
         main: &'a mut FiberState,
         children: &'a mut VecDeque<ProductChildFiber>,
     ) -> Option<&'a mut FiberState> {
-        let Self::Fiber(instance) = self else {
-            return None;
+        let (instance, parent) = match self {
+            Self::Fiber(instance) => (instance, None),
+            Self::LineChild { instance, parent } => (instance, Some(parent)),
+            Self::Activation(_) => return None,
         };
-        if main.instance == instance {
+        if main.instance == instance && parent.is_none() {
             Some(main)
         } else {
             children
                 .iter_mut()
                 .find(|child| {
-                    child.fiber.instance == instance && child.owner.line_activation().is_none()
+                    child.fiber.instance == instance
+                        && child.owner.dialogue_receiver(instance) == self
                 })
                 .map(|child| &mut child.fiber)
         }
@@ -94,6 +111,9 @@ impl ProductDialogueDispatch {
         match self {
             Self::Start(ProductDialogueReceiver::Fiber(_)) => None,
             Self::Start(ProductDialogueReceiver::Activation(activation))
+            | Self::Start(ProductDialogueReceiver::LineChild {
+                parent: activation, ..
+            })
             | Self::Resume { activation, .. } => Some(activation),
         }
     }
@@ -103,60 +123,35 @@ impl AwbcProductStepExecutor {
     pub(super) fn dialogue_dispatch(
         &self,
     ) -> Result<Option<ProductDialogueDispatch>, FiberStateError> {
-        for receiver in std::iter::once(&self.fiber).chain(
-            self.child_fibers
-                .iter()
-                .filter(|child| child.owner.line_activation().is_none())
-                .map(|child| &child.fiber),
-        ) {
-            if let Some(dispatch) = self.dispatch_dialogue_receiver(receiver)? {
-                return Ok(Some(dispatch));
-            }
-        }
-        Ok(None)
+        let receivers = self.borrow_dialogue_receivers()?;
+        receivers.validate(&self.program)?;
+        receivers.dispatch()
     }
 
-    fn dispatch_dialogue_receiver<'a>(
-        &'a self,
-        mut receiver: &'a FiberState,
-    ) -> Result<Option<ProductDialogueDispatch>, FiberStateError> {
-        let mut owner = ProductDialogueReceiver::Fiber(receiver.instance);
-        loop {
-            let Some(suspension) = receiver.suspension.as_ref() else {
-                return Ok(None);
-            };
-            match suspension.reason {
-                FiberSuspensionReason::Dialogue { .. } => {
-                    return Ok(Some(ProductDialogueDispatch::Start(owner)));
-                }
-                FiberSuspensionReason::DialogueActive { activation } => {
-                    let invalid = || FiberStateError::InvalidDialogueReceiver { activation };
-                    let active = self
-                        .dialogues
-                        .active_frame_for(&activation)
-                        .ok_or_else(invalid)?;
-                    let resume = suspension.declared_resume().ok_or_else(invalid)?;
-                    if let Some(fiber) = active.receiving_fiber()
-                        && fiber.suspension.as_ref().is_some_and(|suspension| {
-                            matches!(
-                                suspension.reason,
-                                FiberSuspensionReason::Dialogue { .. }
-                                    | FiberSuspensionReason::DialogueActive { .. }
-                            )
-                        })
-                    {
-                        if fiber.instance.get() <= receiver.instance.get() {
-                            return Err(invalid());
-                        }
-                        owner = ProductDialogueReceiver::Activation(activation);
-                        receiver = fiber;
-                    } else {
-                        return Ok(Some(ProductDialogueDispatch::Resume { activation, resume }));
-                    }
-                }
-                _ => return Ok(None),
+    fn borrow_dialogue_receivers(
+        &self,
+    ) -> Result<ProductDialogueReceivers<'_, FiberState>, FiberStateError> {
+        let mut receivers = ProductDialogueReceivers::default();
+        receivers.register_fiber(
+            &self.fiber,
+            ProductDialogueReceiver::Fiber(self.fiber.instance),
+        )?;
+        for child in &self.child_fibers {
+            receivers.register_fiber(
+                &child.fiber,
+                child.owner.dialogue_receiver(child.fiber.instance),
+            )?;
+        }
+        for active in self.dialogues.active_frames() {
+            receivers.register_dialogue(active.activation, active)?;
+            if let Some(fiber) = active.activation_fiber() {
+                receivers.register_fiber(
+                    fiber,
+                    ProductDialogueReceiver::Activation(active.activation),
+                )?;
             }
         }
+        Ok(receivers)
     }
 
     pub(super) fn foreground_dialogue(&self) -> Option<DialogueActivationId> {
@@ -170,27 +165,7 @@ impl AwbcProductStepExecutor {
         &self,
         child: DialogueActivationId,
     ) -> Result<ProductDialogueReceiver, FiberStateError> {
-        for fiber in std::iter::once(&self.fiber).chain(
-            self.child_fibers
-                .iter()
-                .filter(|child| child.owner.line_activation().is_none())
-                .map(|child| &child.fiber),
-        ) {
-            if fiber.dialogue_receiver() == Some(child)
-                && fiber.instance.get().get() == child.owner_fiber().get()
-            {
-                return Ok(ProductDialogueReceiver::Fiber(fiber.instance));
-            }
-        }
-        self.dialogues
-            .active_frames()
-            .find_map(|frame| {
-                let fiber = frame.receiving_fiber()?;
-                (fiber.dialogue_receiver() == Some(child)
-                    && fiber.instance.get().get() == child.owner_fiber().get())
-                .then_some(ProductDialogueReceiver::Activation(frame.activation))
-            })
-            .ok_or(FiberStateError::InvalidDialogueReceiver { activation: child })
+        self.borrow_dialogue_receivers()?.receiver(child)
     }
 
     pub(super) fn dialogue_receiver_fiber(
@@ -198,7 +173,7 @@ impl AwbcProductStepExecutor {
         receiver: ProductDialogueReceiver,
     ) -> Option<&FiberState> {
         match receiver {
-            ProductDialogueReceiver::Fiber(_) => {
+            ProductDialogueReceiver::Fiber(_) | ProductDialogueReceiver::LineChild { .. } => {
                 receiver.flow_fiber(&self.fiber, &self.child_fibers)
             }
             ProductDialogueReceiver::Activation(id) => {
@@ -320,14 +295,29 @@ impl ProductDialogueStore {
     pub(super) fn begin_nested(
         &mut self,
         parent: &ProductDialogueTransaction,
+        receiver: ProductDialogueReceiver,
         frame: ActiveDialogue,
     ) -> Result<(), LineRuntimeError> {
         self.registry.inspect_commit(parent)?;
-        let fiber = parent
-            .frame()
-            .activation_fiber()
-            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-        if frame.activation.owner_fiber().get() != fiber.instance.get().get() {
+        if receiver.parent_activation().as_ref() != Some(parent.activation()) {
+            return Err(LineRuntimeError::InvalidActivationOperation);
+        }
+        let instance = match receiver {
+            ProductDialogueReceiver::Activation(_) => {
+                parent
+                    .frame()
+                    .activation_fiber()
+                    .ok_or(LineRuntimeError::InvalidActivationOperation)?
+                    .instance
+            }
+            ProductDialogueReceiver::LineChild { instance, .. } => instance,
+            ProductDialogueReceiver::Fiber(_) => {
+                return Err(LineRuntimeError::InvalidActivationOperation);
+            }
+        };
+        if frame.activation.owner_fiber().get() != instance.get().get()
+            || instance.get().get() <= parent.activation().owner_fiber().get()
+        {
             return Err(LineRuntimeError::InvalidActivationOperation);
         }
         self.registry.begin(frame.activation, frame)
@@ -356,7 +346,7 @@ impl ProductDialogueStore {
         &self,
         receiver: ProductDialogueReceiver,
     ) -> Result<(), LineRuntimeError> {
-        if let ProductDialogueReceiver::Activation(id) = receiver {
+        if let Some(id) = receiver.parent_activation() {
             self.registry
                 .active_revision(&id)
                 .ok_or(LineRuntimeError::UnknownActivationLedger)?

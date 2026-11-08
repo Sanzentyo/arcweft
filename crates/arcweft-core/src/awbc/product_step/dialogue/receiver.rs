@@ -1,6 +1,7 @@
 //! Borrowed receiver topology shared by live and inert Product admission.
 
 use super::super::{AwbcProductActiveDialogue, AwbcProductDialoguePhase, AwbcProductStepExecutor};
+use super::{ProductDialogueDispatch, ProductDialogueReceiver};
 use crate::awbc::fiber::{FiberState, FiberStateError};
 use crate::awbc::schema::{AwbcContentUnitId, AwbcDialogueResultTarget, AwbcProgram, AwbcTypeId};
 use crate::line_task::LineRuntimeError;
@@ -14,11 +15,12 @@ struct ReceiverEdge<'a> {
     target_type: AwbcTypeId,
     result: &'a AwbcDialogueResultTarget,
     closing: bool,
+    activation_fiber: Option<RuntimePersistentFiberId>,
 }
 
 struct ReceiverRow<'a, F> {
     fiber: Option<&'a F>,
-    activation_fiber: bool,
+    receiver: Option<ProductDialogueReceiver>,
     child: Option<ReceiverEdge<'a>>,
 }
 
@@ -78,7 +80,7 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
     ) -> &mut ReceiverRow<'a, FiberState<V, O, N, B, R, G>> {
         self.rows.entry(owner).or_insert(ReceiverRow {
             fiber: None,
-            activation_fiber: false,
+            receiver: None,
             child: None,
         })
     }
@@ -86,15 +88,19 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
     pub(in crate::awbc::product_step) fn register_fiber(
         &mut self,
         fiber: &'a FiberState<V, O, N, B, R, G>,
-        activation_fiber: bool,
+        receiver: ProductDialogueReceiver,
     ) -> Result<(), FiberStateError> {
+        if matches!(receiver, ProductDialogueReceiver::Fiber(instance) | ProductDialogueReceiver::LineChild { instance, .. } if instance != fiber.instance)
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
         let owner = RuntimePersistentFiberId::from_allocated(fiber.instance.get().get());
         let row = self.row(owner);
         if row.fiber.is_some() {
             return Err(FiberStateError::InvalidFrame);
         }
         row.fiber = Some(fiber);
-        row.activation_fiber = activation_fiber;
+        row.receiver = Some(receiver);
         Ok(())
     }
 
@@ -136,6 +142,9 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
             target_type: frame.target_type,
             result: &frame.result,
             closing: matches!(frame.phase, AwbcProductDialoguePhase::Closing(_)),
+            activation_fiber: frame
+                .activation_fiber()
+                .map(|fiber| RuntimePersistentFiberId::from_allocated(fiber.instance.get().get())),
         });
         Ok(())
     }
@@ -146,14 +155,51 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
     ) -> Result<(), FiberStateError> {
         let mut root = None;
         let mut depth = 0;
-        for row in self.rows.values() {
+        for (owner, row) in &self.rows {
+            let receiver = row.receiver.ok_or_else(|| {
+                row.child
+                    .as_ref()
+                    .map_or(FiberStateError::InvalidFrame, |edge| {
+                        FiberStateError::InvalidDialogueReceiver {
+                            activation: edge.activation,
+                        }
+                    })
+            })?;
+            if let ProductDialogueReceiver::Activation(parent)
+            | ProductDialogueReceiver::LineChild { parent, .. } = receiver
+            {
+                let parent_edge = self
+                    .rows
+                    .get(&parent.owner_fiber())
+                    .and_then(|row| row.child.as_ref())
+                    .filter(|edge| edge.activation == parent)
+                    .ok_or(FiberStateError::InvalidDialogueReceiver { activation: parent })?;
+                let invalid = FiberStateError::InvalidDialogueReceiver { activation: parent };
+                match receiver {
+                    ProductDialogueReceiver::Activation(_)
+                        if parent_edge.activation_fiber != Some(*owner) =>
+                    {
+                        return Err(invalid);
+                    }
+                    ProductDialogueReceiver::LineChild { .. }
+                        if *owner <= parent.owner_fiber()
+                            || parent_edge
+                                .activation_fiber
+                                .is_some_and(|fiber| *owner <= fiber) =>
+                    {
+                        return Err(invalid);
+                    }
+                    _ => {}
+                }
+            }
             if let Some(edge) = &row.child {
                 let invalid = FiberStateError::InvalidDialogueReceiver {
                     activation: edge.activation,
                 };
                 depth += 1;
                 if !crate::entry::RuntimeSchemaLimits::engine_default().permits_depth(depth)
-                    || (!row.activation_fiber && root.replace(edge.activation).is_some())
+                    || (matches!(receiver, ProductDialogueReceiver::Fiber(_))
+                        && root.replace(edge.activation).is_some())
                 {
                     return Err(invalid);
                 }
@@ -176,5 +222,74 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
             }
         }
         Ok(())
+    }
+
+    pub(in crate::awbc::product_step) fn receiver(
+        &self,
+        activation: DialogueActivationId,
+    ) -> Result<ProductDialogueReceiver, FiberStateError> {
+        self.rows.get(&activation.owner_fiber())
+            .filter(|row| row.fiber.is_some_and(|fiber| matches!(fiber.suspension.as_ref().map(|suspension| &suspension.reason), Some(crate::awbc::fiber::FiberSuspensionReason::DialogueActive { activation: child }) if *child == activation)))
+            .and_then(|row| row.receiver)
+            .ok_or(FiberStateError::InvalidDialogueReceiver { activation })
+    }
+
+    /// Follow actual owned receiver edges from the root toward waiting work.
+    /// A line's child dialogue progresses before its caller's cleanup can join.
+    pub(in crate::awbc::product_step) fn dispatch(
+        &self,
+    ) -> Result<Option<ProductDialogueDispatch>, FiberStateError> {
+        for (owner, row) in &self.rows {
+            if matches!(row.receiver, Some(ProductDialogueReceiver::Fiber(_)))
+                && let Some(dispatch) = self.dispatch_row(*owner, 0)?
+            {
+                return Ok(Some(dispatch));
+            }
+        }
+        Ok(None)
+    }
+
+    fn dispatch_row(
+        &self,
+        owner: RuntimePersistentFiberId,
+        depth: usize,
+    ) -> Result<Option<ProductDialogueDispatch>, FiberStateError> {
+        if !crate::entry::RuntimeSchemaLimits::engine_default().permits_depth(depth) {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let row = self.rows.get(&owner).ok_or(FiberStateError::InvalidFrame)?;
+        let fiber = row.fiber.ok_or(FiberStateError::InvalidFrame)?;
+        let Some(suspension) = &fiber.suspension else {
+            return Ok(None);
+        };
+        match suspension.reason {
+            crate::awbc::fiber::FiberSuspensionReason::Dialogue { .. } => Ok(Some(
+                ProductDialogueDispatch::Start(row.receiver.ok_or(FiberStateError::InvalidFrame)?),
+            )),
+            crate::awbc::fiber::FiberSuspensionReason::DialogueActive { activation } => {
+                let edge = row
+                    .child
+                    .as_ref()
+                    .filter(|edge| edge.activation == activation)
+                    .ok_or(FiberStateError::InvalidDialogueReceiver { activation })?;
+                for (child_owner, child) in &self.rows {
+                    if matches!(child.receiver, Some(ProductDialogueReceiver::LineChild { parent, .. }) if parent == activation)
+                        && let Some(dispatch) = self.dispatch_row(*child_owner, depth + 1)?
+                    {
+                        return Ok(Some(dispatch));
+                    }
+                }
+                if let Some(activation_fiber) = edge.activation_fiber
+                    && let Some(dispatch) = self.dispatch_row(activation_fiber, depth + 1)?
+                {
+                    return Ok(Some(dispatch));
+                }
+                let resume = suspension
+                    .declared_resume()
+                    .ok_or(FiberStateError::InvalidDialogueReceiver { activation })?;
+                Ok(Some(ProductDialogueDispatch::Resume { activation, resume }))
+            }
+            _ => Ok(None),
+        }
     }
 }

@@ -36,7 +36,16 @@ impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.banks
             .register_fiber(fiber.instance, fiber.presentation_bank(), role, admission)?;
-        Ok(self.receivers.register_fiber(fiber, false)?)
+        let receiver = match role {
+            PresentationExecutionRole::Dialogue(parent) => {
+                dialogue::ProductDialogueReceiver::LineChild {
+                    instance: fiber.instance,
+                    parent,
+                }
+            }
+            _ => dialogue::ProductDialogueReceiver::Fiber(fiber.instance),
+        };
+        Ok(self.receivers.register_fiber(fiber, receiver)?)
     }
 
     fn register_dialogue<E, L, P, H>(
@@ -59,7 +68,10 @@ impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B,
                 PresentationExecutionRole::Dialogue(activation),
                 admission,
             )?;
-            self.receivers.register_fiber(fiber, true)?;
+            self.receivers.register_fiber(
+                fiber,
+                dialogue::ProductDialogueReceiver::Activation(activation),
+            )?;
         }
         // The bank/allocator and the original activation root authenticate
         // the frame before any suspension on that frame can supply an edge.
