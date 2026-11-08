@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日 2026-11-08。項目ごとの受入・公開Sourceと検証範囲を下表で独立して追跡する。既存差分の9ファイルをcheckpointし、3 tracked／4 actual untracked WIPを保持している。
+確認日 2026-11-08。項目ごとの受入・公開Sourceと検証範囲を下表で独立して追跡する。既存差分12ファイルをcheckpointし、tracked WIPは0。4 actual untrackedのローカルcacheは保持している。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画を、そのまま現在の残作業へ転記しない。

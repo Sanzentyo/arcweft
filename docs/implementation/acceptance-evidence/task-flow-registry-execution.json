@@ -51713,5 +51713,36 @@
         }
       ]
     }
+  },
+  "existingPresentationFixtureCheckpoint": {
+    "version": 1,
+    "date": "2026-11-08",
+    "inspectedSource": "e32217f6507aba141cd2b424bd2a6fc15bfb8c2c",
+    "adopted": [
+      {
+        "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+        "sha256": "06a51fa84d1c524be50bf310aff6ddf8451a620a76193ceddbd329e73d2e790d"
+      },
+      {
+        "path": "samples/rich-text-full-grammar.arcw",
+        "sha256": "ed62eec83a0b9fd32e422f6a4ecd28bb471e8fcb0a28ef3683bd403c7c4e90fa"
+      },
+      {
+        "path": "samples/rich-text-windows-fonts.arcw",
+        "sha256": "025474ae5424e2249e0afc00e2e8e512dbf5f5ed494c4c1c1505990529e8a868"
+      }
+    ],
+    "sourcePatchSha256": "caee0866442e352ac79356ffac8679f2432a11a385eda3ef0f4e5016a5a799fd",
+    "scope": "Checkpoint the three remaining pre-existing presentation fixture migrations without changing any source bytes. Scroll uses the adopted emit/mount/await-receive forms. Rich-text samples use explicit Flow results, typed Fx/record/layout arguments and complete callback arguments; their unchanged text and rendering assertions retain the existing acceptance scope.",
+    "limits": "The Scroll test still fails at input.text semantic admission and is not accepted by this checkpoint. The sample flash function explicitly returns Unit and is a demonstration callback, not evidence of a host flash effect. Removal of unavailable standalone character looks does not establish Stage/Look acceptance. Current CLI runtime is still running; no new intermediate test result is invented.",
+    "sourceIdentity": "The physical inputs of the non-CLI and CLI frozen epochs do not change. This records existing working-tree bytes in Git, as explicitly authorized for intermediate commits. All earlier feature acceptance and all real test/SHA history remain intact.",
+    "raw": {
+      "path": "task-existing-consumer-fixture-checkpoint.raw.zip",
+      "sha256": "7569b0f5aca12a0592f52cf2cbce1a0e340d2b363a8424aa557900aad5f54ac9",
+      "sourcePatchEntry": "remaining-held.patch",
+      "sourcePatchSha256": "caee0866442e352ac79356ffac8679f2432a11a385eda3ef0f4e5016a5a799fd",
+      "originalFileHashEvidence": "input-before.json"
+    },
+    "workflow": "The live protected tracked set becomes empty. Checkpoint helpers treat an empty held set as empty bytes instead of running an unrestricted Git diff; explicit owned/other path and staged-tree checks remain active. Four local untracked cache files remain unchanged."
   }
 }

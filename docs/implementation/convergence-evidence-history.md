@@ -15531,3 +15531,10 @@ live／inert共有検査の並び順・再送・65537件上限は、同じhistor
 Rust Source **c96539d2fa8107fac34b03bf7568cbb4ce7b16a5**、内容不変のconsumer checkpoint **3ec9934b355c88193229818b84a4ef20b16f07c9** で、非CLI全feature lib／testsの**49 package・7345／7345 PASS・18 SKIP**。Core逆依存53は新Cargo graphでも差分0。compile-only3はarcweft／arcweft-bundle-assets／arcweft-render-web。4新regressionを各1回含み、先行owner結果を重ねない。実test executable 315本を元pathで前後照合し、3417入力drift0。全workspace check／Clippy・構造gate・7 Rust path fmtも同じ入力で終了0。
 
 初回は既存arcweft_bundle rlibのmmapがWindowsページングファイル不足OS1455で拒否され、player-native lib test／player-scene scroll_regionsの準備が101で停止した。テスト失敗・metadata破損とみなさず、原本を保持して同条件・既定jobsで再試行し回復した。生成物を移動・コピー・退避せず、clean・profile／assertion／budget／除外変更もない。generic labelのselectedPackages=0は明示-p件数、held=14は旧templateで、実49 package／現在3 tracked・4 actual untrackedとは区別する。Source checkpoint後も元12ファイルの内容は同一。CLI711件は別途ビルド・実行中で、この非CLI結果へ加えない。旧Sourceの8052件と失敗4件、全SHAは保持する。Generic Match等は受入のまま。[構造の実測・失敗原本・各終端・公開receipt](acceptance-evidence/task-flow-registry-execution.json)。raw 40 entries、SHA-256 dd7f5e10f1a97fa3bfb2ca00c47b68f56e9f0ba6f1d49faa6f9e9d4b5a6fc84b。
+
+
+## 2026-11-08 — 残るpresentation fixture差分のcheckpoint
+
+確認Source **e32217f6507aba141cd2b424bd2a6fc15bfb8c2c**。元のScroll test／rich-text sample 3ファイルを内容不変でcheckpointへ採用する。patch SHA-256 **caee0866442e352ac79356ffac8679f2432a11a385eda3ef0f4e5016a5a799fd** は[元差分原本](acceptance-evidence/task-existing-consumer-fixture-checkpoint.raw.zip)のremaining-held.patchと一致し、各file hashも元12ファイルの記録と一致する。tracked WIPは0になり、4 local cacheは保持する。進行中の検証入力・実行量・assertionを変えない。
+
+Scrollのinput.text型判定は引き続き失敗として追跡する。sampleのflashはUnitを返す通常callbackであり、host flash effectの受入には数えない。standaloneに存在しないlookの除去もStage／Look受入を意味しない。checkpointを機能完了や新しいテスト実行とはせず、Generic Match等の既受入も維持する。過去128 record・実測・全SHAを保持した。[採用path・file hash・適用範囲](acceptance-evidence/task-flow-registry-execution.json)。

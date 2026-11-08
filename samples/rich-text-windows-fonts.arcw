@@ -22,16 +22,14 @@ entry cli @entry.windows_font_showcase {
     goto @flow.windows_font_showcase
 }
 
-flow windows_font_showcase {
-    sen(id=@say.windows_fonts.001, voice=auto)[
-        #layout(.vertical_rl, jlreq=.normal)[#font("MS Mincho")[縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。]] #font("Yu Gothic")[横書き比較]。[p]
-    ]
+flow windows_font_showcase() -> String {
+    sen(id=@say.windows_fonts.001, voice=auto)[#layout(.vertical_rl, jlreq=.normal)[#font("MS Mincho")[縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。]] #font("Yu Gothic")[横書き比較]。[p]]
 
-    akira(id=@say.windows_fonts.002, voice=auto, look=.smile)[
+    akira(id=@say.windows_fonts.002, voice=auto)[
         #font("Yu Gothic")[#color(rgb("#8fd7ff"))[Yu Gothic] は本文寄り。#strong()[太字]、#em()[強調]、#size(36pt)[大きな語]を混ぜる。][p]
     ]
 
-    mio(id=@say.windows_fonts.003, voice=auto, look=.bright)[
+    mio(id=@say.windows_fonts.003, voice=auto)[
         #font("Meiryo")[Meiryo] で、#style(.italic)[italic]、#style(.oblique, angle=10deg)[oblique]、#color(rgb("#ff9ac8"))[色指定]を見る。[p]
     ]
 

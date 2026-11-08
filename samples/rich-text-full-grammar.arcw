@@ -27,36 +27,38 @@ pub fn warning(
     speed: f32 = 1.0,
 ) -> Fx {
     Fx.stack([
-        Fx.text(weight = .strong, color = accent),
+        Fx.text(weight = 700, color = accent),
         Fx.transform(
             target = .glyph,
             sample = |ctx| Transform2D {
-                translate_y:
+                translate_y =
                     sin(ctx.time * speed + ctx.ordinal_phase()) * amplitude,
             },
         ),
     ])
 }
 
+fn flash(color: Color, time: Duration) -> Unit { () }
+
 entry cli @entry.rich_text_full_grammar {
     goto @flow.rich_text_full_grammar
 }
 
-flow rich_text_full_grammar {
+flow rich_text_full_grammar() -> String {
     let player_name = "澪"
     let score: i32 = 42
     let debug_label = "debug-ok"
 
-    alice(id=@say.full.001, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=13px, gap=0px)), inline_error=InlineFailure.fallback("?"))[
-        ルビ: |[変な夢](へんなゆめ)、|[悪夢](あくむ)、｜星影《ほしかげ》、#ruby("時計塔")[時の塔]、#ruby("ゆめ")[夢]、#ruby("ひみつ")[秘密]。[p]
+    alice(id=@say.full.001, voice=auto, inline_error=InlineFailure.fallback("?"))[
+        #layout(.horizontal_tb, ruby_size=13px, ruby_gap=0px)[ルビ: |[変な夢](へんなゆめ)、|[悪夢](あくむ)、｜星影《ほしかげ》、#ruby("時計塔")[時の塔]、#ruby("ゆめ")[夢]、#ruby("ひみつ")[秘密]。][p]
     ]
 
-    alice(id=@say.full.001.extreme, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=13px, gap=0px)), inline_error=InlineFailure.fallback("?"))[
-        極端ルビ: |[政](まつりごと)を行うため、|[中央の帝国将官たち](ぐん)が集まる。[p]
+    alice(id=@say.full.001.extreme, voice=auto, inline_error=InlineFailure.fallback("?"))[
+        #layout(.horizontal_tb, ruby_size=13px, ruby_gap=0px)[極端ルビ: |[政](まつりごと)を行うため、|[中央の帝国将官たち](ぐん)が集まる。][p]
     ]
 
-    alice(id=@say.full.001.vertical_extreme, voice=auto, look=.smile, rich_text=rich_text_style(ruby=ruby_style(size=13px, gap=0px)), inline_error=InlineFailure.fallback("?"))[
-        縦極端ルビ: #layout(.vertical_rl, jlreq=.normal)[|[政](まつりごと)を行うため、|[中央の帝国将官たち](ぐん)が集まる。][p]
+    alice(id=@say.full.001.vertical_extreme, voice=auto, inline_error=InlineFailure.fallback("?"))[
+        縦極端ルビ: #layout(.vertical_rl, jlreq=.normal, ruby_size=13px, ruby_gap=0px)[|[政](まつりごと)を行うため、|[中央の帝国将官たち](ぐん)が集まる。][p]
     ]
 
     bob(id=@say.full.002, voice=auto, inline_error=InlineFailure.fallback("?"))[
@@ -80,7 +82,7 @@ flow rich_text_full_grammar {
     ]
 
     alice(id=@say.full.007, voice=auto)[
-        cue: [voice auto][face @.smile][pose @.idle][show @.alice][hide @.bob][move x=10px y=0px][scale x=1.1][rotate 5deg][anim @.blink][shake amp=2px][at 0.2s call=flash][call flash(color=rgb("#ffffff"), time=90ms)][signal @.seen]条件と代替の表示[mark @.release][p]
+        cue: [voice auto][face @.smile][pose @.idle][show @.alice][hide @.bob][move x=10px y=0px][scale x=1.1][rotate 5deg][anim @.blink][shake amp=2px][at 0.2s call=flash(color=rgb("#ffffff"), time=90ms)][call flash(color=rgb("#ffffff"), time=90ms)][signal @.seen]条件と代替の表示[mark @.release][p]
     ]
 
     bob(id=@say.full.008, voice=auto)[

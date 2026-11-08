@@ -2452,44 +2452,44 @@ pub view ScrollPanel() {
       TextField(feedback)
         .label("Feedback")
         .on_submit {
-          action.invoke(@action:.feedback.submit, value = feedback.text)
+          emit(feedback.submit(value = feedback.text))
         }
       Button(@button:.send, label = "Send")
         .on_click {
-          action.invoke(@action:.feedback.submit, value = feedback.text)
+          emit(feedback.submit(value = feedback.text))
         }
       Button(@button:.more, label = "More")
         .on_click {
-          action.invoke(@action:.feedback.submit, value = feedback.text)
+          emit(feedback.submit(value = feedback.text))
         }
       Button(@button:.below_scroll, label = "Below")
         .on_click {
-          action.invoke(@action:.feedback.submit, value = feedback.text)
+          emit(feedback.submit(value = feedback.text))
         }
     }
   }
 }
 
 flow scroll_agent_live {
-  let panel = view(@view:.ScrollPanel, lifetime = .manual)
-  let event = receive action(@action:.feedback.submit)
+  let panel = mount(ScrollPanel())
+  let event = await receive(feedback.submit)
   return event.value
 }
 
 flow scroll_agent_released {
-  let panel = view(@view:.ScrollPanel, lifetime = .manual)
+  let panel = mount(ScrollPanel())
   panel.release()
   return "released"
 }
 
 flow scroll_agent_unmounted {
-  let panel = view(@view:.ScrollPanel, lifetime = .manual)
+  let panel = mount(ScrollPanel())
   panel.unmount()
   return "unmounted"
 }
 
 flow scroll_agent_destroyed {
-  let panel = view(@view:.ScrollPanel, lifetime = .manual)
+  let panel = mount(ScrollPanel())
   panel.destroy()
   return "destroyed"
 }
