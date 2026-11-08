@@ -296,6 +296,8 @@ pub struct BundleViewMountOutput<F = LineDisplayFrame> {
     pub active_targets: Vec<String>,
     pub active_images: Vec<String>,
     pub action_buttons: Vec<arcweft_bundle::resource_codec::ViewRuntimeActionButton>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_inputs: Vec<arcweft_bundle::resource_codec::ViewRuntimeTextControl>,
     pub paint: Vec<BundleViewPaintItem>,
     pub text: Vec<BundleViewTextOutput<F>>,
     pub fx: Vec<BundleViewFxApplication>,
@@ -390,6 +392,8 @@ pub enum BundleViewEventDispatchError {
     },
     #[error("View handler seal revision cursor is exhausted")]
     HandlerRevisionExhausted,
+    #[error("text-control write-back does not match its active retained input seal")]
+    InvalidTextInput,
 }
 
 /// Public owner and part identity projected from an accepted exported-part boundary.
@@ -472,6 +476,7 @@ impl<F> BundleViewFrame<F> {
                         active_targets: mount.active_targets,
                         active_images: mount.active_images,
                         action_buttons: mount.action_buttons,
+                        text_inputs: mount.text_inputs,
                         paint: mount.paint,
                         fx: mount.fx,
                         events: mount.events,
@@ -698,7 +703,20 @@ struct MountedView {
         MountedViewExpressionEvaluation,
     >,
     handler_seals: BTreeMap<MountedViewHandlerKey, MountedViewHandlerSeal>,
+    text_input_seals: BTreeMap<(BundleViewInstancePath, u32), MountedViewTextInputSeal>,
     next_handler_seal_revision: u64,
+}
+
+/// Frame-derived authority for a text adapter to update one retained field.
+#[derive(Clone, Debug, PartialEq)]
+struct MountedViewTextInputSeal {
+    target: String,
+    session: u64,
+    address: (BundleViewInstancePath, arcweft_view::ViewStateFieldId),
+    value_type: arcweft_id::RuntimeSemanticTypeId,
+    secure: bool,
+    selection: arcweft_bundle::resource_codec::view::ViewRuntimeTextSelection,
+    revision: u64,
 }
 
 /// Derived inert memo evidence; no executable resource value is duplicated.
@@ -1753,6 +1771,7 @@ impl BundleViewRuntime {
                         execution_locals: Vec::new(),
                         expression_evaluations: BTreeMap::new(),
                         handler_seals: BTreeMap::new(),
+                        text_input_seals: BTreeMap::new(),
                         next_handler_seal_revision: saved.next_handler_seal_revision,
                     },
                 )

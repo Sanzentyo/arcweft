@@ -446,6 +446,7 @@ mod dynamic_character_dialogue_context_tests {
                     active_targets: Vec::new(),
                     active_images: Vec::new(),
                     action_buttons: Vec::new(),
+            text_inputs: Vec::new(),
                     paint: Vec::new(),
                     text: vec![
                         crate::view_runtime::BundleViewTextOutput {

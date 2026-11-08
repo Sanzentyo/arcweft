@@ -305,6 +305,63 @@ impl ViewInputOptions {
 }
 
 impl ViewInputKind {
+    /// Creates the adapter projection of an executable retained field. The
+    /// mount owns its value and issues the session; this is display metadata.
+    pub fn retained_control(
+        self,
+        target: String,
+        view: String,
+        session: u64,
+        value: String,
+        label: Option<String>,
+        bounds: ViewRuntimeTextControlBounds,
+    ) -> ViewRuntimeTextControl {
+        ViewRuntimeTextControl {
+            public_id: target.clone(),
+            target,
+            view: Some(view),
+            containing_scroll_region: None,
+            session,
+            selection: ViewRuntimeTextSelection::collapsed_at_end(&value),
+            value,
+            label,
+            kind: self,
+            bounds,
+            options: ViewRuntimeTextControlOptions {
+                purpose: if self.is_secure() {
+                    ViewInputPurpose::Password
+                } else {
+                    ViewInputPurpose::Text
+                },
+                autocorrect: if self.is_secure() {
+                    TextAssistPolicy::Disabled
+                } else {
+                    TextAssistPolicy::PlatformDefault
+                },
+                spellcheck: if self.is_secure() {
+                    TextAssistPolicy::Disabled
+                } else {
+                    TextAssistPolicy::PlatformDefault
+                },
+                capitalization: TextCapitalization::None,
+                enter_key: EnterKeyHint::Default,
+                multiline: self.is_multiline(),
+                selection_policy: ViewTextSelectionPolicy::Enabled,
+                shortcut_policy: ViewTextShortcutPolicy::Enabled,
+                tab_policy: ViewTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
+                secure_policy: if self.is_secure() {
+                    ViewSecureInputPolicy::Password
+                } else {
+                    ViewSecureInputPolicy::Plain
+                },
+                composition_on_blur: CompositionOnBlurPolicy::Commit,
+            },
+            handlers: ViewRuntimeTextControlHandlers::default(),
+            style: ViewRuntimeControlVisualStyle::default(),
+        }
+    }
+
     pub const fn from_element(element: ViewElementKind) -> Option<Self> {
         match element.text_input_kind() {
             Some(ViewElementTextInputKind::TextField) => Some(Self::TextField),

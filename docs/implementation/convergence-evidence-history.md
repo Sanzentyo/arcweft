@@ -15545,3 +15545,11 @@ Scrollのinput.text型判定は引き続き失敗として追跡する。sample�
 確認Source **0ed7a4b093caaac1bf65c51812f9d215018dc25c**、production **c96539d2fa8107fac34b03bf7568cbb4ce7b16a5**、feature **17e34d99e32c4618ac6ed866a7ee9ccdcff441c5**。非CLI7345 PASS／18 SKIPと、凍結Source **3ec9934b355c88193229818b84a4ef20b16f07c9** のCLI711件中707 PASS／4 FAIL／23 SKIPを照合し、**8056件中8052 PASS／4 FAIL／41 SKIP**、2 run／2 feature point・重複0。Core逆依存53中50 packageを実行し、3はcompile-only。9個の新旧required regressionを各1回含み、focused ownerを合算しない。実test executable 327本とCLI本体を元pathで前後照合した。3417 Rust等入力とCLI3641入力（.awfagent24件を追加）のdrift0。
 
 最終4失敗のIDは先行Sourceと一致し、新規失敗0。Scroll入力生成、必須VoiceHandleの開始状態、旧receiverless promotion入力2件の境界を引き続き各ownerで追跡する。元12ファイルのcheckpointは内容を変えず、tracked WIPは0、4 local cacheは保持する。generic held=14 labelは旧templateとして保持し、現状へ転記しない。先行8052件、中断した旧CLI run、OS1455準備失敗、全SHA／実測は保持する。全体goalの未達でGeneric Matchなど完了cutを戻さない。[全選択・終端・diagnostics・公開receipt](acceptance-evidence/task-flow-registry-execution.json)。raw 19 entries、SHA-256 b399fbc718bf0bf40d6d92e20f93c9540c3f74007c8e8aa8e138a0f11d1c7efb。
+
+## 2026-11-08 View の保持 String 入力と text handler の実装 checkpoint
+
+確認基点は `32445ffc35c7a4c49da00d94faf651c0f61ac3c1`、main の既存 checkout。元の tracked WIP 12 ファイルの checkpoint 後に開始した変更で、ローカル cache 4 ファイルは保持している。
+
+未実装の input.text／input.secure を別の保持値 authority として増設せず、既存 local state mut の String フィールドへ TextField／TextArea／SecureField を結び付ける。Bundle は派生 local・別 element・型の異なる入力を拒否し、実行時は mount/session・privacy・UTF-8 selection を検査する。String は借用状態で容量・型を検査してから構築する。text handler は更新候補を読み、入力値と handler 出力を同じ state 公開で commit する。Input control の表示 String は投影である。cold restore／replacement／成功 frame の除去後は以前の入力 session を失効させる。仕様は view-reactive.md の一か所で維持する。
+
+途中の check r1／r2 は新しい variant と output field の consumer 移行、および modifier の import 修正中に 101 で終了した。r3 の compiler／runtime-driver 全 target・全 feature check は終了 0（後続 handler 修正前の入力）。新規 compiler 回帰 3 件の nextest はビルド中。この checkpoint で受入や現行全体の検証完了を宣言しない。ユーザーの「途中 commit の正常動作は必須にしない」という明示指示に従い、入力境界の実装を一度保存して、同じ作業として検証と修復を続ける。Generic Match その他の受入済み境界、既存 CLI 4 失敗の判定は維持する。

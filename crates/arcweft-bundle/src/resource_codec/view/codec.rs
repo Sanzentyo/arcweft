@@ -728,6 +728,55 @@ impl ViewProgramResource {
                             );
                         }
                     }
+                    ViewProgramInstruction::BindTextInput { value, label, .. } => {
+                        self.validate_execution_inputs(
+                            definition,
+                            std::slice::from_ref(value),
+                            &locals,
+                        )?;
+                        let arcweft_view::ViewExecutionInputSource::Local(coordinate) =
+                            value.source
+                        else {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_text_input_state",
+                            ));
+                        };
+                        if locals
+                            .iter()
+                            .rev()
+                            .find_map(|scope| scope.get(&coordinate))
+                            .is_none_or(|local| local.retained_field.is_none())
+                            || !program.runtime_types.iter().any(|ty| {
+                                ty.semantic_identity() == value.value_type()
+                                    && matches!(
+                                        ty.shape(),
+                                        arcweft_core::awbc::schema::AwbcRuntimeTypeShape::String
+                                    )
+                            })
+                        {
+                            return Err(SectionCodecError::NonCanonicalTable(
+                                "view_text_input_state",
+                            ));
+                        }
+                        if let Some(label) = label {
+                            let signature = self
+                                .validate_expression_program(program, definition, label, &locals)?;
+                            if !signature
+                                .result
+                                .and_then(|ty| program.runtime_types.get(ty.index()))
+                                .is_some_and(|ty| {
+                                    matches!(
+                                        ty.shape(),
+                                        arcweft_core::awbc::schema::AwbcRuntimeTypeShape::String
+                                    )
+                                })
+                            {
+                                return Err(SectionCodecError::NonCanonicalTable(
+                                    "view_text_input_label",
+                                ));
+                            }
+                        }
+                    }
                     ViewProgramInstruction::EmitText { text_source, .. } if text.is_some() => {
                         sources.push(text_source.as_str())
                     }
@@ -1242,6 +1291,7 @@ impl ViewProgramResource {
                 | ViewProgramInstruction::RepeatKeyed { .. }
                 | ViewProgramInstruction::Match { .. }
                 | ViewProgramInstruction::BindLocal { .. }
+                | ViewProgramInstruction::BindTextInput { .. }
                 | ViewProgramInstruction::EmitText { .. }
                 | ViewProgramInstruction::EmitImage { .. }
                 | ViewProgramInstruction::EmitCustom { .. }
@@ -1731,6 +1781,7 @@ impl ViewProgramResource {
         for definition in &self.definitions {
             let mut locals = vec![BTreeMap::new()];
             let mut target = None;
+            let mut text_input_targets = BTreeSet::new();
             for event in ScopedInstructions::new(&self.instructions, definition.body)? {
                 let (ordinal, instruction) = match event? {
                     ScopeEvent::Enter { outputs } => {
@@ -1775,7 +1826,36 @@ impl ViewProgramResource {
                     | ViewProgramInstruction::EmitImage { .. }
                     | ViewProgramInstruction::EmitCustom { .. }
                     | ViewProgramInstruction::CallView { .. } => target = Some(ordinal),
+                    ViewProgramInstruction::BindTextInput { value, .. } => {
+                        self.validate_execution_inputs(
+                            definition,
+                            std::slice::from_ref(value),
+                            &locals,
+                        )
+                        .map_err(|_| invalid())?;
+                        let arcweft_view::ViewExecutionInputSource::Local(coordinate) =
+                            value.source
+                        else {
+                            return Err(invalid());
+                        };
+                        if locals.iter().rev().find_map(|scope| scope.get(&coordinate)).is_none_or(|local| local.retained_field.is_none())
+                            || !target.is_some_and(|node| matches!(self.instructions.get(node as usize), Some(ViewProgramInstruction::OpenElement { element, .. }) if element.is_text_input()) && text_input_targets.insert(node)) {
+                            return Err(invalid());
+                        }
+                    }
                     ViewProgramInstruction::BindHandler { event, handler, .. } => {
+                        if matches!(
+                            event,
+                            arcweft_view::EventKind::TextChange
+                                | arcweft_view::EventKind::TextSubmit
+                        ) && (!target.is_some_and(|node| text_input_targets.contains(&node))
+                            || !matches!(
+                                handlers.get(handler).map(|handler| handler.result.role()),
+                                Some(arcweft_view::ViewHandlerResultRole::StateTransition { .. })
+                            ))
+                        {
+                            return Err(invalid());
+                        }
                         let specification = handlers.get(handler).ok_or_else(invalid)?;
                         self.validate_execution_inputs(
                             definition,
@@ -2385,6 +2465,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         | ViewProgramInstruction::Match { .. }
         | ViewProgramInstruction::RepeatKeyed { .. }
         | ViewProgramInstruction::BindLocal { .. }
+        | ViewProgramInstruction::BindTextInput { .. }
         | ViewProgramInstruction::ApplyFx { .. } => Vec::new(),
         ViewProgramInstruction::EmitText {
             text_source,

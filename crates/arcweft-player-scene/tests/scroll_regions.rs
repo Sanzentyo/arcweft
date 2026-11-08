@@ -114,6 +114,7 @@ fn push_view_text(
         active_targets: vec![target.to_owned()],
         active_images: Vec::new(),
         action_buttons: Vec::new(),
+        text_inputs: Vec::new(),
         paint: vec![BundleViewPaintItem::Text {
             source_id: source_id.clone(),
             target: target.to_owned(),

@@ -95,6 +95,7 @@ fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewPr
         | ViewProgramInstruction::Match { source, .. }
         | ViewProgramInstruction::RepeatKeyed { source, .. }
         | ViewProgramInstruction::BindLocal { source, .. }
+        | ViewProgramInstruction::BindTextInput { source, .. }
         | ViewProgramInstruction::ApplyFx { source, .. }
         | ViewProgramInstruction::BindHandler { source, .. }
         | ViewProgramInstruction::AttachSemantic { source, .. } => *source = None,

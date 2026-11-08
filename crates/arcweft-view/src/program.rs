@@ -61,6 +61,10 @@ pub enum ViewInstruction {
     BeginScope,
     EndScope,
     BindLocal(crate::ViewBindingProgram),
+    BindTextInput {
+        value: crate::ViewExecutionInput,
+        label: Option<crate::ViewExpressionProgram>,
+    },
     ApplyFx(ViewFxApplicationInstruction),
     BindEvent(BindEvent),
     AttachSemantic(ViewSemanticSpec),
@@ -76,6 +80,8 @@ pub enum EventKind {
     PointerMove,
     Focus,
     Blur,
+    TextChange,
+    TextSubmit,
 }
 
 impl EventKind {
@@ -88,6 +94,8 @@ impl EventKind {
             Self::PointerMove => 3,
             Self::Focus => 4,
             Self::Blur => 5,
+            Self::TextChange => 6,
+            Self::TextSubmit => 7,
         }
     }
 
@@ -99,6 +107,7 @@ impl EventKind {
             Self::PointerMove => matches!(input.pointer_phase(), Some(PointerPhase::Move)),
             Self::Focus => matches!(input.focus_changed(), Some(true)),
             Self::Blur => matches!(input.focus_changed(), Some(false)),
+            Self::TextChange | Self::TextSubmit => false,
         }
     }
 }
@@ -720,6 +729,7 @@ fn validate_handlers(
             | ViewInstruction::EndScope
             | ViewInstruction::CloseElement
             | ViewInstruction::ApplyFx(_)
+            | ViewInstruction::BindTextInput { .. }
             | ViewInstruction::AttachSemantic(_) => {}
         }
     }
@@ -780,6 +790,7 @@ impl ViewInstruction {
             | Self::Match(_)
             | Self::RepeatKeyed(_)
             | Self::BindLocal(_)
+            | Self::BindTextInput { .. }
             | Self::BeginScope
             | Self::EndScope
             | Self::ApplyFx(_)
@@ -800,6 +811,7 @@ impl ViewInstruction {
             | Self::Match(_)
             | Self::RepeatKeyed(_)
             | Self::BindLocal(_)
+            | Self::BindTextInput { .. }
             | Self::BeginScope
             | Self::EndScope
             | Self::ApplyFx(_)
@@ -820,6 +832,7 @@ impl ViewInstruction {
             | Self::Match(_)
             | Self::RepeatKeyed(_)
             | Self::BindLocal(_)
+            | Self::BindTextInput { .. }
             | Self::BeginScope
             | Self::EndScope
             | Self::ApplyFx(_)

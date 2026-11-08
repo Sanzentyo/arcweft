@@ -1925,14 +1925,10 @@ impl AuthoredViewBodyLowerer<'_> {
         arguments: &[arcweft_lang_sema::final_analysis::CheckedViewElementArgument],
         body: Option<ExprId>,
     ) -> Result<Vec<usize>, ViewProjectLowerError> {
-        if arguments.iter().any(|argument| {
-            matches!(
-                argument.role(),
-                arcweft_view::ViewElementArgumentRole::Label
-                    | arcweft_view::ViewElementArgumentRole::Enabled
-            ) && !element.is_action_control()
-                || !argument.role().accepts_element(element)
-        }) {
+        if arguments
+            .iter()
+            .any(|argument| !argument.role().accepts_element(element))
+        {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
         let styles = self.lower_element_style(
@@ -1963,6 +1959,62 @@ impl AuthoredViewBodyLowerer<'_> {
                 key: None,
                 source: None,
             });
+        if element.is_text_input() {
+            let invalid =
+                || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
+            let value = arguments
+                .iter()
+                .find(|argument| argument.role() == arcweft_view::ViewElementArgumentRole::Value)
+                .ok_or_else(invalid)?;
+            let checked = self
+                .analysis
+                .expression(value.value())
+                .ok_or_else(invalid)?;
+            let place = checked
+                .mutable_place()
+                .filter(|place| place.fields().is_empty())
+                .ok_or_else(invalid)?;
+            let origin = self
+                .analysis
+                .local_binding_origin(place.local())
+                .map_err(|_| invalid())?;
+            if !origin.declaration().is_mutable_binding()
+                || origin.declaration().storage()
+                    != arcweft_lang_hir::stmt::HirBindingStorage::RetainedState
+            {
+                return Err(invalid());
+            }
+            let local = self.locals.get(&place.local()).ok_or_else(invalid)?;
+            let value = arcweft_view::ViewExecutionInput {
+                source: arcweft_view::ViewExecutionInputSource::Local(local.coordinate),
+                value_type: local.value_type,
+            };
+            let label = arguments
+                .iter()
+                .find(|argument| argument.role() == arcweft_view::ViewElementArgumentRole::Label)
+                .map(|argument| {
+                    ViewExpressionLowerer {
+                        module: self.module,
+                        project: self.project,
+                        analysis: self.analysis,
+                        world: self.registered_world,
+                        owner: self.owner,
+                        view: self.view,
+                        parameters: self.parameters,
+                        locals: &self.locals,
+                        output: self.output,
+                    }
+                    .lower(argument.value())
+                })
+                .transpose()?;
+            self.output
+                .instructions
+                .push(ViewProgramInstruction::BindTextInput {
+                    value,
+                    label,
+                    source: None,
+                });
+        }
         if element.is_action_control() {
             let label = format!("button.label.{}.{}", self.view.as_str(), ordinal);
             let mut label_kind = ViewTextSourceKind::Literal {
@@ -2194,7 +2246,8 @@ impl AuthoredViewBodyLowerer<'_> {
         for (role, value) in arguments {
             if matches!(
                 role,
-                ViewElementArgumentRole::Label
+                ViewElementArgumentRole::Value
+                    | ViewElementArgumentRole::Label
                     | ViewElementArgumentRole::Enabled
                     | ViewElementArgumentRole::Part
             ) {
@@ -2663,7 +2716,8 @@ impl AuthoredViewBodyLowerer<'_> {
                 owner: self.owner,
                 source: Box::new(source),
             })?;
-        let transition = handler_value_role == arcweft_view::ViewHandlerTransitionValueRole::Unit
+        let transition = modifier != arcweft_lang_sema::callable::ViewModifierId::OnActivate
+            || handler_value_role == arcweft_view::ViewHandlerTransitionValueRole::Unit
             || input_abi.inputs().iter().any(|input| {
                 input.role() == &arcweft_lang_sema::final_analysis::CheckedExecutionInputRole::Free
                     && input.uses().iter().any(|usage| {

@@ -373,6 +373,8 @@ pub enum BundleSessionError {
     )]
     UnknownTextControlWriteBackTarget { target: String, session: u64 },
     #[error(transparent)]
+    ViewEvent(#[from] BundleViewEventDispatchError),
+    #[error(transparent)]
     ViewRuntime(#[from] BundleViewRuntimeError),
 }
 
@@ -694,6 +696,30 @@ impl BundleSession {
         &mut self,
         write_back: &TextControlWriteBack,
     ) -> Result<(), BundleSessionError> {
+        let target = write_back.target().id().as_str();
+        if !self
+            .presentation
+            .text_inputs
+            .iter()
+            .chain(&self.text_inputs)
+            .any(|control| control.target == target && control.session == write_back.session().0)
+        {
+            return Err(BundleSessionError::UnknownTextControlWriteBackTarget {
+                target: target.to_owned(),
+                session: write_back.session().0,
+            });
+        }
+        if self.view_runtime.has_retained_text_input(target) {
+            let format_context = RuntimeFormatContext::new(self.active_locale.clone());
+            let mut backend = self.make_pure_backend(format_context.clone());
+            if let Some(action) = self.view_runtime.dispatch_text_input_with_backend(
+                write_back,
+                &format_context,
+                &mut backend,
+            )? {
+                self.pending_presentation_inputs.push(action);
+            }
+        }
         let runtime_write_back = match apply_text_control_write_back_to_controls(
             &mut self.presentation.text_inputs,
             write_back,

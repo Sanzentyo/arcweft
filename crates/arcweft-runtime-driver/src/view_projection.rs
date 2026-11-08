@@ -116,6 +116,9 @@ fn project_text_inputs(
     active: &BTreeSet<&str>,
     projected: &mut ProjectedViewResources,
 ) {
+    projected
+        .text_inputs
+        .extend(mount.text_inputs.iter().cloned());
     projected.text_inputs.extend(
         input
             .text_inputs
@@ -565,6 +568,7 @@ mod tests {
             active_targets,
             active_images: Vec::new(),
             action_buttons: Vec::new(),
+            text_inputs: Vec::new(),
             paint: Vec::new(),
             text: Vec::new(),
             fx: Vec::new(),

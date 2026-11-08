@@ -161,6 +161,12 @@ pub enum ViewProgramInstruction {
         program: arcweft_view::ViewBindingProgram,
         source: Option<SourceRangeRef>,
     },
+    /// A writable retained String field belonging to the current text element.
+    BindTextInput {
+        value: arcweft_view::ViewExecutionInput,
+        label: Option<arcweft_view::ViewExpressionProgram>,
+        source: Option<SourceRangeRef>,
+    },
     /// Applies a resolved `#[fx] fn -> Fx` graph to the current retained node.
     ApplyFx {
         /// Package-qualified identity of the original Fx declaration.
@@ -187,6 +193,7 @@ impl ViewProgramInstruction {
     const fn requires_program_runtime(&self) -> bool {
         match self {
             Self::BindLocal { .. }
+            | Self::BindTextInput { .. }
             | Self::Branch { .. }
             | Self::Match { .. }
             | Self::RepeatKeyed { .. }
@@ -217,6 +224,7 @@ impl ViewProgramInstruction {
             | Self::Match { .. }
             | Self::RepeatKeyed { .. }
             | Self::BindLocal { .. }
+            | Self::BindTextInput { .. }
             | Self::BeginScope
             | Self::EndScope
             | Self::ApplyFx { .. }
@@ -238,6 +246,7 @@ impl ViewProgramInstruction {
             | Self::Match { .. }
             | Self::RepeatKeyed { .. }
             | Self::BindLocal { .. }
+            | Self::BindTextInput { .. }
             | Self::BeginScope
             | Self::EndScope
             | Self::ApplyFx { .. }
@@ -271,6 +280,7 @@ impl ViewProgramInstruction {
             | Self::Match { .. }
             | Self::RepeatKeyed { .. }
             | Self::BindLocal { .. }
+            | Self::BindTextInput { .. }
             | Self::BeginScope
             | Self::EndScope
             | Self::ApplyFx { .. }
@@ -290,6 +300,7 @@ impl ViewProgramInstruction {
             | Self::Match { source, .. }
             | Self::RepeatKeyed { source, .. }
             | Self::BindLocal { source, .. }
+            | Self::BindTextInput { source, .. }
             | Self::ApplyFx { source, .. }
             | Self::BindHandler { source, .. }
             | Self::AttachSemantic { source, .. } => source.as_ref(),
@@ -308,6 +319,7 @@ impl ViewProgramInstruction {
             | Self::Match { source, .. }
             | Self::RepeatKeyed { source, .. }
             | Self::BindLocal { source, .. }
+            | Self::BindTextInput { source, .. }
             | Self::ApplyFx { source, .. }
             | Self::BindHandler { source, .. }
             | Self::AttachSemantic { source, .. } => source.as_mut(),

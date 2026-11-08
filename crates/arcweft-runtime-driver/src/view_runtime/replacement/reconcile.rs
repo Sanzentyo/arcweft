@@ -111,6 +111,7 @@ pub(super) fn reconcile_mounts(
         };
         next.state = state;
         next.handler_seals.clear();
+        next.text_input_seals.clear();
         if !preserved {
             next.initialized_parameters.clear();
             next.initialized_state.clear();

@@ -8,6 +8,7 @@ use crate::{
 /// One declaration-independent role in a builtin element's input schema.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ViewElementArgumentRole {
+    Value,
     Label,
     Enabled,
     X,
@@ -23,6 +24,7 @@ impl ViewElementArgumentRole {
     pub const DEFAULT_ENABLED: bool = true;
     pub const fn semantic_tag(self) -> u8 {
         match self {
+            Self::Value => 8,
             Self::Label => 0,
             Self::Enabled => 1,
             Self::X => 2,
@@ -35,7 +37,12 @@ impl ViewElementArgumentRole {
     }
 
     pub const fn positional(element: ViewElementKind, ordinal: usize) -> Option<Self> {
-        if element.is_action_control() || element.is_text_input() {
+        if element.is_text_input() {
+            match ordinal {
+                0 => Some(Self::Value),
+                _ => None,
+            }
+        } else if element.is_action_control() {
             match ordinal {
                 0 => Some(Self::Label),
                 1 => Some(Self::Enabled),
@@ -48,6 +55,7 @@ impl ViewElementArgumentRole {
 
     pub fn from_source_name(name: &str) -> Option<Self> {
         match name {
+            "value" => Some(Self::Value),
             "label" => Some(Self::Label),
             "enabled" => Some(Self::Enabled),
             "x" => Some(Self::X),
@@ -62,9 +70,9 @@ impl ViewElementArgumentRole {
 
     pub const fn accepts_element(self, element: ViewElementKind) -> bool {
         match self {
-            Self::Label | Self::Enabled => {
-                element.is_action_control() || element.text_input_kind().is_some()
-            }
+            Self::Value => element.is_text_input(),
+            Self::Label => element.is_action_control() || element.is_text_input(),
+            Self::Enabled => element.is_action_control(),
             Self::Spacing => self.style_property(element).is_some(),
             Self::X | Self::Y | Self::Width | Self::Height | Self::Part => true,
         }
@@ -84,7 +92,7 @@ impl ViewElementArgumentRole {
                 }
                 Some(ViewPhysicalFlow::Overlay) | None => None,
             },
-            Self::Label | Self::Enabled | Self::Part => None,
+            Self::Value | Self::Label | Self::Enabled | Self::Part => None,
         }
     }
 
@@ -95,7 +103,7 @@ impl ViewElementArgumentRole {
             Self::Y => Some(ViewPropertyKind::Top),
             Self::Width => Some(ViewPropertyKind::Width),
             Self::Height => Some(ViewPropertyKind::Height),
-            Self::Label | Self::Enabled | Self::Spacing | Self::Part => None,
+            Self::Value | Self::Label | Self::Enabled | Self::Spacing | Self::Part => None,
         }
     }
 }

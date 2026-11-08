@@ -211,6 +211,16 @@ impl<'a> RuntimeBorrowedOpaque<'a> {
     }
 }
 
+/// A caller-owned String can be admitted before its runtime carrier allocates.
+impl<'a> From<&'a str> for RuntimeBorrowedValue<'a> {
+    fn from(value: &'a str) -> Self {
+        Self {
+            value: RuntimeValueView::Scalar(RuntimeScalarView::String(value)),
+            origin: ValueAdmissionOrigin::Live,
+        }
+    }
+}
+
 impl<'a> From<&'a RuntimeValue> for RuntimeBorrowedValue<'a> {
     fn from(value: &'a RuntimeValue) -> Self {
         Self {

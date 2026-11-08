@@ -293,6 +293,7 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
         active_targets: PARTS.iter().map(|part| (*part).to_owned()).collect(),
         active_images: Vec::new(),
         action_buttons: Vec::new(),
+        text_inputs: Vec::new(),
         paint: PARTS
             .iter()
             .map(|part| BundleViewPaintItem::Element {

@@ -942,6 +942,7 @@ fn remap_program_references(
         | ViewProgramInstruction::Branch { .. }
         | ViewProgramInstruction::Match { .. }
         | ViewProgramInstruction::BindLocal { .. }
+        | ViewProgramInstruction::BindTextInput { .. }
         | ViewProgramInstruction::RepeatKeyed { .. }
         | ViewProgramInstruction::EmitText { .. }
         | ViewProgramInstruction::EmitImage { .. }

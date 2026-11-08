@@ -16,6 +16,8 @@ use super::{CallableName, CallableValidator, CheckedCallApplication};
 pub enum ViewModifierId {
     /// Binds platform-independent activation to a checked handler body.
     OnActivate,
+    OnChange,
+    OnSubmit,
     /// Applies one checked Fx value to the retained receiver node.
     Fx,
     X,
@@ -27,8 +29,10 @@ pub enum ViewModifierId {
 }
 
 impl ViewModifierId {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::OnActivate,
+        Self::OnChange,
+        Self::OnSubmit,
         Self::Fx,
         Self::X,
         Self::Y,
@@ -42,6 +46,8 @@ impl ViewModifierId {
     pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::OnActivate => 0,
+            Self::OnChange => 8,
+            Self::OnSubmit => 9,
             Self::Fx => 1,
             Self::X => 2,
             Self::Y => 3,
@@ -57,6 +63,12 @@ impl ViewModifierId {
         match self {
             Self::OnActivate => CallableName::try_new("on_click")
                 .expect("the standard View modifier member is canonical"),
+            Self::OnChange => {
+                CallableName::try_new("on_change").expect("canonical text input event")
+            }
+            Self::OnSubmit => {
+                CallableName::try_new("on_submit").expect("canonical text input event")
+            }
             Self::Fx => {
                 CallableName::try_new("fx").expect("the standard View modifier member is canonical")
             }
@@ -80,7 +92,7 @@ impl ViewModifierId {
     /// retained-place publication are authenticated by the handler boundary.
     pub fn signature(self) -> FunctionSignature {
         match self {
-            Self::OnActivate => FunctionSignature::new(
+            Self::OnActivate | Self::OnChange | Self::OnSubmit => FunctionSignature::new(
                 TypeKind::ViewValue,
                 [FunctionParam::required(
                     "handler",
@@ -129,12 +141,14 @@ impl ViewModifierId {
 
     pub(crate) fn generic_issuer(self) -> super::CallableGenericParameterIssuer {
         match self {
-            Self::OnActivate => super::CallableGenericParameterIssuer::language_intrinsic(
-                LanguageIntrinsicGenericOwner::ViewHandlerResult,
-                1,
-                0,
-            )
-            .expect("the View handler result has one language-owned type parameter"),
+            Self::OnActivate | Self::OnChange | Self::OnSubmit => {
+                super::CallableGenericParameterIssuer::language_intrinsic(
+                    LanguageIntrinsicGenericOwner::ViewHandlerResult,
+                    1,
+                    0,
+                )
+                .expect("the View handler result has one language-owned type parameter")
+            }
             Self::Fx
             | Self::X
             | Self::Y
@@ -148,6 +162,8 @@ impl ViewModifierId {
     pub const fn event(self) -> Option<arcweft_view::EventKind> {
         match self {
             Self::OnActivate => Some(arcweft_view::EventKind::Activate),
+            Self::OnChange => Some(arcweft_view::EventKind::TextChange),
+            Self::OnSubmit => Some(arcweft_view::EventKind::TextSubmit),
             Self::Fx
             | Self::X
             | Self::Y
@@ -166,7 +182,12 @@ impl ViewModifierId {
             Self::Y => Some(Role::Y),
             Self::Width => Some(Role::Width),
             Self::Height => Some(Role::Height),
-            Self::OnActivate | Self::Fx | Self::Part | Self::Style => None,
+            Self::OnActivate
+            | Self::OnChange
+            | Self::OnSubmit
+            | Self::Fx
+            | Self::Part
+            | Self::Style => None,
         }
     }
 
@@ -176,7 +197,7 @@ impl ViewModifierId {
         self,
         ty: &TypeKind,
     ) -> Option<arcweft_view::ViewHandlerTransitionValueRole> {
-        if self != Self::OnActivate {
+        if self.event().is_none() {
             return None;
         }
         if *ty == TypeKind::Unit {
@@ -196,7 +217,7 @@ impl ViewModifierId {
         application: &CheckedCallApplication,
         program: &crate::final_analysis::CheckedDeterministicProgram,
     ) -> Option<arcweft_view::ViewHandlerProgramId> {
-        if self != Self::OnActivate {
+        if self.event().is_none() {
             return None;
         }
         if !matches!(

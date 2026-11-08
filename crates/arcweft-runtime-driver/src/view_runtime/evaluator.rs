@@ -2,6 +2,7 @@
 
 mod support;
 mod text;
+mod text_input;
 
 use arcweft_id::presentation::PresentationHandleId;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
@@ -111,6 +112,8 @@ struct MountRenderBuilder {
     images: BTreeSet<String>,
     text: Vec<BundleViewTextOutput>,
     action_buttons: Vec<arcweft_bundle::resource_codec::ViewRuntimeActionButton>,
+    text_inputs: Vec<arcweft_bundle::resource_codec::ViewRuntimeTextControl>,
+    text_input_seals: BTreeSet<(BundleViewInstancePath, u32)>,
     paint: Vec<BundleViewPaintItem>,
     fx: Vec<BundleViewFxApplication>,
     style_scopes: ViewStyleScopeRuntime,
@@ -132,6 +135,8 @@ impl MountRenderBuilder {
             images: BTreeSet::new(),
             text: Vec::new(),
             action_buttons: Vec::new(),
+            text_inputs: Vec::new(),
+            text_input_seals: BTreeSet::new(),
             paint: Vec::new(),
             fx: Vec::new(),
             style_scopes: ViewStyleScopeRuntime::new(style_scopes),
@@ -823,6 +828,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 execution_locals: Vec::new(),
                 expression_evaluations: BTreeMap::new(),
                 handler_seals: BTreeMap::new(),
+                text_input_seals: BTreeMap::new(),
                 next_handler_seal_revision: 1,
             },
         );
@@ -1520,6 +1526,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 mounted
                     .handler_seals
                     .retain(|key, _| builder.handler_seals.contains(key));
+                mounted
+                    .text_input_seals
+                    .retain(|key, _| builder.text_input_seals.contains(key));
                 self.mounts.insert(key.clone(), mounted);
                 let mut output = vec![BundleViewMountOutput {
                     handle: key.handle,
@@ -1531,6 +1540,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     active_targets: builder.targets.into_iter().collect(),
                     active_images: builder.images.into_iter().collect(),
                     action_buttons: builder.action_buttons,
+                    text_inputs: builder.text_inputs,
                     paint: builder.paint,
                     text: builder.text,
                     fx: builder.fx,
@@ -2137,6 +2147,18 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             ));
                         }
                     }
+                    cursor += 1;
+                }
+                ViewProgramInstruction::BindTextInput { value, label, .. } => {
+                    self.bind_text_input(
+                        key,
+                        definition,
+                        mounted,
+                        cursor,
+                        *value,
+                        label.as_ref(),
+                        builder,
+                    )?;
                     cursor += 1;
                 }
                 ViewProgramInstruction::ApplyFx {

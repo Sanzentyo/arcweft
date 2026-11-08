@@ -146,6 +146,38 @@ identity と型のフィールドを保持し、新規フィールドを初回�
 を宣言できない。affine resource は実際の custody と cleanup authority が必要であり、
 Copy として保持値を複製しない。
 
+`TextField`、`TextArea`、`SecureField` の `value` は、同じ View の
+`local state mut` が所有する String フィールドを指定する。第1位置引数も
+`value` に対応する。通常の `let`、parameter、一時 String、読み取り専用の
+state は入力先にならない。現在の入力契約はフィールド全体を扱い、レコード内の
+部分フィールドや式から書き込み先を推測しない。表示名は `label = String式` で指定する。
+
+```arcw
+view Feedback() {
+    local state mut draft: String = ""
+    local state mut submitted: String = ""
+    Column {
+        TextField(draft, label = "Feedback")
+            .on_submit(|| { submitted = draft; () })
+        Text(submitted)
+    }
+}
+```
+
+入力欄は、その mount・構造的 occurrence・保持フィールドに結び付く session を
+adapter に渡す。入力値の正本は保持フィールドであり、表示用 control の String は
+投影である。`on_change`／`on_submit` は同じ checked handler 契約を使うが、
+通常の pointer event では起動せず、正しい target・session・privacy・UTF-8 selection
+を持つ型付き text write-back からだけ実行する。受信 String は借用したまま
+保持値全体の型・容量を検査し、その後で runtime 値を構築する。
+handler は更新候補の入力値を読み、入力と handler の state 変更を一括で公開する。
+handler・型・予算の失敗は値、入力 revision、event lease を変更しない。
+成功した frame で入力欄を除去した場合と cold restore／replacement の後は、
+古い session を受け付けない。保持値は通常の state の保存規則に従う。
+SecureField の adapter 投影と write-back は sensitive な値として扱い、診断や
+trace へ平文を出さない。以前の例にあった未実装の `input.text`／`input.secure` は
+専用の並行状態を作るため採用せず、この保持フィールド契約へ置き換える。
+
 View の `if` 式・statement、`else if` は通常の checked bool 式を条件に使う。
 条件は同じ Core program／input ABI／評価予算で評価し、選択した arm だけを実行する。
 各 arm は独立した lexical region を持ち、arm の local を他の arm や後続の region

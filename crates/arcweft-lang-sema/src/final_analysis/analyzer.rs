@@ -985,11 +985,12 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 continue;
             };
             let selected = application.core().candidates().selected();
-            let CallableValidator::ViewModifier(crate::callable::ViewModifierId::OnActivate) =
-                selected.schema().validator()
-            else {
+            let CallableValidator::ViewModifier(modifier) = selected.schema().validator() else {
                 continue;
             };
+            if modifier.event().is_none() {
+                continue;
+            }
             let [argument] = application.core().execution().arguments() else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };
@@ -1004,11 +1005,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };
-            if !params.is_empty()
-                || crate::callable::ViewModifierId::OnActivate
-                    .handler_value_role(return_type)
-                    .is_none()
-            {
+            if !params.is_empty() || modifier.handler_value_role(return_type).is_none() {
                 return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: *owner });
             }
             let handler = slot.source().owner();

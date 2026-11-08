@@ -8,6 +8,9 @@ mod match_source;
 #[path = "view_product/spacing.rs"]
 mod spacing;
 
+#[path = "view_product/text_input.rs"]
+mod text_input;
+
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary,
     resource_codec::{
