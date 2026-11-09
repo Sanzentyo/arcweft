@@ -1,7 +1,7 @@
 //! Final-HIR callee preparation for the single shared callable resolver.
 
 use super::super::PreparedCallPrefixPayload;
-use super::super::PreparedCallSiteContinuation;
+use super::super::PreparedCallSiteDelivery;
 use super::{
     AgentIntrinsicSignatureId, BTreeMap, BuiltinCallableId, CallCalleeClassificationFact,
     CallResolverAuthority, CallableLimits, CallableName, CallablePath, CallableSignatureSchema,
@@ -737,10 +737,10 @@ where
         )) => {
             let site = super::super::CheckedCallSite::HirCall(producer);
             let continuation = prepared_calls
-                .continuation_at(site, ty)
+                .value_delivery_at(site, ty)
                 .map_err(PrepareFinalCallCalleeError::PreparedContinuationInvariant)?;
             match continuation {
-                PreparedCallSiteContinuation::Prepared(reference) => (
+                PreparedCallSiteDelivery::Continuation(reference) => (
                     ResolvedFunctionValueSeed::PreparedContinuation { reference },
                     PreparedFunctionValueOriginEvidence::new(
                         origin_callee,
@@ -748,7 +748,7 @@ where
                         captures,
                     ),
                 ),
-                PreparedCallSiteContinuation::Independent => {
+                PreparedCallSiteDelivery::Value => {
                     let ordinal = super::FunctionValueOrdinal::try_from_usize(0).map_err(|_| {
                         PrepareFinalCallCalleeError::InvalidFunctionValue { expression }
                     })?;

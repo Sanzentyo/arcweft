@@ -4,12 +4,13 @@ use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
 use arcweft_lang_hir::{
     expr::HirExprKind,
-    identity::{ExprId, ItemId},
-    item::{HirFunctionBody, HirItemKind},
+    identity::{ExprId, ItemId, LocalId},
+    item::{HirFunctionBody, HirItemKind, HirParameterKind},
     module::HirModule,
+    pattern::{HirPatternBinding, HirPatternKind},
     project::{
-        HirControlTransferTarget, HirLocalValueOrigin, HirLoopTargetFamily, HirReturnContext,
-        HirSemanticBodyOwner,
+        HirBindingSite, HirControlTransferTarget, HirLocalValueOrigin, HirLoopTargetFamily,
+        HirReturnContext, HirSemanticBodyOwner,
     },
     source_index::HirCallableSourceOwner,
     symbol::{CallableDeclarationKey, CallableDeclarationOwner},
@@ -18,8 +19,8 @@ use arcweft_lang_hir::{
 use super::{Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery};
 use crate::{
     callable::{
-        CallableCandidateId, CheckedCallSite, PreparedCallGraphIngress,
-        PreparedCallSiteContinuation, PreparedCaptureIdentityRow,
+        CallableCandidateId, CallableParameterCoordinate, CheckedCallSite,
+        PreparedCallGraphIngress, PreparedCallSiteDelivery, PreparedCaptureIdentityRow,
         PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
         PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError,
         prepare_function_value_origin_query_with_pending_captures,
@@ -74,7 +75,7 @@ impl Analyzer<'_, '_, '_> {
             }
             let module = self.module(origin.expression.module())?;
             let Some(evidence) =
-                self.checked_function_origin(module, origin.expression, &captures, receiver)?
+                self.checked_function_origin(module, &origin, &captures, receiver)?
             else {
                 continue;
             };
@@ -117,30 +118,8 @@ impl Analyzer<'_, '_, '_> {
                     CallStorage::SourceResult(_) | CallStorage::NoWitness => {}
                 }
             }
-            let local_origins = self
-                .topology
-                .module(module.module_id())
-                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-                .local_origins();
-            for capture in evidence.captures() {
-                receiver.charge(1)?;
-                let local = capture.local();
-                let ty = self
-                    .facts
-                    .locals()
-                    .get(&local)
-                    .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-                let (borrowed, callable) =
-                    self.inspect_value_storage(ty, &origin.applications, receiver)?;
-                if borrowed {
-                    return Ok(true);
-                }
-                if callable
-                    && let Some(HirLocalValueOrigin::DirectInitializer(initializer)) =
-                        local_origins.origin(local)
-                {
-                    next.push(initializer);
-                }
+            if self.capture_value_origins(module, &origin, &evidence, receiver, &mut pending)? {
+                return Ok(true);
             }
             if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
                 evidence.producer()
@@ -155,18 +134,68 @@ impl Analyzer<'_, '_, '_> {
         Ok(false)
     }
 
+    fn capture_value_origins(
+        &self,
+        module: &HirModule,
+        origin: &ValueOrigin,
+        evidence: &PreparedFunctionValueOriginEvidence,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+        pending: &mut Vec<ValueOrigin>,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        if let PreparedFunctionValueOriginProducer::Lexical { local } = evidence.producer()
+            && let Some(source) = self.parameter_value_origin(module, *local, origin, receiver)?
+        {
+            pending.push(source);
+        }
+        let local_origins = self
+            .topology
+            .module(module.module_id())
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+            .local_origins();
+        for capture in evidence.captures() {
+            receiver.charge(1)?;
+            let local = capture.local();
+            let ty = self
+                .facts
+                .locals()
+                .get(&local)
+                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
+            let (borrowed, callable) =
+                self.inspect_value_storage(ty, &origin.applications, receiver)?;
+            if borrowed {
+                return Ok(true);
+            }
+            if callable {
+                if let Some(HirLocalValueOrigin::DirectInitializer(initializer)) =
+                    local_origins.origin(local)
+                {
+                    pending.push(ValueOrigin {
+                        expression: initializer,
+                        applications: Rc::clone(&origin.applications),
+                    });
+                } else if let Some(source) =
+                    self.parameter_value_origin(module, local, origin, receiver)?
+                {
+                    pending.push(source);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     fn checked_function_origin(
         &self,
         module: &HirModule,
-        expression: ExprId,
+        origin: &ValueOrigin,
         captures: &PendingCaptures,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<Option<PreparedFunctionValueOriginEvidence>, FinalSemanticAnalysisError> {
+        let expression = origin.expression;
         let expressions = self.facts.expressions();
-        if !expressions
-            .get(&expression)
-            .is_some_and(has_function_origin_fact)
-        {
+        let Some(fact) = expressions.get(&expression) else {
+            return Ok(None);
+        };
+        if !self.has_function_origin_fact(fact, &origin.applications, receiver)? {
             return Ok(None);
         }
         let mut progress = prepare_function_value_origin_query_with_pending_captures(
@@ -184,12 +213,12 @@ impl Analyzer<'_, '_, '_> {
                 Ok(PreparedFunctionValueOriginProgress::Need(need)) => {
                     receiver.charge(1)?;
                     let requested = need.expression();
-                    let Some(fact) = expressions
-                        .get(&requested)
-                        .filter(|fact| has_function_origin_fact(fact))
-                    else {
+                    let Some(fact) = expressions.get(&requested) else {
                         return Ok(None);
                     };
+                    if !self.has_function_origin_fact(fact, &origin.applications, receiver)? {
+                        return Ok(None);
+                    }
                     progress = need.resume(requested, fact, module);
                 }
                 Err(PreparedFunctionValueOriginQueryError::Composite) => return Ok(None),
@@ -208,6 +237,20 @@ impl Analyzer<'_, '_, '_> {
         applications: &[CheckedCallSite],
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<(bool, bool), FinalSemanticAnalysisError> {
+        let projected = self.project_value_storage(ty, applications, receiver)?;
+        let ty = projected.as_ref().map_or(ty, |term| term.view().value());
+        Ok((
+            receiver.contains_borrow(ty, &self.types)?,
+            matches!(ty, TypeKind::Function { .. }),
+        ))
+    }
+
+    fn project_value_storage(
+        &self,
+        ty: &TypeKind,
+        applications: &[CheckedCallSite],
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<ScopedType>, FinalSemanticAnalysisError> {
         let mut projected: Option<ScopedType> = None;
         if !applications.is_empty() {
             let graph = self
@@ -230,11 +273,162 @@ impl Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::InvalidOwner)??);
             }
         }
-        let ty = projected.as_ref().map_or(ty, |term| term.view().value());
-        Ok((
-            receiver.contains_borrow(ty, &self.types)?,
-            matches!(ty, TypeKind::Function { .. }),
-        ))
+        Ok(projected)
+    }
+
+    fn has_function_origin_fact(
+        &self,
+        fact: &PreparedExpressionFact,
+        applications: &[CheckedCallSite],
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        if let PreparedExpressionFact::OwnerBound(prepared) = fact {
+            return Ok(matches!(
+                prepared.resolution(),
+                PreparedOwnerBoundResolution::ImplicitCallable(_)
+            ));
+        }
+        match fact.complete().and_then(|checked| checked.value_type()) {
+            Some(TypeKind::Function { .. }) => Ok(true),
+            Some(ty @ TypeKind::GenericParam(_)) => Ok(self
+                .project_value_storage(ty, applications, receiver)?
+                .is_some_and(|term| matches!(term.view().value(), TypeKind::Function { .. }))),
+            _ => Ok(false),
+        }
+    }
+
+    /// Joins a whole parameter binding to the selected argument in its group.
+    /// The supplying expression is evaluated in the caller's instance.
+    fn parameter_value_origin(
+        &self,
+        module: &HirModule,
+        local: LocalId,
+        origin: &ValueOrigin,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<ValueOrigin>, FinalSemanticAnalysisError> {
+        let Some((site, caller)) = origin.applications.split_last() else {
+            return Ok(None);
+        };
+        let Some((item, coordinate)) = self.whole_parameter_binding(module, local)? else {
+            return Ok(None);
+        };
+        let graph = self
+            .facts
+            .prepared_calls()
+            .map_err(FinalSemanticAnalysisError::from)?;
+        let expression = graph
+            .project_site_payload(
+                *site,
+                |prefix| {
+                    let CallableCandidateId::Project(declaration) =
+                        prefix.application().selected().id()
+                    else {
+                        return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+                    };
+                    let selected = self
+                        .topology
+                        .declaration(declaration)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+                    if selected.body().source_item() != item {
+                        return Ok(None);
+                    }
+                    let enclosing = prefix.record().enclosing_callable();
+                    let mut input = prefix;
+                    while input.application().completed_group() != coordinate.group() {
+                        receiver.charge(1)?;
+                        let Some(previous) = input.application().selected().prepared_continuation()
+                        else {
+                            return Err(FinalSemanticAnalysisError::InvalidOwner);
+                        };
+                        input = graph.continuation_prefix(previous).map_err(|error| {
+                            FinalSemanticAnalysisError::CallConstraintFailure(
+                                FinalCallConstraintFailure::new(
+                                    site.expression(),
+                                    CallAnalysisFailure::Invariant(
+                                        CallAnalysisInvariant::Constraint(error),
+                                    ),
+                                ),
+                            )
+                        })?;
+                    }
+                    if input.record().enclosing_callable() != enclosing {
+                        return Ok(None);
+                    }
+                    Ok(input.parameter_value_source(coordinate))
+                },
+                |_| Err(FinalSemanticAnalysisError::InvalidOwner),
+            )
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)??;
+        let Some(expression) = expression else {
+            return Ok(None);
+        };
+        receiver.charge(
+            u64::try_from(caller.len())
+                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
+                + 1,
+        )?;
+        Ok(Some(ValueOrigin {
+            expression,
+            applications: Rc::from(caller),
+        }))
+    }
+
+    fn whole_parameter_binding(
+        &self,
+        module: &HirModule,
+        local: LocalId,
+    ) -> Result<Option<(ItemId, CallableParameterCoordinate)>, FinalSemanticAnalysisError> {
+        let local_origins = self
+            .topology
+            .module(module.module_id())
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+            .local_origins();
+        let Some(binding) = local_origins.binding(local) else {
+            return Err(FinalSemanticAnalysisError::InvalidOwner);
+        };
+        let HirBindingSite::DeclarationParameter {
+            item,
+            owner: HirCallableSourceOwner::Item,
+            group,
+            parameter,
+        } = binding.site()
+        else {
+            return Ok(None);
+        };
+        if binding.is_mutable_binding() {
+            return Ok(None);
+        }
+        let item_source = module
+            .resolve_item(item)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirItemKind::Function(function) = item_source.kind() else {
+            return Ok(None);
+        };
+        let group = crate::callable::CallableGroupIndex::try_from_usize(group as usize)
+            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        let parameter = crate::callable::CallableParameterIndex::try_from_usize(parameter as usize)
+            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        let parameter_source = function
+            .parameter_groups()
+            .get(group.get())
+            .and_then(|group| group.parameters().get(parameter.get()))
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let pattern = module
+            .resolve_pattern(parameter_source.pattern())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if parameter_source.kind() == HirParameterKind::RestPositional
+            || !matches!(pattern.kind(),
+                HirPatternKind::Binding(HirPatternBinding::Bound { local: bound, .. })
+                | HirPatternKind::TypedBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
+                | HirPatternKind::WholeBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
+                if *bound == local)
+        {
+            return Ok(None);
+        }
+        Ok(Some((
+            item,
+            CallableParameterCoordinate::new(group, parameter),
+        )))
     }
 
     fn call_storage(
@@ -262,13 +456,13 @@ impl Analyzer<'_, '_, '_> {
             ))
         };
         let stage = PreparedCallGraphIngress::new(graph)
-            .continuation_at(site, ty)
+            .value_delivery_at(site, ty)
             .map_err(classify)?;
         graph
             .project_site_payload(
                 site,
                 |prefix| {
-                    if matches!(stage, PreparedCallSiteContinuation::Independent) {
+                    if matches!(stage, PreparedCallSiteDelivery::Value) {
                         return Ok(match prefix.application().selected().id() {
                             CallableCandidateId::Project(declaration)
                                 if declaration.owner() == CallableDeclarationOwner::Function =>
@@ -407,18 +601,5 @@ impl Analyzer<'_, '_, '_> {
             _ => {}
         }
         Ok(())
-    }
-}
-
-fn has_function_origin_fact(fact: &PreparedExpressionFact) -> bool {
-    match fact {
-        PreparedExpressionFact::Complete(checked) => {
-            matches!(checked.value_type(), Some(TypeKind::Function { .. }))
-        }
-        PreparedExpressionFact::OwnerBound(prepared) => matches!(
-            prepared.resolution(),
-            PreparedOwnerBoundResolution::ImplicitCallable(_)
-        ),
-        _ => false,
     }
 }

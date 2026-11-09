@@ -905,12 +905,12 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
             let reference = match crate::callable::PreparedCallGraphIngress::new(
                 this.facts.prepared_calls().expect("prepared call graph"),
             )
-            .continuation_at(
+            .value_delivery_at(
                 crate::callable::CheckedCallSite::HirCall(call_owner),
                 &actual,
             ) {
-                Ok(crate::callable::PreparedCallSiteContinuation::Prepared(reference)) => reference,
-                Ok(crate::callable::PreparedCallSiteContinuation::Independent) => {
+                Ok(crate::callable::PreparedCallSiteDelivery::Continuation(reference)) => reference,
+                Ok(crate::callable::PreparedCallSiteDelivery::Value) => {
                     return Err(AnalyzerExpressionError::Call {
                         owner: call_owner,
                         failure: CallAnalysisFailure::Invariant(

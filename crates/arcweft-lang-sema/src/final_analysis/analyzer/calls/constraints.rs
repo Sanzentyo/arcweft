@@ -3693,6 +3693,48 @@ impl AnalyzerPreparedCallPrefix {
         &self.record
     }
 
+    /// The expression that supplies a whole fixed parameter value.
+    pub(crate) fn parameter_value_source(
+        &self,
+        coordinate: CallableParameterCoordinate,
+    ) -> Option<ExprId> {
+        use crate::final_analysis::statement_effects::PreparedCallReceiverEvaluation;
+
+        if self
+            .application
+            .selected()
+            .schema()
+            .extension_receiver()
+            .is_some_and(|receiver| {
+                receiver.group() == coordinate.group()
+                    && receiver.parameter() == coordinate.parameter()
+            })
+            && let Some(source) = self.receiver_evaluation()
+        {
+            return match source {
+                PreparedCallReceiverEvaluation::Value(source)
+                | PreparedCallReceiverEvaluation::Place(source) => Some(source),
+            };
+        }
+
+        self.record
+            .inputs()
+            .mapping()
+            .arguments()
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .find(|slot| slot.coordinate() == Some(coordinate))
+            .and_then(|slot| match slot.source() {
+                CheckedCallArgumentSlotSource::Expression(source)
+                    if slot.open_argument().is_none()
+                        && slot.source_projection() == PreparedArgumentSourceProjection::Scalar =>
+                {
+                    Some(source)
+                }
+                _ => None,
+            })
+    }
+
     pub(crate) fn receiver_evaluation(
         &self,
     ) -> Option<crate::final_analysis::statement_effects::PreparedCallReceiverEvaluation> {
@@ -4225,6 +4267,12 @@ impl AnalyzerPreparedCandidateRecord {
 
     pub(crate) const fn expression(&self) -> ExprId {
         self.metadata.expression
+    }
+
+    pub(crate) fn enclosing_callable(
+        &self,
+    ) -> Option<&arcweft_lang_hir::symbol::CallableDeclarationKey> {
+        self.metadata.enclosing_callable.as_ref()
     }
 
     pub(crate) fn inventory(&self) -> &AnalyzerPreparedCandidateInventory {

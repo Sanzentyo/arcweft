@@ -1770,6 +1770,130 @@ fn safe_lifetime_promotion_checks_returned_function_storage() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "argument forwarding fixtures share exact source diagnostic assertions"
+)]
+fn safe_lifetime_promotion_follows_selected_function_arguments() {
+    let callable = "(Unit) -> i64 effects {}";
+    let borrowed = "|_unit: Unit| -> i64 { let _ = loan; 42i64 }";
+    let owned = "|_unit: Unit| -> i64 { 7i64 }";
+    let identity = "fn forward<T>(input: T) -> T { input }";
+    let typed = format!("fn forward(input: {callable}) -> ({callable}) {{ input }}");
+    let extension = format!("fn forward(self: {callable}) -> ({callable}) {{ self }}");
+    let named =
+        format!("fn forward(discarded: {callable}, input: {callable}) -> ({callable}) {{ input }}");
+    let capture = "|_unit: Unit| -> i64 { let _ = input; 7i64 }";
+    for (case, definition, prefix, result, retains_borrow) in [
+        ("typed", typed, "", "forward(borrowed)", true),
+        (
+            "extension receiver",
+            extension.clone(),
+            "",
+            "borrowed.forward()",
+            true,
+        ),
+        (
+            "free call to extension declaration",
+            extension,
+            "",
+            "forward(borrowed)",
+            true,
+        ),
+        ("generic", identity.into(), "", "forward(borrowed)", true),
+        (
+            "generic owned",
+            identity.into(),
+            "",
+            "forward(owned)",
+            false,
+        ),
+        (
+            "nested generic",
+            "fn keep<T>(input: T) -> T { input }
+             fn forward<U>(input: U) -> U { keep(input) }"
+                .into(),
+            "",
+            "forward(borrowed)",
+            true,
+        ),
+        (
+            "captured parameter",
+            format!("fn forward(input: {callable}) -> ({callable}) {{ {capture} }}"),
+            "",
+            "forward(borrowed)",
+            true,
+        ),
+        (
+            "captured generic parameter",
+            format!("fn forward<T>(input: T) -> ({callable}) {{ {capture} }}"),
+            "",
+            "forward(borrowed)",
+            true,
+        ),
+        (
+            "reordered named arguments",
+            named.clone(),
+            "",
+            "forward(input = borrowed, discarded = owned)",
+            true,
+        ),
+        (
+            "discarded named argument",
+            named,
+            "",
+            "forward(input = owned, discarded = borrowed)",
+            false,
+        ),
+        (
+            "earlier group",
+            format!("fn forward(input: {callable})(number: i64) -> ({callable}) {{ input }}"),
+            "let prefix = forward(borrowed)",
+            "prefix(42i64)",
+            true,
+        ),
+        (
+            "later group",
+            format!("fn forward(number: i64)(input: {callable}) -> ({callable}) {{ input }}"),
+            "let prefix = forward(42i64)",
+            "prefix(borrowed)",
+            true,
+        ),
+        (
+            "generic earlier group",
+            "fn forward<T>(input: T)(number: i64) -> T { input }".into(),
+            "let prefix = forward(borrowed)",
+            "prefix(42i64)",
+            true,
+        ),
+    ] {
+        let promotion = "callback.promote('flow)";
+        let source = format!(
+            "{definition}
+             flow main(loan: &i64) {{
+                 let borrowed = {borrowed}
+                 let owned = {owned}
+                 {prefix}
+                 let callback = {result}
+                 let _ = {promotion}
+             }}"
+        );
+        let error = analyze(&fixture(&source, None)).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{case}: {error:?}"));
+        let (code, offending) = if retains_borrow {
+            ("sema.lifetime.promotion_receiver", "callback")
+        } else {
+            ("sema.lifetime.promotion_execution", promotion)
+        };
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
     for (parameter, code) in [
         ("&i64", "sema.lifetime.promotion_receiver"),

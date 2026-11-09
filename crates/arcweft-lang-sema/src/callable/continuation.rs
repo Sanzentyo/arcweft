@@ -410,13 +410,11 @@ impl PartialEq for PreparedCallContinuationRef {
 
 impl Eq for PreparedCallContinuationRef {}
 
-/// The only two valid origins for a function-valued call callee.  A prepared
-/// continuation is graph-owned evidence; a terminal function result is an
-/// independent callable value and must not acquire a synthetic dependency.
+/// The selected application's delivery, checked against the result at its site.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PreparedCallSiteContinuation {
-    Prepared(PreparedCallContinuationRef),
-    Independent,
+pub(crate) enum PreparedCallSiteDelivery {
+    Continuation(PreparedCallContinuationRef),
+    Value,
 }
 
 pub(crate) struct PreparedCallContinuationSeed {
@@ -996,11 +994,11 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
 
     /// Return the graph-issued continuation at `site`.  A missing site is a
     /// stale producer fact, never an independent function value.
-    pub(crate) fn continuation_at(
+    pub(crate) fn value_delivery_at(
         &self,
         site: CheckedCallSite,
         actual: &TypeKind,
-    ) -> Result<PreparedCallSiteContinuation, CallConstraintInvariant>
+    ) -> Result<PreparedCallSiteDelivery, CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
@@ -1021,7 +1019,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 if actual != &function_type {
                     return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
                 }
-                Ok(PreparedCallSiteContinuation::Prepared(reference))
+                Ok(PreparedCallSiteDelivery::Continuation(reference))
             }
             PreparedCallNodePayload::SelectedValue { prefix, result } => {
                 prefix.validate_site(site)?;
@@ -1042,11 +1040,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 if actual != sealed_result {
                     return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
                 }
-                if matches!(sealed_result, TypeKind::Function { .. }) {
-                    Ok(PreparedCallSiteContinuation::Independent)
-                } else {
-                    Err(CallConstraintInvariant::InvalidPreparedNodeState)
-                }
+                Ok(PreparedCallSiteDelivery::Value)
             }
             PreparedCallNodePayload::Unselected(_) => {
                 Err(CallConstraintInvariant::InvalidPreparedNodeState)
