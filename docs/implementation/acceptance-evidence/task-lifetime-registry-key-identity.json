@@ -10581,5 +10581,1118 @@
         ]
       }
     }
+  },
+  "recursiveFunctionPromotionReceiver": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-09T20:53:14.8461053Z",
+    "source": "1e2db7da75aa6e3b2517ae71e30636ecbf7003bd",
+    "base": "858daa8dc5bd4b3fb8ebe0aeb1250212df1d1a74",
+    "publication": {
+      "version": 1,
+      "commit": "1e2db7da75aa6e3b2517ae71e30636ecbf7003bd",
+      "parent": "858daa8dc5bd4b3fb8ebe0aeb1250212df1d1a74",
+      "remote": "1e2db7da75aa6e3b2517ae71e30636ecbf7003bd",
+      "tree": "f4158ca2062a7b51e828a564bc9195608295909e",
+      "patchSha256": "2fbfd85cddd48392cdf32f26df8548d933195318c49684da0981c62c1d4a1a20",
+      "cliSha256": "bbda9bb31e7f7deda49e3a24797d79567740e733b6626f3e1f4655e1477e2579",
+      "remoteBlobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+          "blob": "0023132f7f2bf07b538507a4fbac85bee80be927",
+          "validatedSha256": "7e1b5bce454f48c5325bc18bd60a8c4bde95ebfd86b64cdbe87a58dfd648167f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/continuation.rs",
+          "blob": "59fb74ec248fbe0522b8d0713e7b43e58f31fa13",
+          "validatedSha256": "4134ccdd0b05087e1654bbe50ec1a7856a2f7818f1f554b6c733ef1bd306cf64"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "blob": "a0a445b8fb05e4d0167a6bad8cf66b696e35b397",
+          "validatedSha256": "1ac342a94144e9f8d03a141ded147616dd944d72df1ed5c44ba6751dd8c2ca6c"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "blob": "8ca679cdd38e2f5027f9cd6f49f6eb90d5afcf6a",
+          "validatedSha256": "d213df6a69c07ae99bed63860dc6d482f565d09760d9c32a7dee456ffef4b4ed"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "2c4f00c755a8cb758da1b8bd5b7f146c245691ea",
+          "validatedSha256": "4f77c966fc532250d8cba63ff602f96296ace56a8bf81e0eaefd94455ae72d17"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+          "blob": "f00ced364bff9fb692b1395c2c6d86c97e0a1cf0",
+          "validatedSha256": "96a9193dc5dfb62cd113a6d850f4b052a5a0c93cc78bf36f75dd3d090118a4f1"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "a09e559bb417aa674e2075532eca8e903ebcfd13",
+          "validatedSha256": "516074e78aa79c9d6b63dc596793a908abeaac07e7a25385175e1208e3d67c29"
+        }
+      ]
+    },
+    "worktree": "Validated the changed source bytes on existing main. Staging included only the validated paths. An unrelated untracked directory existed.",
+    "correction": "The earlier traversal expanded each physical call site only once on a path. A repeated source call can change both type storage and value provenance. The new worklist interns selected application states by the type properties this query observes and grows direct borrow witnesses and formal parameter dependencies. Each call substitutes only the demanded parameters from its checked mapping and group ancestry.",
+    "scope": "Static receiver rejection for recursive source-function results, including generic type rotation, rotation of equal-typed function values and finite storage convergence for growing Option inputs. Dynamic callee results, prefixes formed in another declaration, attached defaults, aggregate callable provenance and executable ownership transfer remain open.",
+    "cli": {
+      "before": {
+        "version": 1,
+        "source": "5430ac4be5dfe1ed3c883f3dda9114e87001dec0",
+        "head": "41807f37fb2e7c5fc2a554a855a1f2c685c2862f",
+        "cliSha256": "1295769892c586719f3d7507eef9c65320663872738f97faabec9a335f907408",
+        "cases": [
+          {
+            "name": "recursion-growing-borrowed",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.final_analysis"
+            ],
+            "messages": [
+              "shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 24, kind: Expr })"
+            ],
+            "inputSha256": "e500ec4c53b3c43b24216694a9d0e5e517fc8b9767b7bd229c5b611b94ab00ba",
+            "reportSha256": "a60058cf9d730d36d0de69d94345179dfe8a15b32a78ff05f8408980bf53dcc1",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-growing-owned",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.final_analysis"
+            ],
+            "messages": [
+              "shared callable resolution failed for expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 24, kind: Expr })"
+            ],
+            "inputSha256": "758c0bfc6e04fcc502573314c6ff2c3c337c1e4a5327e48bc6720a8eb4ea9ed2",
+            "reportSha256": "a60058cf9d730d36d0de69d94345179dfe8a15b32a78ff05f8408980bf53dcc1",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-first",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "messages": [
+              "safe lifetime promotion requires an owned receiver"
+            ],
+            "inputSha256": "527ea321a5da159d4adf93ac7d3f9adbf1d060680b9310dde0cbf1484cf76992",
+            "reportSha256": "1559ceafeeb4e1563a2b9827d0167a0443ffa7e12683cb3fff2e95f630366464",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-owned",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "1aaf135cb80c9fb0028f312f6d30bef7f71e42e9b4208847c1e3a2807adb9715",
+            "reportSha256": "dfd5c0b1476fa48b7613562f75136bbad082a45be85029bc97b436f6aa957dc9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-second",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "messages": [
+              "safe lifetime promotion requires an owned receiver"
+            ],
+            "inputSha256": "480614f2017f511b136ffde1af22669219271edd20b32f0610f890f1f4466324",
+            "reportSha256": "1bc583dc9039f209927a69aa3069a3a821bfc0dc424dab212ff461d109c08b91",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-third",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "523d377a9045405ebb192de0a5b7ca01edbee2f3cf91066e1018e39fb44cd3f6",
+            "reportSha256": "80f64e1cf53ceb20b5691857e03d24bdfc67c7df9835feab0cb7622849ad8f12",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-first",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "messages": [
+              "safe lifetime promotion requires an owned receiver"
+            ],
+            "inputSha256": "e0afc93d976be8e5c308420dad2498d302d04ee820ff0948c8a0148ae5acf1d7",
+            "reportSha256": "9b37c6a3dec840371cbaee0d095d5a2dccce350ee36c9a2de848a5077ba12cb0",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-owned",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "72a30a8b2c735e1e820be3669bdf38554eea023f78bf9a5034a3fcab91650ae5",
+            "reportSha256": "a67adf7be05d195c1429decb5305a65518d3886cd2ed66c95afef8f2c8e1fd8b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-second",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "messages": [
+              "safe lifetime promotion requires an owned receiver"
+            ],
+            "inputSha256": "e1baceb21d1a3426472f85e37efd17db8a436c7f78142aa1103a7793a8978579",
+            "reportSha256": "501c5f00717f0e404d984b87748a3da5384973137ce63d72142f6b746054e0bd",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-third",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "89cbe26d7bf4dc58a4862d207af9d7a69fc21701583941e0ee6e7998d77ef56c",
+            "reportSha256": "d5571405b68099acb37b40b367b7f98ce6a08985a34eec2ba1d03ccfc4ff16cd",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "additionalBefore": {
+        "version": 1,
+        "source": "5430ac4be5dfe1ed3c883f3dda9114e87001dec0",
+        "cliSha256": "1295769892c586719f3d7507eef9c65320663872738f97faabec9a335f907408",
+        "cases": [
+          {
+            "name": "recursion-growing-borrowed-typed",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "messages": [
+              "safe lifetime promotion requires an owned receiver"
+            ],
+            "inputSha256": "f2f31917c2263ee6cf2b88cb9b94f925538cfa593bb6fc974beaf1f18a30d11d",
+            "reportSha256": "f116cac809189d1ba8134390a02bb7c5cc5321b19b4ff34e6abfb2b0f9420344",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-growing-owned-typed",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "b4caf821f72dcb3edfa5e1c14660eeb7c95ca33fc57c348a1c8013916b1222b7",
+            "reportSha256": "a4b0131db9f7f8a8c065fe116451b8f32041cdeb01dc2b05c5255823b236f09d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "after": {
+        "version": 1,
+        "base": "858daa8dc5bd4b3fb8ebe0aeb1250212df1d1a74",
+        "cliSha256": "bbda9bb31e7f7deda49e3a24797d79567740e733b6626f3e1f4655e1477e2579",
+        "cases": [
+          {
+            "name": "recursion-type-first",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "527ea321a5da159d4adf93ac7d3f9adbf1d060680b9310dde0cbf1484cf76992",
+            "reportSha256": "1559ceafeeb4e1563a2b9827d0167a0443ffa7e12683cb3fff2e95f630366464",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-owned",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "1aaf135cb80c9fb0028f312f6d30bef7f71e42e9b4208847c1e3a2807adb9715",
+            "reportSha256": "dfd5c0b1476fa48b7613562f75136bbad082a45be85029bc97b436f6aa957dc9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-second",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "480614f2017f511b136ffde1af22669219271edd20b32f0610f890f1f4466324",
+            "reportSha256": "1bc583dc9039f209927a69aa3069a3a821bfc0dc424dab212ff461d109c08b91",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-third",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "523d377a9045405ebb192de0a5b7ca01edbee2f3cf91066e1018e39fb44cd3f6",
+            "reportSha256": "389160bb0dee1589f7ee7b8ad45cf777908187d6724fe67f22718e5b3073bfa4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-type-third",
+            "command": "verify",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "523d377a9045405ebb192de0a5b7ca01edbee2f3cf91066e1018e39fb44cd3f6",
+            "reportSha256": "389160bb0dee1589f7ee7b8ad45cf777908187d6724fe67f22718e5b3073bfa4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-first",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "e0afc93d976be8e5c308420dad2498d302d04ee820ff0948c8a0148ae5acf1d7",
+            "reportSha256": "9b37c6a3dec840371cbaee0d095d5a2dccce350ee36c9a2de848a5077ba12cb0",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-owned",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "72a30a8b2c735e1e820be3669bdf38554eea023f78bf9a5034a3fcab91650ae5",
+            "reportSha256": "a67adf7be05d195c1429decb5305a65518d3886cd2ed66c95afef8f2c8e1fd8b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-second",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "e1baceb21d1a3426472f85e37efd17db8a436c7f78142aa1103a7793a8978579",
+            "reportSha256": "501c5f00717f0e404d984b87748a3da5384973137ce63d72142f6b746054e0bd",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-third",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "89cbe26d7bf4dc58a4862d207af9d7a69fc21701583941e0ee6e7998d77ef56c",
+            "reportSha256": "50f089fcae2bfcad1b5e90594a1a4f5cddc606791adb55354ec1223c3bdac43f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-value-third",
+            "command": "verify",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "89cbe26d7bf4dc58a4862d207af9d7a69fc21701583941e0ee6e7998d77ef56c",
+            "reportSha256": "50f089fcae2bfcad1b5e90594a1a4f5cddc606791adb55354ec1223c3bdac43f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-growing-borrowed-typed",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "f2f31917c2263ee6cf2b88cb9b94f925538cfa593bb6fc974beaf1f18a30d11d",
+            "reportSha256": "f116cac809189d1ba8134390a02bb7c5cc5321b19b4ff34e6abfb2b0f9420344",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-growing-owned-typed",
+            "command": "check",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "b4caf821f72dcb3edfa5e1c14660eeb7c95ca33fc57c348a1c8013916b1222b7",
+            "reportSha256": "a4b0131db9f7f8a8c065fe116451b8f32041cdeb01dc2b05c5255823b236f09d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursion-growing-owned-typed",
+            "command": "verify",
+            "stage": "type-check",
+            "exit": 1,
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "b4caf821f72dcb3edfa5e1c14660eeb7c95ca33fc57c348a1c8013916b1222b7",
+            "reportSha256": "a4b0131db9f7f8a8c065fe116451b8f32041cdeb01dc2b05c5255823b236f09d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "remainingDynamic": {
+        "version": 1,
+        "base": "858daa8dc5bd4b3fb8ebe0aeb1250212df1d1a74",
+        "validatedInputs": [
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+            "sha256": "7e1b5bce454f48c5325bc18bd60a8c4bde95ebfd86b64cdbe87a58dfd648167f"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/continuation.rs",
+            "sha256": "4134ccdd0b05087e1654bbe50ec1a7856a2f7818f1f554b6c733ef1bd306cf64"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+            "sha256": "1ac342a94144e9f8d03a141ded147616dd944d72df1ed5c44ba6751dd8c2ca6c"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+            "sha256": "d213df6a69c07ae99bed63860dc6d482f565d09760d9c32a7dee456ffef4b4ed"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+            "sha256": "4f77c966fc532250d8cba63ff602f96296ace56a8bf81e0eaefd94455ae72d17"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+            "sha256": "96a9193dc5dfb62cd113a6d850f4b052a5a0c93cc78bf36f75dd3d090118a4f1"
+          },
+          {
+            "path": "docs/01-language/proofs-and-unsafe-audits.md",
+            "sha256": "516074e78aa79c9d6b63dc596793a908abeaac07e7a25385175e1208e3d67c29"
+          }
+        ],
+        "cliSha256": "bbda9bb31e7f7deda49e3a24797d79567740e733b6626f3e1f4655e1477e2579",
+        "cases": [
+          {
+            "name": "dynamic-drop-callee-capture",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "20161d0f0cfd41b17c8bb43efbdb3a54cb94e0a91b1a5f69c076809c8b7b05cd",
+            "reportSha256": "1a63d3937382bf0c964d8d5ddcb15c0c87057fc75e5e9037d6b3c5deb047a8d2",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "dynamic-explicit-return",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "0d6eb76ed28e17512954a9cc363b1b9b904e9262f047c0f7fddd8cc089072ea7",
+            "reportSha256": "d5b52b627aa52f74a4ad271f66ce898a1e26953f2d3790e028e01b47ecef22d3",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "dynamic-return-branch",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "9bd4c1fab1cad85303fe9e8ef33ec52a828d813696d3729c56c5f76cd0813d7a",
+            "reportSha256": "bfafd5d61ac09e6f3b9eafc78e435b109fc765852ad9e5b2f327833fbcea86d9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "dynamic-return-capture",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "bffd985190e21a332b6b5f2624134319dcaec046afa668fcc89216bccd5b7daa",
+            "reportSha256": "db9d01776e0eebd0b9d7f45607d8c8887d2d096163b11018c5f2af7d60b8f47f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "dynamic-return-parameter",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "caf4c8b4d3c533581848b89e2c6db3ae4ca43c22d63a7c09085d2f8b0a3a6e1d",
+            "reportSha256": "443494b290be41d66ec65cc00899b97542910261ce68fd862a0693817b8411e5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "dynamic-source-function-value",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "155a0b9f411be89c6d6155dcbedfd42c13895c5b50bc21c15ffd90dd48e45042",
+            "reportSha256": "a7ae5d642829edd093523f597aff9f001d48750c7c7a7b5a36cb43eb05ecff2b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    },
+    "tests": {
+      "focused": 13,
+      "focusedInput": "The regression exercises ten recursive inputs and exact diagnostic spans.",
+      "log": "recursive-function-promotion-receiver-1e2db7da/sema-recursion-focused.log",
+      "initial": "Twelve existing checks passed. The new fixture put else after a newline and stopped at recovered HIR. Moving else onto the closing-brace line matched the accepted CLI syntax.",
+      "initialLog": "recursive-function-promotion-receiver-1e2db7da/sema-recursion-initial.log"
+    },
+    "ownership": {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+      "crate": "arcweft-lang-sema",
+      "classification": "production",
+      "lines": 766,
+      "bytes": 30776,
+      "disposition": "The promotion receiver owns the transient worklist, reuse of structural borrow inspection, and the projection budget. Selected application facts still own type substitutions and argument coordinates. The exact first representative is retained for projections, while the worklist keys only on observed storage shape."
+    },
+    "checkpointQuality": {
+      "receipt": "recursive-function-promotion-receiver-1e2db7da/quality/checkpoint.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 1450,
+        "pass": 1450,
+        "fail": 0,
+        "skip": 0
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 52.05s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 55.05s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 36.19s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 13s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.53s",
+            "Summary [  68.650s] 1450 tests run: 1450 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-promotion-recursive-capture.raw.zip",
+      "sha256": "8b7281079e981acc3a92fa6fbefb5d7dbf010faf0e724abddeab8d65c194d8c9",
+      "bytes": 965059,
+      "entries": [
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/source.publication.json",
+          "bytes": 2188,
+          "sha256": "804e3128798ddf0791913cae5a90064804f4ec2bbbd87b20a25409c863400d77"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/source.reviewed.patch",
+          "bytes": 49840,
+          "sha256": "2fbfd85cddd48392cdf32f26df8548d933195318c49684da0981c62c1d4a1a20"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/baseline.receipt.json",
+          "bytes": 5832,
+          "sha256": "b7dca7957b4f2fd69b218c7a09a63000c896d6557c82d5a1cbedf171da7bc21e"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/typed-growth.receipt.json",
+          "bytes": 1285,
+          "sha256": "5146398fc3b7eb3d699cea8fd017071dbb11a701a999060ddc777644f12ec6e8"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/changed.receipt.json",
+          "bytes": 6498,
+          "sha256": "26179ffb10dc71655235b9b4d934cee47ef9ae9cf295b7bac755f917dba5fb56"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/sema-recursion-initial.log",
+          "bytes": 85688,
+          "sha256": "76150534789ed5829cfa87c308cb7c4c6378b3aa771d98424802ac4ccae118e4"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/sema-recursion-focused.log",
+          "bytes": 84630,
+          "sha256": "6196582ae8456b8fc90c932b7cb8b240d14b951fc7c2921a24fc493d95a994f9"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/compare-cli.ps1",
+          "bytes": 3017,
+          "sha256": "39841960ef7ece36670906368d135588a94e684e2c39602e4e58c63cfb31b62f"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/run-quality.ps1",
+          "bytes": 4292,
+          "sha256": "f53322fac83cc77c4157f099e4549d027cc8f8527efc46a6570cfa1b8de5af50"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/rdeps.log",
+          "bytes": 4907,
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed.arcw",
+          "bytes": 312,
+          "sha256": "e500ec4c53b3c43b24216694a9d0e5e517fc8b9767b7bd229c5b611b94ab00ba"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed.before.json",
+          "bytes": 540,
+          "sha256": "a60058cf9d730d36d0de69d94345179dfe8a15b32a78ff05f8408980bf53dcc1"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned.arcw",
+          "bytes": 312,
+          "sha256": "758c0bfc6e04fcc502573314c6ff2c3c337c1e4a5327e48bc6720a8eb4ea9ed2"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned.before.json",
+          "bytes": 540,
+          "sha256": "a60058cf9d730d36d0de69d94345179dfe8a15b32a78ff05f8408980bf53dcc1"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-first.arcw",
+          "bytes": 359,
+          "sha256": "527ea321a5da159d4adf93ac7d3f9adbf1d060680b9310dde0cbf1484cf76992"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-first.before.json",
+          "bytes": 1193,
+          "sha256": "1559ceafeeb4e1563a2b9827d0167a0443ffa7e12683cb3fff2e95f630366464"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-first.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-owned.arcw",
+          "bytes": 359,
+          "sha256": "1aaf135cb80c9fb0028f312f6d30bef7f71e42e9b4208847c1e3a2807adb9715"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-owned.before.json",
+          "bytes": 1199,
+          "sha256": "dfd5c0b1476fa48b7613562f75136bbad082a45be85029bc97b436f6aa957dc9"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-owned.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-second.arcw",
+          "bytes": 359,
+          "sha256": "480614f2017f511b136ffde1af22669219271edd20b32f0610f890f1f4466324"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-second.before.json",
+          "bytes": 1197,
+          "sha256": "1bc583dc9039f209927a69aa3069a3a821bfc0dc424dab212ff461d109c08b91"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-second.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-third.arcw",
+          "bytes": 359,
+          "sha256": "523d377a9045405ebb192de0a5b7ca01edbee2f3cf91066e1018e39fb44cd3f6"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-third.before.json",
+          "bytes": 1199,
+          "sha256": "80f64e1cf53ceb20b5691857e03d24bdfc67c7df9835feab0cb7622849ad8f12"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-third.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-first.arcw",
+          "bytes": 490,
+          "sha256": "e0afc93d976be8e5c308420dad2498d302d04ee820ff0948c8a0148ae5acf1d7"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-first.before.json",
+          "bytes": 1197,
+          "sha256": "9b37c6a3dec840371cbaee0d095d5a2dccce350ee36c9a2de848a5077ba12cb0"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-first.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-owned.arcw",
+          "bytes": 487,
+          "sha256": "72a30a8b2c735e1e820be3669bdf38554eea023f78bf9a5034a3fcab91650ae5"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-owned.before.json",
+          "bytes": 1203,
+          "sha256": "a67adf7be05d195c1429decb5305a65518d3886cd2ed66c95afef8f2c8e1fd8b"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-owned.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-second.arcw",
+          "bytes": 490,
+          "sha256": "e1baceb21d1a3426472f85e37efd17db8a436c7f78142aa1103a7793a8978579"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-second.before.json",
+          "bytes": 1201,
+          "sha256": "501c5f00717f0e404d984b87748a3da5384973137ce63d72142f6b746054e0bd"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-second.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-third.arcw",
+          "bytes": 490,
+          "sha256": "89cbe26d7bf4dc58a4862d207af9d7a69fc21701583941e0ee6e7998d77ef56c"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-third.before.json",
+          "bytes": 1203,
+          "sha256": "d5571405b68099acb37b40b367b7f98ce6a08985a34eec2ba1d03ccfc4ff16cd"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-third.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed-typed.arcw",
+          "bytes": 351,
+          "sha256": "f2f31917c2263ee6cf2b88cb9b94f925538cfa593bb6fc974beaf1f18a30d11d"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed-typed.before.json",
+          "bytes": 1241,
+          "sha256": "f116cac809189d1ba8134390a02bb7c5cc5321b19b4ff34e6abfb2b0f9420344"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed-typed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned-typed.arcw",
+          "bytes": 351,
+          "sha256": "b4caf821f72dcb3edfa5e1c14660eeb7c95ca33fc57c348a1c8013916b1222b7"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned-typed.before.json",
+          "bytes": 1235,
+          "sha256": "a4b0131db9f7f8a8c065fe116451b8f32041cdeb01dc2b05c5255823b236f09d"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned-typed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/baseline.receipt.json",
+          "bytes": 4768,
+          "sha256": "33d54157948c3b8ba4bff96df63a88b2f89075068eba1f391f18a1a9c340eb3b"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/observe-baseline.ps1",
+          "bytes": 1947,
+          "sha256": "70cb8218cb8c058c1d4ce2bda25868788704dbb24f4425b60e387a8e65e97934"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-drop-callee-capture.arcw",
+          "bytes": 204,
+          "sha256": "20161d0f0cfd41b17c8bb43efbdb3a54cb94e0a91b1a5f69c076809c8b7b05cd"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-drop-callee-capture.before.json",
+          "bytes": 1227,
+          "sha256": "1a63d3937382bf0c964d8d5ddcb15c0c87057fc75e5e9037d6b3c5deb047a8d2"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-drop-callee-capture.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-explicit-return.arcw",
+          "bytes": 212,
+          "sha256": "0d6eb76ed28e17512954a9cc363b1b9b904e9262f047c0f7fddd8cc089072ea7"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-explicit-return.before.json",
+          "bytes": 1211,
+          "sha256": "d5b52b627aa52f74a4ad271f66ce898a1e26953f2d3790e028e01b47ecef22d3"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-explicit-return.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-branch.arcw",
+          "bytes": 317,
+          "sha256": "9bd4c1fab1cad85303fe9e8ef33ec52a828d813696d3729c56c5f76cd0813d7a"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-branch.before.json",
+          "bytes": 1203,
+          "sha256": "bfafd5d61ac09e6f3b9eafc78e435b109fc765852ad9e5b2f327833fbcea86d9"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-branch.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-capture.arcw",
+          "bytes": 205,
+          "sha256": "bffd985190e21a332b6b5f2624134319dcaec046afa668fcc89216bccd5b7daa"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-capture.before.json",
+          "bytes": 1207,
+          "sha256": "db9d01776e0eebd0b9d7f45607d8c8887d2d096163b11018c5f2af7d60b8f47f"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-capture.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-parameter.arcw",
+          "bytes": 255,
+          "sha256": "caf4c8b4d3c533581848b89e2c6db3ae4ca43c22d63a7c09085d2f8b0a3a6e1d"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-parameter.before.json",
+          "bytes": 1215,
+          "sha256": "443494b290be41d66ec65cc00899b97542910261ce68fd862a0693817b8411e5"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-return-parameter.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-source-function-value.arcw",
+          "bytes": 266,
+          "sha256": "155a0b9f411be89c6d6155dcbedfd42c13895c5b50bc21c15ffd90dd48e45042"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-source-function-value.before.json",
+          "bytes": 1235,
+          "sha256": "a7ae5d642829edd093523f597aff9f001d48750c7c7a7b5a36cb43eb05ecff2b"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/remaining-dynamic/dynamic-source-function-value.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-first.check.after.json",
+          "bytes": 1193,
+          "sha256": "1559ceafeeb4e1563a2b9827d0167a0443ffa7e12683cb3fff2e95f630366464"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-first.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-owned.check.after.json",
+          "bytes": 1199,
+          "sha256": "dfd5c0b1476fa48b7613562f75136bbad082a45be85029bc97b436f6aa957dc9"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-second.check.after.json",
+          "bytes": 1197,
+          "sha256": "1bc583dc9039f209927a69aa3069a3a821bfc0dc424dab212ff461d109c08b91"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-second.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-third.check.after.json",
+          "bytes": 1193,
+          "sha256": "389160bb0dee1589f7ee7b8ad45cf777908187d6724fe67f22718e5b3073bfa4"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-third.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-third.verify.after.json",
+          "bytes": 1193,
+          "sha256": "389160bb0dee1589f7ee7b8ad45cf777908187d6724fe67f22718e5b3073bfa4"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-type-third.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-first.check.after.json",
+          "bytes": 1197,
+          "sha256": "9b37c6a3dec840371cbaee0d095d5a2dccce350ee36c9a2de848a5077ba12cb0"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-first.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-owned.check.after.json",
+          "bytes": 1203,
+          "sha256": "a67adf7be05d195c1429decb5305a65518d3886cd2ed66c95afef8f2c8e1fd8b"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-second.check.after.json",
+          "bytes": 1201,
+          "sha256": "501c5f00717f0e404d984b87748a3da5384973137ce63d72142f6b746054e0bd"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-second.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-third.check.after.json",
+          "bytes": 1197,
+          "sha256": "50f089fcae2bfcad1b5e90594a1a4f5cddc606791adb55354ec1223c3bdac43f"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-third.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-third.verify.after.json",
+          "bytes": 1197,
+          "sha256": "50f089fcae2bfcad1b5e90594a1a4f5cddc606791adb55354ec1223c3bdac43f"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-value-third.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed-typed.check.after.json",
+          "bytes": 1241,
+          "sha256": "f116cac809189d1ba8134390a02bb7c5cc5321b19b4ff34e6abfb2b0f9420344"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-borrowed-typed.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned-typed.check.after.json",
+          "bytes": 1235,
+          "sha256": "a4b0131db9f7f8a8c065fe116451b8f32041cdeb01dc2b05c5255823b236f09d"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned-typed.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned-typed.verify.after.json",
+          "bytes": 1235,
+          "sha256": "a4b0131db9f7f8a8c065fe116451b8f32041cdeb01dc2b05c5255823b236f09d"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/cli/recursion-growing-owned-typed.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-workspace-check.log",
+          "bytes": 111880,
+          "sha256": "35b5590366bef806adac911649231b6d3caaa62be8b43b3cc86cc483adc748de"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-workspace-clippy.log",
+          "bytes": 9273962,
+          "sha256": "475a7ccf9b352caf842918430a05e08026a55ab4d9f39bb2f974b18bb7a55cbf"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-structure.log",
+          "bytes": 66637,
+          "sha256": "1924a09ec1524abbf0225b17d2b0d232cac261c9d07808f1f835ac7b75359c05"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-owner-doctests.log",
+          "bytes": 88122,
+          "sha256": "2cba6bf8e7ff3a6f623c154f67bf6b36fa865250f6a290bd6d47ee7259d37381"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-cli-build.log",
+          "bytes": 92751,
+          "sha256": "085f2a8020a72ea2b4015440ad1900bebd2cd867b1aaa4e86cfb2892552d9b8b"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-owners.log",
+          "bytes": 315935,
+          "sha256": "946489d7f487ae9e8d71b90f2a10c2f99d79ebdd53db98485c976526908b8f33"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/checkpoint.receipt.json",
+          "bytes": 5228,
+          "sha256": "2ea33a8739d6745fb7686f0e10bee25d0374cdbe6a9f37d17f5858a0b6bd7d90"
+        }
+      ]
+    }
   }
 }
