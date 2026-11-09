@@ -1085,6 +1085,8 @@ pub(super) use fx_definition::PreparedFxDefinitionBodyObligations;
 mod function_body;
 #[path = "analyzer/items.rs"]
 mod items;
+#[path = "analyzer/lifetime_promotion.rs"]
+mod lifetime_promotion;
 #[path = "analyzer/patterns.rs"]
 mod patterns;
 #[path = "analyzer/preparation.rs"]

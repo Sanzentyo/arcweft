@@ -3424,9 +3424,6 @@ fn language_family(identity: &CheckedLanguageCallableIdentity) -> LanguageCallab
         }
         CheckedLanguageCallableIdentity::LineSchedule(_) => LanguageCallableFamily::LineSchedule,
         CheckedLanguageCallableIdentity::Drop(_) => LanguageCallableFamily::Drop,
-        CheckedLanguageCallableIdentity::Promotion(
-            PromotionCallableId::Promote | PromotionCallableId::PromoteUnchecked,
-        ) => LanguageCallableFamily::Promote,
         CheckedLanguageCallableIdentity::Promotion(PromotionCallableId::Assume) => {
             LanguageCallableFamily::Assume
         }
@@ -4283,9 +4280,9 @@ impl CheckedCallCanonicalEncoder {
                 self.tag(16);
                 self.tag(drop_tag(*id));
             }
-            CheckedLanguageCallableIdentity::Promotion(id) => {
+            CheckedLanguageCallableIdentity::Promotion(PromotionCallableId::Assume) => {
                 self.tag(17);
-                self.tag(promotion_tag(*id));
+                self.tag(2);
             }
         }
         Ok(())
@@ -4860,13 +4857,6 @@ const fn drop_tag(id: DropCallableId) -> u8 {
         DropCallableId::DropWithPolicy => 1,
         DropCallableId::DropOptional => 2,
         DropCallableId::OnDrop => 3,
-    }
-}
-const fn promotion_tag(id: PromotionCallableId) -> u8 {
-    match id {
-        PromotionCallableId::Promote => 0,
-        PromotionCallableId::PromoteUnchecked => 1,
-        PromotionCallableId::Assume => 2,
     }
 }
 const fn probe_comparison_tag(id: ProbeComparisonOperator) -> u8 {

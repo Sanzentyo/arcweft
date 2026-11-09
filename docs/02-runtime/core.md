@@ -416,8 +416,8 @@ promote_unchecked
 clone_owned
 ```
 
-Safe `promote('target)` requires owned data, no shorter lifetime references, and
-replay-safe serialization when the target is `session`, `global`, or
+Safe `value.promote('target)` requires owned data whose references live at least
+as long as the target, and replay-safe serialization for `session`, `global`, or
 `persistent`. `promote_unchecked` is an unsafe-like lifetime proof escape hatch:
 it requires an explicit `unsafe lifetime` region, a reason string, and a project
 capability. It cannot bypass determinism or the Sans I/O boundary.

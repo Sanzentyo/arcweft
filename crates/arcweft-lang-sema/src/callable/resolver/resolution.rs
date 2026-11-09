@@ -963,17 +963,12 @@ fn resolve_free_call(
     }
 
     check_query_step(request)?;
-    if let Some(id) = PromotionCallableId::resolve(path) {
+    if let Some(id) = PromotionCallableId::resolve_free(path) {
         check_query_step(request)?;
         let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Promotion(id),
             SignatureOrigin::Language {
-                family: match id {
-                    PromotionCallableId::Promote | PromotionCallableId::PromoteUnchecked => {
-                        LanguageCallableFamily::Promote
-                    }
-                    PromotionCallableId::Assume => LanguageCallableFamily::Assume,
-                },
+                family: LanguageCallableFamily::Assume,
             },
             Arc::new(id.signature_schema()),
             CallableInstantiation::None,

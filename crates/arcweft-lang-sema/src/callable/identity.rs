@@ -1340,21 +1340,11 @@ impl FmtParameterId {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PromotionCallableId {
-    Promote,
-    PromoteUnchecked,
     Assume,
 }
 impl PromotionCallableId {
-    pub fn resolve(path: &CallablePath) -> Option<Self> {
-        if path.matches(&["promote"]) {
-            Some(Self::Promote)
-        } else if path.matches(&["promote_unchecked"]) {
-            Some(Self::PromoteUnchecked)
-        } else if path.matches(&["assume"]) {
-            Some(Self::Assume)
-        } else {
-            None
-        }
+    pub fn resolve_free(path: &CallablePath) -> Option<Self> {
+        path.matches(&["assume"]).then_some(Self::Assume)
     }
 }
 
@@ -2009,7 +1999,6 @@ pub enum LanguageCallableFamily {
     LineContextMethod,
     LineSchedule,
     Drop,
-    Promote,
     Assume,
     Content,
     RecordConstructor,

@@ -143,9 +143,14 @@ Diagnostics should point at the operation and the required proof/audit path:
 
 ```text
 error: lifetime promotion from 'line to 'flow is not proven
-help: use promote('flow, proof = @proof.id)
-help: or use promote_unchecked('flow) inside unsafe lifetime @unsafe.id
+help: use value.promote('flow, proof = @proof.id)
+help: or use value.promote_unchecked('flow) inside unsafe lifetime @unsafe.id
 ```
+
+Both forms take a receiver and one positional bare lifetime selector, such as
+`'flow`. `promote` also accepts a named `proof = @proof.id` operand. The
+selector and proof reference are static operands. Resolve the proof in the
+caller's declaration scope and retain the source of each operand for diagnostics.
 
 ## Release policy
 

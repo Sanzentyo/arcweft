@@ -1233,12 +1233,6 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
             )
             | (CallableCandidateId::Drop(_), LanguageCallableFamily::Drop)
             | (
-                CallableCandidateId::Promotion(
-                    PromotionCallableId::Promote | PromotionCallableId::PromoteUnchecked
-                ),
-                LanguageCallableFamily::Promote
-            )
-            | (
                 CallableCandidateId::Promotion(PromotionCallableId::Assume),
                 LanguageCallableFamily::Assume
             )

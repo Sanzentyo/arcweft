@@ -428,6 +428,22 @@ pub enum FinalSemanticAnalysisError {
         reason: ExprId,
         source_span: SourceSpan,
     },
+    #[error("{error}")]
+    InvalidLifetimePromotionOperands {
+        source_span: SourceSpan,
+        #[source]
+        error: arcweft_lang_hir::expr::HirLifetimePromotionError,
+    },
+    #[error("lifetime promotion proof could not be resolved: {error}")]
+    LifetimePromotionProofLookup {
+        source_span: SourceSpan,
+        #[source]
+        error: Box<arcweft_lang_hir::symbol::ProjectEntityReferenceLookupError>,
+    },
+    #[error("lifetime promotion proof must name a registered proof declaration")]
+    LifetimePromotionProofFamily { source_span: SourceSpan },
+    #[error("promote_unchecked requires an enclosing unsafe lifetime audit")]
+    LifetimePromotionAuditRequired { source_span: SourceSpan },
     #[error("call fact is not a clean selected call")]
     UnacceptedCall,
     #[error("call result/effects disagree with the expression fact")]
@@ -775,6 +791,10 @@ impl FinalSemanticAnalysisError {
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
             Self::InvalidUnsafeAuditReason { .. } => "sema.unsafe.reason",
+            Self::InvalidLifetimePromotionOperands { .. } => "sema.lifetime.promotion_operands",
+            Self::LifetimePromotionProofLookup { .. }
+            | Self::LifetimePromotionProofFamily { .. } => "sema.lifetime.promotion_proof",
+            Self::LifetimePromotionAuditRequired { .. } => "sema.lifetime.promotion_audit",
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
@@ -862,6 +882,14 @@ impl FinalSemanticAnalysisError {
                         source_span.clone(),
                         Some("write the audit reason as a string literal".to_owned()),
                     )),
+            ),
+            Self::InvalidLifetimePromotionOperands { source_span, .. }
+            | Self::LifetimePromotionProofLookup { source_span, .. }
+            | Self::LifetimePromotionProofFamily { source_span }
+            | Self::LifetimePromotionAuditRequired { source_span } => Some(
+                Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(source_span.clone(), None)),
             ),
             Self::UnknownValueMember { member_source, .. } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())

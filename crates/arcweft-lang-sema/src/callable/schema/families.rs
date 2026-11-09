@@ -1406,11 +1406,7 @@ impl LineScheduleCallableId {
 
 impl PromotionCallableId {
     pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
-        let result = match self {
-            Self::Promote | Self::PromoteUnchecked => named("Promoted"),
-            Self::Assume => TypeKind::Unit,
-        };
-        variadic_unchecked(result, CallableValidator::Promotion(self), &[])
+        variadic_unchecked(TypeKind::Unit, CallableValidator::Promotion(self), &[])
     }
 }
 

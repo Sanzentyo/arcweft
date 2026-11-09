@@ -1227,6 +1227,64 @@ fn checked_unsafe_audit_reason_requires_an_authored_nonempty_literal() {
 }
 
 #[test]
+fn lifetime_promotion_source_rejects_invalid_static_authority() {
+    for (call, code, offending) in [
+        (
+            "value.promote('flow?)",
+            "sema.lifetime.promotion_operands",
+            "'flow?",
+        ),
+        (
+            "value.promote('flow.key)",
+            "sema.lifetime.promotion_operands",
+            "'flow.key",
+        ),
+        (
+            "value.promote('flow, proof = @flow.verify)",
+            "sema.lifetime.promotion_operands",
+            "@flow.verify",
+        ),
+        (
+            "value.promote('flow, proof = @proof.unknown)",
+            "sema.lifetime.promotion_proof",
+            "@proof.unknown",
+        ),
+        (
+            "value.promote_unchecked('flow)",
+            "sema.lifetime.promotion_audit",
+            "value.promote_unchecked('flow)",
+        ),
+    ] {
+        let source = format!("flow verify {{ let value = 42i64; let _ = {call}; }}");
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("invalid lifetime promotion authority");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{call}: {error:?}"));
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{call}");
+        let span = diagnostic.span().expect("authored operand source");
+        assert_eq!(&source[span.range().as_range()], offending, "{call}");
+    }
+}
+
+#[test]
+fn lifetime_promotion_spelling_preserves_a_project_callable() {
+    let fixture = fixture(
+        r#"
+struct Number { value: i64 }
+fn promote(number: Number, input: i64) -> i64 { number.value + input }
+flow main() -> i64 effects { state.write('flow.input) } {
+    'flow.input <- 2i64
+    let number = Number { value: 40i64 }
+    return promote(number, 'flow.input)
+}
+"#,
+        None,
+    );
+    analyze(&fixture).expect("the registered project callable takes the checked registry value");
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one integration fixture proves source-order line-plan calls, bindings, output, and checked edges together"

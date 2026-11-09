@@ -660,7 +660,7 @@ pub(crate) fn prepare_language_free_dot_path(
         || BuiltinCallableId::resolve(&path).is_some()
         || AgentIntrinsicSignatureId::resolve(&path).is_some()
         || PresentationCallableId::resolve_surface_name(&path.dotted_name()).is_some()
-        || PromotionCallableId::resolve(&path).is_some()
+        || PromotionCallableId::resolve_free(&path).is_some()
         || accepted.free(&path).is_some();
     Ok(is_language_free.then_some(path))
 }

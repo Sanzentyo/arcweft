@@ -10,6 +10,7 @@ mod child_edges;
 mod choice;
 mod control;
 mod for_synthetic;
+mod lifetime_promotion;
 mod owned_body_edges;
 mod thread;
 
@@ -51,6 +52,9 @@ pub use self::control::{
     HirViewBodyApplication,
 };
 pub use self::for_synthetic::HirForSyntheticExpr;
+pub use self::lifetime_promotion::{
+    HirLifetimePromotion, HirLifetimePromotionAuthorization, HirLifetimePromotionError,
+};
 pub use self::owned_body_edges::{
     HirExpressionOwnedBodyProjection, HirExpressionOwnedBodyProjectionError,
     HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirExpressionOwnedChildEdge,

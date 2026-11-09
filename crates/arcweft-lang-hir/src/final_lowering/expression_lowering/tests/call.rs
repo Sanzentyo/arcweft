@@ -59,6 +59,85 @@ fn call_site_end(site: &HirSourceSite) -> usize {
 }
 
 #[test]
+fn lifetime_promotion_preserves_typed_receiver_target_and_proof_operands() {
+    use crate::expr::{HirLifetimePromotionAuthorization, HirLifetimePromotionError};
+    use arcweft_id::{DeclarationIdentityFamily, LifetimeScopeKind};
+
+    let parsed = parsed_source(
+        "lifetime-promotion-operands",
+        &[
+            "value.promote('flow, proof = @proof:.keep)".into(),
+            "value.promote('line)".into(),
+            "value.promote_unchecked('session)".into(),
+            "value.promote('flow?)".into(),
+            "value.promote('flow.key)".into(),
+            "value.promote('flow, proof = @flow.keep)".into(),
+            "value.promote_unchecked('flow, proof = @proof.keep)".into(),
+            "value.other('flow)".into(),
+            "promote('flow)".into(),
+            "value.promote(42i64)".into(),
+        ],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let call = |ordinal: usize| {
+        let expression = module.resolve_expr(owners[ordinal]).expect("call owner");
+        let HirExprKind::Call(call) = expression.kind() else {
+            panic!("expected Call at {ordinal}: {expression:?}");
+        };
+        call
+    };
+    let project = |ordinal| call(ordinal).lifetime_promotion(&module);
+    let safe = project(0).unwrap().unwrap();
+    assert_eq!(Some(safe.receiver()), call(0).callee().value_expression());
+    assert_eq!(safe.target_source(), call(0).arguments()[0].value());
+    assert_eq!(safe.target(), &LifetimeScopeKind::Flow);
+    let HirLifetimePromotionAuthorization::Safe {
+        proof: Some((owner, proof)),
+    } = safe.authorization()
+    else {
+        panic!("expected exact proof source");
+    };
+    assert_eq!(*owner, call(0).arguments()[1].value());
+    assert_eq!(
+        proof
+            .declaration_public_id(DeclarationIdentityFamily::Proof)
+            .unwrap()
+            .as_str(),
+        "proof.keep",
+    );
+    let automatic = project(1).unwrap().unwrap();
+    assert_eq!(automatic.target(), &LifetimeScopeKind::Line);
+    assert_eq!(
+        automatic.authorization(),
+        &HirLifetimePromotionAuthorization::Safe { proof: None }
+    );
+    let audited = project(2).unwrap().unwrap();
+    assert_eq!(audited.target(), &LifetimeScopeKind::Session);
+    assert_eq!(
+        audited.authorization(),
+        &HirLifetimePromotionAuthorization::Audited
+    );
+    for ordinal in [3, 4] {
+        assert_eq!(
+            project(ordinal),
+            Err(HirLifetimePromotionError::InvalidTarget {
+                operand: call(ordinal).arguments()[0].value(),
+            })
+        );
+    }
+    assert_eq!(
+        project(5),
+        Err(HirLifetimePromotionError::InvalidProof {
+            operand: call(5).arguments()[1].value()
+        })
+    );
+    assert_eq!(project(6), Err(HirLifetimePromotionError::InvalidArguments));
+    assert!(project(7).unwrap().is_none());
+    assert!(project(8).unwrap().is_none());
+    assert!(project(9).unwrap().is_none());
+}
+
+#[test]
 fn t_cursor_r04_r05_r08_r09_r13_r14_use_the_committed_argument_manifest() {
     let parsed = parsed_source(
         "call-argument-active-slot-matrix",

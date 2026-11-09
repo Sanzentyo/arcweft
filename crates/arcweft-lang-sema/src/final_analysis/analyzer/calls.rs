@@ -1985,6 +1985,8 @@ impl Analyzer<'_, '_, '_> {
                 (candidates, current_group)
             }
             ResolveCallOutcome::Missing(target) => {
+                self.validate_lifetime_promotion_source(source.module, source.owner, source.call)
+                    .map_err(AnalyzerExpressionError::fatal)?;
                 let name = target
                     .path()
                     .map(crate::callable::CallablePath::dotted_name)

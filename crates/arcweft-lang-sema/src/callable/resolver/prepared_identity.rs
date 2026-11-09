@@ -459,8 +459,7 @@ fn language_identity(
         (CallableCandidateId::Drop(id), LanguageCallableFamily::Drop) => {
             PreparedLanguageCallableIdentity::Drop(*id)
         }
-        (CallableCandidateId::Promotion(id), LanguageCallableFamily::Promote)
-        | (CallableCandidateId::Promotion(id), LanguageCallableFamily::Assume) => {
+        (CallableCandidateId::Promotion(id), LanguageCallableFamily::Assume) => {
             PreparedLanguageCallableIdentity::Promotion(*id)
         }
         _ => return None,
