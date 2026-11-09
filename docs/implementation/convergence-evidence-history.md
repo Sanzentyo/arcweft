@@ -16175,3 +16175,28 @@ CLIの `run-bundle` は4 step／64 opsで台詞に達し、診断は0件。
 
 [検証原本](acceptance-evidence/task-web-demo-regeneration.raw.zip)は13件、6,766 bytes、SHA-256
 `ccc4ed34ca07cb7e4c64de9a46d8cd8ea5bc5935353a5a4e4b4f9c8f8426e461`。
+
+### Webデモの配置・画像観測と起動コスト — 2026-11-09
+
+公開Source `f2e5a28fffb9cd2d2bbe702aea30f7c466d478c0`、親 `8403b15cd6143e10b7a93b5cda1bbdfd1481f281`、
+tree `e021a6152127926a5f5709851c37a5ecaae7d4ea`。13 blobを公開先と照合した。
+
+元のWebデモは2ページ目へ状態が進んでも、描画フレームのテキストが1秒後まで空だった。
+Panel内の相対座標へ直すと、話者・本文の確定座標は `(85.6,480.8)` と `(85.6,518.8)` になり、元の2ページ目のアサーションが通った。
+画像は作者指定名を `authored_id` に、実行時の個体を既存の `id` に保持する。
+4画像の順序は明示depthで確定し、Webテストは4つの作者指定名、描画順、異なる実行時IDを検査する。
+選択肢は確定したPanel上端 `460.8px` から2件分の高さと22pxを空ける。既存の1milliの位置許容差を保持した。
+新AWFBは35,157,520 bytes、SHA-256 `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`。
+同一ソースの2回生成が一致し、Wasm build、bindgen、Rust fmt、JS構文検査を通過した。
+
+既定の `npm --prefix web test` は引き続き10秒上限で終了1。
+起動待ちだけを延ばしたローカル診断は終了0、7件すべてが通った。台詞の2ページ目、Canvas描画、4画像の順序、異なる縦横比、ポインター、キーボード、リサイズ、WebGPU無効時の失敗経路を実行した。
+元のテスト条件での受入は継続する。
+
+元の起動計測は約20.6秒で、Rust初期化約17.7秒、Wasm取得と起動約0.7秒、AWFB・フォント取得約0.2秒。
+別のCPUプロファイルには `BundleView::parse`、セッション内外の完全デコード、`BrowserTaskBroker` からの論理ID計算が現れた。
+非圧縮セクションは同じバイト列を格納時と復号時の両方でハッシュしている。
+この確認は起動処理の測定であり、計測した値を次の実装の短縮結果には読み替えない。
+
+[検証原本](acceptance-evidence/task-web-demo-frame-provenance.raw.zip)は16件、1,091,731 bytes、SHA-256
+`c85939908f307a1dad808e4384956084ce3d81b80eb865b666a4bd1dd27a68c1`。以前の[起動と再生成の原本](acceptance-evidence/task-web-demo-regeneration.raw.zip)を保持する。
