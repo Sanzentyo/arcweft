@@ -212,7 +212,6 @@ enum PureTryContinuation {
     },
     WrapCarrier {
         owner: ExprId,
-        outer: Box<Self>,
     },
     IfCondition {
         then_branch: ExprId,
@@ -242,22 +241,21 @@ enum PureTryContinuation {
 }
 
 impl PureTryContinuation {
-    fn after_carrier(self, target: ExprId) -> Option<Self> {
+    fn targets_carrier(&self, target: ExprId) -> bool {
         match self {
-            Self::WrapCarrier { owner, outer } if owner == target => Some(*outer),
+            Self::WrapCarrier { owner } => *owner == target,
             Self::Try { outer, .. }
             | Self::Compose { outer, .. }
             | Self::LetBlock { outer, .. }
             | Self::AssignBlock { outer, .. }
             | Self::DiscardBlock { outer, .. }
             | Self::DiscardValue { outer, .. }
-            | Self::WrapCarrier { outer, .. }
             | Self::IfCondition { outer, .. }
             | Self::MatchScrutinee { outer, .. }
             | Self::IfLetScrutinee { outer, .. }
             | Self::ShortCircuit { outer, .. }
-            | Self::PipeLeft { outer, .. } => outer.after_carrier(target),
-            Self::Return | Self::WrapSuccess { .. } => None,
+            | Self::PipeLeft { outer, .. } => outer.targets_carrier(target),
+            Self::Return | Self::WrapSuccess { .. } => false,
         }
     }
 }
@@ -882,6 +880,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             HirExprKind::Block(block) => {
                 return self.lower_scoped_block(id, block.statements(), block.tail());
             }
+            HirExprKind::ComputationBlock(block) if block.kind().is_carrier() => {
+                return self.lower_scoped_carrier(id, block);
+            }
             HirExprKind::ComputationBlock(block) => {
                 return self.lower_block(id, block.statements(), block.tail());
             }
@@ -1456,22 +1457,10 @@ impl<'hir> FinalExprLowerer<'hir> {
                 block.tail(),
                 continuation,
             )),
-            HirExprKind::ComputationBlock(block)
-                if matches!(
-                    block.kind(),
-                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
-                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
-                ) =>
-            {
-                Some(self.lower_function_block(
-                    block.statements(),
-                    block.tail(),
-                    PureTryContinuation::WrapCarrier {
-                        owner,
-                        outer: Box::new(continuation),
-                    },
-                ))
-            }
+            HirExprKind::ComputationBlock(block) if block.kind().is_carrier() => Some(
+                self.lower_scoped_carrier(owner, block)
+                    .and_then(|carrier| self.apply_try_continuation(carrier, continuation)),
+            ),
             _ => None,
         }
     }
@@ -1597,16 +1586,16 @@ impl<'hir> FinalExprLowerer<'hir> {
                     },
                 ))
             }
-            PureTryContinuation::WrapCarrier { owner, outer } => {
-                let boundary = self
-                    .semantic_facts
-                    .expression_type(owner)
-                    .ok_or_else(|| format!("carrier block {owner:?} has no checked result type"))?;
-                let wrapped = normalized_variant_expression_seed(boundary, 0, Some(value))
-                    .map_err(|error| {
-                        format!("carrier block {owner:?} success is invalid: {error}")
-                    })?;
-                self.apply_try_continuation(wrapped, *outer)
+            PureTryContinuation::WrapCarrier { owner } => {
+                let boundary = if self.implicit_body_root == Some(owner) {
+                    self.implicit_callable(owner)
+                        .map(|callable| callable.result())
+                } else {
+                    self.semantic_facts.expression_type(owner)
+                }
+                .ok_or_else(|| format!("carrier block {owner:?} has no checked result type"))?;
+                normalized_variant_expression_seed(boundary, 0, Some(value))
+                    .map_err(|error| format!("carrier block {owner:?} success is invalid: {error}"))
             }
             PureTryContinuation::IfCondition {
                 then_branch,

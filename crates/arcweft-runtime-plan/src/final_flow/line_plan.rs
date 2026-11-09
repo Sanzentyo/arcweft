@@ -937,6 +937,9 @@ impl LinePlanLowerer<'_, '_> {
             HirExprKind::NamedBlock(block) => {
                 self.lower_scoped_callback(expression, block.statements(), block.tail())
             }
+            HirExprKind::ComputationBlock(block) if block.kind().is_carrier() => {
+                self.lower_scoped_callback(expression, block.statements(), block.tail())
+            }
             HirExprKind::ComputationBlock(block) => {
                 self.lower_callback_body(block.statements(), block.tail())
             }
@@ -995,17 +998,7 @@ impl LinePlanLowerer<'_, '_> {
         statements: &[StmtId],
         tail: ExprId,
     ) -> Result<Vec<FlowDraft>, RuntimePlanLowerError> {
-        let identity = self
-            .flow
-            .semantic_facts
-            .expression_scope(expression)
-            .ok_or_else(|| {
-                RuntimePlanLowerError::new(format!(
-                    "scheduled Scope expression {expression:?} has no checked lexical identity"
-                ))
-            })?
-            .identity()
-            .clone();
+        let identity = self.flow.expression_scope_identity(expression)?;
         let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope { identity })];
         actions.extend(self.lower_callback_body(statements, tail)?);
         actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));

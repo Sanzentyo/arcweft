@@ -1097,7 +1097,8 @@ fn push_fixture_anonymous_scopes(
     for (_, module) in project.analysis_view().unwrap().modules() {
         for (owner, expression) in module.expressions() {
             if owners.contains_expression(owner)
-                && matches!(expression.kind(), HirExprKind::Block(_))
+                && expression.kind().value_block_scope().is_some()
+                && !matches!(expression.kind(), HirExprKind::NamedBlock(_))
             {
                 input.push_expression_scope(
                     owner,

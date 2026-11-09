@@ -2589,12 +2589,7 @@ impl<'a> LocalUseChecker<'a> {
         value: &arcweft_lang_hir::expr::HirComputationBlockExpr,
         state: &mut Availability,
     ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
-        let catches = matches!(
-            value.kind(),
-            arcweft_lang_hir::expr::HirComputationBlockKind::Result
-                | arcweft_lang_hir::expr::HirComputationBlockKind::Option
-        );
-        let exit = if catches {
+        let exit = if value.kind().is_carrier() {
             self.flow.append(state, Event::Join);
             let exit = self.flow.detached();
             self.carriers.push((owner, exit));

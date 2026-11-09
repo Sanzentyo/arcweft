@@ -40,16 +40,15 @@ impl ScopeProjection<'_, '_> {
             .analysis
             .expression(owner)
             .ok_or_else(|| failure("scope expression has no final semantic value"))?;
-        let identity = match (source.kind(), expression.resolution()) {
-            (HirExprKind::Block(_), _) => {
-                &arcweft_lang_sema::final_analysis::CheckedScopeIdentity::Anonymous
-            }
-            (HirExprKind::NamedBlock(_), CheckedExpressionResolution::Scope(identity)) => identity,
-            _ => {
+        let identity = if matches!(source.kind(), HirExprKind::NamedBlock(_)) {
+            let CheckedExpressionResolution::Scope(identity) = expression.resolution() else {
                 return Err(failure(
                     "checked scope expression lost its lexical identity",
                 ));
-            }
+            };
+            identity
+        } else {
+            &arcweft_lang_sema::final_analysis::CheckedScopeIdentity::Anonymous
         };
         let result = if semantic_value {
             &TypeKind::Unit
@@ -131,12 +130,22 @@ impl ScopeProjection<'_, '_> {
             ) {
                 continue;
             }
-            if let Some(boundary) = tried.boundary().owner().expression_boundary() {
+            let boundary_owner = tried.boundary().owner();
+            if let Some(boundary) = boundary_owner.expression_boundary() {
                 let boundary = self
                     .module
                     .resolve_expr(boundary.lookup_owner())
                     .map_err(|error| failure(error.to_string()))?;
-                if self.contains_execution_scope(boundary.scope(), scope)? {
+                let destination =
+                    if matches!(boundary_owner, CheckedTryBoundaryOwner::CarrierBlock(_)) {
+                        boundary
+                            .kind()
+                            .value_block_scope()
+                            .ok_or_else(|| failure("checked Try carrier has no lexical scope"))?
+                    } else {
+                        boundary.scope()
+                    };
+                if self.contains_execution_scope(destination, scope)? {
                     continue;
                 }
             }

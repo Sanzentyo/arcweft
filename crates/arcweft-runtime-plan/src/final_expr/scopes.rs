@@ -33,13 +33,24 @@ impl FinalExprLowerer<'_> {
         } else {
             self.lower_block(owner, statements, tail)?
         };
-        Ok(RuntimeExprSeed::new(
-            body.ty(),
-            RuntimeExprSeedKind::Scope {
-                identity: fact.identity().clone(),
-                body: Box::new(body),
-            },
-        ))
+        Ok(scoped_value(fact.identity(), body))
+    }
+
+    pub(super) fn lower_scoped_carrier(
+        &self,
+        owner: ExprId,
+        block: &arcweft_lang_hir::expr::HirComputationBlockExpr,
+    ) -> Result<RuntimeExprSeed, String> {
+        let fact = self
+            .semantic_facts
+            .expression_scope(owner)
+            .ok_or_else(|| format!("Carrier scope {owner:?} has no checked fact"))?;
+        let body = self.lower_function_block(
+            block.statements(),
+            block.tail(),
+            PureTryContinuation::WrapCarrier { owner },
+        )?;
+        Ok(scoped_value(fact.identity(), body))
     }
 
     pub(super) fn propagate_pure_residual(
@@ -60,14 +71,14 @@ impl FinalExprLowerer<'_> {
         }
         let propagated = normalized_variant_expression_seed(boundary_type, 1, residual)
             .map_err(|error| format!("propagated residual is invalid: {error}"))?;
-        if let RuntimeTryBoundaryOwner::CarrierBlock(owner) = boundary {
-            let continuation = outer.after_carrier(owner).ok_or_else(|| {
-                format!("propagation has no active carrier continuation for {owner:?}")
-            })?;
-            self.apply_try_continuation(propagated, continuation)
-        } else {
-            Ok(propagated)
+        if let RuntimeTryBoundaryOwner::CarrierBlock(owner) = boundary
+            && !outer.targets_carrier(owner)
+        {
+            return Err(format!(
+                "propagation has no active carrier continuation for {owner:?}"
+            ));
         }
+        Ok(propagated)
     }
 
     pub(super) fn lower_scope_continuation(
@@ -183,4 +194,17 @@ impl FinalExprLowerer<'_> {
             },
         ))
     }
+}
+
+fn scoped_value(
+    identity: &arcweft_core::scope::RuntimeScopeIdentity,
+    body: RuntimeExprSeed,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        body.ty(),
+        RuntimeExprSeedKind::Scope {
+            identity: identity.clone(),
+            body: Box::new(body),
+        },
+    )
 }

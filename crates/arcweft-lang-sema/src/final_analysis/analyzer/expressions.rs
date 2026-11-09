@@ -2484,12 +2484,10 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
         let expected = expectation.contextual_shape();
         self.evaluate_block_statement_uses(context, module, block.statements())?;
-        let returns = matches!(
-            block.kind(),
-            HirComputationBlockKind::Result | HirComputationBlockKind::Option
-        ) && !self
-            .block_statements_completion(module, block.statements(), None)?
-            .continues();
+        let returns = block.kind().is_carrier()
+            && !self
+                .block_statements_completion(module, block.statements(), None)?
+                .continues();
         let expected_success = match (block.kind(), expected) {
             (HirComputationBlockKind::Result, Some(TypeKind::Result { ok, .. })) => {
                 Some(ok.as_ref())

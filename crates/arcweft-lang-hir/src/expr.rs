@@ -239,11 +239,12 @@ impl HirExpressionTypeRoot {
 }
 
 impl HirExprKind {
-    /// Lexical owner of a value block with an optional authored namespace.
+    /// Lexical scope entered by an ordinary, named, or carrier value block.
     pub const fn value_block_scope(&self) -> Option<ScopeId> {
         match self {
             Self::Block(block) => Some(block.scope()),
             Self::NamedBlock(block) => Some(block.scope()),
+            Self::ComputationBlock(block) if block.kind().is_carrier() => Some(block.scope()),
             _ => None,
         }
     }

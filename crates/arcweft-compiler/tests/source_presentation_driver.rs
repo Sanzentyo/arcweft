@@ -578,20 +578,49 @@ flow main() -> i64 {
     let result = BLOCK {
         let inner = mount(Inner())
         let received = await receive(finish)
-        received.value
+        TAIL
     }
     wait(10ms)
     outer.unmount();
-    return result
+    return RESULT
 }
 entry cli @entry.main { goto @flow.main }
 "#;
-    for (form, prefix) in [
-        ("named", "scope inner_region "),
-        ("plain", ""),
-        ("anonymous", "scope "),
+    for (form, prefix, tail, result) in [
+        ("named", "scope inner_region ", "received.value", "result"),
+        ("plain", "", "received.value", "result"),
+        ("anonymous", "scope ", "received.value", "result"),
+        (
+            "option success",
+            "option ",
+            "let payload: Option<i64> = Some(received.value); try payload",
+            "if let Some(value) = result { value } else { -1i64 }",
+        ),
+        (
+            "option residual through an inner scope",
+            "option ",
+            "let payload: Option<i64> = None; scope { try payload }",
+            "if let Some(value) = result { -1i64 } else { 42i64 }",
+        ),
+        (
+            "result success",
+            "result ",
+            "let payload: Result<i64, i64> = Ok(received.value); try payload",
+            "if let Ok(value) = result { value } else { -1i64 }",
+        ),
+        (
+            "result residual through an inner scope",
+            "result ",
+            "let payload: Result<i64, i64> = Err(received.value); scope { try payload }",
+            "if let Err(value) = result { value } else { -1i64 }",
+        ),
     ] {
-        let bytes = source_bundle(&source.replace("BLOCK ", prefix));
+        let bytes = source_bundle(
+            &source
+                .replace("BLOCK ", prefix)
+                .replace("TAIL", tail)
+                .replace("RESULT", result),
+        );
         let mut session = session_from_bytes(&bytes);
         let mut restored = false;
         let mut sent = false;
@@ -661,6 +690,72 @@ entry cli @entry.main { goto @flow.main }
             "{form}: inner View did not retire at value-block exit"
         );
     }
+}
+
+#[test]
+fn callable_carrier_retires_its_view_before_returning_to_the_flow() {
+    let mut session = session(
+        r#"
+view Card(caption: String) { Text(caption) }
+fn collect_option(input: Option<i64>) -> Option<i64> {
+    option {
+        let temporary = mount(Card(caption = "option"))
+        scope { try input }
+    }
+}
+fn collect_result(input: Result<i64, i64>) -> Result<i64, i64> {
+    result {
+        let temporary = mount(Card(caption = "result"))
+        scope { try input }
+    }
+}
+flow main() -> i64 {
+    let outer = mount(Card(caption = "outer"))
+    let some = collect_option(Some(20i64))
+    let none = collect_option(None)
+    let ok = collect_result(Ok(11i64))
+    let err = collect_result(Err(11i64))
+    let after_calls = mount(Card(caption = "after calls"))
+    wait(10ms)
+    after_calls.unmount()
+    outer.unmount()
+    let a = if let Some(value) = some { value } else { -100i64 }
+    let b = if let Some(value) = none { -100i64 } else { 0i64 }
+    let c = if let Ok(value) = ok { value } else { -100i64 }
+    let d = if let Err(value) = err { value } else { -100i64 }
+    return a + b + c + d
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let mut saw_caller_resume = false;
+    run(&mut session, |session| {
+        let mounts = &session.presentation().view.mounts;
+        let has_caption = |caption: &str| {
+            mounts.iter().any(|mount| {
+                mount.text.iter().any(|text| {
+                    matches!(&text.value, BundleViewTextValue::Plain { value } if value == caption)
+                })
+            })
+        };
+        if has_caption("after calls") {
+            assert!(
+                has_caption("outer"),
+                "the caller's mount must still be live"
+            );
+            assert_eq!(mounts.len(), 2, "a callee's mount outlived its scope");
+            saw_caller_resume = true;
+        }
+    });
+    assert!(saw_caller_resume);
+    assert_eq!(
+        session
+            .snapshot_session()
+            .unwrap()
+            .view_runtime
+            .next_mount_id,
+        6
+    );
 }
 
 #[test]

@@ -16,6 +16,20 @@ pub(super) struct ScopeContinuationFrame {
 }
 
 impl FinalFlowLowerer<'_> {
+    pub(super) fn expression_scope_identity(
+        &self,
+        expression: ExprId,
+    ) -> Result<arcweft_core::scope::RuntimeScopeIdentity, RuntimePlanLowerError> {
+        self.semantic_facts
+            .expression_scope(expression)
+            .map(|fact| fact.identity().clone())
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "Scope expression {expression:?} has no checked lexical identity"
+                ))
+            })
+    }
+
     pub(super) fn lower_scope_value(
         &mut self,
         expression: ExprId,

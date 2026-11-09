@@ -13,10 +13,11 @@ pub(super) fn validate_expression_scope(
     identity: &RuntimeScopeIdentity,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let matches_source = match (kind, identity) {
-        (HirExprKind::Block(_), RuntimeScopeIdentity::Anonymous) => true,
         (HirExprKind::NamedBlock(block), RuntimeScopeIdentity::Named(name)) => {
             matches!(block.name(), HirNamedBlockName::Resolved(authored) if authored.as_str() == name.as_str())
         }
+        (HirExprKind::NamedBlock(_), RuntimeScopeIdentity::Anonymous) => false,
+        (kind, RuntimeScopeIdentity::Anonymous) => kind.value_block_scope().is_some(),
         _ => false,
     };
     if matches_source {
@@ -172,15 +173,20 @@ pub(super) fn validate_continuation<'a>(
             continue;
         }
         let target = match tried.boundary() {
-            RuntimeTryBoundaryOwner::CarrierBlock(owner)
-            | RuntimeTryBoundaryOwner::Thread(owner)
+            RuntimeTryBoundaryOwner::CarrierBlock(owner) => Some(
+                resolve_expr(modules, owner)?
+                    .value_block_scope()
+                    .ok_or_else(invalid)?,
+            ),
+            RuntimeTryBoundaryOwner::Thread(owner)
             | RuntimeTryBoundaryOwner::ExplicitFunctionSite(owner)
-            | RuntimeTryBoundaryOwner::ImplicitFunctionSite(owner) => Some(owner),
+            | RuntimeTryBoundaryOwner::ImplicitFunctionSite(owner) => {
+                Some(module.resolve_expr(owner).map_err(|_| invalid())?.scope())
+            }
             RuntimeTryBoundaryOwner::Callable(_) | RuntimeTryBoundaryOwner::Infallible => None,
         };
         if let Some(target) = target {
-            let target = module.resolve_expr(target).map_err(|_| invalid())?;
-            if contains_execution_scope(module, target.scope(), scope).ok_or_else(invalid)? {
+            if contains_execution_scope(module, target, scope).ok_or_else(invalid)? {
                 continue;
             }
         }

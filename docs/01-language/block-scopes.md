@@ -217,7 +217,9 @@ with:
 `result { ... }` and `option { ... }` reuse value-block scope and tail rules,
 but additionally create typed Result/Option propagation boundaries. Normal
 completion wraps the tail in Ok/Some; they do not flatten an already-carried
-tail.
+tail. Both normal completion and a `try` residual close the block's lexical
+scope before delivering the carrier to the enclosing expression. A suspended
+block keeps its scope and resources until execution leaves it.
 
 `const { ... }` also reuses the value-block shape, but is a compile-time phase
 fence rather than a carrier boundary. Runtime locals and effects cannot cross

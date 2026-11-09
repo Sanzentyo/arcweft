@@ -7352,12 +7352,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 | HirExprKind::Try(_)
         ) || matches!(
             resolved.kind(),
-            HirExprKind::ComputationBlock(block)
-                if matches!(
-                    block.kind(),
-                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
-                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
-                )
+            HirExprKind::ComputationBlock(block) if block.kind().is_carrier()
         ) {
             return Ok(true);
         }
@@ -7747,13 +7742,7 @@ impl<'a> FinalFlowLowerer<'a> {
             HirExprKind::NamedBlock(block) => {
                 self.lower_scope_value(expression, block.statements(), block.tail(), continuation)
             }
-            HirExprKind::ComputationBlock(block)
-                if matches!(
-                    block.kind(),
-                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
-                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
-                ) =>
-            {
+            HirExprKind::ComputationBlock(block) if block.kind().is_carrier() => {
                 self.lower_carrier_block(expression, block, continuation)
             }
             HirExprKind::Loop(loop_expression) => {
@@ -8731,26 +8720,39 @@ impl<'a> FinalFlowLowerer<'a> {
         block: &arcweft_lang_hir::expr::HirComputationBlockExpr,
         continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let identity = self.expression_scope_identity(expression)?;
+        let exit = RuntimeFlowValueContinuation::ExitScope {
+            owner: expression,
+            outer: Box::new(continuation),
+        };
         if self
             .carrier_continuations
-            .insert(expression, continuation.clone())
+            .insert(expression, exit.clone())
             .is_some()
         {
             return Err(RuntimePlanLowerError::new(format!(
                 "carrier block {expression:?} was entered more than once during lowering"
             )));
         }
-        let tail = RuntimeFlowTail::Value {
-            expression: block.tail(),
-            continuation: Box::new(RuntimeFlowValueContinuation::WrapCarrier {
+        let body = self.lower_value_block(
+            block.statements(),
+            block.tail(),
+            RuntimeFlowValueContinuation::WrapCarrier {
                 owner: expression,
-                outer: Box::new(continuation),
-            }),
-            overrides: RuntimeExpressionOverrides::new(),
-        };
-        let lowered = self.lower_statement_ids_with_tail(block.statements(), tail);
+                outer: Box::new(exit),
+            },
+        );
         self.carrier_continuations.remove(&expression);
-        lowered
+        let mut ops = vec![RuntimeFlowOpSeed::EnterScope { identity }];
+        ops.extend(body?);
+        if matches!(
+            self.expression_type(expression)?.shape(),
+            RuntimeTypeShape::Never
+        ) {
+            // A terminal effect can still resume into lexical fallthrough.
+            ops.push(RuntimeFlowOpSeed::ExitScope);
+        }
+        Ok(ops)
     }
 
     fn lower_await_continuation(

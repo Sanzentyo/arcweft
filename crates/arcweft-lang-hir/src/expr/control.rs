@@ -126,7 +126,7 @@ impl HirBlockExpr {
     }
 }
 
-/// Result, task, sequence, or stream computation block.
+/// Result, Option, sequence, or stream computation block.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirComputationBlockExpr {
     kind: HirComputationBlockKind,
@@ -176,6 +176,11 @@ pub enum HirComputationBlockKind {
 }
 
 impl HirComputationBlockKind {
+    /// Whether the block runs immediately and catches a local Try residual.
+    pub const fn is_carrier(self) -> bool {
+        matches!(self, Self::Result | Self::Option)
+    }
+
     /// Closed computation contract of a value-producing block.
     pub const fn semantic_transcript_tag(self) -> u8 {
         match self {
