@@ -862,8 +862,8 @@
     },
     "raw": {
       "path": "docs/implementation/acceptance-evidence/task-owned-promotion-admission.raw.zip",
-      "bytes": 8870,
-      "sha256": "d6c2bb811c8f6d58a0dbf80d5ea7f481096c00872b01499f7ebc28bef34b8806",
+      "bytes": 22735,
+      "sha256": "cea7e048ab964584bb6de281dfc09c356567bdf2a4c5f99d16918cae20f49616",
       "entryDrift": 0,
       "entries": [
         {
@@ -960,8 +960,527 @@
           "entry": "owned-promotion-receiver-before-20261106.unchecked.stderr.log",
           "bytes": 0,
           "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/original/control.verify.json",
+          "bytes": 3602,
+          "sha256": "604cfdb42bc7382b54703554c398fb8422b21f636a3ca435abf3fa02e5f84323"
+        },
+        {
+          "entry": "replay-30b1fd3/original/control.verify.stderr.log",
+          "bytes": 1063,
+          "sha256": "2ee1fe6ef3e90093f6ea2a7cafb1bb75911d67c555bcbb33d18c29b9adebf6f4"
+        },
+        {
+          "entry": "replay-30b1fd3/original/receiver.verify.json",
+          "bytes": 1325,
+          "sha256": "5d658c4a03f211ae2d9e43d51dadd35dc60d61bda5c018612cb584ee17d77a69"
+        },
+        {
+          "entry": "replay-30b1fd3/original/receiver.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/original/explicit_proof.verify.json",
+          "bytes": 1349,
+          "sha256": "7999df81ae9b484b2a537f7a88fc7563438d8d79c666ecff6c6d770a4a45fbfc"
+        },
+        {
+          "entry": "replay-30b1fd3/original/explicit_proof.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/original/bare_intrinsic.verify.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "replay-30b1fd3/original/bare_intrinsic.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/original/proof_as_value.verify.json",
+          "bytes": 446,
+          "sha256": "6c90828bad813afb297725218199b4f84bc184520fe399c5f3155bd37488ef3d"
+        },
+        {
+          "entry": "replay-30b1fd3/original/proof_as_value.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/original/unchecked.verify.json",
+          "bytes": 1339,
+          "sha256": "e1860735f80d4e40c4767c2224f17482e096b28af48d4c82d3e06c11d1ffe5cd"
+        },
+        {
+          "entry": "replay-30b1fd3/original/unchecked.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/borrowed-control.arcw",
+          "bytes": 150,
+          "sha256": "c91687a681b032c42384ecf9a87763dc4a80945aa3081ca0797f4d62a2626c02"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/borrowed-control.verify.json",
+          "bytes": 202,
+          "sha256": "19516eb5fdc7c7d067d3f448c0df0c9304c863984b601d6c375e532ce1044425"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/borrowed-control.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/borrowed-nested.arcw",
+          "bytes": 191,
+          "sha256": "28521c8252dbd17d89cf2065079a970bbd91df8f08ae64c9a32e1eade45607d6"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/borrowed-nested.verify.json",
+          "bytes": 1189,
+          "sha256": "c3ba4c360e14aa2e56827402dd3c5d76e926ad760033f47338937d15774e4450"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/borrowed-nested.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/owned-conditional.arcw",
+          "bytes": 171,
+          "sha256": "bf80e6e9b2c75d42020b68965ce34f77f792d2d2a13cfc0e8d6606db63c95d8d"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/owned-conditional.verify.json",
+          "bytes": 1195,
+          "sha256": "03c5927f2b19981ed1d0023ece33b55bdfe2e3cb258a402e9f91e180e5ffb027"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/owned-conditional.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/proof-unknown.arcw",
+          "bytes": 163,
+          "sha256": "dc9fee74fb6dd94af96a2ba0a6db5592fa300c547e486b4c6306fd1c223c0502"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/proof-unknown.verify.json",
+          "bytes": 1179,
+          "sha256": "72ecd2828c5e0ea6f85ba5b833be657845ede068988d98cb6f406e4165225a29"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/proof-unknown.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/selector-member.arcw",
+          "bytes": 148,
+          "sha256": "fd2dac8a94c825764411da11b750efe8cc86e148798406a08c193150ffec6ea1"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/selector-member.verify.json",
+          "bytes": 1185,
+          "sha256": "0f91d95de3b58a310c72025d970a89ea5f7f6cd0cb1e72015f28f1bb236ca6d2"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/selector-member.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/selector-optional.arcw",
+          "bytes": 140,
+          "sha256": "677bdb9b0a9d6729d59dcbb0fbed71be3b72e0b69d7ad64557f62f55d974768f"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/selector-optional.verify.json",
+          "bytes": 1193,
+          "sha256": "b89396dcffaadf4ed400cc39ebde414f1eefadcaf07102a0f6728cda4e70fb1b"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/selector-optional.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/unchecked-outside-audit.arcw",
+          "bytes": 149,
+          "sha256": "940224edbadbf30269f2a4c00f3db43399f1248218f2d1f77b7479bead2efd49"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/unchecked-outside-audit.verify.json",
+          "bytes": 1227,
+          "sha256": "a73444297ce7f5efa6f08e3342eb95bbfb9f560026532d33079fef695f642250"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/unchecked-outside-audit.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/legacy-solver-fixture.arcw",
+          "bytes": 49,
+          "sha256": "0e20bec2da7bab7a0be63af79a027b3e86df580912d87c62ea39956d41ac62f6"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/legacy-solver-emit.verify.json",
+          "bytes": 539,
+          "sha256": "a70a3b211d376d6b5ff60d6e608e0e7e18ee3e1061bf99265172d3d3b9e8d7a8"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/legacy-solver-emit.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/legacy-solver-oxiz.verify.json",
+          "bytes": 539,
+          "sha256": "a70a3b211d376d6b5ff60d6e608e0e7e18ee3e1061bf99265172d3d3b9e8d7a8"
+        },
+        {
+          "entry": "replay-30b1fd3/controls/legacy-solver-oxiz.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ]
+    },
+    "latestReplay": {
+      "version": 1,
+      "recordedUtc": "2026-11-09T14:50:55.3885316Z",
+      "sourceCommit": "30b1fd3a06d20b9f15580bf602297a76617fbdc1",
+      "cliSha256": "73f2f9994136c9e6b7862e5a7eb441117605bc77bc08e4c2fd0e426626d2d992",
+      "correction": "Rechecked the exact previous inputs after the carrier-scope repair. Added ownership, scope and proof controls. The legacy CLI inputs stop before verifier obligation collection with both requested backends.",
+      "originalInputs": [
+        {
+          "name": "control",
+          "mode": "dev",
+          "backend": "emit",
+          "exitCode": 0,
+          "stage": null,
+          "diagnostics": [],
+          "obligations": [
+            "proof_body"
+          ],
+          "solverChecks": 0
+        },
+        {
+          "name": "receiver",
+          "mode": "dev",
+          "backend": "emit",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-promotion-receiver-before-20261106.receiver/owned-promotion-receiver-before-20261106.receiver.arcw",
+                  "revision": "75f9365b446e9b19c8de848c3c55656e19868f4e232a7e4bac516cc7461484c4",
+                  "source_len": 163
+                },
+                "start": 122,
+                "end": 144
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "explicit_proof",
+          "mode": "dev",
+          "backend": "emit",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-promotion-receiver-before-20261106.explicit_proof/owned-promotion-receiver-before-20261106.explicit_proof.arcw",
+                  "revision": "e2c9578f1a9668872182916667a468b31b2a2a34ee1a42aab3c03e6dbd5f75cb",
+                  "source_len": 193
+                },
+                "start": 122,
+                "end": 174
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "bare_intrinsic",
+          "mode": "dev",
+          "backend": "emit",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }) has no admissible final type",
+              "span": null
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "proof_as_value",
+          "mode": "dev",
+          "backend": "emit",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.final_analysis",
+              "message": "semantic fact does not match its final-HIR payload family",
+              "span": null
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "unchecked",
+          "mode": "dev",
+          "backend": "emit",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote_unchecked`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-promotion-receiver-before-20261106.unchecked/owned-promotion-receiver-before-20261106.unchecked.arcw",
+                  "revision": "a7f1cbd04d19813a5ef128e0090c2fa36b98fb1db4e65480f067664a041af89f",
+                  "source_len": 222
+                },
+                "start": 181,
+                "end": 213
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        }
+      ],
+      "additionalControls": [
+        {
+          "name": "borrowed-control",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 0,
+          "stage": null,
+          "diagnostics": [],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "borrowed-nested",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://borrowed-nested/borrowed-nested.arcw",
+                  "revision": "1237748b005bf03ca886c2626108bfd1a1211a9928c477f0372c4cbe8b8c4b86",
+                  "source_len": 191
+                },
+                "start": 108,
+                "end": 129
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "owned-conditional",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://owned-conditional/owned-conditional.arcw",
+                  "revision": "c5a917d482b989fa1b6706c7df6cab5bf269647c457c2c8261b32dba11ddd93b",
+                  "source_len": 171
+                },
+                "start": 90,
+                "end": 110
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "proof-unknown",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://proof-unknown/proof-unknown.arcw",
+                  "revision": "6217ae9a43f90436b4adf3eae074812592849757973d7ad3a8bb56958c07f0f4",
+                  "source_len": 163
+                },
+                "start": 58,
+                "end": 102
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "selector-member",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://selector-member/selector-member.arcw",
+                  "revision": "9ea64a4122a2b3047daf89f8f1d10c6f87417e56f1bbc8cd386bb5fe1d4d22fc",
+                  "source_len": 148
+                },
+                "start": 58,
+                "end": 87
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "selector-optional",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://selector-optional/selector-optional.arcw",
+                  "revision": "5a1db886009c6049e9a9fb531b2d445ce41561ee85cec53274e3ec06a4e6332e",
+                  "source_len": 140
+                },
+                "start": 58,
+                "end": 79
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "unchecked-outside-audit",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.call.unknown_target",
+              "message": "unknown method `promote_unchecked`",
+              "span": {
+                "source": {
+                  "id": "arcweft-project://unchecked-outside-audit/unchecked-outside-audit.arcw",
+                  "revision": "3110029de28dec39faa60458bbeb3fcaedd21e3f4cdf2b6294e2a7901b6503c1",
+                  "source_len": 149
+                },
+                "start": 58,
+                "end": 88
+              }
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        }
+      ],
+      "legacyCliFixture": [
+        {
+          "name": "legacy-solver-fixture",
+          "mode": "test",
+          "backend": "emit",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type",
+              "span": null
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        },
+        {
+          "name": "legacy-solver-fixture",
+          "mode": "test",
+          "backend": "oxiz",
+          "exitCode": 1,
+          "stage": "type-check",
+          "diagnostics": [
+            {
+              "stage": "type-check",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type",
+              "span": null
+            }
+          ],
+          "obligations": [],
+          "solverChecks": 0
+        }
+      ],
+      "archivePrefix": "replay-30b1fd3"
     }
   },
   "lineDeferRegistryProbe": {
