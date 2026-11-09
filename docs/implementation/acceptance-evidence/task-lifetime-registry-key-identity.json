@@ -5415,8 +5415,8 @@
     },
     "raw": {
       "path": "docs/implementation/acceptance-evidence/task-structural-promotion-receiver.raw.zip",
-      "sha256": "7f77fcdf62f214a4420f4b6a2a123cd8f918b61e3ff770705536f86f38f6ff3e",
-      "bytes": 2517148,
+      "sha256": "1f997c5178350e7c6f73d4f4bb2a7179a7140d55786ba06ec70ff84fadc6ff85",
+      "bytes": 2758477,
       "entries": [
         {
           "entry": "structural-promotion-receiver-78f80527/source.publication.json",
@@ -5862,8 +5862,247 @@
           "entry": "structural-promotion-receiver-78f80527/quality/checkpoint.receipt.json",
           "bytes": 5037,
           "sha256": "fa868dfa5fd0d7bc03dff61ef5c5e6c2c276a08a2bcd8e287fde579759db8c31"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality.retry.receipt.json",
+          "bytes": 2133,
+          "sha256": "0fa0f4196cc04810b5042c06babd61085a14b8e63cab81488d7066cdbc1a1f26"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/retry-quality.ps1",
+          "bytes": 2602,
+          "sha256": "453328246f26d414b140aa7ce34b3dbe2c663636a1db46e3586b10d87d7ba4eb"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-plan-compiler.log",
+          "bytes": 94042,
+          "sha256": "a1c5073f8541f56400ecaa856f5611df2ac1b2073a75dc772393dbeeaa5677d8"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-plan-compiler-retry.log",
+          "bytes": 264222,
+          "sha256": "62da9f1aab9a398dc58035918ce711c1735b8b099f3112e4df50135072d8bc39"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-runtime-host.log",
+          "bytes": 102157,
+          "sha256": "f92db8422759f779c2d345fb565451a9c224702d30e212fb163d12fa0dace338"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-driver-scene.log",
+          "bytes": 129775,
+          "sha256": "ffc6d9186a7c41f5060db0730d31bbf77d990d6df304d8d02909eda949384651"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-player-native.log",
+          "bytes": 99499,
+          "sha256": "7996ebd945d51be377413fb7b920dcb86ef148fc7e444807234b17528be42dd7"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-player-web.log",
+          "bytes": 94293,
+          "sha256": "7e0bf22915e0ee4b8e72f52163d448daf7324052d6187c0f2be22f1d4a208792"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-agent-execution.log",
+          "bytes": 102761,
+          "sha256": "3105c0cdaf58cf479200233df754b08e8a2097015689161e85fddb2d1f9a0949"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-agent-transport.log",
+          "bytes": 95243,
+          "sha256": "d9a9c8b32439df7565569310bfa6275a330513594aa5c3973c5b0c3773e15071"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-tools-lsp.log",
+          "bytes": 147796,
+          "sha256": "df10bbdf3501697ad53fb1dff427220620a8134fd542918b5793f305d8e383e9"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-verify.log",
+          "bytes": 93963,
+          "sha256": "34e8cc45896f8bfdfb27cf40e077430d3312889b347c942d6bbc17ec6ef99f66"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-cli-library-binaries.log",
+          "bytes": 121034,
+          "sha256": "64bfc65ed12086cc52709131fcefb8d5a967cf8d19e707ef8cc18f3350fa715a"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-cli-integration.log",
+          "bytes": 95735,
+          "sha256": "d85146e02fe98ee217c0b1d0fa4e1fad7ac600120d45737b571758ca8be137e0"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/terminal.receipt.json",
+          "bytes": 12151,
+          "sha256": "015cc550e4baa53ddc77de8b435a8ce0165a9926b7aeea519afcc316fa8ca770"
         }
       ]
+    },
+    "terminalQuality": {
+      "receipt": "structural-promotion-receiver-78f80527/quality/terminal.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 3884,
+        "pass": 3884,
+        "fail": 0,
+        "skip": 1
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 53.62s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 50.87s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 36.12s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 01s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.12s",
+            "Summary [  67.042s] 1445 tests run: 1445 passed, 0 skipped"
+          ]
+        },
+        "plan-compiler": {
+          "exit": 101,
+          "summary": [],
+          "retry": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 44.25s",
+              "Summary [ 111.791s] 1172 tests run: 1172 passed (2 slow), 1 skipped"
+            ],
+            "log": "structural-promotion-receiver-78f80527/quality/quality-plan-compiler-retry.log"
+          }
+        },
+        "runtime-host": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 04s",
+            "Summary [   2.891s] 72 tests run: 72 passed, 0 skipped"
+          ]
+        },
+        "driver-scene": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 01s",
+            "Summary [   2.930s] 278 tests run: 278 passed, 0 skipped"
+          ]
+        },
+        "player-native": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 04s",
+            "Summary [   1.066s] 59 tests run: 59 passed, 0 skipped"
+          ]
+        },
+        "player-web": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 01s",
+            "Summary [   0.383s] 37 tests run: 37 passed, 0 skipped"
+          ]
+        },
+        "agent-execution": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 30.74s",
+            "Summary [  50.950s] 106 tests run: 106 passed, 0 skipped"
+          ]
+        },
+        "agent-transport": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 16.02s",
+            "Summary [   0.415s] 46 tests run: 46 passed, 0 skipped"
+          ]
+        },
+        "tools-lsp": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 43.70s",
+            "Summary [  84.828s] 412 tests run: 412 passed, 0 skipped"
+          ]
+        },
+        "verify": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 50.21s",
+            "Summary [   0.243s] 31 tests run: 31 passed, 0 skipped"
+          ]
+        },
+        "cli-library-binaries": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 23s",
+            "Summary [  31.386s] 196 tests run: 196 passed, 0 skipped"
+          ]
+        },
+        "cli-integration": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 26.43s",
+            "Summary [   7.805s] 30 tests run: 30 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [
+        "plan-compiler"
+      ],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
     }
   }
 }
