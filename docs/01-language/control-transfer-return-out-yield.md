@@ -195,7 +195,9 @@ Both static and dynamic `goto` end the current Flow and unwind its call frames.
 The target starts in its own effect scope; its effects do not become effects of
 the transferring Flow. Evaluating the target and arguments still belongs to the
 current scope. The target's body, argument contract, and entry capabilities
-remain checked. Returning calls, including ordinary function calls made by a
+remain checked. The runtime admits the transfer before it completes the source
+scopes. Rejected targets and arguments trigger failure cleanup in those scopes.
+Returning calls, including ordinary function calls made by a
 Flow, require the callee's exposed effects to be covered by the caller's scope.
 
 A bare `goto @flow.target` and a compact Choice `-> @flow.target` supply no

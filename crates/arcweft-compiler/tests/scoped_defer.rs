@@ -713,6 +713,60 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn rejected_dynamic_goto_runs_failure_cleanup_without_completing_its_scope() {
+    let source = r#"
+flow main() effects { log.write } {
+    defer on failed { log.info("outer-failed") }
+    scope inner {
+        defer on completed { log.info("wrong-completed") }
+        defer on failed { log.info("inner-failed") }
+        let target = @flow.needs_input
+        goto target
+    }
+}
+flow needs_input(value: i64) { log.info(value) }
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_source(source).unwrap();
+    let mut native = Engine::for_flow(compiled.plan.clone(), &compiled.plan.flows()[0].id).unwrap();
+    let mut native_step = || native.step(Default::default(), Default::default());
+    let mut awbc_step = saved_awbc_steps(source);
+    for (backend, step, diagnostic) in [
+        (
+            "Native",
+            &mut native_step as &mut dyn FnMut() -> RuntimeStepResult,
+            "expects 1 invocation bindings, received 0",
+        ),
+        (
+            "saved AWBC",
+            &mut awbc_step,
+            "expects 1 arguments, received 0",
+        ),
+    ] {
+        let mut logs = Vec::new();
+        let failure =
+            (0..160).find_map(|_| {
+                let result = step();
+                assert!(result.stats.executed_ops <= 1, "{backend}");
+                logs.extend(result.output.effects.line.into_iter().filter_map(
+                    |effect| match effect {
+                        LineEffectRequest::Log(row) => Some(row.message),
+                        _ => None,
+                    },
+                ));
+                match result.fiber_status {
+                    FlowFiberStatus::Running => None,
+                    FlowFiberStatus::Failed(message) => Some(message),
+                    status => panic!("{backend}: unexpected status {status:?}"),
+                }
+            });
+        let failure = failure.unwrap_or_else(|| panic!("{backend}: expected ABI rejection"));
+        assert!(failure.contains(diagnostic), "{backend}: {failure}");
+        assert_eq!(logs, ["inner-failed", "outer-failed"], "{backend}");
+    }
+}
+
+#[test]
 fn function_goto_drains_its_own_and_callers_cleanup_without_resuming_caller_code() {
     let source = r#"
 fn transfer() effects { log.write } {

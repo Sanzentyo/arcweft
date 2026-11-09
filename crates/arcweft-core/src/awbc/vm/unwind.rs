@@ -2,14 +2,19 @@
 
 use super::*;
 
-/// A transfer with no executable callbacks finishes in its producing
-/// operation, preserving the VM's ordinary callback-free goto boundary.
-pub(super) fn finish_transfer_without_callbacks(
+/// Starts source scope exit in the operation that admitted the transfer.
+/// Further lexical scopes retain their own exit steps. An unscoped transfer
+/// with no callbacks still commits in its producing operation.
+pub(super) fn begin_flow_transfer_unwind(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     execution: &mut VmExecutionResources<'_>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<(), VmError> {
+    if !fiber.active_frame()?.scopes.is_empty() {
+        observations.extend(step_exiting_scope(program, fiber, execution)?.observations);
+        return Ok(());
+    }
     if fiber.has_deferred_work() {
         return Ok(());
     }

@@ -1871,7 +1871,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         }
                     }
                 };
-                self.close_active_scopes_for_terminator(frame);
+                // The terminator admits the receiver before it starts
+                // the source scopes' successful exit.
+                frame.exit_all_scopes();
                 body.terminate(
                     self.inventory,
                     terminator,
