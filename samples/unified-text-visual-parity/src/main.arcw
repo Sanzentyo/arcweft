@@ -25,24 +25,25 @@ pub style unified_text_panel {
 }
 
 pub view UnifiedTextPanel(dialogue: DialogueView) {
-    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = unified_text_panel) {
-        Text(dialogue.speaker)
-            .x(85.6px)
-            .y(480.8px)
+    Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {
+        Text(dialogue.character.display_name)
+            .x(28px)
+            .y(20px)
             .width(1108.8px)
             .height(28px)
             .part(unified_text_speaker)
         RichText(dialogue.content)
-            .x(85.6px)
-            .y(518.8px)
+            .x(28px)
+            .y(58px)
             .width(1108.8px)
             .height(125.6px)
             .part(unified_text_content)
-        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+        Button("", x = 0px, y = 0px, width = 1164.8px, height = 201.6px)
             .part(unified_text_action)
             .on_click { dialogue.primary_action }
     }
         .part(unified_text_panel)
+        .style(@style.unified_text_panel)
 }
 
 #[fx]
@@ -88,7 +89,7 @@ entry game @entry.unified_text_visual_parity {
     goto @flow.unified_text_visual_parity
 }
 
-flow unified_text_visual_parity(state: GameState) {
+flow unified_text_visual_parity(state: GameState) -> String {
     parity(id=@say.unified_text_visual_parity.vertical_rl, voice=auto):
         #size(42pt)[#layout(.vertical_rl, jlreq=.strict)[#font("Noto Sans JP")[天地。「人」2026ARC。山川海]]][p]
 

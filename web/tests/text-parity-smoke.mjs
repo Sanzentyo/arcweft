@@ -225,10 +225,15 @@ async function openReady(browser, baseUrl, checkpoint) {
   await page.goto(`${baseUrl}/index.html?${search}`);
   expect(await page.evaluate(() => Boolean(navigator.gpu)), "navigator.gpu is unavailable");
   await page.waitForFunction(
-    () => document.querySelector("#arcweft-canvas")?.dataset.arcweftReady === "true",
+    () => Boolean(window.__arcweftFatal) ||
+      document.querySelector("#arcweft-canvas")?.dataset.arcweftReady === "true",
     null,
     { timeout: 10_000 },
   );
+  const startupFatal = await page.evaluate(() => window.__arcweftFatal ?? null);
+  if (startupFatal) {
+    throw new Error(`Arcweft player fatal: ${startupFatal.message}`);
+  }
   await page.waitForFunction(
     () => Boolean(window.__arcweftFatal) ||
       Boolean(window.__arcweftLastFrameObservation?.text?.some((item) =>
