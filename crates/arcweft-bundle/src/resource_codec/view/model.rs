@@ -56,8 +56,6 @@ pub struct ViewProgramResource {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layout_bounds: Vec<ViewLayoutBoundsResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surfaces: Vec<ViewSurfaceResource>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_blocks: Vec<ViewTextBlockResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub action_buttons: Vec<ViewActionButtonResource>,
@@ -411,7 +409,6 @@ impl Default for ViewProgramResource {
             exported_parts: Vec::new(),
             semantic_targets: Vec::new(),
             layout_bounds: Vec::new(),
-            surfaces: Vec::new(),
             text_blocks: Vec::new(),
             action_buttons: Vec::new(),
             focus_groups: Vec::new(),
@@ -591,22 +588,6 @@ pub enum ViewTextSurface {
     RichText,
 }
 
-/// Product-authored player-rendered surface metadata.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ViewSurfaceResource {
-    pub public_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub view: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub containing_scroll_region: Option<String>,
-    #[serde(default = "default_surface_element")]
-    pub element: ViewElementKind,
-    pub bounds: ViewRuntimeSurfaceBounds,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<SourceRangeRef>,
-}
-
 /// Resolved style binding for one authored View text target.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewTextStyleBinding {
@@ -620,32 +601,6 @@ pub struct ViewTextStyleBinding {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewTextBlockBounds {
-    pub x_milli: i32,
-    pub y_milli: i32,
-    pub width_milli: u32,
-    pub height_milli: u32,
-}
-
-/// Runtime-facing surface emitted in display snapshots.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewRuntimeSurface {
-    pub public_id: String,
-    pub target: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub view: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub containing_scroll_region: Option<String>,
-    pub element: ViewElementKind,
-    pub bounds: ViewRuntimeSurfaceBounds,
-    #[serde(
-        default,
-        skip_serializing_if = "ViewRuntimeControlVisualStyle::is_default"
-    )]
-    pub style: ViewRuntimeControlVisualStyle,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewRuntimeSurfaceBounds {
     pub x_milli: i32,
     pub y_milli: i32,
     pub width_milli: u32,
@@ -1363,13 +1318,6 @@ impl ViewProgramResource {
             .collect()
     }
 
-    pub fn runtime_surfaces(&self) -> Vec<ViewRuntimeSurface> {
-        self.surfaces
-            .iter()
-            .map(ViewSurfaceResource::runtime_surface)
-            .collect()
-    }
-
     pub fn runtime_focus_groups(&self) -> Vec<ViewRuntimeFocusGroup> {
         self.focus_groups
             .iter()
@@ -1519,41 +1467,6 @@ const fn is_text_selection_disabled(policy: &ViewTextSelectionPolicy) -> bool {
     matches!(policy, ViewTextSelectionPolicy::Disabled)
 }
 
-impl ViewSurfaceResource {
-    pub fn new(
-        public_id: impl Into<String>,
-        view: Option<String>,
-        containing_scroll_region: Option<String>,
-        element: ViewElementKind,
-        bounds: ViewRuntimeSurfaceBounds,
-    ) -> Self {
-        Self {
-            public_id: public_id.into(),
-            view,
-            containing_scroll_region,
-            element,
-            bounds,
-            source: None,
-        }
-    }
-
-    pub fn runtime_surface(&self) -> ViewRuntimeSurface {
-        ViewRuntimeSurface {
-            public_id: self.public_id.clone(),
-            target: self.public_id.clone(),
-            view: self.view.clone(),
-            containing_scroll_region: self.containing_scroll_region.clone(),
-            element: self.element,
-            bounds: self.bounds,
-            style: ViewRuntimeControlVisualStyle::default(),
-        }
-    }
-
-    pub const fn is_valid(&self) -> bool {
-        self.bounds.is_valid()
-    }
-}
-
 impl ViewScrollOverflowPolicy {
     pub const fn is_default(&self) -> bool {
         matches!(self, Self::Auto)
@@ -1666,15 +1579,6 @@ impl ViewLogicalRect {
 
     pub const fn runtime_button_bounds(self) -> ViewRuntimeButtonBounds {
         ViewRuntimeButtonBounds::new(
-            self.x_milli,
-            self.y_milli,
-            self.width_milli,
-            self.height_milli,
-        )
-    }
-
-    pub const fn runtime_surface_bounds(self) -> ViewRuntimeSurfaceBounds {
-        ViewRuntimeSurfaceBounds::new(
             self.x_milli,
             self.y_milli,
             self.width_milli,
@@ -1809,34 +1713,6 @@ impl ViewTextBlockBounds {
     pub const fn is_valid(self) -> bool {
         self.width_milli > 0 && self.height_milli > 0
     }
-}
-
-impl ViewRuntimeSurfaceBounds {
-    pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
-        Self {
-            x_milli,
-            y_milli,
-            width_milli,
-            height_milli,
-        }
-    }
-
-    pub const fn from_px(x: i32, y: i32, width: u32, height: u32) -> Self {
-        Self::new(
-            x.saturating_mul(1_000),
-            y.saturating_mul(1_000),
-            width.saturating_mul(1_000),
-            height.saturating_mul(1_000),
-        )
-    }
-
-    pub const fn is_valid(self) -> bool {
-        self.width_milli > 0 && self.height_milli > 0
-    }
-}
-
-const fn default_surface_element() -> ViewElementKind {
-    ViewElementKind::Panel
 }
 
 fn u32_to_i32_saturating(value: u32) -> i32 {

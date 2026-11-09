@@ -226,7 +226,6 @@ impl BundleSession {
                         images: &next_runtime.image_objects,
                         text_inputs: &next_runtime.text_inputs,
                         action_buttons: &next_runtime.action_buttons,
-                        surfaces: &next_runtime.surfaces,
                         focus_groups: &next_runtime.focus_groups,
                         focus_navigation: &next_runtime.focus_navigation,
                     },

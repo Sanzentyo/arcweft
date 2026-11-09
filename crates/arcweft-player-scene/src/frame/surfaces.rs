@@ -7,8 +7,8 @@ use super::{
 };
 use arcweft_bundle::resource_codec::view::{
     ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlFilterList,
-    ViewRuntimeControlRadii, ViewRuntimeControlVisualStyle, ViewRuntimeNodeStyle,
-    ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
+    ViewRuntimeControlRadii, ViewRuntimeControlVisualStyle, ViewRuntimeGeometryOwner,
+    ViewRuntimeNodeStyle, ViewRuntimeShadow, ViewRuntimeShadowKind,
 };
 use arcweft_interaction_model::presentation::ImageObjectTransform;
 use arcweft_layout::{ContentRect, LayoutRect as FitLayoutRect};
@@ -30,7 +30,8 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewFrame, BundleViewMountOutput, BundleViewPaintItem, BundleViewTextOrigin,
     BundleViewTextOutputIndex,
 };
-use arcweft_view::geometry::ViewGeometryConsumer;
+use arcweft_view::geometry::{ViewFinalGeometry, ViewGeometryConsumer};
+use arcweft_view::style::ViewStyleNodeKey;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy)]
@@ -44,14 +45,12 @@ struct PreparedMountedViewImage {
 
 pub(super) fn push_runtime_view_scene(
     frame: &mut PreparedFrame,
-    surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
     text: &PreparedViewText,
     styles: &ResolvedViewStyleFrame,
     geometry: &ViewCommittedGeometryFrame,
     content: Option<ContentRect>,
 ) -> Result<(), PlayerFrameError> {
-    let mut consumed_surfaces = BTreeSet::new();
     let mut available_images = core::mem::take(&mut frame.images);
     for mount in view
         .mounts
@@ -68,9 +67,7 @@ pub(super) fn push_runtime_view_scene(
             &mut resources,
             &mut available_images,
             &mut prepared_images,
-            &mut consumed_surfaces,
             &mut active_mounts,
-            surfaces,
             view,
             text,
             styles,
@@ -83,18 +80,6 @@ pub(super) fn push_runtime_view_scene(
         }
     }
     frame.images = available_images;
-    if let Some(surface_scene) = runtime_surface_scene(
-        frame.viewport.logical_width,
-        frame.viewport.logical_height,
-        surfaces
-            .iter()
-            .filter(|surface| !consumed_surfaces.contains(&surface.public_id)),
-        styles,
-        geometry,
-        content,
-    )? {
-        frame.push_view_scene(surface_scene);
-    }
     Ok(())
 }
 
@@ -107,9 +92,7 @@ fn push_mount_paint(
     resources: &mut PreparedViewSceneResources,
     available_images: &mut Vec<RenderImage>,
     prepared_images: &mut BTreeMap<String, PreparedMountedViewImage>,
-    consumed_surfaces: &mut BTreeSet<String>,
     active_mounts: &mut BTreeSet<u64>,
-    surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
     text: &PreparedViewText,
     styles: &ResolvedViewStyleFrame,
@@ -122,19 +105,21 @@ fn push_mount_paint(
     }
     for item in &mount.paint {
         match item {
-            BundleViewPaintItem::Element { target } => {
-                let scoped = mount.scoped_id(target);
-                if let Some(surface) = surfaces.iter().find(|surface| surface.target == scoped)
-                    && push_surface(
-                        output,
-                        surface,
-                        styles.control(&scoped).or_else(|| styles.part(&scoped)),
-                        geometry,
-                        content,
-                    )?
-                    .is_some()
-                {
-                    consumed_surfaces.insert(surface.public_id.clone());
+            BundleViewPaintItem::Surface { node } => {
+                let key = node.style_node_key(mount.mount);
+                let style = styles
+                    .node(&key)
+                    .filter(|style| {
+                        matches!(
+                            style.physical().owner(),
+                            ViewRuntimeGeometryOwner::Element(element) if element.paints_surface()
+                        )
+                    })
+                    .ok_or_else(|| PlayerFrameError::InvalidSurfacePaintNode {
+                        node: key.clone(),
+                    })?;
+                if let Some(committed) = geometry.final_geometry(&key) {
+                    push_surface(output, &key, committed, style.visual(), content)?;
                 }
             }
             BundleViewPaintItem::Text {
@@ -166,9 +151,7 @@ fn push_mount_paint(
                         resources,
                         available_images,
                         prepared_images,
-                        consumed_surfaces,
                         active_mounts,
-                        surfaces,
                         view,
                         text,
                         styles,
@@ -203,10 +186,7 @@ fn push_mount_text(
         return Err(missing());
     };
     let scoped = mount.scoped_id(&target.public_id);
-    let resolved_visual = styles
-        .text(&scoped)
-        .or_else(|| styles.part(&scoped))
-        .map(ViewRuntimeNodeStyle::visual);
+    let resolved_visual = styles.text(&scoped).map(ViewRuntimeNodeStyle::visual);
     let effects = compositing_effects_from_style(resolved_visual.unwrap_or(&target.style))?;
     push_text(output, prepared, effects)?;
     Ok(())
@@ -287,61 +267,35 @@ fn push_image(
     Ok(())
 }
 
-fn runtime_surface_scene<'a>(
-    viewport_width: f32,
-    viewport_height: f32,
-    surfaces: impl Iterator<Item = &'a ViewRuntimeSurface>,
-    styles: &ResolvedViewStyleFrame,
-    geometry: &ViewCommittedGeometryFrame,
-    content: Option<ContentRect>,
-) -> Result<Option<PreparedViewScene>, PlayerFrameError> {
-    let mut scene = ViewScene::new(viewport_width, viewport_height);
-    let mut ordered = surfaces.collect::<Vec<_>>();
-    ordered.sort_by(|left, right| {
-        surface_depth_milli(left, resolved_surface_style(styles, left))
-            .cmp(&surface_depth_milli(
-                right,
-                resolved_surface_style(styles, right),
-            ))
-            .then_with(|| left.public_id.cmp(&right.public_id))
-    });
-    for surface in ordered {
-        push_surface(
-            &mut scene,
-            surface,
-            resolved_surface_style(styles, surface),
-            geometry,
-            content,
-        )?;
-    }
-    Ok((!scene.paint_nodes().is_empty()).then(|| PreparedViewScene::new(scene)))
-}
-
 fn push_surface(
     scene: &mut ViewScene,
-    surface: &ViewRuntimeSurface,
-    style: Option<&ViewRuntimeNodeStyle>,
-    geometry: &ViewCommittedGeometryFrame,
+    node: &ViewStyleNodeKey,
+    geometry: &ViewFinalGeometry,
+    visual: &ViewRuntimeControlVisualStyle,
     content: Option<ContentRect>,
-) -> Result<Option<()>, PlayerFrameError> {
-    let target =
-        ViewGeometryTargetKey::new(ViewGeometryProductKind::Surface, surface.target.clone());
-    let Some(bounds) = geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Layout)?
+) -> Result<(), PlayerFrameError> {
+    let Some(bounds) = ViewCommittedGeometryFrame::node_consumer_hit_rect(
+        node,
+        geometry,
+        ViewGeometryConsumer::Layout,
+    )?
     else {
-        return Ok(None);
+        return Ok(());
     };
-    let Some(visible_bounds) =
-        geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Capture)?
+    let Some(visible_bounds) = ViewCommittedGeometryFrame::node_consumer_hit_rect(
+        node,
+        geometry,
+        ViewGeometryConsumer::Capture,
+    )?
     else {
-        return Ok(None);
+        return Ok(());
     };
     let bounds = map_rect(bounds, content);
     let visible_bounds = map_rect(visible_bounds, content);
     if bounds.width <= 0.0 || bounds.height <= 0.0 {
-        return Ok(None);
+        return Ok(());
     }
     let clip = (visible_bounds != bounds).then_some(visible_bounds);
-    let visual = style.map_or(&surface.style, |style| style.visual());
     let effects = compositing_effects_from_style(visual)?;
     let direct = surface_paint_range(scene, bounds, visual)?.map(|range| direct(range, clip));
     match (effects.is_identity(), direct) {
@@ -352,9 +306,30 @@ fn push_surface(
         (false, None) => scene.push_paint_node(ViewPaintNode::Group(ViewCompositingGroup::new(
             bounds, effects,
         ))),
-        (true, None) => return Ok(None),
+        (true, None) => {}
     }
-    Ok(Some(()))
+    Ok(())
+}
+
+pub(super) fn mount_surface_avoidance(
+    mount: &BundleViewMountOutput,
+    geometry: &ViewCommittedGeometryFrame,
+) -> Result<Option<HitRect>, PlayerFrameError> {
+    let mut bounds: Option<HitRect> = None;
+    for node in mount.surface_nodes() {
+        let key = node.style_node_key(mount.mount);
+        let Some(geometry) = geometry.final_geometry(&key) else {
+            continue;
+        };
+        if let Some(rect) = ViewCommittedGeometryFrame::node_consumer_hit_rect(
+            &key,
+            geometry,
+            ViewGeometryConsumer::Avoidance,
+        )? {
+            bounds = Some(bounds.map_or(rect, |current| super::union_hit_rects(current, rect)));
+        }
+    }
+    Ok(bounds)
 }
 
 fn push_text(
@@ -581,23 +556,6 @@ fn view_corner_radius(
     ))
 }
 
-fn surface_depth_milli(surface: &ViewRuntimeSurface, style: Option<&ViewRuntimeNodeStyle>) -> i32 {
-    style
-        .map_or(&surface.style, |style| style.visual())
-        .depth_milli
-        .unwrap_or_default()
-}
-
-fn resolved_surface_style<'a>(
-    styles: &'a ResolvedViewStyleFrame,
-    surface: &ViewRuntimeSurface,
-) -> Option<&'a ViewRuntimeNodeStyle> {
-    styles
-        .control(&surface.target)
-        .or_else(|| styles.part(&surface.target))
-        .or_else(|| styles.part(&surface.public_id))
-}
-
 fn direct(range: ViewPrimitiveRange, clip: Option<HitRect>) -> ViewPaintNode {
     ViewPaintNode::Direct(ViewSceneContext {
         transform: ViewAffine2D::IDENTITY,
@@ -816,7 +774,6 @@ mod tests {
         let mut resources = PreparedViewSceneResources::default();
         let mut available_images = Vec::new();
         let mut prepared_images = BTreeMap::new();
-        let mut consumed_surfaces = BTreeSet::new();
         let mut active_mounts = BTreeSet::new();
         let styles = ResolvedViewStyleFrame::default();
         let geometry = ViewCommittedGeometryFrame::empty_for_test();
@@ -826,9 +783,7 @@ mod tests {
             &mut resources,
             &mut available_images,
             &mut prepared_images,
-            &mut consumed_surfaces,
             &mut active_mounts,
-            &[],
             &view,
             &text,
             &styles,

@@ -297,6 +297,11 @@ impl ViewElementKind {
         self.layout_kind().is_some()
     }
 
+    /// Whether the element paints a surface from its own committed box and Style.
+    pub const fn paints_surface(self) -> bool {
+        matches!(self, Self::Panel | Self::Box)
+    }
+
     /// Default executable physical flow owned by this built-in element.
     pub const fn default_physical_flow(self) -> Option<ViewPhysicalFlow> {
         match self {

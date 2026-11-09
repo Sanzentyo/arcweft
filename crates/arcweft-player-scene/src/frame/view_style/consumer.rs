@@ -1,11 +1,10 @@
 //! Runtime consumer support and lossless computed-Style projection.
 
 use super::super::PlayerFrameError;
-use super::super::ViewCommittedGeometryFrame;
 use super::{NodeBinding, ResolvedViewStyleFrame, StyleTargetKind};
 use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError,
-    ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewRuntimeTextControl,
 };
 use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
@@ -14,22 +13,18 @@ use arcweft_runtime_driver::view_runtime::{
 };
 use arcweft_view::ViewElementKind;
 use arcweft_view::style::{ComputedViewStyle, ViewPropertyKind, ViewStyleContributionSource};
-use std::sync::Arc;
 
 /// Presentation resources with the current live Style snapshot applied.
 pub(in crate::frame) struct StyledViewResources {
     pub(in crate::frame) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(in crate::frame) action_buttons: Vec<ViewRuntimeActionButton>,
-    pub(in crate::frame) surfaces: Vec<ViewRuntimeSurface>,
     pub(in crate::frame) images: Vec<PresentationImage>,
-    pub(in crate::frame) geometry: Arc<ViewCommittedGeometryFrame>,
 }
 
 impl ResolvedViewStyleFrame {
     pub(in crate::frame) fn apply_to_presentation(
         &self,
         presentation: &BundlePresentationSnapshot,
-        geometry: Arc<ViewCommittedGeometryFrame>,
     ) -> StyledViewResources {
         StyledViewResources {
             text_inputs: presentation
@@ -54,20 +49,6 @@ impl ResolvedViewStyleFrame {
                     button
                 })
                 .collect(),
-            surfaces: presentation
-                .surfaces
-                .iter()
-                .cloned()
-                .map(|mut surface| {
-                    if let Some(style) = self
-                        .control(&surface.target)
-                        .or_else(|| self.part(&surface.public_id))
-                    {
-                        surface.style = style.visual().clone();
-                    }
-                    surface
-                })
-                .collect(),
             images: presentation
                 .images
                 .iter()
@@ -84,7 +65,6 @@ impl ResolvedViewStyleFrame {
                     image
                 })
                 .collect(),
-            geometry,
         }
     }
 }
@@ -131,18 +111,6 @@ pub(super) fn validate_supported_properties(
     let consumer = match &node.kind {
         BundleViewStyleNodeKind::Element { element, target } => {
             let scoped_target = target.as_deref().map(|target| mount.scoped_id(target));
-            let scoped_part = node
-                .part
-                .as_ref()
-                .map(|part| mount.scoped_id(part.as_public_id().as_str()));
-            let has_surface = presentation.surfaces.iter().any(|surface| {
-                scoped_target
-                    .as_deref()
-                    .is_some_and(|target| surface.target == target)
-                    || scoped_part
-                        .as_deref()
-                        .is_some_and(|part| surface.public_id == part || surface.target == part)
-            });
             let has_control = scoped_target.as_deref().is_some_and(|target| {
                 presentation
                     .text_inputs
@@ -162,9 +130,7 @@ pub(super) fn validate_supported_properties(
                 {
                     StyleConsumer::Control
                 }
-                ViewElementKind::Panel | ViewElementKind::Box if has_surface => {
-                    StyleConsumer::Surface(*element)
-                }
+                element if element.paints_surface() => StyleConsumer::Surface(*element),
                 element => StyleConsumer::Structural(*element),
             }
         }

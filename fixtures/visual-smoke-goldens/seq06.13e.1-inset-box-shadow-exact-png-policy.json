@@ -10,10 +10,10 @@
     "must_use": [
       "typed native Style sheet and selector resolution",
       "ViewStyleResource typed Panel part style rules",
-      "ViewProgramResource::runtime_surfaces_with_style",
-      "BundlePresentationSnapshot::surfaces",
+      "retained Panel nodes and their paint slots in BundleViewMountOutput",
+      "committed border box and visible geometry of each retained node",
       "ViewRuntimeControlVisualStyle fill/radius/shadows",
-      "ViewRoundedRect primitive from player-owned surface resource",
+      "ViewSurfacePaint from the retained Panel box",
       "computed native Style box-shadow value",
       "ViewCompositingEffects::box_shadows",
       "PlayerFramePlanner::prepare",
@@ -32,7 +32,7 @@
       "renderer/lowering/shader redesign without pinned defect evidence"
     ],
     "smoke_fixture_decision": "keep the existing ignored GPU smoke as a compositor execution regression; exact PNG native and Web fixtures are separate because promotion requires fingerprints, candidate PNGs, imq JSON, command logs, and a review decision packet",
-    "web_capture_decision": "Playwright launches the pinned browser, but pixels come from the wasm-exported Arcweft player renderer reading back an Arcweft-owned rgba8unorm texture. The wasm fixture resolves typed Panel part style rules through ViewProgramResource::runtime_surfaces_with_style, attaches the fixture surfaces to BundlePresentationSnapshot::surfaces, and lets PlayerFramePlanner lower them into the normal player PreparedFrame before SharedRenderer::render_to_view. The browser test script only writes PNG/JSON artifacts. It does not call Playwright screenshot APIs or use browser DOM styling as evidence."
+    "web_capture_decision": "Playwright launches the pinned browser. The wasm-exported Arcweft player renderer reads pixels from an Arcweft-owned rgba8unorm texture. PlayerFramePlanner resolves typed Panel part Style rules and prepares the painted boxes from retained node geometry. SharedRenderer::render_to_view renders that PreparedFrame. The browser test script writes PNG and JSON artifacts from the readback."
   },
   "fixtures": [
     {

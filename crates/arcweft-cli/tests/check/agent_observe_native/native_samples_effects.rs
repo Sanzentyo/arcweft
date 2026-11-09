@@ -2579,7 +2579,7 @@ pub view ScrollPair(reverse: bool) {
     Column(spacing = 12) {
         for item in inventory(reverse) key = item {
             Scroll(target = @scroll:.item, width = 420px, height = 74px) {
-                Column(spacing = 14) {
+                Column(spacing = 14, part = item_row) {
                     Text(item)
                     Button("Activate", target = @button:.activate, enabled = item == "Alpha",
                         width = 420px, height = 48px)
@@ -2602,6 +2602,61 @@ flow keyed_reverse() -> String {
     return event.value
 }
 "#;
+
+#[test]
+fn native_retained_panel_and_repeated_box_paint_their_clipped_style_boxes() {
+    let path = temp_authored_native_cli_fixture(
+        "agent-retained-surfaces",
+        r#"
+pub style cards {
+    Panel { background-color = rgba(255, 0, 0, 255) }
+    .item_card { background-color = rgba(0, 255, 0, 255) }
+}
+pub view Cards() {
+    Column {
+        Panel(x = 24px, y = 24px, width = 80px, height = 40px)
+        Scroll(x = 24px, y = 100px, width = 80px, height = 50px) {
+            Column {
+                for item in ["first", "second"] key = item {
+                    Box(width = 80px, height = 36px, part = item_card)
+                }
+            }
+        }
+    }.style(@style.cards)
+}
+flow main() -> String {
+    let cards = mount(Cards());
+    wait(1s)
+    return "done"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        "entry.main",
+    );
+    let dir = temp_dir("agent-retained-surfaces");
+    let raw_path = dir.join("surfaces.rgba");
+    let report = visual_smoke_capture(&path, &raw_path, "raw-rgba", Some("color"), &[], &[]);
+    let image = visual_smoke_image(&report);
+    assert_eq!(image["renderer"], "native");
+    assert_eq!(image["scope"]["kind"], "viewport");
+    assert_eq!(image["width"], 1280);
+    assert_eq!(image["height"], 720);
+    assert_visual_smoke_raw_len_matches_image(&raw_path, image);
+    let rgba = fs::read(&raw_path).unwrap();
+    let pixel = |x: usize, y: usize| &rgba[(y * 1280 + x) * 4..(y * 1280 + x) * 4 + 4];
+    assert_eq!(pixel(30, 30), [255, 0, 0, 255]);
+    assert_eq!(pixel(30, 110), [0, 255, 0, 255]);
+    assert_eq!(pixel(30, 143), [0, 255, 0, 255]);
+    assert_eq!(pixel(30, 151), pixel(110, 151));
+    assert_ne!(pixel(30, 151), [0, 255, 0, 255]);
+    let [scroll] = report["scroll_regions"].as_array().unwrap().as_slice() else {
+        panic!("expected one retained Scroll region");
+    };
+    assert_eq!(
+        scroll["parts"]["content"]["max_offset"],
+        serde_json::json!([0.0, 22.0])
+    );
+}
 
 fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
     let released_view = agent_observe_json_for_path(

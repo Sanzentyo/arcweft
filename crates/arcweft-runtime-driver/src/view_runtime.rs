@@ -317,9 +317,9 @@ pub struct BundleViewFxApplication {
 
 /// One per-mount View paint operation in exact evaluator order.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BundleViewPaintItem {
-    Element { target: String },
+    Surface { node: BundleViewStyleNodeId },
     Text { output: BundleViewTextOutputIndex },
     Image { target: String },
     Mount { mount: ViewMountId },
@@ -475,6 +475,13 @@ pub struct BundleViewExportedPartEvidence {
 }
 
 impl<F> BundleViewMountOutput<F> {
+    /// Retained surface producers in evaluator order.
+    pub fn surface_nodes(&self) -> impl Iterator<Item = &BundleViewStyleNode> {
+        self.style_nodes
+            .iter()
+            .filter(|node| node.kind.paints_surface())
+    }
+
     /// The live activation lease for this exact retained node.
     pub fn activation_binding(
         &self,

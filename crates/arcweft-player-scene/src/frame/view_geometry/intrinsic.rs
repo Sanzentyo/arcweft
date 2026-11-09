@@ -1,7 +1,7 @@
 //! Typed intrinsic-product adapters.
 
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeActionButton, ViewRuntimeGeometryOwner, ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewRuntimeActionButton, ViewRuntimeGeometryOwner, ViewRuntimeTextControl,
 };
 use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_runtime_driver::view_runtime::BundleViewTextTarget;
@@ -16,7 +16,6 @@ pub(crate) enum ViewIntrinsicProductRef<'a> {
     EmptyContainer,
     ActionButton(&'a ViewRuntimeActionButton),
     TextControl(&'a ViewRuntimeTextControl),
-    Surface(&'a ViewRuntimeSurface),
     TextOutput(&'a BundleViewTextTarget),
     Image(&'a PresentationImage),
 }
@@ -82,17 +81,6 @@ impl ViewIntrinsicGeometryProvider for PresentationIntrinsicGeometryProvider {
                     &control.bounds.y_milli.to_le_bytes(),
                     &control.bounds.width_milli.to_le_bytes(),
                     &control.bounds.height_milli.to_le_bytes(),
-                ]),
-            ),
-            ViewIntrinsicProductRef::Surface(surface) => (
-                ViewGeometrySize::new(surface.bounds.width_milli, surface.bounds.height_milli),
-                revision([
-                    surface.public_id.as_bytes(),
-                    surface.target.as_bytes(),
-                    &surface.bounds.x_milli.to_le_bytes(),
-                    &surface.bounds.y_milli.to_le_bytes(),
-                    &surface.bounds.width_milli.to_le_bytes(),
-                    &surface.bounds.height_milli.to_le_bytes(),
                 ]),
             ),
             ViewIntrinsicProductRef::TextOutput(target) => {

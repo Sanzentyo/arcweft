@@ -20,7 +20,6 @@ pub(crate) enum ViewGeometryProductKind {
     TextArea,
     SecureField,
     ScrollRegion,
-    Surface,
     TextOutput,
     Image,
 }

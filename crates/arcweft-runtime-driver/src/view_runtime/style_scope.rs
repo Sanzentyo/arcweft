@@ -92,6 +92,10 @@ impl BundleViewStyleNode {
 }
 
 impl BundleViewStyleNodeKind {
+    pub const fn paints_surface(&self) -> bool {
+        matches!(self, Self::Element { element, .. } if element.paints_surface())
+    }
+
     /// The retained producer is the authority for selector classification.
     pub const fn style_target_kind(&self) -> arcweft_view::ViewStyleTargetKind {
         use arcweft_view::ViewStyleTargetKind;

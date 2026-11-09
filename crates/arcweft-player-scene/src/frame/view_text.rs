@@ -264,7 +264,6 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             instance: dialogue.entry.instance().get(),
             stage: dialogue.entry.stage_index().get(),
             bounds: dialogue_surface_bounds(
-                self.request.presentation,
                 root_output,
                 self.request.geometry,
                 self.request.content,
@@ -290,11 +289,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         dialogue: Option<DialogueTextContext<'request>>,
     ) -> Result<(), PlayerFrameError> {
         let scoped_id = mount.scoped_id(&target.public_id);
-        let resolved = self
-            .request
-            .styles
-            .text(&scoped_id)
-            .or_else(|| self.request.styles.part(&scoped_id));
+        let resolved = self.request.styles.text(&scoped_id);
         let geometry_target =
             ViewGeometryTargetKey::new(ViewGeometryProductKind::TextOutput, scoped_id.clone());
         let Some(bounds) = self
@@ -406,13 +401,8 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         };
         let dialogue_text = dialogue.zip(dialogue_role);
         let object_bounds = if dialogue_text.is_some() {
-            dialogue_surface_bounds(
-                self.request.presentation,
-                root_output,
-                self.request.geometry,
-                self.request.content,
-            )?
-            .unwrap_or(bounds)
+            dialogue_surface_bounds(root_output, self.request.geometry, self.request.content)?
+                .unwrap_or(bounds)
         } else {
             bounds
         };
@@ -649,28 +639,12 @@ fn union(left: HitRect, right: HitRect) -> HitRect {
 }
 
 fn dialogue_surface_bounds(
-    presentation: &BundlePresentationSnapshot,
     mount: &BundleViewMountOutput,
     geometry: &ViewCommittedGeometryFrame,
     content: Option<ContentRect>,
 ) -> Result<Option<HitRect>, PlayerFrameError> {
-    let owner = mount.scoped_id(mount.view.as_str());
-    let mut result = None;
-    for surface in presentation
-        .surfaces
-        .iter()
-        .filter(|surface| surface.view.as_deref() == Some(owner.as_str()))
-    {
-        let target =
-            ViewGeometryTargetKey::new(ViewGeometryProductKind::Surface, surface.target.clone());
-        if let Some(bounds) =
-            geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Avoidance)?
-        {
-            let bounds = map_rect(bounds, content);
-            result = Some(result.map_or(bounds, |current| union(current, bounds)));
-        }
-    }
-    Ok(result)
+    Ok(super::surfaces::mount_surface_avoidance(mount, geometry)?
+        .map(|bounds| map_rect(bounds, content)))
 }
 
 fn visible_text(value: &BundleViewTextValue) -> Result<&str, FramePlanError> {

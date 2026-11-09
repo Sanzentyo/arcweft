@@ -529,9 +529,6 @@ fn bind_element<'a>(
         ViewElementKind::TextField => Some(ViewGeometryProductKind::TextField),
         ViewElementKind::TextArea => Some(ViewGeometryProductKind::TextArea),
         ViewElementKind::SecureField => Some(ViewGeometryProductKind::SecureField),
-        ViewElementKind::Panel | ViewElementKind::Box if authored_target.is_some() => {
-            Some(ViewGeometryProductKind::Surface)
-        }
         ViewElementKind::Panel
         | ViewElementKind::Box
         | ViewElementKind::Scroll
@@ -603,24 +600,6 @@ fn bind_element<'a>(
                 .collect::<Vec<_>>();
             Ok((
                 ViewIntrinsicProductRef::TextControl(exactly_one(
-                    node,
-                    owner,
-                    expected,
-                    key.clone(),
-                    &records,
-                )?),
-                vec![key],
-            ))
-        }
-        ViewGeometryProductKind::Surface => {
-            let records = input
-                .presentation
-                .surfaces
-                .iter()
-                .filter(|record| record.target == id)
-                .collect::<Vec<_>>();
-            Ok((
-                ViewIntrinsicProductRef::Surface(exactly_one(
                     node,
                     owner,
                     expected,
@@ -720,14 +699,6 @@ fn records_for_id<'a>(
                 };
                 (kind, record.public_id.as_str())
             }),
-    );
-    records.extend(
-        input
-            .presentation
-            .surfaces
-            .iter()
-            .filter(|record| record.target == id || record.public_id == id)
-            .map(|record| (ViewGeometryProductKind::Surface, record.public_id.as_str())),
     );
     records.extend(
         input

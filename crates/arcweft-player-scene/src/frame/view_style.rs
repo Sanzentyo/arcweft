@@ -30,7 +30,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use axis_seed::{inherited_axes, validate_mount_seed_shape};
-pub(super) use consumer::StyledViewResources;
 use consumer::validate_supported_properties;
 
 #[cfg(test)]
@@ -41,7 +40,6 @@ enum StyleTargetKind {
     Control,
     Text,
     Image,
-    Part,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -140,10 +138,6 @@ impl ResolvedViewStyleFrame {
 
     pub(super) fn image(&self, id: &str) -> Option<&ViewRuntimeNodeStyle> {
         self.target(StyleTargetKind::Image, id)
-    }
-
-    pub(super) fn part(&self, id: &str) -> Option<&ViewRuntimeNodeStyle> {
-        self.target(StyleTargetKind::Part, id)
     }
 
     fn target(&self, kind: StyleTargetKind, id: &str) -> Option<&ViewRuntimeNodeStyle> {
@@ -605,11 +599,7 @@ fn node_bindings(
     mount: &BundleViewMountOutput,
     node: &BundleViewStyleNode,
 ) -> Result<Vec<NodeBinding>, PlayerFrameError> {
-    let part_key = node.part.as_ref().map(|part| StyleTargetKey {
-        kind: StyleTargetKind::Part,
-        id: mount.scoped_id(part.as_public_id().as_str()),
-    });
-    let mut bindings = match &node.kind {
+    let bindings = match &node.kind {
         BundleViewStyleNodeKind::Element { target, .. } => target
             .as_deref()
             .map(|target| {
@@ -658,18 +648,6 @@ fn node_bindings(
         | BundleViewStyleNodeKind::Custom { .. }
         | BundleViewStyleNodeKind::CallView { .. } => Vec::new(),
     };
-    if let Some(part_key) = part_key {
-        if let Some(binding) = bindings.first_mut() {
-            binding.keys.push(part_key);
-        } else {
-            bindings.push(binding_for_target(
-                presentation,
-                input,
-                part_key.id.clone(),
-                StyleTargetKind::Part,
-            )?);
-        }
-    }
     Ok(bindings)
 }
 

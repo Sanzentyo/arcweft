@@ -1,8 +1,4 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_bundle::resource_codec::view::{
-    ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
-    ViewProgramInstruction, ViewProgramResource, ViewRuntimeSurfaceBounds, ViewSurfaceResource,
-};
 use arcweft_id::presentation::PresentationHandleId;
 use arcweft_id::view::ViewId;
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
@@ -17,17 +13,17 @@ use arcweft_render_wgpu::view_effects::ViewTextureExtent;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
-    BundleViewStyleNode, BundleViewStyleNodeKind,
+    BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind,
 };
-use arcweft_view::ViewMountId;
 use arcweft_view::style::{
     ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewColorValue, ViewInheritedBoxAxes,
-    ViewLengthMilli, ViewPropertyKind, ViewShadow, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleDeclaration,
-    ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
+    ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewShadow, ViewSpecifiedValue,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
+    ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
     ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
-use arcweft_view::{ViewPartLocalName, ViewPartName, ViewProgramId};
+use arcweft_view::{ViewElementKind, ViewMountId};
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
 use wasm_bindgen::prelude::*;
@@ -216,7 +212,15 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
     )
     .map_err(|error| format!("prepare seq06.13e.1 browser player frame: {error}"))?;
     let stats = ExactPlayerCaptureStats {
-        runtime_surfaces: u32::try_from(presentation.surfaces.len()).unwrap_or(u32::MAX),
+        runtime_surfaces: u32::try_from(
+            presentation
+                .view
+                .mounts
+                .iter()
+                .map(|mount| mount.surface_nodes().count())
+                .sum::<usize>(),
+        )
+        .unwrap_or(u32::MAX),
         view_scenes: u32::try_from(prepared.frame.view_scenes().len()).unwrap_or(u32::MAX),
         primitives: u32::try_from(
             prepared
@@ -243,21 +247,11 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
 fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram), String> {
     const PARTS: [&str; 2] = ["rounded_inset_shadow_card", "mixed_outer_inset_shadow_card"];
     let style_program = exact_style_program();
-    let view_program = exact_view_program();
     let mount_id = ViewMountId::from_raw(1);
     let handle = PresentationHandleId::try_new("handle.seq06_13e1_exact")
         .map_err(|error| format!("construct exact View handle: {error}"))?;
-    let mut surfaces = view_program.runtime_surfaces();
-    for surface in &mut surfaces {
-        surface.public_id = format!("view_mount_{}.{}", mount_id.get(), surface.public_id);
-        surface.target = format!("view_mount_{}.{}", mount_id.get(), surface.target);
-        surface.view = surface
-            .view
-            .take()
-            .map(|view| format!("view_mount_{}.{}", mount_id.get(), view));
-    }
     let scope = ViewStyleScopeId::new(1);
-    let nodes = PARTS
+    let nodes: Vec<_> = PARTS
         .iter()
         .enumerate()
         .map(|(index, part)| BundleViewStyleNode {
@@ -294,10 +288,13 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
         active_images: Vec::new(),
         action_buttons: Vec::new(),
         text_inputs: Vec::new(),
-        paint: PARTS
+        paint: nodes
             .iter()
-            .map(|part| BundleViewPaintItem::Element {
-                target: (*part).to_owned(),
+            .map(|node| BundleViewPaintItem::Surface {
+                node: BundleViewStyleNodeId {
+                    path: node.path.clone(),
+                    instruction: node.instruction,
+                },
             })
             .collect(),
         text: Vec::new(),
@@ -307,7 +304,6 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
     };
     Ok((
         BundlePresentationSnapshot {
-            surfaces,
             view: BundleViewFrame {
                 mounts: vec![mount],
                 diagnostics: Vec::new(),
@@ -318,59 +314,6 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
     ))
 }
 
-fn exact_view_program() -> ViewProgramResource {
-    ViewProgramResource {
-        program_id: ViewProgramId::try_new("view.seq06_13e1_inset_box_shadow_exact")
-            .expect("fixture View program id is valid"),
-        definitions: vec![ViewDefinitionResource {
-            public_id: ViewDefinitionRef::new(
-                ViewId::try_new("view.InsetShadowExactFixture")
-                    .expect("fixture View definition id is valid"),
-            ),
-            body: ViewInstructionSpan::new(0, 4),
-            styles: vec![ViewStyleApplicationTarget::named(exact_style_sheet_id())],
-            parameters: Vec::new(),
-            construction_identity: None,
-            parameter_contract: None,
-            state_schema_hash: 0,
-        }],
-        instructions: vec![
-            panel_part("rounded_inset_shadow_card"),
-            ViewProgramInstruction::CloseElement,
-            panel_part("mixed_outer_inset_shadow_card"),
-            ViewProgramInstruction::CloseElement,
-        ],
-        surfaces: vec![
-            ViewSurfaceResource::new(
-                "rounded_inset_shadow_card",
-                Some("view.InsetShadowExactFixture".to_owned()),
-                None,
-                ViewElementKind::Panel,
-                ViewRuntimeSurfaceBounds::from_px(24, 24, 112, 72),
-            ),
-            ViewSurfaceResource::new(
-                "mixed_outer_inset_shadow_card",
-                Some("view.InsetShadowExactFixture".to_owned()),
-                None,
-                ViewElementKind::Panel,
-                ViewRuntimeSurfaceBounds::from_px(176, 40, 112, 72),
-            ),
-        ],
-        ..ViewProgramResource::default()
-    }
-}
-
-fn panel_part(public_id: &str) -> ViewProgramInstruction {
-    ViewProgramInstruction::OpenElement {
-        element: ViewElementKind::Panel,
-        target: None,
-        styles: Vec::new(),
-        part: Some(ViewPartLocalName::try_new(public_id).expect("fixture part is valid")),
-        key: None,
-        source: None,
-    }
-}
-
 fn exact_style_program() -> ViewStyleProgram {
     let source = ViewStyleSourceId::new(0);
     let sheet = ViewStyleSheet::new(
@@ -379,6 +322,7 @@ fn exact_style_program() -> ViewStyleProgram {
         vec![
             surface_rule(
                 "rounded_inset_shadow_card",
+                (24_000, 24_000),
                 [
                     decl(
                         ViewPropertyKind::BackgroundColor,
@@ -406,6 +350,7 @@ fn exact_style_program() -> ViewStyleProgram {
             ),
             surface_rule(
                 "mixed_outer_inset_shadow_card",
+                (176_000, 40_000),
                 [
                     decl(
                         ViewPropertyKind::BackgroundColor,
@@ -450,6 +395,7 @@ fn exact_style_program() -> ViewStyleProgram {
 
 fn surface_rule<const N: usize>(
     public_id: &str,
+    (left, top): (i32, i32),
     declarations: [ViewStyleDeclaration; N],
     source_order: u32,
     source: ViewStyleSourceId,
@@ -466,7 +412,22 @@ fn surface_rule<const N: usize>(
     ViewStyleRule::new(
         ViewStyleSelector::new(vec![sequence]).expect("single selector sequence is valid"),
         None,
-        declarations.into(),
+        [
+            decl(
+                ViewPropertyKind::Position,
+                ViewSpecifiedValue::Position {
+                    value: ViewPosition::Absolute,
+                },
+                source,
+            ),
+            decl(ViewPropertyKind::Left, style_length(left), source),
+            decl(ViewPropertyKind::Top, style_length(top), source),
+            decl(ViewPropertyKind::Width, style_length(112_000), source),
+            decl(ViewPropertyKind::Height, style_length(72_000), source),
+        ]
+        .into_iter()
+        .chain(declarations)
+        .collect(),
         source_order,
         source,
     )
@@ -642,7 +603,7 @@ fn observe_json(capture: &CaptureOutput) -> String {
         "BundleViewMountOutput::style_nodes executed inventory",
         "ViewStyleResolver current computed snapshot",
         "ViewRuntimeNodeStyle::try_from_computed",
-        "BundlePresentationSnapshot mount-scoped surfaces",
+        "BundlePresentationSnapshot retained surface nodes",
         "ViewRuntimeControlVisualStyle fill/radius/shadows projection",
         "PlayerFramePlanner surface lowering to ViewScene",
         "ViewRoundedRect primitive from player-owned surface resource",

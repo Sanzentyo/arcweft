@@ -64,7 +64,6 @@ impl ViewProgramResource {
                     .iter()
                     .filter_map(|item| item.source.as_ref()),
             )
-            .chain(self.surfaces.iter().filter_map(|item| item.source.as_ref()))
             .chain(
                 self.text_blocks
                     .iter()
@@ -102,10 +101,6 @@ impl ViewProgramResource {
             .filter_map(|item| item.source.as_mut())
             .for_each(&mut apply);
         self.layout_bounds
-            .iter_mut()
-            .filter_map(|item| item.source.as_mut())
-            .for_each(&mut apply);
-        self.surfaces
             .iter_mut()
             .filter_map(|item| item.source.as_mut())
             .for_each(&mut apply);

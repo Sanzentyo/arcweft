@@ -1,13 +1,8 @@
 mod support;
 
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_bundle::resource_codec::view::{
-    ViewElementKind, ViewObserveClassification, ViewTextSelectionPolicy,
-};
-use arcweft_bundle::resource_codec::{
-    ViewRuntimeControlVisualStyle, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
-    ViewTextBlockBounds,
-};
+use arcweft_bundle::resource_codec::view::{ViewObserveClassification, ViewTextSelectionPolicy};
+use arcweft_bundle::resource_codec::{ViewRuntimeControlVisualStyle, ViewTextBlockBounds};
 use arcweft_bundle::resource_codec::{ViewScrollAxis, ViewScrollOverflowPolicy, ViewScrollPolicy};
 use arcweft_character::id::CharacterId;
 use arcweft_core::plan::RuntimeLineId;
@@ -159,48 +154,6 @@ fn push_view_text(
             applications: Vec::new(),
         }],
     });
-}
-
-#[test]
-fn product_only_surface_is_not_treated_as_retained_geometry() {
-    let mut presentation = BundlePresentationSnapshot::default();
-    presentation.surfaces.push(ViewRuntimeSurface {
-        public_id: "surface.feedback.card".to_owned(),
-        target: "surface.feedback.card".to_owned(),
-        view: Some("view.FeedbackPanel".to_owned()),
-        containing_scroll_region: None,
-        element: ViewElementKind::Panel,
-        bounds: ViewRuntimeSurfaceBounds::from_px(24, 32, 112, 72),
-        style: ViewRuntimeControlVisualStyle::default(),
-    });
-    let images = BundleImageCatalog::empty();
-    let mut input = InputController::default();
-
-    let prepared = PlayerFramePlanner::prepare(
-        &mut input,
-        PlayerFrameRequest {
-            presentation: &presentation,
-            fx_definitions: empty_fx_definitions(),
-            images: &images,
-            style_program: None,
-            style_environment:
-                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
-            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-            viewport: RenderViewport {
-                logical_width: 320.0,
-                logical_height: 180.0,
-                physical_width: 320,
-                physical_height: 180,
-                scale_factor: 1.0,
-            },
-            fit: PlayerFrameFit::raw(),
-            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
-            preferences: RenderPreferences::default(),
-        },
-    )
-    .expect("frame prepares");
-
-    assert!(prepared.frame.view_scenes().is_empty());
 }
 
 fn retained_scroll_fixture() -> (BundlePresentationSnapshot, ViewStyleProgram) {

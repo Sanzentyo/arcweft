@@ -292,10 +292,16 @@ profile は px の固定小数点 thousandths を使い、pt／em は換算規�
 既存の Style/layout 規則に従う。これらの入力は新しい runtime scalar interpreter
 や別の bounds table を作らず、既存の cascade、geometry、paint、hit-test 境界を使う。
 
+`Panel` と `Box` の面は、評価済みノードの ID、確定した border box、可視範囲、
+解決済み Style から描画する。寸法を省略したときは子を含む通常のレイアウトで測る。
+キー付き反復内でもノードごとに測定し、評価順の描画スロットを保持する。
+標準台詞の面も同じ経路を使い、既定寸法は標準 Style が指定する。
+
 静的に構築するView nodeには、同じLength契約の `.x(value)`／`.y(value)`／
 `.width(value)`／`.height(value)` も適用できる。modifierは式が返すroot nodeに作用し、
 containerの子へ付け替えない。inline Style applicationは記述順に保持する。
 `.part(name)` とconstructorの `part = name` は同じprivate local partを宣言する。
+反復されたノードの `part` は同じセレクターに一致できる。描画先は各ノードの ID で区別する。
 Sourceのnameはidentifierを`.`でつないだ静的な名前で、UTF-8で255 bytes・32 segments
 を含む上限まで受理し、同じnodeへの重複指定を拒否する。
 `.style(reference)` は元のStyle宣言identityを保持した `Ref<Style>` を受け取り、
@@ -636,7 +642,7 @@ presentation frame が retained mount table の handle/path/View/mount identity 
 `EmitText` は指定された一つの text block を評価したノードに結び付ける。同じ
 text source を複数の block から参照しても、各 block の寸法・描画順・操作先は
 個別に保持する。Style・layout・paint は同じ mount 内の text output を参照する。
-restore はその参照、paint の順序、Button のノードとの対応を代入前に検証する。
+restore はその参照、面とテキストの paint 順序、Button のノードとの対応を代入前に検証する。
 
 replacement は View/general expression、正確な handler runtime 世代、Style、text と
 resource、field 単位の state migration を一つの候補にする。同じ field identity/型の

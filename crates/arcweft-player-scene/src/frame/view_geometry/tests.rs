@@ -8,10 +8,7 @@ use crate::images::BundleImageCatalog;
 use crate::input::InputController;
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{ViewObserveClassification, ViewTextSelectionPolicy};
-use arcweft_bundle::resource_codec::{
-    ViewRuntimeControlVisualStyle, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
-    ViewTextBlockBounds,
-};
+use arcweft_bundle::resource_codec::{ViewRuntimeControlVisualStyle, ViewTextBlockBounds};
 use arcweft_id::presentation::PresentationHandleId;
 use arcweft_id::view::ViewId;
 use arcweft_presentation::appearance::{PresentationEnvironment, SystemPaletteSet};
@@ -78,40 +75,6 @@ impl GeometryFixture {
                 target: Some("button.missing".to_owned()),
             },
             vec!["button.missing".to_owned()],
-        ));
-        Self {
-            presentation,
-            fx: FxDefinitions::default(),
-            images: BundleImageCatalog::empty(),
-        }
-    }
-
-    fn surface(width_milli: u32) -> Self {
-        let mount = ViewMountId::from_raw(1);
-        let target = "surface.panel";
-        let scoped = format!("view_mount_{}.{}", mount.get(), target);
-        let mut presentation = BundlePresentationSnapshot::default();
-        presentation.surfaces.push(ViewRuntimeSurface {
-            public_id: scoped.clone(),
-            target: scoped,
-            view: None,
-            containing_scroll_region: None,
-            element: ViewElementKind::Panel,
-            bounds: ViewRuntimeSurfaceBounds {
-                x_milli: 20_000,
-                y_milli: 30_000,
-                width_milli,
-                height_milli: 60_000,
-            },
-            style: ViewRuntimeControlVisualStyle::default(),
-        });
-        presentation.view.mounts.push(mount_with_node(
-            mount,
-            BundleViewStyleNodeKind::Element {
-                element: ViewElementKind::Panel,
-                target: Some(target.to_owned()),
-            },
-            vec![target.to_owned()],
         ));
         Self {
             presentation,
@@ -374,9 +337,23 @@ fn cache_candidate_stages_without_mutation_and_exact_hits_publish_one_live_entry
 }
 
 #[test]
-fn supported_surface_product_contributes_container_intrinsic_size_not_authored_position() {
-    let fixture = GeometryFixture::surface(140_000);
-    let planner = PlayerFramePlannerState::new();
+fn retained_surface_measures_its_children_in_the_same_box_as_paint() {
+    let mut fixture = GeometryFixture::row();
+    let mount = &mut fixture.presentation.view.mounts[0];
+    mount.style_nodes[0].kind = BundleViewStyleNodeKind::Element {
+        element: ViewElementKind::Panel,
+        target: Some("panel.fixture".to_owned()),
+    };
+    mount.paint.insert(
+        0,
+        BundleViewPaintItem::Surface {
+            node: BundleViewStyleNodeId {
+                path: BundleViewInstancePath::default(),
+                instruction: 0,
+            },
+        },
+    );
+    let planner = planner_with_fonts();
     let input = InputController::default();
     let node = ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 0);
 
@@ -390,8 +367,8 @@ fn supported_surface_product_contributes_container_intrinsic_size_not_authored_p
 
     assert_eq!(geometry.border_box.left_milli, 0);
     assert_eq!(geometry.border_box.top_milli, 0);
-    assert_eq!(geometry.border_box.size().width_milli, 140_000);
-    assert_eq!(geometry.border_box.size().height_milli, 60_000);
+    assert_eq!(geometry.border_box.size().width_milli, 80_000);
+    assert_eq!(geometry.border_box.size().height_milli, 30_000);
 }
 
 #[test]

@@ -2274,11 +2274,8 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             structural_path.qualify_repeated_target(target)
                         }
                     });
-                    builder.retain_node(
-                        structural_path,
-                        instruction_ordinal(cursor)?,
-                        target.as_deref(),
-                    );
+                    let instruction = instruction_ordinal(cursor)?;
+                    builder.retain_node(structural_path, instruction, target.as_deref());
                     let root = builder.is_root_node();
                     let mut local_styles = builder
                         .style_scopes
@@ -2287,7 +2284,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 parts: self.parts,
                                 owner: &mounted.owner,
                                 path: structural_path,
-                                instruction: instruction_ordinal(cursor)?,
+                                instruction,
                                 kind: BundleViewStyleNodeKind::Element {
                                     element: *element,
                                     target: target.clone(),
@@ -2302,8 +2299,13 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     builder.style_scopes.enter_element(&mut local_styles);
                     if let Some(target) = &target {
                         builder.retain_target(target);
-                        builder.paint.push(BundleViewPaintItem::Element {
-                            target: target.clone(),
+                    }
+                    if element.paints_surface() {
+                        builder.paint.push(BundleViewPaintItem::Surface {
+                            node: BundleViewStyleNodeId {
+                                path: structural_path.clone(),
+                                instruction,
+                            },
                         });
                     }
                     if element.is_action_control()
@@ -2408,9 +2410,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
                     builder.style_scopes.enter_element(&mut local_styles);
                     builder.retain_target(&local_target);
-                    builder.paint.push(BundleViewPaintItem::Element {
-                        target: local_target.clone(),
-                    });
                     builder.element_targets.push(Some(local_target));
                     cursor += 1;
                 }

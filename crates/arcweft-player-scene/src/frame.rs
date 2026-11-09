@@ -5,7 +5,7 @@ use crate::frame::view_geometry::{
     ViewGeometryPreparedFrame, ViewPaintOutsetSnapshot, ViewScrollStateSnapshot,
     prepare_view_geometry, viewport_input,
 };
-use crate::frame::view_style::{PlayerViewStyleState, ResolvedViewStyleFrame, StyledViewResources};
+use crate::frame::view_style::{PlayerViewStyleState, ResolvedViewStyleFrame};
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
@@ -171,6 +171,10 @@ pub enum PlayerFrameError {
     },
     #[error("View Style parent is missing for mount {mount} instruction {instruction}")]
     MissingStyleParent { mount: u64, instruction: u32 },
+    #[error("View surface paint refers to a non-surface node {node:?}")]
+    InvalidSurfacePaintNode {
+        node: arcweft_view::style::ViewStyleNodeKey,
+    },
     #[error("View Style parent is ambiguous for mount {mount} instruction {instruction}")]
     AmbiguousStyleParent { mount: u64, instruction: u32 },
     #[error(
@@ -240,7 +244,6 @@ pub struct PlayerEnvironmentInvalidation {
 struct ResolvedPlayerScene {
     scene: RenderScene,
     styles: ResolvedViewStyleFrame,
-    resources: StyledViewResources,
     geometry: std::sync::Arc<ViewCommittedGeometryFrame>,
     geometry_prepared: ViewGeometryPreparedFrame,
 }
@@ -425,22 +428,18 @@ fn resolve_player_scene(
         &mut intrinsic,
     )?;
     let geometry = geometry_prepared.committed().clone();
-    let resources = styles.apply_to_presentation(request.presentation, geometry.clone());
-    let text_inputs = RuntimeTextControlLowerer::lower_for_geometry(
-        input,
-        &resources.text_inputs,
-        &resources.geometry,
-    )?;
+    let resources = styles.apply_to_presentation(request.presentation);
+    let text_inputs =
+        RuntimeTextControlLowerer::lower_for_geometry(input, &resources.text_inputs, &geometry)?;
     let action_buttons = RuntimeActionButtonLowerer::lower_for_geometry(
         &resources.action_buttons,
         &text_inputs,
-        &resources.geometry,
+        &geometry,
     )?;
     let scene = RenderScene {
         content_avoidance_regions: dialogue_content_avoidance_regions(
             request.presentation,
-            &resources.surfaces,
-            &resources.geometry,
+            &geometry,
         )?,
         choices: request
             .presentation
@@ -468,7 +467,7 @@ fn resolve_player_scene(
         scroll_regions: render_scroll_regions(
             input,
             &request.presentation.view,
-            &resources.geometry,
+            &geometry,
             request.time.visual_millis(),
             request.preferences.reduce_motion,
         )?,
@@ -476,7 +475,6 @@ fn resolve_player_scene(
     Ok(ResolvedPlayerScene {
         scene,
         styles,
-        resources,
         geometry,
         geometry_prepared,
     })
@@ -484,7 +482,6 @@ fn resolve_player_scene(
 
 fn dialogue_content_avoidance_regions(
     presentation: &BundlePresentationSnapshot,
-    surfaces: &[arcweft_bundle::resource_codec::ViewRuntimeSurface],
     geometry: &ViewCommittedGeometryFrame,
 ) -> Result<Vec<HitRect>, PlayerFrameError> {
     let mut regions = Vec::new();
@@ -494,25 +491,7 @@ fn dialogue_content_avoidance_regions(
         .iter()
         .filter(|mount| mount.dialogue.is_some() && mount.path.segments().is_empty())
     {
-        let owner = mount.scoped_id(mount.view.as_str());
-        let mut bounds = None;
-        for surface in surfaces
-            .iter()
-            .filter(|surface| surface.view.as_deref() == Some(owner.as_str()))
-        {
-            let target = ViewGeometryTargetKey::new(
-                ViewGeometryProductKind::Surface,
-                surface.target.clone(),
-            );
-            if let Some(surface_bounds) =
-                geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Avoidance)?
-            {
-                bounds = Some(bounds.map_or(surface_bounds, |current| {
-                    union_hit_rects(current, surface_bounds)
-                }));
-            }
-        }
-        if let Some(bounds) = bounds {
+        if let Some(bounds) = surfaces::mount_surface_avoidance(mount, geometry)? {
             regions.push(bounds);
         }
     }
@@ -946,7 +925,6 @@ fn prepare_mapped_frame(
     )?;
     surfaces::push_runtime_view_scene(
         &mut frame,
-        &resolved.resources.surfaces,
         &request.presentation.view,
         &prepared_view_text,
         &resolved.styles,

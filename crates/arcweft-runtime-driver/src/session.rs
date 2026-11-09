@@ -43,8 +43,7 @@ use arcweft_bundle::patch::{
 };
 use arcweft_bundle::resource_codec::{
     ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeSurface, ViewRuntimeTextControl,
-    ViewRuntimeTextSelection,
+    ViewRuntimeFocusNavigation, ViewRuntimeTextControl, ViewRuntimeTextSelection,
 };
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_character::presentation_name::AcceptedCharacterPresentationCatalog;
@@ -293,7 +292,6 @@ pub struct BundleSession {
     image_objects: Vec<PresentationImage>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
-    surfaces: Vec<ViewRuntimeSurface>,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     fx_definitions: FxDefinitions,
@@ -1109,7 +1107,6 @@ impl BundleSession {
             BundlePresentationResources {
                 text_inputs: &self.text_inputs,
                 action_buttons: &self.action_buttons,
-                surfaces: &self.surfaces,
                 focus_groups: &self.focus_groups,
                 focus_navigation: &self.focus_navigation,
             },
@@ -1252,7 +1249,6 @@ impl BundleSession {
                     images: &self.image_objects,
                     text_inputs: &self.text_inputs,
                     action_buttons: &self.action_buttons,
-                    surfaces: &self.surfaces,
                     focus_groups: &self.focus_groups,
                     focus_navigation: &self.focus_navigation,
                 },

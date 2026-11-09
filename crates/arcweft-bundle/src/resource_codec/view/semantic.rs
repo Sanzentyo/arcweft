@@ -8,8 +8,8 @@ use crate::resource_codec::{CrossSectionRef, SectionCodecError};
 use super::{
     ViewActionButtonResource, ViewDefinitionResource, ViewFocusGroupResource,
     ViewFocusNavigationResource, ViewHandlerRef, ViewLayoutBoundsResource, ViewOwnedPartRef,
-    ViewProgramInstruction, ViewProgramResource, ViewSemanticTarget, ViewSurfaceResource,
-    ViewTextBlockResource, ViewValueInputResource,
+    ViewProgramInstruction, ViewProgramResource, ViewSemanticTarget, ViewTextBlockResource,
+    ViewValueInputResource,
 };
 
 #[derive(Serialize)]
@@ -24,7 +24,6 @@ struct SemanticViewProgramTranscript<'a> {
     exported_parts: Vec<SemanticViewExportedPart>,
     semantic_targets: Vec<ViewSemanticTarget>,
     layout_bounds: Vec<ViewLayoutBoundsResource>,
-    surfaces: Vec<ViewSurfaceResource>,
     text_blocks: Vec<ViewTextBlockResource>,
     action_buttons: Vec<ViewActionButtonResource>,
     focus_groups: Vec<ViewFocusGroupResource>,
@@ -66,7 +65,6 @@ pub(super) fn accepted_revision(
             item.source = None;
         }),
         layout_bounds: without_source(&resource.layout_bounds, |item| item.source = None),
-        surfaces: without_source(&resource.surfaces, |item| item.source = None),
         text_blocks: without_source(&resource.text_blocks, |item| item.source = None),
         action_buttons: without_source(&resource.action_buttons, |item| item.source = None),
         focus_groups: without_source(&resource.focus_groups, |item| item.source = None),

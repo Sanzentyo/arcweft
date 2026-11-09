@@ -6,7 +6,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewRuntimeActionButtonAction,
 };
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeSurface,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeTextControl,
 };
 use arcweft_id::view::ViewId;
@@ -19,7 +19,6 @@ pub(crate) struct ProjectedViewResources {
     pub(crate) images: Vec<PresentationImage>,
     pub(crate) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(crate) action_buttons: Vec<ViewRuntimeActionButton>,
-    pub(crate) surfaces: Vec<ViewRuntimeSurface>,
     pub(crate) focus_groups: Vec<ViewRuntimeFocusGroup>,
     pub(crate) focus_navigation: Vec<ViewRuntimeFocusNavigation>,
 }
@@ -31,7 +30,6 @@ pub(crate) struct ViewProjectionInput<'a> {
     pub(crate) images: &'a [PresentationImage],
     pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
-    pub(crate) surfaces: &'a [ViewRuntimeSurface],
     pub(crate) focus_groups: &'a [ViewRuntimeFocusGroup],
     pub(crate) focus_navigation: &'a [ViewRuntimeFocusNavigation],
 }
@@ -50,7 +48,6 @@ pub(crate) fn project_view_resources(
                 button
             })
             .collect(),
-        surfaces: retain_non_executable(input.surfaces, input.executable_definitions),
         focus_groups: retain_non_executable(input.focus_groups, input.executable_definitions),
         focus_navigation: retain_non_executable(
             input.focus_navigation,
@@ -77,7 +74,6 @@ fn project_mount(
     project_images(mount, input, projected);
     project_text_inputs(mount, input, &active, projected);
     project_action_buttons(frame, mount, &active, projected);
-    project_layout_resources(mount, input, &active, projected);
     project_focus(mount, input, &active, projected);
 }
 
@@ -209,33 +205,6 @@ fn dialogue_root_mount(
     roots.next().is_none().then_some(root.mount)
 }
 
-fn project_layout_resources(
-    mount: &BundleViewMountOutput,
-    input: &ViewProjectionInput<'_>,
-    active: &BTreeSet<&str>,
-    projected: &mut ProjectedViewResources,
-) {
-    projected.surfaces.extend(
-        input
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                owned_and_active(surface.view.as_deref(), &surface.target, mount, active)
-            })
-            .cloned()
-            .map(|mut surface| {
-                surface.public_id = scoped_id(mount, &surface.public_id);
-                surface.target = scoped_id(mount, &surface.target);
-                scope_owner(
-                    mount,
-                    &mut surface.view,
-                    &mut surface.containing_scroll_region,
-                );
-                surface
-            }),
-    );
-}
-
 fn project_focus(
     mount: &BundleViewMountOutput,
     input: &ViewProjectionInput<'_>,
@@ -344,7 +313,6 @@ impl_view_owned!(
     PresentationImage,
     ViewRuntimeTextControl,
     ViewRuntimeActionButton,
-    ViewRuntimeSurface,
     ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation,
 );
@@ -445,7 +413,6 @@ mod tests {
                 images: &[],
                 text_inputs: &[],
                 action_buttons: &[button],
-                surfaces: &[],
                 focus_groups: &[],
                 focus_navigation: &[],
             },
@@ -515,7 +482,6 @@ mod tests {
                 images: &[],
                 text_inputs: &[],
                 action_buttons: &[button],
-                surfaces: &[],
                 focus_groups: &[],
                 focus_navigation: &[],
             },

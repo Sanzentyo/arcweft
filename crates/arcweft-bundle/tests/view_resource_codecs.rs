@@ -228,7 +228,7 @@ fn view_program_rejects_unknown_resource_fields() {
     let canonical: serde_json::Value =
         serde_json::from_slice(&transcript.payload).expect("View transcript is JSON");
 
-    for table in ["action_buttons", "text_blocks", "surfaces"] {
+    for table in ["action_buttons", "text_blocks"] {
         let mut tampered = canonical.clone();
         tampered[table][0]
             .as_object_mut()
@@ -1298,6 +1298,48 @@ fn fixture_scroll_program(policy: ViewScrollPolicy) -> ViewProgramResource {
 }
 
 #[test]
+fn view_surface_budget_counts_painted_elements_and_decoder_rejects_the_removed_table() {
+    let program = arcweft_bundle::standard_view::dialogue_program();
+    let bytes = program.encode_canonical_section().unwrap();
+    assert_eq!(
+        ViewProgramResource::decode_canonical_section(&bytes).unwrap(),
+        program
+    );
+    assert!(
+        ViewProgramResource::decode_canonical_section_with_budget(
+            &bytes,
+            ViewResourceBudget {
+                surfaces: 0,
+                ..ViewResourceBudget::default()
+            },
+        )
+        .is_err()
+    );
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::ViewProgram,
+        SectionCodecBudget::default(),
+    )
+    .unwrap();
+    let transcript = envelope
+        .fields
+        .iter()
+        .find(|field| field.id == FieldId(1))
+        .unwrap();
+    let mut json: serde_json::Value = serde_json::from_slice(&transcript.payload).unwrap();
+    json["surfaces"] = serde_json::json!([]);
+    let legacy = envelope_with_replaced_field_payload(
+        &envelope,
+        FieldId(1),
+        &serde_json::to_vec(&json).unwrap(),
+    );
+    assert_eq!(
+        ViewProgramResource::decode_canonical_section(&legacy),
+        Err(arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable("view_program"))
+    );
+}
+
+#[test]
 fn view_theme_palette_changes_are_content_only() {
     let old = fixture_theme(PresentationColor::rgb(0x25, 0x63, 0xEB));
     let new = fixture_theme(PresentationColor::rgb(0x58, 0xA6, 0xFF));
@@ -1660,7 +1702,6 @@ fn fixture_program() -> ViewProgramResource {
                 ViewLogicalRect::from_px(48, 48, 420, 48),
             ),
         ],
-        surfaces: Vec::new(),
         text_blocks: vec![ViewTextBlockResource::new(
             "text.block.dialogue.title",
             Some("view.dialogue".to_owned()),

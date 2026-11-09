@@ -5,10 +5,7 @@ use super::{
 };
 use crate::input::InputController;
 use arcweft_bundle::resource_codec::view::{ViewObserveClassification, ViewTextSelectionPolicy};
-use arcweft_bundle::resource_codec::{
-    ViewRuntimeControlVisualStyle, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
-    ViewTextBlockBounds,
-};
+use arcweft_bundle::resource_codec::{ViewRuntimeControlVisualStyle, ViewTextBlockBounds};
 use arcweft_id::PublicId;
 use arcweft_id::presentation::PresentationHandleId;
 use arcweft_id::view::ViewId;
@@ -1218,7 +1215,6 @@ fn environment_style_fixture(
     mount.style_nodes = vec![node];
     let mut presentation = BundlePresentationSnapshot::default();
     presentation.view.mounts = vec![mount];
-    presentation.surfaces = vec![surface("view_mount_1.control.environment", 0, 20_000)];
     (program, presentation)
 }
 
@@ -1301,23 +1297,6 @@ fn unsupported_consumer_value(property: ViewPropertyKind) -> ViewSpecifiedValue 
             value: ViewLengthMilli::new(1_000),
         },
         _ => unreachable!("test table only contains known unsupported consumer properties"),
-    }
-}
-
-fn surface(id: &str, y_milli: i32, height_milli: u32) -> ViewRuntimeSurface {
-    ViewRuntimeSurface {
-        public_id: id.to_owned(),
-        target: id.to_owned(),
-        view: None,
-        containing_scroll_region: None,
-        element: ViewElementKind::Panel,
-        bounds: ViewRuntimeSurfaceBounds {
-            x_milli: 0,
-            y_milli,
-            width_milli: 100_000,
-            height_milli,
-        },
-        style: ViewRuntimeControlVisualStyle::default(),
     }
 }
 

@@ -8,9 +8,8 @@ use crate::resource_codec::view::{
     DialogueTextProjection, ViewActionButtonActionResource, ViewActionButtonResource,
     ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
     ViewParameterResource, ViewParameterRole, ViewProgramInstruction, ViewProgramResource,
-    ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds, ViewStyleResource, ViewSurfaceResource,
-    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewTextSourceKind,
-    ViewTextSourceRecord, ViewTextSurface,
+    ViewRuntimeButtonBounds, ViewStyleResource, ViewTextBlockBounds, ViewTextBlockResource,
+    ViewTextResource, ViewTextSourceKind, ViewTextSourceRecord, ViewTextSurface,
 };
 use crate::resource_codec::{SourceMapSection, SourceRangeRef};
 use arcweft_core::value::{RuntimeDialogueOpaqueRole, RuntimeDialogueViewField};
@@ -210,14 +209,6 @@ pub fn dialogue_program() -> ViewProgramResource {
                 ViewTextSurface::RichText,
             ),
         ],
-        surfaces: vec![ViewSurfaceResource {
-            public_id: PANEL_PART.to_owned(),
-            view: Some(DIALOGUE_VIEW_ID.to_owned()),
-            containing_scroll_region: None,
-            element: ViewElementKind::Panel,
-            bounds: ViewRuntimeSurfaceBounds::new(57_600, 460_800, 1_164_800, 201_600),
-            source: None,
-        }],
         action_buttons: vec![ViewActionButtonResource {
             public_id: ACTION_PART.to_owned(),
             view: Some(DIALOGUE_VIEW_ID.to_owned()),
@@ -357,6 +348,8 @@ fn dialogue_style_rules(source: ViewStyleSourceId) -> Vec<ViewStyleRule> {
                 ),
                 declaration(ViewPropertyKind::Left, length(57_600), source),
                 declaration(ViewPropertyKind::Top, length(460_800), source),
+                declaration(ViewPropertyKind::Width, length(1_164_800), source),
+                declaration(ViewPropertyKind::Height, length(201_600), source),
             ],
             0,
             source,

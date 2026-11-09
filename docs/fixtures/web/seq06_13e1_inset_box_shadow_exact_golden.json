@@ -42,10 +42,10 @@
   "route": [
     "typed native Style sheet and selector resolution",
     "ViewStyleResource typed Panel part style rules",
-    "ViewProgramResource::runtime_surfaces_with_style",
-    "BundlePresentationSnapshot::surfaces",
+    "retained Panel nodes and their paint slots in BundleViewMountOutput",
+    "committed border box and visible geometry of each retained node",
     "ViewRuntimeControlVisualStyle fill/radius/shadows",
-    "ViewRoundedRect primitive from player-owned surface resource",
+    "ViewSurfacePaint from the retained Panel box",
     "computed native Style box-shadow value",
     "ViewCompositingEffects::box_shadows",
     "PlayerFramePlanner::prepare",

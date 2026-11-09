@@ -1055,8 +1055,6 @@ impl ViewProgramResource {
         });
         self.action_buttons
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
-        self.surfaces
-            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.text_blocks
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.focus_groups
@@ -1075,7 +1073,6 @@ impl ViewProgramResource {
         self.validate_unique_ids()?;
         self.validate_handlers()?;
         self.validate_layout_bounds()?;
-        self.validate_surfaces()?;
         self.validate_text_blocks()?;
         self.validate_focus_targets()?;
         self.validate_application_bindings()?;
@@ -1220,12 +1217,12 @@ impl ViewProgramResource {
             budget.scroll_regions,
             "view_scroll_regions",
         )?;
-        check_budget(self.surfaces.len(), budget.surfaces, "view_surfaces")?;
         check_budget(
             self.text_blocks.len(),
             budget.text_blocks,
             "view_text_blocks",
         )?;
+        check_budget(self.surface_count(), budget.surfaces, "view_surfaces")?;
         check_budget(
             self.focus_groups.len(),
             budget.focus_groups,
@@ -1655,12 +1652,6 @@ impl ViewProgramResource {
             "view_action_buttons",
         )?;
         reject_duplicates(
-            self.surfaces
-                .iter()
-                .map(|surface| surface.public_id.clone()),
-            "view_surfaces",
-        )?;
-        reject_duplicates(
             self.text_blocks.iter().map(|block| block.public_id.clone()),
             "view_text_blocks",
         )?;
@@ -1959,18 +1950,6 @@ impl ViewProgramResource {
         Ok(referenced)
     }
 
-    fn validate_surfaces(&self) -> Result<(), SectionCodecError> {
-        if self
-            .surfaces
-            .iter()
-            .all(super::model::ViewSurfaceResource::is_valid)
-        {
-            Ok(())
-        } else {
-            Err(SectionCodecError::NonCanonicalTable("view_surfaces"))
-        }
-    }
-
     fn validate_focus_targets(&self) -> Result<(), SectionCodecError> {
         let authored_targets = self
             .focus_navigation
@@ -2124,7 +2103,6 @@ impl ViewProgramResource {
                         .iter()
                         .flat_map(action_button_public_ids),
                 )
-                .chain(self.surfaces.iter().flat_map(surface_public_ids))
                 .chain(self.text_blocks.iter().flat_map(text_block_public_ids))
                 .chain(self.focus_groups.iter().flat_map(focus_group_public_ids))
                 .chain(
@@ -2133,6 +2111,12 @@ impl ViewProgramResource {
                         .flat_map(focus_navigation_public_ids),
                 ),
         )
+    }
+
+    fn surface_count(&self) -> usize {
+        self.instructions.iter().filter(|instruction| {
+            matches!(instruction, ViewProgramInstruction::OpenElement { element, .. } if element.paints_surface())
+        }).count()
     }
 
     fn record_count(&self) -> u32 {
@@ -2155,8 +2139,8 @@ impl ViewProgramResource {
                     .sum::<usize>(),
             ))
             .saturating_add(saturating_u32(self.layout_bounds.len()))
+            .saturating_add(saturating_u32(self.surface_count()))
             .saturating_add(saturating_u32(self.action_buttons.len()))
-            .saturating_add(saturating_u32(self.surfaces.len()))
             .saturating_add(saturating_u32(self.text_blocks.len()))
             .saturating_add(saturating_u32(self.focus_groups.len()))
             .saturating_add(saturating_u32(self.focus_navigation.len()))
@@ -2193,17 +2177,6 @@ fn action_button_public_ids(button: &super::model::ViewActionButtonResource) -> 
     .into_iter()
     .flatten()
     .chain(action_ids)
-    .collect()
-}
-
-fn surface_public_ids(surface: &super::model::ViewSurfaceResource) -> Vec<String> {
-    [
-        Some(surface.public_id.clone()),
-        surface.view.clone(),
-        surface.containing_scroll_region.clone(),
-    ]
-    .into_iter()
-    .flatten()
     .collect()
 }
 

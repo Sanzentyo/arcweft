@@ -1,4 +1,4 @@
-//! Validates typed text and action-control bindings on cold restore.
+//! Validates typed paint and action-control bindings on cold restore.
 
 use super::{
     BundleViewActionButtonOutput, BundleViewMountOutput, BundleViewPaintItem,
@@ -29,9 +29,31 @@ pub(super) fn validate(
         }
     };
     let mut claimed_blocks = BTreeSet::new();
-    let mut block_nodes = BTreeSet::new();
+    let mut paint_nodes = BTreeSet::new();
     let mut node_order = Vec::new();
     for node in &mount.style_nodes {
+        let is_surface_instruction = matches!(
+            program.instructions.get(node.instruction as usize),
+            Some(ViewProgramInstruction::OpenElement { element, .. }) if element.paints_surface()
+        );
+        if node.kind.paints_surface() || is_surface_instruction {
+            let id = BundleViewStyleNodeId {
+                path: node.path.clone(),
+                instruction: node.instruction,
+            };
+            let valid = matches!(
+                (&node.kind, instruction(&id)),
+                (BundleViewStyleNodeKind::Element { element, target },
+                 Some(ViewProgramInstruction::OpenElement { element: declared, target: authored, .. }))
+                if declared.paints_surface() && element == declared
+                    && *target == authored.as_deref().map(|target| id.path.qualify_repeated_target(target))
+            );
+            if !valid || !paint_nodes.insert((&node.path, node.instruction)) {
+                return Err(failure("surface differs from its accepted instruction"));
+            }
+            node_order.push(BundleViewPaintItem::Surface { node: id });
+            continue;
+        }
         let index = match node.kind {
             BundleViewStyleNodeKind::Text { output }
             | BundleViewStyleNodeKind::RichText { output } => output,
@@ -43,11 +65,11 @@ pub(super) fn validate(
         if row.block_for(node).is_none()
             || row.value.style_target_kind() != node.kind.style_target_kind()
             || !claimed_blocks.insert(index.index())
-            || !block_nodes.insert((&node.path, node.instruction))
+            || !paint_nodes.insert((&node.path, node.instruction))
         {
             return Err(failure("text output belongs to a different retained node"));
         }
-        node_order.push(index);
+        node_order.push(BundleViewPaintItem::Text { output: index });
     }
     let mut labels = BTreeSet::new();
     for (index, row) in mount.text.iter().enumerate() {
@@ -93,12 +115,16 @@ pub(super) fn validate(
             }
         }
     }
-    let paint_order = mount.paint.iter().filter_map(|paint| match paint {
-        BundleViewPaintItem::Text { output } => Some(*output),
-        _ => None,
+    let paint_order = mount.paint.iter().filter(|paint| {
+        matches!(
+            paint,
+            BundleViewPaintItem::Text { .. } | BundleViewPaintItem::Surface { .. }
+        )
     });
-    if !node_order.into_iter().eq(paint_order) {
-        return Err(failure("text paint order differs from retained node order"));
+    if !node_order.iter().eq(paint_order) {
+        return Err(failure(
+            "surface and text paint order differs from retained node order",
+        ));
     }
     validate_action_buttons(mount, program, instruction).map_err(failure)
 }

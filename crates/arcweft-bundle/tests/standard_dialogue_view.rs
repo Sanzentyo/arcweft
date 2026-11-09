@@ -1,7 +1,7 @@
 use arcweft_bundle::resource_codec::view::{
     ViewActionButtonActionResource, ViewDefinitionResource, ViewInstructionSpan,
-    ViewProgramResource, ViewResourceMergeError, ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds,
-    ViewStyleResource, ViewTextBlockBounds, ViewTextSourceKind,
+    ViewProgramResource, ViewResourceMergeError, ViewRuntimeButtonBounds, ViewStyleResource,
+    ViewTextBlockBounds, ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
     MAX_SOURCE_MAP_DOCUMENTS, SectionCodecError, SourceMapBuildError, SourceMapDocument,
@@ -45,7 +45,6 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
         program.handlers[0].result.value_type(),
         RuntimeDialogueOpaqueRole::Action.semantic_identity()
     );
-    assert_eq!(program.surfaces.len(), 1);
     assert_eq!(program.text_blocks.len(), 2);
     assert_eq!(text.sources.len(), 3);
     assert_eq!(style.program.sheets().len(), 1);
@@ -55,10 +54,6 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
         [ViewStyleApplicationTarget::Named { sheet }]
             if sheet.public_id().as_str() == DIALOGUE_STYLE_ID
     ));
-    assert_eq!(
-        program.surfaces[0].bounds,
-        ViewRuntimeSurfaceBounds::new(57_600, 460_800, 1_164_800, 201_600)
-    );
     assert_eq!(
         program.text_blocks[0].bounds,
         ViewTextBlockBounds::new(85_600, 480_800, 1_108_800, 28_000)
@@ -114,6 +109,16 @@ fn assert_standard_style_declarations(style: &ViewStyleResource) {
         rules[0].declarations(),
         ViewPropertyKind::Top,
         &length(460_800),
+    );
+    assert_declaration(
+        rules[0].declarations(),
+        ViewPropertyKind::Width,
+        &length(1_164_800),
+    );
+    assert_declaration(
+        rules[0].declarations(),
+        ViewPropertyKind::Height,
+        &length(201_600),
     );
     assert_declaration(
         rules[1].declarations(),

@@ -141,7 +141,6 @@ impl BundleSession {
                     images: &self.image_objects,
                     text_inputs: &self.text_inputs,
                     action_buttons: &self.action_buttons,
-                    surfaces: &self.surfaces,
                     focus_groups: &self.focus_groups,
                     focus_navigation: &self.focus_navigation,
                 },
@@ -724,7 +723,6 @@ impl BundleSession {
                     images: &self.image_objects,
                     text_inputs: &self.text_inputs,
                     action_buttons: &self.action_buttons,
-                    surfaces: &self.surfaces,
                     focus_groups: &self.focus_groups,
                     focus_navigation: &self.focus_navigation,
                 },
@@ -987,7 +985,6 @@ impl BundleSession {
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
         self.action_buttons = runtime.action_buttons;
-        self.surfaces = runtime.surfaces;
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;
         self.fx_definitions = runtime.fx_definitions;

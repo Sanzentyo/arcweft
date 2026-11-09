@@ -333,9 +333,11 @@ fn source_scroll_and_virtual_list_share_live_ownership_across_cold_restore() {
         r#"
 view Inventory() {
     Scroll(target = @scroll:.inventory, width = 200px, height = 100px) {
-        Text("Inventory")
-        Text("Details")
-        Button("Confirm")
+        Panel {
+            Text("Inventory")
+            Text("Details")
+            Button("Confirm")
+        }
     }
 }
 flow main() -> i64 {
@@ -443,6 +445,37 @@ entry cli @entry.main { goto @flow.main }
             .collect::<Vec<_>>();
         assert_eq!(text_slots.len(), 2);
         mount.paint.swap(text_slots[0], text_slots[1]);
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::ViewRuntime { .. })
+        ));
+        assert_eq!(session.snapshot_session().unwrap(), before);
+
+        let mut forged = session.snapshot_session().unwrap();
+        let mount = &mut forged.presentation.view.mounts[0];
+        let surface_slot = mount
+            .paint
+            .iter()
+            .position(|item| matches!(item, BundleViewPaintItem::Surface { .. }))
+            .unwrap();
+        mount.paint.swap(surface_slot, text_slots[0]);
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::ViewRuntime { .. })
+        ));
+        assert_eq!(session.snapshot_session().unwrap(), before);
+
+        let mut forged = session.snapshot_session().unwrap();
+        let mount = &mut forged.presentation.view.mounts[0];
+        let surface = mount
+            .style_nodes
+            .iter_mut()
+            .find(|node| node.kind.paints_surface())
+            .unwrap();
+        let BundleViewStyleNodeKind::Element { element, .. } = &mut surface.kind else {
+            unreachable!()
+        };
+        *element = arcweft_view::ViewElementKind::Box;
         assert!(matches!(
             session.restore_session_snapshot(forged),
             Err(BundleSessionSaveError::ViewRuntime { .. })

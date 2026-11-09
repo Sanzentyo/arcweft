@@ -344,16 +344,6 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     assert!(presentation.view.diagnostics.is_empty());
     let mount = presentation.view.mounts[0].clone();
 
-    presentation.surfaces = program
-        .runtime_surfaces()
-        .into_iter()
-        .map(|mut surface| {
-            surface.public_id = mount.scoped_id(&surface.public_id);
-            surface.target = mount.scoped_id(&surface.target);
-            surface.view = Some(mount.scoped_id(mount.view.as_str()));
-            surface
-        })
-        .collect();
     presentation.action_buttons = mount
         .action_buttons
         .iter()
