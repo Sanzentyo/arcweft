@@ -16345,3 +16345,12 @@ Native採取ツールは受理済みAWFBの一つのデコード結果をセッ�
 
 [統合サンプルの採取・ブラウザー停止の原本](acceptance-evidence/task-unified-text-parity-current.raw.zip)は40件、305,085 bytes、SHA-256
 `aebfd96f33fb8d0ad7049cc122849b7fb624590581ec065477d7920d0f28bb2d`。
+
+### 統合サンプルのJLREQ段組み条件 — 2026-11-09
+
+公開Source `0b00875e93c13fdf15acd04574b5358b5c0ff629`、親 `1e0de26953440a37c927bc4face976c8c364526c`、tree `28eaa7733e6f2eb1f244163eb3f8827f298c22e5`。公開先の2 blobを照合した。indexは空で、既存の未追跡 `%SystemDrive%/` があった。
+元の36ptでは両設定が型付き台詞の観測に残っていたが、同じ列配置になった。同じ文、Noto Sans JP、125.6pxの縦方向の枠、進行回数、採取時刻を使い、JLREQ 2場面の文字サイズだけを比較した。36pxと38pxでは両設定で句点が列0、開き括弧が列1だった。34pxのlooseは同じ配置で、strictは両方が列1となった。このサイズを2場面に適用した。
+現行ファイルでCLI `check` とAWFB生成が終了0。AWFBのSHA-256は `50f7eac893124378298d947276305458cdf9079b6456cf4e32ef8158bd8adc92`。Nativeの再採取は異なるlayout hashとPNGを出力し、PNG SHA-256はlooseが `856d1338c67214c795ac02c2f0b16ea1738ad55b28ceffcd8f5bd4cf55c96fb0`、strictが `2f1b7ab5f80f90eb8460db363a36cd1bf3ed7e27e2f975a4c0855275dba7d880`。Webの2場面の試行は最初のEnter後の全文表示待ちで2秒上限に達し、画像を出力しなかった。
+
+[比較条件・Native画像・Web停止・公開照合の原本](acceptance-evidence/task-unified-jlreq-34px.raw.zip)は13件、55,623 bytes、SHA-256
+`db30883f7c00eecac227cce09386182a5c6ffcbe9b2923e738cfa6b5fccafb46`。
