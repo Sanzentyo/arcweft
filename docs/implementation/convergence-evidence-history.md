@@ -16364,3 +16364,13 @@ Nativeは `--max-ticks 1` で指定ページに届かない入力を終了1で�
 
 [入力・時計・比較画像・失敗・公開照合の原本](acceptance-evidence/task-unified-jlreq-input-parity.raw.zip)は31件、129,157 bytes、SHA-256
 `c4a162270434ea84884b1614732d5d74a7622ef155b374287a52fd13bf652246`。
+
+### 統合サンプルの6組比較 — 2026-11-09
+
+採取Source `08b5b7d0b58ff854e92157698d28dc6b17af3b31`、入力AWFB `50f7eac893124378298d947276305458cdf9079b6456cf4e32ef8158bd8adc92`、Wasm `37ddaaaf8993cceb34ec002b049849223a4510bcb4e5894c07dc59af1758db39`。変更後のNativeで8場面を再採取し、すべて終了0。全8場面のWeb試行は縦書き2場面を取得し、次のJLREQ looseで論理時計待ち10秒に達した。残りのWebは同じ条件で場面別に実行し、JLREQ 2場面とFx 2場面が終了0、reveal 2場面が同じ時計待ちで終了1だった。
+
+採取できた6組は文字単位、全画像、imqの既存ゲートを通過し、RGBAの全チャンネルでMSE・MAE・最大差が0。文字単位の比較数は縦書き28／27、JLREQ 19／19、Fx 30／30。縦書きは採取tickとlayout hashも両環境で一致した。Fxの2時刻間のMSEは両環境で `0.00041164314253706505`。Nativeのrevealは2時刻で異なる画像を出力した。
+Webの20,500 msを調べた別実行ではtick 9から581へ進み、要求1,282ステップのうち710が残った状態で停止した。致命エラーは出ていない。全8場面の最終検証器は入力不足で実行していない。
+
+[8場面のNative、6組の画像比較、Web停止の原本](acceptance-evidence/task-unified-text-six-pairs.raw.zip)は92件、456,656 bytes、SHA-256
+`b95af956965b0036aae1f4bddfb6115129b89a3600494bede2274c2fc350e535`。
