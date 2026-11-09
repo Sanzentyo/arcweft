@@ -862,8 +862,8 @@
     },
     "raw": {
       "path": "docs/implementation/acceptance-evidence/task-owned-promotion-admission.raw.zip",
-      "bytes": 876302,
-      "sha256": "98118330763067d38769f750c59ff6559da753e1e62724d7f7a336c0f038e199",
+      "bytes": 1223609,
+      "sha256": "df8b5d2a042b7778dcd4e90f996dd51b4b320afe017717102df2ff466cc33c23",
       "entryDrift": 0,
       "entries": [
         {
@@ -1345,6 +1345,96 @@
           "entry": "static-operands-fe488636/quality/cli-build.log",
           "bytes": 92901,
           "sha256": "42090ffac52301d990f1074758a0542d91287586c745cdac9e3a8206a855d62a"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/owner-doctests.log",
+          "bytes": 88350,
+          "sha256": "ab110f8364d69f20e8481ef0dc34aff00d83de0037959f028283609e06d0356c"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/owners.log",
+          "bytes": 465110,
+          "sha256": "36fae9aff2c9fd98ba8ed3e28b5e5d90b70156d2b08a2af942a92cdb2dcbbf84"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/plan-compiler.log",
+          "bytes": 264969,
+          "sha256": "7a6cf2c5d7bd1931bdd6086891cc3d3a0981918aa9c289ed01b3439af2820cc0"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/runtime-host.log",
+          "bytes": 102236,
+          "sha256": "8398bfb7a8af7e7900cc5100103b4c53bac3869b39d81d19cb42177a223bae8d"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/driver-scene.log",
+          "bytes": 139004,
+          "sha256": "ac26cfebdc26f4e32789824c29dbee480de11d00ce651aa8da5241bc3823910f"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/player-native.log",
+          "bytes": 113702,
+          "sha256": "4e217db70e56f8d08cdd3ed4b1f67adea1396ba563a808070efdb18bcae8477c"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/player-web.log",
+          "bytes": 100542,
+          "sha256": "578a9d324156f0d3f6d905e2dff1e481f6d651cffae6b94f52bca4037930a743"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/agent-execution.log",
+          "bytes": 105960,
+          "sha256": "0848045750c66cb9382d63ee2b11d03b40ecc010847fe554eb59192c5f1b7043"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/agent-transport.log",
+          "bytes": 95514,
+          "sha256": "e0540ea1c6039aae93296c3d8f4fe8255ce738604e1f20d754bd6515dbfed7c2"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/tools-lsp.log",
+          "bytes": 153731,
+          "sha256": "fb463b2f79dc38b09cc38c600621941e64532bb6391aa553c7a84d5c7c2c5399"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/verify.log",
+          "bytes": 99730,
+          "sha256": "ad089f98aef52d22a86725095d5b1f4a05dddc3869f7243b8fb7812221dc6170"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/cli-library-binaries.log",
+          "bytes": 128055,
+          "sha256": "5649dc151113ef5ef38c47d07be8c71e7361069a43c69c3e63f83a9c57cb8a28"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/cli-integration.log",
+          "bytes": 95735,
+          "sha256": "576f0028c0d51c2e395b709d7bf6d29e1df651fffce4067adbe9fc080e8d38ea"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/terminal.receipt.json",
+          "bytes": 14217,
+          "sha256": "2675ae3a4c22e6c8338ee67d7a97ab1d6cc81deebe47e0026e804067e638865b"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/cargo-clean.receipt.json",
+          "bytes": 332,
+          "sha256": "2f53d2a10360c726d22eddd85d83d58ee7b05d6dcf47bca03ae3dddce4ec91e9"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/cargo-clean-interruption.json",
+          "bytes": 414,
+          "sha256": "95256d73b4376d893050cffe143bc815ae6d857e330baa954096aa82fabdf490"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/driver-scene.interrupted-before-cargo-clean.log",
+          "bytes": 89473,
+          "sha256": "099437784a8fd40c8ba7e3d0f4f43d0457b0e7648ec458a5fffa073569e4eb57"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/resume-exact-after-clean.ps1",
+          "bytes": 6264,
+          "sha256": "50512eb0cd5ff848370f6e0df9fc1018b85854fa9749e9f473c97973784be032"
         }
       ]
     },
@@ -1957,6 +2047,171 @@
             "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
           }
         ]
+      },
+      "terminalQuality": {
+        "receipt": "static-operands-fe488636/quality/terminal.receipt.json",
+        "reversePackages": [
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-lang-hir",
+          "arcweft-lang-sema",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-web",
+          "arcweft-project-loader",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-test",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3"
+        ],
+        "nextest": {
+          "run": 4855,
+          "pass": 4855,
+          "fail": 0,
+          "skip": 9
+        },
+        "stages": {
+          "workspace-check": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 06s"
+            ]
+          },
+          "workspace-clippy": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 09s"
+            ]
+          },
+          "cli-build": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 20s"
+            ]
+          },
+          "owner-doctests": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 49.45s",
+              "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+              "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s"
+            ]
+          },
+          "owners": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 08s",
+              "Summary [ 179.277s] 2418 tests run: 2418 passed (1 slow), 8 skipped"
+            ]
+          },
+          "plan-compiler": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 20s",
+              "Summary [ 151.977s] 1170 tests run: 1170 passed (5 slow), 1 skipped"
+            ]
+          },
+          "runtime-host": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 13s",
+              "Summary [   3.833s] 72 tests run: 72 passed, 0 skipped"
+            ]
+          },
+          "driver-scene": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 24s",
+              "Summary [   2.792s] 278 tests run: 278 passed, 0 skipped"
+            ]
+          },
+          "player-native": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 43s",
+              "Summary [   1.144s] 59 tests run: 59 passed, 0 skipped"
+            ]
+          },
+          "player-web": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 08s",
+              "Summary [   0.402s] 37 tests run: 37 passed, 0 skipped"
+            ]
+          },
+          "agent-execution": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 58s",
+              "Summary [ 175.463s] 106 tests run: 106 passed (1 slow), 0 skipped"
+            ]
+          },
+          "agent-transport": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 17.25s",
+              "Summary [   0.409s] 46 tests run: 46 passed, 0 skipped"
+            ]
+          },
+          "tools-lsp": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 19s",
+              "Summary [ 331.645s] 412 tests run: 412 passed (2 slow), 0 skipped"
+            ]
+          },
+          "verify": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 01s",
+              "Summary [   0.282s] 31 tests run: 31 passed, 0 skipped"
+            ]
+          },
+          "cli-library-binaries": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 37s",
+              "Summary [  37.784s] 196 tests run: 196 passed, 0 skipped"
+            ]
+          },
+          "cli-integration": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 19.97s",
+              "Summary [   8.325s] 30 tests run: 30 passed, 0 skipped"
+            ]
+          }
+        },
+        "cliScope": "CLI libraries, binaries and six named integration targets. The two historical promotion failures in the separate check integration target remain outside this run.",
+        "historicalCliFailuresOutsideSelection": [
+          "verify_json_records_required_solver_checks",
+          "verify_json_reports_missing_promotion_proof"
+        ],
+        "cargoClean": {
+          "receipt": "static-operands-fe488636/quality/cargo-clean.receipt.json",
+          "interruption": "static-operands-fe488636/quality/cargo-clean-interruption.json",
+          "completedBeforeClean": [
+            "workspace-check",
+            "workspace-clippy",
+            "cli-build",
+            "owner-doctests",
+            "owners",
+            "plan-compiler",
+            "runtime-host"
+          ],
+          "resumedAtUtc": "2026-11-09T15:58:50.7758499Z"
+        }
       }
     }
   },
