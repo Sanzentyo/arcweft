@@ -16083,3 +16083,26 @@ Native CLIは正順・逆順で420×74のScroll 2件、縦のoffset範囲各12px
 最終treeのChrome/WebGPUは320×180の実画像を出力し、2回のWeb PNGのSHA256は `a4be12324d4e5501e05d1e180a9634a28d9143bb1879623de896d532b9ce9b35` で一致した。同じStyle・位置のNative CLI PNGは `8c432d034ef02aa0366210b0718275a5f36db2c382e5e2a6c608916d0df940d2`。imqの直接比較はMSE `2.700660261200959e-6`、MAE `0.0008493572167760565`、SSIM `0.9999833787817182`。全RGBA成分ではMSE `5.889962194025e-6`、MAE `0.0011619349128533616`。旧Web基準は配置と寸法が現行指定と異なり、対現行WebのMSE `0.13894921544980685`、MAE `0.2561603698123156` で許容差を超えた。既存のNative単独capture scriptは上流 `glyphon` に対するfork専用APIのimportでE0432となった。ここでの直接比較はNative CLIとブラウザーの実画像に基づく。旧基準画像との合格や基準画像の昇格は行っていない。
 
 [検証原本](acceptance-evidence/task-retained-surface-native-web.raw.zip) は29 entries、996207 bytes、SHA256 `85276d224ed319822a6855f6caaf6354b3bc38bacee008edc4f571dd5d9efb22`。最終検証、初回失敗、公開blob照合、PNG、環境と比較JSONを保管する。
+
+### 保持 View の41逆依存の再検証 — 2026-11-09
+
+検証Sourceは `83d3689000598ad41a27a01593d5a1f4e95af705`、treeは
+`67655835a3f0427e248a4af7f0fcf57bd8284b1c`。Panel／Boxの実装Sourceは
+`ae708a9ca954fb2b1cd9e45789c97cc831baef56`。既存mainのtrackedとindexに差分はなく、未追跡のWindowsキャッシュは保持した。
+
+Windowsのlocked・全feature・既定nextest filterで41パッケージを選択した。
+38パッケージで5,418件を実行し、5,416 PASS、2 FAIL、41 SKIPで終了100。
+元バイナリ180本とSourceの前後差分は0。Panel／反復Boxの実Native描画、
+キー付きText／Button、Scrollのcold restore、標準台詞と保持面のgeometry、
+旧Surface表の拒否、Web IME生成器を含む必須8件はすべてPASS。
+
+先行 `751128cbe0ce4311bbe11fda887bf4ee5712bf50` の5,416実行／5,412 PASS／4 FAIL／
+41 SKIPを[先行原本](acceptance-evidence/task-retained-scroll-reverse.raw.zip)に保持する。
+共通5,413 IDの変化はWeb IME生成器とMCP起動待ちのFAILからPASSのみ。
+残るCLIの2件は `verify_json_records_required_solver_checks` と
+`verify_json_reports_missing_promotion_proof` で、どちらもExpr8の型検査で失敗した。
+今回の検証は保持 View の対象範囲であり、全workspace受入は継続する。
+
+[検証原本](acceptance-evidence/task-retained-surface-reverse.raw.zip)は9件、
+455,155 bytes、SHA-256 `b50a10434b3d3cffa3c13ca1549b22799502c8121be470b3328c50a175d95c48`。
+選択条件、catalog、元バイナリの前後ハッシュ、全出力、基点との比較、検証スクリプトを収録した。
