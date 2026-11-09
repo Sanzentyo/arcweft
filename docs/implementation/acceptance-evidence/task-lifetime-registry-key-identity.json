@@ -14724,5 +14724,1294 @@
       "unresolvedStages": [],
       "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
     }
+  },
+  "returnedPrefixPromotionReceiver": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-09T23:13:22.4067010Z",
+    "source": "587316e75a391c8ca84de7b48c1f238883db5293",
+    "base": "378e3c654d7d581588f1be9760b5f5bccf38f0d4",
+    "publication": {
+      "version": 1,
+      "commit": "587316e75a391c8ca84de7b48c1f238883db5293",
+      "parent": "378e3c654d7d581588f1be9760b5f5bccf38f0d4",
+      "remote": "587316e75a391c8ca84de7b48c1f238883db5293",
+      "tree": "9d41420e5ca7d6f2b1cea225befb1b89b732665c",
+      "patchSha256": "896799b57508c6d6c072b486fdd0c0cdbb8122208ac2458e66c2c941dcb9671e",
+      "cliSha256": "88294fff9aa334d44c4230c7f85feb1ae99e4fd691605046ba6e65bba7c1cd21",
+      "remoteBlobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+          "blob": "523968fea830a4af17960ab0591a1d1b6cdfc46b",
+          "validatedSha256": "eda337081b8e373aa55603e5e459accc8b2b3d98a5688b36b65f2313d76c1ff7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/specialization.rs",
+          "blob": "937818c6c43aecd6513bb3eb278dc3d476610a85",
+          "validatedSha256": "1a2efb88dc0ca96f838ddbbcde8a2282c67a75e3bdc93799db112266633ff168"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "blob": "5d70ca55d2313f6027106f159743fc1afdabfa47",
+          "validatedSha256": "350f0cd463b7cdd50c972025130b036af1c3d0f35ac6c30c98e33722cad854df"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/continuation.rs",
+          "blob": "57bd65074a1b0ca006ed2f416b29d0132971a8b8",
+          "validatedSha256": "8b70465bd01ea1f335f3c973221675a52a2ada0d4daa14c0b533b14254ddd35b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/inputs.rs",
+          "blob": "3b90c493dc33d2b79a91c3a8fbcedfd4017ebe0f",
+          "validatedSha256": "8a9b4c0cfbdf4d18f799832fe3f7f1124a245deaa5432b85c963724d90d651bd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "blob": "76c1fccff92c896e67abf29c8f0dd7cb73cdbfac",
+          "validatedSha256": "1ed899fb3bd6fa95f92b64487518a5c572cc631f5f55216e4ebeddee58f972dd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/localization.rs",
+          "blob": "61b09c3ef344a577b61ce38f4ce6dddc59d25c91",
+          "validatedSha256": "737191289154a70b91e6a61fb7e3f69755a2ea3c7a931073c5acceeb0e230986"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/projection.rs",
+          "blob": "88ce4a7fed8f0a35de5a4caf352f8493042af9cb",
+          "validatedSha256": "a021009fd92c6c8ffc9612d9b5470d80139dc1566153117221cd227faee5f7f1"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "blob": "ae144bfd34808afda774f47b897e66c7725a3ca4",
+          "validatedSha256": "cf5cb86a14ec2a4ff0a58ac6762db86e25a8f6724a853521bb2bf8352fd34178"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "7a6f2295d473a6f62fa606b5b36099ceb60a5a09",
+          "validatedSha256": "25cf0c8e25b5014dc5cecaf93c3e90de68a15cebe4391a2a65165e161d14c24f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints.rs",
+          "blob": "062b89346afd2a0fe3b93ed95bf99ea9c8b716e4",
+          "validatedSha256": "07a81e8619ae05bde1a12f333e4874bb9ad297ae9f1982bff46f8b507e8bcaa0"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution.rs",
+          "blob": "e40541825ecdc7e254f520916664d069ff78853d",
+          "validatedSha256": "180d58b496e334197ed10efd4b9da92b4b7d1f346276b359c83dc06fb75c4869"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+          "blob": "efe890d28bee59c1555c330c752bc59a7210298c",
+          "validatedSha256": "245273b7cf5e083d516cf4302131da96e49466d31f0c13c5de40661a9f800f37"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template/localized.rs",
+          "blob": "15622d86f437213cd75dc669892c9391b654b2dd",
+          "validatedSha256": "8f8d37f8755ca2ee5606649980ec3f068801a8f08b2c64477bd86171fdaee162"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/generics.rs",
+          "blob": "57fd51d6708e2153a2cdfb583647ed66f1c83851",
+          "validatedSha256": "b148acc40ce1bb9de025cccad3c8beff959ca7bbf79538b3c9a60b78ee624de6"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "40417912b06fe2e5b578057f7897093f9b214a52",
+          "validatedSha256": "d483e5a15091c8d37586324f7dfb81312c71c2a417b30cc0a78f6ece032353f4"
+        }
+      ]
+    },
+    "worktree": "Validated the changed source bytes on existing main. Staging included only the validated paths. An unrelated untracked directory existed.",
+    "correction": "Storage observation already found borrowed retained inputs. Invocation of the returned prefix previously stopped before the declaration body. The checked prefix now supplies its original application and argument mapping. Synthetic later calls supply their own lexical groups. The body projection resolves each stage in its own frame while preserving residual slots for subsequent stages. Returning a stored value follows the result dependencies, so a borrow used and discarded by the body does not taint the result.",
+    "scope": "Static receiver rejection for an invoked returned source prefix, including callable parameters, aliases, distinct creator and caller frames, a single inferred later group, and multiple checked later groups with type context. Fully inferred intermediate later groups and repeated executable use of the same returned polymorphic prefix remain open. Direct shared prefix and independent returned instances run through all three exercised executors.",
+    "statusReconciliation": "The former status row remains in the raw history. The current row consolidates verified ownership behavior and replaces the corrected returned-prefix counterexample with current outcomes. Separate repros capture the type-inference and local-use boundaries that still fail.",
+    "cli": {
+      "version": 1,
+      "base": "378e3c654d7d581588f1be9760b5f5bccf38f0d4",
+      "validatedInputs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+          "sha256": "eda337081b8e373aa55603e5e459accc8b2b3d98a5688b36b65f2313d76c1ff7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/specialization.rs",
+          "sha256": "1a2efb88dc0ca96f838ddbbcde8a2282c67a75e3bdc93799db112266633ff168"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "sha256": "350f0cd463b7cdd50c972025130b036af1c3d0f35ac6c30c98e33722cad854df"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/continuation.rs",
+          "sha256": "8b70465bd01ea1f335f3c973221675a52a2ada0d4daa14c0b533b14254ddd35b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/inputs.rs",
+          "sha256": "8a9b4c0cfbdf4d18f799832fe3f7f1124a245deaa5432b85c963724d90d651bd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "sha256": "1ed899fb3bd6fa95f92b64487518a5c572cc631f5f55216e4ebeddee58f972dd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/localization.rs",
+          "sha256": "737191289154a70b91e6a61fb7e3f69755a2ea3c7a931073c5acceeb0e230986"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/projection.rs",
+          "sha256": "a021009fd92c6c8ffc9612d9b5470d80139dc1566153117221cd227faee5f7f1"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "sha256": "cf5cb86a14ec2a4ff0a58ac6762db86e25a8f6724a853521bb2bf8352fd34178"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "sha256": "25cf0c8e25b5014dc5cecaf93c3e90de68a15cebe4391a2a65165e161d14c24f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints.rs",
+          "sha256": "07a81e8619ae05bde1a12f333e4874bb9ad297ae9f1982bff46f8b507e8bcaa0"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution.rs",
+          "sha256": "180d58b496e334197ed10efd4b9da92b4b7d1f346276b359c83dc06fb75c4869"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+          "sha256": "245273b7cf5e083d516cf4302131da96e49466d31f0c13c5de40661a9f800f37"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template/localized.rs",
+          "sha256": "8f8d37f8755ca2ee5606649980ec3f068801a8f08b2c64477bd86171fdaee162"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/generics.rs",
+          "sha256": "b148acc40ce1bb9de025cccad3c8beff959ca7bbf79538b3c9a60b78ee624de6"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "sha256": "d483e5a15091c8d37586324f7dfb81312c71c2a417b30cc0a78f6ece032353f4"
+        }
+      ],
+      "cliSha256": "88294fff9aa334d44c4230c7f85feb1ae99e4fd691605046ba6e65bba7c1cd21",
+      "baseline": {
+        "source": "679ef8df8ca5075e45ad566679b928c590eaf191",
+        "cliSha256": "75672252e6983556e955f7fd6c38e906c6f1354922442ea2d53dd22af1582261",
+        "cases": [
+          {
+            "name": "returned-prefix-discards",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "de379ed35b919f0753206d521180b73e5ed112bcccab769322d24bb6c9f5b299",
+            "reportSha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-retains",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "ee716478620f62754cdefae48fffeef44f6b90c5e444f315bc227def56f8f335",
+            "reportSha256": "a15fa9110c9216e060913a787d012eafe8ab1bdc4dbffe7cc09cc472f2047fa7",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-storage",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "7c82eb1a764c3e790963bb45e788406a6a10a3c2b5ad61f47324236655ba9537",
+            "reportSha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "cases": [
+        {
+          "name": "returned-prefix-retains",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "ee716478620f62754cdefae48fffeef44f6b90c5e444f315bc227def56f8f335",
+          "reportSha256": "14ca3619a625018ddacfc0c9f87affe98e051237aaa3ed544bd092b2dff13b7e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-retains",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "ee716478620f62754cdefae48fffeef44f6b90c5e444f315bc227def56f8f335",
+          "reportSha256": "14ca3619a625018ddacfc0c9f87affe98e051237aaa3ed544bd092b2dff13b7e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-discards",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "de379ed35b919f0753206d521180b73e5ed112bcccab769322d24bb6c9f5b299",
+          "reportSha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-discards",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "de379ed35b919f0753206d521180b73e5ed112bcccab769322d24bb6c9f5b299",
+          "reportSha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-storage",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "7c82eb1a764c3e790963bb45e788406a6a10a3c2b5ad61f47324236655ba9537",
+          "reportSha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-storage",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "7c82eb1a764c3e790963bb45e788406a6a10a3c2b5ad61f47324236655ba9537",
+          "reportSha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "poly-prefix-from-closure",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "cd2c2bff498db23af4193e17f5bfcc9fcb552d7da65fb81fa99550c2df39a6cb",
+          "reportSha256": "e922dd5a5ebd09632267ec2337fff4466f40075532e32672bf94ee8871aaabf8",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "poly-shared-returned-prefix",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "1a39dfd5314142ace6c5905cf2a5e8a4a5d51dac6dbe79371427281636c7cbf6",
+          "reportSha256": "0e758c219d745ddb1e49f25d8ffd03609c4b2d0f7359c0b19584f1c46081308b",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-contextual",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "5a3e0d355cfdf34f1f2489aa7f6a8597777c4965fc23700449f56ecf3296c951",
+          "reportSha256": "ad3f1d80f6a9ad06b7ba5a9129844a74b0c01cdf2258868f128a9516017994e5",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-contextual",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "5a3e0d355cfdf34f1f2489aa7f6a8597777c4965fc23700449f56ecf3296c951",
+          "reportSha256": "ad3f1d80f6a9ad06b7ba5a9129844a74b0c01cdf2258868f128a9516017994e5",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-contextual-owned",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "04ace18d16d52feb4aacc34c9f3932ea5a262c6a48ebea296b1f8d7cd58ef46d",
+          "reportSha256": "cf3fdf455b27dfbb7d3f73a319925da67ea72145909c6717f025cd547b094c5e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-contextual-owned",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "04ace18d16d52feb4aacc34c9f3932ea5a262c6a48ebea296b1f8d7cd58ef46d",
+          "reportSha256": "cf3fdf455b27dfbb7d3f73a319925da67ea72145909c6717f025cd547b094c5e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "execution": {
+        "runner": "headless",
+        "mode": "one-op",
+        "operationLimit": 1,
+        "stepLimit": 256,
+        "cases": [
+          {
+            "name": "returned-prefix-execution",
+            "tier": "bytecode-vm",
+            "exit": 0,
+            "executor": "bytecode_vm",
+            "steps": 10,
+            "maxOps": 1.0,
+            "executedOps": 10.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "0c2b9821a66a70b2ccaa792928f4ed6079b368edf99b60ab9ed692c770c3353d",
+            "reportSha256": "3c562cc4a13487077949593b8ba9afdf9672046318e043df8320facf2db5caa5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-execution",
+            "tier": "aot",
+            "exit": 0,
+            "executor": "aot",
+            "steps": 10,
+            "maxOps": 1.0,
+            "executedOps": 10.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "0c2b9821a66a70b2ccaa792928f4ed6079b368edf99b60ab9ed692c770c3353d",
+            "reportSha256": "2d9940933d7d3597ba7bd3fd86032044d531866b4089e5a459ecae9e17584cdc",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-execution",
+            "tier": "awbc-product",
+            "exit": 0,
+            "executor": "awbc_product",
+            "steps": 58,
+            "maxOps": 1.0,
+            "executedOps": 58.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "0c2b9821a66a70b2ccaa792928f4ed6079b368edf99b60ab9ed692c770c3353d",
+            "reportSha256": "c330f7d0845364718025ae24f4575f92467b9f9c5c2d715b3f06a96bc5619509",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-independent-execution",
+            "tier": "bytecode-vm",
+            "exit": 0,
+            "executor": "bytecode_vm",
+            "steps": 20,
+            "maxOps": 1.0,
+            "executedOps": 20.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "c495e13ffc539149c9f12eae36af0667f2fa709c4e99d74fd67568605ec9dc8b",
+            "reportSha256": "1ba2c4e65da0b0a59071d6cbed5829f770fc66e186b2d61ff3fed33689180a1f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-independent-execution",
+            "tier": "aot",
+            "exit": 0,
+            "executor": "aot",
+            "steps": 20,
+            "maxOps": 1.0,
+            "executedOps": 20.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "c495e13ffc539149c9f12eae36af0667f2fa709c4e99d74fd67568605ec9dc8b",
+            "reportSha256": "b5dc297ed657bd70c04a0597ab0e2876067ce5df6af5455f83e67424cf2bef47",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-independent-execution",
+            "tier": "awbc-product",
+            "exit": 0,
+            "executor": "awbc_product",
+            "steps": 129,
+            "maxOps": 1.0,
+            "executedOps": 129.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "c495e13ffc539149c9f12eae36af0667f2fa709c4e99d74fd67568605ec9dc8b",
+            "reportSha256": "ce9e4ce93141353d25e57a8ac0fe0459a1a903cc80638817f2cb122ec4a48e46",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "direct-prefix-shared-execution",
+            "tier": "bytecode-vm",
+            "exit": 0,
+            "executor": "bytecode_vm",
+            "steps": 9,
+            "maxOps": 1.0,
+            "executedOps": 9.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "2e54237d22c2a1c57afbbe79cb2f43f194ada353872c9190ad4f8b69b0ac0ab3",
+            "reportSha256": "5b33afcc8f34f341b46a788a97702f4093abdae5966d7dcef736016854f7d514",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "direct-prefix-shared-execution",
+            "tier": "aot",
+            "exit": 0,
+            "executor": "aot",
+            "steps": 9,
+            "maxOps": 1.0,
+            "executedOps": 9.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "2e54237d22c2a1c57afbbe79cb2f43f194ada353872c9190ad4f8b69b0ac0ab3",
+            "reportSha256": "ecd7d038b3b3034b7f7b587877d322d820fb6a4481fe34ed80bd0f7414714515",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "direct-prefix-shared-execution",
+            "tier": "awbc-product",
+            "exit": 0,
+            "executor": "awbc_product",
+            "steps": 94,
+            "maxOps": 1.0,
+            "executedOps": 94.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "2e54237d22c2a1c57afbbe79cb2f43f194ada353872c9190ad4f8b69b0ac0ab3",
+            "reportSha256": "29dcf48bc0c50450db6d46b90f305ad2c49a055075619b176fa6ca999aa70ab4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "limitations": [
+        {
+          "name": "returned-prefix-poly-owned",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 68, kind: Expr }) has no admissible final type",
+          "inputSha256": "c3cba1c9fcc77a5e8d534018df1e4ace0ba4f21f8551315fabff663775866c97",
+          "reportSha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-borrow",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 68, kind: Expr }) has no admissible final type",
+          "inputSha256": "75f9e5554a9a185cbedcac2b55d7558272ad697b5816fe991f2809d7e84f30bb",
+          "reportSha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-shared-execution",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 68, kind: Expr }) has no admissible final type",
+          "inputSha256": "66be1cd34f6721d603acb800f7d5306ecb185f485cf67fbb87cbf7f3b0a51579",
+          "reportSha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-shared-one-execution",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "local LocalId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 59, kind: Local }) is unavailable at Expression(ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 68, kind: Expr }))",
+          "inputSha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266",
+          "reportSha256": "8db09460415b662029c1638244dc0eb7f36083c50b25b01b60164fc4f0d9f55b",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-shared-contextual-execution",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "local LocalId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 66, kind: Local }) is unavailable at Expression(ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 80, kind: Expr }))",
+          "inputSha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af",
+          "reportSha256": "d2cf637a268a71de5ce02f12a439369c305b08fba1faac2d5b22b4793713731e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "cliRerun": "The first comparison reported all expected case outcomes but the wrapper inherited the last deliberate denial exit code. The repeat added an explicit successful wrapper exit. Case metadata agrees across both receipts.",
+    "priorObserved": {
+      "cliSha256": "541d21aa009909108a674f3472e4c64e508f15fe5e2a7cda677a282af782d328",
+      "authority": "Observed local CLI before rebuilding changed source. The separately pinned three-case archive establishes the receiver baseline."
+    },
+    "tests": {
+      "focused": 16,
+      "matrixInputs": 15,
+      "log": "returned-prefix-promotion-receiver-587316e7/focused-acceptance.log",
+      "initialCompileFailure": "returned-prefix-promotion-receiver-587316e7/focused-initial.log",
+      "firstPassingMatrix": "returned-prefix-promotion-receiver-587316e7/focused-scopes.log",
+      "unconstrainedIntermediateCounterexample": "returned-prefix-promotion-receiver-587316e7/focused-final.log"
+    },
+    "ownership": {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/continuation.rs",
+      "crate": "arcweft-lang-sema",
+      "classification": "production",
+      "lines": 160,
+      "bytes": 6707,
+      "disposition": "Continuation owns progression over the selected source group layout. The shared checked mapper binds each group to its lexical frame. Scope-localized projections reuse the solution fold for type, const and effect rows while preserving remaining binders."
+    },
+    "templateOwnership": {
+      "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+      "beforeLines": 1059,
+      "afterLines": 1217,
+      "disposition": "The existing type-system owner keeps one capture-avoiding fold for solved templates and scoped terms. Localized argument rows reuse the fold, retain their solution-owned keys, and live in a separate projection module. The caller and continuation traversal stay in Sema. The change adds no public API or cross-crate dependency."
+    },
+    "checkpointQuality": {
+      "receipt": "returned-prefix-promotion-receiver-587316e7/quality/checkpoint.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 1453,
+        "pass": 1453,
+        "fail": 0,
+        "skip": 0
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 57.62s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 58.63s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 37.29s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 16s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.14s",
+            "Summary [  70.482s] 1453 tests run: 1453 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-promotion-returned-prefix.raw.zip",
+      "sha256": "161caa33a3ed26b4cacfb6b8eef5f29d9f1814c14ae62cce4929d3ee0ac34add",
+      "bytes": 1044094,
+      "entries": [
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/source.publication.json",
+          "bytes": 4564,
+          "sha256": "6f32ef27c302e7a9ea1a9ebdb93119f2f3201db201b05818631828ef7e46791d"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/source.reviewed.patch",
+          "bytes": 81903,
+          "sha256": "896799b57508c6d6c072b486fdd0c0cdbb8122208ac2458e66c2c941dcb9671e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/changed.receipt.json",
+          "bytes": 19779,
+          "sha256": "b4c220a1067bb3d8748c8689049e4ce24ddf1c35f6cc722ba7961489bebb1236"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/first-cli.receipt.json",
+          "bytes": 19779,
+          "sha256": "806a1b35328153078e0b942ff64b3061111eeffbeab2fbc7a3fd259402931055"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/focused-initial.log",
+          "bytes": 82084,
+          "sha256": "6d35ad592272c9258e5e739430c3372192e2043c63cfbf62cda719e6c17eba34"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/focused-scopes.log",
+          "bytes": 85399,
+          "sha256": "a2a2261f63cddff1f240b3582ab5d6816bf613ee4d02e0c30254db8556e0c49d"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/focused-final.log",
+          "bytes": 86492,
+          "sha256": "e787c39f9ce1b9bb6f4f9d86ad51025b84d1f10e151f106e0ba9c7e483db4477"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/focused-acceptance.log",
+          "bytes": 85034,
+          "sha256": "89583ba483b609bdb48f76b5393bfd83ac8771569ea16fff2ac646d2d767d29e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/compare-cli.ps1",
+          "bytes": 6157,
+          "sha256": "e98ab77f1b5cda8ff5929f2a9bfad30d3547dc7f3e74aac648e25572a4ba748a"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/run-quality.ps1",
+          "bytes": 5428,
+          "sha256": "6c861f42175d89b4260be9997e2e5b85b585e008ec52f604881181c1925ff066"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/history/previous-promotion-status.txt",
+          "bytes": 1714,
+          "sha256": "11b8dc0babc69e2981d82557e4130268782a17c88e6a70df8744d539e6a14f4e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/rdeps.log",
+          "bytes": 4907,
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/workspace-metadata.json",
+          "bytes": 356023,
+          "sha256": "ee92f9e2f6bfa1738d6767ea4e3ac725a6dd43d2ef606a87339afe866ef5abf6"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/baseline.receipt.json",
+          "bytes": 4331,
+          "sha256": "3172d5f8b23419958dc08d8f12c2dd5653ab3a5cb916e6b2c0354a368a0577a7"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-discards.arcw",
+          "bytes": 348,
+          "sha256": "de379ed35b919f0753206d521180b73e5ed112bcccab769322d24bb6c9f5b299"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-discards.json",
+          "bytes": 1215,
+          "sha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-discards.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-retains.arcw",
+          "bytes": 345,
+          "sha256": "ee716478620f62754cdefae48fffeef44f6b90c5e444f315bc227def56f8f335"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-retains.json",
+          "bytes": 1211,
+          "sha256": "a15fa9110c9216e060913a787d012eafe8ab1bdc4dbffe7cc09cc472f2047fa7"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-retains.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-storage.arcw",
+          "bytes": 341,
+          "sha256": "7c82eb1a764c3e790963bb45e788406a6a10a3c2b5ad61f47324236655ba9537"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-storage.json",
+          "bytes": 1205,
+          "sha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/baseline/returned-prefix-storage.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/poly-prefix-from-closure.arcw",
+          "bytes": 287,
+          "sha256": "cd2c2bff498db23af4193e17f5bfcc9fcb552d7da65fb81fa99550c2df39a6cb"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/poly-shared-returned-prefix.arcw",
+          "bytes": 340,
+          "sha256": "1a39dfd5314142ace6c5905cf2a5e8a4a5d51dac6dbe79371427281636c7cbf6"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-discards.arcw",
+          "bytes": 348,
+          "sha256": "de379ed35b919f0753206d521180b73e5ed112bcccab769322d24bb6c9f5b299"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual.arcw",
+          "bytes": 418,
+          "sha256": "5a3e0d355cfdf34f1f2489aa7f6a8597777c4965fc23700449f56ecf3296c951"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual-owned.arcw",
+          "bytes": 420,
+          "sha256": "04ace18d16d52feb4aacc34c9f3932ea5a262c6a48ebea296b1f8d7cd58ef46d"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-retains.arcw",
+          "bytes": 345,
+          "sha256": "ee716478620f62754cdefae48fffeef44f6b90c5e444f315bc227def56f8f335"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-storage.arcw",
+          "bytes": 341,
+          "sha256": "7c82eb1a764c3e790963bb45e788406a6a10a3c2b5ad61f47324236655ba9537"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-retains.check.after.json",
+          "bytes": 1205,
+          "sha256": "14ca3619a625018ddacfc0c9f87affe98e051237aaa3ed544bd092b2dff13b7e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-retains.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-retains.verify.after.json",
+          "bytes": 1205,
+          "sha256": "14ca3619a625018ddacfc0c9f87affe98e051237aaa3ed544bd092b2dff13b7e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-retains.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-discards.check.after.json",
+          "bytes": 1215,
+          "sha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-discards.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-discards.verify.after.json",
+          "bytes": 1215,
+          "sha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-discards.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-storage.check.after.json",
+          "bytes": 1205,
+          "sha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-storage.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-storage.verify.after.json",
+          "bytes": 1205,
+          "sha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-storage.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/poly-prefix-from-closure.check.after.json",
+          "bytes": 1209,
+          "sha256": "e922dd5a5ebd09632267ec2337fff4466f40075532e32672bf94ee8871aaabf8"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/poly-prefix-from-closure.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/poly-shared-returned-prefix.check.after.json",
+          "bytes": 1221,
+          "sha256": "0e758c219d745ddb1e49f25d8ffd03609c4b2d0f7359c0b19584f1c46081308b"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/poly-shared-returned-prefix.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual.check.after.json",
+          "bytes": 1237,
+          "sha256": "ad3f1d80f6a9ad06b7ba5a9129844a74b0c01cdf2258868f128a9516017994e5"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual.verify.after.json",
+          "bytes": 1237,
+          "sha256": "ad3f1d80f6a9ad06b7ba5a9129844a74b0c01cdf2258868f128a9516017994e5"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual-owned.check.after.json",
+          "bytes": 1267,
+          "sha256": "cf3fdf455b27dfbb7d3f73a319925da67ea72145909c6717f025cd547b094c5e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual-owned.verify.after.json",
+          "bytes": 1267,
+          "sha256": "cf3fdf455b27dfbb7d3f73a319925da67ea72145909c6717f025cd547b094c5e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/cli/returned-prefix-poly-contextual-owned.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/direct-prefix-shared-execution.arcw",
+          "bytes": 290,
+          "sha256": "2e54237d22c2a1c57afbbe79cb2f43f194ada353872c9190ad4f8b69b0ac0ab3"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-execution.arcw",
+          "bytes": 400,
+          "sha256": "0c2b9821a66a70b2ccaa792928f4ed6079b368edf99b60ab9ed692c770c3353d"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-independent-execution.arcw",
+          "bytes": 392,
+          "sha256": "c495e13ffc539149c9f12eae36af0667f2fa709c4e99d74fd67568605ec9dc8b"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-execution.bytecode-vm.run.after.json",
+          "bytes": 20083,
+          "sha256": "3c562cc4a13487077949593b8ba9afdf9672046318e043df8320facf2db5caa5"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-execution.bytecode-vm.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-execution.aot.run.after.json",
+          "bytes": 20075,
+          "sha256": "2d9940933d7d3597ba7bd3fd86032044d531866b4089e5a459ecae9e17584cdc"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-execution.aot.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-execution.awbc-product.run.after.json",
+          "bytes": 97076,
+          "sha256": "c330f7d0845364718025ae24f4575f92467b9f9c5c2d715b3f06a96bc5619509"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-execution.awbc-product.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-independent-execution.bytecode-vm.run.after.json",
+          "bytes": 36124,
+          "sha256": "1ba2c4e65da0b0a59071d6cbed5829f770fc66e186b2d61ff3fed33689180a1f"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-independent-execution.bytecode-vm.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-independent-execution.aot.run.after.json",
+          "bytes": 36116,
+          "sha256": "b5dc297ed657bd70c04a0597ab0e2876067ce5df6af5455f83e67424cf2bef47"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-independent-execution.aot.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-independent-execution.awbc-product.run.after.json",
+          "bytes": 210991,
+          "sha256": "ce9e4ce93141353d25e57a8ac0fe0459a1a903cc80638817f2cb122ec4a48e46"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/returned-prefix-independent-execution.awbc-product.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/direct-prefix-shared-execution.bytecode-vm.run.after.json",
+          "bytes": 18480,
+          "sha256": "5b33afcc8f34f341b46a788a97702f4093abdae5966d7dcef736016854f7d514"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/direct-prefix-shared-execution.bytecode-vm.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/direct-prefix-shared-execution.aot.run.after.json",
+          "bytes": 18472,
+          "sha256": "ecd7d038b3b3034b7f7b587877d322d820fb6a4481fe34ed80bd0f7414714515"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/direct-prefix-shared-execution.aot.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/direct-prefix-shared-execution.awbc-product.run.after.json",
+          "bytes": 154821,
+          "sha256": "29dcf48bc0c50450db6d46b90f305ad2c49a055075619b176fa6ca999aa70ab4"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/execution/direct-prefix-shared-execution.awbc-product.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-poly-owned.arcw",
+          "bytes": 369,
+          "sha256": "c3cba1c9fcc77a5e8d534018df1e4ace0ba4f21f8551315fabff663775866c97"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-poly-owned.json",
+          "bytes": 540,
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-poly-owned.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-poly-borrow.arcw",
+          "bytes": 369,
+          "sha256": "75f9e5554a9a185cbedcac2b55d7558272ad697b5816fe991f2809d7e84f30bb"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-poly-borrow.json",
+          "bytes": 540,
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-poly-borrow.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-execution.arcw",
+          "bytes": 441,
+          "sha256": "66be1cd34f6721d603acb800f7d5306ecb185f485cf67fbb87cbf7f3b0a51579"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-execution.json",
+          "bytes": 540,
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-execution.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-one-execution.arcw",
+          "bytes": 336,
+          "sha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-one-execution.json",
+          "bytes": 632,
+          "sha256": "8db09460415b662029c1638244dc0eb7f36083c50b25b01b60164fc4f0d9f55b"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-one-execution.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-contextual-execution.arcw",
+          "bytes": 538,
+          "sha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-contextual-execution.json",
+          "bytes": 632,
+          "sha256": "d2cf637a268a71de5ce02f12a439369c305b08fba1faac2d5b22b4793713731e"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/open/returned-prefix-shared-contextual-execution.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-poly-owned.json",
+          "bytes": 540,
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-poly-owned.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-poly-borrow.json",
+          "bytes": 540,
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-poly-borrow.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-poly-contextual.json",
+          "bytes": 1243,
+          "sha256": "7e8a06b3c5e080ccfbc3c71d7a8bfcaad2a1d45025ea5d43d91fe546fdab23e6"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-poly-contextual.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/poly-prefix-from-closure.json",
+          "bytes": 1215,
+          "sha256": "fc6747b6388438d0a4abc94e8cba5923c61416b3867b3cc53070475727af407a"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/poly-prefix-from-closure.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/poly-shared-returned-prefix.json",
+          "bytes": 1227,
+          "sha256": "3aa10a04dbbe45e86b5aa8af86aecd8e74101557a94d3487d94de116b8034cc4"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/poly-shared-returned-prefix.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-execution.bytecode-vm.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-execution.bytecode-vm.run.stderr.log",
+          "bytes": 181,
+          "sha256": "445362db0d82694cd6f486b29afa0999d44fcffc7c98400d654f4e71f2c1a7f1"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-execution.aot.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-execution.aot.run.stderr.log",
+          "bytes": 181,
+          "sha256": "445362db0d82694cd6f486b29afa0999d44fcffc7c98400d654f4e71f2c1a7f1"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-execution.awbc-product.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-execution.awbc-product.run.stderr.log",
+          "bytes": 181,
+          "sha256": "445362db0d82694cd6f486b29afa0999d44fcffc7c98400d654f4e71f2c1a7f1"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-one-execution.bytecode-vm.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-one-execution.bytecode-vm.run.stderr.log",
+          "bytes": 273,
+          "sha256": "6d8c4e4470d2bb2086be44012fd284d39db4fc7411d6b8bac1f322ccff5d72a9"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-one-execution.aot.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-one-execution.aot.run.stderr.log",
+          "bytes": 273,
+          "sha256": "6d8c4e4470d2bb2086be44012fd284d39db4fc7411d6b8bac1f322ccff5d72a9"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-one-execution.awbc-product.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-one-execution.awbc-product.run.stderr.log",
+          "bytes": 273,
+          "sha256": "6d8c4e4470d2bb2086be44012fd284d39db4fc7411d6b8bac1f322ccff5d72a9"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-contextual-execution.bytecode-vm.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-contextual-execution.bytecode-vm.run.stderr.log",
+          "bytes": 273,
+          "sha256": "5634ccba97ca0de844b649e0755673c32d8af893b421b1b86b61c66320c462bf"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-contextual-execution.aot.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-contextual-execution.aot.run.stderr.log",
+          "bytes": 273,
+          "sha256": "5634ccba97ca0de844b649e0755673c32d8af893b421b1b86b61c66320c462bf"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-contextual-execution.awbc-product.run.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/observed-before-build/returned-prefix-shared-contextual-execution.awbc-product.run.stderr.log",
+          "bytes": 273,
+          "sha256": "5634ccba97ca0de844b649e0755673c32d8af893b421b1b86b61c66320c462bf"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/quality-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/quality-workspace-check.log",
+          "bytes": 111880,
+          "sha256": "aff5cd429be4532c463cee262115b65a91d2c6361a5c206a5fe4b9c86a82c4ca"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/quality-workspace-clippy.log",
+          "bytes": 9276890,
+          "sha256": "4a1eece2924c0464dd8b8317e2a65b872b2a874feb5aa470f51217a60b4530e5"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/quality-structure.log",
+          "bytes": 66798,
+          "sha256": "4186f8532a856bc17fe4fb91e041c474cf735afa79afc3e1db46c50c9a72bb68"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/quality-owner-doctests.log",
+          "bytes": 88122,
+          "sha256": "0629f2a3c3303cd0dcbb78fc5874993aa74297fb35a7ef57c5c9e4e2f7de6822"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/quality-cli-build.log",
+          "bytes": 92751,
+          "sha256": "3fca792ee4cfacede973bd0cc6df794a50d53672416ce7c153f7fd79b0a67574"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/quality-owners.log",
+          "bytes": 316351,
+          "sha256": "eb2a6c2b729f4f6b8882b727a6b46d74087707f31c28c94846f1824167c6442a"
+        },
+        {
+          "entry": "returned-prefix-promotion-receiver-587316e7/quality/checkpoint.receipt.json",
+          "bytes": 7903,
+          "sha256": "a6d17698b35e821a73b2f3eda7a6b3d31873c004ec6ebdb07f82e77357abdeeb"
+        }
+      ]
+    }
   }
 }
