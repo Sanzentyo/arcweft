@@ -75,6 +75,8 @@ frame observation summary used by the native/Web parity tests. Set
 `ARW_PLAYWRIGHT_CHANNEL` to use another installed Playwright browser channel.
 It also verifies `[p]` as a same-dialogue page transition through the dialogue
 instance, stage, page index, and page count in `arcweft.web_observation.v1`.
+The frame report exposes each image's runtime occurrence key as `id` and its
+authored object name as `authored_id`. Several live images can share the authored name.
 
 `web/arcw.toml` uses the schema-1 project asset root at `web/assets/`.
 The bundle includes virtual files from this root, including fonts served

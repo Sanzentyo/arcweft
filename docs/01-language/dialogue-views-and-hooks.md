@@ -45,12 +45,12 @@ from the member spelling.
 pub view StandardDialogueShape(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {
         Text(dialogue.character.display_name)
-            .x(85.6px).y(480.8px)
+            .x(28px).y(20px)
             .width(1108.8px).height(28px)
         RichText(dialogue.content)
-            .x(85.6px).y(518.8px)
+            .x(28px).y(58px)
             .width(1108.8px).height(125.6px)
-        Button("", x = 57.6px, y = 460.8px,
+        Button("", x = 0px, y = 0px,
                    width = 1164.8px, height = 201.6px)
             .on_click { dialogue.primary_action }
     }
@@ -60,6 +60,8 @@ pub view StandardDialogueShape(dialogue: DialogueView) {
 When a project does not select a View, normal linking selects
 `std.view.dialogue`.
 There is no runtime-created fallback panel.
+In the authored examples, the positioned Panel supplies the containing block
+for its positioned children. Their offsets are measured from the Panel.
 
 Logical page behavior remains dialogue behavior. `[p]` waits and closes the
 current logical page; `[l]` waits while retaining it. A View may animate a page
@@ -82,13 +84,13 @@ pub view MainDialogue(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px,
           part = main_dialogue) {
         Text(dialogue.character.display_name)
-            .x(85.6px).y(480.8px)
+            .x(28px).y(20px)
             .width(1108.8px).height(28px)
         RichText(dialogue.content)
-            .x(85.6px).y(518.8px)
+            .x(28px).y(58px)
             .width(1108.8px).height(125.6px)
             .style(@style.main_dialogue)
-        Button("", x = 57.6px, y = 460.8px,
+        Button("", x = 0px, y = 0px,
                    width = 1164.8px, height = 201.6px)
             .on_click { dialogue.primary_action }
     }

@@ -90,6 +90,8 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
         WebFrameObservationReport::from_prepared_frame(&prepared).expect("actual frame geometry");
 
     assert_eq!(report.image_count, 1);
+    assert_eq!(report.images[0].id, prepared.images[0].id);
+    assert_eq!(report.images[0].authored_id, "image.authored");
     assert_eq!(
         report.images[0].bounds,
         WebFrameBounds {
@@ -130,6 +132,7 @@ fn image_frame_report(images: Vec<RenderImage>) -> WebFrameObservationReport {
 fn test_render_image(id: &str) -> RenderImage {
     RenderImage {
         id: id.to_owned(),
+        authored_id: "image.authored".to_owned(),
         frame: RenderImageFrame {
             index: None,
             width: 2,

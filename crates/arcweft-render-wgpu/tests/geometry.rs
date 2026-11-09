@@ -89,6 +89,7 @@ fn generated_scene(elapsed_millis: u64) -> RenderScene {
 fn render_image(id: &str, bounds: HitRect) -> RenderImage {
     RenderImage {
         id: id.to_owned(),
+        authored_id: id.to_owned(),
         frame: RenderImageFrame {
             index: None,
             width: 10,

@@ -54,6 +54,7 @@ pub fn generated_demo_images(
     vec![
         RenderImage {
             id: DemoImageKind::Background.asset_id().to_owned(),
+            authored_id: DemoImageKind::Background.asset_id().to_owned(),
             frame: gradient_background_frame(),
             bounds: HitRect::new(0.0, 0.0, width, height),
             containing_scroll_region: None,
@@ -66,6 +67,7 @@ pub fn generated_demo_images(
         },
         RenderImage {
             id: DemoImageKind::CharacterStand.asset_id().to_owned(),
+            authored_id: DemoImageKind::CharacterStand.asset_id().to_owned(),
             frame: character_stand_frame(),
             bounds: HitRect::new(width * 0.61, height * 0.14, width * 0.22, height * 0.62),
             containing_scroll_region: None,
@@ -78,6 +80,7 @@ pub fn generated_demo_images(
         },
         RenderImage {
             id: DemoImageKind::GifPulse.asset_id().to_owned(),
+            authored_id: DemoImageKind::GifPulse.asset_id().to_owned(),
             frame: pulse_frame(clock.frame_index(160, 4), [255, 111, 88, 255]),
             bounds: HitRect::new(width * 0.08, height * 0.12, 76.0, 76.0),
             containing_scroll_region: None,
@@ -90,6 +93,7 @@ pub fn generated_demo_images(
         },
         RenderImage {
             id: DemoImageKind::WebPPulse.asset_id().to_owned(),
+            authored_id: DemoImageKind::WebPPulse.asset_id().to_owned(),
             frame: pulse_frame(clock.frame_index(130, 5), [98, 205, 255, 255]),
             bounds: HitRect::new(width * 0.17, height * 0.16, 68.0, 68.0),
             containing_scroll_region: None,

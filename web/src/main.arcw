@@ -31,18 +31,18 @@ pub style web_panel {
 pub view WebPanel(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {
         Text(dialogue.character.display_name)
-            .x(85.6px)
-            .y(480.8px)
+            .x(28px)
+            .y(20px)
             .width(1108.8px)
             .height(28px)
             .part(web_speaker)
         RichText(dialogue.content)
-            .x(85.6px)
-            .y(518.8px)
+            .x(28px)
+            .y(58px)
             .width(1108.8px)
             .height(125.6px)
             .part(web_content)
-        Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
+        Button("", x = 0px, y = 0px, width = 1164.8px, height = 201.6px)
             .part(web_action)
             .on_click { dialogue.primary_action }
     }
@@ -88,16 +88,19 @@ flow main(state: GameState) {
     let character_stand = image(
         asset = @asset:.generated.character_stand,
         id = "image.generated.character_stand",
+        depth = 1,
         x = 72px, y = 52px, width = 208px, height = 332px
     )
     let gif_pulse = image(
         asset = @asset:.generated.gif_pulse,
         id = "image.generated.gif_pulse",
+        depth = 2,
         x = 486px, y = 46px, width = 96px, height = 96px
     )
     let webp_pulse = image(
         asset = @asset:.generated.webp_pulse,
         id = "image.generated.webp_pulse",
+        depth = 3,
         x = 492px, y = 156px, width = 96px, height = 96px
     )
 

@@ -104,6 +104,7 @@ impl BundleImageCatalog {
         let placement = render_placement(object, viewport)?;
         Ok(RenderImage {
             id: object.object_id().to_owned(),
+            authored_id: object.id.clone(),
             frame: RenderImageFrame {
                 index: usize::try_from(frame.index()).ok(),
                 width: frame.dimensions().width(),

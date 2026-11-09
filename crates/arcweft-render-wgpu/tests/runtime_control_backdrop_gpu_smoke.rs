@@ -266,6 +266,7 @@ fn foreground_control(filter: bool) -> RenderTextInputControl {
 fn checker_image() -> RenderImage {
     RenderImage {
         id: "checker".to_owned(),
+        authored_id: "checker".to_owned(),
         frame: RenderImageFrame {
             index: None,
             width: 160,

@@ -18,7 +18,10 @@ pub struct RenderImageFrame {
 /// One textured image quad in logical viewport coordinates.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderImage {
+    /// Exact occurrence key used by the renderer and capture.
     pub id: String,
+    /// Authored object metadata, which may be shared by several occurrences.
+    pub authored_id: String,
     pub frame: RenderImageFrame,
     pub bounds: HitRect,
     pub containing_scroll_region: Option<String>,

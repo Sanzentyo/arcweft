@@ -138,6 +138,7 @@ pub struct WebFrameBounds {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebFrameImage {
     pub id: String,
+    pub authored_id: String,
     pub bounds: WebFrameBounds,
     pub frame_width: u32,
     pub frame_height: u32,
@@ -502,6 +503,7 @@ impl WebFrameImage {
     fn from_render_image(image: &RenderImage) -> Self {
         Self {
             id: image.id.clone(),
+            authored_id: image.authored_id.clone(),
             bounds: WebFrameBounds::from_hit_rect(image.visible_bounds().unwrap_or(image.bounds)),
             frame_width: image.frame.width,
             frame_height: image.frame.height,

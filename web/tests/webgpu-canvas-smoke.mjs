@@ -254,7 +254,7 @@ async function assertFrameObservation(page, expected) {
     "scale factor mismatch",
   );
   expect(
-    frame.images.map((image) => image.id).join(",") ===
+    frame.images.map((image) => image.authored_id).join(",") ===
       [
         "image.generated.background",
         "image.generated.character_stand",
@@ -263,6 +263,7 @@ async function assertFrameObservation(page, expected) {
       ].join(","),
     `unexpected image ids: ${JSON.stringify(frame.images)}`,
   );
+  expect(new Set(frame.images.map((image) => image.id)).size === 4, "image occurrences collide");
   const expectedChoices = expectedChoiceGeometry(expected);
   expect(
     frame.choices.length === expectedChoices.length &&
@@ -285,10 +286,10 @@ function expectedChoiceGeometry(expected) {
   const offsetY = (expected.logicalHeight - referenceHeight * scale) / 2;
   const itemHeight = 60;
   const gap = 12;
-  // Authored product bounds are intrinsic inputs only. The committed physical
-  // geometry places the root dialogue surface at the viewport origin, so the
-  // shared choice layout uses its canonical top clamp in design space.
-  const top = 36;
+  // The two choices leave 22 design pixels above the retained dialogue Panel.
+  const panelTop = 460.8;
+  const total = 2 * itemHeight + gap;
+  const top = panelTop - total - 22;
   return [
     {
       optionId: "choice.web_demo.continue",
