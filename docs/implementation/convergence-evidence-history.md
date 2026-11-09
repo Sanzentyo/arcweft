@@ -16329,3 +16329,19 @@ Webクレートは全feature nextest 37件成功、ClippyとWasmビルドは終�
 ### Scrollの現状記述の訂正 — 2026-11-09
 
 `cc9e2deb9c5de1c2f0d699d67ed7d7e576926430` の現状一覧には、Scrollの初回検証で発生した反復子の描画失敗が現在形で残っていた。`77c2024abbde3d455e0bb2699fcae821cf4817fa` はキー付きText／Button／Scrollの正順と逆順をNativeで再検証し、`ae708a9ca954fb2b1cd9e45789c97cc831baef56` は単独Panelと反復Box、名前付き `part` の重複を修復して実描画を確認した。後続結果は各項目の行に集約し、Scrollの行は元のCLI・保存復元の受入範囲に絞った。[初回の失敗原本](acceptance-evidence/task-retained-scroll-occurrence.raw.zip)、[Text／Buttonの再検証](acceptance-evidence/task-retained-text-button-occurrences.raw.zip)、[Panel／Boxの再検証](acceptance-evidence/task-retained-surface-native-web.raw.zip)。
+
+### 文字表示の実画像と可視性 — 2026-11-09
+
+採取Source `d7c53e97c4b506c1eb3399beacab3a6592ce2da9`、親 `792e78c6ded7c1a8fbff3bfa793458e7e3b69dc0`、tree `1ecbf62b41fc3d1c4ca278c04c314b89831a2a30`。公開先の1 blobを照合した。indexは空で、既存の未追跡 `%SystemDrive%/` があった。
+Native採取ツールは受理済みAWFBの一つのデコード結果をセッションと画像登録で共有し、Fxはセッションの定義を使う。変更前は同じ入力でWindowsの1 MiBスタックがあふれ、終了 `0xc00000fd`。LLDBではAWBCの定数ロードと424,352 bytesの命令ディスパッチスタックを確認した。変更後はスタック設定、時刻、フォント、画像比較ゲートの条件を維持し、標準・縮小・高DPIのNative採取がすべて終了0だった。
+
+先のブラウザー診断では563ステップ中232ステップに進んだ時点で10秒上限に達した。Rustの分割検証終了後に単独で実行した既定のWebスモークは3件とも終了0。NativeとWebはそれぞれtick 1から564まで進み、9,000 msの要求を16 ms刻みで9,008 msとして処理した。標準と高DPIは1280×720、縮小は960×540。3組すべてで全RGBA画素のMSE・MAE・最大差が0で、標準Nativeの再採取PNGも同じSHA-256だった。
+既存の総合ゲートは終了1。画像全体とimqの各3件は通過した。文字単位の3件では標準・縮小が通過し、高DPIで本文が見切れて `h`（source 46..47）と `i`（49..50）が両環境ともインク0画素だった。最小4画素の条件を維持した。
+
+[比較画像・各ゲート・旧実行の原本](acceptance-evidence/task-native-style-parity-captures.raw.zip)は36件、274,553 bytes、SHA-256
+`90e56efaab9d4ea45ff849c8209646eb68ffdf86e4e71da986439c4f9ca7ccdf`。
+
+統合サンプルは同じ採取SourceでNativeの8場面がすべて終了0。指定した縦書き2場面とFxの1場面でcolor・mask・object IDを出力した。NativeのJLREQ loose／strictはPNGのSHA-256 `c452cf41c3850a1a1551e5e0b4ee16fb38ce6885d0249773e5deeeb1c5a1a35e` が一致し、比較の前提となる両場面の差が出なかった。Fxの4,000／4,500 msとrevealの20,000／20,500 msはそれぞれ異なるPNGを出力し、後者の観測本文は `開示20` から `開示202` へ進んだ。Webの既定スモークは最初の論理時計を進める処理で10秒上限に達し終了1。画像を取得していないためNative／Webの比較は未実行。
+
+[統合サンプルの採取・ブラウザー停止の原本](acceptance-evidence/task-unified-text-parity-current.raw.zip)は40件、305,085 bytes、SHA-256
+`aebfd96f33fb8d0ad7049cc122849b7fb624590581ec065477d7920d0f28bb2d`。
