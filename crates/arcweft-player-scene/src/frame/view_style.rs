@@ -667,9 +667,9 @@ fn node_bindings(
             mount.scoped_id(target.as_deref().unwrap_or(image)),
             StyleTargetKind::Image,
         )?],
-        BundleViewStyleNodeKind::Custom { .. } | BundleViewStyleNodeKind::CallView { .. } => {
-            Vec::new()
-        }
+        BundleViewStyleNodeKind::Scroll { .. }
+        | BundleViewStyleNodeKind::Custom { .. }
+        | BundleViewStyleNodeKind::CallView { .. } => Vec::new(),
     };
     if let Some(part_key) = part_key {
         if let Some(binding) = bindings.first_mut() {

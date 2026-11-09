@@ -43,8 +43,8 @@ use arcweft_bundle::patch::{
 };
 use arcweft_bundle::resource_codec::{
     ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
-    ViewRuntimeTextControl, ViewRuntimeTextSelection,
+    ViewRuntimeFocusNavigation, ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewRuntimeTextSelection,
 };
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_character::presentation_name::AcceptedCharacterPresentationCatalog;
@@ -293,7 +293,6 @@ pub struct BundleSession {
     image_objects: Vec<PresentationImage>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
-    scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
@@ -1110,7 +1109,6 @@ impl BundleSession {
             BundlePresentationResources {
                 text_inputs: &self.text_inputs,
                 action_buttons: &self.action_buttons,
-                scroll_regions: &self.scroll_regions,
                 surfaces: &self.surfaces,
                 focus_groups: &self.focus_groups,
                 focus_navigation: &self.focus_navigation,
@@ -1254,7 +1252,6 @@ impl BundleSession {
                     images: &self.image_objects,
                     text_inputs: &self.text_inputs,
                     action_buttons: &self.action_buttons,
-                    scroll_regions: &self.scroll_regions,
                     surfaces: &self.surfaces,
                     focus_groups: &self.focus_groups,
                     focus_navigation: &self.focus_navigation,
@@ -1265,6 +1262,12 @@ impl BundleSession {
         } else {
             false
         };
+        self.view_virtualization.retain_live_scroll_targets(
+            &frame
+                .scroll_occurrences()
+                .map(|scroll| scroll.target)
+                .collect(),
+        );
         self.presentation.replace_view_frame(frame);
         self.reconcile_view_fx(&previous_fx);
         replaced_resources

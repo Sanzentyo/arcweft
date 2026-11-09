@@ -737,7 +737,6 @@ fn merge_programs(
             left.exported_parts.extend(right.exported_parts);
             left.semantic_targets.extend(right.semantic_targets);
             left.layout_bounds.extend(right.layout_bounds);
-            left.scroll_regions.extend(right.scroll_regions);
             left.surfaces.extend(right.surfaces);
             left.text_blocks.extend(right.text_blocks);
             left.action_buttons.extend(right.action_buttons);
@@ -935,6 +934,7 @@ fn remap_program_references(
             }
         }
         ViewProgramInstruction::OpenElement { .. }
+        | ViewProgramInstruction::OpenScroll { .. }
         | ViewProgramInstruction::CloseElement
         | ViewProgramInstruction::BeginScope
         | ViewProgramInstruction::EndScope

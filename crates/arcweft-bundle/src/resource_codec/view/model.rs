@@ -56,8 +56,6 @@ pub struct ViewProgramResource {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layout_bounds: Vec<ViewLayoutBoundsResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scroll_regions: Vec<ViewScrollRegionResource>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surfaces: Vec<ViewSurfaceResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_blocks: Vec<ViewTextBlockResource>,
@@ -106,6 +104,15 @@ pub enum ViewProgramInstruction {
         styles: Vec<ViewStyleApplicationTarget>,
         part: Option<ViewPartLocalName>,
         key: Option<u64>,
+        source: Option<SourceRangeRef>,
+    },
+    OpenScroll {
+        target: String,
+        #[serde(default, skip_serializing_if = "ViewScrollPolicy::is_default")]
+        policy: ViewScrollPolicy,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        styles: Vec<ViewStyleApplicationTarget>,
+        part: Option<ViewPartLocalName>,
         source: Option<SourceRangeRef>,
     },
     CloseElement,
@@ -203,6 +210,7 @@ impl ViewProgramInstruction {
             | Self::BindHandler { .. } => true,
             Self::CallView { arguments, .. } => !arguments.is_empty(),
             Self::OpenElement { .. }
+            | Self::OpenScroll { .. }
             | Self::CloseElement
             | Self::EmitText { .. }
             | Self::EmitImage { .. }
@@ -218,6 +226,7 @@ impl ViewProgramInstruction {
     pub fn styles(&self) -> &[ViewStyleApplicationTarget] {
         match self {
             Self::OpenElement { styles, .. }
+            | Self::OpenScroll { styles, .. }
             | Self::EmitText { styles, .. }
             | Self::EmitImage { styles, .. }
             | Self::EmitCustom { styles, .. }
@@ -240,6 +249,7 @@ impl ViewProgramInstruction {
     pub fn styles_mut(&mut self) -> Option<&mut Vec<ViewStyleApplicationTarget>> {
         match self {
             Self::OpenElement { styles, .. }
+            | Self::OpenScroll { styles, .. }
             | Self::EmitText { styles, .. }
             | Self::EmitImage { styles, .. }
             | Self::EmitCustom { styles, .. }
@@ -262,6 +272,7 @@ impl ViewProgramInstruction {
     pub fn part_mut(&mut self) -> Option<&mut Option<ViewPartLocalName>> {
         match self {
             Self::OpenElement { part, .. }
+            | Self::OpenScroll { part, .. }
             | Self::EmitText { part, .. }
             | Self::EmitImage { part, .. }
             | Self::EmitCustom { part, .. }
@@ -274,6 +285,7 @@ impl ViewProgramInstruction {
     pub fn part(&self) -> Option<&ViewPartLocalName> {
         match self {
             Self::OpenElement { part, .. }
+            | Self::OpenScroll { part, .. }
             | Self::EmitText { part, .. }
             | Self::EmitImage { part, .. }
             | Self::EmitCustom { part, .. }
@@ -295,6 +307,7 @@ impl ViewProgramInstruction {
     pub(crate) fn source(&self) -> Option<&SourceRangeRef> {
         match self {
             Self::OpenElement { source, .. }
+            | Self::OpenScroll { source, .. }
             | Self::EmitText { source, .. }
             | Self::EmitImage { source, .. }
             | Self::EmitCustom { source, .. }
@@ -314,6 +327,7 @@ impl ViewProgramInstruction {
     pub(crate) fn source_mut(&mut self) -> Option<&mut SourceRangeRef> {
         match self {
             Self::OpenElement { source, .. }
+            | Self::OpenScroll { source, .. }
             | Self::EmitText { source, .. }
             | Self::EmitImage { source, .. }
             | Self::EmitCustom { source, .. }
@@ -397,7 +411,6 @@ impl Default for ViewProgramResource {
             exported_parts: Vec::new(),
             semantic_targets: Vec::new(),
             layout_bounds: Vec::new(),
-            scroll_regions: Vec::new(),
             surfaces: Vec::new(),
             text_blocks: Vec::new(),
             action_buttons: Vec::new(),
@@ -677,44 +690,13 @@ pub struct ViewRuntimeButtonBounds {
     pub height_milli: u32,
 }
 
-/// Authored scroll viewport metadata for Arcweft-owned player scrolling.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewScrollRegionResource {
-    pub public_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub view: Option<String>,
-    pub bounds: ViewLogicalRect,
-    pub content_width_milli: u32,
-    pub content_height_milli: u32,
-    pub axis: ViewScrollAxis,
-    #[serde(default, skip_serializing_if = "ViewScrollOverflowPolicy::is_default")]
-    pub overflow: ViewScrollOverflowPolicy,
-    #[serde(
-        default,
-        skip_serializing_if = "ViewScrollIndicatorsPolicy::is_default"
-    )]
-    pub indicators: ViewScrollIndicatorsPolicy,
-    #[serde(
-        default,
-        skip_serializing_if = "ViewScrollOverscrollPolicy::is_default"
-    )]
-    pub overscroll: ViewScrollOverscrollPolicy,
-    #[serde(default, skip_serializing_if = "ViewFocusAutoScrollPolicy::is_default")]
-    pub auto_scroll_focus: ViewFocusAutoScrollPolicy,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<SourceRangeRef>,
-}
-
-/// Runtime-facing scroll viewport emitted in display snapshots.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewRuntimeScrollRegion {
-    pub public_id: String,
-    pub target: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub view: Option<String>,
-    pub bounds: ViewRuntimeScrollRegionBounds,
-    pub content_width_milli: u32,
-    pub content_height_milli: u32,
+/// Interaction policy carried by each retained Scroll viewport. Layout owns its geometry.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ViewScrollPolicy {
+    #[serde(default, skip_serializing_if = "ViewScrollAxis::is_default")]
     pub axis: ViewScrollAxis,
     #[serde(default, skip_serializing_if = "ViewScrollOverflowPolicy::is_default")]
     pub overflow: ViewScrollOverflowPolicy,
@@ -732,22 +714,45 @@ pub struct ViewRuntimeScrollRegion {
     pub auto_scroll_focus: ViewFocusAutoScrollPolicy,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewRuntimeScrollRegionBounds {
-    pub x_milli: i32,
-    pub y_milli: i32,
-    pub width_milli: u32,
-    pub height_milli: u32,
+impl ViewScrollPolicy {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Physical overflow consumes the same policy as host input.
+    pub const fn physical_overflow(
+        self,
+    ) -> (
+        arcweft_view::style::ViewOverflow,
+        arcweft_view::style::ViewOverflow,
+    ) {
+        use arcweft_view::style::ViewOverflow;
+        let primary = match self.overflow {
+            ViewScrollOverflowPolicy::Auto => ViewOverflow::Auto,
+            ViewScrollOverflowPolicy::Scroll => ViewOverflow::Scroll,
+            ViewScrollOverflowPolicy::Hidden => ViewOverflow::Clip,
+        };
+        match self.axis {
+            ViewScrollAxis::Vertical => (ViewOverflow::Clip, primary),
+            ViewScrollAxis::Horizontal => (primary, ViewOverflow::Clip),
+        }
+    }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewScrollAxis {
+    #[default]
     Vertical,
     Horizontal,
 }
 
 impl ViewScrollAxis {
+    const fn is_default(&self) -> bool {
+        matches!(self, Self::Vertical)
+    }
     /// Corresponding primary axis used by retained-list virtualization.
     pub const fn virtual_axis(self) -> ViewVirtualAxis {
         match self {
@@ -784,7 +789,9 @@ impl ViewScrollAxis {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewScrollOverflowPolicy {
     #[default]
@@ -793,7 +800,9 @@ pub enum ViewScrollOverflowPolicy {
     Hidden,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewScrollIndicatorsPolicy {
     #[default]
@@ -802,7 +811,9 @@ pub enum ViewScrollIndicatorsPolicy {
     Hidden,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewScrollOverscrollPolicy {
     #[default]
@@ -811,7 +822,9 @@ pub enum ViewScrollOverscrollPolicy {
     Elastic,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewFocusAutoScrollPolicy {
     #[default]
@@ -1392,13 +1405,6 @@ impl ViewProgramResource {
             .collect()
     }
 
-    pub fn runtime_scroll_regions(&self) -> Vec<ViewRuntimeScrollRegion> {
-        self.scroll_regions
-            .iter()
-            .map(ViewScrollRegionResource::runtime_scroll_region)
-            .collect()
-    }
-
     pub fn text_control_bounds_for(&self, public_id: &str) -> Option<ViewRuntimeTextControlBounds> {
         self.layout_bounds
             .iter()
@@ -1548,75 +1554,6 @@ impl ViewSurfaceResource {
     }
 }
 
-impl ViewScrollRegionResource {
-    pub fn new(
-        public_id: impl Into<String>,
-        view: Option<String>,
-        bounds: ViewLogicalRect,
-        content_width_milli: u32,
-        content_height_milli: u32,
-        axis: ViewScrollAxis,
-    ) -> Self {
-        Self {
-            public_id: public_id.into(),
-            view,
-            bounds,
-            content_width_milli,
-            content_height_milli,
-            axis,
-            overflow: ViewScrollOverflowPolicy::default(),
-            indicators: ViewScrollIndicatorsPolicy::default(),
-            overscroll: ViewScrollOverscrollPolicy::default(),
-            auto_scroll_focus: ViewFocusAutoScrollPolicy::default(),
-            source: None,
-        }
-    }
-
-    #[must_use]
-    pub const fn with_overflow(mut self, overflow: ViewScrollOverflowPolicy) -> Self {
-        self.overflow = overflow;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_indicators(mut self, indicators: ViewScrollIndicatorsPolicy) -> Self {
-        self.indicators = indicators;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_overscroll(mut self, overscroll: ViewScrollOverscrollPolicy) -> Self {
-        self.overscroll = overscroll;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_auto_scroll_focus(mut self, policy: ViewFocusAutoScrollPolicy) -> Self {
-        self.auto_scroll_focus = policy;
-        self
-    }
-
-    pub const fn is_valid(&self) -> bool {
-        self.bounds.is_valid() && self.content_width_milli > 0 && self.content_height_milli > 0
-    }
-
-    pub fn runtime_scroll_region(&self) -> ViewRuntimeScrollRegion {
-        ViewRuntimeScrollRegion {
-            public_id: self.public_id.clone(),
-            target: self.public_id.clone(),
-            view: self.view.clone(),
-            bounds: self.bounds.runtime_scroll_region_bounds(),
-            content_width_milli: self.content_width_milli,
-            content_height_milli: self.content_height_milli,
-            axis: self.axis,
-            overflow: self.overflow,
-            indicators: self.indicators,
-            overscroll: self.overscroll,
-            auto_scroll_focus: self.auto_scroll_focus,
-        }
-    }
-}
-
 impl ViewScrollOverflowPolicy {
     pub const fn is_default(&self) -> bool {
         matches!(self, Self::Auto)
@@ -1729,15 +1666,6 @@ impl ViewLogicalRect {
 
     pub const fn runtime_button_bounds(self) -> ViewRuntimeButtonBounds {
         ViewRuntimeButtonBounds::new(
-            self.x_milli,
-            self.y_milli,
-            self.width_milli,
-            self.height_milli,
-        )
-    }
-
-    pub const fn runtime_scroll_region_bounds(self) -> ViewRuntimeScrollRegionBounds {
-        ViewRuntimeScrollRegionBounds::new(
             self.x_milli,
             self.y_milli,
             self.width_milli,
@@ -1904,17 +1832,6 @@ impl ViewRuntimeSurfaceBounds {
 
     pub const fn is_valid(self) -> bool {
         self.width_milli > 0 && self.height_milli > 0
-    }
-}
-
-impl ViewRuntimeScrollRegionBounds {
-    pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
-        Self {
-            x_milli,
-            y_milli,
-            width_milli,
-            height_milli,
-        }
     }
 }
 

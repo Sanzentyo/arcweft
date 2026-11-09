@@ -4,8 +4,8 @@ use super::super::PlayerFrameError;
 use super::super::ViewCommittedGeometryFrame;
 use super::{NodeBinding, ResolvedViewStyleFrame, StyleTargetKind};
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeActionButton, ViewRuntimeNodeStyle, ViewRuntimeScrollRegion,
-    ViewRuntimeStyleProjectionError, ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewRuntimeActionButton, ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError,
+    ViewRuntimeSurface, ViewRuntimeTextControl,
 };
 use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
@@ -20,7 +20,6 @@ use std::sync::Arc;
 pub(in crate::frame) struct StyledViewResources {
     pub(in crate::frame) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(in crate::frame) action_buttons: Vec<ViewRuntimeActionButton>,
-    pub(in crate::frame) scroll_regions: Vec<ViewRuntimeScrollRegion>,
     pub(in crate::frame) surfaces: Vec<ViewRuntimeSurface>,
     pub(in crate::frame) images: Vec<PresentationImage>,
     pub(in crate::frame) geometry: Arc<ViewCommittedGeometryFrame>,
@@ -55,7 +54,6 @@ impl ResolvedViewStyleFrame {
                     button
                 })
                 .collect(),
-            scroll_regions: presentation.scroll_regions.clone(),
             surfaces: presentation
                 .surfaces
                 .iter()
@@ -145,12 +143,6 @@ pub(super) fn validate_supported_properties(
                         .as_deref()
                         .is_some_and(|part| surface.public_id == part || surface.target == part)
             });
-            let has_scroll = scoped_target.as_deref().is_some_and(|target| {
-                presentation
-                    .scroll_regions
-                    .iter()
-                    .any(|region| region.target == target)
-            });
             let has_control = scoped_target.as_deref().is_some_and(|target| {
                 presentation
                     .text_inputs
@@ -173,10 +165,10 @@ pub(super) fn validate_supported_properties(
                 ViewElementKind::Panel | ViewElementKind::Box if has_surface => {
                     StyleConsumer::Surface(*element)
                 }
-                ViewElementKind::Scroll if has_scroll => StyleConsumer::Scroll,
                 element => StyleConsumer::Structural(*element),
             }
         }
+        BundleViewStyleNodeKind::Scroll { .. } => StyleConsumer::Scroll,
         BundleViewStyleNodeKind::Text { .. } | BundleViewStyleNodeKind::RichText { .. }
             if !bindings.is_empty() =>
         {
@@ -238,7 +230,7 @@ const fn consumer_supports(consumer: StyleConsumer, property: ViewPropertyKind) 
                 || surface_box_property(property)
                 || surface_visual_property(property)
         }
-        StyleConsumer::Scroll => property.is_inherited() || scroll_box_property(property),
+        StyleConsumer::Scroll => property.is_inherited() || box_geometry_property(property),
         StyleConsumer::Control => {
             control_box_property(property)
                 || surface_visual_property(property)
@@ -249,14 +241,6 @@ const fn consumer_supports(consumer: StyleConsumer, property: ViewPropertyKind) 
         StyleConsumer::Image => image_box_property(property) || image_visual_property(property),
         StyleConsumer::Boundary => property.is_inherited(),
     }
-}
-
-const fn scroll_box_property(property: ViewPropertyKind) -> bool {
-    box_geometry_property(property)
-        || matches!(
-            property,
-            ViewPropertyKind::OverflowX | ViewPropertyKind::OverflowY
-        )
 }
 
 const fn container_gap_property(element: ViewElementKind, property: ViewPropertyKind) -> bool {

@@ -473,7 +473,7 @@ capture resources.
 
 ## Scroll-region observation
 
-`scroll_regions[]` contains one record per authored `Scroll`. The record is the
+`scroll_regions[]` contains one record per live `Scroll` occurrence. The record is the
 only user-facing target and produces at most one semantic `scroll` action in
 `actions[]`. `parts.viewport` and `parts.content` are marked `internal = true`;
 they expose viewport bounds, retained content size, clamped offset, and maximum

@@ -1,8 +1,11 @@
 //! Ordered Style application scopes retained during View evaluation.
 
 use super::BundleViewInstancePath;
-use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewRuntimeGeometryOwner};
+use arcweft_bundle::resource_codec::view::{
+    ViewElementKind, ViewRuntimeGeometryOwner, ViewScrollPolicy,
+};
 use arcweft_id::view::ViewId;
+use arcweft_presentation::input::InteractionTarget;
 use arcweft_view::{
     ViewMountId, ViewPartLocalName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
     ViewStyleBoundaryFacts, ViewStyleNodeKey, ViewStyleScopeId,
@@ -47,6 +50,10 @@ pub enum BundleViewStyleNodeKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target: Option<String>,
     },
+    Scroll {
+        target: InteractionTarget,
+        policy: ViewScrollPolicy,
+    },
     Text {
         text_source: String,
     },
@@ -86,6 +93,7 @@ impl BundleViewStyleNodeKind {
         use arcweft_view::ViewStyleTargetKind;
         match self {
             Self::Element { element, .. } => ViewStyleTargetKind::Element(*element),
+            Self::Scroll { .. } => ViewStyleTargetKind::Element(ViewElementKind::Scroll),
             Self::Text { .. } => ViewStyleTargetKind::Text,
             Self::RichText { .. } => ViewStyleTargetKind::RichText,
             Self::Image { .. } => ViewStyleTargetKind::Image,
@@ -98,6 +106,7 @@ impl BundleViewStyleNodeKind {
     pub const fn runtime_geometry_owner(&self) -> ViewRuntimeGeometryOwner {
         match self {
             Self::Element { element, .. } => ViewRuntimeGeometryOwner::Element(*element),
+            Self::Scroll { policy, .. } => ViewRuntimeGeometryOwner::Scroll(*policy),
             Self::Text { .. } | Self::RichText { .. } => ViewRuntimeGeometryOwner::Text,
             Self::Image { .. } => ViewRuntimeGeometryOwner::Image,
             Self::Custom { .. } => ViewRuntimeGeometryOwner::Custom,

@@ -9,14 +9,15 @@ use crate::{
     program::{ViewStableKey, ViewVirtualAxis},
 };
 use arcweft_id::PublicId;
+use arcweft_presentation::input::InteractionTarget;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use thiserror::Error;
 
-/// Authored Scroll target that owns a virtualized list's primary-axis offset.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct ViewVirtualScrollTarget(String);
+/// Live Scroll target that owns a virtualized list's primary-axis offset.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ViewVirtualScrollTarget(InteractionTarget);
 
 /// One finite source item after its primary-axis extent has been resolved.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -182,25 +183,23 @@ pub enum ViewVirtualizationError {
 
 impl ViewVirtualScrollTarget {
     pub fn as_str(&self) -> &str {
+        self.0.id().as_str()
+    }
+
+    pub const fn target(&self) -> &InteractionTarget {
         &self.0
     }
 }
 
 impl From<PublicId> for ViewVirtualScrollTarget {
     fn from(target: PublicId) -> Self {
-        Self(target.as_str().to_owned())
+        Self(InteractionTarget::new(target))
     }
 }
 
-impl<'de> Deserialize<'de> for ViewVirtualScrollTarget {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        PublicId::try_new(value)
-            .map(Self::from)
-            .map_err(serde::de::Error::custom)
+impl From<InteractionTarget> for ViewVirtualScrollTarget {
+    fn from(target: InteractionTarget) -> Self {
+        Self(target)
     }
 }
 
@@ -528,6 +527,15 @@ impl ViewVirtualizationRuntime {
 
     pub fn unmount(&mut self, mount: ViewMountId) -> Option<ViewVirtualList> {
         self.mounts.remove(&mount)
+    }
+
+    /// Drops lists whose containing Scroll occurrence is absent from the live frame.
+    pub fn retain_live_scroll_targets(
+        &mut self,
+        live: &std::collections::BTreeSet<&InteractionTarget>,
+    ) {
+        self.mounts
+            .retain(|_, list| live.contains(list.scroll_target().target()));
     }
 
     pub fn get(&self, mount: ViewMountId) -> Option<&ViewVirtualList> {

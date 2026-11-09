@@ -26,8 +26,8 @@ use crate::presentation_handles::PresentationHandleRecord;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::resource_codec::view::{
     DialogueViewContractError, ValidatedViewProduct, ViewObserveClassification,
-    ViewProductValidationLimits, ViewProgramAdmissionError, ViewTextSelectionPolicy,
-    ViewTextSourceKind,
+    ViewProductValidationLimits, ViewProgramAdmissionError, ViewProgramInstruction,
+    ViewScrollPolicy, ViewTextSelectionPolicy, ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewRuntimeControlVisualStyle, ViewTextBlockBounds, ViewTextResource,
@@ -463,6 +463,26 @@ impl<F> Default for BundleViewFrame<F> {
 }
 
 impl<F> BundleViewFrame<F> {
+    /// Traverses the live Scroll occurrences in deterministic mount and node order.
+    pub fn scroll_occurrences(&self) -> impl Iterator<Item = BundleViewScrollOccurrence<'_>> {
+        self.mounts.iter().flat_map(|mount| {
+            mount
+                .style_nodes
+                .iter()
+                .filter_map(|node| match &node.kind {
+                    BundleViewStyleNodeKind::Scroll { target, policy } => {
+                        Some(BundleViewScrollOccurrence {
+                            node,
+                            mount: mount.mount,
+                            target,
+                            policy: *policy,
+                        })
+                    }
+                    _ => None,
+                })
+        })
+    }
+
     pub(crate) fn try_map_frames<T, E>(
         self,
         map: &mut impl FnMut(F) -> Result<T, E>,
@@ -533,6 +553,20 @@ impl<F> BundleViewFrame<F> {
                 .collect::<Result<_, E>>()?,
             diagnostics: self.diagnostics,
         })
+    }
+}
+
+/// Borrowed routing and layout identity for one evaluated Scroll node.
+pub struct BundleViewScrollOccurrence<'a> {
+    node: &'a BundleViewStyleNode,
+    mount: ViewMountId,
+    pub target: &'a InteractionTarget,
+    pub policy: ViewScrollPolicy,
+}
+
+impl BundleViewScrollOccurrence<'_> {
+    pub fn style_node_key(&self) -> arcweft_view::style::ViewStyleNodeKey {
+        self.node.style_node_key(self.mount)
     }
 }
 
@@ -1867,6 +1901,7 @@ impl BundleViewRuntime {
         frame: &BundleViewFrame,
     ) -> Result<(), BundleViewRuntimeError> {
         let mut occurrences = BTreeSet::new();
+        let mut scroll_targets = BTreeSet::new();
         for output in &frame.mounts {
             let key = ViewOccurrenceKey {
                 handle: output.handle.clone(),
@@ -1925,6 +1960,58 @@ impl BundleViewRuntime {
                         output.handle, output.path
                     ),
                 });
+            }
+            let span = self
+                .catalog
+                .as_ref()
+                .and_then(|catalog| catalog.definition_index(&output.view))
+                .map(|index| self.definition(index).body);
+            let program = self.product.program().map(|program| program.resource());
+            for node in &output.style_nodes {
+                let valid_instruction = span
+                    .zip(program)
+                    .filter(|(span, _)| {
+                        (span.start_instruction..span.end_instruction).contains(&node.instruction)
+                    })
+                    .and_then(|(_, program)| program.instructions.get(node.instruction as usize));
+                let valid = match (&node.kind, valid_instruction) {
+                    (
+                        BundleViewStyleNodeKind::Scroll { target, policy },
+                        Some(ViewProgramInstruction::OpenScroll {
+                            target: declaration,
+                            policy: accepted,
+                            ..
+                        }),
+                    ) => {
+                        node.path.validate().is_ok()
+                            && node.path.segments().starts_with(output.path.segments())
+                            && policy == accepted
+                            && mount_scoped_interaction_target(
+                                output.mount,
+                                &node.path.qualify_target(declaration),
+                            )
+                            .is_ok_and(|expected| &expected == target)
+                            && scroll_targets.insert(target)
+                    }
+                    (
+                        BundleViewStyleNodeKind::Scroll { .. }
+                        | BundleViewStyleNodeKind::Element {
+                            element: arcweft_view::ViewElementKind::Scroll,
+                            ..
+                        },
+                        _,
+                    )
+                    | (_, Some(ViewProgramInstruction::OpenScroll { .. })) => false,
+                    _ => true,
+                };
+                if !valid {
+                    return Err(BundleViewRuntimeError::PresentationFrameMismatch {
+                        message: format!(
+                            "Scroll node {} on mount {:?} differs from its accepted View instruction",
+                            node.instruction, output.mount
+                        ),
+                    });
+                }
             }
         }
         Ok(())

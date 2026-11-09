@@ -10,14 +10,14 @@ use arcweft_bundle::resource_codec::view::{
     ViewObserveClassification, ViewOwnedPartRef, ViewParameterResource, ViewPartExportSourceRef,
     ViewProgramInstruction, ViewProgramResource, ViewProgramStyleResources, ViewResourceBudget,
     ViewResourceCompatibility, ViewScrollAxis, ViewScrollIndicatorsPolicy,
-    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
-    ViewSecureInputPolicy, ViewSecureRedactionMetadata, ViewSemanticTarget,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStylePatch,
-    ViewStylePatchId, ViewStyleProgram, ViewStyleResource, ViewStyleRule, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId, ViewTextBlockBounds,
-    ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
-    ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
+    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollPolicy, ViewSecureInputPolicy,
+    ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleResource,
+    ViewStyleRule, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken,
+    ViewStyleTokenId, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
+    ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord,
+    ViewTextTabPolicy, ViewTextVerticalNavigationPolicy, ViewThemeResource,
+    ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
     migrated_view_section_compatibility,
 };
 use arcweft_presentation::text_input::{EnterKeyHint, TextInputPurpose};
@@ -1200,56 +1200,101 @@ fn view_program_layout_bounds_reject_zero_size_rects() {
 }
 
 #[test]
-fn view_program_scroll_regions_reject_pre_axis_payload_shape() {
-    for removed_field in ["content_width_milli", "axis"] {
-        let bytes = view_program_bytes_without_scroll_region_field(removed_field);
-        assert!(
-            ViewProgramResource::decode_canonical_section(&bytes).is_err(),
-            "scroll regions must reject payloads missing `{removed_field}`",
-        );
+fn view_scroll_instruction_round_trips_default_and_explicit_policies() {
+    for policy in [
+        ViewScrollPolicy::default(),
+        ViewScrollPolicy {
+            axis: ViewScrollAxis::Horizontal,
+            overflow: ViewScrollOverflowPolicy::Hidden,
+            indicators: ViewScrollIndicatorsPolicy::Visible,
+            overscroll: ViewScrollOverscrollPolicy::Elastic,
+            auto_scroll_focus: ViewFocusAutoScrollPolicy::End,
+        },
+    ] {
+        let program = fixture_scroll_program(policy);
+        let bytes = program
+            .encode_canonical_section()
+            .expect("Scroll program encodes");
+        let decoded =
+            ViewProgramResource::decode_canonical_section(&bytes).expect("Scroll program decodes");
+        assert_eq!(decoded.instructions, program.instructions);
+        assert_eq!(decoded.encode_canonical_section().unwrap(), bytes);
     }
 }
 
 #[test]
-fn view_program_scroll_region_policy_defaults_are_round_tripped() {
-    let bytes = fixture_program()
+fn view_scroll_rejects_unowned_geometry_and_enforces_the_instruction_budget() {
+    let mut program = fixture_scroll_program(ViewScrollPolicy::default());
+    let bytes = program
         .encode_canonical_section()
-        .expect("program encodes");
-    let decoded = ViewProgramResource::decode_canonical_section(&bytes).expect("program decodes");
-    let region = decoded.scroll_regions.first().expect("scroll region");
-    let runtime = region.runtime_scroll_region();
-
-    assert_eq!(region.indicators, ViewScrollIndicatorsPolicy::Auto);
-    assert_eq!(region.overscroll, ViewScrollOverscrollPolicy::Clamp);
-    assert_eq!(region.auto_scroll_focus, ViewFocusAutoScrollPolicy::Nearest);
-    assert_eq!(runtime.indicators, ViewScrollIndicatorsPolicy::Auto);
-    assert_eq!(runtime.overscroll, ViewScrollOverscrollPolicy::Clamp);
-    assert_eq!(
-        runtime.auto_scroll_focus,
-        ViewFocusAutoScrollPolicy::Nearest
+        .expect("Scroll program encodes");
+    assert!(
+        ViewProgramResource::decode_canonical_section_with_budget(
+            &bytes,
+            ViewResourceBudget {
+                scroll_regions: 0,
+                ..ViewResourceBudget::default()
+            },
+        )
+        .is_err()
     );
+
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::ViewProgram,
+        SectionCodecBudget::default(),
+    )
+    .expect("envelope decodes");
+    let transcript = envelope
+        .fields
+        .iter()
+        .find(|field| field.id == FieldId(1))
+        .expect("view transcript field exists");
+    let mut json: serde_json::Value = serde_json::from_slice(&transcript.payload).unwrap();
+    json["scroll_regions"] = serde_json::json!([{
+        "public_id": "scroll.dialogue.body",
+        "view": "view.dialogue",
+        "bounds": {"x_milli": 0, "y_milli": 0, "width_milli": 1000, "height_milli": 1000},
+        "content_width_milli": 1000,
+        "content_height_milli": 2000,
+        "axis": "vertical"
+    }]);
+    let removed_table = envelope_with_replaced_field_payload(
+        &envelope,
+        FieldId(1),
+        &serde_json::to_vec(&json).unwrap(),
+    );
+    assert!(ViewProgramResource::decode_canonical_section(&removed_table).is_err());
+
+    program.instructions[0] = ViewProgramInstruction::OpenElement {
+        element: ViewElementKind::Scroll,
+        target: Some("scroll.dialogue.body".to_owned()),
+        styles: Vec::new(),
+        part: None,
+        key: None,
+        source: None,
+    };
+    assert!(program.encode_canonical_section().is_err());
 }
 
-#[test]
-fn view_program_scroll_region_policy_values_are_preserved() {
-    let mut program = fixture_program();
-    program.scroll_regions[0] = program.scroll_regions[0]
-        .clone()
-        .with_indicators(ViewScrollIndicatorsPolicy::Visible)
-        .with_overscroll(ViewScrollOverscrollPolicy::Elastic)
-        .with_auto_scroll_focus(ViewFocusAutoScrollPolicy::End);
-
-    let bytes = program.encode_canonical_section().expect("program encodes");
-    let decoded = ViewProgramResource::decode_canonical_section(&bytes).expect("program decodes");
-    let region = decoded.scroll_regions.first().expect("scroll region");
-    let runtime = region.runtime_scroll_region();
-
-    assert_eq!(region.indicators, ViewScrollIndicatorsPolicy::Visible);
-    assert_eq!(region.overscroll, ViewScrollOverscrollPolicy::Elastic);
-    assert_eq!(region.auto_scroll_focus, ViewFocusAutoScrollPolicy::End);
-    assert_eq!(runtime.indicators, ViewScrollIndicatorsPolicy::Visible);
-    assert_eq!(runtime.overscroll, ViewScrollOverscrollPolicy::Elastic);
-    assert_eq!(runtime.auto_scroll_focus, ViewFocusAutoScrollPolicy::End);
+fn fixture_scroll_program(policy: ViewScrollPolicy) -> ViewProgramResource {
+    let mut definition = fixture_program().definitions.remove(0);
+    definition.body = ViewInstructionSpan::new(0, 2);
+    definition.styles.clear();
+    ViewProgramResource {
+        definitions: vec![definition],
+        instructions: vec![
+            ViewProgramInstruction::OpenScroll {
+                target: "scroll.dialogue.body".to_owned(),
+                policy,
+                styles: Vec::new(),
+                part: None,
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+        ],
+        ..ViewProgramResource::default()
+    }
 }
 
 #[test]
@@ -1410,31 +1455,6 @@ fn envelope_with_replaced_field_payload(
     .expect("envelope rebuilds")
     .encode_canonical()
     .expect("envelope re-encodes")
-}
-
-fn view_program_bytes_without_scroll_region_field(field_name: &str) -> Vec<u8> {
-    let bytes = fixture_program()
-        .encode_canonical_section()
-        .expect("program encodes");
-    let envelope = ProductResourceEnvelope::decode_all_fields(
-        &bytes,
-        ProductSectionCodecKind::ViewProgram,
-        SectionCodecBudget::default(),
-    )
-    .expect("envelope decodes");
-    let transcript = envelope
-        .fields
-        .iter()
-        .find(|field| field.id == FieldId(1))
-        .expect("view transcript field exists");
-    let mut json: serde_json::Value =
-        serde_json::from_slice(&transcript.payload).expect("transcript is JSON");
-    json["scroll_regions"][0]
-        .as_object_mut()
-        .expect("scroll region transcript is an object")
-        .remove(field_name);
-    let updated_transcript = serde_json::to_vec(&json).expect("updated transcript encodes");
-    envelope_with_replaced_field_payload(&envelope, FieldId(1), &updated_transcript)
 }
 
 fn exported_part_program() -> ViewProgramResource {
@@ -1639,17 +1659,6 @@ fn fixture_program() -> ViewProgramResource {
                 "input.dialogue.name",
                 ViewLogicalRect::from_px(48, 48, 420, 48),
             ),
-        ],
-        scroll_regions: vec![
-            ViewScrollRegionResource::new(
-                "scroll.dialogue.body",
-                Some("view.dialogue".to_owned()),
-                ViewLogicalRect::from_px(48, 112, 420, 180),
-                640_000,
-                360_000,
-                ViewScrollAxis::Horizontal,
-            )
-            .with_overflow(ViewScrollOverflowPolicy::Hidden),
         ],
         surfaces: Vec::new(),
         text_blocks: vec![ViewTextBlockResource::new(

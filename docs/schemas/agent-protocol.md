@@ -39,23 +39,24 @@ pub struct ActionResult {
 }
 ```
 
-Scroll uses the authored region id and signed milli-logical-pixel input deltas:
+Scroll uses the live region ID from observation and signed milli-logical-pixel
+input deltas.
 
 ```json
 {
   "kind": "scroll",
-  "region": "scroll.Inventory.0",
+  "region": "view_mount_1.scroll.Inventory.0",
   "delta_x_milli": 0,
   "delta_y_milli": -90000
 }
 ```
 
-Observation keeps one authored `scroll_region` target. Its internal viewport
+Observation keeps one `scroll_region` target per live occurrence. Its internal viewport
 and retained content are metadata parts, not additional semantic/action nodes:
 
 ```json
 {
-  "target": "scroll.Inventory.0",
+  "target": "view_mount_1.scroll.Inventory.0",
   "role": "scroll_region",
   "parts": {
     "viewport": {
@@ -84,7 +85,7 @@ when it is not materialized:
 ```json
 {
   "target": "view.mount.7",
-  "scroll_target": "scroll.Inventory.0",
+  "scroll_target": "view_mount_1.scroll.Inventory.0",
   "axis": "vertical",
   "viewport_extent_milli": 60000,
   "offset_milli": 120000,
@@ -129,7 +130,7 @@ when it is not materialized:
 ```
 
 `virtual_lists[]` is produced from exact per-mount session state only when an
-observation or capture report is requested. `scroll_target` names the authored
+observation or capture report is requested. `scroll_target` names the live
 region accepted by the `scroll` action; an off-window item target does not by
 itself imply render geometry or an image capture.
 

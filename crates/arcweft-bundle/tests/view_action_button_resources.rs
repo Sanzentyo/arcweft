@@ -18,7 +18,6 @@ fn runtime_action_button_resolves_label_and_noop_action() {
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
-        scroll_regions: Vec::new(),
         surfaces: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: vec![ViewActionButtonResource {
@@ -75,7 +74,6 @@ fn runtime_action_button_resolves_action_invoke_action() {
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
-        scroll_regions: Vec::new(),
         surfaces: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: vec![ViewActionButtonResource {

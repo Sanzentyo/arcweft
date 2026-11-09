@@ -1055,8 +1055,6 @@ impl ViewProgramResource {
         });
         self.action_buttons
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
-        self.scroll_regions
-            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.surfaces
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.text_blocks
@@ -1077,7 +1075,6 @@ impl ViewProgramResource {
         self.validate_unique_ids()?;
         self.validate_handlers()?;
         self.validate_layout_bounds()?;
-        self.validate_scroll_regions()?;
         self.validate_surfaces()?;
         self.validate_text_blocks()?;
         self.validate_focus_targets()?;
@@ -1214,7 +1211,12 @@ impl ViewProgramResource {
             "view_action_buttons",
         )?;
         check_budget(
-            self.scroll_regions.len(),
+            self.instructions
+                .iter()
+                .filter(|instruction| {
+                    matches!(instruction, ViewProgramInstruction::OpenScroll { .. })
+                })
+                .count(),
             budget.scroll_regions,
             "view_scroll_regions",
         )?;
@@ -1300,7 +1302,16 @@ impl ViewProgramResource {
                         }
                     }
                 }
+                ViewProgramInstruction::OpenElement {
+                    element: super::model::ViewElementKind::Scroll,
+                    ..
+                } => {
+                    return Err(SectionCodecError::NonCanonicalTable(
+                        "view_scroll_instruction",
+                    ));
+                }
                 ViewProgramInstruction::OpenElement { .. }
+                | ViewProgramInstruction::OpenScroll { .. }
                 | ViewProgramInstruction::CloseElement
                 | ViewProgramInstruction::BeginScope
                 | ViewProgramInstruction::EndScope
@@ -1571,7 +1582,8 @@ impl ViewProgramResource {
                             ViewProgramInstruction::OpenElement {
                                 target: Some(target),
                                 ..
-                            },
+                            }
+                            | ViewProgramInstruction::OpenScroll { target, .. },
                         ..
                     } => {
                         if !targets.insert(target.as_str()) {
@@ -1643,12 +1655,6 @@ impl ViewProgramResource {
             "view_action_buttons",
         )?;
         reject_duplicates(
-            self.scroll_regions
-                .iter()
-                .map(|region| region.public_id.clone()),
-            "view_scroll_regions",
-        )?;
-        reject_duplicates(
             self.surfaces
                 .iter()
                 .map(|surface| surface.public_id.clone()),
@@ -1681,18 +1687,6 @@ impl ViewProgramResource {
             Ok(())
         } else {
             Err(SectionCodecError::NonCanonicalTable("view_layout_bounds"))
-        }
-    }
-
-    fn validate_scroll_regions(&self) -> Result<(), SectionCodecError> {
-        if self
-            .scroll_regions
-            .iter()
-            .all(super::model::ViewScrollRegionResource::is_valid)
-        {
-            Ok(())
-        } else {
-            Err(SectionCodecError::NonCanonicalTable("view_scroll_regions"))
         }
     }
 
@@ -1855,6 +1849,7 @@ impl ViewProgramResource {
                         target = None;
                     }
                     ViewProgramInstruction::OpenElement { .. }
+                    | ViewProgramInstruction::OpenScroll { .. }
                     | ViewProgramInstruction::EmitText { .. }
                     | ViewProgramInstruction::EmitImage { .. }
                     | ViewProgramInstruction::EmitCustom { .. }
@@ -2129,11 +2124,6 @@ impl ViewProgramResource {
                         .iter()
                         .flat_map(action_button_public_ids),
                 )
-                .chain(
-                    self.scroll_regions
-                        .iter()
-                        .flat_map(scroll_region_public_ids),
-                )
                 .chain(self.surfaces.iter().flat_map(surface_public_ids))
                 .chain(self.text_blocks.iter().flat_map(text_block_public_ids))
                 .chain(self.focus_groups.iter().flat_map(focus_group_public_ids))
@@ -2166,7 +2156,6 @@ impl ViewProgramResource {
             ))
             .saturating_add(saturating_u32(self.layout_bounds.len()))
             .saturating_add(saturating_u32(self.action_buttons.len()))
-            .saturating_add(saturating_u32(self.scroll_regions.len()))
             .saturating_add(saturating_u32(self.surfaces.len()))
             .saturating_add(saturating_u32(self.text_blocks.len()))
             .saturating_add(saturating_u32(self.focus_groups.len()))
@@ -2205,13 +2194,6 @@ fn action_button_public_ids(button: &super::model::ViewActionButtonResource) -> 
     .flatten()
     .chain(action_ids)
     .collect()
-}
-
-fn scroll_region_public_ids(region: &super::model::ViewScrollRegionResource) -> Vec<String> {
-    [Some(region.public_id.clone()), region.view.clone()]
-        .into_iter()
-        .flatten()
-        .collect()
 }
 
 fn surface_public_ids(surface: &super::model::ViewSurfaceResource) -> Vec<String> {
@@ -2508,6 +2490,18 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         } => target
             .iter()
             .cloned()
+            .chain(
+                part.iter()
+                    .map(|part| part.as_public_id().as_str().to_owned()),
+            )
+            .chain(style_apply_public_ids(styles))
+            .collect(),
+        ViewProgramInstruction::OpenScroll {
+            target,
+            styles,
+            part,
+            ..
+        } => std::iter::once(target.clone())
             .chain(
                 part.iter()
                     .map(|part| part.as_public_id().as_str().to_owned()),

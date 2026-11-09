@@ -10,8 +10,8 @@ use super::{
     PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget, RootCommandHostCallCatalog,
     RuntimeTaskRegistry, SessionEnvironmentState, SwapSession, SystemPaletteSet,
     ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
-    ViewRuntimeTextControl, ViewVirtualizationRuntime,
+    ViewRuntimeFocusNavigation, ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewVirtualizationRuntime,
 };
 use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::value::RuntimeFormatContext;
@@ -34,7 +34,6 @@ pub(super) struct SessionRuntime {
     pub(super) image_objects: Vec<PresentationImage>,
     pub(super) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(super) action_buttons: Vec<ViewRuntimeActionButton>,
-    pub(super) scroll_regions: Vec<ViewRuntimeScrollRegion>,
     pub(super) surfaces: Vec<ViewRuntimeSurface>,
     pub(super) focus_groups: Vec<ViewRuntimeFocusGroup>,
     pub(super) focus_navigation: Vec<ViewRuntimeFocusNavigation>,
@@ -54,7 +53,6 @@ struct SessionRuntimeResources {
     image_objects: Vec<PresentationImage>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
-    scroll_regions: Vec<ViewRuntimeScrollRegion>,
     surfaces: Vec<ViewRuntimeSurface>,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
@@ -132,7 +130,6 @@ impl BundleSession {
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
         let action_buttons = runtime.action_buttons.clone();
-        let scroll_regions = runtime.scroll_regions.clone();
         let surfaces = runtime.surfaces.clone();
         let focus_groups = runtime.focus_groups.clone();
         let focus_navigation = runtime.focus_navigation.clone();
@@ -163,7 +160,6 @@ impl BundleSession {
             image_objects,
             text_inputs,
             action_buttons,
-            scroll_regions,
             surfaces,
             focus_groups,
             focus_navigation,
@@ -254,7 +250,6 @@ impl SessionRuntime {
             image_objects: resources.image_objects,
             text_inputs: resources.text_inputs,
             action_buttons: resources.action_buttons,
-            scroll_regions: resources.scroll_regions,
             surfaces: resources.surfaces,
             focus_groups: resources.focus_groups,
             focus_navigation: resources.focus_navigation,
@@ -315,7 +310,6 @@ impl SessionRuntime {
                 image_objects: self.image_objects.clone(),
                 text_inputs: self.text_inputs.clone(),
                 action_buttons: self.action_buttons.clone(),
-                scroll_regions: self.scroll_regions.clone(),
                 surfaces: self.surfaces.clone(),
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
@@ -363,10 +357,6 @@ pub(super) fn build_session_runtime(
             |program| program.runtime_action_buttons(bundle.view_text.as_ref()),
         )
         .map_err(BundleViewRuntimeError::from)?;
-    let scroll_regions = bundle
-        .view_program
-        .as_ref()
-        .map_or_else(Vec::new, ViewProgramResource::runtime_scroll_regions);
     let surfaces = bundle
         .view_program
         .as_ref()
@@ -424,7 +414,6 @@ pub(super) fn build_session_runtime(
         image_objects: bundle.image_objects.clone(),
         text_inputs,
         action_buttons,
-        scroll_regions,
         surfaces,
         focus_groups,
         focus_navigation,

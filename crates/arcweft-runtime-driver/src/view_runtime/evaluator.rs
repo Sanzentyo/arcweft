@@ -2344,6 +2344,52 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     builder.element_targets.push(target.clone());
                     cursor += 1;
                 }
+                ViewProgramInstruction::OpenScroll {
+                    target,
+                    policy,
+                    styles,
+                    part,
+                    ..
+                } => {
+                    let local_target = structural_path.qualify_target(target);
+                    let target = mount_scoped_interaction_target(builder.mount, &local_target)
+                        .map_err(|error| {
+                            EvaluationFailure::new(
+                                BundleViewDiagnosticCode::InvalidControlFlow,
+                                Some(cursor),
+                                error.to_string(),
+                            )
+                        })?;
+                    let instruction = instruction_ordinal(cursor)?;
+                    builder.retain_node(structural_path, instruction, Some(&local_target));
+                    let root = builder.is_root_node();
+                    let mut local_styles = builder
+                        .style_scopes
+                        .retain_node(
+                            ViewStyleNodeInput {
+                                parts: self.parts,
+                                owner: &mounted.owner,
+                                path: structural_path,
+                                instruction,
+                                kind: BundleViewStyleNodeKind::Scroll {
+                                    target,
+                                    policy: *policy,
+                                },
+                                part: part.as_ref(),
+                                local: styles,
+                                root,
+                            },
+                            &mut self.style_scope_allocator,
+                        )
+                        .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
+                    builder.style_scopes.enter_element(&mut local_styles);
+                    builder.retain_target(&local_target);
+                    builder.paint.push(BundleViewPaintItem::Element {
+                        target: local_target.clone(),
+                    });
+                    builder.element_targets.push(Some(local_target));
+                    cursor += 1;
+                }
                 ViewProgramInstruction::CloseElement => {
                     if builder.element_targets.pop().is_none() {
                         return Err(EvaluationFailure::new(

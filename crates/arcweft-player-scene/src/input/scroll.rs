@@ -114,10 +114,7 @@ impl InputController {
         let Some(state) = self.scroll_states.get_mut(&region.id) else {
             return;
         };
-        state.offset = ScrollOffset::new(
-            region.clamped_offset_x(state.offset.x),
-            region.clamped_offset_y(state.offset.y),
-        );
+        state.offset = ScrollOffset::new(region.offset_x, region.offset_y);
         match region.axis {
             RenderScrollAxis::Vertical => {
                 state.offset.x = 0.0;

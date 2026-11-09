@@ -6,8 +6,8 @@ use arcweft_bundle::resource_codec::view::{
     ViewRuntimeActionButtonAction,
 };
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeSurface,
+    ViewRuntimeTextControl,
 };
 use arcweft_id::view::ViewId;
 use arcweft_interaction_model::presentation::PresentationImage;
@@ -19,7 +19,6 @@ pub(crate) struct ProjectedViewResources {
     pub(crate) images: Vec<PresentationImage>,
     pub(crate) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(crate) action_buttons: Vec<ViewRuntimeActionButton>,
-    pub(crate) scroll_regions: Vec<ViewRuntimeScrollRegion>,
     pub(crate) surfaces: Vec<ViewRuntimeSurface>,
     pub(crate) focus_groups: Vec<ViewRuntimeFocusGroup>,
     pub(crate) focus_navigation: Vec<ViewRuntimeFocusNavigation>,
@@ -32,7 +31,6 @@ pub(crate) struct ViewProjectionInput<'a> {
     pub(crate) images: &'a [PresentationImage],
     pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
-    pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
     pub(crate) surfaces: &'a [ViewRuntimeSurface],
     pub(crate) focus_groups: &'a [ViewRuntimeFocusGroup],
     pub(crate) focus_navigation: &'a [ViewRuntimeFocusNavigation],
@@ -52,7 +50,6 @@ pub(crate) fn project_view_resources(
                 button
             })
             .collect(),
-        scroll_regions: retain_non_executable(input.scroll_regions, input.executable_definitions),
         surfaces: retain_non_executable(input.surfaces, input.executable_definitions),
         focus_groups: retain_non_executable(input.focus_groups, input.executable_definitions),
         focus_navigation: retain_non_executable(
@@ -237,21 +234,6 @@ fn project_layout_resources(
     active: &BTreeSet<&str>,
     projected: &mut ProjectedViewResources,
 ) {
-    projected.scroll_regions.extend(
-        input
-            .scroll_regions
-            .iter()
-            .filter(|region| {
-                owned_and_active(region.view.as_deref(), &region.target, mount, active)
-            })
-            .cloned()
-            .map(|mut region| {
-                region.public_id = scoped_id(mount, &region.public_id);
-                region.target = scoped_id(mount, &region.target);
-                region.view = Some(scoped_id(mount, mount.view.as_str()));
-                region
-            }),
-    );
     projected.surfaces.extend(
         input
             .surfaces
@@ -381,7 +363,6 @@ impl_view_owned!(
     PresentationImage,
     ViewRuntimeTextControl,
     ViewRuntimeActionButton,
-    ViewRuntimeScrollRegion,
     ViewRuntimeSurface,
     ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation,
@@ -474,7 +455,6 @@ mod tests {
                 images: &[],
                 text_inputs: &[],
                 action_buttons: &[button],
-                scroll_regions: &[],
                 surfaces: &[],
                 focus_groups: &[],
                 focus_navigation: &[],
@@ -539,7 +519,6 @@ mod tests {
                 images: &[],
                 text_inputs: &[],
                 action_buttons: &[button],
-                scroll_regions: &[],
                 surfaces: &[],
                 focus_groups: &[],
                 focus_navigation: &[],

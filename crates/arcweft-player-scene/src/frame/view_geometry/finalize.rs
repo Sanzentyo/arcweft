@@ -29,13 +29,25 @@ pub(super) fn finalize_inventory(
     placed: PlacedInventory,
 ) -> Result<ViewGeometryPreparedFrame, ViewGeometryRuntimeError> {
     let mut entries = BTreeMap::<ViewStyleNodeKey, ViewFinalCacheEntry>::new();
-    let mut scroll_subtrees = BTreeMap::<ViewStyleNodeKey, ViewGeometryRect>::new();
+    let resolved_scroll = resolve_scroll_geometry(&inventory, input, &placed)?;
     for key in &inventory.postorder {
         let node = inventory.node(key);
         let placement = placed.entry(key).placement;
-        let inherited_clip = inherited_clip(&inventory, input, &placed, key)?;
-        let world_border_box = world_rect(&inventory, input, &placed, key, placement.border_box)?;
-        let world_padding_box = world_rect(&inventory, input, &placed, key, placement.padding_box)?;
+        let inherited_clip = inherited_clip(&inventory, input, &placed, &resolved_scroll, key)?;
+        let world_border_box = world_rect(
+            &inventory,
+            &placed,
+            &resolved_scroll,
+            key,
+            placement.border_box,
+        )?;
+        let world_padding_box = world_rect(
+            &inventory,
+            &placed,
+            &resolved_scroll,
+            key,
+            placement.padding_box,
+        )?;
         let descendant_clip = inherited_clip.with_overflow(
             world_padding_box,
             node.box_style().overflow_x,
@@ -45,7 +57,8 @@ pub(super) fn finalize_inventory(
         let local_paint_box = placement
             .border_box
             .outset_non_negative(key, paint_outsets.edges)?;
-        let world_paint_box = world_rect(&inventory, input, &placed, key, local_paint_box)?;
+        let world_paint_box =
+            world_rect(&inventory, &placed, &resolved_scroll, key, local_paint_box)?;
         let consumers = consumer_geometry(world_border_box, world_paint_box, inherited_clip);
 
         let child_entries = node
@@ -76,49 +89,14 @@ pub(super) fn finalize_inventory(
             ),
         )
         .expect("one node margin box always seeds the layout subtree");
-        let scroll_children = node
-            .children
-            .iter()
-            .filter(|child| inventory.node(child).box_style().position != ViewPosition::Fixed)
-            .map(|child| {
-                let child_geometry = &entries
-                    .get(child)
-                    .expect("child final geometry exists")
-                    .geometry;
-                let subtree = *scroll_subtrees
-                    .get(child)
-                    .expect("child scroll subtree exists");
-                visible_layout_contribution(
-                    child_geometry.margin_box,
-                    child_geometry.padding_box,
-                    subtree,
-                    inventory.node(child).box_style().overflow_x,
-                    inventory.node(child).box_style().overflow_y,
-                )
-            })
-            .collect::<Vec<_>>();
-        let scroll_content = union_rects(
-            core::iter::once(placement.padding_box).chain(scroll_children.iter().copied()),
-        )
-        .expect("padding box always seeds scroll content");
-        let own_scroll = ViewGeometryInventory::scroll(input, key);
-        let scroll = ViewScrollGeometry {
-            x: scroll_axis_geometry(
-                key,
-                ViewPhysicalAxis::X,
-                node.box_style().overflow_x,
-                placement.padding_box.x(),
-                scroll_content.x(),
-                own_scroll.x_milli,
-            )?,
-            y: scroll_axis_geometry(
-                key,
-                ViewPhysicalAxis::Y,
-                node.box_style().overflow_y,
-                placement.padding_box.y(),
-                scroll_content.y(),
-                own_scroll.y_milli,
-            )?,
+        let scroll = resolved_scroll[key];
+        let own_scroll = arcweft_view::geometry::ViewScrollStateInput {
+            x_milli: scroll.x.current_offset_milli,
+            y_milli: scroll.y.current_offset_milli,
+            revision: super::scroll_revision(
+                scroll.x.current_offset_milli,
+                scroll.y.current_offset_milli,
+            ),
         };
         let paint_subtree_bounds = union_rects(
             consumers.paint_bounds.into_iter().chain(
@@ -127,7 +105,7 @@ pub(super) fn finalize_inventory(
                     .filter_map(|entry| entry.geometry.paint_subtree_bounds),
             ),
         );
-        let transform_chain = transform_dependencies(&inventory, &placed, key);
+        let transform_chain = transform_dependencies(&inventory, &placed, &resolved_scroll, key);
         let final_key = ViewFinalGeometryKey {
             node: key.clone(),
             placement,
@@ -161,10 +139,6 @@ pub(super) fn finalize_inventory(
                 key: final_key,
             },
         };
-        let scroll_subtree =
-            union_rects(core::iter::once(placement.margin_box).chain(scroll_children))
-                .expect("one node margin box always seeds the scroll subtree");
-        scroll_subtrees.insert(key.clone(), scroll_subtree);
         entries.insert(key.clone(), entry);
     }
 
@@ -192,6 +166,64 @@ pub(super) fn finalize_inventory(
         entries,
         committed,
     ))
+}
+
+fn resolve_scroll_geometry(
+    inventory: &ViewGeometryInventory<'_>,
+    input: &ViewGeometryFrameInput<'_>,
+    placed: &PlacedInventory,
+) -> Result<BTreeMap<ViewStyleNodeKey, ViewScrollGeometry>, ViewGeometryRuntimeError> {
+    let mut subtrees = BTreeMap::new();
+    let mut scroll = BTreeMap::new();
+    for key in &inventory.postorder {
+        let node = inventory.node(key);
+        let placement = placed.entry(key).placement;
+        let children = node
+            .children
+            .iter()
+            .filter(|child| inventory.node(child).box_style().position != ViewPosition::Fixed)
+            .map(|child| {
+                let child_box = placed.entry(child).placement;
+                let style = inventory.node(child).box_style();
+                visible_layout_contribution(
+                    child_box.margin_box,
+                    child_box.padding_box,
+                    subtrees[child],
+                    style.overflow_x,
+                    style.overflow_y,
+                )
+            })
+            .collect::<Vec<_>>();
+        let content =
+            union_rects(core::iter::once(placement.padding_box).chain(children.iter().copied()))
+                .expect("padding box always seeds scroll content");
+        let requested = ViewGeometryInventory::scroll(input, key);
+        let resolved = ViewScrollGeometry {
+            x: scroll_axis_geometry(
+                key,
+                ViewPhysicalAxis::X,
+                node.box_style().overflow_x,
+                placement.padding_box.x(),
+                content.x(),
+                0,
+            )?
+            .clamp_offset(requested.x_milli),
+            y: scroll_axis_geometry(
+                key,
+                ViewPhysicalAxis::Y,
+                node.box_style().overflow_y,
+                placement.padding_box.y(),
+                content.y(),
+                0,
+            )?
+            .clamp_offset(requested.y_milli),
+        };
+        scroll.insert(key.clone(), resolved);
+        let subtree = union_rects(core::iter::once(placement.margin_box).chain(children))
+            .expect("margin box always seeds the scroll subtree");
+        subtrees.insert(key.clone(), subtree);
+    }
+    Ok(scroll)
 }
 
 fn visible_layout_contribution(
@@ -232,8 +264,8 @@ fn visible_layout_contribution(
 
 fn world_rect(
     inventory: &ViewGeometryInventory<'_>,
-    input: &ViewGeometryFrameInput<'_>,
     placed: &PlacedInventory,
+    scroll: &BTreeMap<ViewStyleNodeKey, ViewScrollGeometry>,
     subject: &ViewStyleNodeKey,
     rect: ViewGeometryRect,
 ) -> Result<ViewGeometryRect, ViewGeometryRuntimeError> {
@@ -256,18 +288,18 @@ fn world_rect(
         )?;
         current = node.parent.as_ref();
         if let Some(parent) = current {
-            let scroll = ViewGeometryInventory::scroll(input, parent);
+            let scroll = scroll[parent];
             current_rect = current_rect.translated(
                 subject,
                 ViewGeometryPoint::new(
-                    scroll.x_milli.checked_neg().ok_or_else(|| {
+                    scroll.x.current_offset_milli.checked_neg().ok_or_else(|| {
                         arcweft_view::geometry::ViewGeometryError::ArithmeticOverflow {
                             node: subject.clone(),
                             axis: Some(ViewPhysicalAxis::X),
                             operation: arcweft_view::geometry::ViewGeometryOperation::Subtract,
                         }
                     })?,
-                    scroll.y_milli.checked_neg().ok_or_else(|| {
+                    scroll.y.current_offset_milli.checked_neg().ok_or_else(|| {
                         arcweft_view::geometry::ViewGeometryError::ArithmeticOverflow {
                             node: subject.clone(),
                             axis: Some(ViewPhysicalAxis::Y),
@@ -285,6 +317,7 @@ fn inherited_clip(
     inventory: &ViewGeometryInventory<'_>,
     input: &ViewGeometryFrameInput<'_>,
     placed: &PlacedInventory,
+    scroll: &BTreeMap<ViewStyleNodeKey, ViewScrollGeometry>,
     key: &ViewStyleNodeKey,
 ) -> Result<ViewGeometryClip, ViewGeometryRuntimeError> {
     let mut clip = ViewGeometryClip::from_rect(input.viewport.rect);
@@ -293,8 +326,8 @@ fn inherited_clip(
         let node = inventory.node(parent);
         let world_padding = world_rect(
             inventory,
-            input,
             placed,
+            scroll,
             parent,
             placed.entry(parent).placement.padding_box,
         )?;
@@ -311,6 +344,7 @@ fn inherited_clip(
 fn transform_dependencies(
     inventory: &ViewGeometryInventory<'_>,
     placed: &PlacedInventory,
+    scroll: &BTreeMap<ViewStyleNodeKey, ViewScrollGeometry>,
     key: &ViewStyleNodeKey,
 ) -> Vec<ViewTransformDependency> {
     let mut dependencies = Vec::new();
@@ -329,6 +363,10 @@ fn transform_dependencies(
                 scale: node.box_style().scale,
             },
             placed_revision: entry.key.revision(),
+            scroll: ViewGeometryPoint::new(
+                scroll[node_key].x.current_offset_milli,
+                scroll[node_key].y.current_offset_milli,
+            ),
         });
         current = node.parent.as_ref();
     }

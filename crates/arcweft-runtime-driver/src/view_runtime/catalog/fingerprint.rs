@@ -184,6 +184,7 @@ fn referenced_value_programs(body: &[ViewProgramInstruction]) -> BTreeSet<ViewVa
                 programs.extend(key_program);
             }
             ViewProgramInstruction::OpenElement { .. }
+            | ViewProgramInstruction::OpenScroll { .. }
             | ViewProgramInstruction::CloseElement
             | ViewProgramInstruction::BeginScope
             | ViewProgramInstruction::EndScope
@@ -217,6 +218,7 @@ fn exports_for<'a>(
 fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewProgramInstruction {
     match &mut instruction {
         ViewProgramInstruction::OpenElement { source, .. }
+        | ViewProgramInstruction::OpenScroll { source, .. }
         | ViewProgramInstruction::EmitText { source, .. }
         | ViewProgramInstruction::EmitImage { source, .. }
         | ViewProgramInstruction::EmitCustom { source, .. }

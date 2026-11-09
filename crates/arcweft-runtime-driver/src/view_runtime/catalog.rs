@@ -480,7 +480,8 @@ fn build_definition(
     let mut part_ids = BTreeMap::new();
     for (local, instruction) in authored_parts {
         let kind = match &body[instruction.index()] {
-            ViewProgramInstruction::OpenElement { .. } => {
+            ViewProgramInstruction::OpenElement { .. }
+            | ViewProgramInstruction::OpenScroll { .. } => {
                 arcweft_view::ViewPartInstructionKind::OpenElement
             }
             ViewProgramInstruction::EmitText { .. } => {
@@ -550,6 +551,14 @@ fn map_instruction(
             part: None,
             key: key.map(ViewStableKey),
         }),
+        ViewProgramInstruction::OpenScroll { styles, .. } => {
+            ViewInstruction::OpenElement(ViewElementSpec {
+                kind: arcweft_view::ViewElementKind::Scroll,
+                styles: styles.clone(),
+                part: None,
+                key: None,
+            })
+        }
         ViewProgramInstruction::CloseElement => ViewInstruction::CloseElement,
         ViewProgramInstruction::EmitText {
             text_source,

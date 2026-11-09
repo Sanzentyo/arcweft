@@ -245,6 +245,28 @@ event route の共通targetにする。省略時はcompilerが宣言ごとのtar
 キー付き反復の入力欄は同じ宣言targetを構造的occurrenceで区別し、さらにmountごとの
 runtime targetを発行する。authored IDだけから入力sessionやevent leaseを生成しない。
 
+`Scroll` は子の保持レイアウトをビューポートでクリップする。縦軸の `Auto`、指標
+`Auto`、端での `Clamp`、フォーカスを最寄りの可視位置へ移す `Nearest` が
+ソースから生成する設定になる。設定は View 命令に属し、ビューポートの位置・寸法と
+スクロール範囲は実際に配置された子から計算する。たとえば次の View では、
+本文の高さが 168px を超えると縦方向のスクロール範囲ができる。
+
+```arcw
+view FeedbackScroll() {
+    local state mut draft: String = ""
+    Scroll(target = @scroll:.feedback, width = 420px, height = 168px) {
+        Column(spacing = 14) {
+            TextField(draft, label = "Feedback", width = 420px, height = 48px)
+            Text(draft)
+        }
+    }
+}
+```
+
+操作先の ID は評価時に Scroll ノードと一緒に確定する。同じ宣言を別 mount や
+キー付き反復で使うと、評価結果はそれぞれの操作先を区別する。player はその ID
+でスクロールオフセットを保持する。
+
 `Button` の label は String、enabled は bool であり、省略時の宣言値はそれぞれ
 空文字列と true。位置引数と名前付き引数は同じ typed role に束縛し、未知・重複・
 型不一致の引数を拒否する。supplied expression は authored order で評価し、
@@ -723,13 +745,10 @@ order changes. Save/load instead restores the exact finite inventory and
 absolute offset; its derived anchor is an integrity check, so contradictory or
 tampered offset/anchor pairs are rejected rather than silently normalized.
 
-`LazyRow` and `LazyColumn` authoring must not be implemented as eager Row/Column
-aliases. The grammar becomes available only when the typed View evaluator can
-provide finite keyed values and the layout layer can resolve off-window extents
-under one deterministic measurement policy. That evaluator must also allocate
-an occurrence-specific actionable Scroll identity; the current player and
-Agent action path still addresses authored Scroll strings and cannot
-independently route two mounts of one authored Scroll.
+`LazyRow` and `LazyColumn` authoring requires finite keyed values from the
+typed View evaluator and a deterministic layout measurement policy for
+off-window extents. Virtual lists bind to the live Scroll occurrence that owns
+their primary-axis offset.
 
 ## Agent output
 

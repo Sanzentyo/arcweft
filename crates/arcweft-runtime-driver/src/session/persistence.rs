@@ -141,7 +141,6 @@ impl BundleSession {
                     images: &self.image_objects,
                     text_inputs: &self.text_inputs,
                     action_buttons: &self.action_buttons,
-                    scroll_regions: &self.scroll_regions,
                     surfaces: &self.surfaces,
                     focus_groups: &self.focus_groups,
                     focus_navigation: &self.focus_navigation,
@@ -725,7 +724,6 @@ impl BundleSession {
                     images: &self.image_objects,
                     text_inputs: &self.text_inputs,
                     action_buttons: &self.action_buttons,
-                    scroll_regions: &self.scroll_regions,
                     surfaces: &self.surfaces,
                     focus_groups: &self.focus_groups,
                     focus_navigation: &self.focus_navigation,
@@ -746,7 +744,7 @@ impl BundleSession {
             }
             for list in restored_view_virtualization.mounts() {
                 validate_virtual_list_scroll_owner(
-                    &self.scroll_regions,
+                    &snapshot.presentation.view,
                     list.scroll_target(),
                     list.axis(),
                 )
@@ -989,7 +987,6 @@ impl BundleSession {
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
         self.action_buttons = runtime.action_buttons;
-        self.scroll_regions = runtime.scroll_regions;
         self.surfaces = runtime.surfaces;
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;

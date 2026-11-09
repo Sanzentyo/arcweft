@@ -109,6 +109,14 @@ impl ViewCommittedGeometryFrame {
         let Some((node, geometry)) = self.target_geometry(target) else {
             return Ok(None);
         };
+        Self::node_consumer_hit_rect(node, geometry, consumer)
+    }
+
+    pub(crate) fn node_consumer_hit_rect(
+        node: &ViewStyleNodeKey,
+        geometry: &ViewFinalGeometry,
+        consumer: ViewGeometryConsumer,
+    ) -> Result<Option<arcweft_presentation::hit::HitRect>, ViewGeometryRuntimeError> {
         consumer_hit_rect(node, geometry, consumer).map_err(|source| {
             ViewGeometryRuntimeError::Conversion {
                 node: Some(node.clone()),

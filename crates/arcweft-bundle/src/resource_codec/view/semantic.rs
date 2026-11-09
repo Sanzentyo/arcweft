@@ -8,8 +8,8 @@ use crate::resource_codec::{CrossSectionRef, SectionCodecError};
 use super::{
     ViewActionButtonResource, ViewDefinitionResource, ViewFocusGroupResource,
     ViewFocusNavigationResource, ViewHandlerRef, ViewLayoutBoundsResource, ViewOwnedPartRef,
-    ViewProgramInstruction, ViewProgramResource, ViewScrollRegionResource, ViewSemanticTarget,
-    ViewSurfaceResource, ViewTextBlockResource, ViewValueInputResource,
+    ViewProgramInstruction, ViewProgramResource, ViewSemanticTarget, ViewSurfaceResource,
+    ViewTextBlockResource, ViewValueInputResource,
 };
 
 #[derive(Serialize)]
@@ -24,7 +24,6 @@ struct SemanticViewProgramTranscript<'a> {
     exported_parts: Vec<SemanticViewExportedPart>,
     semantic_targets: Vec<ViewSemanticTarget>,
     layout_bounds: Vec<ViewLayoutBoundsResource>,
-    scroll_regions: Vec<ViewScrollRegionResource>,
     surfaces: Vec<ViewSurfaceResource>,
     text_blocks: Vec<ViewTextBlockResource>,
     action_buttons: Vec<ViewActionButtonResource>,
@@ -67,7 +66,6 @@ pub(super) fn accepted_revision(
             item.source = None;
         }),
         layout_bounds: without_source(&resource.layout_bounds, |item| item.source = None),
-        scroll_regions: without_source(&resource.scroll_regions, |item| item.source = None),
         surfaces: without_source(&resource.surfaces, |item| item.source = None),
         text_blocks: without_source(&resource.text_blocks, |item| item.source = None),
         action_buttons: without_source(&resource.action_buttons, |item| item.source = None),
@@ -87,6 +85,7 @@ pub(super) fn accepted_revision(
 fn without_instruction_source(mut instruction: ViewProgramInstruction) -> ViewProgramInstruction {
     match &mut instruction {
         ViewProgramInstruction::OpenElement { source, .. }
+        | ViewProgramInstruction::OpenScroll { source, .. }
         | ViewProgramInstruction::EmitText { source, .. }
         | ViewProgramInstruction::EmitImage { source, .. }
         | ViewProgramInstruction::EmitCustom { source, .. }

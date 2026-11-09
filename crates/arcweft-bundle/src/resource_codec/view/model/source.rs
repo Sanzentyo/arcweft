@@ -64,11 +64,6 @@ impl ViewProgramResource {
                     .iter()
                     .filter_map(|item| item.source.as_ref()),
             )
-            .chain(
-                self.scroll_regions
-                    .iter()
-                    .filter_map(|item| item.source.as_ref()),
-            )
             .chain(self.surfaces.iter().filter_map(|item| item.source.as_ref()))
             .chain(
                 self.text_blocks
@@ -107,10 +102,6 @@ impl ViewProgramResource {
             .filter_map(|item| item.source.as_mut())
             .for_each(&mut apply);
         self.layout_bounds
-            .iter_mut()
-            .filter_map(|item| item.source.as_mut())
-            .for_each(&mut apply);
-        self.scroll_regions
             .iter_mut()
             .filter_map(|item| item.source.as_mut())
             .for_each(&mut apply);

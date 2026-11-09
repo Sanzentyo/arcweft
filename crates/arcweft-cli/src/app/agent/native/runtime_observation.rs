@@ -192,8 +192,8 @@ pub(super) fn agent_action_targets_for_scroll_regions(
             kind: AgentActionDispatch::Semantic,
             enabled: region.overflow.scroll_enabled()
                 && match region.axis {
-                    RenderScrollAxis::Vertical => region.max_offset_y() > f32::EPSILON,
-                    RenderScrollAxis::Horizontal => region.max_offset_x() > f32::EPSILON,
+                    RenderScrollAxis::Vertical => region.max_offset_y() > region.min_offset_y(),
+                    RenderScrollAxis::Horizontal => region.max_offset_x() > region.min_offset_x(),
                 },
         })
         .collect()

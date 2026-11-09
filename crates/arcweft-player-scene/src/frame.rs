@@ -460,20 +460,13 @@ fn resolve_player_scene(
         preferences: request.preferences,
         interaction: input.visual_state(),
         choice_scroll: input.choice_scroll(),
-        scroll_regions: resources
-            .scroll_regions
-            .iter()
-            .filter_map(|region| {
-                render_scroll_region(
-                    input,
-                    region,
-                    &resources.geometry,
-                    request.time.visual_millis(),
-                    request.preferences.reduce_motion,
-                )
-                .transpose()
-            })
-            .collect::<Result<Vec<_>, _>>()?,
+        scroll_regions: render_scroll_regions(
+            input,
+            &request.presentation.view,
+            &resources.geometry,
+            request.time.visual_millis(),
+            request.preferences.reduce_motion,
+        )?,
     };
     Ok(ResolvedPlayerScene {
         scene,
@@ -529,19 +522,39 @@ fn union_hit_rects(left: HitRect, right: HitRect) -> HitRect {
     HitRect::new(min_x, min_y, max_x - min_x, max_y - min_y)
 }
 
+fn render_scroll_regions(
+    input: &mut InputController,
+    frame: &arcweft_runtime_driver::view_runtime::BundleViewFrame,
+    geometry: &ViewCommittedGeometryFrame,
+    visual_time_millis: u64,
+    reduce_motion: bool,
+) -> Result<Vec<RenderScrollRegion>, PlayerFrameError> {
+    frame
+        .scroll_occurrences()
+        .filter_map(|scroll| {
+            render_scroll_region(input, scroll, geometry, visual_time_millis, reduce_motion)
+                .transpose()
+        })
+        .collect()
+}
+
 fn render_scroll_region(
     input: &mut InputController,
-    region: &arcweft_bundle::resource_codec::ViewRuntimeScrollRegion,
+    scroll: arcweft_runtime_driver::view_runtime::BundleViewScrollOccurrence<'_>,
     geometry: &ViewCommittedGeometryFrame,
     visual_time_millis: u64,
     reduce_motion: bool,
 ) -> Result<Option<RenderScrollRegion>, PlayerFrameError> {
-    let target =
-        ViewGeometryTargetKey::new(ViewGeometryProductKind::ScrollRegion, region.target.clone());
-    let Some((node, final_geometry)) = geometry.target_geometry(&target) else {
+    let node = &scroll.style_node_key();
+    let policy = scroll.policy;
+    let Some(final_geometry) = geometry.final_geometry(node) else {
         return Ok(None);
     };
-    let Some(bounds) = geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Scroll)?
+    let Some(bounds) = ViewCommittedGeometryFrame::node_consumer_hit_rect(
+        node,
+        final_geometry,
+        ViewGeometryConsumer::Scroll,
+    )?
     else {
         return Ok(None);
     };
@@ -598,7 +611,7 @@ fn render_scroll_region(
         ViewGeometryConversionField::Top,
     )?;
     let mut render_region = RenderScrollRegion {
-        id: region.public_id.clone(),
+        id: scroll.target.id().as_str().to_owned(),
         bounds,
         content_width,
         content_height,
@@ -610,11 +623,11 @@ fn render_scroll_region(
         offset_y,
         overscroll_x: 0.0,
         overscroll_y: 0.0,
-        axis: render_scroll_axis(region.axis),
-        overflow: render_scroll_overflow(region.overflow),
-        indicators: render_scroll_indicators_policy(region.indicators),
-        overscroll: render_scroll_overscroll_policy(region.overscroll),
-        auto_scroll_focus: render_focus_auto_scroll_policy(region.auto_scroll_focus),
+        axis: render_scroll_axis(policy.axis),
+        overflow: render_scroll_overflow(policy.overflow),
+        indicators: render_scroll_indicators_policy(policy.indicators),
+        overscroll: render_scroll_overscroll_policy(policy.overscroll),
+        auto_scroll_focus: render_focus_auto_scroll_policy(policy.auto_scroll_focus),
         indicator_activity_millis: None,
     };
     input.resolve_scroll_region(&mut render_region, visual_time_millis, reduce_motion);

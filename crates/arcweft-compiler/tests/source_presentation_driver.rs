@@ -319,6 +319,101 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn source_scroll_and_virtual_list_share_live_ownership_across_cold_restore() {
+    use arcweft_bundle::resource_codec::ViewScrollAxis;
+    use arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind;
+    use arcweft_view::{
+        program::{ViewStableKey, ViewVirtualAxis},
+        virtualization::{ViewVirtualItem, ViewVirtualScrollTarget},
+    };
+
+    let bytes = source_bundle(
+        r#"
+view Inventory() {
+    Scroll(target = @scroll:.inventory, width = 200px, height = 100px) {
+        Text("Inventory")
+    }
+}
+flow main() -> i64 {
+    let inventory = mount(Inventory());
+    wait(10ms)
+    inventory.destroy();
+    return 42i64
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let mut session = session_from_bytes(&bytes);
+    let mut virtual_mount = None;
+    let mut retired = false;
+    run(&mut session, |session| {
+        let target = session
+            .presentation()
+            .view
+            .scroll_occurrences()
+            .next()
+            .map(|scroll| scroll.target.clone());
+        if let Some(mount) = virtual_mount {
+            if let Some(target) = target {
+                let list = session.view_virtualization().get(mount).unwrap();
+                assert_eq!(list.scroll_target().target(), &target);
+            } else {
+                assert!(session.view_virtualization().get(mount).is_none());
+                retired = true;
+            }
+            return;
+        }
+        let Some(target) = target else { return };
+        let scroll_target = ViewVirtualScrollTarget::from(target);
+        assert!(
+            session
+                .mount_virtual_list(
+                    scroll_target.clone(),
+                    ViewVirtualAxis::Horizontal,
+                    100_000,
+                    Vec::new()
+                )
+                .is_err()
+        );
+        virtual_mount = Some(
+            session
+                .mount_virtual_list(
+                    scroll_target,
+                    ViewVirtualAxis::Vertical,
+                    100_000,
+                    vec![ViewVirtualItem::new(ViewStableKey(1), 120_000)],
+                )
+                .unwrap(),
+        );
+        let save = session.export_session_save_bytes().unwrap();
+        let mut cold = session_from_bytes(&bytes);
+        cold.import_session_save_bytes(&save, &Default::default())
+            .unwrap();
+        assert_eq!(cold.export_session_save_bytes().unwrap(), save);
+        let before = session.snapshot_session().unwrap();
+        let mut forged = session.snapshot_session().unwrap();
+        let node = forged
+            .presentation
+            .view
+            .mounts
+            .iter_mut()
+            .flat_map(|mount| &mut mount.style_nodes)
+            .find(|node| matches!(node.kind, BundleViewStyleNodeKind::Scroll { .. }))
+            .unwrap();
+        let BundleViewStyleNodeKind::Scroll { policy, .. } = &mut node.kind else {
+            unreachable!()
+        };
+        policy.axis = ViewScrollAxis::Horizontal;
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::ViewRuntime { .. })
+        ));
+        assert_eq!(session.snapshot_session().unwrap(), before);
+    });
+    assert!(virtual_mount.is_some() && retired);
+}
+
+#[test]
 fn source_view_inputs_and_defaults_reach_the_retained_mount_after_each_restore() {
     let mut session = session(
         r#"

@@ -1,5 +1,6 @@
 //! Transient canonical physical geometry projection for one retained View node.
 
+use super::super::ViewScrollPolicy;
 use super::ViewRuntimeStyleProjectionError;
 use arcweft_view::ViewElementKind;
 use arcweft_view::geometry::{
@@ -15,6 +16,7 @@ use arcweft_view::style::{
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ViewRuntimeGeometryOwner {
     Element(ViewElementKind),
+    Scroll(ViewScrollPolicy),
     Text,
     Image,
     Custom,
@@ -49,6 +51,9 @@ impl ViewRuntimePhysicalNodeStyle {
         match owner {
             ViewRuntimeGeometryOwner::Element(element) => {
                 Self::project_element(node, owner, element, computed)
+            }
+            ViewRuntimeGeometryOwner::Scroll(_) => {
+                Self::project_element(node, owner, ViewElementKind::Scroll, computed)
             }
             ViewRuntimeGeometryOwner::Text | ViewRuntimeGeometryOwner::Image => {
                 Self::project_non_element_leaf(node, owner, computed)
@@ -85,7 +90,10 @@ impl ViewRuntimePhysicalNodeStyle {
         element: ViewElementKind,
         computed: &ComputedViewStyle,
     ) -> Result<Self, ViewRuntimeStyleProjectionError> {
-        let box_style = computed.physical_box();
+        let mut box_style = computed.physical_box();
+        if let ViewRuntimeGeometryOwner::Scroll(policy) = owner {
+            (box_style.overflow_x, box_style.overflow_y) = policy.physical_overflow();
+        }
         let container_style = computed
             .physical_container(&node, element)
             .map_err(|source| ViewRuntimeStyleProjectionError::Geometry {

@@ -136,21 +136,6 @@ impl BundleSession {
         }
         let mut next_presentation = self.presentation.clone();
         preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
-        if matches!(
-            compatibility,
-            SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
-        ) {
-            for list in self.view_virtualization.mounts() {
-                validate_virtual_list_scroll_owner(
-                    &next_runtime.scroll_regions,
-                    list.scroll_target(),
-                    list.axis(),
-                )
-                .map_err(|error| BundleHotSwapError::ViewVirtualization {
-                    message: error.to_string(),
-                })?;
-            }
-        }
         if compatibility == SwapCompatibility::ContentOnly {
             let catalog_changed = match (
                 self.character_presentation.as_ref(),
@@ -223,6 +208,12 @@ impl BundleSession {
                 &[],
                 next_environment.effective().reduced_motion(),
             );
+            for list in self.view_virtualization.mounts() {
+                validate_virtual_list_scroll_owner(&frame, list.scroll_target(), list.axis())
+                    .map_err(|error| BundleHotSwapError::ViewVirtualization {
+                        message: error.to_string(),
+                    })?;
+            }
             drop(dialogue);
             if next_runtime.view_runtime.has_program() {
                 let executable_definitions = next_runtime.view_runtime.definition_ids();
@@ -235,7 +226,6 @@ impl BundleSession {
                         images: &next_runtime.image_objects,
                         text_inputs: &next_runtime.text_inputs,
                         action_buttons: &next_runtime.action_buttons,
-                        scroll_regions: &next_runtime.scroll_regions,
                         surfaces: &next_runtime.surfaces,
                         focus_groups: &next_runtime.focus_groups,
                         focus_navigation: &next_runtime.focus_navigation,
@@ -288,6 +278,7 @@ impl BundleSession {
                 self.pending_presentation_inputs.clear();
                 self.pending_host_call_results.clear();
                 self.waiting_action_receive_calls.clear();
+                self.view_virtualization = Default::default();
                 self.presentation = BundlePresentationSnapshot::default();
             }
             SwapCompatibility::CodeGenerational => {

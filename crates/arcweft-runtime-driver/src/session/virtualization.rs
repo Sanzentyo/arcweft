@@ -1,7 +1,7 @@
 //! Session ownership for retained virtual-list mounts.
 
 use super::BundleSession;
-use arcweft_bundle::resource_codec::ViewRuntimeScrollRegion;
+use crate::view_runtime::BundleViewFrame;
 use arcweft_view::ViewMountId;
 use arcweft_view::program::ViewVirtualAxis;
 use arcweft_view::virtualization::{
@@ -13,7 +13,7 @@ use thiserror::Error;
 /// Error while connecting a retained virtual list to an authored Scroll.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum BundleVirtualListMountError {
-    #[error("unknown authored Scroll target `{target}` for virtual list mount")]
+    #[error("unknown live Scroll target `{target}` for virtual list mount")]
     UnknownScrollTarget { target: String },
     #[error(
         "virtual list axis {list_axis:?} does not match Scroll target `{target}` axis {scroll_axis:?}"
@@ -41,7 +41,7 @@ impl BundleSession {
         viewport_extent_milli: u32,
         items: Vec<ViewVirtualItem>,
     ) -> Result<ViewMountId, BundleVirtualListMountError> {
-        validate_virtual_list_scroll_owner(&self.scroll_regions, &scroll_target, axis)?;
+        validate_virtual_list_scroll_owner(&self.presentation.view, &scroll_target, axis)?;
         self.view_virtualization
             .mount(scroll_target, axis, viewport_extent_milli, items)
             .map_err(Into::into)
@@ -59,14 +59,14 @@ impl BundleSession {
 }
 
 pub(super) fn validate_virtual_list_scroll_owner(
-    scroll_regions: &[ViewRuntimeScrollRegion],
+    frame: &BundleViewFrame,
     scroll_target: &ViewVirtualScrollTarget,
     axis: ViewVirtualAxis,
 ) -> Result<(), BundleVirtualListMountError> {
-    let scroll_axis = scroll_regions
-        .iter()
-        .find(|region| region.target == scroll_target.as_str())
-        .map(|region| region.axis.virtual_axis())
+    let scroll_axis = frame
+        .scroll_occurrences()
+        .find(|scroll| scroll.target == scroll_target.target())
+        .map(|scroll| scroll.policy.axis.virtual_axis())
         .ok_or_else(|| BundleVirtualListMountError::UnknownScrollTarget {
             target: scroll_target.as_str().to_owned(),
         })?;

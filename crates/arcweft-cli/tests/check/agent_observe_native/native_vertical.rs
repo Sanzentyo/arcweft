@@ -512,10 +512,9 @@ flow main {
     assert_eq!(mcp_tool_image_metadata["image"]["height"], 203);
     assert_eq!(mcp_tool_image_metadata["image"]["renderer"], "native");
     assert_eq!(mcp_tool_image_metadata["image"]["scope"]["kind"], "layer");
-    assert!(
-        mcp_tool_image_metadata["image"]["scope"]["id"]
-            .as_str()
-            .is_some_and(|id| id.starts_with("layer."))
+    assert_eq!(
+        mcp_tool_image_metadata["image"]["scope"]["id"],
+        dialogue_layer["id"]
     );
     assert_eq!(
         mcp_tool_image_metadata["image"]["scope"]["id"],

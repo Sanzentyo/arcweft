@@ -342,6 +342,7 @@ fn contain_overscroll_stops_scroll_chaining_without_transient_offset() {
     assert!((input.scroll_offset_y("scroll.child") - 120.0).abs() < f32::EPSILON);
     assert!(input.scroll_offset_y("scroll.parent").abs() < f32::EPSILON);
     let mut child = frame.scroll_regions[0].clone();
+    child.offset_y = input.scroll_offset_y(&child.id);
     input.resolve_scroll_region(&mut child, 100, false);
     assert!(child.overscroll_y.abs() < f32::EPSILON);
 }
@@ -358,6 +359,7 @@ fn elastic_overscroll_is_transient_and_settles_without_changing_snapshot_offset(
     assert!(input.scroll_offset_y("scroll.parent").abs() < f32::EPSILON);
     let snapshot = input.snapshot();
     let mut child = frame.scroll_regions[0].clone();
+    child.offset_y = input.scroll_offset_y(&child.id);
     input.resolve_scroll_region(&mut child, 100, false);
     assert!(child.overscroll_y > 0.0);
     assert!(child.visual_offset_y() > child.offset_y);
@@ -379,6 +381,7 @@ fn reduce_motion_consumes_elastic_boundary_delta_without_displacement() {
     input.wheel(&frame, -200.0);
 
     let mut child = frame.scroll_regions[0].clone();
+    child.offset_y = input.scroll_offset_y(&child.id);
     input.resolve_scroll_region(&mut child, 100, true);
     assert!(child.overscroll_y.abs() < f32::EPSILON);
     assert!(input.scroll_offset_y("scroll.parent").abs() < f32::EPSILON);

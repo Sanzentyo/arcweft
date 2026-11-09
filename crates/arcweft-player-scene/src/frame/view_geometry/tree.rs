@@ -451,6 +451,20 @@ fn bind_product<'a>(
         BundleViewStyleNodeKind::Element { element, target } => {
             bind_element(input, mount, node, owner, *element, target.as_deref())
         }
+        BundleViewStyleNodeKind::Scroll { target, .. } => {
+            let key = ViewGeometryTargetKey::new(
+                ViewGeometryProductKind::ScrollRegion,
+                target.id().as_str().to_owned(),
+            );
+            reject_incompatible(
+                input,
+                node,
+                owner,
+                Some(ViewGeometryProductKind::ScrollRegion),
+                &key,
+            )?;
+            Ok((ViewIntrinsicProductRef::EmptyContainer, vec![key]))
+        }
         BundleViewStyleNodeKind::Text { text_source }
         | BundleViewStyleNodeKind::RichText { text_source } => {
             let matches = mount
@@ -529,12 +543,12 @@ fn bind_element<'a>(
         ViewElementKind::TextField => Some(ViewGeometryProductKind::TextField),
         ViewElementKind::TextArea => Some(ViewGeometryProductKind::TextArea),
         ViewElementKind::SecureField => Some(ViewGeometryProductKind::SecureField),
-        ViewElementKind::Scroll => Some(ViewGeometryProductKind::ScrollRegion),
         ViewElementKind::Panel | ViewElementKind::Box if authored_target.is_some() => {
             Some(ViewGeometryProductKind::Surface)
         }
         ViewElementKind::Panel
         | ViewElementKind::Box
+        | ViewElementKind::Scroll
         | ViewElementKind::Row
         | ViewElementKind::Column
         | ViewElementKind::Stack => None,
@@ -612,24 +626,6 @@ fn bind_element<'a>(
                 vec![key],
             ))
         }
-        ViewGeometryProductKind::ScrollRegion => {
-            let records = input
-                .presentation
-                .scroll_regions
-                .iter()
-                .filter(|record| record.target == id)
-                .collect::<Vec<_>>();
-            Ok((
-                ViewIntrinsicProductRef::ScrollRegion(exactly_one(
-                    node,
-                    owner,
-                    expected,
-                    key.clone(),
-                    &records,
-                )?),
-                vec![key],
-            ))
-        }
         ViewGeometryProductKind::Surface => {
             let records = input
                 .presentation
@@ -648,7 +644,9 @@ fn bind_element<'a>(
                 vec![key],
             ))
         }
-        ViewGeometryProductKind::TextOutput | ViewGeometryProductKind::Image => {
+        ViewGeometryProductKind::ScrollRegion
+        | ViewGeometryProductKind::TextOutput
+        | ViewGeometryProductKind::Image => {
             unreachable!("element products are closed above")
         }
     }
@@ -735,19 +733,6 @@ fn records_for_id<'a>(
                     ViewInputKind::SecureField => ViewGeometryProductKind::SecureField,
                 };
                 (kind, record.public_id.as_str())
-            }),
-    );
-    records.extend(
-        input
-            .presentation
-            .scroll_regions
-            .iter()
-            .filter(|record| record.target == id)
-            .map(|record| {
-                (
-                    ViewGeometryProductKind::ScrollRegion,
-                    record.public_id.as_str(),
-                )
             }),
     );
     records.extend(

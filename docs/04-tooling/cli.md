@@ -699,7 +699,7 @@ observation:
   parent display-map element kind, index, byte range, source category, and node
   index.
 - `actions` with a semantic `advance_text` target
-- `scroll_regions` with one authored target per retained Scroll, internal
+- `scroll_regions` with one target per live Scroll occurrence, internal
   viewport/content metadata, offsets/ranges, and effective policies; matching
   `actions` entries use semantic `scroll` without creating internal actionable
   nodes

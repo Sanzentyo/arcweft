@@ -51,6 +51,15 @@ pub struct ViewScrollAxisGeometry {
     pub current_offset_milli: i32,
 }
 
+impl ViewScrollAxisGeometry {
+    /// Resolves a previous input offset against the current layout range.
+    pub fn clamp_offset(mut self, requested_milli: i32) -> Self {
+        self.current_offset_milli =
+            requested_milli.clamp(self.min_offset_milli, self.max_offset_milli);
+        self
+    }
+}
+
 /// Signed scroll geometry for both physical axes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewScrollGeometry {

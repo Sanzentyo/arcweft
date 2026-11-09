@@ -1,6 +1,6 @@
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeSurface,
+    ViewRuntimeTextControl,
 };
 use arcweft_id::presentation::PresentationHandleId;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
@@ -184,28 +184,6 @@ pub(crate) fn filter_presentation_action_buttons(
             let mut aliases = vec![control.public_id.as_str(), control.target.as_str()];
             let default_visible = control.view.is_none();
             if let Some(view) = control.view.as_deref() {
-                aliases.push(view);
-            }
-            resource_is_render_visible(
-                handles,
-                &RUNTIME_CONTROL_FAMILIES,
-                &aliases,
-                default_visible,
-            )
-        })
-        .collect()
-}
-
-pub(crate) fn filter_presentation_scroll_regions(
-    regions: Vec<ViewRuntimeScrollRegion>,
-    handles: &[PresentationHandleRecord],
-) -> Vec<ViewRuntimeScrollRegion> {
-    regions
-        .into_iter()
-        .filter(|region| {
-            let mut aliases = vec![region.public_id.as_str(), region.target.as_str()];
-            let default_visible = region.view.is_none();
-            if let Some(view) = region.view.as_deref() {
                 aliases.push(view);
             }
             resource_is_render_visible(

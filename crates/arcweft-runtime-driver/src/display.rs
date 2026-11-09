@@ -6,16 +6,15 @@ use crate::fx_runtime::{BundleFxRuntimeError, BundleFxRuntimeSnapshot};
 use crate::presentation_handles::{
     PresentationHandleDiagnostic, PresentationHandleRecord, filter_presentation_action_buttons,
     filter_presentation_focus_groups, filter_presentation_focus_navigation,
-    filter_presentation_scroll_regions, filter_presentation_surfaces,
-    filter_presentation_text_inputs, hidden_focus_diagnostics,
+    filter_presentation_surfaces, filter_presentation_text_inputs, hidden_focus_diagnostics,
 };
 use crate::presentation_projection::PresentationProjection;
 pub use crate::presentation_projection::PresentationProjectionError;
 use crate::view_projection::ProjectedViewResources;
 use crate::view_runtime::BundleViewFrame;
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeSurface,
+    ViewRuntimeTextControl,
 };
 use arcweft_character::presentation_name::{
     AcceptedCharacterPresentationCatalog, CharacterNameResolutionLocales,
@@ -322,8 +321,6 @@ pub struct BundlePresentationSnapshot<F = arcweft_text_model::LineDisplayFrame> 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub action_buttons: Vec<ViewRuntimeActionButton>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scroll_regions: Vec<ViewRuntimeScrollRegion>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surfaces: Vec<ViewRuntimeSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub focus_groups: Vec<ViewRuntimeFocusGroup>,
@@ -350,7 +347,6 @@ impl<F> Default for BundlePresentationSnapshot<F> {
             viewport_fit: None,
             text_inputs: Vec::new(),
             action_buttons: Vec::new(),
-            scroll_regions: Vec::new(),
             surfaces: Vec::new(),
             focus_groups: Vec::new(),
             focus_navigation: Vec::new(),
@@ -399,7 +395,6 @@ impl<F> BundlePresentationSnapshot<F> {
             viewport_fit: self.viewport_fit,
             text_inputs: self.text_inputs,
             action_buttons: self.action_buttons,
-            scroll_regions: self.scroll_regions,
             surfaces: self.surfaces,
             focus_groups: self.focus_groups,
             focus_navigation: self.focus_navigation,
@@ -415,7 +410,6 @@ impl<F> BundlePresentationSnapshot<F> {
 pub(crate) struct BundlePresentationResources<'a> {
     pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
-    pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
     pub(crate) surfaces: &'a [ViewRuntimeSurface],
     pub(crate) focus_groups: &'a [ViewRuntimeFocusGroup],
     pub(crate) focus_navigation: &'a [ViewRuntimeFocusNavigation],
@@ -614,10 +608,6 @@ impl BundlePresentationSnapshot {
             resources.action_buttons.to_vec(),
             &next_presentation_handles,
         );
-        let next_scroll_regions = filter_presentation_scroll_regions(
-            resources.scroll_regions.to_vec(),
-            &next_presentation_handles,
-        );
         let next_surfaces =
             filter_presentation_surfaces(resources.surfaces.to_vec(), &next_presentation_handles);
         let next_focus_groups = filter_presentation_focus_groups(
@@ -638,7 +628,6 @@ impl BundlePresentationSnapshot {
             || self.viewport_fit != next_viewport_fit
             || self.text_inputs != next_text_inputs
             || self.action_buttons != next_action_buttons
-            || self.scroll_regions != next_scroll_regions
             || self.surfaces != next_surfaces
             || self.focus_groups != next_focus_groups
             || self.focus_navigation != next_focus_navigation
@@ -651,7 +640,6 @@ impl BundlePresentationSnapshot {
             self.viewport_fit = next_viewport_fit;
             self.text_inputs = next_text_inputs;
             self.action_buttons = next_action_buttons;
-            self.scroll_regions = next_scroll_regions;
             self.surfaces = next_surfaces;
             self.focus_groups = next_focus_groups;
             self.focus_navigation = next_focus_navigation;
@@ -670,7 +658,6 @@ impl BundlePresentationSnapshot {
         if self.images != resources.images
             || self.text_inputs != resources.text_inputs
             || self.action_buttons != resources.action_buttons
-            || self.scroll_regions != resources.scroll_regions
             || self.surfaces != resources.surfaces
             || self.focus_groups != resources.focus_groups
             || self.focus_navigation != resources.focus_navigation
@@ -679,7 +666,6 @@ impl BundlePresentationSnapshot {
             self.images = resources.images;
             self.text_inputs = resources.text_inputs;
             self.action_buttons = resources.action_buttons;
-            self.scroll_regions = resources.scroll_regions;
             self.surfaces = resources.surfaces;
             self.focus_groups = resources.focus_groups;
             self.focus_navigation = resources.focus_navigation;
@@ -738,7 +724,6 @@ impl<F: fmt::Debug + Clone> fmt::Debug for BundlePresentationSnapshot<F> {
             .field("viewport_fit", &self.viewport_fit)
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
             .field("action_buttons", &self.action_buttons)
-            .field("scroll_regions", &self.scroll_regions)
             .field("surfaces", &self.surfaces)
             .field("focus_groups", &self.focus_groups)
             .field("focus_navigation", &self.focus_navigation)

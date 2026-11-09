@@ -5,16 +5,14 @@ use arcweft_bundle::resource_codec::view::{
     ViewElementKind, ViewObserveClassification, ViewTextSelectionPolicy,
 };
 use arcweft_bundle::resource_codec::{
-    ViewFocusAutoScrollPolicy, ViewScrollAxis, ViewScrollIndicatorsPolicy,
-    ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy,
+    ViewRuntimeControlVisualStyle, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
+    ViewTextBlockBounds,
 };
-use arcweft_bundle::resource_codec::{
-    ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds,
-    ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewTextBlockBounds,
-};
+use arcweft_bundle::resource_codec::{ViewScrollAxis, ViewScrollOverflowPolicy, ViewScrollPolicy};
 use arcweft_character::id::CharacterId;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::PublicId;
 use arcweft_id::TextKey;
 use arcweft_id::presentation::PresentationHandleId;
 use arcweft_id::view::ViewId;
@@ -27,14 +25,17 @@ use arcweft_player_scene::{
         InputPointerModifiers, InputScrollOffsetSnapshot,
     },
 };
-use arcweft_presentation::input::{PointerId, ViewportPoint};
+use arcweft_presentation::input::{InteractionTarget, PointerId, ViewportPoint};
 use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
-use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
+use arcweft_render_wgpu::geometry::{
+    RenderPreferences, RenderScrollAxis, RenderScrollOverflow, RenderViewport,
+};
 use arcweft_render_wgpu::view_scene::ViewPrimitive;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewStyleNode,
-    BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
+    BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget,
+    BundleViewTextValue,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
@@ -43,7 +44,12 @@ use arcweft_text_model::{
     RichTextStyle, RichTextWritingMode,
 };
 use arcweft_view::ViewMountId;
-use arcweft_view::style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes};
+use arcweft_view::style::{
+    ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes, ViewLengthMilli,
+    ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleDeclaration, ViewStylePatch,
+    ViewStylePatchId, ViewStyleProgram, ViewStyleScopeId, ViewStyleSourceId,
+};
 
 fn test_source_ref() -> ProductSourceRef {
     let source = SourceDocument::try_new(
@@ -192,49 +198,174 @@ fn product_only_surface_is_not_treated_as_retained_geometry() {
     assert!(prepared.frame.view_scenes().is_empty());
 }
 
-#[test]
-fn product_only_scroll_region_is_not_treated_as_retained_geometry() {
+fn retained_scroll_fixture() -> (BundlePresentationSnapshot, ViewStyleProgram) {
     let mut presentation = BundlePresentationSnapshot::default();
-    presentation.scroll_regions.push(ViewRuntimeScrollRegion {
-        public_id: "scroll.feedback.body".to_owned(),
-        target: "scroll.feedback.body".to_owned(),
-        view: Some("view.FeedbackPanel".to_owned()),
-        bounds: ViewRuntimeScrollRegionBounds::new(48_000, 64_000, 420_000, 120_000),
-        content_width_milli: 420_000,
-        content_height_milli: 360_000,
-        axis: ViewScrollAxis::Vertical,
-        overflow: ViewScrollOverflowPolicy::Auto,
-        indicators: ViewScrollIndicatorsPolicy::Auto,
-        overscroll: ViewScrollOverscrollPolicy::Clamp,
-        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
-    });
+    for (target, policy) in [
+        ("text.first", ViewScrollPolicy::default()),
+        (
+            "text.second",
+            ViewScrollPolicy {
+                axis: ViewScrollAxis::Horizontal,
+                ..ViewScrollPolicy::default()
+            },
+        ),
+        (
+            "text.hidden",
+            ViewScrollPolicy {
+                overflow: ViewScrollOverflowPolicy::Hidden,
+                ..ViewScrollPolicy::default()
+            },
+        ),
+    ] {
+        push_view_text(
+            &mut presentation,
+            "view.FeedbackPanel",
+            target,
+            None,
+            "Scrollable content",
+            ViewTextBlockBounds::from_px(0, 0, 240, 220),
+            ViewTextSelectionPolicy::Disabled,
+            ViewRuntimeControlVisualStyle::default(),
+        );
+        let mount = presentation.view.mounts.last_mut().unwrap();
+        mount.style_nodes[0].instruction = 1;
+        mount.style_nodes[0].parent = Some(BundleViewStyleNodeId {
+            path: BundleViewInstancePath::default(),
+            instruction: 0,
+        });
+        mount.style_nodes.insert(
+            0,
+            BundleViewStyleNode {
+                path: BundleViewInstancePath::default(),
+                instruction: 0,
+                parent: None,
+                kind: BundleViewStyleNodeKind::Scroll {
+                    target: InteractionTarget::new(
+                        PublicId::try_new_engine_owned(mount.scoped_id("scroll.body")).unwrap(),
+                    ),
+                    policy,
+                },
+                part: None,
+                exported_part: None,
+                applications: vec![ViewStyleApplication::new(
+                    ViewStyleApplicationTarget::inline(ViewStylePatchId::new(0)),
+                    ViewStyleScopeId::new(mount.mount.get()),
+                    0,
+                    0,
+                    ViewStyleBoundaryFacts::SAME_VIEW,
+                )],
+            },
+        );
+    }
+    let viewport_size = ViewStylePatch::new(
+        ViewStylePatchId::new(0),
+        [ViewPropertyKind::Width, ViewPropertyKind::Height]
+            .into_iter()
+            .map(|property| {
+                ViewStyleDeclaration::new(
+                    property,
+                    ViewSpecifiedValue::Length {
+                        value: ViewLengthMilli::new(100_000),
+                    },
+                    ViewStyleAssignOp::Replace,
+                    ViewStyleSourceId::new(0),
+                )
+                .unwrap()
+            })
+            .collect(),
+    );
+    let style = ViewStyleProgram::try_new(Vec::new(), vec![viewport_size]).unwrap();
+    (presentation, style)
+}
+
+#[test]
+fn retained_scroll_routes_each_occurrence_and_uses_child_extents() {
+    let (presentation, style) = retained_scroll_fixture();
     let images = BundleImageCatalog::empty();
+    let request = PlayerFrameRequest {
+        presentation: &presentation,
+        fx_definitions: empty_fx_definitions(),
+        images: &images,
+        style_program: Some(&style),
+        style_environment:
+            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
+        viewport: RenderViewport {
+            logical_width: 320.0,
+            logical_height: 240.0,
+            physical_width: 320,
+            physical_height: 240,
+            scale_factor: 1.0,
+        },
+        fit: PlayerFrameFit::raw(),
+        time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
+        preferences: RenderPreferences::default(),
+    };
     let mut input = InputController::default();
-    let prepared = PlayerFramePlanner::prepare(
+    let mut planner = PlayerFramePlannerState::new();
+    planner
+        .register_font_bytes(DEFAULT_PLAYER_FONT_BYTES.to_vec())
+        .unwrap();
+    let mut prepare = |input: &mut InputController, request| {
+        let candidate = planner.prepare_candidate(input, request).unwrap();
+        planner
+            .publication_guard()
+            .publish_with(candidate, input, |_| ())
+            .unwrap()
+            .0
+    };
+    let frame = prepare(&mut input, request).frame;
+    let [first, second, hidden] = frame.scroll_regions.as_slice() else {
+        panic!("one region per Scroll occurrence");
+    };
+    assert_eq!(first.id, "view_mount_1.scroll.body");
+    assert_eq!(second.id, "view_mount_2.scroll.body");
+    assert_eq!(first.axis, RenderScrollAxis::Vertical);
+    assert_eq!(second.axis, RenderScrollAxis::Horizontal);
+    assert_eq!(hidden.overflow, RenderScrollOverflow::Hidden);
+    assert_px(first.max_offset_y(), 120.0);
+    assert_px(first.max_offset_x(), 0.0);
+    assert_px(second.max_offset_x(), 140.0);
+    assert_px(second.max_offset_y(), 0.0);
+    assert_px(hidden.max_offset_y(), 0.0);
+
+    assert!(
+        input
+            .scroll_region_by_id(&frame, &first.id, 0.0, -40.0)
+            .redraw
+    );
+    assert!(
+        input
+            .scroll_region_by_id(&frame, &second.id, -30.0, 0.0)
+            .redraw
+    );
+    assert!(
+        !input
+            .scroll_region_by_id(&frame, &hidden.id, 0.0, -40.0)
+            .redraw
+    );
+    let updated = prepare(&mut input, request).frame;
+    assert_px(updated.scroll_regions[0].offset_y, 40.0);
+    assert_px(updated.scroll_regions[1].offset_x, 30.0);
+    assert_px(updated.scroll_regions[2].offset_y, 0.0);
+
+    let mut shrunk = presentation.clone();
+    shrunk.view.mounts[0].text[0].targets[0].bounds.height_milli = 110_000;
+    let reflow = prepare(
         &mut input,
         PlayerFrameRequest {
-            presentation: &presentation,
-            fx_definitions: empty_fx_definitions(),
-            images: &images,
-            style_program: None,
-            style_environment:
-                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
-            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-            viewport: RenderViewport {
-                logical_width: 1280.0,
-                logical_height: 720.0,
-                physical_width: 1280,
-                physical_height: 720,
-                scale_factor: 1.0,
-            },
-            fit: PlayerFrameFit::raw(),
-            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
-            preferences: RenderPreferences::default(),
+            presentation: &shrunk,
+            ..request
         },
-    )
-    .expect("frame prepares");
-
-    assert!(prepared.frame.scroll_regions.is_empty());
+    );
+    assert_px(reflow.frame.scroll_regions[0].offset_y, 10.0);
+    assert_px(reflow.frame.scroll_regions[1].offset_x, 30.0);
+    let mount = &shrunk.view.mounts[0];
+    let child = reflow
+        .view_geometry()
+        .final_geometry(&mount.style_nodes[1].style_node_key(mount.mount))
+        .unwrap();
+    assert_eq!(child.world_border_box.top_milli, -10_000);
 }
 
 #[test]
@@ -322,111 +453,8 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
 }
 
 #[test]
-fn product_only_hidden_scroll_region_is_not_retained_geometry() {
+fn retained_text_ignores_a_scroll_alias_without_a_retained_ancestor() {
     let mut presentation = BundlePresentationSnapshot::default();
-    presentation.scroll_regions.push(ViewRuntimeScrollRegion {
-        public_id: "scroll.feedback.body".to_owned(),
-        target: "scroll.feedback.body".to_owned(),
-        view: Some("view.FeedbackPanel".to_owned()),
-        bounds: ViewRuntimeScrollRegionBounds::new(48_000, 64_000, 420_000, 120_000),
-        content_width_milli: 420_000,
-        content_height_milli: 360_000,
-        axis: ViewScrollAxis::Vertical,
-        overflow: ViewScrollOverflowPolicy::Hidden,
-        indicators: ViewScrollIndicatorsPolicy::Auto,
-        overscroll: ViewScrollOverscrollPolicy::Clamp,
-        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
-    });
-    let images = BundleImageCatalog::empty();
-    let mut input = InputController::default();
-    let prepared = PlayerFramePlanner::prepare(
-        &mut input,
-        PlayerFrameRequest {
-            presentation: &presentation,
-            fx_definitions: empty_fx_definitions(),
-            images: &images,
-            style_program: None,
-            style_environment:
-                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
-            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-            viewport: RenderViewport {
-                logical_width: 1280.0,
-                logical_height: 720.0,
-                physical_width: 1280,
-                physical_height: 720,
-                scale_factor: 1.0,
-            },
-            fit: PlayerFrameFit::raw(),
-            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
-            preferences: RenderPreferences::default(),
-        },
-    )
-    .expect("frame prepares");
-
-    assert!(prepared.frame.scroll_regions.is_empty());
-}
-
-#[test]
-fn product_only_horizontal_scroll_region_is_not_retained_geometry() {
-    let mut presentation = BundlePresentationSnapshot::default();
-    presentation.scroll_regions.push(ViewRuntimeScrollRegion {
-        public_id: "scroll.gallery".to_owned(),
-        target: "scroll.gallery".to_owned(),
-        view: Some("view.Gallery".to_owned()),
-        bounds: ViewRuntimeScrollRegionBounds::new(48_000, 64_000, 240_000, 120_000),
-        content_width_milli: 640_000,
-        content_height_milli: 120_000,
-        axis: ViewScrollAxis::Horizontal,
-        overflow: ViewScrollOverflowPolicy::Auto,
-        indicators: ViewScrollIndicatorsPolicy::Auto,
-        overscroll: ViewScrollOverscrollPolicy::Clamp,
-        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
-    });
-    let images = BundleImageCatalog::empty();
-    let mut input = InputController::default();
-    let prepared = PlayerFramePlanner::prepare(
-        &mut input,
-        PlayerFrameRequest {
-            presentation: &presentation,
-            fx_definitions: empty_fx_definitions(),
-            images: &images,
-            style_program: None,
-            style_environment:
-                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
-            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-            viewport: RenderViewport {
-                logical_width: 1280.0,
-                logical_height: 720.0,
-                physical_width: 1280,
-                physical_height: 720,
-                scale_factor: 1.0,
-            },
-            fit: PlayerFrameFit::raw(),
-            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
-            preferences: RenderPreferences::default(),
-        },
-    )
-    .expect("frame prepares");
-
-    assert!(prepared.frame.scroll_regions.is_empty());
-}
-
-#[test]
-fn retained_text_ignores_unretained_product_scroll_metadata() {
-    let mut presentation = BundlePresentationSnapshot::default();
-    presentation.scroll_regions.push(ViewRuntimeScrollRegion {
-        public_id: "scroll.notes".to_owned(),
-        target: "scroll.notes".to_owned(),
-        view: Some("view.NotesPanel".to_owned()),
-        bounds: ViewRuntimeScrollRegionBounds::new(48_000, 64_000, 240_000, 64_000),
-        content_width_milli: 240_000,
-        content_height_milli: 180_000,
-        axis: ViewScrollAxis::Vertical,
-        overflow: ViewScrollOverflowPolicy::Auto,
-        indicators: ViewScrollIndicatorsPolicy::Auto,
-        overscroll: ViewScrollOverscrollPolicy::Clamp,
-        auto_scroll_focus: ViewFocusAutoScrollPolicy::Nearest,
-    });
     push_view_text(
         &mut presentation,
         "view.NotesPanel",

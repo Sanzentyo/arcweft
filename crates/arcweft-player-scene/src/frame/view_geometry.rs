@@ -64,33 +64,23 @@ impl ViewScrollStateSnapshot {
         input: &crate::input::InputController,
     ) -> Result<Self, ViewGeometryRuntimeError> {
         let mut snapshot = Self::default();
-        for mount in &frame.mounts {
-            for node in &mount.style_nodes {
-                let arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind::Element {
-                    element: arcweft_view::ViewElementKind::Scroll,
-                    target: Some(target),
-                } = &node.kind
-                else {
-                    continue;
-                };
-                let target = mount.scoped_id(target);
-                let key = node.style_node_key(mount.mount);
-                let x_milli = arcweft_view::geometry::milli_from_logical_pointer(f64::from(
-                    input.scroll_offset_x(&target),
-                ))?;
-                let y_milli = arcweft_view::geometry::milli_from_logical_pointer(f64::from(
-                    input.scroll_offset_y(&target),
-                ))?;
-                let revision = scroll_revision(x_milli, y_milli);
-                snapshot.insert(
-                    key,
-                    ViewScrollStateInput {
-                        x_milli,
-                        y_milli,
-                        revision,
-                    },
-                );
-            }
+        for scroll in frame.scroll_occurrences() {
+            let target = scroll.target.id().as_str();
+            let x_milli = arcweft_view::geometry::milli_from_logical_pointer(f64::from(
+                input.scroll_offset_x(target),
+            ))?;
+            let y_milli = arcweft_view::geometry::milli_from_logical_pointer(f64::from(
+                input.scroll_offset_y(target),
+            ))?;
+            let revision = scroll_revision(x_milli, y_milli);
+            snapshot.insert(
+                scroll.style_node_key(),
+                ViewScrollStateInput {
+                    x_milli,
+                    y_milli,
+                    revision,
+                },
+            );
         }
         Ok(snapshot)
     }

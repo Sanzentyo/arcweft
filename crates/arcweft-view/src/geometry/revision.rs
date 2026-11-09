@@ -317,6 +317,7 @@ pub struct ViewTransformDependency {
     pub node: ViewStyleNodeKey,
     pub transform: ViewGeometryTransform,
     pub placed_revision: ViewPlacedGeometryRevision,
+    pub scroll: ViewGeometryPoint,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -353,6 +354,8 @@ impl ViewFinalGeometryKey {
             transcript.node(&dependency.node);
             transcript.transform(dependency.transform);
             transcript.u64(dependency.placed_revision.value());
+            transcript.i32(dependency.scroll.x_milli);
+            transcript.i32(dependency.scroll.y_milli);
         }
         transcript.clip(self.inherited_clip);
         for edge in [

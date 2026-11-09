@@ -4417,7 +4417,9 @@ fn items(reverse: bool) -> Vec<(i32, String)> {
 fn item_key(id: i32) -> String { if id == 1 { "one" } else { "two" } }
 view Main(reverse: bool) {
     {
-        for (id, label) in items(reverse) key = item_key(id) { Text(label) }
+        for (id, label) in items(reverse) key = item_key(id) {
+            Scroll(target = @scroll:.item, width = 80px, height = 20px) { Text(label) }
+        }
         Text("tail")
     }
 }
@@ -4506,6 +4508,7 @@ view Main(reverse: bool) {
     )
     .unwrap();
     let mut stable_paths = BTreeMap::new();
+    let mut stable_scroll_targets = BTreeMap::new();
     for reverse in [false, true, false] {
         let inputs = [RuntimeBinding {
             name: "reverse".to_owned(),
@@ -4547,6 +4550,17 @@ view Main(reverse: bool) {
             })
             .collect::<Vec<_>>();
         assert_eq!(rendered, expected);
+        let scrolls = frame.scroll_occurrences().collect::<Vec<_>>();
+        assert_eq!(scrolls.len(), 2);
+        assert_ne!(scrolls[0].target, scrolls[1].target);
+        assert_ne!(scrolls[0].style_node_key(), scrolls[1].style_node_key());
+        for (label, scroll) in rendered.iter().take(2).zip(scrolls) {
+            if let Some(previous) =
+                stable_scroll_targets.insert((*label).to_owned(), scroll.target.clone())
+            {
+                assert_eq!(&previous, scroll.target);
+            }
+        }
         let item_nodes = frame.mounts[0]
             .style_nodes
             .iter()

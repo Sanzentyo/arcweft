@@ -1985,13 +1985,23 @@ impl AuthoredViewBodyLowerer<'_> {
         let node = self.output.instructions.len();
         self.output
             .instructions
-            .push(ViewProgramInstruction::OpenElement {
-                element,
-                target: Some(target.clone()),
-                styles,
-                part,
-                key: None,
-                source: None,
+            .push(if element == arcweft_view::ViewElementKind::Scroll {
+                ViewProgramInstruction::OpenScroll {
+                    target: target.clone(),
+                    policy: Default::default(),
+                    styles,
+                    part,
+                    source: None,
+                }
+            } else {
+                ViewProgramInstruction::OpenElement {
+                    element,
+                    target: Some(target.clone()),
+                    styles,
+                    part,
+                    key: None,
+                    source: None,
+                }
             });
         if element.is_text_input() {
             let invalid =

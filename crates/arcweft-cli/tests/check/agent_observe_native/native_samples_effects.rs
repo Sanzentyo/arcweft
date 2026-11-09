@@ -2416,11 +2416,11 @@ fn agent_observe_reports_authored_scroll_view_capture_and_release_filtering() {
             "drain",
             "--json",
             "--object",
-            "button.below_scroll",
+            "view_mount_0.button.below_scroll",
         ],
         "authored Scroll clipped object observe",
     );
-    assert_agent_missing_scope_diagnostic(&clipped, "button.below_scroll", "object");
+    assert_agent_missing_scope_diagnostic(&clipped, "view_mount_0.button.below_scroll", "object");
     assert_released_authored_scroll_missing_scopes(&path);
 
     fs::remove_file(&path).expect("remove temp authored Scroll observe source");
@@ -2446,49 +2446,40 @@ entry cli @entry.scroll_agent_destroyed {
 }
 
 pub view ScrollPanel() {
-  let feedback = input.text(@input:.feedback, initial = "Ada")
-  Panel {
-    Scroll {
-      TextField(feedback)
-        .label("Feedback")
-        .on_submit {
-          emit(feedback.submit(value = feedback.text))
-        }
-      Button(@button:.send, label = "Send")
-        .on_click {
-          emit(feedback.submit(value = feedback.text))
-        }
-      Button(@button:.more, label = "More")
-        .on_click {
-          emit(feedback.submit(value = feedback.text))
-        }
-      Button(@button:.below_scroll, label = "Below")
-        .on_click {
-          emit(feedback.submit(value = feedback.text))
-        }
+  local state mut draft: String = "Ada"
+  Scroll(target = @scroll:.feedback, x = 48px, y = 48px, width = 420px, height = 168px) {
+    Column(spacing = 14) {
+      TextField(draft, target = @input:.feedback, label = "Feedback", width = 420px, height = 48px)
+        .on_submit(|| feedback.submit(value = draft))
+      Button("Send", target = @button:.send, width = 420px, height = 48px)
+        .on_click(|| feedback.submit(value = draft))
+      Button("More", target = @button:.more, width = 420px, height = 48px)
+        .on_click(|| feedback.submit(value = draft))
+      Button("Below", target = @button:.below_scroll, width = 420px, height = 48px)
+        .on_click(|| feedback.submit(value = draft))
     }
   }
 }
 
-flow scroll_agent_live {
+flow scroll_agent_live() -> String {
   let panel = mount(ScrollPanel())
   let event = await receive(feedback.submit)
   return event.value
 }
 
-flow scroll_agent_released {
+flow scroll_agent_released() -> String {
   let panel = mount(ScrollPanel())
   panel.release()
   return "released"
 }
 
-flow scroll_agent_unmounted {
+flow scroll_agent_unmounted() -> String {
   let panel = mount(ScrollPanel())
   panel.unmount()
   return "unmounted"
 }
 
-flow scroll_agent_destroyed {
+flow scroll_agent_destroyed() -> String {
   let panel = mount(ScrollPanel())
   panel.destroy()
   return "destroyed"
@@ -2509,7 +2500,7 @@ fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
             "drain",
             "--json",
             "--view",
-            "view.ScrollPanel",
+            "view_mount_0.view.ScrollPanel",
         ],
         "released authored Scroll view observe",
     );
@@ -2519,7 +2510,8 @@ fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
             .is_some_and(Vec::is_empty)
     );
     assert!(released_view["views"].as_array().is_some_and(Vec::is_empty));
-    assert_agent_missing_scope_diagnostic(&released_view, "view.ScrollPanel", "view");
+    assert_eq!(released_view["scroll_regions"], serde_json::json!([]));
+    assert_agent_missing_scope_diagnostic(&released_view, "view_mount_0.view.ScrollPanel", "view");
 
     let released_object = agent_observe_json_for_path(
         path,
@@ -2534,11 +2526,15 @@ fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
             "drain",
             "--json",
             "--object",
-            "input.feedback",
+            "view_mount_0.input.feedback",
         ],
         "released authored Scroll object observe",
     );
-    assert_agent_missing_scope_diagnostic(&released_object, "input.feedback", "object");
+    assert_agent_missing_scope_diagnostic(
+        &released_object,
+        "view_mount_0.input.feedback",
+        "object",
+    );
 
     let unmounted_view = agent_observe_json_for_path(
         path,
@@ -2553,7 +2549,7 @@ fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
             "drain",
             "--json",
             "--view",
-            "view.ScrollPanel",
+            "view_mount_0.view.ScrollPanel",
         ],
         "unmounted authored Scroll view observe",
     );
@@ -2567,7 +2563,8 @@ fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
             .as_array()
             .is_some_and(Vec::is_empty)
     );
-    assert_agent_missing_scope_diagnostic(&unmounted_view, "view.ScrollPanel", "view");
+    assert_eq!(unmounted_view["scroll_regions"], serde_json::json!([]));
+    assert_agent_missing_scope_diagnostic(&unmounted_view, "view_mount_0.view.ScrollPanel", "view");
 
     let destroyed_view = agent_observe_json_for_path(
         path,
@@ -2582,7 +2579,7 @@ fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
             "drain",
             "--json",
             "--view",
-            "view.ScrollPanel",
+            "view_mount_0.view.ScrollPanel",
         ],
         "destroyed authored Scroll view observe",
     );
@@ -2596,10 +2593,42 @@ fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
             .as_array()
             .is_some_and(Vec::is_empty)
     );
-    assert_agent_missing_scope_diagnostic(&destroyed_view, "view.ScrollPanel", "view");
+    assert_eq!(destroyed_view["scroll_regions"], serde_json::json!([]));
+    assert_agent_missing_scope_diagnostic(&destroyed_view, "view_mount_0.view.ScrollPanel", "view");
 }
 
 fn assert_authored_scroll_live_observation(live: &serde_json::Value) {
+    let [scroll] = live["scroll_regions"].as_array().unwrap().as_slice() else {
+        panic!("expected one retained Scroll region");
+    };
+    assert_eq!(scroll["target"], "view_mount_0.scroll.feedback");
+    assert_eq!(
+        scroll["parts"]["viewport"]["bounds"],
+        serde_json::json!([48.0, 48.0, 420.0, 168.0])
+    );
+    assert_eq!(
+        scroll["parts"]["content"]["size"],
+        serde_json::json!([420.0, 234.0])
+    );
+    assert_eq!(
+        scroll["parts"]["content"]["max_offset"],
+        serde_json::json!([0.0, 66.0])
+    );
+    assert_eq!(
+        live["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|action| action["action"] == "scroll")
+            .collect::<Vec<_>>(),
+        [&serde_json::json!({
+            "id": "action.scroll.view_mount_0.scroll.feedback",
+            "target": "view_mount_0.scroll.feedback",
+            "action": "scroll",
+            "kind": "semantic",
+            "enabled": true
+        })],
+    );
     let view = authored_scroll_view(live);
     assert_eq!(view["visible"], true);
     assert_eq!(view["object_count"], 3);
@@ -2614,7 +2643,11 @@ fn assert_authored_scroll_live_observation(live: &serde_json::Value) {
             .iter()
             .map(|value| value.as_str().expect("object ref is a string"))
             .collect::<Vec<_>>(),
-        vec!["input.feedback", "button.send", "button.more"]
+        vec![
+            "view_mount_0.input.feedback",
+            "view_mount_0.button.send",
+            "view_mount_0.button.more"
+        ]
     );
 
     let objects = live["objects"]
@@ -2622,9 +2655,9 @@ fn assert_authored_scroll_live_observation(live: &serde_json::Value) {
         .expect("live observe reports objects");
     let input = objects
         .iter()
-        .find(|object| object["id"] == "input.feedback")
+        .find(|object| object["id"] == "view_mount_0.input.feedback")
         .unwrap_or_else(|| panic!("Scroll-owned input should be observed: {live}"));
-    assert_eq!(input["parent_id"], "view.ScrollPanel");
+    assert_eq!(input["parent_id"], "view_mount_0.view.ScrollPanel");
     assert_eq!(input["role"], "text_field");
     assert_eq!(input["text"], "Ada");
     assert_eq!(input["bbox"]["x"], 48);
@@ -2632,14 +2665,14 @@ fn assert_authored_scroll_live_observation(live: &serde_json::Value) {
     assert_eq!(input["bbox"]["width"], 420);
     assert_eq!(input["bbox"]["height"], 48);
     assert!(objects.iter().any(|object| {
-        object["id"] == "button.more"
-            && object["parent_id"] == "view.ScrollPanel"
+        object["id"] == "view_mount_0.button.more"
+            && object["parent_id"] == "view_mount_0.view.ScrollPanel"
             && object["bbox"]["y"] == 172
     }));
     assert!(
         objects
             .iter()
-            .all(|object| object["id"] != "button.below_scroll"),
+            .all(|object| object["id"] != "view_mount_0.button.below_scroll"),
         "button fully outside the authored Scroll viewport must be absent: {live}"
     );
 }
@@ -2649,7 +2682,10 @@ fn assert_authored_scroll_view_resource(resource: &serde_json::Value, expected_u
     assert_eq!(resource["uri"], expected_uri);
     assert_eq!(resource["image"]["renderer"], "native");
     assert_eq!(resource["image"]["scope"]["kind"], "view");
-    assert_eq!(resource["image"]["scope"]["id"], "view.ScrollPanel");
+    assert_eq!(
+        resource["image"]["scope"]["id"],
+        "view_mount_0.view.ScrollPanel"
+    );
     assert_eq!(resource["image"]["width"], 420);
     assert_eq!(resource["image"]["height"], 168);
     assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
@@ -2673,7 +2709,7 @@ fn authored_scroll_view(live: &serde_json::Value) -> &serde_json::Value {
         .as_array()
         .expect("live observe reports views")
         .iter()
-        .find(|view| view["id"] == "view.ScrollPanel")
+        .find(|view| view["id"] == "view_mount_0.view.ScrollPanel")
         .unwrap_or_else(|| panic!("live Scroll view should be observed: {live}"))
 }
 
