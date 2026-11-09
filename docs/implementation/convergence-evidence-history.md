@@ -16389,3 +16389,18 @@ Webの20,500 msを調べた別実行ではtick 9から581へ進み、要求1,282
 
 [正例・旧配置の拒否・開発用Wasmの計測の原本](acceptance-evidence/task-unified-text-reveal-raster.raw.zip)は109件、796,200 bytes、SHA-256
 `8810a300039a50b1f1200282d29eeb6abcc2a255fa892fee1ef8611c1a2d92f5`。
+
+### retained Viewの組版縮尺と高DPIの実画像 — 2026-11-09
+
+公開Source `79dce12d8718d115de9637543ca6070b961671fb`、親 `671d9d5c63a86a51869df10bbc15efbbe1b7b9ad`、tree `22f4c445f1f447742135205319d1077ad63e3287`。公開先の20 blobを照合した。indexは空で、既存の未追跡 `%SystemDrive%/` があった。
+
+高DPIでは本文枠と既定24pxが0.5倍になる一方、明示31pt／32ptのサイズは41.333／42.667論理pxのままだった。旧採取の `h` と `i` は本文の縦境界外にあり、両環境のインクが0画素だった。[旧採取と失敗の原本](acceptance-evidence/task-native-style-parity-captures.raw.zip)。
+
+Viewのfitとホストの文字拡大率から一つの `TextMetricScale` を作る。共通レイアウトは絶対単位の解決後に本文とルビのメトリクスを射影し、その値を整形・配置・レイアウトIDに使う。ルビの衝突解決は計測時の間隔を受け取り、後段で原文から解決し直していた経路を除いた。間隔は0への丸めを許し、フォントサイズと行高は正値を要求する。初回の組版ビルドは後段に残った間隔の再解決呼び出しで終了101となり、計測値の引き渡し後に通過した。
+
+最終版の `just native-style-parity` は既定の開発用Wasmと時計待ち10秒で終了0。同一AWFBを使い、Native／Webともtick 1から564へ進んだ。標準・縮小・高DPIの各137項目、全画像、imqの9ゲートが通過し、全RGBAのMSE・MAE・最大差が各0。高DPIの既定・明示サイズは12／20.667／21.334論理px、`h` と `i` は両環境で132／75インク画素。標準Native PNGは旧SHA-256 `4c06ac41c32479231c323c35fc1d277d6d6dd8d6997239686043ad4b71070d14` と一致した。AWFBは `6769268f6688c246970b502090f00255b43d0c7731060e002a06cf43f9eaa513`、Wasmは `70e8b2bff6d3c6d7b13a34c43d02d268cafe45883b54fab3ada722de2e5f095d`。
+
+組版・文字解決・座標のnextestは103／103 PASS。変更した5クレートの `--all-targets --all-features` Clippyと構造ゲートは終了0、構造上のブロッキング違反は0件。既存のresolved documentとWGPU geometryのファイル規模の範囲内で、それぞれのメトリクス解決とフレーム要求に責務を置いた。Cargoの逆依存62パッケージの検証は開始済みで、この採取記録の時点では集計待ち。
+
+[描画・組版・依存グラフ・公開照合の原本](acceptance-evidence/task-retained-typography-hidpi.raw.zip)は41件、715,403 bytes、SHA-256
+`b482f3b0a4fb3402b123f46e7e03fa636638e5372a2cee772495e1c070b68cc1`。
