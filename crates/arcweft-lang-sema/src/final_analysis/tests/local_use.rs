@@ -1972,6 +1972,7 @@ fn let_else_rejects_a_failure_branch_with_normal_continuation() {
         "loop { break }",
         "if flag { return 0i64 }",
         "if flag { return 0i64 } else { () }",
+        "option { let item = try input; return item; 0i64 }",
     ] {
         let source = format!(
             "fn inspect(flag: bool, input: Option<i64>) -> i64 {{
@@ -1999,6 +2000,7 @@ fn let_else_admits_return_and_all_branch_divergence() {
     for body in [
         "return 0i64",
         "if flag { return 0i64 } else { return 1i64 }",
+        "option { return 0i64; try input }",
         "loop {}",
     ] {
         let source = format!(

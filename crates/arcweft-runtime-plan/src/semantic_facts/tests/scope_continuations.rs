@@ -115,6 +115,17 @@ fn scope_origins_reject_another_owner_family_and_generation() {
             owner: RuntimeScopeOwner::Statement(statement)
         }
     );
+    let mut statement_with_carrier = scopes(&project);
+    statement_with_carrier.statement_scopes[0].1 = statement_with_carrier.statement_scopes[0]
+        .1
+        .clone()
+        .with_carrier_block(option_unit_type(), true);
+    assert_eq!(
+        runtime_facts(&project, statement_with_carrier).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidScopeContinuation {
+            owner: RuntimeScopeOwner::Statement(statement)
+        }
+    );
 
     let foreign = project_fixture("scope-origin-admission", source);
     let foreign_analysis = analyze_identity_fixture(&foreign);

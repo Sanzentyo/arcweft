@@ -3,8 +3,8 @@
 use super::{
     ExprId, FinalExprLowerer, PureTryContinuation, RuntimeExprMatchArmSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeLocalReadMode, RuntimeLocalReadSeed, RuntimeNormalizedType,
-    RuntimeScopeOwner, RuntimeTryBoundaryOwner, StmtId, normalized_variant_binding_pattern_seed,
-    normalized_variant_expression_seed,
+    RuntimeScopeOwner, RuntimeTryBoundaryOwner, RuntimeTypeShape, StmtId,
+    normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
 };
 
 impl FinalExprLowerer<'_> {
@@ -45,6 +45,13 @@ impl FinalExprLowerer<'_> {
             .semantic_facts
             .expression_scope(owner)
             .ok_or_else(|| format!("Carrier scope {owner:?} has no checked fact"))?;
+        if !fact
+            .carrier_block()
+            .ok_or_else(|| format!("Carrier scope {owner:?} has no local carrier type"))?
+            .delivers_value()
+        {
+            return self.lower_scoped_block(owner, block.statements(), block.tail());
+        }
         let body = self.lower_function_block(
             block.statements(),
             block.tail(),
@@ -96,6 +103,21 @@ impl FinalExprLowerer<'_> {
             return self
                 .apply_try_continuation(self.lower_scoped_block(owner, statements, tail)?, outer);
         };
+        let (statements, tail) =
+            if matches!(continuation.value_type().shape(), RuntimeTypeShape::Never) {
+                let (prefix, terminal) = self.terminal_block_prefix(statements, tail)?;
+                if !self.block_contains_selected_try(prefix, terminal, &|owner| {
+                    continuation.exits().binary_search(&owner).is_ok()
+                })? {
+                    return self.apply_try_continuation(
+                        self.lower_scoped_block(owner, prefix, terminal)?,
+                        outer,
+                    );
+                }
+                (prefix, terminal)
+            } else {
+                (statements, tail)
+            };
         let locals = self
             .scope_locals
             .and_then(|locals| locals.get(&RuntimeScopeOwner::Expression(owner)))

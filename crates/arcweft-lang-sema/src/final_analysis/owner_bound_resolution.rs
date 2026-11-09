@@ -211,14 +211,17 @@ pub(super) fn seal(
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        replacements.insert(
-            owner,
-            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
-                value,
-                effects,
-                CheckedExpressionResolution::ImplicitCallable(Box::new(checked)),
-            )),
+        let mut published = CheckedExpression::typed_value(
+            value,
+            effects,
+            CheckedExpressionResolution::ImplicitCallable(Box::new(checked)),
         );
+        if let PreparedImplicitCallableBody::Complete(body) = &seed.body
+            && let Some(carrier) = body.carrier_block()
+        {
+            published = published.with_carrier_block(carrier.clone());
+        }
+        replacements.insert(owner, PreparedExpressionFact::Complete(published));
     }
 
     // Try rows are closed only after callable identities and expression
@@ -479,7 +482,8 @@ fn seal_try(
         PreparedTryBoundary::CarrierBlock { lookup_owner } => {
             let boundary_type = expressions
                 .get(lookup_owner)
-                .and_then(PreparedExpressionFact::value_type)
+                .and_then(PreparedExpressionFact::carrier_block)
+                .map(super::CheckedCarrierBlock::carrier_type)
                 .cloned()
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                     owner: *lookup_owner,

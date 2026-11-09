@@ -1275,10 +1275,18 @@ impl<'hir> FinalExprLowerer<'hir> {
     }
 
     fn contains_executable_try(&self, owner: ExprId) -> Result<bool, String> {
+        self.contains_selected_try(owner, &|_| true)
+    }
+
+    fn contains_selected_try(
+        &self,
+        owner: ExprId,
+        selected: &impl Fn(ExprId) -> bool,
+    ) -> Result<bool, String> {
         if self.implicit_body_root != Some(owner) && self.implicit_callable(owner).is_some() {
             return Ok(false);
         }
-        if self.tried(owner).is_some() {
+        if selected(owner) && self.tried(owner).is_some() {
             return Ok(true);
         }
         let expression = self.resolve_expression(owner)?;
@@ -1287,44 +1295,50 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
         match expression.kind() {
             HirExprKind::Block(block) => {
-                return self.block_contains_executable_try(block.statements(), block.tail());
+                return self.block_contains_selected_try(
+                    block.statements(),
+                    block.tail(),
+                    selected,
+                );
             }
             HirExprKind::ComputationBlock(block) => {
-                return self.block_contains_executable_try(block.statements(), block.tail());
+                return self.block_contains_selected_try(
+                    block.statements(),
+                    block.tail(),
+                    selected,
+                );
             }
             HirExprKind::NamedBlock(block) => {
-                return self.block_contains_executable_try(block.statements(), block.tail());
+                return self.block_contains_selected_try(
+                    block.statements(),
+                    block.tail(),
+                    selected,
+                );
             }
             _ => {}
         }
         for child in self.expression_children(owner)? {
-            if self.contains_executable_try(*child)? {
+            if self.contains_selected_try(*child, selected)? {
                 return Ok(true);
             }
         }
         Ok(false)
     }
 
-    fn block_contains_executable_try(
+    fn block_contains_selected_try(
         &self,
         statements: &[StmtId],
         tail: ExprId,
+        selected: &impl Fn(ExprId) -> bool,
     ) -> Result<bool, String> {
         for statement in statements {
-            let statement = self.module.resolve_stmt(*statement).map_err(|error| {
-                format!("cannot resolve pure block statement {statement:?}: {error}")
-            })?;
-            let child = match statement.kind() {
-                HirStmtKind::Let { initializer, .. } => *initializer,
-                HirStmtKind::Assign { value, .. } => *value,
-                HirStmtKind::Expression { expression } => *expression,
-                _ => continue,
-            };
-            if self.contains_executable_try(child)? {
+            if let Some(child) = self.pure_statement_operand(*statement)?
+                && self.contains_selected_try(child, selected)?
+            {
                 return Ok(true);
             }
         }
-        self.contains_executable_try(tail)
+        self.contains_selected_try(tail, selected)
     }
 
     fn lower_with_try_continuation(
@@ -1587,13 +1601,12 @@ impl<'hir> FinalExprLowerer<'hir> {
                 ))
             }
             PureTryContinuation::WrapCarrier { owner } => {
-                let boundary = if self.implicit_body_root == Some(owner) {
-                    self.implicit_callable(owner)
-                        .map(|callable| callable.result())
-                } else {
-                    self.semantic_facts.expression_type(owner)
-                }
-                .ok_or_else(|| format!("carrier block {owner:?} has no checked result type"))?;
+                let boundary = self
+                    .semantic_facts
+                    .expression_scope(owner)
+                    .and_then(crate::semantic_facts::RuntimeScopeFact::carrier_block)
+                    .ok_or_else(|| format!("carrier block {owner:?} has no local carrier type"))?
+                    .carrier_type();
                 normalized_variant_expression_seed(boundary, 0, Some(value))
                     .map_err(|error| format!("carrier block {owner:?} success is invalid: {error}"))
             }
@@ -3584,11 +3597,56 @@ impl<'hir> FinalExprLowerer<'hir> {
         statements: &[StmtId],
         tail: ExprId,
     ) -> Result<RuntimeExprSeed, String> {
+        let source_type = if self.implicit_body_root == Some(owner) {
+            self.implicit_callable(owner)
+                .map(|callable| callable.result())
+        } else {
+            self.semantic_facts.expression_source_type(owner)
+        };
+        let (statements, tail) =
+            if source_type.is_some_and(|ty| matches!(ty.shape(), RuntimeTypeShape::Never)) {
+                self.terminal_block_prefix(statements, tail)?
+            } else {
+                (statements, tail)
+            };
         let body = self.lower_function_block(statements, tail, PureTryContinuation::Return)?;
         Ok(RuntimeExprSeed::new(
             self.expression_source_type(owner)?,
             body.kind().clone(),
         ))
+    }
+
+    /// A checked Never block evaluates its terminal operand and any preceding
+    /// statements. Subsequent checked statements have no runtime continuation.
+    fn terminal_block_prefix<'a>(
+        &self,
+        statements: &'a [StmtId],
+        tail: ExprId,
+    ) -> Result<(&'a [StmtId], ExprId), String> {
+        for (index, owner) in statements.iter().copied().enumerate() {
+            if let Some(value) = self.pure_statement_operand(owner)?
+                && self
+                    .semantic_facts
+                    .expression_type(value)
+                    .is_some_and(|ty| matches!(ty.shape(), RuntimeTypeShape::Never))
+            {
+                return Ok((&statements[..index], value));
+            }
+        }
+        Ok((statements, tail))
+    }
+
+    fn pure_statement_operand(&self, owner: StmtId) -> Result<Option<ExprId>, String> {
+        let statement = self
+            .module
+            .resolve_stmt(owner)
+            .map_err(|error| format!("cannot resolve pure block statement {owner:?}: {error}"))?;
+        Ok(match statement.kind() {
+            HirStmtKind::Let { initializer, .. } => Some(*initializer),
+            HirStmtKind::Assign { value, .. } => Some(*value),
+            HirStmtKind::Expression { expression } => Some(*expression),
+            _ => None,
+        })
     }
 
     fn lower_agent_intrinsic(

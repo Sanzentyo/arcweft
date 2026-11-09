@@ -104,6 +104,139 @@ flow main() -> i64 {
 }
 
 #[test]
+fn a_carrier_residual_can_finish_before_a_nonlocal_return() {
+    for (ty, block, residual, success) in [
+        ("Option<i64>", "option", "None", "Some(23i64)"),
+        ("Result<i64, i64>", "result", "Err(7i64)", "Ok(23i64)"),
+    ] {
+        let body = format!("{block} {{ let value = try input; return value; 0i64 }}; return 42i64");
+        let function = format!("fn classify(input: {ty}) -> i64 {{ {body} }}");
+        for (input, expected, label) in [(residual, 42, "42"), (success, 23, "23")] {
+            let flow = format!("flow main() -> i64 {{ let input: {ty} = {input}; {body} }}");
+            assert_case("", &flow, RuntimeValue::i64(expected), label);
+            let call = format!("flow main() -> i64 {{ return classify({input}) }}");
+            assert_case(&function, &call, RuntimeValue::i64(expected), label);
+        }
+    }
+}
+
+#[test]
+fn a_dead_try_does_not_revive_a_terminal_carrier() {
+    for (ty, block, residual) in [
+        ("Option<i64>", "option", "None"),
+        ("Result<i64, i64>", "result", "Err(7i64)"),
+    ] {
+        let source = format!(
+            "flow main() -> i64 {{ let input: {ty} = {residual}; {block} {{ return 23i64; try input }}; return 42i64 }}"
+        );
+        assert_case("", &source, RuntimeValue::i64(23), "23");
+    }
+    assert_case(
+        "fn keep(first: i64, second: i64) -> i64 { first }",
+        r#"
+flow main() -> i64 {
+    let input: Option<i64> = None
+    option { keep(scope { return 23i64; 0i64 }, try input) }
+    return 42i64
+}
+"#,
+        RuntimeValue::i64(23),
+        "23",
+    );
+}
+
+#[test]
+fn a_pure_carrier_without_a_delivery_has_type_never() {
+    assert_case(
+        r#"
+pub fn impossible(value: Never) -> Never {
+    option { value }
+}
+pub fn impossible_after_prefix(value: Never, input: Option<i64>) -> Never {
+    option {
+        let _ = value
+        try input
+    }
+}
+pub fn impossible_in_scope(value: Never, input: Option<i64>) -> Never {
+    option {
+        scope {
+            let _ = value
+            try input
+        }
+    }
+}
+"#,
+        "flow main() -> i64 { let direct = impossible_after_prefix; let nested = impossible_in_scope; return 42i64 }",
+        RuntimeValue::i64(42),
+        "42",
+    );
+}
+
+#[test]
+fn a_residual_only_carrier_uses_the_expected_success_type() {
+    assert_case(
+        "",
+        r#"
+flow main() -> i64 {
+    let input: Option<i64> = None
+    let outcome: Option<i64> = option {
+        let value = try input
+        scope { return value; 0i64 }
+    }
+    return if let Some(value) = outcome { value } else { 42i64 }
+}
+"#,
+        RuntimeValue::i64(42),
+        "42",
+    );
+    assert_case(
+        "",
+        r#"
+flow main() -> i64 {
+    let input: Result<i64, i64> = Err(42i64)
+    let outcome: Result<i64, i64> = result {
+        let value = try input
+        scope { return value; 0i64 }
+    }
+    return if let Err(error) = outcome { error } else { 0i64 }
+}
+"#,
+        RuntimeValue::i64(42),
+        "42",
+    );
+    assert_case(
+        r#"
+fn direct(value: Never, input: Option<i64>) -> Option<i64> {
+    option { let seen = try input; value }
+}
+fn nested(value: Never, input: Result<i64, i64>) -> Result<i64, i64> {
+    result {
+        scope { let seen = try input; let _ = value; 0i64 }
+    }
+}
+"#,
+        "flow main() -> i64 { let option_case = direct; let result_case = nested; return 42i64 }",
+        RuntimeValue::i64(42),
+        "42",
+    );
+}
+
+#[test]
+fn result_residual_can_finish_before_a_nonlocal_loop_break() {
+    for (input, expected, label) in [("Err(7i64)", 42, "42"), ("Ok(23i64)", 23, "23")] {
+        assert_case(
+            "",
+            &format!(
+                "flow main() -> i64 {{ let input: Result<i64, i64> = {input}; let answer = loop {{ result {{ let value = try input; break value; 0i64 }}; break 42i64 }}; return answer }}"
+            ),
+            RuntimeValue::i64(expected),
+            label,
+        );
+    }
+}
+
+#[test]
 fn try_inside_an_ordinary_block_keeps_the_outer_continuation() {
     let definitions = r#"
 fn retain(value: Result<i64, String>) -> Result<i64, String> {

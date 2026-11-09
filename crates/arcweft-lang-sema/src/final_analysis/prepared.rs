@@ -995,6 +995,45 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(crate) fn carrier_block(&self) -> Option<&super::CheckedCarrierBlock> {
+        match self {
+            Self::Complete(value) => value.carrier_block(),
+            Self::OwnerBound(value) => match value.resolution() {
+                PreparedOwnerBoundResolution::ImplicitCallable(callable) => match callable.body() {
+                    PreparedImplicitCallableBody::Complete(body) => body.carrier_block(),
+                    PreparedImplicitCallableBody::OwnerBound(_) => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub(crate) fn local_try(&self) -> Option<(ExprId, &CheckedTryCarrier)> {
+        match self {
+            Self::Complete(value) => {
+                let CheckedExpressionResolution::Try(tried) = value.resolution() else {
+                    return None;
+                };
+                let super::CheckedTryBoundaryOwner::CarrierBlock(target) = tried.boundary().owner()
+                else {
+                    return None;
+                };
+                Some((target.lookup_owner(), tried.carrier()))
+            }
+            Self::OwnerBound(value) => {
+                let PreparedOwnerBoundResolution::Try(tried) = value.resolution() else {
+                    return None;
+                };
+                let PreparedTryBoundary::CarrierBlock { lookup_owner } = tried.boundary() else {
+                    return None;
+                };
+                Some((*lookup_owner, tried.carrier()))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn supports_place_access(&self) -> bool {
         match self {
             Self::Complete(value) => value.mutable_place().is_some(),

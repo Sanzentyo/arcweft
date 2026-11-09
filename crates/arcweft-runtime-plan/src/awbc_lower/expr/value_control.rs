@@ -6,6 +6,22 @@ impl AwbcExprLowerer<'_, '_, '_> {
     pub(super) fn lower_value_control_expr(&mut self, expression: &RuntimeExpr) -> AwbcRegisterId {
         let ty = admitted_plan_type(self.inventory, self.plan, expression.ty());
         let result = self.frame.temp(ty);
+        if let RuntimeExprKind::Match { scrutinee, arms } = expression.kind()
+            && arms.is_empty()
+            && matches!(
+                plan_type_projection(self.plan, scrutinee.ty()),
+                RuntimePlanTypeProjection::Never
+            )
+        {
+            // Evaluating the uninhabited input already diverges. Carry its
+            // type through the value boundary without emitting a dead join.
+            let value = self.lower(scrutinee);
+            self.inventory.push_instruction(AwbcInstruction::Move {
+                dst: result,
+                src: value,
+            });
+            return result;
+        }
         let mut joins = Vec::new();
         match expression.kind() {
             RuntimeExprKind::If {

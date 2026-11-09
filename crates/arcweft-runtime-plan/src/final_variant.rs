@@ -5,9 +5,18 @@ use arcweft_core::plan::{
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalSeedId, RuntimePatternSeed,
     RuntimePatternSeedKind,
 };
+use arcweft_lang_sema::types::TypeKind;
+use std::sync::LazyLock;
 use thiserror::Error;
 
 use crate::semantic_facts::{RuntimeNormalizedType, RuntimeNormalizedVariantSelectionError};
+
+static NEVER_TYPE: LazyLock<RuntimeSemanticTypeId> = LazyLock::new(|| {
+    let identity = TypeKind::Never
+        .semantic_identity_digest()
+        .expect("Never has a closed semantic identity");
+    RuntimeSemanticTypeId::from_bytes(*identity.as_bytes())
+});
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum RuntimeNormalizedVariantSeedError {
@@ -50,6 +59,15 @@ pub(crate) fn normalized_variant_expression_seed(
     let raw_type = selection.single_payload_item()?;
     let payload = match (selection.payload(), raw_type, raw_payload) {
         (Some(payload), Some(expected), Some(raw_payload)) => {
+            if raw_payload.ty() == *NEVER_TYPE {
+                return Ok(RuntimeExprSeed::new(
+                    selection.owner().identity(),
+                    RuntimeExprSeedKind::Match {
+                        scrutinee: Box::new(raw_payload),
+                        arms: Box::new([]),
+                    },
+                ));
+            }
             if raw_payload.ty() != expected.identity() {
                 return Err(RuntimeNormalizedVariantSeedError::PayloadType {
                     owner: selection.owner().identity(),

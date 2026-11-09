@@ -982,7 +982,14 @@ fn apply_instruction(
             let src_ty = read_register(verifier, function, block, *src, state)?;
             let copy_proof = state.copy_proofs[src.index()].clone();
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            require_compatible(program, dst_ty, src_ty, &at)?;
+            // A Never register has no runtime inhabitant. Its coercion
+            // records the destination type of a non-resuming expression.
+            if !matches!(
+                runtime_shape(program, src_ty),
+                Some(AwbcRuntimeTypeShape::Never)
+            ) {
+                require_compatible(program, dst_ty, src_ty, &at)?;
+            }
             write_register(verifier, function, block, *dst, state)?;
             state.copy_proofs[dst.index()] = copy_proof;
             if dst != src {

@@ -61,15 +61,32 @@ impl RuntimeScopeOrigin {
     }
 }
 
-/// One lexical frame and its optional outward propagation continuation.
-/// The carrier belongs to this lowering boundary: its success is the scope's
-/// own value, while its residual is exactly the checked enclosing carrier's.
+/// One lexical frame, its local carrier when present, and an optional
+/// continuation for a Try residual targeting an enclosing owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeScopeFact {
     origin: RuntimeScopeOrigin,
     identity: RuntimeScopeIdentity,
     continuation: Option<RuntimeScopeContinuation>,
     semantic_unit: Option<Box<RuntimeNormalizedType>>,
+    carrier_block: Option<Box<RuntimeCarrierBlock>>,
+}
+
+/// The normalized local carrier owned by one immediate computation block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeCarrierBlock {
+    carrier_type: RuntimeNormalizedType,
+    delivers_value: bool,
+}
+
+impl RuntimeCarrierBlock {
+    pub const fn carrier_type(&self) -> &RuntimeNormalizedType {
+        &self.carrier_type
+    }
+
+    pub const fn delivers_value(&self) -> bool {
+        self.delivers_value
+    }
 }
 
 impl RuntimeScopeFact {
@@ -83,6 +100,7 @@ impl RuntimeScopeFact {
             identity,
             continuation,
             semantic_unit: None,
+            carrier_block: None,
         }
     }
 
@@ -95,6 +113,22 @@ impl RuntimeScopeFact {
 
     pub fn semantic_unit(&self) -> Option<&RuntimeNormalizedType> {
         self.semantic_unit.as_deref()
+    }
+
+    pub fn with_carrier_block(
+        mut self,
+        carrier_type: RuntimeNormalizedType,
+        delivers_value: bool,
+    ) -> Self {
+        self.carrier_block = Some(Box::new(RuntimeCarrierBlock {
+            carrier_type,
+            delivers_value,
+        }));
+        self
+    }
+
+    pub fn carrier_block(&self) -> Option<&RuntimeCarrierBlock> {
+        self.carrier_block.as_deref()
     }
 
     pub const fn origin(&self) -> &RuntimeScopeOrigin {
@@ -117,6 +151,7 @@ impl RuntimeScopeFact {
             roots.extend([continuation.carrier_type(), continuation.boundary_type()]);
         }
         roots.extend(self.semantic_unit());
+        roots.extend(self.carrier_block().map(RuntimeCarrierBlock::carrier_type));
     }
 }
 

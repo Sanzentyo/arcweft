@@ -534,6 +534,20 @@ pub(super) fn validate_expressions(
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
         let fact_type = fact.value_type();
+        match (expression.kind(), fact.carrier_block()) {
+            (HirExprKind::ComputationBlock(block), Some(carrier))
+                if carrier.matches_source(block.kind())
+                    && match fact.resolution() {
+                        CheckedExpressionResolution::ImplicitCallable(callable) => {
+                            !carrier.delivers_value()
+                                || callable.result().accepts(carrier.carrier_type())
+                        }
+                        _ => fact_type.is_some_and(|ty| carrier.matches_result_type(ty)),
+                    } => {}
+            (kind, None) if !matches!(kind, HirExprKind::ComputationBlock(block) if block.kind().is_carrier()) =>
+                {}
+            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+        }
         if let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) =
             fact.resolution()
         {
@@ -1713,7 +1727,8 @@ fn validate_checked_try(
             );
             let boundary_fact = expressions
                 .get(&boundary.lookup_owner())
-                .and_then(CheckedExpression::value_type)
+                .and_then(CheckedExpression::carrier_block)
+                .map(super::CheckedCarrierBlock::carrier_type)
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                     owner: boundary.lookup_owner(),
                 })?;

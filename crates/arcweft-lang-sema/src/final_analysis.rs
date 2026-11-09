@@ -180,7 +180,7 @@ pub(crate) use model::CheckedMatchRef;
 pub use model::{
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedAssignment, CheckedAwait,
     CheckedAwaitPendingObserver, CheckedBinding, CheckedBindingRole, CheckedCallableBoundary,
-    CheckedCallableDeclarationBoundary, CheckedCaptureAuthorityViolation,
+    CheckedCallableDeclarationBoundary, CheckedCaptureAuthorityViolation, CheckedCarrierBlock,
     CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
     CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
     CheckedCharacterDialogueTarget, CheckedChoice, CheckedChoiceGoto, CheckedChoicePlan,

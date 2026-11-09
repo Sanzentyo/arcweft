@@ -221,6 +221,12 @@ tail. Both normal completion and a `try` residual close the block's lexical
 scope before delivering the carrier to the enclosing expression. A suspended
 block keeps its scope and resources until execution leaves it.
 
+A reachable `try` residual still completes the carrier when the success path
+leaves through an enclosing `return` or another control transfer. In that
+case the contextual success type supplies the carrier's success type, which
+otherwise defaults to `Never`. A block with no reachable carrier delivery
+has type `Never`.
+
 `const { ... }` also reuses the value-block shape, but is a compile-time phase
 fence rather than a carrier boundary. Runtime locals and effects cannot cross
 into it, and its admitted result is replaced by one typed constant before the

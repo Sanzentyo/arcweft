@@ -8720,7 +8720,23 @@ impl<'a> FinalFlowLowerer<'a> {
         block: &arcweft_lang_hir::expr::HirComputationBlockExpr,
         continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let identity = self.expression_scope_identity(expression)?;
+        let fact = self
+            .semantic_facts
+            .expression_scope(expression)
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "carrier block {expression:?} has no checked scope"
+                ))
+            })?;
+        let identity = fact.identity().clone();
+        let delivers_value = fact
+            .carrier_block()
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "carrier block {expression:?} has no local carrier type"
+                ))
+            })?
+            .delivers_value();
         let exit = RuntimeFlowValueContinuation::ExitScope {
             owner: expression,
             outer: Box::new(continuation),
@@ -8745,10 +8761,7 @@ impl<'a> FinalFlowLowerer<'a> {
         self.carrier_continuations.remove(&expression);
         let mut ops = vec![RuntimeFlowOpSeed::EnterScope { identity }];
         ops.extend(body?);
-        if matches!(
-            self.expression_type(expression)?.shape(),
-            RuntimeTypeShape::Never
-        ) {
+        if !delivers_value {
             // A terminal effect can still resume into lexical fallthrough.
             ops.push(RuntimeFlowOpSeed::ExitScope);
         }
@@ -9022,7 +9035,16 @@ impl<'a> FinalFlowLowerer<'a> {
                 return self.lower_await_continuation(owner, value, *outer);
             }
             RuntimeFlowValueContinuation::WrapCarrier { owner, outer } => {
-                let boundary = self.expression_type(owner)?;
+                let boundary = self
+                    .semantic_facts
+                    .expression_scope(owner)
+                    .and_then(RuntimeScopeFact::carrier_block)
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "carrier block {owner:?} has no local carrier type"
+                        ))
+                    })?
+                    .carrier_type();
                 let wrapped = normalized_variant_expression_seed(boundary, 0, Some(value))
                     .map_err(|error| {
                         RuntimePlanLowerError::new(format!(

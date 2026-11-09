@@ -29,6 +29,7 @@ pub(in crate::final_analysis::analyzer) struct BodyCompletion {
     // Exact source rows, not copied targets. Only a matching receiving boundary
     // may consume a reachable transfer. Dead operands are still type checked.
     escaping: BTreeSet<StmtId>,
+    local_try_destinations: BTreeSet<ExprId>,
 }
 impl BodyCompletion {
     fn unit() -> Self {
@@ -36,6 +37,7 @@ impl BodyCompletion {
             normal: NormalContinuation::Unit,
             returns: BTreeSet::new(),
             escaping: BTreeSet::new(),
+            local_try_destinations: BTreeSet::new(),
         }
     }
     fn never() -> Self {
@@ -43,6 +45,7 @@ impl BodyCompletion {
             normal: NormalContinuation::Never,
             returns: BTreeSet::new(),
             escaping: BTreeSet::new(),
+            local_try_destinations: BTreeSet::new(),
         }
     }
     pub(in crate::final_analysis::analyzer) const fn continues(&self) -> bool {
@@ -54,6 +57,8 @@ impl BodyCompletion {
     fn sequence(&mut self, child: Self) {
         if self.continues() {
             self.escaping.extend(child.escaping);
+            self.local_try_destinations
+                .extend(child.local_try_destinations);
         }
         self.normal = self.normal.then(child.normal);
         self.returns.extend(child.returns);
@@ -62,10 +67,31 @@ impl BodyCompletion {
         self.normal = self.normal.join(child.normal);
         self.returns.extend(child.returns);
         self.escaping.extend(child.escaping);
+        self.local_try_destinations
+            .extend(child.local_try_destinations);
     }
     fn evidence(&mut self, child: Self) {
         self.returns.extend(child.returns);
-        self.escaping.extend(child.escaping);
+        if self.continues() {
+            self.escaping.extend(child.escaping);
+            self.local_try_destinations
+                .extend(child.local_try_destinations);
+        }
+    }
+
+    fn receive_carrier(&mut self, owner: ExprId) {
+        if self.local_try_destinations.remove(&owner) {
+            self.normal = self.normal.join(NormalContinuation::Unit);
+        }
+    }
+
+    fn operand_evidence(&mut self, child: Self, prefix: &mut NormalContinuation) {
+        if prefix.is_unit() {
+            *prefix = child.normal;
+            self.evidence(child);
+        } else {
+            self.returns.extend(child.returns);
+        }
     }
 }
 #[derive(Clone, Copy)]
@@ -148,6 +174,27 @@ impl Analyzer<'_, '_, '_> {
                 current_expression: None,
             },
         )
+    }
+
+    pub(super) fn carrier_body_delivery(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        mut statements: BodyCompletion,
+        tail: ExprId,
+    ) -> Result<(bool, NormalContinuation), AnalyzerExpressionError> {
+        statements.sequence(self.expression_body_completion_in(
+            module,
+            tail,
+            CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
+                callable: None,
+                current_expression: None,
+            },
+        )?);
+        let delivers_success = statements.continues();
+        statements.receive_carrier(owner);
+        Ok((delivers_success, statements.normal))
     }
     /// Declaration-result typing keeps a rejected Call's issued diagnostic.
     /// Its possible resumption constrains the tail but grants no execution
@@ -489,7 +536,93 @@ impl Analyzer<'_, '_, '_> {
                 self.block_body_completion(module, block.statements(), block.tail(), query)?
             }
             HirExprKind::ComputationBlock(block) => {
-                self.block_body_completion(module, block.statements(), block.tail(), query)?
+                let mut body =
+                    self.block_body_completion(module, block.statements(), block.tail(), query)?;
+                body.receive_carrier(owner);
+                body
+            }
+            HirExprKind::Try(tried) => {
+                let mut operand =
+                    self.expression_body_completion_in(module, tried.operand(), query)?;
+                if operand.continues()
+                    && let Some((target, _)) =
+                        self.completion_expression_fact(owner, query)?.local_try()
+                {
+                    operand.local_try_destinations.insert(target);
+                }
+                operand
+            }
+            HirExprKind::Binary(binary)
+                if matches!(
+                    binary.operator(),
+                    arcweft_lang_hir::expr::HirBinaryOp::And
+                        | arcweft_lang_hir::expr::HirBinaryOp::Or
+                        | arcweft_lang_hir::expr::HirBinaryOp::Implies
+                ) =>
+            {
+                let mut left = self.expression_body_completion_in(module, binary.left(), query)?;
+                let mut after_left = BodyCompletion::unit();
+                after_left.branch(self.expression_body_completion_in(
+                    module,
+                    binary.right(),
+                    query,
+                )?);
+                left.sequence(after_left);
+                left
+            }
+            HirExprKind::If(branch) => {
+                let mut condition =
+                    self.expression_body_completion_in(module, branch.condition(), query)?;
+                let mut branches =
+                    self.expression_body_completion_in(module, branch.then_branch(), query)?;
+                branches.branch(self.expression_body_completion_in(
+                    module,
+                    branch.else_branch(),
+                    query,
+                )?);
+                condition.sequence(branches);
+                condition
+            }
+            HirExprKind::IfLet(branch) => {
+                let mut scrutinee =
+                    self.expression_body_completion_in(module, branch.scrutinee(), query)?;
+                let mut branches = branch
+                    .guard()
+                    .map(|guard| self.expression_body_completion_in(module, guard, query))
+                    .transpose()?
+                    .unwrap_or_else(BodyCompletion::unit);
+                branches.sequence(self.expression_body_completion_in(
+                    module,
+                    branch.then_branch(),
+                    query,
+                )?);
+                branches.branch(self.expression_body_completion_in(
+                    module,
+                    branch.else_branch(),
+                    query,
+                )?);
+                scrutinee.sequence(branches);
+                scrutinee
+            }
+            HirExprKind::Match(matched) => {
+                let mut scrutinee =
+                    self.expression_body_completion_in(module, matched.scrutinee(), query)?;
+                let mut branches = BodyCompletion::never();
+                for arm in matched.arms() {
+                    let mut branch = arm
+                        .guard()
+                        .map(|guard| self.expression_body_completion_in(module, guard, query))
+                        .transpose()?
+                        .unwrap_or_else(BodyCompletion::unit);
+                    branch.sequence(self.expression_body_completion_in(
+                        module,
+                        arm.value(),
+                        query,
+                    )?);
+                    branches.branch(branch);
+                }
+                scrutinee.sequence(branches);
+                scrutinee
             }
             HirExprKind::Loop(block) => {
                 let mut result =
@@ -504,9 +637,9 @@ impl Analyzer<'_, '_, '_> {
             }
             _ => {
                 let mut result = BodyCompletion::unit();
-                // Existing checked expression typing owns conditional normal
-                // completion. HIR selects only the accepted owning operands;
-                // semantic reference edges remain outside active evaluation.
+                let mut operand_prefix = NormalContinuation::Unit;
+                // HIR selects the owning operands that execute in source order.
+                // Semantic reference edges stay outside this continuation.
                 for edge in
                     self.completion_expression_edges(module, owner, expression.kind(), query)?
                 {
@@ -533,17 +666,25 @@ impl Analyzer<'_, '_, '_> {
                                 .flatten();
                             if let Some(sources) = sources {
                                 for source in sources {
-                                    result.evidence(
+                                    result.operand_evidence(
                                         self.expression_body_completion_in(module, source, query)?,
+                                        &mut operand_prefix,
                                     );
                                 }
                                 continue;
                             }
                         }
-                        result.evidence(self.expression_body_completion_in(module, child, query)?);
+                        let child = self.expression_body_completion_in(module, child, query)?;
+                        if matches!(expression.kind(), HirExprKind::Choice(_)) {
+                            // Candidate edges can belong to independent Choice arms.
+                            result.evidence(child);
+                        } else {
+                            result.operand_evidence(child, &mut operand_prefix);
+                        }
                     }
                 }
 
+                result.normal = operand_prefix;
                 for edge in expression
                     .kind()
                     .expression_owned_child_edges()

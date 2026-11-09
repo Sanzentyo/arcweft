@@ -2484,10 +2484,11 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
         let expected = expectation.contextual_shape();
         self.evaluate_block_statement_uses(context, module, block.statements())?;
-        let returns = block.kind().is_carrier()
-            && !self
-                .block_statements_completion(module, block.statements(), None)?
-                .continues();
+        let statements = block
+            .kind()
+            .is_carrier()
+            .then(|| self.block_statements_completion(module, block.statements(), None))
+            .transpose()?;
         let expected_success = match (block.kind(), expected) {
             (HirComputationBlockKind::Result, Some(TypeKind::Result { ok, .. })) => {
                 Some(ok.as_ref())
@@ -2498,17 +2499,26 @@ impl Analyzer<'_, '_, '_> {
         let tail = self.evaluate_expression_with_expectation(
             context,
             block.tail(),
-            if returns {
+            if statements
+                .as_ref()
+                .is_some_and(|statements| !statements.continues())
+            {
                 AnalyzerExpressionExpectation::Unconstrained
             } else {
                 expectation.project_checked(owner, expected_success)?
             },
         )?;
-        let tail_type = tail.value_type().cloned().ok_or_else(|| {
+        let mut tail_type = tail.value_type().cloned().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                 owner: block.tail(),
             })
         })?;
+        let delivery = statements
+            .map(|statements| self.carrier_body_delivery(module, owner, statements, block.tail()))
+            .transpose()?;
+        if delivery.is_some_and(|(delivers_success, _)| !delivers_success) {
+            tail_type = expected_success.cloned().unwrap_or(TypeKind::Never);
+        }
         let ty = match block.kind() {
             HirComputationBlockKind::Result => {
                 let expected_error = match expected {
@@ -2541,10 +2551,15 @@ impl Analyzer<'_, '_, '_> {
                 error: Box::new(TypeKind::Unit),
             },
         };
-        Ok(structural_expression(
-            if returns { TypeKind::Never } else { ty },
-            CheckedTypeSelection::Inferred,
-        ))
+        if let Some((_, delivery)) = delivery {
+            let carrier = crate::final_analysis::CheckedCarrierBlock::new(ty, delivery);
+            Ok(
+                structural_expression(carrier.result_type(), CheckedTypeSelection::Inferred)
+                    .with_carrier_block(carrier),
+            )
+        } else {
+            Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
+        }
     }
 
     fn check_control_named_block_expression(
@@ -2953,32 +2968,9 @@ impl Analyzer<'_, '_, '_> {
         self.facts
             .expressions()
             .values()
-            .filter_map(|expression| match expression {
-                super::PreparedExpressionFact::Complete(expression) => {
-                    let CheckedExpressionResolution::Try(tried) = expression.resolution() else {
-                        return None;
-                    };
-                    matches!(
-                        tried.boundary().owner(),
-                        CheckedTryBoundaryOwner::CarrierBlock(boundary)
-                            if boundary.lookup_owner() == owner
-                    )
-                    .then(|| tried.carrier().residual())
-                    .flatten()
-                }
-                super::PreparedExpressionFact::OwnerBound(expression) => {
-                    let PreparedOwnerBoundResolution::Try(tried) = expression.resolution() else {
-                        return None;
-                    };
-                    matches!(
-                        tried.boundary(),
-                        PreparedTryBoundary::CarrierBlock { lookup_owner } if *lookup_owner == owner
-                    )
-                    .then(|| tried.carrier().residual())
-                    .flatten()
-                }
-                _ => None,
-            })
+            .filter_map(PreparedExpressionFact::local_try)
+            .filter(|(target, _)| *target == owner)
+            .filter_map(|(_, carrier)| carrier.residual())
             .collect()
     }
 

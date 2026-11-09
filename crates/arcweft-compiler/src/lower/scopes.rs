@@ -78,6 +78,18 @@ impl ScopeProjection<'_, '_> {
                 self.analysis,
             )?);
         }
+        if let Some(carrier) = expression.carrier_block() {
+            fact = fact.with_carrier_block(
+                runtime_type_under(
+                    carrier.carrier_type(),
+                    self.instance,
+                    self.symbols,
+                    self.world,
+                    self.analysis,
+                )?,
+                carrier.delivers_value(),
+            );
+        }
         Ok(Some(fact))
     }
 

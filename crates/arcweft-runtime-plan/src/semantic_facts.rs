@@ -114,8 +114,8 @@ mod flow;
 mod lexical_scope;
 mod scope_continuation;
 pub use scope_continuation::{
-    RuntimeScopeContinuation, RuntimeScopeContinuationError, RuntimeScopeFact, RuntimeScopeOrigin,
-    RuntimeScopeOwner,
+    RuntimeCarrierBlock, RuntimeScopeContinuation, RuntimeScopeContinuationError, RuntimeScopeFact,
+    RuntimeScopeOrigin, RuntimeScopeOwner,
 };
 mod project_function;
 mod type_dependencies;
@@ -9339,8 +9339,12 @@ impl RuntimePlanSemanticFacts {
                             RuntimeTryCarrierFact::Option { .. }
                         )
                     );
+                    let carrier = expression_scopes
+                        .get(&boundary)
+                        .and_then(RuntimeScopeFact::carrier_block);
                     if !family_matches
-                        || expression_types.get(&boundary) != Some(fact.boundary_type())
+                        || carrier.map(RuntimeCarrierBlock::carrier_type)
+                            != Some(fact.boundary_type())
                     {
                         return Err(RuntimeSemanticFactsError::InvalidTryFact {
                             expression: *expression,
@@ -9404,6 +9408,14 @@ impl RuntimePlanSemanticFacts {
                 .get(&HirValueTypeOwner::Expression(*owner))
                 .is_some_and(|projection| projection.semantic_value_type().is_some());
             lexical_scope::validate_semantic_result(&modules, *owner, fact, semantic)?;
+            let implicit = implicit_callables.get(owner);
+            lexical_scope::validate_carrier_block(
+                &modules,
+                *owner,
+                fact,
+                implicit,
+                expression_types.get(owner),
+            )?;
             lexical_scope::validate_continuation(
                 &modules,
                 RuntimeScopeOwner::Expression(*owner),
@@ -14515,6 +14527,13 @@ fn validate_project_function_semantic_catalog(
                 .semantic_value_type(HirValueTypeOwner::Expression(owner))
                 .is_some();
             lexical_scope::validate_semantic_result(modules, owner, identity, semantic)?;
+            lexical_scope::validate_carrier_block(
+                modules,
+                owner,
+                identity,
+                semantics.implicit_callable(owner),
+                semantics.expression_type(owner),
+            )?;
             lexical_scope::validate_continuation(
                 modules,
                 scope_owner,
@@ -14763,6 +14782,10 @@ fn validate_project_function_semantic_catalog(
                 if tried.operand() != fact.operand()
                     || expression_types.get(&fact.operand()) != Some(fact.carrier_type())
                     || !try_boundary_type_matches(fact)
+                    || matches!(fact.boundary(), RuntimeTryBoundaryOwner::CarrierBlock(boundary)
+                        if semantics.expression_scope(boundary)
+                            .and_then(RuntimeScopeFact::carrier_block)
+                            .map(RuntimeCarrierBlock::carrier_type) != Some(fact.boundary_type()))
                 {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
@@ -14790,7 +14813,13 @@ fn validate_project_function_semantic_catalog(
                         .any(|capture| !local_types.contains_key(&capture.local()))
                     || tried
                         .as_ref()
-                        .is_some_and(|tried| !try_boundary_type_matches(tried))
+                        .is_some_and(|tried| {
+                            !try_boundary_type_matches(tried)
+                                || matches!(tried.boundary(), RuntimeTryBoundaryOwner::CarrierBlock(boundary)
+                                    if semantics.expression_scope(boundary)
+                                        .and_then(RuntimeScopeFact::carrier_block)
+                                        .map(RuntimeCarrierBlock::carrier_type) != Some(tried.boundary_type()))
+                        })
                     || pipe.as_ref().is_some_and(|pipe| {
                         pipe.placeholders().is_empty()
                             || !row.children().contains(&pipe.left())

@@ -56,6 +56,55 @@ pub(super) fn validate_semantic_result(
     }
 }
 
+pub(super) fn validate_carrier_block(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    scope: &RuntimeScopeFact,
+    callable: Option<&RuntimeImplicitCallableFact>,
+    value_type: Option<&RuntimeNormalizedType>,
+) -> Result<(), RuntimeSemanticFactsError> {
+    use arcweft_lang_hir::expr::HirComputationBlockKind;
+    let kind = resolve_expr(modules, owner)?;
+    let invalid = || RuntimeSemanticFactsError::InvalidExpressionScope { expression: owner };
+    let HirExprKind::ComputationBlock(block) = kind else {
+        return if scope.carrier_block().is_none() {
+            Ok(())
+        } else {
+            Err(invalid())
+        };
+    };
+    let carrier = scope.carrier_block().ok_or_else(invalid)?;
+    let ty = carrier.carrier_type();
+    if scope.semantic_unit().is_some()
+        || !matches!(
+            (block.kind(), ty.shape()),
+            (
+                HirComputationBlockKind::Option,
+                RuntimeTypeShape::Option { .. }
+            ) | (
+                HirComputationBlockKind::Result,
+                RuntimeTypeShape::Result { .. }
+            )
+        )
+    {
+        return Err(invalid());
+    }
+    if carrier.delivers_value() {
+        if callable
+            .map(RuntimeImplicitCallableFact::result)
+            .or(value_type)
+            != Some(ty)
+        {
+            return Err(invalid());
+        }
+    } else if callable.is_none()
+        && !value_type.is_some_and(|ty| matches!(ty.shape(), RuntimeTypeShape::Never))
+    {
+        return Err(invalid());
+    }
+    validate_normalized_type(modules, ty)
+}
+
 pub(super) fn validate_global_scopes(
     project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
@@ -151,7 +200,7 @@ pub(super) fn validate_continuation<'a>(
             (expression.module(), scope)
         }
         RuntimeScopeOwner::Statement(statement) => {
-            if fact.semantic_unit().is_some() {
+            if fact.semantic_unit().is_some() || fact.carrier_block().is_some() {
                 return Err(invalid());
             }
             let HirStmtKind::Scope(block) = resolve_stmt(modules, statement)? else {

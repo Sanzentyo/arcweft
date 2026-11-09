@@ -1526,6 +1526,61 @@ pub enum CheckedTryBoundaryOwner {
     Callable(CheckedCallableBoundary),
 }
 
+/// The type owned by an immediate carrier block and its ability to deliver
+/// that type to the enclosing expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCarrierBlock {
+    carrier_type: TypeKind,
+    delivery: super::completion::NormalContinuation,
+}
+
+impl CheckedCarrierBlock {
+    pub(crate) const fn new(
+        carrier_type: TypeKind,
+        delivery: super::completion::NormalContinuation,
+    ) -> Self {
+        Self {
+            carrier_type,
+            delivery,
+        }
+    }
+
+    pub const fn carrier_type(&self) -> &TypeKind {
+        &self.carrier_type
+    }
+
+    pub const fn delivers_value(&self) -> bool {
+        self.delivery.is_unit()
+    }
+
+    pub(crate) fn result_type(&self) -> TypeKind {
+        if self.delivers_value() {
+            self.carrier_type().clone()
+        } else {
+            TypeKind::Never
+        }
+    }
+
+    pub(crate) fn matches_result_type(&self, ty: &TypeKind) -> bool {
+        if self.delivers_value() {
+            ty == self.carrier_type()
+        } else {
+            matches!(ty, TypeKind::Never)
+        }
+    }
+
+    pub(crate) fn matches_source(
+        &self,
+        kind: arcweft_lang_hir::expr::HirComputationBlockKind,
+    ) -> bool {
+        use arcweft_lang_hir::expr::HirComputationBlockKind::{Option, Result};
+        matches!(
+            (kind, self.carrier_type()),
+            (Option, TypeKind::Option(_)) | (Result, TypeKind::Result { .. })
+        )
+    }
+}
+
 impl CheckedTryBoundaryOwner {
     pub const fn expression_boundary(&self) -> Option<&CheckedExpressionBoundary> {
         match self {
@@ -2636,6 +2691,7 @@ struct CheckedExpressionData {
     execution: Option<CheckedExpressionExecutionPlan>,
     evaluated_effect: Option<Box<CheckedEvaluatedEffect>>,
     match_fact: Option<CheckedMatchFact>,
+    carrier_block: Option<Box<CheckedCarrierBlock>>,
     nested_path_evidence: Option<Result<NestedPathEvidence, super::CheckedChildEdgeError>>,
 }
 
@@ -2655,6 +2711,7 @@ impl CheckedExpression {
                 )),
                 evaluated_effect: None,
                 match_fact: None,
+                carrier_block: None,
                 nested_path_evidence: None,
             }),
         }
@@ -2669,6 +2726,7 @@ impl CheckedExpression {
                 execution: None,
                 evaluated_effect: None,
                 match_fact: None,
+                carrier_block: None,
                 nested_path_evidence: None,
             }),
         }
@@ -2704,6 +2762,7 @@ impl CheckedExpression {
                 )),
                 evaluated_effect: None,
                 match_fact: None,
+                carrier_block: None,
                 nested_path_evidence: None,
             }),
         }
@@ -2728,6 +2787,7 @@ impl CheckedExpression {
                 )),
                 evaluated_effect: None,
                 match_fact: None,
+                carrier_block: None,
                 nested_path_evidence: None,
             }),
         }
@@ -3014,6 +3074,16 @@ impl CheckedExpression {
         self.data.match_fact.as_ref()
     }
 
+    pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock) -> Self {
+        self.data.carrier_block = Some(Box::new(carrier));
+        self
+    }
+
+    /// Returns the local propagation contract of this carrier block's body.
+    pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock> {
+        self.data.carrier_block.as_deref()
+    }
+
     /// Returns accepted path-keyed nested child evidence for this owner.
     pub fn nested_path_evidence(
         &self,
@@ -3038,6 +3108,9 @@ impl CheckedExpression {
             specialization.visit_types(visitor)?;
         } else if let Some(ty) = self.value_type() {
             visitor(ty)?;
+        }
+        if let Some(carrier) = self.carrier_block() {
+            visitor(carrier.carrier_type())?;
         }
         self.data.resolution.visit_types(visitor)?;
         Ok(())
