@@ -1118,11 +1118,19 @@ impl<'a> BundleView<'a> {
                         }
                         let payload =
                             checked_slice(bytes, descriptor.offset, descriptor.stored_size)?;
-                        if BundleDigest::of(payload) != descriptor.stored_digest {
+                        let stored_digest = BundleDigest::of(payload);
+                        if stored_digest != descriptor.stored_digest {
                             return Err(ContainerError::StoredDigestMismatch(descriptor.id));
                         }
-                        let decoded = decode_payload(&descriptor, payload, budget)?;
-                        if BundleDigest::of(&decoded) != descriptor.content_digest {
+                        // The validated descriptor guarantees identical stored and decoded
+                        // bytes for an uncompressed section.
+                        let content_digest = match descriptor.compression {
+                            Compression::None => stored_digest,
+                            Compression::Zstd => {
+                                BundleDigest::of(&decode_payload(&descriptor, payload, budget)?)
+                            }
+                        };
+                        if content_digest != descriptor.content_digest {
                             return Err(ContainerError::ContentDigestMismatch(descriptor.id));
                         }
                         occupied_ranges.push(range);
@@ -2066,6 +2074,27 @@ mod tests {
             BundleView::parse(&bytes, ReadBudget::default()).expect_err("digest mismatch rejects");
 
         assert!(matches!(error, ContainerError::StoredDigestMismatch(section) if section == id));
+    }
+
+    #[test]
+    fn awfb_v1_rejects_wrong_uncompressed_content_digest() {
+        let id = section_id(1);
+        let mut section = SectionInput::embedded(
+            id,
+            BundleSectionKind::AssetBlob,
+            1,
+            ContentResidency::OnDemand,
+            false,
+            b"blob",
+        );
+        section.content_digest = BundleDigest::of(b"other");
+        let bytes =
+            encode_bundle(BundleKind::ContentPack, b"{}", vec![section]).expect("AWFB encodes");
+
+        let error = BundleView::parse(&bytes, ReadBudget::default())
+            .expect_err("a valid stored digest must not bypass the content digest check");
+
+        assert!(matches!(error, ContainerError::ContentDigestMismatch(section) if section == id));
     }
 
     #[test]
