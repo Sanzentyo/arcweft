@@ -1,0 +1,753 @@
+{
+  "version": 1,
+  "recordedUtc": "2026-11-09T13:03:26.5834163Z",
+  "sourceCommit": "959707f736e0a3af22771a94fe0a5600362044e7",
+  "publication": {
+    "version": 1,
+    "base": "bbedbb15ba56cd2ab037adb976f9c86df3578406",
+    "commit": "959707f736e0a3af22771a94fe0a5600362044e7",
+    "tree": "d825e4867368fa9a3c716e42b00be0cf09306428",
+    "remoteHead": "959707f736e0a3af22771a94fe0a5600362044e7",
+    "blobs": [
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "oid": "2e6d2555d0caadfb78b22332908816c26e78c071"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/lower/scopes.rs",
+        "oid": "d5138558e2c6c5b2dde26e6d721b9a6897429dfe"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/source_presentation_driver.rs",
+        "oid": "e8f7cde0791752d8beff9db8690b7757eb3c671d"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/src/expr.rs",
+        "oid": "215253d71880d8dec3da7e7762b378132c627dbf"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+        "oid": "ad96eb77efa5350cecf56c70c0e8fa71a49c35ad"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+        "oid": "97de0efdaf20ea259bb3188fd7ec3942ce834c16"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr/scopes.rs",
+        "oid": "60def678f0486f0d557742f7343f1f03bbc66f06"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "oid": "8ea2eeb0684b0e8b7f7a5f5feab2189d53bba061"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+        "oid": "16a8c4b5570ddaddc06a0458e6d54fc2f7bab1aa"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/scopes.rs",
+        "oid": "44bd44d68c3f84d45d29b219cfc0ce84e0c43dd7"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "oid": "2ceb20e1085dae44a44f52b5c7cf044237343fa7"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/lexical_scope.rs",
+        "oid": "33a13292e7952fa4de06f95f384c7a61a66498a0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+        "oid": "6dcfefcc9a2ac82495960a0e12b70ebd0db294cf"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/scope_continuation.rs",
+        "oid": "fc04ba33eda81ab390ff6826329b3aee67fa5261"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+        "oid": "e07c69889975d66fc67b2b729fa5b80f975eb7c9"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+        "oid": "aabab9a7a501154421ef0efee0b797b405ef914c"
+      },
+      {
+        "path": "docs/01-language/block-scopes.md",
+        "oid": "894773cc43d9096dfa39c1f9431e68e5c31eb4c9"
+      }
+    ]
+  },
+  "scope": "Ordinary, unnamed scope and named value blocks. The scope inventory is separate from the checked expression result. Compiler-consumed callable tails retain the enclosing call and its evaluation order.",
+  "regression": {
+    "test": "value_block_retires_only_its_own_view_after_wait_and_restore",
+    "stepBudget": 1,
+    "clockMillis": 1,
+    "namedControlPassedBefore": true,
+    "plainFailureBefore": "inner mount escaped outer custody",
+    "after": "All three forms save while Action receive is waiting, restore from bytes, reprepare a frame, accept the restored button route and return 42 while only the outer mount remains after the inner scope."
+  },
+  "verification": {
+    "targetedSummary": "Summary [   5.449s] 76 tests run: 76 passed, 1997 skipped",
+    "targetedLogSha256": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
+    "structuralGateExit": 0,
+    "structuralBlocking": 0,
+    "reverseGraph": {
+      "version": 1,
+      "head": "bbedbb15ba56cd2ab037adb976f9c86df3578406",
+      "roots": [
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "target": "x86_64-pc-windows-msvc",
+      "features": "defaults",
+      "packages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "cargoTreeCount": 23,
+      "difference": []
+    },
+    "qualityResultsAtRecord": [
+      {
+        "name": "workspace-check",
+        "command": [
+          "cargo",
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "headAtFinish": "959707f736e0a3af22771a94fe0a5600362044e7",
+        "exitCode": 0,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 56s"
+        ],
+        "logSha256": "b7e824208a963657a94209f18f9b80b48fcb96c452da47a402bc5e02508bdcc1",
+        "startedUtc": "2026-11-09T12:59:31.9813474Z",
+        "finishedUtc": "2026-11-09T13:02:30.1670894Z"
+      }
+    ],
+    "qualityIncompleteAtRecord": true
+  },
+  "sample": {
+    "source": "samples/modern-feedback-view/arcw.toml",
+    "unchangedSampleSource": true,
+    "operations": "Both player-rendered Action submissions, a disabled button, a newline in the brief, and return to the opening dialogue.",
+    "cliSha256": "0cf2476b0cb2b1f263a2a71e74b944906e33304ea960a72658a0d4a27fdc122d",
+    "bundleSha256": "06ca1144d3d5d9f4d9f080fb772a254cc9dca63bc86e9f69d57f3803be953c0c",
+    "wasmSha256": "279edac227d1b35c1c355dbbe33637db839ce989cc1685eb70e92a3e11af72d2",
+    "capture": [
+      {
+        "phase": "opening",
+        "nativeTick": 1,
+        "webTick": 1,
+        "pixelExact": true,
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "report": {
+          "reference": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\native\\native-operation-opening.png",
+          "distorted": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\web-opening.png",
+          "dimensions": {
+            "width": 1280,
+            "height": 720
+          },
+          "reference_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "distorted_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "metrics": [
+            {
+              "name": "psnr",
+              "score": null,
+              "unit": "dB",
+              "direction": "HigherIsBetter",
+              "details": {
+                "mse": 0.0,
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mse",
+              "score": 0.0,
+              "unit": "normalized_code^2",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "maxae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "phase": "name-panel",
+        "nativeTick": 17,
+        "webTick": 17,
+        "pixelExact": true,
+        "nativeSha256": "32bcd017b88e748d9dd59c571f508d3fa98fa54f3f07597a8cdd3ff1671dc978",
+        "webSha256": "f88fdb92cc468911499db09b61be277e72e2fd1536d930b0b71f9dcd7f55834b",
+        "report": {
+          "reference": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\native\\native-operation-name-panel.png",
+          "distorted": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\web-name-panel.png",
+          "dimensions": {
+            "width": 1280,
+            "height": 720
+          },
+          "reference_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "distorted_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "metrics": [
+            {
+              "name": "psnr",
+              "score": null,
+              "unit": "dB",
+              "direction": "HigherIsBetter",
+              "details": {
+                "mse": 0.0,
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mse",
+              "score": 0.0,
+              "unit": "normalized_code^2",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "maxae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "phase": "name-action",
+        "nativeTick": 29,
+        "webTick": 29,
+        "pixelExact": true,
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "report": {
+          "reference": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\native\\native-operation-name-action.png",
+          "distorted": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\web-name-action.png",
+          "dimensions": {
+            "width": 1280,
+            "height": 720
+          },
+          "reference_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "distorted_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "metrics": [
+            {
+              "name": "psnr",
+              "score": null,
+              "unit": "dB",
+              "direction": "HigherIsBetter",
+              "details": {
+                "mse": 0.0,
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mse",
+              "score": 0.0,
+              "unit": "normalized_code^2",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "maxae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "phase": "brief-panel",
+        "nativeTick": 53,
+        "webTick": 53,
+        "pixelExact": true,
+        "nativeSha256": "96ed60c9feb40ee16c2bc18df81c990ee247bc2c99414733f9955bb2bf90b0e8",
+        "webSha256": "73a0b7b89397c7d7b90755563fe93061ef42ed9c20d82b50e5e007aec5671845",
+        "report": {
+          "reference": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\native\\native-operation-brief-panel.png",
+          "distorted": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\web-brief-panel.png",
+          "dimensions": {
+            "width": 1280,
+            "height": 720
+          },
+          "reference_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "distorted_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "metrics": [
+            {
+              "name": "psnr",
+              "score": null,
+              "unit": "dB",
+              "direction": "HigherIsBetter",
+              "details": {
+                "mse": 0.0,
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mse",
+              "score": 0.0,
+              "unit": "normalized_code^2",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "maxae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "phase": "brief-action",
+        "nativeTick": 77,
+        "webTick": 77,
+        "pixelExact": true,
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "report": {
+          "reference": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\native\\native-operation-brief-action.png",
+          "distorted": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\web-brief-action.png",
+          "dimensions": {
+            "width": 1280,
+            "height": 720
+          },
+          "reference_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "distorted_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "metrics": [
+            {
+              "name": "psnr",
+              "score": null,
+              "unit": "dB",
+              "direction": "HigherIsBetter",
+              "details": {
+                "mse": 0.0,
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mse",
+              "score": 0.0,
+              "unit": "normalized_code^2",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "maxae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "phase": "loop-return",
+        "nativeTick": 93,
+        "webTick": 93,
+        "pixelExact": true,
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "report": {
+          "reference": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\native\\native-operation-loop-return.png",
+          "distorted": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\modern-feedback-retained-execution\\plain-scope-repaired\\web-loop-return.png",
+          "dimensions": {
+            "width": 1280,
+            "height": 720
+          },
+          "reference_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "distorted_format": {
+            "pixel_format": "Rgba8",
+            "color_space": "Srgb",
+            "transfer": "Srgb",
+            "range": "Full"
+          },
+          "metrics": [
+            {
+              "name": "psnr",
+              "score": null,
+              "unit": "dB",
+              "direction": "HigherIsBetter",
+              "details": {
+                "mse": 0.0,
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mse",
+              "score": 0.0,
+              "unit": "normalized_code^2",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "mae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            },
+            {
+              "name": "maxae",
+              "score": 0.0,
+              "unit": "normalized_code",
+              "direction": "LowerIsBetter",
+              "details": {
+                "samples": 3686400.0
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rgbaSamplesPerFrame": 3686400,
+    "namedScopeControl": [
+      {
+        "name": "opening",
+        "nativeTick": 1,
+        "webTick": 1,
+        "metrics": {
+          "psnr": null,
+          "mse": 0.0,
+          "mae": 0.0,
+          "maxae": 0.0
+        },
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "nativeImageCount": 1,
+        "webImageCount": 1
+      },
+      {
+        "name": "name-panel",
+        "nativeTick": 17,
+        "webTick": 17,
+        "metrics": {
+          "psnr": null,
+          "mse": 0.0,
+          "mae": 0.0,
+          "maxae": 0.0
+        },
+        "nativeSha256": "32bcd017b88e748d9dd59c571f508d3fa98fa54f3f07597a8cdd3ff1671dc978",
+        "webSha256": "f88fdb92cc468911499db09b61be277e72e2fd1536d930b0b71f9dcd7f55834b",
+        "nativeImageCount": 1,
+        "webImageCount": 1
+      },
+      {
+        "name": "name-action",
+        "nativeTick": 29,
+        "webTick": 29,
+        "metrics": {
+          "psnr": null,
+          "mse": 0.0,
+          "mae": 0.0,
+          "maxae": 0.0
+        },
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "nativeImageCount": 1,
+        "webImageCount": 1
+      },
+      {
+        "name": "brief-panel",
+        "nativeTick": 53,
+        "webTick": 53,
+        "metrics": {
+          "psnr": null,
+          "mse": 0.0,
+          "mae": 0.0,
+          "maxae": 0.0
+        },
+        "nativeSha256": "96ed60c9feb40ee16c2bc18df81c990ee247bc2c99414733f9955bb2bf90b0e8",
+        "webSha256": "73a0b7b89397c7d7b90755563fe93061ef42ed9c20d82b50e5e007aec5671845",
+        "nativeImageCount": 1,
+        "webImageCount": 1
+      },
+      {
+        "name": "brief-action",
+        "nativeTick": 77,
+        "webTick": 77,
+        "metrics": {
+          "psnr": null,
+          "mse": 0.0,
+          "mae": 0.0,
+          "maxae": 0.0
+        },
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "nativeImageCount": 1,
+        "webImageCount": 1
+      },
+      {
+        "name": "loop-return",
+        "nativeTick": 93,
+        "webTick": 93,
+        "metrics": {
+          "psnr": null,
+          "mse": 0.0,
+          "mae": 0.0,
+          "maxae": 0.0
+        },
+        "nativeSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+        "webSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+        "nativeImageCount": 1,
+        "webImageCount": 1
+      }
+    ],
+    "controlCorrection": "The prior record said the named-scope control ticks had not been aligned. The archived frames use ticks 1, 17, 29, 53, 77 and 93 on both sides. This replay compares those six archived pairs and records zero RGBA error."
+  },
+  "carrierFollowUp": {
+    "version": 1,
+    "sourceCommit": "959707f736e0a3af22771a94fe0a5600362044e7",
+    "cliSha256": "0cf2476b0cb2b1f263a2a71e74b944906e33304ea960a72658a0d4a27fdc122d",
+    "results": [
+      {
+        "kind": "option",
+        "bundleExit": 0,
+        "nativeExit": 1,
+        "focusAfterAction": "view_mount_1.button.submit_name",
+        "diagnostic": [
+          "Error: \"cannot reach \\\"Write one sharp product idea\\\" at tick 65. Text [\\\"Ada\\\", \\\"Continue\\\", \\\"Arcweft Concierge\\\", \\\"Nice to meet you, Ada.\\\", \\\"Control deck\\\", \\\"A one-line player-rendered view scoped to the name receive step.\\\"]\""
+        ],
+        "sourceSha256": "aee42bb4c80fa6dfdf7b772649d1bba6e32077a723db4dbc1f9bffd47d5a7019"
+      },
+      {
+        "kind": "result",
+        "bundleExit": 0,
+        "nativeExit": 1,
+        "focusAfterAction": "view_mount_1.button.submit_name",
+        "diagnostic": [
+          "Error: \"cannot reach \\\"Write one sharp product idea\\\" at tick 65. Text [\\\"Ada\\\", \\\"Continue\\\", \\\"Arcweft Concierge\\\", \\\"Nice to meet you, Ada.\\\", \\\"Control deck\\\", \\\"A one-line player-rendered view scoped to the name receive step.\\\"]\""
+        ],
+        "sourceSha256": "a8beebd9de1ccb6662f325b16765211affb68e138e8df739800316faf9574a5a"
+      }
+    ]
+  },
+  "rawArchive": {
+    "file": "task-expression-value-scope.raw.zip",
+    "bytes": 567103,
+    "sha256": "2bc0e7ebdac51aa5506023474fc855a9d1397ccd632cf92e63b66e19f8675268",
+    "entries": {
+      "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
+      "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
+      "test/retained-value-scope-structure.log": "1a97dc35363166ee67e7d76ccf5066a3fdffd45440aa2e74b385e49553a501f8",
+      "test/retained-value-scope-rdeps.json": "3b4a69d39e06b36100693021bb0ea372fce82625f191a5f8f81c02d8ac4aceae",
+      "test/retained-value-scope-owner-first-repair.receipt.json": "c8a67739cf07841c24455ecb0a9593989a3433c891f24da3a7642f9eaff000d3",
+      "test/retained-value-scope-owner-first-repair.log": "71c6ab26efef9fdc270b8551c28ca73df0260960ba755b740534bba8595738ae",
+      "test/retained-value-scope-regression-button-refreshed-before.log": "d877322e675c4d58da23ddd593c3dcdedc462b80e0f642dbb65954f31525db09",
+      "test/retained-value-scope-source.publication.json": "46e7b28801c8023596635ebe0d05d69f046836325243374e787ece6e00e9f391",
+      "sample/receipt.json": "14cabaae858eb4eea7e1afc064267e2db6d91ed3861200fb3e704933cd0bab0e",
+      "sample/bundle.log": "74c989f2ae5eeb2e4bad4844b816c532e9ecef6bb8ce71866d159e5ad25faac7",
+      "sample/native-operation.log": "543d2b04814782f4fc8d33a657c3e467bb98372c5dc776fc04e70041044622c0",
+      "sample/web-operation.stdout": "226c1d0374f1f639ba015c7182daeed9fa81c14647c8eb9a5b38e0706df2b303",
+      "sample/web-operation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "control/named-scope-control-rgba.json": "563785956f18fbd81da2d27cf9b3994ab182cf7dcf0d0f1a5ebee122810df8bc",
+      "sample/web-opening.json": "e64fc5376ef71342e962c8cc845849f1f1cbb6756f7cbf0c5cb9e283f316da1c",
+      "sample/native/native-operation-opening.json": "197ea7d89445c7701d0a61bf2691cbda54b524755ff7b5f28b935a72a04cc32b",
+      "sample/web-opening.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "sample/native/native-operation-opening.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "sample/rgba-opening.json": "01a9eb165c26016d56a80195b8c7d1ef9876fb839cc578bd3edcec143a700c6f",
+      "sample/web-name-panel.json": "cb74e0c41b2f9507a0dc3beed846e84181830e01074fc519fd0224fdb4567026",
+      "sample/native/native-operation-name-panel.json": "5042787db37b0237d204f5ae6c1b66a6caef61e8f2063d508ed3938a2b6bdbf0",
+      "sample/web-name-panel.png": "f88fdb92cc468911499db09b61be277e72e2fd1536d930b0b71f9dcd7f55834b",
+      "sample/native/native-operation-name-panel.png": "32bcd017b88e748d9dd59c571f508d3fa98fa54f3f07597a8cdd3ff1671dc978",
+      "sample/rgba-name-panel.json": "58aa745964b41b0018964e5c583dd7b54a180847d7a18cf098ed599dc583aa7a",
+      "sample/web-name-action.json": "0c8a336cab52f41c6243253991ec48b51b1b18fbc92f3fa2adb89c4ba8ece09c",
+      "sample/native/native-operation-name-action.json": "5cad311c123bf29bf437298e27b73fbc7c118c22e01e1457e52dbbe3a8c2e25f",
+      "sample/web-name-action.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "sample/native/native-operation-name-action.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "sample/rgba-name-action.json": "0f59d61650477f857b8a808987d25fc521aff191693456d8fd6c24911ca5a261",
+      "sample/web-brief-panel.json": "de6d5441a36629ff4ece390f3c949de88aa61f21cd996db8ae5201d341bb9db5",
+      "sample/native/native-operation-brief-panel.json": "a95f2e136114c6ce67ef0765acb4e69e6888a040845914f15afeee4135cf4772",
+      "sample/web-brief-panel.png": "73a0b7b89397c7d7b90755563fe93061ef42ed9c20d82b50e5e007aec5671845",
+      "sample/native/native-operation-brief-panel.png": "96ed60c9feb40ee16c2bc18df81c990ee247bc2c99414733f9955bb2bf90b0e8",
+      "sample/rgba-brief-panel.json": "6a8d0fecaf5ba166783ac12731030d51ff9882e0df6c6e24e320fda8674192f2",
+      "sample/web-brief-action.json": "ac045b39a1a320ebb3b323a328e841516f5039de8209c0739441cd893b08cb06",
+      "sample/native/native-operation-brief-action.json": "f999dfe211dfed97e69b27b037457f000f8a5e1ab3cf775ca3e00e238aabbd96",
+      "sample/web-brief-action.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "sample/native/native-operation-brief-action.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "sample/rgba-brief-action.json": "7a42eee23d5f873fd2c4aa6ce48421a05700dfbc5d64accf68a90dd8f37b96b2",
+      "sample/web-loop-return.json": "ce5f9a24fa4b153fa3f609097a93e8f9709d701137184b90953b1cc243aa53d8",
+      "sample/native/native-operation-loop-return.json": "3b941575c503b98daf73ebdbb7c15a0150d41666705c289c9bfc2cf95a2c6717",
+      "sample/web-loop-return.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "sample/native/native-operation-loop-return.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "sample/rgba-loop-return.json": "504de29deb56a1938a33ffd55e2a5b10270e60e843e7bfb53991f6461eb89e00",
+      "carrier/receipt.json": "5b3c7ce25d65b365c6599b9cae6582284724eaffb67d788f0504bbfc522e1610",
+      "carrier/option/source.arcw": "aee42bb4c80fa6dfdf7b772649d1bba6e32077a723db4dbc1f9bffd47d5a7019",
+      "carrier/option/bundle.log": "0c456a7b74fb91c53797457a87740789ecce10898be691564098f6bb7143ce11",
+      "carrier/option/native.log": "76f4c5d83d961c843712d3f25f12543c2e37ae8c2d286af54de313466e3d430b",
+      "carrier/option/native-operation-name-action.json": "cb21e013e7076b7760c3f5575601df0594533f531d78223f22eb3782b6fefba5",
+      "carrier/option/native-operation-name-action.png": "23deb739a2d05a056e3724453da6702aaa5bfc85c2227b60a222489da8aa2b7f",
+      "carrier/result/source.arcw": "a8beebd9de1ccb6662f325b16765211affb68e138e8df739800316faf9574a5a",
+      "carrier/result/bundle.log": "9368d2fcd63a69a3698614bda43f2528c6fcee2645196ff5cd7bad6b149012b5",
+      "carrier/result/native.log": "76f4c5d83d961c843712d3f25f12543c2e37ae8c2d286af54de313466e3d430b",
+      "carrier/result/native-operation-name-action.json": "57ccc45869c9f7d68192537b9e2a846bcb7d8bbcbe3f22f1bb277257eee9054b",
+      "carrier/result/native-operation-name-action.png": "23deb739a2d05a056e3724453da6702aaa5bfc85c2227b60a222489da8aa2b7f"
+    }
+  }
+}
