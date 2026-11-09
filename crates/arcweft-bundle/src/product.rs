@@ -3,10 +3,12 @@ use crate::character_dialogue_generation::{
     encode_section as encode_character_dialogue_generation_section,
 };
 use crate::container::{
-    BundleDigest, BundleKind as ContainerBundleKind, BundleSectionKind, BundleView,
-    ContentResidency, ExternalSectionPayload, ReadBudget, SectionId, SectionInput, encode_bundle,
+    ArtifactIdentity, BundleDigest, BundleKind as ContainerBundleKind, BundleSectionKind,
+    BundleView, ContentResidency, ExternalSectionPayload, ReadBudget, SectionId, SectionInput,
+    encode_bundle,
 };
 use crate::fx_definitions::FxDefinitions;
+use crate::patch::PatchMaterializedTarget;
 use crate::product_awbc::ProductExecutablePayload;
 use crate::resource_codec::runtime::{
     AdapterRequirementsSection as CompactAdapterRequirementsSection,
@@ -39,6 +41,75 @@ use source_projection::validate_view_sources;
 use style_cross_section::{validate_style_bundle_view, validate_style_section_inputs};
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
+
+/// A decoded product paired with the identity of its validated AWFB container.
+///
+/// The model is exposed by shared reference so the identity stays bound to the
+/// decoded data. Consumers can share the product without rereading the bytes.
+#[derive(Debug)]
+pub struct DecodedAwfbBundle {
+    bundle: ArcweftBundle,
+    artifact_identity: ArtifactIdentity,
+}
+
+impl DecodedAwfbBundle {
+    /// Decodes an AWFB product using the host's engine resource types.
+    pub fn from_bytes(
+        bytes: &[u8],
+        base_resource_types: &ResourceTypeRegistry,
+    ) -> Result<Self, BundleCodecError> {
+        let view = parse_product_container(bytes)?;
+        Self::decode_view(&view, base_resource_types, None)
+    }
+
+    /// Decodes a patch target after rechecking its materialized identity.
+    pub fn from_materialized_target(
+        target: &PatchMaterializedTarget,
+        base_resource_types: &ResourceTypeRegistry,
+    ) -> Result<Self, BundleCodecError> {
+        let view = parse_product_container(target.bytes())?;
+        Self::decode_view(
+            &view,
+            base_resource_types,
+            Some(target.report().target_artifact),
+        )
+    }
+
+    fn decode_view(
+        view: &BundleView<'_>,
+        base_resource_types: &ResourceTypeRegistry,
+        expected: Option<ArtifactIdentity>,
+    ) -> Result<Self, BundleCodecError> {
+        let artifact_identity = view.artifact_identity();
+        if let Some(expected) = expected
+            && artifact_identity != expected
+        {
+            return Err(BundleCodecError::DecodeAwfb {
+                message: format!(
+                    "materialized target identity {artifact_identity:?} does not match verified identity {expected:?}"
+                ),
+            });
+        }
+        let bundle = decode_product(view, &[], Some(base_resource_types))?;
+        Ok(Self {
+            bundle,
+            artifact_identity,
+        })
+    }
+
+    /// Returns the decoded product model.
+    #[must_use]
+    pub const fn bundle(&self) -> &ArcweftBundle {
+        &self.bundle
+    }
+
+    /// Returns the identity of the container that supplied the model.
+    #[must_use]
+    pub const fn artifact_identity(&self) -> ArtifactIdentity {
+        self.artifact_identity
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ProductManifest {
     schema_version: u32,
@@ -173,11 +244,21 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
     external_sections: &[ExternalSectionPayload],
     base_resource_types: Option<&ResourceTypeRegistry>,
 ) -> Result<ArcweftBundle, BundleCodecError> {
-    let view = BundleView::parse(bytes, ReadBudget::default()).map_err(|error| {
-        BundleCodecError::DecodeAwfb {
-            message: error.to_string(),
-        }
-    })?;
+    let view = parse_product_container(bytes)?;
+    decode_product(&view, external_sections, base_resource_types)
+}
+
+fn parse_product_container(bytes: &[u8]) -> Result<BundleView<'_>, BundleCodecError> {
+    BundleView::parse(bytes, ReadBudget::default()).map_err(|error| BundleCodecError::DecodeAwfb {
+        message: error.to_string(),
+    })
+}
+
+fn decode_product(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+    base_resource_types: Option<&ResourceTypeRegistry>,
+) -> Result<ArcweftBundle, BundleCodecError> {
     let product_manifest = decode_product_manifest(view.manifest())?;
     if product_manifest.schema_version != ARCWEFT_BUNDLE_SCHEMA_VERSION {
         return Err(BundleCodecError::UnsupportedSchema {
@@ -190,23 +271,23 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
             message: "container kind does not match product manifest bundle kind".to_owned(),
         });
     }
-    let product_awbc = required_product_awbc_bytes(&view, external_sections)
+    let product_awbc = required_product_awbc_bytes(view, external_sections)
         .and_then(|bytes| BundleAwbcProgram::decode_product_section(&bytes))?;
-    let runtime_types = required_runtime_types(&view, external_sections)?;
+    let runtime_types = required_runtime_types(view, external_sections)?;
     runtime_types
         .validate_awbc(product_awbc.program())
         .map_err(|error| compact_decode_error(&error))?;
-    let entrypoints = required_entrypoints(&view, external_sections)?;
+    let entrypoints = required_entrypoints(view, external_sections)?;
     entrypoints
         .validate_manifest(&product_manifest.manifest)
         .and_then(|()| entrypoints.validate_awbc(product_awbc.program()))
         .map_err(|error| compact_decode_error(&error))?;
-    let adapters = required_adapter_requirements(&view, external_sections)?;
-    let content = required_content_catalog(&view, external_sections)?;
-    let character_presentation = optional_locale_catalog(&view, external_sections)?;
+    let adapters = required_adapter_requirements(view, external_sections)?;
+    let content = required_content_catalog(view, external_sections)?;
+    let character_presentation = optional_locale_catalog(view, external_sections)?;
     let (character_dialogue_generation, character_packages) =
         optional_character_dialogue_generation(
-            &view,
+            view,
             external_sections,
             &product_awbc.program_owner(),
         )?
@@ -216,28 +297,28 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
             message: "AWFB dialogue content and LocaleCatalog presence disagree".to_owned(),
         });
     }
-    let assets = optional_asset_catalog(&view, external_sections)?.unwrap_or_default();
-    let display = required_display_catalog(&view, external_sections)?;
-    let source_map = optional_source_map(&view, external_sections)?.ok_or_else(|| {
+    let assets = optional_asset_catalog(view, external_sections)?.unwrap_or_default();
+    let display = required_display_catalog(view, external_sections)?;
+    let source_map = optional_source_map(view, external_sections)?.ok_or_else(|| {
         BundleCodecError::DecodeAwfb {
             message: "AWFB bundle is missing its canonical SourceMap section".to_owned(),
         }
     })?;
-    let view_program = optional_view_program(&view, external_sections)?;
-    let view_style = optional_view_style(&view, external_sections)?;
+    let view_program = optional_view_program(view, external_sections)?;
+    let view_style = optional_view_style(view, external_sections)?;
     validate_view_sources(
         view_program.as_ref(),
         view_style.as_ref(),
         Some(&source_map),
     )?;
-    let audio = optional_audio_graph(&view, external_sections)?.map(|section| section.graph);
-    let view_text = optional_view_text(&view, external_sections)?;
-    let view_input = optional_view_input(&view, external_sections)?;
-    let view_theme = optional_view_theme(&view, external_sections)?;
-    let fx_definitions = optional_fx_definitions(&view, external_sections)?.unwrap_or_default();
+    let audio = optional_audio_graph(view, external_sections)?.map(|section| section.graph);
+    let view_text = optional_view_text(view, external_sections)?;
+    let view_input = optional_view_input(view, external_sections)?;
+    let view_theme = optional_view_theme(view, external_sections)?;
+    let fx_definitions = optional_fx_definitions(view, external_sections)?.unwrap_or_default();
     let resource_type_manifests =
-        optional_resource_type_manifests(&view, external_sections, base_resource_types)?;
-    validate_style_bundle_view(view_style.as_ref(), &view, external_sections).map_err(|error| {
+        optional_resource_type_manifests(view, external_sections, base_resource_types)?;
+    validate_style_bundle_view(view_style.as_ref(), view, external_sections).map_err(|error| {
         BundleCodecError::DecodeAwfb {
             message: error.to_string(),
         }

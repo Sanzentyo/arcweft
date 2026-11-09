@@ -35,7 +35,7 @@ use crate::view_runtime::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewEventDispatchError,
     BundleViewRuntime, BundleViewRuntimeError, reconciled_root_handles_for_restore,
 };
-use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleView, ReadBudget};
+use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::patch::{
     BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchMaterializedTarget,

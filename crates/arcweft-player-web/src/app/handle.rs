@@ -8,7 +8,6 @@ use crate::clock::LogicalClockQuantizer;
 use crate::edit_context::WebEditContextFeatureDetection;
 use crate::host::BrowserTaskBroker;
 use crate::runtime_text_input::register_runtime_bridge;
-use arcweft_bundle::ArcweftBundle;
 use arcweft_core::plan::EntryRuntimeId;
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::fonts::PlayerFontSet;
@@ -16,7 +15,7 @@ use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlannerState};
 use arcweft_player_scene::images::BundleImageCatalog;
 use arcweft_player_scene::input::InputController;
 use arcweft_runtime_driver::session::PresentationEnvironmentUpdateError;
-use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions};
+use arcweft_runtime_driver::session::{BundleSession, BundleSessionError, BundleSessionOptions};
 use js_sys::{Array, Uint8Array};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -124,21 +123,23 @@ fn create(
     let text_input = register_runtime_bridge(canvas_id.clone(), detection);
     let mut session_options = BundleSessionOptions::default();
     session_options.entry = entry;
-    let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
+    let (session, decoded) = BundleSession::from_awfb_bytes_with_bundle(
         &bundle_bytes,
-        session_options.engine_resource_types.as_ref(),
+        session_options,
     )
-    .map_err(|error| WebPlayerError::BundleDecode(error.to_string()))?;
-    let session = BundleSession::from_awfb_bytes(&bundle_bytes, session_options)
-        .map_err(|error| WebPlayerError::Session(error.to_string()))?;
+    .map_err(|error| match error {
+        BundleSessionError::DecodeBundle { message } => WebPlayerError::BundleDecode(message),
+        other => WebPlayerError::Session(other.to_string()),
+    })?;
+    let bundle = decoded.bundle();
     let generation = session.active_generation();
     let broker = BrowserTaskBroker::from_bundle(
-        &bundle,
+        bundle,
         generation.bundle_asset_context(),
         generation.artifact_identity,
     )
     .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
-    let images = BundleImageCatalog::from_bundle(&bundle)
+    let images = BundleImageCatalog::from_bundle(bundle)
         .map_err(|error| WebPlayerError::Image(error.to_string()))?;
     let clock = LogicalClockQuantizer::new(16, 4)
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;

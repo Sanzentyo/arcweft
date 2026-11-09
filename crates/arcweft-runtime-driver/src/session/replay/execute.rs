@@ -8,8 +8,8 @@ use super::super::construction::selected_awbc_entry;
 use super::super::root_command::RootCommandHostResultRoute;
 use super::super::{
     ArcweftBundle, BundleSession, BundleSessionArtifactIdentity, BundleSessionError,
-    BundleSessionOptions, BundleStepInput, BundleView, ReadBudget, RootEventInput,
-    RuntimeClockStep, RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallResult,
+    BundleSessionOptions, BundleStepInput, RootEventInput, RuntimeClockStep, RuntimeHostCallError,
+    RuntimeHostCallErrorKind, RuntimeHostCallResult,
 };
 use super::model::{
     ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SCHEMA_VERSION, RecordedExternalOutcome,
@@ -17,6 +17,7 @@ use super::model::{
     RecordedHostCallErrorKindV1, RecordedRootOutcomeV1, RecordedRootTransitionV1, RootReplayError,
     RootReplayReportV1, RootReplayTraceV1,
 };
+use arcweft_bundle::DecodedAwfbBundle;
 use arcweft_core::entry::{RuntimeStatefulEntryRoles, RuntimeValueDigest};
 use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
@@ -58,26 +59,17 @@ impl BundleSession {
         options: BundleSessionOptions,
         trace: &RootReplayTraceV1,
     ) -> Result<RootReplayReportV1, RootReplayError> {
-        let view = BundleView::parse(bytes, ReadBudget::default()).map_err(|error| {
-            RootReplayError::ArtifactInspection {
+        let decoded = DecodedAwfbBundle::from_bytes(bytes, &options.engine_resource_types)
+            .map_err(|error| RootReplayError::ArtifactInspection {
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let artifact = BundleSessionArtifactIdentity::AwfbContainer {
-            identity: view.artifact_identity(),
+            identity: decoded.artifact_identity(),
         };
-        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
-            bytes,
-            options.engine_resource_types.as_ref(),
-        )
-        .map_err(|error| RootReplayError::ArtifactInspection {
-            message: error.to_string(),
-        })?;
         let mut replay_options = options.clone();
         replay_options.active_locale = Some(trace.identity.active_locale.clone());
-        let start_options = replay_options.clone();
-        replay_root_trace_with(&bundle, &options, trace, artifact, || {
-            BundleSession::from_awfb_bytes(bytes, start_options)
+        replay_root_trace_with(decoded.bundle(), &options, trace, artifact, || {
+            BundleSession::from_decoded_awfb(&decoded, replay_options)
         })
     }
 }

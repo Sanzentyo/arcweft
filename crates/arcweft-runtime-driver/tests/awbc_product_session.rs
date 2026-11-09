@@ -316,7 +316,9 @@ fn bundle_session_returns_failed_runtime_assertion_as_typed_core_data() {
 #[test]
 fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
     let bytes = product_awfb_bytes("entry.main");
-    let mut session = product_session_from_bytes(&bytes);
+    let (mut session, decoded) =
+        BundleSession::from_awfb_bytes_with_bundle(&bytes, BundleSessionOptions::default())
+            .expect("session and host product open together");
     session.step_with_clock(
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
@@ -325,6 +327,11 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
     let identity = BundleView::parse(&bytes, ReadBudget::default())
         .expect("source AWFB parses")
         .artifact_identity();
+    assert_eq!(decoded.artifact_identity(), identity);
+    assert_eq!(
+        decoded.bundle().manifest.entry.as_deref(),
+        Some("entry.main")
+    );
     assert_eq!(
         session
             .snapshot_session()

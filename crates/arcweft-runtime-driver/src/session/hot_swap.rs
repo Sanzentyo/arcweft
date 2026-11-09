@@ -6,12 +6,13 @@ mod presentation_generation_tests;
 use super::{
     Arc, ArcweftBundle, BundleHotSwapError, BundleHotSwapReport, BundlePatchArtifact,
     BundlePatchReadiness, BundlePatchReadinessReport, BundlePresentationSnapshot, BundleSession,
-    BundleSessionArtifactIdentity, BundleSessionError, BundleView, BundleViewRuntime, GenerationId,
+    BundleSessionArtifactIdentity, BundleSessionError, BundleViewRuntime, GenerationId,
     GenerationRuntimeError, GenerationRuntimeImage, PatchMaterializedTarget, ProgramGeneration,
-    ReadBudget, SwapCompatibility, ViewProjectionInput, ViewRuntimeTextControl, apply_patch_bundle,
+    SwapCompatibility, ViewProjectionInput, ViewRuntimeTextControl, apply_patch_bundle,
     build_session_runtime, classify_swap_for_entry, decode_patch_bundle, project_view_resources,
     reconciled_root_handles_for_restore, validate_virtual_list_scroll_owner,
 };
+use arcweft_bundle::DecodedAwfbBundle;
 
 impl BundleSession {
     pub fn hot_swap_bundle(
@@ -363,23 +364,8 @@ impl BundleSession {
             });
         }
 
-        let target_view =
-            BundleView::parse(materialized.bytes(), ReadBudget::default()).map_err(|error| {
-                BundleHotSwapError::DecodePatchTarget {
-                    message: error.to_string(),
-                }
-            })?;
-        let actual_identity = target_view.artifact_identity();
-        if actual_identity != materialized.report().target_artifact {
-            return Err(BundleHotSwapError::DecodePatchTarget {
-                message: format!(
-                    "materialized target identity {actual_identity:?} does not match verified identity {:?}",
-                    materialized.report().target_artifact
-                ),
-            });
-        }
-        let target_bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
-            materialized.bytes(),
+        let target_bundle = DecodedAwfbBundle::from_materialized_target(
+            materialized,
             self.engine_resource_types.as_ref(),
         )
         .map_err(|error| BundleHotSwapError::DecodePatchTarget {
@@ -388,9 +374,9 @@ impl BundleSession {
         let compatibility_floor =
             SwapCompatibility::from_patch_compatibility(materialized.compatibility());
         self.hot_swap_bundle_with_compatibility_floor(
-            &target_bundle,
+            target_bundle.bundle(),
             BundleSessionArtifactIdentity::AwfbContainer {
-                identity: actual_identity,
+                identity: target_bundle.artifact_identity(),
             },
             compatibility_floor,
         )

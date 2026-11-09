@@ -4,14 +4,15 @@ use super::{
     AcceptedCharacterPresentationCatalog, Arc, ArcweftBundle, ArcweftRuntimeExecutor, AwbcEntryId,
     AwbcProductStepBuildError, AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError,
     BundleKind, BundlePresentationSnapshot, BundleSession, BundleSessionArtifactIdentity,
-    BundleSessionError, BundleSessionOptions, BundleView, BundleViewRuntime,
-    BundleViewRuntimeError, DialogueContentCatalog, EntryRuntimeId, FxDefinitions,
-    GenerationBuildError, GenerationId, GenerationRuntimeImage, GenerationRuntimeTable,
-    PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget, RootCommandHostCallCatalog,
-    RuntimeTaskRegistry, SessionEnvironmentState, SwapSession, SystemPaletteSet,
-    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeTextControl, ViewVirtualizationRuntime,
+    BundleSessionError, BundleSessionOptions, BundleViewRuntime, BundleViewRuntimeError,
+    DialogueContentCatalog, EntryRuntimeId, FxDefinitions, GenerationBuildError, GenerationId,
+    GenerationRuntimeImage, GenerationRuntimeTable, PresentationEnvironmentOverrides,
+    ProgramGeneration, RootCommandHostCallCatalog, RuntimeTaskRegistry, SessionEnvironmentState,
+    SwapSession, SystemPaletteSet, ViewProgramResource, ViewRuntimeActionButton,
+    ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeTextControl,
+    ViewVirtualizationRuntime,
 };
+use arcweft_bundle::DecodedAwfbBundle;
 use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::value::RuntimeFormatContext;
 use arcweft_id::LocaleTag;
@@ -79,30 +80,40 @@ impl BundleSession {
         )
     }
 
+    /// Starts a session from an encoded AWFB product.
     pub fn from_awfb_bytes(
         bytes: &[u8],
         options: BundleSessionOptions,
     ) -> Result<Self, BundleSessionError> {
-        let view = BundleView::parse(bytes, ReadBudget::default()).map_err(|error| {
-            BundleSessionError::DecodeBundle {
+        Self::from_awfb_bytes_with_bundle(bytes, options).map(|(session, _)| session)
+    }
+
+    /// Starts a session and returns the same decoded product for host resources.
+    pub fn from_awfb_bytes_with_bundle(
+        bytes: &[u8],
+        options: BundleSessionOptions,
+    ) -> Result<(Self, DecodedAwfbBundle), BundleSessionError> {
+        let decoded = DecodedAwfbBundle::from_bytes(bytes, &options.engine_resource_types)
+            .map_err(|error| BundleSessionError::DecodeBundle {
                 message: error.to_string(),
-            }
-        })?;
-        let container_identity = view.artifact_identity();
+            })?;
+        let session = Self::from_decoded_awfb(&decoded, options)?;
+        Ok((session, decoded))
+    }
+
+    // Callers decode the product with the same engine registry before starting
+    // it, including when replay changes only the selected locale.
+    pub(super) fn from_decoded_awfb(
+        decoded: &DecodedAwfbBundle,
+        options: BundleSessionOptions,
+    ) -> Result<Self, BundleSessionError> {
         let engine_resource_types = Arc::clone(&options.engine_resource_types);
-        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
-            bytes,
-            engine_resource_types.as_ref(),
-        )
-        .map_err(|error| BundleSessionError::DecodeBundle {
-            message: error.to_string(),
-        })?;
         Self::new_with_artifact_identity(
-            &bundle,
+            decoded.bundle(),
             options,
             engine_resource_types,
             BundleSessionArtifactIdentity::AwfbContainer {
-                identity: container_identity,
+                identity: decoded.artifact_identity(),
             },
         )
     }
