@@ -4,10 +4,22 @@
   "fixture": "seq06_13e1_inset_box_shadow_exact_png",
   "tier": "tier2_environment_gated",
   "default_fast_path": false,
-  "status": "native_and_web_png_promoted_web_exact_readback_harness_implemented",
+  "status": "shared_authored_fixture_with_separate_promoted_references",
   "source_request": "docs/reviews/requests/2026-07-04-seq-06.13e.1.1-web-exact-png-readback-harness.md",
+  "shared_capture_fixture": {
+    "source": "docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw",
+    "bundle": "target/seq06.13e.1-inset-box-shadow-golden/fixture.awfb",
+    "bundle_receipt": "target/seq06.13e.1-inset-box-shadow-golden/fixture.json",
+    "frame_preparation": "crates/arcweft-player-web/src/parity/inset_shadow.rs",
+    "steps": 4,
+    "step_millis": 16,
+    "max_ops_per_step": 128,
+    "format": "rgba8unorm",
+    "same_run_compare": "Compare the Native and Web 320 by 180 PNGs after verifying matching AWFB artifact identity and prepared-scene statistics. Use the existing MSE and MAE limits, then compare each candidate with its own reference."
+  },
   "renderer_contract": {
     "must_use": [
+      "one compiled AWFB evaluated by BundleSession::from_awfb_bytes",
       "typed native Style sheet and selector resolution",
       "ViewStyleResource typed Panel part style rules",
       "retained Panel nodes and their paint slots in BundleViewMountOutput",
@@ -32,7 +44,7 @@
       "renderer/lowering/shader redesign without pinned defect evidence"
     ],
     "smoke_fixture_decision": "keep the existing ignored GPU smoke as a compositor execution regression; exact PNG native and Web fixtures are separate because promotion requires fingerprints, candidate PNGs, imq JSON, command logs, and a review decision packet",
-    "web_capture_decision": "Playwright launches the pinned browser. The wasm-exported Arcweft player renderer reads pixels from an Arcweft-owned rgba8unorm texture. PlayerFramePlanner resolves typed Panel part Style rules and prepares the painted boxes from retained node geometry. SharedRenderer::render_to_view renders that PreparedFrame. The browser test script writes PNG and JSON artifacts from the readback."
+    "web_capture_decision": "Playwright launches the pinned browser. The wasm-exported Arcweft player renderer reads pixels from an Arcweft-owned rgba8unorm texture. The browser fetches the same AWFB file passed to the Native capture. The shared frame preparation runs the authored scene and PlayerFramePlanner resolves typed Panel part Style rules from retained node geometry. SharedRenderer::render_to_view renders that PreparedFrame. The browser test script writes PNG and JSON artifacts from the readback."
   },
   "fixtures": [
     {
@@ -96,7 +108,7 @@
       "viewport.width": 320,
       "viewport.height": 180,
       "viewport.device_pixel_ratio": 1.0,
-      "font.state": "MS Mincho probe recorded even though the direct compositor fixture is texture-only; missing font remains an environment_blocker to avoid weakening exact native policy",
+      "font.state": "MS Mincho probe recorded even though the shared fixture paints only the two panels; missing font remains an environment_blocker to avoid weakening exact native policy",
       "png.format": "rgba8unorm PNG emitted from the shared wgpu compositor readback path"
     }
   },

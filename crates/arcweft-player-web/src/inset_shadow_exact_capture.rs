@@ -1,37 +1,13 @@
-use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_id::presentation::PresentationHandleId;
-use arcweft_id::view::ViewId;
-use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
-use arcweft_player_scene::images::BundleImageCatalog;
-use arcweft_player_scene::input::InputController;
-use arcweft_presentation::appearance::{
-    PresentationColor, PresentationEnvironment, SystemPaletteSet,
+use crate::parity::inset_shadow::{
+    HEIGHT, InsetShadowExactStats, WIDTH, has_exact_card_pixels, prepare_inset_shadow_exact_frame,
 };
-use arcweft_render_wgpu::geometry::{PreparedFrame, RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_render_wgpu::view_effects::ViewTextureExtent;
-use arcweft_runtime_driver::display::BundlePresentationSnapshot;
-use arcweft_runtime_driver::view_runtime::{
-    BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
-    BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind,
-};
-use arcweft_view::style::{
-    ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewColorValue, ViewInheritedBoxAxes,
-    ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewShadow, ViewSpecifiedValue,
-    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
-    ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-};
-use arcweft_view::{ViewElementKind, ViewMountId};
-use arcweft_view::{ViewPartLocalName, ViewPartName};
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
 use wasm_bindgen::prelude::*;
 
-const WIDTH: u32 = 320;
-const HEIGHT: u32 = 180;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const EXACT_STYLE_ID: &str = "style.seq06_13e1_inset_box_shadow_exact";
 
 /// Captures the seq06.13e.1 inset box-shadow exact fixture through the portable
 /// Arcweft player renderer in a browser WebGPU runtime.
@@ -41,14 +17,16 @@ const EXACT_STYLE_ID: &str = "style.seq06_13e1_inset_box_shadow_exact";
 /// side never uses browser-layout screenshots, SVG filters, Canvas 2D, or CPU raster
 /// replacement as the visual source.
 #[wasm_bindgen]
-pub async fn capture_seq06_13e1_inset_box_shadow_exact_png() -> Result<JsValue, JsValue> {
-    capture_js_value()
+pub async fn capture_seq06_13e1_inset_box_shadow_exact_png(
+    bundle_bytes: Vec<u8>,
+) -> Result<JsValue, JsValue> {
+    capture_js_value(&bundle_bytes)
         .await
         .map_err(|error| JsValue::from_str(&error))
 }
 
-async fn capture_js_value() -> Result<JsValue, String> {
-    let capture = render_capture().await?;
+async fn capture_js_value(bundle_bytes: &[u8]) -> Result<JsValue, String> {
+    let capture = render_capture(bundle_bytes).await?;
     let object = Object::new();
     set_property(&object, "width", JsValue::from_f64(f64::from(WIDTH)))?;
     set_property(&object, "height", JsValue::from_f64(f64::from(HEIGHT)))?;
@@ -73,17 +51,10 @@ async fn capture_js_value() -> Result<JsValue, String> {
 
 struct CaptureOutput {
     rgba: Vec<u8>,
-    stats: ExactPlayerCaptureStats,
+    stats: InsetShadowExactStats,
+    bundle_artifact: String,
     adapter: wgpu::AdapterInfo,
     content: ContentStats,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct ExactPlayerCaptureStats {
-    runtime_surfaces: u32,
-    view_scenes: u32,
-    primitives: u32,
-    paint_nodes: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -93,7 +64,9 @@ struct ContentStats {
     max_channel: u8,
 }
 
-async fn render_capture() -> Result<CaptureOutput, String> {
+async fn render_capture(bundle_bytes: &[u8]) -> Result<CaptureOutput, String> {
+    let fixture =
+        prepare_inset_shadow_exact_frame(bundle_bytes).map_err(|error| error.to_string())?;
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -134,10 +107,10 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     let final_view = final_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
 
-    let (frame, stats) = exact_player_frame()?;
+    let stats = fixture.stats;
     let mut renderer = SharedRenderer::new(&device, &queue, FORMAT);
     renderer
-        .render_to_view(&device, &queue, &final_view, &frame)
+        .render_to_view(&device, &queue, &final_view, &fixture.frame)
         .map_err(|error| format!("render seq06.13e.1 browser player frame: {error}"))?;
 
     let padded_row_bytes = padded_rgba_row_bytes(WIDTH);
@@ -162,14 +135,14 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     }
     let rgba = map_readback_buffer(&readback, WIDTH, HEIGHT, padded_row_bytes).await?;
     let content = content_stats(&rgba);
-    if content.non_transparent_pixels == 0 {
+    if !has_exact_card_pixels(&rgba) {
         return Err(format!(
-            "browser WebGPU readback produced a fully transparent seq06.13e.1 candidate; adapter={} backend={:?} driver={}; runtime_surfaces={}; player_view_scenes={}; primitives={}; paint_nodes={}; max_channel={}",
+            "browser WebGPU readback produced an incomplete seq06.13e.1 candidate; adapter={} backend={:?} driver={}; runtime_surfaces={}; player_view_scenes={}; primitives={}; paint_nodes={}; max_channel={}",
             adapter_info.name,
             adapter_info.backend,
             adapter_info.driver,
             stats.runtime_surfaces,
-            stats.view_scenes,
+            stats.player_view_scenes,
             stats.primitives,
             stats.paint_nodes,
             content.max_channel,
@@ -178,305 +151,10 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     Ok(CaptureOutput {
         rgba,
         stats,
+        bundle_artifact: fixture.bundle_identity.digest().to_hex(),
         adapter: adapter_info,
         content,
     })
-}
-
-fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), String> {
-    let viewport = RenderViewport {
-        logical_width: WIDTH as f32,
-        logical_height: HEIGHT as f32,
-        physical_width: WIDTH,
-        physical_height: HEIGHT,
-        scale_factor: 1.0,
-    };
-    let (presentation, style_program) = exact_presentation()?;
-    let images = BundleImageCatalog::empty();
-    let fx_definitions = FxDefinitions::default();
-    let mut input = InputController::default();
-    let prepared = PlayerFramePlanner::prepare(
-        &mut input,
-        PlayerFrameRequest {
-            presentation: &presentation,
-            fx_definitions: &fx_definitions,
-            images: &images,
-            style_program: Some(&style_program),
-            style_environment: &PresentationEnvironment::ENGINE_DEFAULT,
-            style_palettes: &SystemPaletteSet::ENGINE_DEFAULT,
-            viewport,
-            fit: PlayerFrameFit::raw(),
-            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
-            preferences: RenderPreferences::default(),
-        },
-    )
-    .map_err(|error| format!("prepare seq06.13e.1 browser player frame: {error}"))?;
-    let stats = ExactPlayerCaptureStats {
-        runtime_surfaces: u32::try_from(
-            presentation
-                .view
-                .mounts
-                .iter()
-                .map(|mount| mount.surface_nodes().count())
-                .sum::<usize>(),
-        )
-        .unwrap_or(u32::MAX),
-        view_scenes: u32::try_from(prepared.frame.view_scenes().len()).unwrap_or(u32::MAX),
-        primitives: u32::try_from(
-            prepared
-                .frame
-                .view_scenes()
-                .iter()
-                .map(|scene| scene.scene.primitives().len())
-                .sum::<usize>(),
-        )
-        .unwrap_or(u32::MAX),
-        paint_nodes: u32::try_from(
-            prepared
-                .frame
-                .view_scenes()
-                .iter()
-                .map(|scene| scene.scene.paint_nodes().len())
-                .sum::<usize>(),
-        )
-        .unwrap_or(u32::MAX),
-    };
-    Ok((prepared.frame, stats))
-}
-
-fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram), String> {
-    const PARTS: [&str; 2] = ["rounded_inset_shadow_card", "mixed_outer_inset_shadow_card"];
-    let style_program = exact_style_program();
-    let mount_id = ViewMountId::from_raw(1);
-    let handle = PresentationHandleId::try_new("handle.seq06_13e1_exact")
-        .map_err(|error| format!("construct exact View handle: {error}"))?;
-    let scope = ViewStyleScopeId::new(1);
-    let nodes: Vec<_> = PARTS
-        .iter()
-        .enumerate()
-        .map(|(index, part)| BundleViewStyleNode {
-            path: BundleViewInstancePath::default(),
-            instruction: u32::try_from(index.saturating_mul(2)).unwrap_or(u32::MAX),
-            parent: None,
-            kind: BundleViewStyleNodeKind::Element {
-                element: ViewElementKind::Panel,
-                target: Some((*part).to_owned()),
-            },
-            part: Some(ViewPartLocalName::try_new(*part).expect("fixture part is valid")),
-            exported_part: None,
-            applications: vec![ViewStyleApplication::new(
-                ViewStyleApplicationTarget::named(exact_style_sheet_id()),
-                scope,
-                0,
-                u32::try_from(index).unwrap_or(u32::MAX),
-                ViewStyleBoundaryFacts::SAME_VIEW,
-            )],
-        })
-        .collect();
-    let mount = BundleViewMountOutput {
-        handle,
-        mount: mount_id,
-        host_axis_seed: Some(ViewInheritedBoxAxes::for_host_seed(
-            mount_id,
-            ViewBoxAxisSeedGeneration::INITIAL,
-            ViewBoxAxisHostSeed::Default,
-        )),
-        view: ViewId::try_new("view.InsetShadowExactFixture").expect("fixture View id is valid"),
-        path: BundleViewInstancePath::default(),
-        dialogue: None,
-        active_targets: PARTS.iter().map(|part| (*part).to_owned()).collect(),
-        active_images: Vec::new(),
-        action_buttons: Vec::new(),
-        text_inputs: Vec::new(),
-        paint: nodes
-            .iter()
-            .map(|node| BundleViewPaintItem::Surface {
-                node: BundleViewStyleNodeId {
-                    path: node.path.clone(),
-                    instruction: node.instruction,
-                },
-            })
-            .collect(),
-        text: Vec::new(),
-        fx: Vec::new(),
-        events: Vec::new(),
-        style_nodes: nodes,
-    };
-    Ok((
-        BundlePresentationSnapshot {
-            view: BundleViewFrame {
-                mounts: vec![mount],
-                diagnostics: Vec::new(),
-            },
-            ..BundlePresentationSnapshot::default()
-        },
-        style_program,
-    ))
-}
-
-fn exact_style_program() -> ViewStyleProgram {
-    let source = ViewStyleSourceId::new(0);
-    let sheet = ViewStyleSheet::new(
-        exact_style_sheet_id(),
-        Vec::new(),
-        vec![
-            surface_rule(
-                "rounded_inset_shadow_card",
-                (24_000, 24_000),
-                [
-                    decl(
-                        ViewPropertyKind::BackgroundColor,
-                        style_rgba(36, 42, 54, 255),
-                        source,
-                    ),
-                    decl(ViewPropertyKind::BorderRadius, style_length(14_000), source),
-                    decl(
-                        ViewPropertyKind::BoxShadow,
-                        ViewSpecifiedValue::ShadowList {
-                            value: vec![shadow(
-                                0,
-                                3_000,
-                                12_000,
-                                2_000,
-                                PresentationColor::rgba(0, 0, 0, 143),
-                                true,
-                            )],
-                        },
-                        source,
-                    ),
-                ],
-                0,
-                source,
-            ),
-            surface_rule(
-                "mixed_outer_inset_shadow_card",
-                (176_000, 40_000),
-                [
-                    decl(
-                        ViewPropertyKind::BackgroundColor,
-                        style_rgba(255, 255, 255, 255),
-                        source,
-                    ),
-                    decl(ViewPropertyKind::BorderRadius, style_length(16_000), source),
-                    decl(
-                        ViewPropertyKind::BoxShadow,
-                        ViewSpecifiedValue::ShadowList {
-                            value: vec![
-                                shadow(
-                                    0,
-                                    10_000,
-                                    18_000,
-                                    2_000,
-                                    PresentationColor::rgba(0, 0, 0, 97),
-                                    false,
-                                ),
-                                shadow(
-                                    0,
-                                    -2_000,
-                                    10_000,
-                                    1_000,
-                                    PresentationColor::rgba(255, 255, 255, 89),
-                                    true,
-                                ),
-                            ],
-                        },
-                        source,
-                    ),
-                ],
-                1,
-                source,
-            ),
-        ],
-    )
-    .expect("exact inset-shadow Style sheet is statically valid");
-    ViewStyleProgram::try_new(vec![sheet], Vec::new())
-        .expect("exact inset-shadow native Style program is statically valid")
-}
-
-fn surface_rule<const N: usize>(
-    public_id: &str,
-    (left, top): (i32, i32),
-    declarations: [ViewStyleDeclaration; N],
-    source_order: u32,
-    source: ViewStyleSourceId,
-) -> ViewStyleRule {
-    let sequence = ViewStyleSelectorSequence::new(
-        None,
-        Some(arcweft_view::ViewStyleTargetKind::Element(
-            ViewElementKind::Panel,
-        )),
-        Some(ViewPartName::try_new(public_id).expect("exact Style part ID is valid")),
-        Vec::new(),
-    )
-    .expect("element-and-part selector is non-empty");
-    ViewStyleRule::new(
-        ViewStyleSelector::new(vec![sequence]).expect("single selector sequence is valid"),
-        None,
-        [
-            decl(
-                ViewPropertyKind::Position,
-                ViewSpecifiedValue::Position {
-                    value: ViewPosition::Absolute,
-                },
-                source,
-            ),
-            decl(ViewPropertyKind::Left, style_length(left), source),
-            decl(ViewPropertyKind::Top, style_length(top), source),
-            decl(ViewPropertyKind::Width, style_length(112_000), source),
-            decl(ViewPropertyKind::Height, style_length(72_000), source),
-        ]
-        .into_iter()
-        .chain(declarations)
-        .collect(),
-        source_order,
-        source,
-    )
-    .expect("exact Style rule is statically valid")
-}
-
-fn decl(
-    property: ViewPropertyKind,
-    value: ViewSpecifiedValue,
-    source: ViewStyleSourceId,
-) -> ViewStyleDeclaration {
-    ViewStyleDeclaration::new(property, value, ViewStyleAssignOp::Replace, source)
-        .expect("exact Style declaration is statically valid")
-}
-
-fn exact_style_sheet_id() -> ViewStyleSheetId {
-    ViewStyleSheetId::try_new(EXACT_STYLE_ID).expect("exact Style sheet ID is valid")
-}
-
-fn style_length(value: i32) -> ViewSpecifiedValue {
-    ViewSpecifiedValue::Length {
-        value: ViewLengthMilli::new(value),
-    }
-}
-
-fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewSpecifiedValue {
-    ViewSpecifiedValue::Color {
-        value: ViewColorValue::Literal {
-            color: PresentationColor::rgba(red, green, blue, alpha),
-        },
-    }
-}
-
-const fn shadow(
-    x: i32,
-    y: i32,
-    blur: i32,
-    spread: i32,
-    color: PresentationColor,
-    inset: bool,
-) -> ViewShadow {
-    ViewShadow {
-        x: ViewLengthMilli::new(x),
-        y: ViewLengthMilli::new(y),
-        blur: ViewLengthMilli::new(blur),
-        spread: ViewLengthMilli::new(spread),
-        color: ViewColorValue::Literal { color },
-        inset,
-    }
 }
 
 fn create_readback_buffer(
@@ -593,6 +271,12 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  \"target\": \"web\",").unwrap();
     writeln!(&mut json, "  \"fixture\": \"seq06_13e1_inset_box_shadow\",").unwrap();
     writeln!(&mut json, "  \"candidate_png\": null,").unwrap();
+    writeln!(
+        &mut json,
+        "  \"bundle_artifact\": {},",
+        json_string(&capture.bundle_artifact)
+    )
+    .unwrap();
     writeln!(&mut json, "  \"viewport\": {{").unwrap();
     writeln!(&mut json, "    \"width\": {WIDTH},").unwrap();
     writeln!(&mut json, "    \"height\": {HEIGHT},").unwrap();
@@ -600,13 +284,14 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
     let route_entries = [
+        "BundleSession::from_awfb_bytes",
         "BundleViewMountOutput::style_nodes executed inventory",
         "ViewStyleResolver current computed snapshot",
         "ViewRuntimeNodeStyle::try_from_computed",
         "BundlePresentationSnapshot retained surface nodes",
         "ViewRuntimeControlVisualStyle fill/radius/shadows projection",
         "PlayerFramePlanner surface lowering to ViewScene",
-        "ViewRoundedRect primitive from player-owned surface resource",
+        "ViewSurfacePaint from retained Panel boxes",
         "ViewCompositingEffects::box_shadows",
         "PlayerFramePlanner::prepare",
         "SharedRenderer::render_to_view",
@@ -648,32 +333,8 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "    \"operation\": \"copy_texture_to_buffer\",").unwrap();
     writeln!(&mut json, "    \"format\": \"rgba8unorm\"").unwrap();
     writeln!(&mut json, "  }},").unwrap();
-    writeln!(&mut json, "  \"stats\": {{").unwrap();
-    writeln!(
-        &mut json,
-        "    \"runtime_surfaces\": {},",
-        capture.stats.runtime_surfaces
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"player_view_scenes\": {},",
-        capture.stats.view_scenes
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"primitives\": {},",
-        capture.stats.primitives
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"paint_nodes\": {}",
-        capture.stats.paint_nodes
-    )
-    .unwrap();
-    writeln!(&mut json, "  }},").unwrap();
+    let stats = serde_json::to_string(&capture.stats).expect("typed frame statistics serialize");
+    writeln!(&mut json, "  \"stats\": {stats},").unwrap();
     writeln!(&mut json, "  \"content\": {{").unwrap();
     writeln!(
         &mut json,

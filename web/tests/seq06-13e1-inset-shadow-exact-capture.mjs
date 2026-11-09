@@ -4,10 +4,13 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { release as osRelease } from "node:os";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
+const { version: playwrightVersion } = createRequire(import.meta.url)("playwright/package.json");
 const webRoot = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
 const repoRoot = normalize(join(webRoot, ".."));
 const WIDTH = 320;
@@ -42,6 +45,7 @@ function parseArgs(argv) {
     root: repoRoot,
     outDir: join(repoRoot, "target/seq06.13e.1-inset-box-shadow-golden"),
     browserChannel: process.env.ARW_PLAYWRIGHT_CHANNEL || "chrome",
+    bundle: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -51,6 +55,9 @@ function parseArgs(argv) {
         break;
       case "--out-dir":
         args.outDir = resolveMaybeRoot(args.root, nextArg(argv, ++index, arg));
+        break;
+      case "--bundle":
+        args.bundle = nextArg(argv, ++index, arg);
         break;
       case "--browser-channel":
         args.browserChannel = nextArg(argv, ++index, arg);
@@ -63,6 +70,9 @@ function parseArgs(argv) {
         fail(`unknown argument: ${arg}`);
     }
   }
+  args.bundle = args.bundle
+    ? resolveMaybeRoot(args.root, args.bundle)
+    : join(args.outDir, "fixture.awfb");
   return args;
 }
 
@@ -79,7 +89,7 @@ function resolveMaybeRoot(root, value) {
 }
 
 function printHelp() {
-  console.log(`seq06.13e.1 Web exact PNG capture\n\nUsage:\n  node web/tests/seq06-13e1-inset-shadow-exact-capture.mjs --root . --out-dir target/seq06.13e.1-inset-box-shadow-golden [--browser-channel chrome]\n\nThe visual source is the wasm-exported Arcweft WGPU compositor readback. This script never uses DOM/CSS screenshots, SVG filters, Canvas 2D fallback, or CPU raster fallback.`);
+  console.log(`seq06.13e.1 Web exact PNG capture\n\nUsage:\n  node web/tests/seq06-13e1-inset-shadow-exact-capture.mjs --root . --out-dir target/seq06.13e.1-inset-box-shadow-golden [--bundle FILE] [--browser-channel chrome]\n\nThe runner loads the compiled AWFB at --bundle or fixture.awfb in the output directory. The visual source is the Arcweft renderer's WebGPU texture readback.`);
 }
 
 function staticPath(requestUrl) {
@@ -98,8 +108,9 @@ function staticPath(requestUrl) {
   return fullPath.startsWith(webRoot) ? fullPath : null;
 }
 
-async function serveFile(request, response) {
-  const fullPath = staticPath(request.url);
+async function serveFile(request, response, bundlePath) {
+  const url = new URL(request.url, "http://127.0.0.1");
+  const fullPath = url.pathname === "/fixture.awfb" ? bundlePath : staticPath(request.url);
   if (fullPath === "") {
     response.writeHead(204);
     response.end();
@@ -125,9 +136,9 @@ async function serveFile(request, response) {
   createReadStream(fullPath).pipe(response);
 }
 
-function startServer() {
+function startServer(bundlePath) {
   const server = createServer((request, response) => {
-    serveFile(request, response).catch((error) => {
+    serveFile(request, response, bundlePath).catch((error) => {
       response.writeHead(500);
       response.end(String(error?.stack ?? error));
     });
@@ -179,7 +190,12 @@ async function captureFromBrowser(page, baseUrl) {
     result = await page.evaluate(async () => {
       const module = await import("/pkg/arcweft_player_web.js");
       await module.default();
-      const capture = await module.capture_seq06_13e1_inset_box_shadow_exact_png();
+      const response = await fetch("/fixture.awfb");
+      if (!response.ok) {
+        throw new Error("exact inset-shadow fixture AWFB is unavailable");
+      }
+      const bundle = new Uint8Array(await response.arrayBuffer());
+      const capture = await module.capture_seq06_13e1_inset_box_shadow_exact_png(bundle);
       const canvas = document.querySelector("#seq06-13e1-canvas-fingerprint");
       return {
         width: capture.width,
@@ -268,13 +284,13 @@ async function environmentJson(args, browser, result, candidatePath, referencePa
       os: {
         family: process.platform,
         arch: process.arch,
-        version_family: process.version,
+        version_family: osRelease(),
       },
       runtime: {
         name: "Playwright browser test harness",
-        version: npmCommand(args.root, ["exec", "--", "playwright", "--version"]),
+        version: playwrightVersion,
         node_version: process.version,
-        npm_version: npmCommand(args.root, ["--version"]),
+        npm_version: npmVersion(),
       },
       browser: browserFingerprint(browser, result.page, args.browserChannel),
       webgpu: {
@@ -310,7 +326,7 @@ async function environmentJson(args, browser, result, candidatePath, referencePa
         dirty: Boolean(commandOutput("git", ["-C", args.root, "status", "--short"])),
       },
       fixture: {
-        source_hash: gitHashObject(args.root, join(args.root, "docs/fixtures/web/seq06_13e1_inset_box_shadow_exact_golden.json")),
+        source_hash: gitHashObject(args.root, join(args.root, "docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw")),
         policy_hash: gitHashObject(args.root, join(args.root, "fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow-exact-png-policy.json")),
       },
       reference: {
@@ -334,8 +350,11 @@ async function environmentJson(args, browser, result, candidatePath, referencePa
   };
 }
 
-function npmCommand(root, args) {
-  return commandOutput("npm", args, { cwd: join(root, "web") });
+function npmVersion() {
+  if (process.platform === "win32") {
+    return commandOutput("cmd.exe", ["/d", "/c", "npm", "--version"]);
+  }
+  return commandOutput("npm", ["--version"]);
 }
 
 function commandAvailable(command, args) {
@@ -445,7 +464,9 @@ async function main() {
     printHelp();
     return;
   }
-  const { server, baseUrl } = await startServer();
+  const input = await open(args.bundle, "r");
+  await input.close();
+  const { server, baseUrl } = await startServer(args.bundle);
   const browser = await chromium.launch({
     channel: args.browserChannel,
     headless: launchHeadless(),

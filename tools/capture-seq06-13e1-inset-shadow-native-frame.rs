@@ -8,11 +8,15 @@ rust-version = "1.96"
 publish = false
 
 [dependencies]
-arcweft-presentation = { path = "../crates/arcweft-presentation" }
+arcweft-player-web = { path = "../crates/arcweft-player-web" }
 arcweft-render-wgpu = { path = "../crates/arcweft-render-wgpu" }
 png = "0.18.1"
 pollster = "0.4.0"
+serde_json = "1"
 wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl", "dx12", "metal", "vulkan"] }
+
+[patch.crates-io]
+glyphon = { path = "../vendor/glyphon" }
 ---
 
 /*
@@ -25,16 +29,11 @@ seq06.13e.1 pinned environment variables and keeps the command log.
 cargo +nightly -Zscript tools/capture-seq06-13e1-inset-shadow-native-frame.rs --root . --out-dir target/seq06.13e.1-inset-box-shadow-golden
 */
 
-use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::view_compositor::{
-    ViewCompositor, ViewCompositorError, ViewCompositorFrame, ViewCompositorTarget,
-    ViewDirectPrimitiveRenderer, ViewNoMaskTextures,
+use arcweft_player_web::parity::inset_shadow::{
+    HEIGHT, InsetShadowExactStats, WIDTH, has_exact_card_pixels, prepare_inset_shadow_exact_frame,
 };
+use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_render_wgpu::view_effects::ViewTextureExtent;
-use arcweft_render_wgpu::view_scene::{
-    ViewAffine2D, ViewBoxShadow, ViewBoxShadowList, ViewColorRgba8, ViewCompositingEffects,
-    ViewCompositingGroup, ViewPaintNode, ViewPrimitiveRange, ViewScene, ViewSceneContext,
-};
 use png::{BitDepth, ColorType, Encoder};
 use std::env;
 use std::fmt::Write as _;
@@ -48,8 +47,6 @@ const REQUIRED_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED";
 const PINNED_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED";
 const NATIVE_BACKEND_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_NATIVE_BACKEND";
 const NATIVE_BACKEND: &str = "wgpu_offscreen_compositor";
-const WIDTH: u32 = 320;
-const HEIGHT: u32 = 180;
 
 fn main() {
     if let Err(error) = run() {
@@ -81,7 +78,12 @@ fn run() -> Result<(), String> {
     let candidate = target_dir.join("seq06_13e1_inset_box_shadow.candidate.png");
     let observe = target_dir.join("seq06_13e1_inset_box_shadow.observe.json");
 
-    let capture = render_capture(args.target_format.wgpu())?;
+    let bundle_path = args
+        .bundle
+        .map_or_else(|| out_dir.join("fixture.awfb"), |path| root.join(path));
+    let bytes = fs::read(&bundle_path)
+        .map_err(|error| format!("read {}: {error}", bundle_path.display()))?;
+    let capture = render_capture(args.target_format.wgpu(), &bytes)?;
     write_png(&candidate, WIDTH, HEIGHT, &capture.rgba)?;
     write_observe_json(&root, &candidate, &observe, &capture)?;
     println!(
@@ -95,8 +97,8 @@ fn run() -> Result<(), String> {
 fn print_help() {
     println!(
         "capture-seq06-13e1-inset-shadow-native-frame\n\n\
-         Usage:\n  cargo +nightly -Zscript tools/capture-seq06-13e1-inset-shadow-native-frame.rs --root . [--out-dir DIR] [--target-format rgba8unorm|rgba8unorm-srgb]\n\n\
-         Options:\n  --root <repo-root>\n  --out-dir <dir>        Default: target/seq06.13e.1-inset-box-shadow-golden\n  --target-format <fmt> Default: rgba8unorm\n  -h, --help            Print this help."
+         Usage:\n  cargo +nightly -Zscript tools/capture-seq06-13e1-inset-shadow-native-frame.rs --root . [--out-dir DIR] [--bundle FILE] [--target-format rgba8unorm|rgba8unorm-srgb]\n\n\
+         Options:\n  --root <repo-root>\n  --out-dir <dir>        Default: target/seq06.13e.1-inset-box-shadow-golden\n  --bundle <file>        Default: fixture.awfb in the output directory\n  --target-format <fmt> Default: rgba8unorm\n  -h, --help            Print this help."
     );
 }
 
@@ -104,6 +106,7 @@ fn print_help() {
 struct Args {
     root: PathBuf,
     out_dir: PathBuf,
+    bundle: Option<PathBuf>,
     target_format: CaptureTargetFormat,
     help: bool,
 }
@@ -112,6 +115,7 @@ impl Args {
     fn parse(values: impl Iterator<Item = String>) -> Result<Self, String> {
         let mut root = None;
         let mut out_dir = PathBuf::from("target/seq06.13e.1-inset-box-shadow-golden");
+        let mut bundle = None;
         let mut target_format = CaptureTargetFormat::Rgba8Unorm;
         let mut help = false;
         let mut values = values.peekable();
@@ -120,6 +124,7 @@ impl Args {
             match arg.as_str() {
                 "--root" => root = Some(PathBuf::from(next_arg(&mut values, "--root")?)),
                 "--out-dir" => out_dir = PathBuf::from(next_arg(&mut values, "--out-dir")?),
+                "--bundle" => bundle = Some(PathBuf::from(next_arg(&mut values, "--bundle")?)),
                 "--target-format" => {
                     target_format =
                         CaptureTargetFormat::parse(&next_arg(&mut values, "--target-format")?)?;
@@ -136,6 +141,7 @@ impl Args {
                 root.ok_or_else(|| String::from("missing --root"))?
             },
             out_dir,
+            bundle,
             target_format,
             help,
         })
@@ -174,25 +180,10 @@ impl CaptureTargetFormat {
     }
 }
 
-struct NoopDirectRenderer;
-
-impl ViewDirectPrimitiveRenderer for NoopDirectRenderer {
-    fn render_direct_range(
-        &mut self,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-        _encoder: &mut wgpu::CommandEncoder,
-        _scene: &ViewScene,
-        _context: &ViewSceneContext,
-        _target: ViewCompositorTarget<'_>,
-    ) -> Result<(), ViewCompositorError> {
-        Ok(())
-    }
-}
-
 struct CaptureOutput {
     rgba: Vec<u8>,
-    stats: arcweft_render_wgpu::view_compositor::ViewCompositorStats,
+    stats: InsetShadowExactStats,
+    bundle_artifact: String,
     adapter: wgpu::AdapterInfo,
     content: ContentStats,
 }
@@ -204,7 +195,8 @@ struct ContentStats {
     max_channel: u8,
 }
 
-fn render_capture(format: wgpu::TextureFormat) -> Result<CaptureOutput, String> {
+fn render_capture(format: wgpu::TextureFormat, bytes: &[u8]) -> Result<CaptureOutput, String> {
+    let fixture = prepare_inset_shadow_exact_frame(bytes).map_err(|error| error.to_string())?;
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
@@ -241,113 +233,22 @@ fn render_capture(format: wgpu::TextureFormat) -> Result<CaptureOutput, String> 
         view_formats: &[],
     });
     let final_view = final_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("arcweft-seq06-13e1-inset-shadow-capture-encoder"),
-    });
-    clear_target(&mut encoder, &final_view);
-
-    let scene = smoke_scene();
-    let mut direct_renderer = NoopDirectRenderer;
-    let mut mask_textures = ViewNoMaskTextures;
-    let mut compositor = ViewCompositor::new(&device, &queue, format);
-    let mut frame = ViewCompositorFrame {
-        device: &device,
-        queue: &queue,
-        encoder: &mut encoder,
-        final_target: &final_view,
-        scene: &scene,
-        target_extent: extent,
-        direct_renderer: &mut direct_renderer,
-        mask_textures: &mut mask_textures,
-    };
-
-    let stats = compositor
-        .render_scene(&mut frame)
-        .map_err(|error| format!("render seq06.13e.1 compositor scene: {error}"))?;
-    queue.submit([encoder.finish()]);
+    let mut renderer = SharedRenderer::new(&device, &queue, format);
+    renderer
+        .render_to_view(&device, &queue, &final_view, &fixture.frame)
+        .map_err(|error| format!("render retained inset-shadow frame: {error}"))?;
     let rgba = readback_texture_rgba(&device, &queue, &final_texture, WIDTH, HEIGHT)?;
+    if !has_exact_card_pixels(&rgba) {
+        return Err("native exact PNG is missing one or both card fills".to_owned());
+    }
     let content = content_stats(&rgba);
     Ok(CaptureOutput {
         rgba,
-        stats,
+        stats: fixture.stats,
+        bundle_artifact: fixture.bundle_identity.digest().to_hex(),
         adapter: adapter_info,
         content,
     })
-}
-
-fn smoke_scene() -> ViewScene {
-    let mut scene = ViewScene::new(WIDTH as f32, HEIGHT as f32);
-
-    scene.push_paint_node(ViewPaintNode::Group(
-        ViewCompositingGroup::new(
-            HitRect::new(24.0, 24.0, 112.0, 72.0),
-            ViewCompositingEffects {
-                box_shadows: ViewBoxShadowList::new([ViewBoxShadow::inset(
-                    0.0,
-                    3.0,
-                    12.0,
-                    2.0,
-                    14.0,
-                    rgba(0, 0, 0, 144),
-                )]),
-                ..ViewCompositingEffects::default()
-            },
-        )
-        .with_children(vec![direct(0, 0)]),
-    ));
-
-    scene.push_paint_node(ViewPaintNode::Group(
-        ViewCompositingGroup::new(
-            HitRect::new(176.0, 40.0, 112.0, 72.0),
-            ViewCompositingEffects {
-                box_shadows: ViewBoxShadowList::new([
-                    ViewBoxShadow::outer(0.0, 10.0, 18.0, 2.0, 16.0, rgba(0, 0, 0, 96)),
-                    ViewBoxShadow::inset(0.0, -2.0, 10.0, 1.0, 16.0, rgba(255, 255, 255, 88)),
-                ]),
-                ..ViewCompositingEffects::default()
-            },
-        )
-        .with_children(vec![direct(0, 0)]),
-    ));
-
-    scene
-}
-
-fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewColorRgba8 {
-    ViewColorRgba8 {
-        red,
-        green,
-        blue,
-        alpha,
-    }
-}
-
-fn direct(start: u32, end: u32) -> ViewPaintNode {
-    ViewPaintNode::Direct(ViewSceneContext {
-        transform: ViewAffine2D::IDENTITY,
-        opacity: 1.0,
-        clip: None,
-        primitive_range: ViewPrimitiveRange { start, end },
-    })
-}
-
-fn clear_target(encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
-    let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("arcweft-seq06-13e1-inset-shadow-capture-clear"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target,
-            resolve_target: None,
-            depth_slice: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
 }
 
 fn readback_texture_rgba(
@@ -474,23 +375,30 @@ fn write_observe_json(
         json_string(&display_path(candidate))
     )
     .unwrap();
+    writeln!(
+        &mut json,
+        "  \"bundle_artifact\": {},",
+        json_string(&capture.bundle_artifact)
+    )
+    .unwrap();
     writeln!(&mut json, "  \"viewport\": {{").unwrap();
     writeln!(&mut json, "    \"width\": {WIDTH},").unwrap();
     writeln!(&mut json, "    \"height\": {HEIGHT},").unwrap();
     writeln!(&mut json, "    \"device_pixel_ratio\": 1.0").unwrap();
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
-    for (index, route) in [
+    let route = [
+        "BundleSession::from_awfb_bytes",
+        "PlayerFramePlanner::prepare",
+        "SharedRenderer::render_to_view",
         "ViewCompositingEffects::box_shadows",
         "ViewBoxShadowPassPlan unified outer/inset pass list",
         "ViewCompositor::render_group",
         "PASS_BOX_SHADOW WGSL kind flag",
-    ]
-    .iter()
-    .enumerate()
-    {
-        let comma = if index == 3 { "" } else { "," };
-        writeln!(&mut json, "    {}{comma}", json_string(route)).unwrap();
+    ];
+    for (index, label) in route.iter().enumerate() {
+        let comma = if index + 1 == route.len() { "" } else { "," };
+        writeln!(&mut json, "    {}{comma}", json_string(label)).unwrap();
     }
     writeln!(&mut json, "  ],").unwrap();
     writeln!(&mut json, "  \"scene\": {{").unwrap();
@@ -502,50 +410,8 @@ fn write_observe_json(
     writeln!(&mut json, "    \"box_shadow\": \"outer and inset\",").unwrap();
     writeln!(&mut json, "    \"inset\": true").unwrap();
     writeln!(&mut json, "  }},").unwrap();
-    writeln!(&mut json, "  \"stats\": {{").unwrap();
-    writeln!(
-        &mut json,
-        "    \"direct_ranges\": {},",
-        capture.stats.direct_ranges
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"offscreen_targets\": {},",
-        capture.stats.offscreen_targets
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"shader_passes\": {},",
-        capture.stats.shader_passes
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"backdrop_copies\": {},",
-        capture.stats.backdrop_copies
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"pool_reuses\": {},",
-        capture.stats.pool_reuses
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"clip_passes\": {},",
-        capture.stats.clip_passes
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"box_shadow_passes\": {}",
-        capture.stats.box_shadow_passes
-    )
-    .unwrap();
-    writeln!(&mut json, "  }},").unwrap();
+    let stats = serde_json::to_string(&capture.stats).map_err(|error| error.to_string())?;
+    writeln!(&mut json, "  \"stats\": {stats},").unwrap();
     writeln!(&mut json, "  \"content\": {{").unwrap();
     writeln!(
         &mut json,

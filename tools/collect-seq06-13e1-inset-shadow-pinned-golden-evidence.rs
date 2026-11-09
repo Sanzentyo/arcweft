@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const FIXTURE_SOURCE: &str = "docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw";
 const REQUIRED_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED";
 const PINNED_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED";
 const NATIVE_BACKEND_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_NATIVE_BACKEND";
@@ -93,12 +94,30 @@ fn run() -> Result<(), String> {
         }
     }
 
+    build_fixture(&root, &out_dir)?;
+    let mut captured = Vec::new();
+    let mut failures = Vec::new();
     for &target in args.mode.targets() {
-        run_smoke_and_capture_commands(&root, &out_dir, target)?;
-        validate_existing_artifact_packet(&root, &out_dir, target)?;
+        match run_smoke_and_capture_commands(&root, &out_dir, target) {
+            Ok(()) => captured.push(target),
+            Err(error) => failures.push(error),
+        }
     }
-
-    Ok(())
+    if captured.len() == 2
+        && let Err(error) = compare_same_run(&out_dir)
+    {
+        failures.push(error);
+    }
+    for target in captured {
+        if let Err(error) = validate_existing_artifact_packet(&root, &out_dir, target) {
+            failures.push(error);
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("\n"))
+    }
 }
 
 fn print_help() {
@@ -477,6 +496,95 @@ fn write_review_decision(
     .map_err(|error| format!("write review decision: {error}"))
 }
 
+fn build_fixture(root: &Path, out_dir: &Path) -> Result<(), String> {
+    let source = root.join(FIXTURE_SOURCE);
+    let bundle = out_dir.join("fixture.awfb");
+    let output = cargo_command()
+        .current_dir(root)
+        .args(["run", "--locked", "-p", "arcweft-cli", "--", "bundle"])
+        .arg(&source)
+        .arg("--output")
+        .arg(&bundle)
+        .output()
+        .map_err(|error| format!("compile exact fixture AWFB: {error}"))?;
+    write_command_log(
+        &out_dir.join("fixture-build.log"),
+        "cargo run --locked -p arcweft-cli -- bundle FIXTURE --output fixture.awfb",
+        &output,
+    )?;
+    if !output.status.success() {
+        return Err("compiling the shared exact fixture failed; see fixture-build.log".to_owned());
+    }
+    let receipt = json!({
+        "schema": "arcweft.seq06.13e1.inset_box_shadow.bundle.v1",
+        "commit": git_head(root),
+        "source_sha256": sha256_file(&source).map_err(|error| error.to_string())?,
+        "bundle_sha256": sha256_file(&bundle).map_err(|error| error.to_string())?,
+    });
+    fs::write(
+        out_dir.join("fixture.json"),
+        serde_json::to_vec_pretty(&receipt).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("write exact fixture receipt: {error}"))
+}
+
+fn compare_same_run(out_dir: &Path) -> Result<(), String> {
+    const PNG: &str = "seq06_13e1_inset_box_shadow.candidate.png";
+    const OBSERVE: &str = "seq06_13e1_inset_box_shadow.observe.json";
+    let native = Target::Native.dir(out_dir);
+    let web = Target::Web.dir(out_dir);
+    let read_observe = |path: &Path| -> Result<Value, String> {
+        let bytes = fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
+        serde_json::from_slice(&bytes).map_err(|error| format!("parse {}: {error}", path.display()))
+    };
+    let native_observe = read_observe(&native.join(OBSERVE))?;
+    let web_observe = read_observe(&web.join(OBSERVE))?;
+    let artifact = native_observe["bundle_artifact"]
+        .as_str()
+        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| "native capture omitted its AWFB artifact identity".to_owned())?;
+    if web_observe["bundle_artifact"].as_str() != Some(artifact)
+        || native_observe["stats"] != web_observe["stats"]
+        || native_observe["stats"]["inset_shadows"].as_u64() != Some(2)
+        || native_observe["stats"]["outer_shadows"].as_u64() != Some(1)
+    {
+        return Err("native and Web captures differ in fixture identity or prepared scene".to_owned());
+    }
+    let native_png = native.join(PNG);
+    let web_png = web.join(PNG);
+    for path in [&native_png, &web_png] {
+        let dimensions = png_dimensions(path)?;
+        if dimensions.width != 320 || dimensions.height != 180 {
+            return Err(format!("{} is not a 320x180 capture", path.display()));
+        }
+    }
+    let output = tool_command("imq")
+        .arg("image")
+        .arg(&native_png)
+        .arg(&web_png)
+        .args(["--metrics", METRICS, "--format", "json"])
+        .output()
+        .map_err(|error| format!("compare same-run native/Web PNGs: {error}"))?;
+    let metrics_path = out_dir.join("native-web.imq.json");
+    fs::write(&metrics_path, &output.stdout)
+        .map_err(|error| format!("write {}: {error}", metrics_path.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "imq could not compare same-run native/Web PNGs: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let metrics: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("parse same-run native/Web metrics: {error}"))?;
+    let mse = metric_score(&metrics, "mse")?;
+    let mae = metric_score(&metrics, "mae")?;
+    if mse > MAX_MSE || mae > MAX_MAE {
+        return Err(format!("same-run native/Web PNG difference exceeds limits: mse={mse}, mae={mae}"));
+    }
+    println!("same-run native/Web PNG comparison passed: mse={mse}, mae={mae}");
+    Ok(())
+}
+
 fn run_smoke_and_capture_commands(
     root: &Path,
     out_dir: &Path,
@@ -642,8 +750,8 @@ fn web_capture_failure_code(output: &Output) -> &'static str {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    if text.contains("fully transparent seq06.13e.1 candidate") {
-        "transparent_candidate"
+    if text.contains("incomplete seq06.13e.1 candidate") {
+        "incomplete_candidate"
     } else if text.contains("WebGPU validation error") || text.contains("Error while parsing WGSL")
     {
         "webgpu_validation_error"
@@ -961,7 +1069,7 @@ fn write_packet_review_decision(
         "source_hashes": {
             "policy_git": git_hash_object_path(root, &root.join("fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow-exact-png-policy.json")),
             "fixture_doc_git": git_hash_object_path(root, &fixture_doc_path(root, target)),
-            "source_style_git": git_hash_object_path(root, &root.join("docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw")),
+            "source_style_git": git_hash_object_path(root, &root.join(FIXTURE_SOURCE)),
         },
         "artifacts": {
             "candidate": artifact_review_json(root, paths.candidate),

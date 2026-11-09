@@ -83,6 +83,8 @@ fixture-refresh-native-capture-check:
     @cargo test -p arcweft-cli --features native-capture --test check native_checked_in_visual_golden_artifacts_are_well_formed --quiet
 
 seq06-13e1-inset-shadow-native-capture out="target\\seq06.13e.1-inset-box-shadow-golden":
+    @New-Item -ItemType Directory -Force -Path "{{ out }}" | Out-Null
+    @cargo run --locked -p arcweft-cli -- bundle docs/fixtures/native-style/seq06.13e-inset-box-shadow-card.arcw --output "{{ out }}\fixture.awfb"
     @cargo +nightly -Zscript tools\capture-seq06-13e1-inset-shadow-native-frame.rs --root . --out-dir "{{ out }}"
 
 seq06-13e1-inset-shadow-pinned-native-golden out="target\\seq06.13e.1-inset-box-shadow-golden":

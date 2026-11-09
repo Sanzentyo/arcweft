@@ -38,3 +38,16 @@ pub style inset_shadow_exact {
         ]
     }
 }
+
+pub view ShadowCards() {
+    Stack(width = 320px, height = 180px) {
+        Panel(x = 24px, y = 24px, part = rounded_inset_shadow_card)
+        Panel(x = 176px, y = 40px, part = mixed_outer_inset_shadow_card)
+    }.style(@style.inset_shadow_exact)
+}
+flow main() -> String {
+    let cards = mount(ShadowCards());
+    wait(1s)
+    return "done"
+}
+entry cli @entry.main { goto @flow.main }

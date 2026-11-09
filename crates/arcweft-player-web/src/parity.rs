@@ -1,3 +1,5 @@
+pub mod inset_shadow;
+
 use arcweft_bundle::ArcweftBundle;
 use arcweft_player_scene::{
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest},

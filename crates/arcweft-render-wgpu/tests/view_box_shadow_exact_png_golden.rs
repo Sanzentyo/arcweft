@@ -66,6 +66,9 @@ fn seq06_13e1_inset_shadow_web_exact_png_packet_is_complete() {
 
 fn assert_exact_png_packet(target: Target) {
     let dir = target.artifact_dir();
+    let shared = dir.parent().expect("shared exact fixture directory");
+    let bundle = shared.join("fixture.awfb");
+    let bundle_receipt = shared.join("fixture.json");
     let candidate = dir.join("seq06_13e1_inset_box_shadow.candidate.png");
     let observe = dir.join("seq06_13e1_inset_box_shadow.observe.json");
     let metrics = dir.join("seq06_13e1_inset_box_shadow.imq.json");
@@ -74,6 +77,8 @@ fn assert_exact_png_packet(target: Target) {
     let capture_log = target.capture_log();
     let review = target.review_decision();
     let required = [
+        &bundle,
+        &bundle_receipt,
         &candidate,
         &observe,
         &metrics,
@@ -111,7 +116,17 @@ fn assert_exact_png_packet(target: Target) {
             &["ready_for_first_promotion_review", "promoted", "false"],
         );
     }
-    assert_json_contains(&observe, &["PASS_BOX_SHADOW", "box_shadow", "inset"]);
+    assert_json_contains(&bundle_receipt, &["source_sha256", "bundle_sha256"]);
+    assert_json_contains(
+        &observe,
+        &[
+            "BundleSession::from_awfb_bytes",
+            "bundle_artifact",
+            "PASS_BOX_SHADOW",
+            "box_shadow",
+            "inset",
+        ],
+    );
     assert_json_contains(
         &environment,
         &["environment", "imq", "arcweft", "candidate", "reference"],
