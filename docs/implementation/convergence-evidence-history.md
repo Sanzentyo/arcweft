@@ -16061,3 +16061,15 @@ Web IME生成器の standalone nightly script に旧 `ViewProgramResource.scroll
 同じ実arcw.exeで追加の再現を取った。キー付きScrollのText・Column・Buttonを含むfixtureはCLI check成功後、順序の正逆ともText target重複で描画を拒否された。Textを含まないキー付きButtonもButton target重複で失敗した。単独のPanelは生成targetに対する必須Surfaceが欠落して描画を拒否された。これらはScrollの範囲計算とは別の子ノードの所有境界で再現した。
 
 [検証原本](acceptance-evidence/task-retained-scroll-reverse.raw.zip) は25 entries、502332 bytes、SHA256 `0cf1bc564d5be1353c739b09ae6b7851a624bd90283f27140a41408196adb767`。列挙、全件、個別再試行、元EXEのhash、公開照合、追加再現を保持する。
+
+### キー付き反復の Text／Button と保存済み描画の認証 — 2026-11-09
+
+公開Source `77c2024abbde3d455e0bb2699fcae821cf4817fa`、親 `943f8fe3e2342532cd9689210b4cd5536ea11250`、tree `690056ae9041322a03af8b188043029f5c6c36bd`、公開patch SHA256 `1cc75ef07820dc75e9c809e7d6e161c6a0688cce806b0da21d137719ded671ab`。公開24 blobと照合した。評価されたtext blockをmount内の同じ出力でStyle・layout・paintへ渡す。以前はtext sourceで全blockを拾い、別の命令や反復の対象まで集約していた。Buttonの値は正確なノードを保持し、activation routeはセッションの入力投影でそのノードから選ぶ。
+
+初回は229実行、228 PASS／1 FAIL。復元で再発行するrouteをButtonの保存値に格納したため、既存の復元テストが失敗した。routeをノードのevent bindingに置き、値とrouteを分離したところ対象312件が全PASS。全target checkで台詞描画fixtureの旧Button参照を検出し、fixtureも正確なノードからrouteを引く形に移行した。最終treeの全workspace check／Clippy、Wasm lib check、構造gate、Native Tier 2 PNG／raw read-uri 1件は終了0。変更Rustのformatと差分検査も終了0。
+
+最終Sourceのlocked・全feature・12逆依存は2,469実行、2,467 PASS（31 slow）／2 FAIL／23 SKIP、613.833秒。CLIは712 PASS／2 FAIL／23 SKIP。旧固定run `751128cbe0ce4311bbe11fda887bf4ee5712bf50` と共通の2,467 IDでは、MCP起動待ちがFAILからPASSになった。2失敗は従来と同じpromotionのExpr8型検査で、solverに到達していない。Sourceと元EXE 92件の前後差分0。arcw.exeは306310144 bytes、SHA256 `5e06d509150bee4148f854c03dd75cd8a16d040724a3c11eb0a27e7a73d9fe11`。
+
+Native CLIは正順・逆順で420×74のScroll 2件、縦のoffset範囲各12px、クリップ後のButton高36px、キーごとのText／Button／Scroll IDとButtonの有効状態を確認した。同一text sourceを使う別blockの寸法と親子mountの描画順を保持し、公開AWFB saveのcold restore・再export一致と、text index／paint順／button nodeの改変の原子拒否を確認した。別の物理クリック試行はNative Agent Scriptのsemantic dispatcherで入力種別を拒否され、クリックによるpayloadの受信には達しなかった。名前付き `part = item_row` を反復Columnに足した実Native probeは `view_mount_0.item_row` の重複で失敗した。単独PanelのSurface欠落とNative/Webの実画像parityは引き続き対象となる。
+
+[検証原本](acceptance-evidence/task-retained-text-button-occurrences.raw.zip) は34 entries、1169666 bytes、SHA256 `9ad356cdc2a66eb0e785fdf80ba5ac3111b29698f8c07c08804de9b6083081d2`。初回失敗、最終gate、全逆依存、元バイナリhash、追加probeを保持する。
