@@ -16263,3 +16263,11 @@ Cargo treeとmetadataで逆依存17パッケージが一致し、全feature next
 
 [Web実行・計測・公開照合の原本](acceptance-evidence/task-awfb-accepted-artifact-web.raw.zip)は12件、42,595 bytes、SHA-256
 `7433d9fff3ad39c93612bab2b018d6ac789c252b685d86855891c83f7b2613d4`。
+
+同じSourceの全workspace・全target・全feature Clippyは終了0で警告を出力した。
+17パッケージを一括ビルドしたnextestは初回と再試行が終了101。Windowsのページファイル不足 `os error 1455` でrlibのmmapに失敗し、両方ともテスト開始前に停止した。
+保存復元、置換、Native入力、Webフレーム観測、バンドル実行を含む最初の分割は終了0で90件成功、0件スキップ。
+残りは同じ解決済み17パッケージと全feature指定から、Cargo metadataにあるテストバイナリを分割して実行する。
+
+[Clippy・一括ビルド失敗・最初の分割の原本](acceptance-evidence/task-awfb-accepted-artifact-rust-validation.raw.zip)は5件、849,025 bytes、SHA-256
+`c10e959318be4b3b79fe38c566fca3228b259112e13168304697589ce1b5547a`。
