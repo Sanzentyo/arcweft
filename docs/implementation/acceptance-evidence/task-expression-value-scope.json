@@ -2041,6 +2041,260 @@
             },
             "exactComparison": "carrier/terminal-transfer/repair/quality/generic-match-exact.receipt.json",
             "reconciledComparison": "carrier/terminal-transfer/repair/quality/generic-match-reconciled.receipt.json"
+          },
+          "qualityTerminal": {
+            "receipt": "carrier/terminal-transfer/repair/quality/final.receipt.json",
+            "sourceCommit": "30b1fd3a06d20b9f15580bf602297a76617fbdc1",
+            "remaining": 0,
+            "reversePackages": [
+              "arcweft-adapter-desktop",
+              "arcweft-adapter-sema",
+              "arcweft-agent-mcp",
+              "arcweft-agent-mcp-client",
+              "arcweft-agent-policy",
+              "arcweft-agent-protocol",
+              "arcweft-agent-repl",
+              "arcweft-agent-runner",
+              "arcweft-browser-bench",
+              "arcweft-bundle",
+              "arcweft-bundle-assets",
+              "arcweft-character-view",
+              "arcweft-cli",
+              "arcweft-compiler",
+              "arcweft-core",
+              "arcweft-debug-model",
+              "arcweft-debug-sqlite",
+              "arcweft-dialogue",
+              "arcweft-glyphon",
+              "arcweft-host-adapter",
+              "arcweft-lang-jit-cranelift",
+              "arcweft-lang-sema",
+              "arcweft-launch",
+              "arcweft-lsp",
+              "arcweft-player-native",
+              "arcweft-player-scene",
+              "arcweft-player-text-input",
+              "arcweft-player-web",
+              "arcweft-project",
+              "arcweft-project-loader",
+              "arcweft-rag",
+              "arcweft-render-text",
+              "arcweft-render-wgpu",
+              "arcweft-resource-manifest",
+              "arcweft-resource-model",
+              "arcweft-runtime-accelerator",
+              "arcweft-runtime-codegen",
+              "arcweft-runtime-driver",
+              "arcweft-runtime-host",
+              "arcweft-runtime-plan",
+              "arcweft-runtime-scheduler",
+              "arcweft-save",
+              "arcweft-test",
+              "arcweft-text-layout",
+              "arcweft-text-model",
+              "arcweft-tooling",
+              "arcweft-verify",
+              "arcweft-verify-lsp",
+              "arcweft-verify-oxiz",
+              "arcweft-verify-z3",
+              "arcweft-view"
+            ],
+            "stages": {
+              "workspace-check": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/workspace-check.log",
+                "summary": [
+                  "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 50s"
+                ]
+              },
+              "workspace-clippy": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/workspace-clippy.log",
+                "summary": [
+                  "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 00s"
+                ]
+              },
+              "owner-doctests": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/owner-doctests.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 0.74s",
+                  "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+                  "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s",
+                  "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s",
+                  "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+                ]
+              },
+              "core": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/core.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 17s",
+                  "Summary [ 114.002s] 2399 tests run: 2399 passed (1 slow), 0 skipped"
+                ]
+              },
+              "owners": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/owners.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 49s",
+                  "Summary [ 339.767s] 2606 tests run: 2606 passed (5 slow), 1 skipped"
+                ]
+              },
+              "runtime-host": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/runtime-host.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 37s",
+                  "Summary [   2.820s] 72 tests run: 72 passed, 0 skipped"
+                ]
+              },
+              "driver-scene": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/driver-scene.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 19s",
+                  "Summary [   2.805s] 278 tests run: 278 passed, 0 skipped"
+                ]
+              },
+              "runtime-codegen": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/runtime-codegen.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 36s",
+                  "Summary [   1.226s] 131 tests run: 131 passed, 0 skipped"
+                ]
+              },
+              "runtime-adapters": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/runtime-adapters.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 21s",
+                  "Summary [   0.675s] 79 tests run: 79 passed, 0 skipped"
+                ]
+              },
+              "save-bundle": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/save-bundle.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 15s",
+                  "Summary [ 255.184s] 365 tests run: 365 passed (2 slow), 0 skipped"
+                ]
+              },
+              "view-dialogue": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/view-dialogue.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 16s",
+                  "Summary [   2.480s] 291 tests run: 291 passed, 0 skipped"
+                ]
+              },
+              "resource-project": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/resource-project.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 17.87s",
+                  "Summary [   0.775s] 99 tests run: 99 passed, 0 skipped"
+                ]
+              },
+              "render-text": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/render-text.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 22s",
+                  "Summary [   1.297s] 147 tests run: 147 passed, 0 skipped"
+                ]
+              },
+              "render-wgpu": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/render-wgpu.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 29s",
+                  "Summary [   5.327s] 150 tests run: 150 passed, 17 skipped"
+                ]
+              },
+              "player-native": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/player-native.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 49s",
+                  "Summary [   1.033s] 59 tests run: 59 passed, 0 skipped"
+                ]
+              },
+              "player-web": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/player-web.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 03s",
+                  "Summary [   0.449s] 43 tests run: 43 passed, 0 skipped"
+                ]
+              },
+              "agent-execution": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/agent-execution.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 35.41s",
+                  "Summary [   7.886s] 180 tests run: 180 passed, 0 skipped"
+                ]
+              },
+              "tools-lsp": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/tools-lsp.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 40s",
+                  "Summary [ 156.053s] 412 tests run: 412 passed (1 slow), 0 skipped"
+                ]
+              },
+              "agent-transport": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/agent-transport.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 15.90s",
+                  "Summary [   0.407s] 46 tests run: 46 passed, 0 skipped"
+                ]
+              },
+              "analysis-data": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/analysis-data.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 14.13s",
+                  "Summary [   0.248s] 26 tests run: 26 passed, 0 skipped"
+                ]
+              },
+              "verify": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/verify.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 22s",
+                  "Summary [   0.272s] 31 tests run: 31 passed, 0 skipped"
+                ]
+              },
+              "cli-library-binaries": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/cli-library-binaries.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 03s",
+                  "Summary [  31.946s] 196 tests run: 196 passed, 0 skipped"
+                ]
+              },
+              "cli-integration": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/cli-integration.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 21.04s",
+                  "Summary [   8.405s] 30 tests run: 30 passed, 0 skipped"
+                ]
+              }
+            },
+            "nextest": {
+              "stages": 20,
+              "run": 7640,
+              "pass": 7640,
+              "fail": 0,
+              "skip": 18
+            },
+            "doctestPassed": 82,
+            "failedTestIds": []
           }
         }
       }
@@ -2048,8 +2302,8 @@
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 4480505,
-    "sha256": "a91c30b6736169538a48ab768976701c553b77c728f1dd5b60ee912b556cb18d",
+    "bytes": 4791095,
+    "sha256": "90c938021f696867a8cf887796832936e26344c6474ac2b34393c5eccc4c2f96",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -2368,7 +2622,26 @@
       "carrier/terminal-transfer/repair/quality/checkpoint.receipt.json": "9c98045c50d5032353c1341a54e0a7b72af93b5481523a3bd6bcfa37d02ded61",
       "carrier/terminal-transfer/repair/quality/generic-match-exact.receipt.json": "d70f7f64fa8220f064cdba6db0368277184404c64446747e7e0134412ce39562",
       "carrier/terminal-transfer/repair/quality/generic-match-reconciled.receipt.json": "15d409b195eabca6225b18068ecbdc0ca9b3ce3e41d0e502facbc3833e065155",
-      "carrier/terminal-transfer/repair/quality/owners.log": "d739eb41fb5b447ff428db76467e2dfe7bbf2c30f4a3eca5c4dbe732f05de163"
+      "carrier/terminal-transfer/repair/quality/owners.log": "d739eb41fb5b447ff428db76467e2dfe7bbf2c30f4a3eca5c4dbe732f05de163",
+      "carrier/terminal-transfer/repair/quality/runtime-host.log": "cd047d5602f4b160ca1cea3d83dd7859235b264ed08878c0771dd664611f96c5",
+      "carrier/terminal-transfer/repair/quality/driver-scene.log": "6b66bfd1a2c545997014120cd85c7070f6f158ec69bc29df7af5fb39bab878be",
+      "carrier/terminal-transfer/repair/quality/runtime-codegen.log": "528f310244947b975e83c0b980fe3616889cb81622079d3a35c34fdf6bd2a6ae",
+      "carrier/terminal-transfer/repair/quality/runtime-adapters.log": "3448f1834954756ee9442e67e4ac32cf34d1a488457d8d10d58bd38df6d4f49c",
+      "carrier/terminal-transfer/repair/quality/save-bundle.log": "31bffef58612f31fbaf2ccb2d20d275dec4c950d91b43f80a1e56610957c8813",
+      "carrier/terminal-transfer/repair/quality/view-dialogue.log": "7605c734414dae498864e6874938ebe9a2f0884c74b47deea9f1e6a05743e612",
+      "carrier/terminal-transfer/repair/quality/resource-project.log": "b7a8a817f4fa528f38c2aa01f77926993934168c121f5063a9d73a47d1baea16",
+      "carrier/terminal-transfer/repair/quality/render-text.log": "0865a2c8c3f9fa83ac5e2a1dba8b6d40db8697feb99580b90365030b563d8734",
+      "carrier/terminal-transfer/repair/quality/render-wgpu.log": "d01236b161ffc4ef7f5aa939a81ca79ab9645b6a8c3ff11f1791700552f6ae6b",
+      "carrier/terminal-transfer/repair/quality/player-native.log": "1c35972757ee9972a01ff1eb9f2c30abbec4100363708b6dc31fc1437f73d5ea",
+      "carrier/terminal-transfer/repair/quality/player-web.log": "1b2586d86e540a0f2fb7642749de78335c87246bc9dbfc72dc1b21a7e8c6a288",
+      "carrier/terminal-transfer/repair/quality/agent-execution.log": "af4bf82b75bac4cf5df8dcb94b4bf0d9b83210f1e6ad32bcba50a9340ecde198",
+      "carrier/terminal-transfer/repair/quality/tools-lsp.log": "aaa4a8b9b71c05b24959095f521982c225a7e3ab17f8a81704757d3f38d1349e",
+      "carrier/terminal-transfer/repair/quality/agent-transport.log": "72cd873b663869ab4aee080a3303226e864952b6d2f9fce630a02054c097c8e3",
+      "carrier/terminal-transfer/repair/quality/analysis-data.log": "1b5d0baa5f95c99917fb61725481169e236076e53d1587eb8540e0abbcefc7ac",
+      "carrier/terminal-transfer/repair/quality/verify.log": "336243944052910284222fd31e586f31b5b0790163c37df95e37b32b32c4dc13",
+      "carrier/terminal-transfer/repair/quality/cli-library-binaries.log": "84e2fe48e73f968b8407ea3e6834928cd60fb8dd2f096622913d5eeb6b663673",
+      "carrier/terminal-transfer/repair/quality/cli-integration.log": "068c0b201d0fafdd5c3756414223fd7d35a8cd2dcde84d9481ccf3e3bba988e4",
+      "carrier/terminal-transfer/repair/quality/final.receipt.json": "7d2a6857ca24a5eb046bb1e274904e564649b5da7e9e6455aa55e115e5d84ec4"
     }
   }
 }
