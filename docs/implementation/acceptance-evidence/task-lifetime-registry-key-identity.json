@@ -4915,5 +4915,955 @@
       ],
       "unresolvedStages": []
     }
+  },
+  "structuralPromotionReceiver": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-09T18:26:37.4255735Z",
+    "source": "78f80527f1a076022ae660762639daa59eff891e",
+    "base": "70b5ab712f8326ccf104a88474173d1d496156d7",
+    "publication": {
+      "version": 1,
+      "commit": "78f80527f1a076022ae660762639daa59eff891e",
+      "parent": "70b5ab712f8326ccf104a88474173d1d496156d7",
+      "tree": "6f59ab958030a84e3f1816aa267a1967418ed14a",
+      "remote": "78f80527f1a076022ae660762639daa59eff891e",
+      "blobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion.rs",
+          "gitBlob": "a1476b8fa81eaa8df635851bfce6de6398715ed9",
+          "sha256": "027005b1a314a2582348932757582768f38a210cfbf87e0512e2fb15a05234a3"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/receiver.rs",
+          "gitBlob": "1d70af9f3378e0fee1f78e82a0eff22c26e3ba0c",
+          "sha256": "804d0b8fb39c8742885dc219e07481ef1217d16c68de8e95c26bd9c19a701f39"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+          "gitBlob": "8fa15cdb25bf50cc6065f6667f84695d0b94fbd3",
+          "sha256": "e4d112b2e1ea1b5eb8f08d017ce86df4110ff48603cd3bb54ed70407645b8b4f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "gitBlob": "8b24a94565d4ff204680ecd51947cbfd5e1dd083",
+          "sha256": "0e81992a4de3d88725a18472f1943c7c8134e722e473fb0631fe9ab4683ee69f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/variant_payload/projection.rs",
+          "gitBlob": "73159af3c081727b729e9c019dc683e175daa44f",
+          "sha256": "9840f5924cc7d87570633b1db560b0d1d895aa591c74475ca24bc1b3bbf3fe69"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "gitBlob": "0885958b17791531918a7a28c1c6f592d84b61ea",
+          "sha256": "6b20bf6f8137e41f64e378d6a3f0cd23881edfbca0bdb118a257d2d59cbf23d7"
+        }
+      ]
+    },
+    "worktree": "Staged source changes tested on existing main with an unrelated untracked directory.",
+    "correction": "The previous check inspected only a root BorrowRef. Safe promotion now rejects the receiver when its semantic value storage can retain a borrow, including borrowed slices and stored payloads of instantiated declarations. A finite declaration fixed point tracks only parameters retained by members. Stored payload fields are obtained from their type owner. A proof reference leaves this check unchanged.",
+    "scope": "Static detection of structural borrows in safe receivers. The lifetime relation, capture and resource ownership evidence, proof obligations, and runtime transfer remain open. The absence of a structurally identified borrow never admits an executable promotion.",
+    "cli": {
+      "before": {
+        "version": 1,
+        "source": "70b5ab712f8326ccf104a88474173d1d496156d7",
+        "cliSha256": "9989e15cdd99725c2aa45b7c4109418b2747d4df50c40a6d639d9aa6bd3fcd0c",
+        "cases": [
+          {
+            "name": "audited-borrow",
+            "inputSha256": "106eab36ecba1a8482139e30945f8105fc0b84114da491cf73544974936d50f3",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "7fceba26d416aeb0f770659cf36c52aa5acea65f4938198943584177d8c10679",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-enum",
+            "inputSha256": "a525b83f38575b079087d90e10ebb473c17376155b070a4264f8e749efcef6be",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "19638dd8783c1ebf6086e9fa7697ece1dbd2d6afbea5858e1f4eed9cb4fb96d5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-explicit-proof",
+            "inputSha256": "abac19ca24632c1974a22d1a90e215d52e9ebb20e701d0b59e8ba466935258d1",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "93c82c324c6a7b2034006620bc5931cf21dcf05d9bcb841e2a3169c2fb0e7c22",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-option",
+            "inputSha256": "2f77ee6cbc04628beb6b64d46ab1c5fbebbf13e935a42d4ad6d2c2c8b38df0a3",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "578e56eaacde74d2dc26ce97694eddaf1e15f5009981b88e7806a11b1ef5458f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-root",
+            "inputSha256": "ed2c612f668ffd7410a03d6578ad10883adc8bfc5061887148e2b42dab0ef376",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "messages": [
+              "safe lifetime promotion requires an owned receiver"
+            ],
+            "reportSha256": "ac17c47af8e3e4e27a88ad6eabec23e808675ce52c3be823d748f11fc6d66e2a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-struct",
+            "inputSha256": "5f052ec56f1dbe5a456c73550f7de07bdf2574c5f13dc4594d0784b0b79f65a0",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "e7887d4fe4e121e04e100b9e1be0db6e004c7b76d9ad5f30dd5a5cb07fd8ef49",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "generic-field",
+            "inputSha256": "392c01515ba033a8e856a2603ddf3fc0678f26b261fac32ad39c622377b16680",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "ad025fff250c7f4387302e669b16a13115cd5b182c5ac67ed9acf2b75fb740de",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "owned-struct",
+            "inputSha256": "c51e7e12be3b1b3e952d7ac8b48d8c216e2df59762fdc54b7d558c30107f950c",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "64b76c1176f9129cb2b602992b2d4445524f81932b2c6627148f2b9d68a6fd49",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "phantom-argument",
+            "inputSha256": "c3aad64d457cd358fc46b0e3d998677fc26803a513d677c8ef5d0c944a29444d",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "19d0bb733a26549a3166bc0ff3c6f822b2f4f9ce98019b510a642e5c62a1908f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursive-borrow",
+            "inputSha256": "87392cf0af474a8ff9818ef0209ceca5826df78cb043a27ad1a16bdfb06f8d19",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "cc747af71ccca657c5d1b93f24766c26c622764dba33010cc97207634fc484c3",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursive-owned",
+            "inputSha256": "4eed2618635df093e0f764c661e7ab0f7a6d57f684064cd09e285643c98209c8",
+            "exit": 1,
+            "stage": "type-check",
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "reportSha256": "30aa0f6b82cd8941e68ba2c86cf416c7c00ee949e764ba9e9b0683920f28057a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "after": {
+        "version": 1,
+        "base": "70b5ab712f8326ccf104a88474173d1d496156d7",
+        "cliSha256": "b9468bc0e40df123292f1c62b80958bb71d70efab7036e032d08875a6c5ed459",
+        "cases": [
+          {
+            "name": "audited-borrow",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "value.promote_unchecked('flow)",
+            "inputSha256": "106eab36ecba1a8482139e30945f8105fc0b84114da491cf73544974936d50f3",
+            "reportSha256": "7fceba26d416aeb0f770659cf36c52aa5acea65f4938198943584177d8c10679",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-enum",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "a525b83f38575b079087d90e10ebb473c17376155b070a4264f8e749efcef6be",
+            "reportSha256": "e263063a6534a542a769630a59b8af1112cc66f38206972a24c270bdc9827e31",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-explicit-proof",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "abac19ca24632c1974a22d1a90e215d52e9ebb20e701d0b59e8ba466935258d1",
+            "reportSha256": "f22fadaafccf1f87b640825dee2b70321109e7249541e6ff9eebc1e5156befa6",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-explicit-proof",
+            "command": "verify",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "abac19ca24632c1974a22d1a90e215d52e9ebb20e701d0b59e8ba466935258d1",
+            "reportSha256": "f22fadaafccf1f87b640825dee2b70321109e7249541e6ff9eebc1e5156befa6",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-option",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "2f77ee6cbc04628beb6b64d46ab1c5fbebbf13e935a42d4ad6d2c2c8b38df0a3",
+            "reportSha256": "a758cb372729c5310dae7888fcee84f82bbe41a80bbf1586cc068418f99470a5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-root",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "ed2c612f668ffd7410a03d6578ad10883adc8bfc5061887148e2b42dab0ef376",
+            "reportSha256": "ac17c47af8e3e4e27a88ad6eabec23e808675ce52c3be823d748f11fc6d66e2a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrow-struct",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "5f052ec56f1dbe5a456c73550f7de07bdf2574c5f13dc4594d0784b0b79f65a0",
+            "reportSha256": "4d5a705a28fc297f33aacd4e53a3347ade4da54fe4e535b483ce40a249314ca6",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "generic-field",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "392c01515ba033a8e856a2603ddf3fc0678f26b261fac32ad39c622377b16680",
+            "reportSha256": "ca87002d4993559d810b80a10425f4f5d717702ef678653f5c36624e282e823d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "owned-struct",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "value.promote('flow)",
+            "inputSha256": "c51e7e12be3b1b3e952d7ac8b48d8c216e2df59762fdc54b7d558c30107f950c",
+            "reportSha256": "64b76c1176f9129cb2b602992b2d4445524f81932b2c6627148f2b9d68a6fd49",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "phantom-argument",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "value.promote('flow)",
+            "inputSha256": "c3aad64d457cd358fc46b0e3d998677fc26803a513d677c8ef5d0c944a29444d",
+            "reportSha256": "19d0bb733a26549a3166bc0ff3c6f822b2f4f9ce98019b510a642e5c62a1908f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "phantom-argument",
+            "command": "verify",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "value.promote('flow)",
+            "inputSha256": "c3aad64d457cd358fc46b0e3d998677fc26803a513d677c8ef5d0c944a29444d",
+            "reportSha256": "19d0bb733a26549a3166bc0ff3c6f822b2f4f9ce98019b510a642e5c62a1908f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursive-borrow",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "87392cf0af474a8ff9818ef0209ceca5826df78cb043a27ad1a16bdfb06f8d19",
+            "reportSha256": "24370e7c0c97191772f2b54bb5a9912776215699280e6b864abbbf8dc3396ed7",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "recursive-owned",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "value.promote('flow)",
+            "inputSha256": "4eed2618635df093e0f764c661e7ab0f7a6d57f684064cd09e285643c98209c8",
+            "reportSha256": "30aa0f6b82cd8941e68ba2c86cf416c7c00ee949e764ba9e9b0683920f28057a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "linear": [
+          {
+            "name": "linear-owned",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "value.promote('flow)",
+            "inputSha256": "6696039bdcb72b61c21688712e866f456dfc8088fcb1c73f00be43b9d4700765",
+            "reportSha256": "9b2c5a5ab1f83d301b25fe9aee2a4059155b73f17ef4fd5c40dc8584ba8ae5cc",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "linear-borrowed",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "value",
+            "inputSha256": "03d9b6eaec781e35a14c760f5079c91b39418b5a5a2a4c1339b891f452f769ce",
+            "reportSha256": "96d3f4360247d2c132897313209a038096782817e571386d8120f4f9c6bd6ccb",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    },
+    "tests": {
+      "focused": 8,
+      "structuralCases": 14,
+      "log": "structural-promotion-receiver-78f80527/sema-focused-worklist.log",
+      "initial": "The first focused compile reported an unresolved SourceSpan import and an inaccessible traversal that also visits payload owner metadata. The revised call uses the existing source crate and projects stored payload fields through the owning type.",
+      "initialLog": "structural-promotion-receiver-78f80527/sema-focused.log"
+    },
+    "worklist": {
+      "draft": {
+        "version": 1,
+        "cliSha256": "4dafa022ee563e2a59b3adf1c16af0653cfa709a301b6c95d579d0228aee3b8a",
+        "exit": 1,
+        "stage": "type-check",
+        "codes": [
+          "sema.lifetime.promotion_receiver_limit"
+        ],
+        "messages": [
+          "lifetime promotion receiver ownership analysis exceeded its type work limit"
+        ],
+        "inputSha256": "6696039bdcb72b61c21688712e866f456dfc8088fcb1c73f00be43b9d4700765",
+        "reportSha256": "fd515b9906c89844b84aaaf7e6bfa4333b489963b99c064dca86b99e2ccc87d5"
+      },
+      "declarations": 181,
+      "correction": "The first draft rescanned every reached declaration and exceeded the type work limit on the acyclic owned control. Only dependents of a changed summary are revisited now. The same owned input reaches the existing transfer diagnostic, and changing only the leaf to a borrow rejects the original receiver."
+    },
+    "ownership": {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/receiver.rs",
+      "crate": "arcweft-lang-sema",
+      "classification": "production, zero embedded test lines",
+      "lines": 380,
+      "bytes": 13571,
+      "disposition": "The source admission query owns one temporary bounded fixed point over declaration member types and a complete semantic storage projection. The resolved symbol and type tables remain authoritative. No exported API, new dependency or runtime schema was needed."
+    },
+    "checkpointQuality": {
+      "receipt": "structural-promotion-receiver-78f80527/quality/checkpoint.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 1445,
+        "pass": 1445,
+        "fail": 0,
+        "skip": 0
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 53.62s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 50.87s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 36.12s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 01s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.12s",
+            "Summary [  67.042s] 1445 tests run: 1445 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-structural-promotion-receiver.raw.zip",
+      "sha256": "7f77fcdf62f214a4420f4b6a2a123cd8f918b61e3ff770705536f86f38f6ff3e",
+      "bytes": 2517148,
+      "entries": [
+        {
+          "entry": "structural-promotion-receiver-78f80527/source.publication.json",
+          "bytes": 1716,
+          "sha256": "c6e7a8a7e9f52e5514e9d3b3619723906b318fcd38eae5981db30fe8fe0f3b6a"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/source.reviewed.patch",
+          "bytes": 24369,
+          "sha256": "a402549f4ce5da9c250a62aacad3ca7d582cbf55cb998fc2703d44e01a1f6086"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/baseline.receipt.json",
+          "bytes": 6095,
+          "sha256": "905a10992ca9e80e30bdda19a2af1af43deff302eabb42a4a6f4b23f30a56124"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/changed.receipt.json",
+          "bytes": 7352,
+          "sha256": "6fa7f6fa810187ece8a8af1c926aef85f7d0ac54c74b5d44137361f24a200d39"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/sema-focused.log",
+          "bytes": 80361,
+          "sha256": "f120663808b6c19579f6485a546545fb4423da22e0d9f518731981137d9cb50c"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/sema-focused-retry.log",
+          "bytes": 83798,
+          "sha256": "c49ba08f16e334981b2af932926aade0db9c9a2ded66edf845029293eb4e8ac2"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/sema-focused-worklist.log",
+          "bytes": 83935,
+          "sha256": "dafb5bfbc59df248dd0b7ee9595770d735f85e4e763c0f1843bfeec2d66f83b6"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/compare-cli.ps1",
+          "bytes": 3673,
+          "sha256": "51762213ea020549ff7f2c3af171f537a8909956b887874fded7b59c913193bf"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/run-quality.ps1",
+          "bytes": 4265,
+          "sha256": "d68846fb53b6d87e1cf24c917ab996473e19beeac91ba8ba004a5b544649191f"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/rdeps.log",
+          "bytes": 4982,
+          "sha256": "1b6e596577e5467179d6fb0c9f9b2c1be3f9a40dc284530ed1593f2e15498fba"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/audited-borrow.arcw",
+          "bytes": 181,
+          "sha256": "106eab36ecba1a8482139e30945f8105fc0b84114da491cf73544974936d50f3"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/audited-borrow.before.json",
+          "bytes": 1175,
+          "sha256": "7fceba26d416aeb0f770659cf36c52aa5acea65f4938198943584177d8c10679"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/audited-borrow.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-enum.arcw",
+          "bytes": 97,
+          "sha256": "a525b83f38575b079087d90e10ebb473c17376155b070a4264f8e749efcef6be"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-enum.before.json",
+          "bytes": 1157,
+          "sha256": "19638dd8783c1ebf6086e9fa7697ece1dbd2d6afbea5858e1f4eed9cb4fb96d5"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-enum.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-explicit-proof.arcw",
+          "bytes": 105,
+          "sha256": "abac19ca24632c1974a22d1a90e215d52e9ebb20e701d0b59e8ba466935258d1"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-explicit-proof.before.json",
+          "bytes": 1201,
+          "sha256": "93c82c324c6a7b2034006620bc5931cf21dcf05d9bcb841e2a3169c2fb0e7c22"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-explicit-proof.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-option.arcw",
+          "bytes": 66,
+          "sha256": "2f77ee6cbc04628beb6b64d46ab1c5fbebbf13e935a42d4ad6d2c2c8b38df0a3"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-option.before.json",
+          "bytes": 1165,
+          "sha256": "578e56eaacde74d2dc26ce97694eddaf1e15f5009981b88e7806a11b1ef5458f"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-option.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-root.arcw",
+          "bytes": 58,
+          "sha256": "ed2c612f668ffd7410a03d6578ad10883adc8bfc5061887148e2b42dab0ef376"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-root.before.json",
+          "bytes": 1151,
+          "sha256": "ac17c47af8e3e4e27a88ad6eabec23e808675ce52c3be823d748f11fc6d66e2a"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-root.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-struct.arcw",
+          "bytes": 92,
+          "sha256": "5f052ec56f1dbe5a456c73550f7de07bdf2574c5f13dc4594d0784b0b79f65a0"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-struct.before.json",
+          "bytes": 1165,
+          "sha256": "e7887d4fe4e121e04e100b9e1be0db6e004c7b76d9ad5f30dd5a5cb07fd8ef49"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-struct.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/generic-field.arcw",
+          "bytes": 94,
+          "sha256": "392c01515ba033a8e856a2603ddf3fc0678f26b261fac32ad39c622377b16680"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/generic-field.before.json",
+          "bytes": 1165,
+          "sha256": "ad025fff250c7f4387302e669b16a13115cd5b182c5ac67ed9acf2b75fb740de"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/generic-field.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/owned-struct.arcw",
+          "bytes": 91,
+          "sha256": "c51e7e12be3b1b3e952d7ac8b48d8c216e2df59762fdc54b7d558c30107f950c"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/owned-struct.before.json",
+          "bytes": 1161,
+          "sha256": "64b76c1176f9129cb2b602992b2d4445524f81932b2c6627148f2b9d68a6fd49"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/owned-struct.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/phantom-argument.arcw",
+          "bytes": 101,
+          "sha256": "c3aad64d457cd358fc46b0e3d998677fc26803a513d677c8ef5d0c944a29444d"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/phantom-argument.before.json",
+          "bytes": 1179,
+          "sha256": "19d0bb733a26549a3166bc0ff3c6f822b2f4f9ce98019b510a642e5c62a1908f"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/phantom-argument.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-borrow.arcw",
+          "bytes": 108,
+          "sha256": "87392cf0af474a8ff9818ef0209ceca5826df78cb043a27ad1a16bdfb06f8d19"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-borrow.before.json",
+          "bytes": 1181,
+          "sha256": "cc747af71ccca657c5d1b93f24766c26c622764dba33010cc97207634fc484c3"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-borrow.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-owned.arcw",
+          "bytes": 107,
+          "sha256": "4eed2618635df093e0f764c661e7ab0f7a6d57f684064cd09e285643c98209c8"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-owned.before.json",
+          "bytes": 1177,
+          "sha256": "30aa0f6b82cd8941e68ba2c86cf416c7c00ee949e764ba9e9b0683920f28057a"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-owned.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/initial/before-lint-refinement/quality.receipt.json",
+          "bytes": 3943,
+          "sha256": "849e429c5b81bb4c11d58da9e0437d217b6dd711dff352d5c3cc8d3d5d5bdcfd"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/initial/before-lint-refinement/quality-workspace-clippy.log",
+          "bytes": 9278220,
+          "sha256": "204455e41a5f3959d4d6abc365ae36bc9f8f917708a1ce80087fe08ac3382f02"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/initial/before-worklist/quality.receipt.json",
+          "bytes": 2700,
+          "sha256": "a584b88005d650246196f0c9f70ee1c61814f0a4f1aeb0546ca5d6728380e31a"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/initial/before-worklist/quality-workspace-clippy.log",
+          "bytes": 9272530,
+          "sha256": "7f4cee59986a172383b2e45e51fb8f4944cc8d090e7bf97c481ad45b2a613536"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/initial/linear-owned.before-worklist.receipt.json",
+          "bytes": 491,
+          "sha256": "6196789c22a6ebfad5075a79faaaaf538db61e9bf306cc941066622e7ac0cb14"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/initial/linear-owned.before-worklist.json",
+          "bytes": 1198,
+          "sha256": "fd515b9906c89844b84aaaf7e6bfa4333b489963b99c064dca86b99e2ccc87d5"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/linear-owned.arcw",
+          "bytes": 5992,
+          "sha256": "6696039bdcb72b61c21688712e866f456dfc8088fcb1c73f00be43b9d4700765"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/linear-borrowed.arcw",
+          "bytes": 5993,
+          "sha256": "03d9b6eaec781e35a14c760f5079c91b39418b5a5a2a4c1339b891f452f769ce"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/audited-borrow.check.after.json",
+          "bytes": 1175,
+          "sha256": "7fceba26d416aeb0f770659cf36c52aa5acea65f4938198943584177d8c10679"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/audited-borrow.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-enum.check.after.json",
+          "bytes": 1151,
+          "sha256": "e263063a6534a542a769630a59b8af1112cc66f38206972a24c270bdc9827e31"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-enum.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-explicit-proof.check.after.json",
+          "bytes": 1193,
+          "sha256": "f22fadaafccf1f87b640825dee2b70321109e7249541e6ff9eebc1e5156befa6"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-explicit-proof.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-explicit-proof.verify.after.json",
+          "bytes": 1193,
+          "sha256": "f22fadaafccf1f87b640825dee2b70321109e7249541e6ff9eebc1e5156befa6"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-explicit-proof.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-option.check.after.json",
+          "bytes": 1159,
+          "sha256": "a758cb372729c5310dae7888fcee84f82bbe41a80bbf1586cc068418f99470a5"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-option.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-root.check.after.json",
+          "bytes": 1151,
+          "sha256": "ac17c47af8e3e4e27a88ad6eabec23e808675ce52c3be823d748f11fc6d66e2a"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-root.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-struct.check.after.json",
+          "bytes": 1159,
+          "sha256": "4d5a705a28fc297f33aacd4e53a3347ade4da54fe4e535b483ce40a249314ca6"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/borrow-struct.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/generic-field.check.after.json",
+          "bytes": 1159,
+          "sha256": "ca87002d4993559d810b80a10425f4f5d717702ef678653f5c36624e282e823d"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/generic-field.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/owned-struct.check.after.json",
+          "bytes": 1161,
+          "sha256": "64b76c1176f9129cb2b602992b2d4445524f81932b2c6627148f2b9d68a6fd49"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/owned-struct.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/phantom-argument.check.after.json",
+          "bytes": 1179,
+          "sha256": "19d0bb733a26549a3166bc0ff3c6f822b2f4f9ce98019b510a642e5c62a1908f"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/phantom-argument.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/phantom-argument.verify.after.json",
+          "bytes": 1179,
+          "sha256": "19d0bb733a26549a3166bc0ff3c6f822b2f4f9ce98019b510a642e5c62a1908f"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/phantom-argument.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-borrow.check.after.json",
+          "bytes": 1173,
+          "sha256": "24370e7c0c97191772f2b54bb5a9912776215699280e6b864abbbf8dc3396ed7"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-borrow.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-owned.check.after.json",
+          "bytes": 1177,
+          "sha256": "30aa0f6b82cd8941e68ba2c86cf416c7c00ee949e764ba9e9b0683920f28057a"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/recursive-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/linear-owned.check.after.json",
+          "bytes": 1173,
+          "sha256": "9b2c5a5ab1f83d301b25fe9aee2a4059155b73f17ef4fd5c40dc8584ba8ae5cc"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/linear-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/linear-borrowed.check.after.json",
+          "bytes": 1179,
+          "sha256": "96d3f4360247d2c132897313209a038096782817e571386d8120f4f9c6bd6ccb"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/cli/linear-borrowed.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-workspace-check.log",
+          "bytes": 111935,
+          "sha256": "2a8621ac4969aede06ca7e3e5b28eb19ff9e8d8da05001a537b039b57902f43d"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-workspace-clippy.log",
+          "bytes": 9272552,
+          "sha256": "650328f11bb08652d3b4de3d87dd731bbe0eaea69d860c302faad6a34d3e1c81"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-structure.log",
+          "bytes": 66637,
+          "sha256": "dbf89f1767b04213c480a3c86cd469916681f1339abec989cd7419c0b63ba06f"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-owner-doctests.log",
+          "bytes": 88122,
+          "sha256": "8c0e2d33cfd1f07e2c02de9db28d7a371c6b2488d353b7fc9ad4cf5485daf180"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-cli-build.log",
+          "bytes": 92751,
+          "sha256": "cb01fe972a50bcafff417df22b55ba7979b1cb8b70b47eb8e3db5d4164e7be2c"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/quality-owners.log",
+          "bytes": 315239,
+          "sha256": "fba52526a87ea0050c6a613b074c6789cb29f19d8e4116be8c08a16bce4e4f38"
+        },
+        {
+          "entry": "structural-promotion-receiver-78f80527/quality/checkpoint.receipt.json",
+          "bytes": 5037,
+          "sha256": "fa868dfa5fd0d7bc03dff61ef5c5e6c2c276a08a2bcd8e287fde579759db8c31"
+        }
+      ]
+    }
   }
 }
