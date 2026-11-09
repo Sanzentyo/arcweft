@@ -2213,6 +2213,672 @@
           "resumedAtUtc": "2026-11-09T15:58:50.7758499Z"
         }
       }
+    },
+    "lifetimeActivationAndAuditFlow": {
+      "version": 1,
+      "recordedAtUtc": "2026-11-09T17:11:49.4706833Z",
+      "sourceCommit": "2690a91a30cfdb84858f78cf1251f8a09a308604",
+      "base": "8a94cdd3ffc28c4b08493fc4f0a9d020a3604bd6",
+      "publication": {
+        "version": 1,
+        "commit": "2690a91a30cfdb84858f78cf1251f8a09a308604",
+        "parent": "8a94cdd3ffc28c4b08493fc4f0a9d020a3604bd6",
+        "tree": "1667f53a1a149016f2d9e4e3d36b60e3da296396",
+        "remote": "2690a91a30cfdb84858f78cf1251f8a09a308604",
+        "blobs": [
+          {
+            "path": "crates/arcweft-compiler/tests/scoped_defer.rs",
+            "gitBlob": "5005a73ce831a36b1a4a8f955d108825d36714b3",
+            "sha256": "faf2dbbc893a54b9aff7460823fbb9cdbb831b5106814d89aa19723c933ddfaf"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/expr/lifetime_promotion.rs",
+            "gitBlob": "5525673625e60ccb0b000eda801652aa043971e4",
+            "sha256": "0530064b2349b66701259deff2e94decc71e12d9289d07cb09cc90a52d208809"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests/call.rs",
+            "gitBlob": "ca917bf0ccf3ae0510394c2a29c802834d217f07",
+            "sha256": "96790751b7dfe1bbb795f63a54c9ab67c80e2060f71031afa3abe53b1a05800c"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/source_index/block_projection.rs",
+            "gitBlob": "bf8657c7d5cfec9707f5f13dc90a6d9fb7d4e454",
+            "sha256": "db62f3d56c72b78df9a68b4f80d6ea6b971e2c35f485daf034dceac8da4de399"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/source_index/block_projection/thread_control.rs",
+            "gitBlob": "a1534c9bd22b9b354e1e3a0d465535df5b6c53a7",
+            "sha256": "43e02d3d4ffc4646247f86fe34c59205209e0a8acf20dad304bb3247b8cb2c4b"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+            "gitBlob": "59124bb09a1302dec00dcc4c4374c59fef286100",
+            "sha256": "26347a3429b83605f2857c62e6606dffe53ee5d2b841fa73dd1a57530c10001e"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+            "gitBlob": "3faf8fb85dba7090af6a026c5bb7df175911f45a",
+            "sha256": "63fb2cc59917e2585688bfdcaac1ae5d7b772d9fa1245f700f02d16d2d90e44b"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion.rs",
+            "gitBlob": "5455ad4b2374bb416ead89d23bd122e1e9153c8c",
+            "sha256": "b2112f5a164c2617c611e4a6c596efb5aa7c82a97a4528c3706781b097939240"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+            "gitBlob": "44c9fec1c8e970c7212dcbfdeb6383834fd71e26",
+            "sha256": "d1b7b291ad61183cbdc07970875f54db5a770437a74357108814173e0fa1db28"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+            "gitBlob": "03362292881c87c6749673183ebee6b2313d2aa7",
+            "sha256": "5972d05e01b9927681ba7a7824445a613d9b28730e2271b2caeaee04902c814c"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/model/registry.rs",
+            "gitBlob": "3aace71824d58dd7717bb653aaaa43db79443b86",
+            "sha256": "b19c371ad39e23fc22008fe37cb7e650d4cca6ab822b64559a2b2b93765a4d00"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+            "gitBlob": "bafc52973037b3ea27a7f5232f0620f18a9dd0c9",
+            "sha256": "383a6d5b0e613e73524a7f365fe12fc814a870d48b25bb6e837e4648b4870c18"
+          },
+          {
+            "path": "crates/arcweft-lang-syntax/src/parser/statement.rs",
+            "gitBlob": "33bf50d5dea41b4e98a3c815600a346ddfae5eee",
+            "sha256": "62fed34c2936e2fdf1695843ad0d5efe8b755908c711c7ad1e8ecc698266ad68"
+          },
+          {
+            "path": "docs/01-language/proofs-and-unsafe-audits.md",
+            "gitBlob": "899b4903e92f1d097fc710905fe0daccc213f3b7",
+            "sha256": "b3bb0ba193856c9578976fef87516b34c78fe7961e099c7b43b8221890dd8788"
+          }
+        ]
+      },
+      "worktree": "Tested the recorded source patch in main. An unrelated untracked directory was present.",
+      "scope": "Promotion source and lexical admission through reached Flow or Line, exact receiver type, and audit isolation. The executable promotion operation and verifier obligation remain open.",
+      "correction": "The old promotion projection handled only unresolved dotted paths. A literal or computed receiver was lowered as an ordinary selected value and reached unknown_target. The new projection retains both typed HIR shapes and their exact receiver. Registry inference and promotion share the same reached Flow or Line query. Safe promotion rejects a bare borrow even with a registered proof. A child Thread and a closure do not borrow an enclosing audit.",
+      "auditedFlowCorrection": "The original audit body parser dropped the enclosing Flow statement context. After the grammar fix, the source freeze still attempted to validate the nested Flow if as an ordinary conditional. Both if and if-let now use the same exact branch validation for Thread bodies, including direct Flow items; the previous If/IfLet source-evidence fallback was removed. The accepted ordinary conditional path is preserved.",
+      "runtime": {
+        "test": "unsafe_audit_flow_branch_waits_for_cleanup_before_resuming_the_audit",
+        "suitePassed": 32,
+        "testLog": "lexical-activation-2690a91a/compiler-scoped-defer-final.log",
+        "checks": [
+          "selected if-let binding and no other branch",
+          "cleanup then 40 ms blocked with zero operations",
+          "60 ms resumes exactly once",
+          "Native and canonical decoded AWBC",
+          "public AWBC save/restore after each step",
+          "drain budget 128"
+        ]
+      },
+      "priorAttempts": {
+        "firstOwnerPass": 2,
+        "firstOwnerFail": 2,
+        "receiverFormCorrectedPass": 7,
+        "firstRuntimePass": 31,
+        "firstRuntimeFail": 1,
+        "syntaxOnlyFailure": "hir.lower.project_publish",
+        "beforeGrammarFailure": "hir.lower.project_transaction",
+        "functionControlBeforeExit": 0
+      },
+      "cli": {
+        "version": 1,
+        "base": "8a94cdd3ffc28c4b08493fc4f0a9d020a3604bd6",
+        "beforeCli": "035ef45bdc1c95c12d504642245422280985e51b686c0e0eb25c21cc7c43bebc",
+        "afterCli": "818a3706f8870ebc1b3eb31db63cb26c592cb23dcf974a154a97f67e6b8f2307",
+        "results": [
+          {
+            "name": "flow-reached",
+            "before": [
+              "sema.call.unknown_target"
+            ],
+            "after": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "beforeExit": 1,
+            "afterExit": 1,
+            "offendingSource": "42i64.promote('flow)",
+            "sourceSha256": "068b1c937c0b17b91bc7d67bd86542842f87a94c52b43f8a43071a73ecf82a4a"
+          },
+          {
+            "name": "line-not-reached",
+            "before": [
+              "sema.call.unknown_target"
+            ],
+            "after": [
+              "sema.lifetime.promotion_target"
+            ],
+            "beforeExit": 1,
+            "afterExit": 1,
+            "offendingSource": "'line",
+            "sourceSha256": "88def6f98642483b3d159bdf9465cac149b825913fd0461e457aac775c508927"
+          },
+          {
+            "name": "thread-flow-not-reached",
+            "before": [
+              "sema.call.unknown_target"
+            ],
+            "after": [
+              "sema.lifetime.promotion_target"
+            ],
+            "beforeExit": 1,
+            "afterExit": 1,
+            "offendingSource": "'flow",
+            "sourceSha256": "827fa0282dfca2fc38e025467b1d859ceabda3a47bfc8a2ce820ed5574c5db15"
+          },
+          {
+            "name": "borrowed-receiver",
+            "before": [
+              "sema.call.unknown_target"
+            ],
+            "after": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "beforeExit": 1,
+            "afterExit": 1,
+            "offendingSource": "value",
+            "sourceSha256": "c8cc1868a80ad93715fab96a65277ffe87660772063a7db83a3301b195701feb"
+          },
+          {
+            "name": "proof-does-not-own",
+            "before": [
+              "sema.call.unknown_target"
+            ],
+            "after": [
+              "sema.lifetime.promotion_receiver"
+            ],
+            "beforeExit": 1,
+            "afterExit": 1,
+            "offendingSource": "value",
+            "sourceSha256": "6484ed0e4c26e6287d926961e8e76b65d1be2e62d5965557f5a8520d2683c473"
+          },
+          {
+            "name": "thread-audit-not-reached",
+            "before": [
+              "sema.call.unknown_target"
+            ],
+            "after": [
+              "sema.lifetime.promotion_audit"
+            ],
+            "beforeExit": 1,
+            "afterExit": 1,
+            "offendingSource": "value.promote_unchecked('flow)",
+            "sourceSha256": "03dcb50f0b8df581792d942233b2bcdaa17c938e914d6ba0197d0571fb01f9ee"
+          },
+          {
+            "name": "outside-audit",
+            "before": [
+              "sema.call.unknown_target"
+            ],
+            "after": [
+              "sema.lifetime.promotion_audit"
+            ],
+            "beforeExit": 1,
+            "afterExit": 1,
+            "offendingSource": "42i64.promote_unchecked('flow)",
+            "sourceSha256": "812e45e328b5646e4a1feb0b0697405469d4d3539640bfa72371f803b8df983a"
+          },
+          {
+            "name": "ordinary",
+            "before": [],
+            "after": [],
+            "beforeExit": 0,
+            "afterExit": 0,
+            "offendingSource": null,
+            "sourceSha256": "2781195f0ce2ac7c52caa07aca48c767b20268bd00cd51d0898caf81db55f869"
+          }
+        ],
+        "nestedAuditControl": {
+          "beforeCode": "hir.lower.project_transaction",
+          "afterExit": 0,
+          "sourceSha256": "f36036340de95e55a227425cc8a68188e2129af25c7023e18930b7bf178b7110",
+          "reportSha256": "61cee6426a2db6055ee150f239dfc508c3fb92e030ca63c66b64c88c2732902b"
+        }
+      },
+      "checkpointQuality": {
+        "receipt": "lexical-activation-2690a91a/quality/checkpoint.receipt.json",
+        "reversePackages": [
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-lang-hir",
+          "arcweft-lang-sema",
+          "arcweft-lang-syntax",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-web",
+          "arcweft-project",
+          "arcweft-project-loader",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-test",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3"
+        ],
+        "nextest": {
+          "run": 3178,
+          "pass": 3178,
+          "fail": 0,
+          "skip": 8
+        },
+        "stages": {
+          "fmt": {
+            "exit": 0,
+            "summary": []
+          },
+          "workspace-check": {
+            "exit": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 12s"
+            ]
+          },
+          "workspace-clippy": {
+            "exit": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 04s"
+            ]
+          },
+          "structure": {
+            "exit": 0,
+            "summary": [
+              "blocking violations: 0"
+            ]
+          },
+          "owner-doctests": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 57.87s",
+              "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+              "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s",
+              "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s"
+            ]
+          },
+          "cli-build": {
+            "exit": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 6m 18s"
+            ]
+          },
+          "owners": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 13s",
+              "Summary [ 189.248s] 3178 tests run: 3178 passed (2 slow), 8 skipped"
+            ]
+          }
+        }
+      },
+      "ownership": "The parser owns the enclosing body grammar. The HIR source index keeps shared conditional branch evidence in block_projection, where source, scope, binding generations, and child owners are already validated. The checked resolver and reached activation query supply promotion inputs. No dependency, runtime opcode, format version, or host boundary changed.",
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-lifetime-activation-audit-flow.raw.zip",
+        "bytes": 1051985,
+        "sha256": "333946afb60770a6021c1541f7e2e5752027232dcc2115c9130f2a4466e6b75e",
+        "entries": [
+          {
+            "entry": "lexical-activation-2690a91a/source.publication.json",
+            "bytes": 3610,
+            "sha256": "587a0c20e844565931fe277e1919ce93ffcb8574f3226f66e993e55066c802ef"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/source.reviewed.patch",
+            "bytes": 43567,
+            "sha256": "84d681a158f06781b4406e40e32156593762e553ba455e99196065597900e475"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/focused.log",
+            "bytes": 87963,
+            "sha256": "d85f2b5b1f45f5041443932f045e150ec0d924e8b2ce5d5556ebddab09314227"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/focused-r2.log",
+            "bytes": 83985,
+            "sha256": "7ab494a5e495b746dbab622b24acca4db9c3c5c9ca35b7d0515a7fa58ac8fd9f"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/compiler-scoped-defer.log",
+            "bytes": 95676,
+            "sha256": "d3372598cb98b40dd630468a4f32bcc8fb3a98aacceabcbfa5850b443ba9bc3d"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/compiler-scoped-defer-r2.log",
+            "bytes": 94121,
+            "sha256": "e313428e3ae8294adcc7c1733b0ffdca0d7c0a67cf71749533f6594df02d6316"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/compiler-scoped-defer-final.log",
+            "bytes": 93550,
+            "sha256": "4df5f2a1178f8214d973be8759c3b5b3f72855c72a0cb9ebba7f94311ac112f2"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/baseline.receipt.json",
+            "bytes": 3397,
+            "sha256": "ff4b800e6f677fc8a5230b11fa8e26c1b4a017becaddc5d44ee1d071e11f24de"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/changed.receipt.json",
+            "bytes": 3443,
+            "sha256": "5b63d48bf34564b1e2d2bac626a238cf9aa5bc140e32ba7456ea4500b2f221d3"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli-comparison.receipt.json",
+            "bytes": 3380,
+            "sha256": "d33bfd5d77a857a32e3914fa813fa3097b05e6dc14c812b912aa38d321610d7f"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/run-cli.ps1",
+            "bytes": 1970,
+            "sha256": "13b22dfe190554f7b98be4c8284c4e6eb20ff1656c88656d620667204c653e22"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/compare-cli.ps1",
+            "bytes": 3589,
+            "sha256": "7f8c75091ddad24da06236208156843318d5ed43879efaaa49a5c5be8fb4f44d"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/run-quality.ps1",
+            "bytes": 4382,
+            "sha256": "acc7b661d64b14298d7f9a0ebd48165fde2d1f95c645f867537a4d34480690e2"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/all-rdeps.log",
+            "bytes": 19338,
+            "sha256": "5d0885f4a5d28612ea8e2ef6f46f7c6f26015f356715e25c89c4437a38eda2b5"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/audit-if.arcw",
+            "bytes": 139,
+            "sha256": "97d2fb1e9468f54a8b09c9d27e44f45be3e6af9420ee751996b9fc7a70d20b86"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/audit-if-control.arcw",
+            "bytes": 114,
+            "sha256": "f36036340de95e55a227425cc8a68188e2129af25c7023e18930b7bf178b7110"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/audit-if-function-control.arcw",
+            "bytes": 112,
+            "sha256": "41a343df7fddab581963cc5ba09c6e6ea55c931e19c9a0cddd7bed530406976c"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-audit-if.json",
+            "bytes": 461,
+            "sha256": "72205428fd0dcc571e84b3711d438b8d3f8d5fa56090e050c4ba46cd46bd0b5d"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-audit-if-control.json",
+            "bytes": 461,
+            "sha256": "72205428fd0dcc571e84b3711d438b8d3f8d5fa56090e050c4ba46cd46bd0b5d"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-audit-if-function-control.json",
+            "bytes": 2478,
+            "sha256": "f35ba01c0a624ac67f61f7cea27d6b15d59b20de45a705d1ff2bd7236a63f6d8"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-audit-if-control.json",
+            "bytes": 2424,
+            "sha256": "61cee6426a2db6055ee150f239dfc508c3fb92e030ca63c66b64c88c2732902b"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-audit-if-control.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/flow-reached.arcw",
+            "bytes": 46,
+            "sha256": "068b1c937c0b17b91bc7d67bd86542842f87a94c52b43f8a43071a73ecf82a4a"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-flow-reached.json",
+            "bytes": 1171,
+            "sha256": "ae0cdb86db2f35fb6de4fd94f9b4634a767cb6c9267e959f337c6c4d26e03f2a"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-flow-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-flow-reached.json",
+            "bytes": 1161,
+            "sha256": "2caf257d3e33c88404ddf3f120c0bf5bd1057e63c5ceb60f8c80ed86783efdda"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-flow-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/line-not-reached.arcw",
+            "bytes": 46,
+            "sha256": "88def6f98642483b3d159bdf9465cac149b825913fd0461e457aac775c508927"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-line-not-reached.json",
+            "bytes": 1187,
+            "sha256": "bb4a6eca79cbee7d6a64713cde26a4eba19bf4d05c63d3013746f06abe44c007"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-line-not-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-line-not-reached.json",
+            "bytes": 1169,
+            "sha256": "ae8cda892811ac1d860dc19f9cd6924998ce39e29a146fd9cf65c157675b95b9"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-line-not-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/thread-flow-not-reached.arcw",
+            "bytes": 57,
+            "sha256": "827fa0282dfca2fc38e025467b1d859ceabda3a47bfc8a2ce820ed5574c5db15"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-thread-flow-not-reached.json",
+            "bytes": 1215,
+            "sha256": "24fda0d2913f96287f15ca70a761f5a3409815f70f1cf3d833536b4e1f06dfb9"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-thread-flow-not-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-thread-flow-not-reached.json",
+            "bytes": 1197,
+            "sha256": "763f8ab18243f9f177e86e2788090e1f2f77459b6d475276f4f775e7225de374"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-thread-flow-not-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/borrowed-receiver.arcw",
+            "bytes": 57,
+            "sha256": "c8cc1868a80ad93715fab96a65277ffe87660772063a7db83a3301b195701feb"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-borrowed-receiver.json",
+            "bytes": 1191,
+            "sha256": "92282b0f6667c342034deb3af77d5db751bdf254fc81d1c32d61233e418f785c"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-borrowed-receiver.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-borrowed-receiver.json",
+            "bytes": 1175,
+            "sha256": "a4c83d01ab1a4dc622848ac1bcce8794f0d19a34befad74f633ffa79ff6aafe0"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-borrowed-receiver.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/proof-does-not-own.arcw",
+            "bytes": 96,
+            "sha256": "6484ed0e4c26e6287d926961e8e76b65d1be2e62d5965557f5a8520d2683c473"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-proof-does-not-own.json",
+            "bytes": 1195,
+            "sha256": "1d69e1ee556a1d477ccbf58bb328abdbb02f6c11d2f315a24909cd4f81277ef3"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-proof-does-not-own.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-proof-does-not-own.json",
+            "bytes": 1179,
+            "sha256": "a817cf398023954a334558ffc3a6dc8667b86889a83588531477a0015c3c7207"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-proof-does-not-own.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/thread-audit-not-reached.arcw",
+            "bytes": 137,
+            "sha256": "03dcb50f0b8df581792d942233b2bcdaa17c938e914d6ba0197d0571fb01f9ee"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-thread-audit-not-reached.json",
+            "bytes": 1233,
+            "sha256": "da62214bdac3426243db743be335660bc236cc260f9d7d8af68a59f487ca0a8d"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-thread-audit-not-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-thread-audit-not-reached.json",
+            "bytes": 1215,
+            "sha256": "409bc3d3fda0b0399783280e43b11735fddc10a095af89109db4a106a7864da0"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-thread-audit-not-reached.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/outside-audit.arcw",
+            "bytes": 56,
+            "sha256": "812e45e328b5646e4a1feb0b0697405469d4d3539640bfa72371f803b8df983a"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-outside-audit.json",
+            "bytes": 1185,
+            "sha256": "f285f958029294115d32b25150e3e5a7247a983d2286d9e2909ce3854431938b"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-outside-audit.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-outside-audit.json",
+            "bytes": 1167,
+            "sha256": "fc7eec4351dc62f608110471564e71b5c32b82213ab6968081caacc190905945"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-outside-audit.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/ordinary.arcw",
+            "bytes": 37,
+            "sha256": "2781195f0ce2ac7c52caa07aca48c767b20268bd00cd51d0898caf81db55f869"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-ordinary.json",
+            "bytes": 201,
+            "sha256": "41c064cc95e379a6fdfea0ce705eeb71c4858ffeb1dd241b98e68650450f2767"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/baseline-ordinary.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-ordinary.json",
+            "bytes": 201,
+            "sha256": "41c064cc95e379a6fdfea0ce705eeb71c4858ffeb1dd241b98e68650450f2767"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/cli/changed-ordinary.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/fmt.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/workspace-check.log",
+            "bytes": 135040,
+            "sha256": "c6de5f30a2f43f324651d035c7df25411d277d1e22671a27d7bb0604b52cb266"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/workspace-clippy.log",
+            "bytes": 9279026,
+            "sha256": "3b115136a7504c8485460d101740e53a1a7a5f30671f5f1dc7450dba6674055d"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/structure.log",
+            "bytes": 66637,
+            "sha256": "c4f984c2b40610206fcf42e8e64502df81df54f4cb78adb93967908b1fd03174"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/owner-doctests.log",
+            "bytes": 88833,
+            "sha256": "aa687e611cf06f2abb2735a5cb6e13fc491d1f57e31504cafbb6fede557b2006"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/cli-build.log",
+            "bytes": 113716,
+            "sha256": "3baab2fc602b539d1455618de332eabbe28e7b6f644ab552caa49048db4c1451"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/owners.log",
+            "bytes": 579138,
+            "sha256": "9d0b461fdcffa2c4c8854fe39c24e833898a4f3d78ad2f64d4f153bcc0e29cc5"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/checkpoint.receipt.json",
+            "bytes": 6916,
+            "sha256": "12ca85429e0c0994eddcf94fab49a42dcf8a8fd504a50a3f5ce999c17ff68c5d"
+          }
+        ]
+      }
     }
   },
   "lineDeferRegistryProbe": {
