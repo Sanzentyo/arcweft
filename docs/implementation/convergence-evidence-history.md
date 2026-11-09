@@ -16200,3 +16200,16 @@ Panel内の相対座標へ直すと、話者・本文の確定座標は `(85.6,4
 
 [検証原本](acceptance-evidence/task-web-demo-frame-provenance.raw.zip)は16件、1,091,731 bytes、SHA-256
 `c85939908f307a1dad808e4384956084ce3d81b80eb865b666a4bd1dd27a68c1`。以前の[起動と再生成の原本](acceptance-evidence/task-web-demo-regeneration.raw.zip)を保持する。
+
+### Webデモの描画変更に対するRust検証 — 2026-11-09
+
+対象のSourceは `f2e5a28fffb9cd2d2bbe702aea30f7c466d478c0`。テスト列挙とビルドは同じ変更を作業ツリーに置いた親 `8403b15cd6143e10b7a93b5cda1bbdfd1481f281` から開始し、実行中に公開した。
+終端確認時のHEADは証拠記録 `8fd84d858b0bb925d79ad2ece732cbab6b479a0a` で、追跡中の差分はなく、未追跡の既存 `%SystemDrive%/` があった。
+
+Cargo treeとmetadataの逆依存は6パッケージ。`rdeps(=arcweft-render-wgpu)` の全feature nextestは終了100で、1,089件中1,087件成功、2件失敗、40件スキップだった。
+画像の表示範囲・作者指定IDと実行時IDを照合する `arcweft-player-web::parity` も通過した。
+失敗は既知のCLI promotion検証 `verify_json_records_required_solver_checks` と `verify_json_reports_missing_promotion_proof` の2件。
+`arcweft-render-web` はNativeのテスト選択に該当せず、前節のWasm buildで確認した。逆依存6パッケージの全target・全feature Clippyは終了0で警告を出力した。
+
+[列挙・結果・公開照合の原本](acceptance-evidence/task-web-demo-frame-reverse.raw.zip)は6件、676,642 bytes、SHA-256
+`27d6b8d41c7676bd94d4f96bb6d04d25034d127a8c7d1c4cd7815a631b1b81dc`。
