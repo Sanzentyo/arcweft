@@ -502,7 +502,8 @@ fn build_fixture(root: &Path, out_dir: &Path) -> Result<(), String> {
     let output = cargo_command()
         .current_dir(root)
         .args(["run", "--locked", "-p", "arcweft-cli", "--", "bundle"])
-        .arg(&source)
+        // Match the native capture recipe's source spelling in the AWFB.
+        .arg(FIXTURE_SOURCE)
         .arg("--output")
         .arg(&bundle)
         .output()

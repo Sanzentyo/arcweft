@@ -16136,3 +16136,21 @@ Wasm buildとbindgen、両環境の実キャプチャー、Rust fmt、JS構文�
 [検証原本](acceptance-evidence/task-inset-shadow-shared-capture.raw.zip)は28件、92,946 bytes、
 SHA-256 `d662703e8a06019b60e122be26cb855670056e08e06790ac5df12df5536e16f1`。
 実画像と比較、観測、環境、初回失敗、元バイナリ照合、公開結果を保持した。
+
+### 共有キャプチャー収集ツールの終端結果 — 2026-11-09
+
+検証基点は `3aad7860f2ef65884b3fbdc4272850d56a9e93a0`。収集ツールを非固定環境で実行し、同一AWFBのNative／Web比較はMSE／MAEとも0。
+両方の既存基準を独立に比較し、Native 0.181370／0.317298とWeb 0.138949／0.256160を `baseline_drift` と判定して終了1。
+補助のWebデモは、チェックイン済み `web/demo.awfb` に `artifact_fingerprint` がないため起動時に停止した。
+元ソースからの再生成も `web/src/main.arcw` の廃止済みImage宣言4件を現行文法が拒否した。
+Nativeの低水準GPU smokeは収集ツール内と別のnextestの両方で1／1 PASS。exact packetの2テストはコンパイルと列挙を確認した。
+
+同じCLIバイナリと同じソースで、相対／絶対／Windowsのverbatim入力パスだけを変更すると、AWFBのSHA-256はそれぞれ
+`f586969f9b02184c293edddf8629357dde14e137eb686652f88bd9cc7a70223c`、
+`349e182ea6997111de7dba6f3e94fdfb2ef1f3d716d4d0c5dedf420da83a1dde`、
+`5eb8612260ffa0f3a4e3d1a91fe29738ba4480a16e87891ffe31424a77cd931a` となった。
+収集ツールを既存Nativeレシピと同じ相対パスに統一して再実行し、単独ビルドと同じ `f586969…`、直接比較のMSE／MAE 0、両基準の差分超過を確認した。
+公開ソースとバイナリが異なるWebデモの起動結果は別項目に記録した。
+
+[検証原本](acceptance-evidence/task-inset-shadow-shared-collector.raw.zip)は20件、46,078 bytes、SHA-256
+`f373ae89214f9a455394a3c878d84f82bee01fc8e99bb229d9baca1dbdf8ba3e`。
