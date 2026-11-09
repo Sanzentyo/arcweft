@@ -1921,6 +1921,108 @@
               "arcweft-view"
             ],
             "tree": "carrier/terminal-transfer/repair/quality/rdeps-tree.log"
+          },
+          "qualityCheckpoint": {
+            "receipt": "carrier/terminal-transfer/repair/quality/checkpoint.receipt.json",
+            "sourceCommit": "30b1fd3a06d20b9f15580bf602297a76617fbdc1",
+            "remaining": 19,
+            "reversePackages": [
+              "arcweft-adapter-desktop",
+              "arcweft-adapter-sema",
+              "arcweft-agent-mcp",
+              "arcweft-agent-mcp-client",
+              "arcweft-agent-policy",
+              "arcweft-agent-protocol",
+              "arcweft-agent-repl",
+              "arcweft-agent-runner",
+              "arcweft-browser-bench",
+              "arcweft-bundle",
+              "arcweft-bundle-assets",
+              "arcweft-character-view",
+              "arcweft-cli",
+              "arcweft-compiler",
+              "arcweft-core",
+              "arcweft-debug-model",
+              "arcweft-debug-sqlite",
+              "arcweft-dialogue",
+              "arcweft-glyphon",
+              "arcweft-host-adapter",
+              "arcweft-lang-jit-cranelift",
+              "arcweft-lang-sema",
+              "arcweft-launch",
+              "arcweft-lsp",
+              "arcweft-player-native",
+              "arcweft-player-scene",
+              "arcweft-player-text-input",
+              "arcweft-player-web",
+              "arcweft-project",
+              "arcweft-project-loader",
+              "arcweft-rag",
+              "arcweft-render-text",
+              "arcweft-render-wgpu",
+              "arcweft-resource-manifest",
+              "arcweft-resource-model",
+              "arcweft-runtime-accelerator",
+              "arcweft-runtime-codegen",
+              "arcweft-runtime-driver",
+              "arcweft-runtime-host",
+              "arcweft-runtime-plan",
+              "arcweft-runtime-scheduler",
+              "arcweft-save",
+              "arcweft-test",
+              "arcweft-text-layout",
+              "arcweft-text-model",
+              "arcweft-tooling",
+              "arcweft-verify",
+              "arcweft-verify-lsp",
+              "arcweft-verify-oxiz",
+              "arcweft-verify-z3",
+              "arcweft-view"
+            ],
+            "stages": {
+              "workspace-check": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/workspace-check.log",
+                "summary": [
+                  "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 50s"
+                ]
+              },
+              "workspace-clippy": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/workspace-clippy.log",
+                "summary": [
+                  "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 00s"
+                ]
+              },
+              "owner-doctests": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/owner-doctests.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 0.74s",
+                  "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+                  "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s",
+                  "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s",
+                  "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+                ]
+              },
+              "core": {
+                "exitCode": 0,
+                "log": "carrier/terminal-transfer/repair/quality/core.log",
+                "summary": [
+                  "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 17s",
+                  "Summary [ 114.002s] 2399 tests run: 2399 passed (1 slow), 0 skipped"
+                ]
+              }
+            },
+            "nextest": {
+              "stages": 1,
+              "run": 2399,
+              "pass": 2399,
+              "fail": 0,
+              "skip": 0
+            },
+            "doctestPassed": 82,
+            "failedTestIds": []
           }
         }
       }
@@ -1928,8 +2030,8 @@
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 3497046,
-    "sha256": "70d226988a73fdab63b62b61deefca1035cd02bec65e0434a55b8751885264dc",
+    "bytes": 4392526,
+    "sha256": "80921097f740b828a0e779ebe67590bc0748cbb146ba63e0bb6e98b499dba002",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -2240,7 +2342,12 @@
       "carrier/terminal-transfer/repair/draft/pure-carrier-dead-try-nested.before-prefix.log": "2610528fe1e95cf6b01be364f0cc60ccaf51be85f6db4b4a31ae1062cfdb055a",
       "carrier/terminal-transfer/repair/draft/pure-carrier-dead-try.before.log": "5b7ff26316e75fa6ec0cae4a97c40974c727dee03619d602bc1c4371f91ac6cc",
       "carrier/terminal-transfer/repair/draft/pure-residual-only-nested.before-prefix.log": "da6378e5c6dec694c02d7bbc48981c065525ba2e70a0efa80dd8cc8c799376bd",
-      "carrier/terminal-transfer/repair/draft/pure-residual-only.before-prefix.log": "47149ff833958a9750bf0dcf86f9d3aca1ec1e26e4863439bca3dd05a24a2960"
+      "carrier/terminal-transfer/repair/draft/pure-residual-only.before-prefix.log": "47149ff833958a9750bf0dcf86f9d3aca1ec1e26e4863439bca3dd05a24a2960",
+      "carrier/terminal-transfer/repair/quality/workspace-check.log": "83bd3d449cedba00938d2d0d67ca6087e72f6b27bfae363baf7852081c9472a5",
+      "carrier/terminal-transfer/repair/quality/workspace-clippy.log": "d54506213894f32ca5aa548ed1a3fde535011f2e77599ad7e669d08fc8045856",
+      "carrier/terminal-transfer/repair/quality/owner-doctests.log": "b42ccaa0c267e08954d5a5394faa32dce7da5c58d999bb9d4b02768a04c112c2",
+      "carrier/terminal-transfer/repair/quality/core.log": "b37b418edb187085de32e845f7e188888a33eb9c4b26ef5463aaff4e2aa95ddb",
+      "carrier/terminal-transfer/repair/quality/checkpoint.receipt.json": "9c98045c50d5032353c1341a54e0a7b72af93b5481523a3bd6bcfa37d02ded61"
     }
   }
 }
