@@ -862,8 +862,8 @@
     },
     "raw": {
       "path": "docs/implementation/acceptance-evidence/task-owned-promotion-admission.raw.zip",
-      "bytes": 22735,
-      "sha256": "cea7e048ab964584bb6de281dfc09c356567bdf2a4c5f99d16918cae20f49616",
+      "bytes": 876302,
+      "sha256": "98118330763067d38769f750c59ff6559da753e1e62724d7f7a336c0f038e199",
       "entryDrift": 0,
       "entries": [
         {
@@ -1150,6 +1150,201 @@
           "entry": "replay-30b1fd3/controls/legacy-solver-oxiz.verify.stderr.log",
           "bytes": 0,
           "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/publication.json",
+          "bytes": 4214,
+          "sha256": "4df3ac443e7fb034271012bc5806def61302c804baff72eaffef6d1d77fb8378"
+        },
+        {
+          "entry": "static-operands-fe488636/structure.log",
+          "bytes": 66637,
+          "sha256": "d3d42784df444defc04389f19bb8a4a2afbc2df7e2ee8d13c9ad1825ea628311"
+        },
+        {
+          "entry": "static-operands-fe488636/targeted-before-prose.log",
+          "bytes": 83659,
+          "sha256": "9c9c74b14d42f28a83d6a24f754e3e5ace97843937bf83ab9161f3525a05dcf0"
+        },
+        {
+          "entry": "static-operands-fe488636/targeted-first-control.log",
+          "bytes": 84853,
+          "sha256": "d2dead3f0c91255cd9cde49b0bdad4236f1c40a316e20f0628ec205b214d0c30"
+        },
+        {
+          "entry": "static-operands-fe488636/graph.log",
+          "bytes": 10935,
+          "sha256": "7bcfeed8225ab2283af2c1895d683cd76cb92e9985c03e8d035bbfd03f1a8b9a"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-method-registry.arcw",
+          "bytes": 272,
+          "sha256": "e4dad984f6a83b74cbef07208239d8862fb2f1f88fbb8555a91761b5ffebcbc8"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-method-registry.baseline.log",
+          "bytes": 391,
+          "sha256": "2d9a18b7a0ac4b1e8b4acb70f7d221d6886e1af90b6df149e86cfa0d065fcb22"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-method-value.arcw",
+          "bytes": 265,
+          "sha256": "b4d96182dd38842a8ac42aacf1b48864e6d94aee6f6945687430c9ade9e5440b"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-method-value.baseline.log",
+          "bytes": 385,
+          "sha256": "6373b9a9aca8c5ba9a89eb526a00ace7e99e78056cd4ae6dd104eccb19fae0eb"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-method-bound-value.arcw",
+          "bytes": 299,
+          "sha256": "c42128e4b1e34662f0fd887679ade36040658f3d1a489afd5856f7385682bfc6"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-method-bound-value.baseline.log",
+          "bytes": 397,
+          "sha256": "1e2717308738c6f62907722f4778a31c8182426b71c19de18ef2538da497cfa5"
+        },
+        {
+          "entry": "static-operands-fe488636/control/different-method-same-args.arcw",
+          "bytes": 276,
+          "sha256": "aee00912554011d5efba34a3bdef1b7adaa0859abbbed7915d19287122a203ec"
+        },
+        {
+          "entry": "static-operands-fe488636/control/different-method-same-args.baseline.log",
+          "bytes": 403,
+          "sha256": "739a7d880e0351209249698addf45b359cd06d6df814f4fc848396578c212b32"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-free-function-name.arcw",
+          "bytes": 265,
+          "sha256": "c291bb4799882ae3351aaa856a5279e58da69975fefb6a8e4ddacc60e71e4d6e"
+        },
+        {
+          "entry": "static-operands-fe488636/control/same-free-function-name.baseline.log",
+          "bytes": 604,
+          "sha256": "ac3592dba26f5f56b1fc213d75ee61ae1311ad514195cbcb6f4a7685ae61d8a3"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/receipt.json",
+          "bytes": 5302,
+          "sha256": "d6b99920ab2d0b4d9704e64e3fbc658ebf12b01ffef24f1d33a84cd961242acd"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/owned-control.json",
+          "bytes": 3602,
+          "sha256": "604cfdb42bc7382b54703554c398fb8422b21f636a3ca435abf3fa02e5f84323"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/owned-control.stderr.log",
+          "bytes": 1063,
+          "sha256": "2ee1fe6ef3e90093f6ea2a7cafb1bb75911d67c555bcbb33d18c29b9adebf6f4"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/owned-receiver-pending.json",
+          "bytes": 1325,
+          "sha256": "5d658c4a03f211ae2d9e43d51dadd35dc60d61bda5c018612cb584ee17d77a69"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/owned-receiver-pending.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/explicit-known-proof-pending.json",
+          "bytes": 1349,
+          "sha256": "7999df81ae9b484b2a537f7a88fc7563438d8d79c666ecff6c6d770a4a45fbfc"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/explicit-known-proof-pending.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/enclosing-audit-pending.json",
+          "bytes": 1339,
+          "sha256": "e1860735f80d4e40c4767c2224f17482e096b28af48d4c82d3e06c11d1ffe5cd"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/enclosing-audit-pending.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/bare-obsolete.json",
+          "bytes": 1209,
+          "sha256": "a65418ca0e573f72a1664130457662e917dbc7627621274d117c2cef6027a16f"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/bare-obsolete.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/selector-optional.json",
+          "bytes": 1189,
+          "sha256": "6e8d833ae624268d4bf3347cab6eb08821393f200dea1b2c5d72e86504383209"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/selector-optional.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/selector-member.json",
+          "bytes": 1181,
+          "sha256": "e7bce9d3df4944db007ba788efd611e6f6fe35eb40e839b165386973a4cb3814"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/selector-member.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/unknown-proof.json",
+          "bytes": 1185,
+          "sha256": "3b74a75cc9b5fd595a3ff121d0b38a149d71c532eff3e80d3aec0de9a2243234"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/unknown-proof.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/outside-audit.json",
+          "bytes": 1209,
+          "sha256": "db9b3a6fcc8e526bc9414cf0986b4fba908aab2b4f01e84019aea9ef17ab47cb"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/outside-audit.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/same-free-function-name.json",
+          "bytes": 201,
+          "sha256": "41c064cc95e379a6fdfea0ce705eeb71c4858ffeb1dd241b98e68650450f2767"
+        },
+        {
+          "entry": "static-operands-fe488636/cli/same-free-function-name.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/workspace-check.log",
+          "bytes": 112030,
+          "sha256": "0f0cdc319088155b7dac8078b250bba5d39719f14c578807e723987e6126fb82"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/workspace-clippy.log",
+          "bytes": 9272673,
+          "sha256": "c2a4b317b55b91c13ba7e02e82c61c666429cf245522e479088ded90e3edd171"
+        },
+        {
+          "entry": "static-operands-fe488636/quality/cli-build.log",
+          "bytes": 92901,
+          "sha256": "42090ffac52301d990f1074758a0542d91287586c745cdac9e3a8206a855d62a"
         }
       ]
     },
@@ -1481,6 +1676,288 @@
         }
       ],
       "archivePrefix": "replay-30b1fd3"
+    },
+    "staticOperandAdmission": {
+      "version": 1,
+      "sourceCommit": "fe488636a23c0f0eaab0e097874576b0318b44f6",
+      "publication": {
+        "version": 1,
+        "base": "f6c8da2cf1569f9cc32599f63ccb19ad47dc6bf1",
+        "commit": "fe488636a23c0f0eaab0e097874576b0318b44f6",
+        "tree": "13860a1b530ce81dc3da652ebf4736f07a27c1b6",
+        "remoteHead": "fe488636a23c0f0eaab0e097874576b0318b44f6",
+        "blobs": [
+          {
+            "path": "crates/arcweft-lang-hir/src/expr.rs",
+            "blob": "8ad95364177d678c234aac2e6b294ed658df5597",
+            "sha256": "0eeaafeaeff7dca1fd0854ada26a1053778c17bb3c305ff0acf20a338babcaf4"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/expr/lifetime_promotion.rs",
+            "blob": "83924b3940f8c0a006ab77ed2c1863a2ffcf077a",
+            "sha256": "130661b2232ce3cac120808d2996e24ec65dfc47f6e2f244e9d82fd1b5e1ef16"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests/call.rs",
+            "blob": "6b86bd856e4dd8a1449f0605da040e9ec939f553",
+            "sha256": "632a248c5fe3baba3e848bbb18ee18e1c3d47a96f4169df15162cfc5c30cc39d"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/checked_application.rs",
+            "blob": "3ec0dcc69a37fef8c81dc167f361ec1ce65a2e3c",
+            "sha256": "fcadad928d13af8b5396c5a6e539182e99fad41e4d99d8d94f03b3ed6419db38"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+            "blob": "d3c9b5cf17ed19bace485d90fadbbdaba87b40ca",
+            "sha256": "a6bf4190e69497552a67c5dda984c1d5f1e13a562c09dd2e8a28bf5c771fa0a9"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/resolver/outcome.rs",
+            "blob": "0a120be3d39147060eae3234cef48d58e5e32556",
+            "sha256": "7320bc30d85bce01361c49700f2728ff4b5abfc7486387d7a92fae96f2c15fbd"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/resolver/preparation.rs",
+            "blob": "f1e36fe8a4c98a698945568688dc2a7481c91b0c",
+            "sha256": "f1eebd908947d94084e2639c7305c70e6a5d521cd03a332d2ab43bce3253b6a1"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/resolver/prepared_identity.rs",
+            "blob": "b8a2d125c3d888df742d64b850429da47aa20f6c",
+            "sha256": "25055016763e6f8924b6be2e1970402eb1c9ac42d9033ab3d9508a9f2a3743f3"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/resolver/resolution.rs",
+            "blob": "5dc78a7a3b7828b9de0949b72840e832163c3001",
+            "sha256": "e0d7ab54ddcc70611e9482fd3b797bb1af40aa19a8049d0e67fbed0e12e14040"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+            "blob": "d32a4c031735f9bd060e45b68b94e77fb4408614",
+            "sha256": "2b325f218edcac3ff5e478bb7f8d9076fdef6208c5b4ee620a98c846d12475cb"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs",
+            "blob": "71aba49bb384e78c40dc9792147fa9660bfb5689",
+            "sha256": "3f8153dae92d91dd1db8f8c82eab9536decf5905f2c01e75f747234a0d0e80c2"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+            "blob": "b6eedf7fcc130fbac71ba2e7776806611b42c09f",
+            "sha256": "a860dd5db1414fca2f85fd495a0f9a4af63c30c495ca5afc3c2b9c0d3d0bdfa9"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion.rs",
+            "blob": "e7e4d3abc61ae566c5bd3696fbcd6a83a8a886f8",
+            "sha256": "ca6e0b08f22968c34e417636733ff2828ff58c310aafdd579075ca1b7940174c"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+            "blob": "eef1fcb9443d5a4f5b2d7d972ff04cdacd7b164f",
+            "sha256": "39cda7c74c99d6818e071dc7da2b6ce5e968aa57deb9252b09920011c1c54706"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+            "blob": "f5c6e639676b8287a0695a98629983a33fc3044d",
+            "sha256": "a93368a46ce4905718e0868074d4de7b8bd544853ed645ff46f879e571433a01"
+          },
+          {
+            "path": "docs/01-language/proofs-and-unsafe-audits.md",
+            "blob": "19e4459bae7355fb24cbcc77193f61cae1930899",
+            "sha256": "e5815ab027b90fa69f66594104443f1f4d961ec4bd6d4d2ac745d8ab05e9d91b"
+          },
+          {
+            "path": "docs/02-runtime/core.md",
+            "blob": "4de96a619aac45247ae6164dc700d2c03090d352",
+            "sha256": "7a074ff0a6c9ebc54ca6fa1b1d57cdc13924574e07b497233e430e1989cd3b81"
+          }
+        ]
+      },
+      "scope": "Typed source operand and diagnostic admission. The executable promotion receiver and proof obligation are separate open boundaries.",
+      "correction": "The obsolete free-call fallback offered a provisional Promoted result without receiver evidence. The receiver form now projects the exact static scope and proof reference from HIR. The resolver preserves declared call candidates and applies source diagnostics to an otherwise missing promotion target. The first preservation fixture used an inherent method that also failed with the previous CLI. The replacement uses an ordinary registered function with the same spelling and the same registry argument.",
+      "previousCliSha256": "402379e4b1e79fee4d16d8ce8908d759683eb8dc991691f6d8c07953b4fc4fcf",
+      "verification": {
+        "targeted": 5,
+        "targetedLog": "static-operands-fe488636/targeted-before-prose.log",
+        "targetedScope": "Targeted tests preceded only the final API comment and contract wording edits.",
+        "structure": "static-operands-fe488636/structure.log",
+        "formatExit": 0,
+        "quality": {
+          "workspace-check": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 06s"
+            ]
+          },
+          "workspace-clippy": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 09s"
+            ]
+          },
+          "cli-build": {
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 20s"
+            ]
+          }
+        },
+        "reversePackages": [
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-lang-hir",
+          "arcweft-lang-sema",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-web",
+          "arcweft-project-loader",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-test",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3"
+        ],
+        "cliSmoke": "static-operands-fe488636/cli/receipt.json",
+        "cliResults": [
+          {
+            "name": "owned-control",
+            "pass": true,
+            "exitCode": 0,
+            "expectedExit": 0,
+            "expectedDiagnostic": null,
+            "diagnostics": [],
+            "sourceSha256": "7ade6fcc4f34e3a394800cde46f93eceff2a3003e8e997e4ecf73d1ee1777ef9",
+            "reportSha256": "604cfdb42bc7382b54703554c398fb8422b21f636a3ca435abf3fa02e5f84323",
+            "stderrSha256": "2ee1fe6ef3e90093f6ea2a7cafb1bb75911d67c555bcbb33d18c29b9adebf6f4"
+          },
+          {
+            "name": "owned-receiver-pending",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.call.unknown_target",
+            "diagnostics": [
+              "sema.call.unknown_target"
+            ],
+            "sourceSha256": "46e90592910bd38f770473fbed75c8eddcd18dc515593dff9680f72ba13bfb5b",
+            "reportSha256": "5d658c4a03f211ae2d9e43d51dadd35dc60d61bda5c018612cb584ee17d77a69",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "explicit-known-proof-pending",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.call.unknown_target",
+            "diagnostics": [
+              "sema.call.unknown_target"
+            ],
+            "sourceSha256": "a205023f493e10c25524fbb5911bd10d0bdf43b69bc26597fcffc892b884fc91",
+            "reportSha256": "7999df81ae9b484b2a537f7a88fc7563438d8d79c666ecff6c6d770a4a45fbfc",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "enclosing-audit-pending",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.call.unknown_target",
+            "diagnostics": [
+              "sema.call.unknown_target"
+            ],
+            "sourceSha256": "672a9be27d6e5c8c1210abaf463324963cd82e886dc3f39a075c8528299f117e",
+            "reportSha256": "e1860735f80d4e40c4767c2224f17482e096b28af48d4c82d3e06c11d1ffe5cd",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "bare-obsolete",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.call.unknown_target",
+            "diagnostics": [
+              "sema.call.unknown_target"
+            ],
+            "sourceSha256": "0e20bec2da7bab7a0be63af79a027b3e86df580912d87c62ea39956d41ac62f6",
+            "reportSha256": "a65418ca0e573f72a1664130457662e917dbc7627621274d117c2cef6027a16f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "selector-optional",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.lifetime.promotion_operands",
+            "diagnostics": [
+              "sema.lifetime.promotion_operands"
+            ],
+            "sourceSha256": "677bdb9b0a9d6729d59dcbb0fbed71be3b72e0b69d7ad64557f62f55d974768f",
+            "reportSha256": "6e8d833ae624268d4bf3347cab6eb08821393f200dea1b2c5d72e86504383209",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "selector-member",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.lifetime.promotion_operands",
+            "diagnostics": [
+              "sema.lifetime.promotion_operands"
+            ],
+            "sourceSha256": "fd2dac8a94c825764411da11b750efe8cc86e148798406a08c193150ffec6ea1",
+            "reportSha256": "e7bce9d3df4944db007ba788efd611e6f6fe35eb40e839b165386973a4cb3814",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "unknown-proof",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.lifetime.promotion_proof",
+            "diagnostics": [
+              "sema.lifetime.promotion_proof"
+            ],
+            "sourceSha256": "dc9fee74fb6dd94af96a2ba0a6db5592fa300c547e486b4c6306fd1c223c0502",
+            "reportSha256": "3b74a75cc9b5fd595a3ff121d0b38a149d71c532eff3e80d3aec0de9a2243234",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "outside-audit",
+            "pass": true,
+            "exitCode": 1,
+            "expectedExit": 1,
+            "expectedDiagnostic": "sema.lifetime.promotion_audit",
+            "diagnostics": [
+              "sema.lifetime.promotion_audit"
+            ],
+            "sourceSha256": "940224edbadbf30269f2a4c00f3db43399f1248218f2d1f77b7479bead2efd49",
+            "reportSha256": "db9b3a6fcc8e526bc9414cf0986b4fba908aab2b4f01e84019aea9ef17ab47cb",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "same-free-function-name",
+            "pass": true,
+            "exitCode": 0,
+            "expectedExit": 0,
+            "expectedDiagnostic": null,
+            "diagnostics": [],
+            "sourceSha256": "c291bb4799882ae3351aaa856a5279e58da69975fefb6a8e4ddacc60e71e4d6e",
+            "reportSha256": "41c064cc95e379a6fdfea0ce705eeb71c4858ffeb1dd241b98e68650450f2767",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
     }
   },
   "lineDeferRegistryProbe": {
