@@ -16271,3 +16271,28 @@ Cargo treeとmetadataで逆依存17パッケージが一致し、全feature next
 
 [Clippy・一括ビルド失敗・最初の分割の原本](acceptance-evidence/task-awfb-accepted-artifact-rust-validation.raw.zip)は5件、849,025 bytes、SHA-256
 `c10e959318be4b3b79fe38c566fca3228b259112e13168304697589ce1b5547a`。
+
+### デモのNative／Webキャプチャ — 2026-11-09
+
+公開Source `818e8ef71a7ce00d04633ed4ed21f8f2bd482224`、親 `433d0a3965814c20125aa9976a2fb54e474e7610`、
+tree `16ebfb633ff34c6e08f9a83a1a1be156ca32d6ff`。公開先の6 blobを照合した。公開時のindexは空で、既存の未追跡 `%SystemDrive%/` があった。
+
+Nativeは検証済みAWFBから通常のバンドルセッションを作り、Webと同じ順のフォントを描画プランナーとGPU採取の両方に登録する。
+台詞送りは入力コントローラーから解決し、両方が16 ms刻みのtick 10で実フレームを採取する。
+Nativeの比較ツールは比較時刻を16 ms刻みに制限し、159 msでは画像を作る前に拒否した。
+高DPIはCSS上の640×360に対して描画バッファ1280×720を採取し、画像比較の既存のしきい値を使う。
+
+AWFBのSHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`。
+初回と診断のWebプレイヤーには既受入Wasm `916f58390a4e298bc57a83f99b25edcab377fe0a718f18d358da410604dbfafc` を使った。
+公開Sourceから再生成したWasmは `37ddaaaf8993cceb34ec002b049849223a4510bcb4e5894c07dc59af1758db39` で、既定スモークの再試行用に照合した。
+起動待ちを60秒に延ばした診断では、標準、ホバー、押下、縮小、高DPIの5組が既存の比較器を通過した。
+`imq image` の `mse:all,mae:all,maxae:all` は両入力をRGBA8として比較し、全組の最大差0を確認した。
+Nativeの標準キャプチャを再取得したPNGは同じSHA-256だった。
+完全一致のPSNRは数値判定に無限大を使い、レポートJSONでは `null` を使う。異なるNativeフレームの有限PSNRと、非有限しきい値の拒否も確認した。
+
+Webクレートは全feature nextest 37件成功、ClippyとWasmビルドは終了0、構造監査のブロッキング違反は0件。
+既定の10秒上限を使った画像比較付きスモークの初回は通常3件と最初の比較画像を取得し、次の起動待ちで終了1だった。
+共通の時計を使う文字表示スモークも、CLI描画テストとの並行実行中に起動待ち10秒で終了1だった。
+
+[採取・測定・公開照合の原本](acceptance-evidence/task-webgpu-demo-native-parity.raw.zip)は39件、706,690 bytes、SHA-256
+`6a649b3120b814286fe35ebb7f582ab355e745021fce98e9aa7b03fe3146f650`。
