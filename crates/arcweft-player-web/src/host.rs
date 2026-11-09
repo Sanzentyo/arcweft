@@ -1,4 +1,4 @@
-use arcweft_bundle::{ArcweftBundle, BundleArtifactIdentity, BundleVirtualFileSpace};
+use arcweft_bundle::{BundleArtifact, BundleVirtualFileRef, BundleVirtualFileSpace};
 use arcweft_bundle_assets::BundleAssetResolver;
 use arcweft_core::entry::RuntimeSchemaLimits;
 use arcweft_core::task::{
@@ -10,7 +10,6 @@ use arcweft_core::value::{
 };
 use arcweft_runtime_driver::task::HostTaskDispatch;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use thiserror::Error;
 
 /// Browser host task broker for the synchronous embedded-VFS MVP slice.
@@ -20,7 +19,8 @@ use thiserror::Error;
 #[derive(Debug)]
 pub struct BrowserTaskBroker {
     allowed_calls: BTreeSet<String>,
-    files: BTreeMap<String, Vec<u8>>,
+    artifact: BundleArtifact,
+    written_files: BTreeMap<String, Vec<u8>>,
     asset_resolver: BundleAssetResolver,
     cancelled_scopes: BTreeSet<CancelScopeId>,
     queued_task_events: Vec<TaskEvent>,
@@ -54,10 +54,10 @@ pub enum BrowserHostTaskError {
 
 impl BrowserTaskBroker {
     pub fn from_bundle(
-        bundle: &ArcweftBundle,
+        artifact: BundleArtifact,
         context: RuntimeBundleAssetContext,
-        identity: BundleArtifactIdentity,
     ) -> Result<Self, BrowserHostTaskError> {
+        let bundle = artifact.bundle();
         let allowed_calls = bundle
             .manifest
             .required_host_calls
@@ -70,21 +70,16 @@ impl BrowserTaskBroker {
                     .flat_map(|manifest| manifest.host_calls.iter().map(|call| call.id.clone())),
             )
             .collect();
-        let files = bundle
-            .virtual_files
-            .iter()
-            .try_fold(BTreeMap::new(), |mut files, file| {
-                let key = virtual_file_key(file.space, &file.path);
-                validate_virtual_path(&key)?;
-                files.insert(key, file.bytes.clone());
-                Ok::<_, BrowserHostTaskError>(files)
-            })?;
-        let asset_resolver =
-            BundleAssetResolver::try_new(context, identity, Arc::new(bundle.clone()))
-                .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
+        for file in &bundle.virtual_files {
+            let key = virtual_file_key(file.space, &file.path);
+            validate_virtual_path(&key)?;
+        }
+        let asset_resolver = BundleAssetResolver::try_new(context, artifact.clone())
+            .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
         Ok(Self {
             allowed_calls,
-            files,
+            artifact,
+            written_files: BTreeMap::new(),
             asset_resolver,
             cancelled_scopes: BTreeSet::new(),
             queued_task_events: Vec::new(),
@@ -276,25 +271,31 @@ impl BrowserTaskBroker {
     }
 
     fn read_text(&self, path: &str) -> Result<TaskEventKind, BrowserHostTaskError> {
-        validate_virtual_path(path)?;
-        let bytes = self
-            .files
-            .get(path)
-            .ok_or_else(|| BrowserHostTaskError::MissingVirtualFile(path.to_owned()))?;
-        let text = String::from_utf8(bytes.clone())
+        let text = std::str::from_utf8(self.read_file(path)?)
             .map_err(|_| BrowserHostTaskError::InvalidUtf8(path.to_owned()))?;
-        Ok(TaskEventKind::Ready(RuntimePayload::from(text)))
+        Ok(TaskEventKind::Ready(RuntimePayload::from(text.to_owned())))
     }
 
     fn read_bytes(&self, path: &str) -> Result<TaskEventKind, BrowserHostTaskError> {
-        validate_virtual_path(path)?;
-        let bytes = self
-            .files
-            .get(path)
-            .ok_or_else(|| BrowserHostTaskError::MissingVirtualFile(path.to_owned()))?;
         Ok(TaskEventKind::Ready(RuntimePayload::new(
-            runtime_sequence_dense_bytes(bytes.clone()),
+            runtime_sequence_dense_bytes(self.read_file(path)?.to_vec()),
         )))
+    }
+
+    fn read_file(&self, path: &str) -> Result<&[u8], BrowserHostTaskError> {
+        let (space, relative) = validate_virtual_path(path)?;
+        if let Some(bytes) = self.written_files.get(path) {
+            return Ok(bytes);
+        }
+        let file = BundleVirtualFileRef {
+            space,
+            path: relative.to_owned(),
+        };
+        self.artifact
+            .bundle()
+            .virtual_file(&file)
+            .map(|file| file.bytes.as_slice())
+            .ok_or_else(|| BrowserHostTaskError::MissingVirtualFile(path.to_owned()))
     }
 
     fn write_bytes(
@@ -302,12 +303,12 @@ impl BrowserTaskBroker {
         path: &str,
         bytes: &[u8],
     ) -> Result<TaskEventKind, BrowserHostTaskError> {
-        match validate_virtual_path(path)? {
+        match validate_virtual_path(path)?.0 {
             BundleVirtualFileSpace::Asset => Err(BrowserHostTaskError::ReadOnlyAsset),
             BundleVirtualFileSpace::Save
             | BundleVirtualFileSpace::Temp
             | BundleVirtualFileSpace::Export => {
-                self.files.insert(path.to_owned(), bytes.to_vec());
+                self.written_files.insert(path.to_owned(), bytes.to_vec());
                 Ok(TaskEventKind::Ready(RuntimePayload::new(
                     RuntimeValue::Unit,
                 )))
@@ -320,7 +321,9 @@ fn virtual_file_key(space: BundleVirtualFileSpace, path: &str) -> String {
     format!("{}:{path}", space.as_str())
 }
 
-fn validate_virtual_path(path: &str) -> Result<BundleVirtualFileSpace, BrowserHostTaskError> {
+fn validate_virtual_path(
+    path: &str,
+) -> Result<(BundleVirtualFileSpace, &str), BrowserHostTaskError> {
     let (space, relative) = path
         .split_once(':')
         .ok_or(BrowserHostTaskError::InvalidVirtualPath)?;
@@ -334,13 +337,14 @@ fn validate_virtual_path(path: &str) -> Result<BundleVirtualFileSpace, BrowserHo
     {
         return Err(BrowserHostTaskError::InvalidVirtualPath);
     }
-    match space {
-        "asset" => Ok(BundleVirtualFileSpace::Asset),
-        "save" => Ok(BundleVirtualFileSpace::Save),
-        "temp" => Ok(BundleVirtualFileSpace::Temp),
-        "export" => Ok(BundleVirtualFileSpace::Export),
-        _ => Err(BrowserHostTaskError::InvalidVirtualPath),
-    }
+    let space = match space {
+        "asset" => BundleVirtualFileSpace::Asset,
+        "save" => BundleVirtualFileSpace::Save,
+        "temp" => BundleVirtualFileSpace::Temp,
+        "export" => BundleVirtualFileSpace::Export,
+        _ => return Err(BrowserHostTaskError::InvalidVirtualPath),
+    };
+    Ok((space, relative))
 }
 
 #[cfg(test)]
@@ -349,6 +353,7 @@ mod tests {
     use arcweft_audio_core::graph::{
         AudioAsset, AudioBusDef, AudioDecodeStrategy, AudioFormat, AudioGraph,
     };
+    use arcweft_bundle::BundleArtifactIdentity;
     use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{
         ArcweftBundle, BundleImageAnimation, BundleImageAsset, BundleImageFormat, BundleManifest,
@@ -379,6 +384,7 @@ mod tests {
     };
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use arcweft_text_model::DialogueContentCatalog;
+    use std::sync::Arc;
 
     const IMAGE_BYTES: &[u8] = &[
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
@@ -441,12 +447,10 @@ mod tests {
         let (_, _, foreign_report) = trace();
         assert_eq!(foreign_report.handle(), report.handle());
         assert_ne!(foreign_report.source(), report.source());
-        let bundle = asset_test_bundle();
-        let identity = BundleArtifactIdentity::LogicalBundle {
-            identity: bundle.logical_identity().unwrap(),
-        };
+        let artifact = BundleArtifact::from_logical(Arc::new(asset_test_bundle())).unwrap();
+        let identity = artifact.artifact_identity();
         let context = test_asset_context(identity, 0);
-        let mut broker = BrowserTaskBroker::from_bundle(&bundle, context, identity).unwrap();
+        let mut broker = BrowserTaskBroker::from_bundle(artifact, context).unwrap();
         let previous = TaskPublicationRevision::new(std::num::NonZeroU64::new(17).unwrap());
         let dispatch = HostTaskDispatch::try_new(
             TaskDispatchStart::new(
@@ -503,12 +507,11 @@ mod tests {
 
     #[test]
     fn asset_loads_publish_typed_image_and_voice_results() {
-        let bundle = asset_test_bundle();
-        let identity = BundleArtifactIdentity::LogicalBundle {
-            identity: bundle.logical_identity().expect("logical bundle identity"),
-        };
+        let artifact = BundleArtifact::from_logical(Arc::new(asset_test_bundle()))
+            .expect("logical bundle identity");
+        let identity = artifact.artifact_identity();
         let context = test_asset_context(identity, 0);
-        let mut broker = BrowserTaskBroker::from_bundle(&bundle, context, identity)
+        let mut broker = BrowserTaskBroker::from_bundle(artifact, context)
             .expect("browser broker binds the complete bundle catalog");
         let (program, image_result, voice_result) = asset_result_program();
         let owner = RuntimeProgramOwner::Plan(Arc::clone(&program));
@@ -566,12 +569,11 @@ mod tests {
 
     #[test]
     fn missing_and_malformed_assets_publish_typed_domain_errors() {
-        let bundle = asset_test_bundle();
-        let identity = BundleArtifactIdentity::LogicalBundle {
-            identity: bundle.logical_identity().expect("logical bundle identity"),
-        };
+        let artifact = BundleArtifact::from_logical(Arc::new(asset_test_bundle()))
+            .expect("logical bundle identity");
+        let identity = artifact.artifact_identity();
         let context = test_asset_context(identity, 0);
-        let mut broker = BrowserTaskBroker::from_bundle(&bundle, context, identity)
+        let mut broker = BrowserTaskBroker::from_bundle(artifact, context)
             .expect("browser broker binds the complete bundle catalog");
         let (program, image_result, voice_result) = asset_result_program();
         let owner = RuntimeProgramOwner::Plan(program);
@@ -652,13 +654,12 @@ mod tests {
 
     #[test]
     fn asset_dispatch_context_mismatch_is_a_failed_task() {
-        let bundle = asset_test_bundle();
-        let identity = BundleArtifactIdentity::LogicalBundle {
-            identity: bundle.logical_identity().expect("logical bundle identity"),
-        };
+        let artifact = BundleArtifact::from_logical(Arc::new(asset_test_bundle()))
+            .expect("logical bundle identity");
+        let identity = artifact.artifact_identity();
         let context = test_asset_context(identity, 0);
         let wrong_context = test_asset_context(identity, 1);
-        let mut broker = BrowserTaskBroker::from_bundle(&bundle, context, identity)
+        let mut broker = BrowserTaskBroker::from_bundle(artifact, context)
             .expect("browser broker binds the complete bundle catalog");
         let (program, image_result, _) = asset_result_program();
         let owner = RuntimeProgramOwner::Plan(program);
@@ -1067,6 +1068,52 @@ mod tests {
         bytes.extend_from_slice(&data_length.to_le_bytes());
         bytes.extend(samples.iter().flat_map(|sample| sample.to_le_bytes()));
         bytes
+    }
+
+    #[test]
+    fn browser_virtual_writes_leave_embedded_catalog_immutable() {
+        let bundle = empty_asset_test_bundle().with_virtual_files([
+            BundleVirtualFile {
+                space: BundleVirtualFileSpace::Asset,
+                path: "base.txt".to_owned(),
+                bytes: b"asset".to_vec(),
+            },
+            BundleVirtualFile {
+                space: BundleVirtualFileSpace::Save,
+                path: "progress.txt".to_owned(),
+                bytes: b"original".to_vec(),
+            },
+        ]);
+        let bytes = bundle
+            .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
+            .unwrap();
+        let artifact = BundleArtifact::from_awfb(
+            &bytes,
+            arcweft_runtime_driver::session::BundleSessionOptions::default()
+                .engine_resource_types
+                .as_ref(),
+        )
+        .unwrap();
+        let logical = BundleArtifact::from_logical(Arc::new(bundle)).unwrap();
+        let wrong_context = test_asset_context(logical.artifact_identity(), 0);
+        assert!(matches!(
+            BrowserTaskBroker::from_bundle(artifact.clone(), wrong_context),
+            Err(BrowserHostTaskError::AssetResolver(_))
+        ));
+        let context = test_asset_context(artifact.artifact_identity(), 0);
+        let mut broker = BrowserTaskBroker::from_bundle(artifact.clone(), context).unwrap();
+        assert_eq!(broker.read_file("asset:base.txt").unwrap(), b"asset");
+        assert_eq!(broker.read_file("save:progress.txt").unwrap(), b"original");
+        assert!(matches!(
+            broker.write_bytes("asset:base.txt", b"modified"),
+            Err(BrowserHostTaskError::ReadOnlyAsset)
+        ));
+        broker
+            .write_bytes("save:progress.txt", b"modified")
+            .unwrap();
+        assert_eq!(broker.read_file("save:progress.txt").unwrap(), b"modified");
+        let fresh = BrowserTaskBroker::from_bundle(artifact, context).unwrap();
+        assert_eq!(fresh.read_file("save:progress.txt").unwrap(), b"original");
     }
 
     #[test]

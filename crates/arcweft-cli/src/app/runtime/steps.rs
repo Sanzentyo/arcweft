@@ -2,7 +2,7 @@ use super::executor::RuntimeExecutorInstance;
 use super::options::{CliRuntimeExecutorTier, CliRuntimeStepMode, RuntimeRunOptions};
 use super::parse::step_options;
 use crate::output::RuntimeStepRunSummary;
-use arcweft_bundle::{ArcweftBundle, BundleArtifactIdentity};
+use arcweft_bundle::BundleArtifact;
 use arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
@@ -111,7 +111,7 @@ fn try_run_runtime_steps_with_executor(
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, RuntimeStepRunError> {
     if let Some(assets) = host_config.bundle_assets {
-        executor.bind_bundle_external_calls(assets.bundle)?;
+        executor.bind_bundle_external_calls(assets.artifact.bundle())?;
     }
     let mut host = host_config
         .source
@@ -200,8 +200,7 @@ pub(in crate::app) fn build_native_task_bridge(
     let builder = if let Some(assets) = host_config.bundle_assets {
         builder.register(BundleAssetAdapter::try_new(
             assets.context,
-            assets.artifact_identity,
-            std::sync::Arc::clone(assets.bundle),
+            assets.artifact.clone(),
         )?)?
     } else {
         builder
@@ -244,9 +243,8 @@ pub(in crate::app) struct NativeRunHost<'a> {
 
 #[derive(Clone, Copy)]
 pub(in crate::app) struct RuntimeBundleAssets<'a> {
-    pub(in crate::app) bundle: &'a std::sync::Arc<ArcweftBundle>,
+    pub(in crate::app) artifact: &'a BundleArtifact,
     pub(in crate::app) product: &'a arcweft_core::awbc::product_step::AwbcProductProgram,
-    pub(in crate::app) artifact_identity: BundleArtifactIdentity,
     pub(in crate::app) context: arcweft_core::value::RuntimeBundleAssetContext,
 }
 

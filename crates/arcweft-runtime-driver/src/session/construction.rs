@@ -12,7 +12,7 @@ use super::{
     ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeTextControl,
     ViewVirtualizationRuntime,
 };
-use arcweft_bundle::DecodedAwfbBundle;
+use arcweft_bundle::BundleArtifact;
 use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::value::RuntimeFormatContext;
 use arcweft_id::LocaleTag;
@@ -92,10 +92,12 @@ impl BundleSession {
     pub fn from_awfb_bytes_with_bundle(
         bytes: &[u8],
         options: BundleSessionOptions,
-    ) -> Result<(Self, DecodedAwfbBundle), BundleSessionError> {
-        let decoded = DecodedAwfbBundle::from_bytes(bytes, &options.engine_resource_types)
-            .map_err(|error| BundleSessionError::DecodeBundle {
-                message: error.to_string(),
+    ) -> Result<(Self, BundleArtifact), BundleSessionError> {
+        let decoded =
+            BundleArtifact::from_awfb(bytes, &options.engine_resource_types).map_err(|error| {
+                BundleSessionError::DecodeBundle {
+                    message: error.to_string(),
+                }
             })?;
         let session = Self::from_decoded_awfb(&decoded, options)?;
         Ok((session, decoded))
@@ -104,7 +106,7 @@ impl BundleSession {
     // Callers decode the product with the same engine registry before starting
     // it, including when replay changes only the selected locale.
     pub(super) fn from_decoded_awfb(
-        decoded: &DecodedAwfbBundle,
+        decoded: &BundleArtifact,
         options: BundleSessionOptions,
     ) -> Result<Self, BundleSessionError> {
         let engine_resource_types = Arc::clone(&options.engine_resource_types);
@@ -112,9 +114,7 @@ impl BundleSession {
             decoded.bundle(),
             options,
             engine_resource_types,
-            BundleSessionArtifactIdentity::AwfbContainer {
-                identity: decoded.artifact_identity(),
-            },
+            decoded.artifact_identity(),
         )
     }
 

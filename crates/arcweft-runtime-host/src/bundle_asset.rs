@@ -1,8 +1,7 @@
 //! Host task adapter for portable bundle asset resolution.
 
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
-use arcweft_bundle::ArcweftBundle;
-use arcweft_bundle::BundleArtifactIdentity;
+use arcweft_bundle::BundleArtifact;
 use arcweft_bundle_assets::{
     BundleAssetResolver, BundleAssetResolverError, BundleAssetValidationError,
 };
@@ -14,7 +13,6 @@ use arcweft_host_adapter::{
     HostAdapter, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome, HostTaskSubmission,
     HostTaskSubmissionContext,
 };
-use std::sync::Arc;
 use thiserror::Error;
 
 /// Standard `asset.image` and `asset.voice` Need producer host adapter.
@@ -41,17 +39,14 @@ impl BundleAssetAdapter {
         }
     }
 
-    /// Creates an adapter bound to one initial generation and exact bundle
-    /// identity. AWFB identities must be obtained from validated original
-    /// container bytes.
+    /// Creates an adapter bound to one initial generation and its accepted artifact.
     pub fn try_new(
         context: RuntimeBundleAssetContext,
-        identity: BundleArtifactIdentity,
-        bundle: Arc<ArcweftBundle>,
+        artifact: BundleArtifact,
     ) -> Result<Self, BundleAssetAdapterError> {
         Ok(Self {
             manifest: standard::bundle_asset_manifest(),
-            resolver: BundleAssetResolver::try_new(context, identity, bundle)?,
+            resolver: BundleAssetResolver::try_new(context, artifact)?,
         })
     }
 
@@ -59,10 +54,9 @@ impl BundleAssetAdapter {
     pub fn bind_generation(
         &self,
         context: RuntimeBundleAssetContext,
-        identity: BundleArtifactIdentity,
-        bundle: Arc<ArcweftBundle>,
+        artifact: BundleArtifact,
     ) -> Result<(), BundleAssetAdapterError> {
-        self.resolver.bind_generation(context, identity, bundle)?;
+        self.resolver.bind_generation(context, artifact)?;
         Ok(())
     }
 

@@ -9,7 +9,7 @@ use crate::output::{
     RuntimeProfileCompiler, RuntimeProfilePhase,
 };
 use arcweft_adapter_context::standard;
-use arcweft_bundle::{ArcweftBundle, BundleArtifactIdentity, BundleVirtualFileSpace};
+use arcweft_bundle::{BundleArtifact, BundleVirtualFileSpace};
 use arcweft_compiler::project::CompiledProject;
 use arcweft_core::task::GenerationId;
 use arcweft_host_adapter::HostCallPolicy;
@@ -25,9 +25,8 @@ pub(in crate::app) struct SourceRuntimeProgram {
     pub(in crate::app) execution_diagnostics:
         Arc<arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext>,
     pub(in crate::app) plan: arcweft_core::plan::RuntimePlan,
-    pub(in crate::app) bundle: Arc<ArcweftBundle>,
+    bundle_artifact: BundleArtifact,
     pub(in crate::app) product: arcweft_core::awbc::product_step::AwbcProductProgram,
-    pub(in crate::app) bundle_artifact_identity: BundleArtifactIdentity,
     pub(in crate::app) bundle_asset_context: arcweft_core::value::RuntimeBundleAssetContext,
     pub(in crate::app) host_policy: HostCallPolicy,
     pub(in crate::app) compiler: RuntimeProfileCompiler,
@@ -38,9 +37,8 @@ pub(in crate::app) struct SourceRuntimeProgram {
 impl SourceRuntimeProgram {
     pub(in crate::app) fn bundle_assets(&self) -> RuntimeBundleAssets<'_> {
         RuntimeBundleAssets {
-            bundle: &self.bundle,
+            artifact: &self.bundle_artifact,
             product: &self.product,
-            artifact_identity: self.bundle_artifact_identity,
             context: self.bundle_asset_context,
         }
     }
@@ -87,14 +85,12 @@ pub(in crate::app) fn source_runtime_program_from_compiled(
         eprintln!("error: source runtime executable admission failed: {error}");
         ExitCode::FAILURE
     })?;
-    let bundle_artifact_identity = bundle
-        .logical_identity()
-        .map(|identity| BundleArtifactIdentity::LogicalBundle { identity })
-        .map_err(|error| {
-            eprintln!("error: failed to identify the source runtime bundle: {error}");
-            ExitCode::FAILURE
-        })?;
-    let bundle_asset_context = bundle_artifact_identity
+    let bundle_artifact = BundleArtifact::from_logical(Arc::new(bundle)).map_err(|error| {
+        eprintln!("error: failed to identify the source runtime bundle: {error}");
+        ExitCode::FAILURE
+    })?;
+    let bundle_asset_context = bundle_artifact
+        .artifact_identity()
         .bundle_asset_context(GenerationId::new(0))
         .map_err(|error| {
             eprintln!("error: failed to bind source bundle asset context: {error}");
@@ -102,7 +98,8 @@ pub(in crate::app) fn source_runtime_program_from_compiled(
         })?;
     let mut host_policy =
         native_host_policy_for_selection_with_adapter(selection, adapter_override)?;
-    if bundle
+    if bundle_artifact
+        .bundle()
         .manifest
         .required_host_calls
         .iter()
@@ -118,9 +115,8 @@ pub(in crate::app) fn source_runtime_program_from_compiled(
         source_document,
         execution_diagnostics,
         plan,
-        bundle: Arc::new(bundle),
+        bundle_artifact,
         product,
-        bundle_artifact_identity,
         bundle_asset_context,
         host_policy,
         compiler,
@@ -219,12 +215,18 @@ view SourceProbe(enabled: bool = true) {
             Some(runtime.execution_diagnostics.artifact())
         );
         assert_eq!(
-            runtime.bundle.manifest.runtime.artifact_fingerprint,
+            runtime
+                .bundle_artifact
+                .bundle()
+                .manifest
+                .runtime
+                .artifact_fingerprint,
             runtime.execution_diagnostics.artifact()
         );
         assert!(
             !runtime
-                .bundle
+                .bundle_artifact
+                .bundle()
                 .view_program
                 .as_ref()
                 .unwrap()
@@ -281,7 +283,8 @@ view SourceProbe(enabled: bool = true) {
         }
 
         let encoded = runtime
-            .bundle
+            .bundle_artifact
+            .bundle()
             .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
             .expect("the same View Source bundle encodes as AWFB");
         let decoded = arcweft_bundle::ArcweftBundle::from_format_slice(

@@ -55,7 +55,7 @@ use std::path::Path;
 use thiserror::Error;
 
 pub use bundle_artifact_identity::BundleArtifactIdentity;
-pub use product::DecodedAwfbBundle;
+pub use product::BundleArtifact;
 #[cfg(feature = "format-yaml")]
 use yaml_rust2::yaml::Hash;
 #[cfg(feature = "format-yaml")]

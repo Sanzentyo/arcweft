@@ -12,7 +12,9 @@ use crate::windowed_patch::{
 use arcweft_adapter_desktop::DesktopAdapterSet;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::patch::PatchCompatibility;
-use arcweft_bundle::{ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleVirtualFile};
+use arcweft_bundle::{
+    ArcweftBundle, BundleAdapterManifest, BundleArtifact, BundleFormat, BundleVirtualFile,
+};
 use arcweft_core::task::{GenerationId, TaskEvent};
 use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder, HostCallPolicy};
@@ -20,7 +22,7 @@ use arcweft_interaction_model::audio::AudioEvent;
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
-    BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput,
+    BundleSession, BundleSessionError, BundleSessionOptions, BundleSessionStep, BundleStepInput,
 };
 use arcweft_runtime_driver::swap::ProgramGeneration;
 use arcweft_runtime_driver::task::HostTaskDispatch;
@@ -30,7 +32,6 @@ use arcweft_runtime_host::{
 };
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
@@ -139,7 +140,7 @@ pub enum WindowedRuntimeOwnerError {
     #[error(transparent)]
     BundleAssetContext(#[from] arcweft_core::value::RuntimeBundleAssetValueError),
     #[error(transparent)]
-    PatchEndpoint(#[from] NativePatchEndpointError),
+    PatchEndpoint(NativePatchEndpointError),
     #[error(transparent)]
     ImageCatalog(#[from] BundleImageCatalogError),
     #[error(transparent)]
@@ -177,6 +178,17 @@ pub struct WindowedRuntimeOwner {
     host: NativeTaskBridge,
     pending_task_events: Vec<TaskEvent>,
     pending_audio_events: Vec<AudioEvent>,
+}
+
+impl From<NativePatchEndpointError> for WindowedRuntimeOwnerError {
+    fn from(error: NativePatchEndpointError) -> Self {
+        match error {
+            NativePatchEndpointError::Session(BundleSessionError::DecodeBundle { message }) => {
+                Self::DecodeBundle { message }
+            }
+            other => Self::PatchEndpoint(other),
+        }
+    }
 }
 
 impl WindowedRuntimeOwner {
@@ -217,19 +229,16 @@ impl WindowedRuntimeOwner {
             HostAdapterRegistryBuilder,
         ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
     {
-        let images = BundleImageCatalog::from_bundle(bundle)?;
         let awfb_bytes = bundle
             .to_format_bytes(BundleFormat::Awfb)
             .map_err(|error| WindowedRuntimeOwnerError::EncodeBundle {
                 message: error.to_string(),
             })?;
-        Self::from_decoded_bundle_and_awfb_bytes(bundle, awfb_bytes, images, options, install)
+        Self::from_awfb_bytes_with_adapter_installer(awfb_bytes, options, install)
     }
 
-    fn from_decoded_bundle_and_awfb_bytes<F>(
-        bundle: &ArcweftBundle,
+    fn from_awfb_bytes_with_adapter_installer<F>(
         awfb_bytes: Vec<u8>,
-        images: BundleImageCatalog,
         options: BundleSessionOptions,
         install: F,
     ) -> Result<Self, WindowedRuntimeOwnerError>
@@ -239,14 +248,14 @@ impl WindowedRuntimeOwner {
             HostAdapterRegistryBuilder,
         ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
     {
+        let (endpoint, artifact) =
+            NativePatchEndpoint::from_awfb_bytes_with_bundle(awfb_bytes, options)?;
+        let bundle = artifact.bundle();
+        let images = BundleImageCatalog::from_bundle(bundle)?;
         let workspace = WindowedRuntimeWorkspace::create(bundle)?;
-        let endpoint = NativePatchEndpoint::from_awfb_bytes(awfb_bytes, options)?;
         let generation = endpoint.session().active_generation();
-        let bundle_assets = BundleAssetAdapter::try_new(
-            generation.bundle_asset_context(),
-            generation.artifact_identity,
-            Arc::new(bundle.clone()),
-        )?;
+        let bundle_assets =
+            BundleAssetAdapter::try_new(generation.bundle_asset_context(), artifact.clone())?;
         let builder = arcweft_runtime_host::native_task::standard_cli_registry_builder(
             arcweft_runtime_host::NativeFileRoots::for_bundle_workspace(workspace.source_path()),
             &[],
@@ -272,18 +281,8 @@ impl WindowedRuntimeOwner {
         awfb_bytes: Vec<u8>,
         options: BundleSessionOptions,
     ) -> Result<Self, WindowedRuntimeOwnerError> {
-        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
-            &awfb_bytes,
-            options.engine_resource_types.as_ref(),
-        )
-        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
-            message: error.to_string(),
-        })?;
-        let images = BundleImageCatalog::from_bundle(&bundle)?;
-        Self::from_decoded_bundle_and_awfb_bytes(
-            &bundle,
+        Self::from_awfb_bytes_with_adapter_installer(
             awfb_bytes,
-            images,
             options,
             |_source_path, builder| Ok(builder),
         )
@@ -465,32 +464,24 @@ impl WindowedRuntimeOwner {
         bytes: &[u8],
     ) -> Result<WindowedRuntimeOutcome, WindowedRuntimeOwnerError> {
         let prepared = self.endpoint.prepare_patch_bytes(bytes)?;
-        let target_bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
-            prepared.target_awfb_bytes(),
-            self.endpoint.options().engine_resource_types.as_ref(),
-        )
-        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
-            message: error.to_string(),
-        })?;
-        let target_images = BundleImageCatalog::from_bundle(&target_bundle)?;
-        let restart_candidate = NativePatchEndpoint::from_awfb_bytes(
-            prepared.target_awfb_bytes().to_vec(),
-            self.endpoint.options().clone(),
-        )?;
+        let (restart_candidate, target_artifact) =
+            NativePatchEndpoint::from_awfb_bytes_with_bundle(
+                prepared.target_awfb_bytes().to_vec(),
+                self.endpoint.options().clone(),
+            )?;
+        let target_bundle = target_artifact.bundle();
+        let target_images = BundleImageCatalog::from_bundle(target_bundle)?;
         let (restart_assets, restart_host) =
-            self.restarted_host_for(&restart_candidate, &target_bundle)?;
-        let target_policy = windowed_host_policy(&target_bundle);
+            self.restarted_host_for(&restart_candidate, &target_artifact)?;
+        let target_policy = windowed_host_policy(target_bundle);
         self.host.validate_policy_extension(target_policy.clone())?;
         let candidate_generation = self.endpoint.session().next_generation_id();
         let target_identity = prepared.target_artifact_identity();
         let candidate_context =
             ProgramGeneration::bundle_asset_context_for(candidate_generation, target_identity)?;
         if !prepared.is_noop() {
-            self.bundle_assets.bind_generation(
-                candidate_context,
-                target_identity,
-                Arc::new(target_bundle.clone()),
-            )?;
+            self.bundle_assets
+                .bind_generation(candidate_context, target_artifact)?;
         }
         let outcome = match self.endpoint.apply_prepared_patch(prepared) {
             Ok(outcome) => outcome,
@@ -549,24 +540,16 @@ impl WindowedRuntimeOwner {
         _source: PatchEventSource,
         bytes: Vec<u8>,
     ) -> Result<WindowedRuntimeOutcome, WindowedRuntimeOwnerError> {
-        let images = images_from_awfb_bytes(
-            &bytes,
-            self.endpoint.options().engine_resource_types.as_ref(),
+        let (endpoint, artifact) = NativePatchEndpoint::from_awfb_bytes_with_bundle(
+            bytes,
+            self.endpoint.options().clone(),
         )?;
-        let endpoint =
-            NativePatchEndpoint::from_awfb_bytes(bytes, self.endpoint.options().clone())?;
-        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
-            endpoint.active_awfb_bytes(),
-            endpoint.options().engine_resource_types.as_ref(),
-        )
-        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
-            message: error.to_string(),
-        })?;
+        let images = BundleImageCatalog::from_bundle(artifact.bundle())?;
         let generation = endpoint.session().active_generation().id;
         let content_root = endpoint
             .active_content_root()
             .unwrap_or_else(|| endpoint.session().active_generation().content_root);
-        let (bundle_assets, host) = self.restarted_host_for(&endpoint, &bundle)?;
+        let (bundle_assets, host) = self.restarted_host_for(&endpoint, &artifact)?;
         self.endpoint = endpoint;
         self.install_restarted_host(bundle_assets, host);
         self.images = images;
@@ -580,16 +563,16 @@ impl WindowedRuntimeOwner {
     fn restarted_host_for(
         &self,
         endpoint: &NativePatchEndpoint,
-        bundle: &ArcweftBundle,
+        artifact: &BundleArtifact,
     ) -> Result<(BundleAssetAdapter, NativeTaskBridge), WindowedRuntimeOwnerError> {
         let generation = endpoint.session().active_generation();
-        let bundle_assets = BundleAssetAdapter::try_new(
-            generation.bundle_asset_context(),
-            generation.artifact_identity,
-            Arc::new(bundle.clone()),
+        let bundle_assets =
+            BundleAssetAdapter::try_new(generation.bundle_asset_context(), artifact.clone())?;
+        let host = windowed_native_task_bridge(
+            artifact.bundle(),
+            self.base_registry.clone(),
+            bundle_assets.clone(),
         )?;
-        let host =
-            windowed_native_task_bridge(bundle, self.base_registry.clone(), bundle_assets.clone())?;
         Ok((bundle_assets, host))
     }
 
@@ -678,17 +661,6 @@ const fn patch_compatibility_from_swap(
             PatchCompatibility::RestartRequired
         }
     }
-}
-
-fn images_from_awfb_bytes(
-    bytes: &[u8],
-    engine_resource_types: &arcweft_resource_model::registry::ResourceTypeRegistry,
-) -> Result<BundleImageCatalog, WindowedRuntimeOwnerError> {
-    let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(bytes, engine_resource_types)
-        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
-        message: error.to_string(),
-    })?;
-    BundleImageCatalog::from_bundle(&bundle).map_err(WindowedRuntimeOwnerError::ImageCatalog)
 }
 
 #[derive(Debug)]

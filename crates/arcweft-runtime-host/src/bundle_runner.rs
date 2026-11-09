@@ -6,8 +6,9 @@ use crate::native_task::{
 use crate::stats::{RuntimeExecutorStats, runtime_executor_stats};
 use arcweft_bundle::container::{BundleView, ReadBudget};
 use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterManifest, BundleArtifactIdentity, BundleImageAnimation,
-    BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
+    ArcweftBundle, BundleAdapterManifest, BundleArtifact, BundleArtifactIdentity,
+    BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleKind,
+    BundleVirtualFile,
 };
 use arcweft_core::awbc::{
     product_step::{AwbcProductProgram, AwbcProductStepBuildError},
@@ -23,8 +24,7 @@ use arcweft_core::step::{
 };
 use arcweft_core::task::{GenerationId, LogicalEpoch};
 use arcweft_core::value::{
-    RuntimeBundleAssetArtifactDigest, RuntimeBundleAssetContext, RuntimeBundleAssetValueError,
-    RuntimeFormatContext,
+    RuntimeBundleAssetContext, RuntimeBundleAssetValueError, RuntimeFormatContext,
 };
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_id::LocaleTag;
@@ -47,14 +47,9 @@ pub fn run_bundle_with_native_adapters(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<BundleRunnerReport, BundleRunnerError> {
     let mut phases = Vec::new();
-    let artifact_identity = logical_bundle_artifact_identity(bundle)?;
-    execute_bundle_with_native_adapters(
-        bundle,
-        artifact_identity,
-        options,
-        adapter_registrars,
-        &mut phases,
-    )
+    let artifact = BundleArtifact::from_logical(Arc::new(bundle.clone()))
+        .map_err(BundleRunnerError::LogicalArtifactIdentity)?;
+    execute_bundle_with_native_adapters(&artifact, options, adapter_registrars, &mut phases)
 }
 
 /// Reads, decodes, and executes an `.awfb` bundle with native adapters supplied by the host.
@@ -76,27 +71,15 @@ pub fn run_bundle_file_with_native_adapters(
             source,
         })
     })?;
-    let artifact_identity = run_bundle_runner_phase(&mut phases, "artifact_identity", || {
+    let view = run_bundle_runner_phase(&mut phases, "artifact_identity", || {
         BundleView::parse(&bytes, ReadBudget::default())
-            .map(|view| BundleArtifactIdentity::AwfbContainer {
-                identity: view.artifact_identity(),
-            })
             .map_err(BundleRunnerError::ContainerArtifactIdentity)
     })?;
-    let bundle = run_bundle_runner_phase(&mut phases, "decode_bundle", || {
-        ArcweftBundle::from_awfb_slice_with_resource_types(
-            &bytes,
-            options.engine_resource_types.as_ref(),
-        )
-        .map_err(BundleRunnerError::DecodeBundle)
+    let artifact = run_bundle_runner_phase(&mut phases, "decode_bundle", || {
+        BundleArtifact::from_awfb_view(&view, options.engine_resource_types.as_ref())
+            .map_err(BundleRunnerError::DecodeBundle)
     })?;
-    execute_bundle_with_native_adapters(
-        &bundle,
-        artifact_identity,
-        options,
-        adapter_registrars,
-        &mut phases,
-    )
+    execute_bundle_with_native_adapters(&artifact, options, adapter_registrars, &mut phases)
 }
 
 /// Bundle execution options for embedding hosts.
@@ -247,12 +230,12 @@ pub enum BundleRunnerError {
 }
 
 fn execute_bundle_with_native_adapters(
-    bundle: &ArcweftBundle,
-    artifact_identity: BundleArtifactIdentity,
+    artifact: &BundleArtifact,
     options: &BundleRunnerOptions,
     adapter_registrars: &[NativeAdapterRegistrar],
     phases: &mut Vec<BundleRunnerPhase>,
 ) -> Result<BundleRunnerReport, BundleRunnerError> {
+    let bundle = artifact.bundle();
     run_bundle_runner_phase(phases, "validate_bundle_kind", || {
         validate_bundle_kind(bundle)
     })?;
@@ -270,8 +253,7 @@ fn execute_bundle_with_native_adapters(
         run_product_runtime_steps(
             runtime_program,
             Some(workspace.source_path()),
-            bundle,
-            artifact_identity,
+            artifact,
             options
                 .active_locale
                 .as_ref()
@@ -298,23 +280,13 @@ fn execute_bundle_with_native_adapters(
     })
 }
 
-fn logical_bundle_artifact_identity(
-    bundle: &ArcweftBundle,
-) -> Result<BundleArtifactIdentity, BundleRunnerError> {
-    bundle
-        .logical_identity()
-        .map(|identity| BundleArtifactIdentity::LogicalBundle { identity })
-        .map_err(BundleRunnerError::LogicalArtifactIdentity)
-}
-
 fn bundle_asset_context(
     generation: GenerationId,
     identity: BundleArtifactIdentity,
 ) -> Result<RuntimeBundleAssetContext, BundleRunnerError> {
-    let artifact =
-        RuntimeBundleAssetArtifactDigest::try_from_bytes(identity.binding_digest().as_bytes())
-            .map_err(BundleRunnerError::BundleAssetContext)?;
-    Ok(RuntimeBundleAssetContext::new(generation, artifact))
+    identity
+        .bundle_asset_context(generation)
+        .map_err(BundleRunnerError::BundleAssetContext)
 }
 
 fn validate_bundle_kind(bundle: &ArcweftBundle) -> Result<(), BundleRunnerError> {
@@ -496,8 +468,7 @@ fn bundle_runner_entry(
 fn run_product_runtime_steps(
     program: BundleRunnerRuntimeProgram,
     source_path: Option<&Path>,
-    bundle: &ArcweftBundle,
-    artifact_identity: BundleArtifactIdentity,
+    artifact: &BundleArtifact,
     active_locale: LocaleTag,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
@@ -510,8 +481,7 @@ fn run_product_runtime_steps(
             source_path,
             policy: host_policy,
             adapter_registrars,
-            bundle,
-            artifact_identity,
+            artifact,
         },
         config.steps,
         config.mode,
@@ -526,19 +496,19 @@ fn run_runtime_steps_with_executor(
     mode: BundleRunnerStepMode,
     max_ops: usize,
 ) -> Result<RuntimeRunTrace, BundleRunnerError> {
-    let asset_context = bundle_asset_context(executor.generation(), host_config.artifact_identity)?;
+    let asset_context = bundle_asset_context(
+        executor.generation(),
+        host_config.artifact.artifact_identity(),
+    )?;
     let mut host = host_config
         .source_path
         .map(|path| {
             let mut builder =
                 standard_cli_registry_builder(NativeFileRoots::for_bundle_workspace(path), &[])
                     .map_err(BundleRunnerError::NativeAdapter)?;
-            let asset_adapter = BundleAssetAdapter::try_new(
-                asset_context,
-                host_config.artifact_identity,
-                Arc::new(host_config.bundle.clone()),
-            )
-            .map_err(BundleRunnerError::BundleAssetAdapter)?;
+            let asset_adapter =
+                BundleAssetAdapter::try_new(asset_context, host_config.artifact.clone())
+                    .map_err(BundleRunnerError::BundleAssetAdapter)?;
             builder = builder
                 .register(asset_adapter)
                 .map_err(BundleRunnerError::NativeAdapter)?;
@@ -633,8 +603,7 @@ struct NativeRunHost<'a> {
     source_path: Option<&'a Path>,
     policy: &'a HostCallPolicy,
     adapter_registrars: &'a [NativeAdapterRegistrar],
-    bundle: &'a ArcweftBundle,
-    artifact_identity: BundleArtifactIdentity,
+    artifact: &'a BundleArtifact,
 }
 
 struct RuntimeExecutorInstance {
@@ -929,12 +898,11 @@ mod tests {
     fn bundle_asset_adapter_publishes_typed_results_for_validated_image_and_voice_bytes() {
         let audio_bytes = tiny_wav_bytes();
         let (bundle, image_bytes) = asset_test_bundle(audio_bytes.clone());
-        let artifact =
-            logical_bundle_artifact_identity(&bundle).expect("logical artifact identity");
-        let context = bundle_asset_context(GenerationId::new(7), artifact)
+        let artifact = BundleArtifact::from_logical(Arc::new(bundle)).expect("logical artifact");
+        let context = bundle_asset_context(GenerationId::new(7), artifact.artifact_identity())
             .expect("generation-bound asset context");
-        let adapter = BundleAssetAdapter::try_new(context, artifact, Arc::new(bundle.clone()))
-            .expect("generation asset catalog");
+        let adapter =
+            BundleAssetAdapter::try_new(context, artifact).expect("generation asset catalog");
 
         let (image_task, image_bound) = asset_task(AssetLoadKind::Image, "asset.bg.room");
         let image_result = submit_asset(&adapter, &image_task, &image_bound, context);
@@ -1027,11 +995,12 @@ mod tests {
 
         let (bad_bundle, _) = asset_test_bundle(b"not a wav".to_vec());
         let bad_artifact =
-            logical_bundle_artifact_identity(&bad_bundle).expect("bad-byte logical identity");
-        let bad_context = bundle_asset_context(GenerationId::new(8), bad_artifact)
-            .expect("bad-byte generation context");
+            BundleArtifact::from_logical(Arc::new(bad_bundle)).expect("bad-byte logical artifact");
+        let bad_context =
+            bundle_asset_context(GenerationId::new(8), bad_artifact.artifact_identity())
+                .expect("bad-byte generation context");
         adapter
-            .bind_generation(bad_context, bad_artifact, Arc::new(bad_bundle))
+            .bind_generation(bad_context, bad_artifact)
             .expect("second generation catalog is retained");
         let (bad_voice_task, bad_voice_bound) =
             asset_task(AssetLoadKind::Voice, "asset.voice.opening");
@@ -1308,6 +1277,7 @@ mod tests {
     fn terminal_native_step_registers_requests_before_publishing_body_retirement() {
         let (bundle, mut executor) = terminal_thread_fixture();
         let workspace = MaterializedBundleWorkspace::create(&bundle).unwrap();
+        let artifact = BundleArtifact::from_logical(Arc::new(bundle)).unwrap();
         let policy = HostCallPolicy::new();
         let trace = run_runtime_steps_with_executor(
             &mut executor,
@@ -1315,8 +1285,7 @@ mod tests {
                 source_path: Some(workspace.source_path()),
                 policy: &policy,
                 adapter_registrars: &[],
-                bundle: &bundle,
-                artifact_identity: logical_bundle_artifact_identity(&bundle).unwrap(),
+                artifact: &artifact,
             },
             1,
             BundleRunnerStepMode::Drain,

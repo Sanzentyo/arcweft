@@ -1,11 +1,11 @@
 //! In-process dev patch endpoint for native player hosts.
 
-use arcweft_bundle::BundleArtifactIdentity;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::patch::{
     PatchBundleError, PatchCompatibility, PatchMaterializedTarget, apply_patch_bundle,
     decode_patch_bundle,
 };
+use arcweft_bundle::{BundleArtifact, BundleArtifactIdentity};
 use arcweft_core::task::GenerationId;
 use arcweft_runtime_driver::session::{
     BundleHotSwapError, BundleHotSwapReport, BundlePatchReadiness, BundlePatchReadinessReport,
@@ -269,12 +269,23 @@ impl NativePatchEndpoint {
         base_awfb_bytes: Vec<u8>,
         options: BundleSessionOptions,
     ) -> Result<Self, NativePatchEndpointError> {
-        let session = BundleSession::from_awfb_bytes(&base_awfb_bytes, options.clone())?;
-        Ok(Self {
-            base_awfb_bytes,
-            options,
-            session,
-        })
+        Self::from_awfb_bytes_with_bundle(base_awfb_bytes, options).map(|(endpoint, _)| endpoint)
+    }
+
+    pub(crate) fn from_awfb_bytes_with_bundle(
+        base_awfb_bytes: Vec<u8>,
+        options: BundleSessionOptions,
+    ) -> Result<(Self, BundleArtifact), NativePatchEndpointError> {
+        let (session, artifact) =
+            BundleSession::from_awfb_bytes_with_bundle(&base_awfb_bytes, options.clone())?;
+        Ok((
+            Self {
+                base_awfb_bytes,
+                options,
+                session,
+            },
+            artifact,
+        ))
     }
 
     pub const fn session(&self) -> &BundleSession {

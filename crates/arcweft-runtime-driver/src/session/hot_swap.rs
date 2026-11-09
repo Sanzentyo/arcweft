@@ -12,7 +12,7 @@ use super::{
     build_session_runtime, classify_swap_for_entry, decode_patch_bundle, project_view_resources,
     reconciled_root_handles_for_restore, validate_virtual_list_scroll_owner,
 };
-use arcweft_bundle::DecodedAwfbBundle;
+use arcweft_bundle::BundleArtifact;
 
 impl BundleSession {
     pub fn hot_swap_bundle(
@@ -364,7 +364,7 @@ impl BundleSession {
             });
         }
 
-        let target_bundle = DecodedAwfbBundle::from_materialized_target(
+        let target_bundle = BundleArtifact::from_materialized_target(
             materialized,
             self.engine_resource_types.as_ref(),
         )
@@ -375,9 +375,7 @@ impl BundleSession {
             SwapCompatibility::from_patch_compatibility(materialized.compatibility());
         self.hot_swap_bundle_with_compatibility_floor(
             target_bundle.bundle(),
-            BundleSessionArtifactIdentity::AwfbContainer {
-                identity: target_bundle.artifact_identity(),
-            },
+            target_bundle.artifact_identity(),
             compatibility_floor,
         )
     }

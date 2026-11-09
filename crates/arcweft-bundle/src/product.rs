@@ -27,13 +27,14 @@ use crate::resource_type_manifests::{
     resource_type_manifest_section_input_v1,
 };
 use crate::{
-    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleCodecError, BundleKind,
-    BundleManifest,
+    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleArtifactIdentity, BundleAwbcProgram,
+    BundleCodecError, BundleKind, BundleManifest,
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_resource_manifest::{ResourceManifestDecodeLimits, ResourceManifestPublicationLimits};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::sync::Arc;
 
 mod source_projection;
 mod style_cross_section;
@@ -42,24 +43,42 @@ use style_cross_section::{validate_style_bundle_view, validate_style_section_inp
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
 
-/// A decoded product paired with the identity of its validated AWFB container.
+/// An immutable product with the identity established from its source.
 ///
-/// The model is exposed by shared reference so the identity stays bound to the
-/// decoded data. Consumers can share the product without rereading the bytes.
-#[derive(Debug)]
-pub struct DecodedAwfbBundle {
-    bundle: ArcweftBundle,
-    artifact_identity: ArtifactIdentity,
+/// A logical product is validated and hashed as a typed model. An AWFB product
+/// takes its identity from its validated container. Clones share the same model
+/// and provenance across the runtime and its hosts.
+#[derive(Clone, Debug)]
+pub struct BundleArtifact {
+    bundle: Arc<ArcweftBundle>,
+    artifact_identity: BundleArtifactIdentity,
 }
 
-impl DecodedAwfbBundle {
+impl BundleArtifact {
+    /// Identifies a bundle from its validated logical content.
+    pub fn from_logical(bundle: Arc<ArcweftBundle>) -> Result<Self, BundleCodecError> {
+        let identity = bundle.logical_identity()?;
+        Ok(Self {
+            bundle,
+            artifact_identity: BundleArtifactIdentity::LogicalBundle { identity },
+        })
+    }
+
     /// Decodes an AWFB product using the host's engine resource types.
-    pub fn from_bytes(
+    pub fn from_awfb(
         bytes: &[u8],
         base_resource_types: &ResourceTypeRegistry,
     ) -> Result<Self, BundleCodecError> {
         let view = parse_product_container(bytes)?;
-        Self::decode_view(&view, base_resource_types, None)
+        Self::from_awfb_view(&view, base_resource_types)
+    }
+
+    /// Decodes a product within the bounds of an already validated container view.
+    pub fn from_awfb_view(
+        view: &BundleView<'_>,
+        base_resource_types: &ResourceTypeRegistry,
+    ) -> Result<Self, BundleCodecError> {
+        Self::decode_view(view, base_resource_types, None)
     }
 
     /// Decodes a patch target after rechecking its materialized identity.
@@ -92,20 +111,22 @@ impl DecodedAwfbBundle {
         }
         let bundle = decode_product(view, &[], Some(base_resource_types))?;
         Ok(Self {
-            bundle,
-            artifact_identity,
+            bundle: Arc::new(bundle),
+            artifact_identity: BundleArtifactIdentity::AwfbContainer {
+                identity: artifact_identity,
+            },
         })
     }
 
     /// Returns the decoded product model.
     #[must_use]
-    pub const fn bundle(&self) -> &ArcweftBundle {
+    pub fn bundle(&self) -> &ArcweftBundle {
         &self.bundle
     }
 
-    /// Returns the identity of the container that supplied the model.
+    /// Returns the identity of the artifact that supplied the model.
     #[must_use]
-    pub const fn artifact_identity(&self) -> ArtifactIdentity {
+    pub const fn artifact_identity(&self) -> BundleArtifactIdentity {
         self.artifact_identity
     }
 }

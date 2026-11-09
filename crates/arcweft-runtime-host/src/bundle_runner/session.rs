@@ -6,7 +6,7 @@ use super::{
 };
 use crate::bundle_asset::BundleAssetAdapter;
 use crate::native_task::{NativeFileRoots, NativeTaskBridge, standard_cli_registry_builder};
-use arcweft_bundle::ArcweftBundle;
+use arcweft_bundle::{ArcweftBundle, BundleArtifact};
 use arcweft_core::{
     engine::{FlowFiberStatus, FlowStatusLabelStyle},
     step::RuntimeHostCallResult,
@@ -83,7 +83,8 @@ impl BundleRunnerSession {
         let program = run_bundle_runner_phase(&mut phases, "runtime_decode", || {
             bundle_runner_runtime_program(bundle, options)
         })?;
-        let artifact_identity = super::logical_bundle_artifact_identity(bundle)?;
+        let artifact = BundleArtifact::from_logical(Arc::new(bundle.clone()))
+            .map_err(BundleRunnerError::LogicalArtifactIdentity)?;
         let active_locale = options
             .active_locale
             .as_ref()
@@ -91,7 +92,7 @@ impl BundleRunnerSession {
             .clone();
         let executor = RuntimeExecutorInstance::from_awbc_product(program, active_locale)?;
         let bundle_asset_context =
-            super::bundle_asset_context(executor.generation(), artifact_identity)?;
+            super::bundle_asset_context(executor.generation(), artifact.artifact_identity())?;
 
         let policy = bundle_host_policy(bundle);
         let run_started = Instant::now();
@@ -100,12 +101,8 @@ impl BundleRunnerSession {
             &[],
         )
         .map_err(BundleRunnerError::NativeAdapter)?;
-        let asset_adapter = BundleAssetAdapter::try_new(
-            bundle_asset_context,
-            artifact_identity,
-            Arc::new(bundle.clone()),
-        )
-        .map_err(BundleRunnerError::BundleAssetAdapter)?;
+        let asset_adapter = BundleAssetAdapter::try_new(bundle_asset_context, artifact)
+            .map_err(BundleRunnerError::BundleAssetAdapter)?;
         let builder = builder
             .register(asset_adapter)
             .map_err(BundleRunnerError::NativeAdapter)?;

@@ -1,10 +1,9 @@
 //! Portable decoding, identity binding, and typed results for bundled assets.
 
 use arcweft_audio_codec::{AudioDecodeLimits, decode_audio};
-use arcweft_bundle::logical_identity::LogicalBundleIdentity;
 use arcweft_bundle::{
-    ArcweftBundle, BundleArtifactIdentity, BundleCodecError, BundleImageAnimation,
-    BundleImageAsset, BundleImageFormat,
+    ArcweftBundle, BundleArtifact, BundleCodecError, BundleImageAnimation, BundleImageAsset,
+    BundleImageFormat,
 };
 use arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity;
 use arcweft_core::task::{AssetLoadKind, GenerationId};
@@ -22,9 +21,7 @@ use thiserror::Error;
 #[derive(Clone, Debug)]
 struct BoundBundleCatalog {
     context: RuntimeBundleAssetContext,
-    identity: BundleArtifactIdentity,
-    catalog_identity: LogicalBundleIdentity,
-    bundle: Arc<ArcweftBundle>,
+    artifact: BundleArtifact,
 }
 
 /// Portable generation-indexed catalog for bundle image and voice resources.
@@ -46,10 +43,6 @@ pub enum BundleAssetResolverError {
     GenerationAlreadyBound { generation: GenerationId },
     #[error("bundle artifact identity differs from generation {generation:?} context")]
     ArtifactContextMismatch { generation: GenerationId },
-    #[error("logical bundle identity differs from generation {generation:?} catalog")]
-    LogicalCatalogMismatch { generation: GenerationId },
-    #[error("failed to compute complete logical bundle identity: {0}")]
-    LogicalIdentity(#[source] BundleCodecError),
     #[error("asset id is not a canonical Asset identity")]
     InvalidResourceId(#[source] RuntimeBundleAssetValueError),
     #[error("bundle catalog lookup failed: {0}")]
@@ -112,62 +105,38 @@ impl BundleAssetResolver {
         Self::default()
     }
 
-    /// Creates a resolver bound to one initial generation and exact bundle
-    /// identity. AWFB identity values must come from the validated original
-    /// container bytes before calling this constructor.
+    /// Creates a resolver bound to one initial generation and its accepted artifact.
     pub fn try_new(
         context: RuntimeBundleAssetContext,
-        identity: BundleArtifactIdentity,
-        bundle: Arc<ArcweftBundle>,
+        artifact: BundleArtifact,
     ) -> Result<Self, BundleAssetResolverError> {
         let resolver = Self::new();
-        resolver.bind_generation(context, identity, bundle)?;
+        resolver.bind_generation(context, artifact)?;
         Ok(resolver)
     }
 
-    /// Binds an immutable catalog to the generation and artifact digest in the
-    /// Core context. Logical identities are recomputed from the typed bundle;
-    /// AWFB identities must have been obtained from its original bytes.
+    /// Binds the accepted artifact to the generation and digest in the Core context.
     pub fn bind_generation(
         &self,
         context: RuntimeBundleAssetContext,
-        identity: BundleArtifactIdentity,
-        bundle: Arc<ArcweftBundle>,
+        artifact: BundleArtifact,
     ) -> Result<(), BundleAssetResolverError> {
         let generation = context.generation();
+        let identity = artifact.artifact_identity();
         if identity.binding_digest().as_bytes() != *context.artifact().as_bytes() {
             return Err(BundleAssetResolverError::ArtifactContextMismatch { generation });
         }
-        let catalog_identity = bundle
-            .logical_identity()
-            .map_err(BundleAssetResolverError::LogicalIdentity)?;
-        if matches!(identity, BundleArtifactIdentity::LogicalBundle { identity } if identity != catalog_identity)
-        {
-            return Err(BundleAssetResolverError::LogicalCatalogMismatch { generation });
-        }
-
         let mut generations = self
             .generations
             .write()
             .map_err(|_| BundleAssetResolverError::GenerationTablePoisoned)?;
         if let Some(existing) = generations.get(&generation) {
-            if existing.context == context
-                && existing.identity == identity
-                && existing.catalog_identity == catalog_identity
-            {
+            if existing.context == context && existing.artifact.artifact_identity() == identity {
                 return Ok(());
             }
             return Err(BundleAssetResolverError::GenerationAlreadyBound { generation });
         }
-        generations.insert(
-            generation,
-            BoundBundleCatalog {
-                context,
-                identity,
-                catalog_identity,
-                bundle,
-            },
-        );
+        generations.insert(generation, BoundBundleCatalog { context, artifact });
         Ok(())
     }
 
@@ -305,7 +274,7 @@ impl BundleAssetResolver {
         let id = RuntimeBundleAssetResourceId::try_new(id)
             .map_err(BundleAssetResolverError::InvalidResourceId)?;
         let catalog = self.catalog_for_context(context)?;
-        let state = asset_content_state(&catalog.bundle, kind, id.as_str())?;
+        let state = asset_content_state(catalog.artifact.bundle(), kind, id.as_str())?;
         match state.status {
             AssetContentStatus::MissingResource | AssetContentStatus::MissingBytes => {
                 return domain_failure(
@@ -408,7 +377,7 @@ impl BundleAssetResolver {
         expected_digest: Option<RuntimeAssetContentDigest>,
     ) -> Result<(), BundleAssetValidationError> {
         let catalog = self.catalog_for_context(context)?;
-        let state = asset_content_state(&catalog.bundle, kind, id.as_str())?;
+        let state = asset_content_state(catalog.artifact.bundle(), kind, id.as_str())?;
         let reason_matches = match reason {
             RuntimeBundleAssetFailureReason::Missing => matches!(
                 state.status,
@@ -436,7 +405,8 @@ impl BundleAssetResolver {
         expected_digest: RuntimeAssetContentDigest,
     ) -> Result<Arc<[u8]>, BundleAssetValidationError> {
         let catalog = self.catalog_for_context(context)?;
-        let state = asset_content_state(&catalog.bundle, kind, id.as_str())?;
+        let bundle = catalog.artifact.bundle();
+        let state = asset_content_state(bundle, kind, id.as_str())?;
         match state.status {
             AssetContentStatus::MissingResource => {
                 return Err(BundleAssetValidationError::MissingResource);
@@ -453,12 +423,10 @@ impl BundleAssetResolver {
             return Err(BundleAssetValidationError::ContentDigestMismatch);
         }
         let bytes = match kind {
-            AssetLoadKind::Image => catalog
-                .bundle
+            AssetLoadKind::Image => bundle
                 .image_asset_bytes(id.as_str())
                 .map_err(|_| BundleAssetValidationError::CatalogLookupFailure)?,
-            AssetLoadKind::Voice => catalog
-                .bundle
+            AssetLoadKind::Voice => bundle
                 .audio_asset_bytes(id.as_str())
                 .map_err(|_| BundleAssetValidationError::CatalogLookupFailure)?,
         }

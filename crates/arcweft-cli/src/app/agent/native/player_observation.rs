@@ -178,10 +178,15 @@ pub(super) fn native_player_runtime_state_for_options(
     }
     let file_roots = selection.native_file_roots();
     let generation = session.active_generation();
+    let artifact =
+        arcweft_bundle::BundleArtifact::from_logical(std::sync::Arc::new(compiled.bundle))
+            .map_err(|error| {
+                eprintln!("error: failed to identify player bundle assets: {error}");
+                ExitCode::FAILURE
+            })?;
     let bundle_assets = arcweft_runtime_host::BundleAssetAdapter::try_new(
         generation.bundle_asset_context(),
-        generation.artifact_identity,
-        std::sync::Arc::new(compiled.bundle.clone()),
+        artifact,
     )
     .map_err(|error| {
         eprintln!("error: failed to bind player bundle assets: {error}");

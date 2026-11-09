@@ -17,7 +17,7 @@ use super::model::{
     RecordedHostCallErrorKindV1, RecordedRootOutcomeV1, RecordedRootTransitionV1, RootReplayError,
     RootReplayReportV1, RootReplayTraceV1,
 };
-use arcweft_bundle::DecodedAwfbBundle;
+use arcweft_bundle::BundleArtifact;
 use arcweft_core::entry::{RuntimeStatefulEntryRoles, RuntimeValueDigest};
 use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
@@ -59,13 +59,13 @@ impl BundleSession {
         options: BundleSessionOptions,
         trace: &RootReplayTraceV1,
     ) -> Result<RootReplayReportV1, RootReplayError> {
-        let decoded = DecodedAwfbBundle::from_bytes(bytes, &options.engine_resource_types)
-            .map_err(|error| RootReplayError::ArtifactInspection {
-                message: error.to_string(),
+        let decoded =
+            BundleArtifact::from_awfb(bytes, &options.engine_resource_types).map_err(|error| {
+                RootReplayError::ArtifactInspection {
+                    message: error.to_string(),
+                }
             })?;
-        let artifact = BundleSessionArtifactIdentity::AwfbContainer {
-            identity: decoded.artifact_identity(),
-        };
+        let artifact = decoded.artifact_identity();
         let mut replay_options = options.clone();
         replay_options.active_locale = Some(trace.identity.active_locale.clone());
         replay_root_trace_with(decoded.bundle(), &options, trace, artifact, || {

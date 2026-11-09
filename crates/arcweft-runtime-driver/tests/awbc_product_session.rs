@@ -327,7 +327,10 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
     let identity = BundleView::parse(&bytes, ReadBudget::default())
         .expect("source AWFB parses")
         .artifact_identity();
-    assert_eq!(decoded.artifact_identity(), identity);
+    assert_eq!(
+        decoded.artifact_identity(),
+        BundleSessionArtifactIdentity::AwfbContainer { identity }
+    );
     assert_eq!(
         decoded.bundle().manifest.entry.as_deref(),
         Some("entry.main")

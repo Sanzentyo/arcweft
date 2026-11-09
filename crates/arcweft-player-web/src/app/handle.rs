@@ -131,15 +131,11 @@ fn create(
         BundleSessionError::DecodeBundle { message } => WebPlayerError::BundleDecode(message),
         other => WebPlayerError::Session(other.to_string()),
     })?;
-    let bundle = decoded.bundle();
+    drop(bundle_bytes);
     let generation = session.active_generation();
-    let broker = BrowserTaskBroker::from_bundle(
-        bundle,
-        generation.bundle_asset_context(),
-        generation.artifact_identity,
-    )
-    .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
-    let images = BundleImageCatalog::from_bundle(bundle)
+    let broker = BrowserTaskBroker::from_bundle(decoded.clone(), generation.bundle_asset_context())
+        .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
+    let images = BundleImageCatalog::from_bundle(decoded.bundle())
         .map_err(|error| WebPlayerError::Image(error.to_string()))?;
     let clock = LogicalClockQuantizer::new(16, 4)
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
