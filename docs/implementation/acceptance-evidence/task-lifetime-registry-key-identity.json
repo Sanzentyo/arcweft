@@ -2524,8 +2524,8 @@
       "ownership": "The parser owns the enclosing body grammar. The HIR source index keeps shared conditional branch evidence in block_projection, where source, scope, binding generations, and child owners are already validated. The checked resolver and reached activation query supply promotion inputs. No dependency, runtime opcode, format version, or host boundary changed.",
       "raw": {
         "path": "docs/implementation/acceptance-evidence/task-lifetime-activation-audit-flow.raw.zip",
-        "bytes": 1051985,
-        "sha256": "333946afb60770a6021c1541f7e2e5752027232dcc2115c9130f2a4466e6b75e",
+        "bytes": 1277403,
+        "sha256": "f738546f17e171937c150f8545aff30cb7d16f364bfe162ffe16151b0059a396",
         "entries": [
           {
             "entry": "lexical-activation-2690a91a/source.publication.json",
@@ -2876,8 +2876,201 @@
             "entry": "lexical-activation-2690a91a/quality/checkpoint.receipt.json",
             "bytes": 6916,
             "sha256": "12ca85429e0c0994eddcf94fab49a42dcf8a8fd504a50a3f5ce999c17ff68c5d"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/plan-compiler.log",
+            "bytes": 264396,
+            "sha256": "30b55da913d09bc448f2c48d1cd675ca9965692b25d736d84a8d4bdcbd9a03df"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/runtime-host.log",
+            "bytes": 103567,
+            "sha256": "f085c8a073a4aa14dc0da35ccfb7c24829a4901ac81696818bd489da06929b33"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/driver-scene.log",
+            "bytes": 129939,
+            "sha256": "8bff0cbc93218b829d791d65a4d6ee530f704ce174aa286dd3dbf6321ad2aab8"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/player-native.log",
+            "bytes": 99499,
+            "sha256": "9ea0c86a9c8b4caece772db900e0a49a3363fa585f76927210e4ff7f1bbdd8b5"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/player-web.log",
+            "bytes": 94449,
+            "sha256": "6dda9439ec7f870b361b42dba03b2ec67cf676af0800a46b66447bfb08497bd3"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/agent-execution.log",
+            "bytes": 102761,
+            "sha256": "d87913ea2ecb8095d1e091540bec351881fca1b1e0486015aa75485e6eac2197"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/agent-transport.log",
+            "bytes": 95243,
+            "sha256": "d2eb80a3006cd5ef468853b11ea4586a4e0ab25bd7181c7b9c6891d89eac0578"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/tools-lsp.log",
+            "bytes": 153292,
+            "sha256": "7b33e57c4c642f3342affb825f0e868ca5d89fbfa2e974326869060c12927c00"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/verify.log",
+            "bytes": 94127,
+            "sha256": "9f754d06eef5beead9ba550c09877e2754a3d8ef98588fdb4880b43bbbf54951"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/cli-library-binaries.log",
+            "bytes": 121346,
+            "sha256": "d8eecd6bff8b86c3d784e92e56064eedea54c16a04c9460806920893752569b1"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/cli-integration.log",
+            "bytes": 95735,
+            "sha256": "094e82e68245b5ab0cfab1517fc7e5252dc8e82d86bf7d77b14fb45a81e698c4"
+          },
+          {
+            "entry": "lexical-activation-2690a91a/quality/terminal.receipt.json",
+            "bytes": 14249,
+            "sha256": "83b05cc3123aa4838175d09efaf81454c9961ae8fd5385834a71ebf0249e4d20"
           }
         ]
+      },
+      "terminalQuality": {
+        "receipt": "lexical-activation-2690a91a/quality/terminal.receipt.json",
+        "nextest": {
+          "run": 5658,
+          "pass": 5658,
+          "fail": 0,
+          "skip": 9
+        },
+        "stages": {
+          "fmt": {
+            "exit": 0,
+            "summary": []
+          },
+          "workspace-check": {
+            "exit": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 12s"
+            ]
+          },
+          "workspace-clippy": {
+            "exit": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 04s"
+            ]
+          },
+          "structure": {
+            "exit": 0,
+            "summary": [
+              "blocking violations: 0"
+            ]
+          },
+          "owner-doctests": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 57.87s",
+              "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+              "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s",
+              "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s"
+            ]
+          },
+          "cli-build": {
+            "exit": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 6m 18s"
+            ]
+          },
+          "owners": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 13s",
+              "Summary [ 189.248s] 3178 tests run: 3178 passed (2 slow), 8 skipped"
+            ]
+          },
+          "plan-compiler": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 11s",
+              "Summary [ 140.974s] 1171 tests run: 1171 passed (3 slow), 1 skipped"
+            ]
+          },
+          "runtime-host": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 44s",
+              "Summary [   6.181s] 72 tests run: 72 passed, 0 skipped"
+            ]
+          },
+          "driver-scene": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 19s",
+              "Summary [   2.863s] 278 tests run: 278 passed, 0 skipped"
+            ]
+          },
+          "player-native": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 04s",
+              "Summary [   1.008s] 59 tests run: 59 passed, 0 skipped"
+            ]
+          },
+          "player-web": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 14s",
+              "Summary [   0.365s] 37 tests run: 37 passed, 0 skipped"
+            ]
+          },
+          "agent-execution": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 31.86s",
+              "Summary [   5.238s] 106 tests run: 106 passed, 0 skipped"
+            ]
+          },
+          "agent-transport": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 15.56s",
+              "Summary [   0.438s] 46 tests run: 46 passed, 0 skipped"
+            ]
+          },
+          "tools-lsp": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 46.65s",
+              "Summary [ 100.171s] 454 tests run: 454 passed (1 slow), 0 skipped"
+            ]
+          },
+          "verify": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 08s",
+              "Summary [   0.263s] 31 tests run: 31 passed, 0 skipped"
+            ]
+          },
+          "cli-library-binaries": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 41s",
+              "Summary [  32.223s] 196 tests run: 196 passed, 0 skipped"
+            ]
+          },
+          "cli-integration": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 25.32s",
+              "Summary [   8.375s] 30 tests run: 30 passed, 0 skipped"
+            ]
+          }
+        },
+        "cliScope": "The tested CLI surface is its libraries, binaries and six named integration targets. The historical bare-promotion checks in the separate check integration target were outside this run."
       }
     }
   },
