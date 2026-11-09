@@ -16244,3 +16244,22 @@ Wasm buildとbindgenは終了0。同じ35,157,520 bytesのデモで通常Web smo
 
 [検証原本](acceptance-evidence/task-awfb-shared-decode.raw.zip)は10件、54,559 bytes、SHA-256
 `649ee5677f887d477915ed01420eb696050ffb62070c3b3115351a10eead06b4`。
+
+### 受理済みAWFBとWebデモの通常起動 — 2026-11-09
+
+公開Source `cea809f6b5acbe75f3edbeef8cc7568626362743`、親 `d55712b2ebe4f55aa76bb24a77b868408970ea57`、
+tree `30e61a16a89a6fccf9a5cbb41953b337c27ea1eb`。公開先の19 blobを照合した。
+Wasm buildとworkspace checkは親に実装差分を置いて実行した。公開した18 Rustファイルの差分は同じSHA-256 `1bdd52b42cc7e590f0d362fe59e490ed40fcb0604780b24cb2403e710d8623fb`。
+公開照合時のindexは空で、既存の未追跡 `%SystemDrive%/` があった。
+
+`BundleArtifact` は型付きモデルと元の成果物IDを保持し、Web・Native・CLIのアセット登録がこの組を使う。
+AWFB由来の登録ではJSONによる論理ID計算を省く。Webの埋め込みファイルはこのモデルから読み取り、実行中の書き込みを個別に保持する。
+アセット登録は引き続き世代と成果物ダイジェストを照合する。実行用AWFBのcodec、セクション制限、デモの資産とテスト条件を維持した。
+
+既定の `npm --prefix web test` は終了0で7件成功。起動上限10秒のもと、台詞の2ページ目、4画像、選択肢の座標と操作、リサイズ、WebGPU無効時の構造化エラーを確認した。
+別の起動計測は約7.66秒で、Rust初期化は約4.75秒。デモAWFBのSHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`。
+Wasm build、bindgen、全workspace・全target・全featureの `cargo check` は終了0。構造監査のブロッキング違反は0件。
+Cargo treeとmetadataで逆依存17パッケージが一致し、全feature nextestを開始した。
+
+[Web実行・計測・公開照合の原本](acceptance-evidence/task-awfb-accepted-artifact-web.raw.zip)は12件、42,595 bytes、SHA-256
+`7433d9fff3ad39c93612bab2b018d6ac789c252b685d86855891c83f7b2613d4`。
