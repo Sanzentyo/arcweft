@@ -16037,3 +16037,15 @@ CLI regressionを含む固定Sourceは `Summary [   3.453s] 21 tests run: 21 pas
 Windows・locked・全feature・既定filterのnextestで `Summary [1187.926s] 8151 tests run: 8148 passed (71 slow), 3 failed, 41 skipped`。非CLI 7,438 PASS／18 SKIP。CLI 710 PASS／3 FAIL／23 SKIP。共通IDの差分は従来の無音台詞CLIのFAILからPASSのみ。残るScroll・promotionの診断差分0。追加は前回のBundleSession保存復元1件と今回のNative／AWBC無音リース2件。Generic Matchの照合151件とFlow・台詞・CLIの照合13件がPASS。元Sourceと元EXE 216件の前後差分0。元arcw.exeは 305957376 bytes、SHA256 `7ff25979174c02307b0abfb090b1b2bfc0db9620bf9dfe5d8e2f887f602ccfed`。
 
 原本は 16 entries、512886 bytes、SHA256 `451a73d226cceca5b6299325e602c756de3f7b57ad7a4758b5e55ad995019ede`。初回構築失敗、再試行の選択、実行ログ、元EXEの前後hashを保管した。[全逆依存の実測](acceptance-evidence/task-unvoiced-line-lease-reverse.raw.zip)。
+
+### 保持 Scroll の操作先・レイアウト・Native capture — 2026-11-09
+
+公開 Source `8d8d26adbc9d8943467b259201c64a21dddcd055`、親 `3d0fbe22afff3bb9273804d60e44bbb2a1397e00`、tree `47f1569880302ecd24aa5c046d6dab844558f7ff`、公開patch SHA256 `c2ed2548dc18c460be23215e33c44285f82ccaec79df78fba9596721e62c7e97`。Scroll の設定は型付きView命令に属する。評価時にmount／キー付きoccurrenceの操作先を確定し、確定済み子レイアウトからスクロール範囲とクリップを作る。固定座標付きの旧bundle表を削除し、version 1のdecoderがその表と旧Scroll命令を拒否する。仮想リストは稼働中のScrollを所有者として検証する。
+
+旧 CLI fixture は廃止済み入力構文で shared callable Expr15に失敗していた。r1は旧表の削除時に残った重複serde属性で構築失敗。r2は現行入力構文まで進み、戻り値型の省略で Expr175 に失敗した。明示の戻り値型と現行のmount-scoped IDに同期し、元のstep／op予算、420×168、座標、可視3件、クリップと解放のassertionを維持した。r3は13 PASS／528 SKIP。Nativeで420×168のraw read-uri、内容234px、縦の範囲66px、正の画素、非表示scopeを確認。r4は非Cloneのsnapshotを複製しようとして構築失敗。別々にsnapshotを取得するよう修正し、r5は154 PASS（1 slow）／330 SKIP。AWFB公開saveのcold restoreと再export一致、軸を改変したframeの原子拒否、破棄によるvirtual list消失を検証した。
+
+workspaceの全target・全feature check／Clippy、変更Rustのfmt、Wasm向けplayer-web／render-webのlib check、構造gateは終了0。構造gateは3,410ファイル、388レビュー指摘、blocking 0。CompilerのView loweringは型付き命令の構築を担当し、Runtime Driverは評価済みoccurrence、Player Sceneは子寸法とclipを担当する。Cargo edgeの追加なし。Native AgentのTier 2画像テストは、MCPのscope IDにURI用の `layer.` 接頭辞を要求する古いassertionで初回失敗。実測は画像・capture scope・sourceがすべて観測レイヤーの `dialogue` を返した。観測したレイヤーIDとの完全一致に訂正し、同じテストが1 PASS／493 SKIPとなった。画像寸法、crop、pixelとresourceの検査を維持した。
+
+locked・全feature・全targetのCargo treeとmetadataが41逆依存で一致した。全41のnextestは未実施。キー付き保持入力を含むScroll 2件の実Native観測は別IDと各50pxの範囲を返した。キー付きTextはScroll有無の両方で同じtext block targetの重複により描画に失敗した。構造コンテナも繰り返すとgenerated targetが重複した。
+
+[検証原本](acceptance-evidence/task-retained-scroll-occurrence.raw.zip) は33 entries、1037206 bytes、SHA256 `dbb3a8218ff4979a5f338180263471a8aa51a444f7f5cc6dd22d149b7417ee85`。失敗・成功ログ、Native probe、実行ファイルのhash、公開blob照合を保持する。
