@@ -12,10 +12,14 @@ pub(super) fn validate_expression_scope(
     expression: ExprId,
     identity: &RuntimeScopeIdentity,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    if matches!((kind, identity),
-        (HirExprKind::NamedBlock(block), RuntimeScopeIdentity::Named(name))
-            if matches!(block.name(), HirNamedBlockName::Resolved(authored) if authored.as_str() == name.as_str())
-    ) {
+    let matches_source = match (kind, identity) {
+        (HirExprKind::Block(_), RuntimeScopeIdentity::Anonymous) => true,
+        (HirExprKind::NamedBlock(block), RuntimeScopeIdentity::Named(name)) => {
+            matches!(block.name(), HirNamedBlockName::Resolved(authored) if authored.as_str() == name.as_str())
+        }
+        _ => false,
+    };
+    if matches_source {
         Ok(())
     } else {
         Err(RuntimeSemanticFactsError::InvalidExpressionScope { expression })
@@ -33,6 +37,21 @@ pub(super) fn validate_statement_scope(
         Ok(())
     } else {
         Err(RuntimeSemanticFactsError::InvalidStatementScope { statement })
+    }
+}
+
+pub(super) fn validate_semantic_result(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    fact: &RuntimeScopeFact,
+    semantic: bool,
+) -> Result<(), RuntimeSemanticFactsError> {
+    match (semantic, fact.semantic_unit()) {
+        (true, Some(unit)) if matches!(unit.shape(), RuntimeTypeShape::Unit) => {
+            validate_normalized_type(modules, unit)
+        }
+        (false, None) => Ok(()),
+        _ => Err(RuntimeSemanticFactsError::InvalidExpressionScope { expression: owner }),
     }
 }
 
@@ -64,13 +83,13 @@ pub(super) fn validate_global_scopes(
             owners,
             *owner,
             RuntimeSemanticFactFamily::ExpressionScope,
-            |kind| matches!(kind, HirExprKind::NamedBlock(_)),
+            |kind| kind.value_block_scope().is_some(),
         )?;
         validate_expression_scope(resolve_expr(modules, *owner)?, *owner, identity.identity())?;
     }
     for owner in owners.expressions() {
         if !instance_expressions.contains(&owner)
-            && matches!(resolve_expr(modules, owner)?, HirExprKind::NamedBlock(_))
+            && resolve_expr(modules, owner)?.value_block_scope().is_some()
             && !expressions.contains_key(&owner)
         {
             return Err(RuntimeSemanticFactsError::InvalidExpressionScope { expression: owner });
@@ -125,12 +144,15 @@ pub(super) fn validate_continuation<'a>(
     let invalid = || RuntimeSemanticFactsError::InvalidScopeContinuation { owner };
     let (module_id, scope) = match owner {
         RuntimeScopeOwner::Expression(expression) => {
-            let HirExprKind::NamedBlock(block) = resolve_expr(modules, expression)? else {
-                return Err(invalid());
-            };
-            (expression.module(), block.scope())
+            let scope = resolve_expr(modules, expression)?
+                .value_block_scope()
+                .ok_or_else(invalid)?;
+            (expression.module(), scope)
         }
         RuntimeScopeOwner::Statement(statement) => {
+            if fact.semantic_unit().is_some() {
+                return Err(invalid());
+            }
             let HirStmtKind::Scope(block) = resolve_stmt(modules, statement)? else {
                 return Err(invalid());
             };

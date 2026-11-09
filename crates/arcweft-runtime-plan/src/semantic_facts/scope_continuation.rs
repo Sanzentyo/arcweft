@@ -69,6 +69,7 @@ pub struct RuntimeScopeFact {
     origin: RuntimeScopeOrigin,
     identity: RuntimeScopeIdentity,
     continuation: Option<RuntimeScopeContinuation>,
+    semantic_unit: Option<Box<RuntimeNormalizedType>>,
 }
 
 impl RuntimeScopeFact {
@@ -81,7 +82,19 @@ impl RuntimeScopeFact {
             origin,
             identity,
             continuation,
+            semantic_unit: None,
         }
+    }
+
+    /// Supplies the physical result of a scope whose tail is consumed by the
+    /// compiler. The caller continues with the checked semantic value.
+    pub fn with_semantic_unit(mut self, unit: RuntimeNormalizedType) -> Self {
+        self.semantic_unit = Some(Box::new(unit));
+        self
+    }
+
+    pub fn semantic_unit(&self) -> Option<&RuntimeNormalizedType> {
+        self.semantic_unit.as_deref()
     }
 
     pub const fn origin(&self) -> &RuntimeScopeOrigin {
@@ -103,6 +116,7 @@ impl RuntimeScopeFact {
         if let Some(continuation) = &self.continuation {
             roots.extend([continuation.carrier_type(), continuation.boundary_type()]);
         }
+        roots.extend(self.semantic_unit());
     }
 }
 

@@ -1,9 +1,9 @@
 //! Typed lexical frame joins: close the frame before either outer continuation.
 
 use super::{
-    ExprId, FinalFlowLowerer, HirContextualStmtBody, RuntimeExprSeed, RuntimeFlowMatchArmSeed,
-    RuntimeFlowOpSeed, RuntimeFlowTail, RuntimeFlowValueContinuation, RuntimeLocalReadMode,
-    RuntimePlanLowerError, RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner,
+    ExprId, FinalFlowLowerer, HirContextualStmtBody, HirValueTypeOwner, RuntimeExprSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowTail, RuntimeFlowValueContinuation,
+    RuntimeLocalReadMode, RuntimePlanLowerError, RuntimeScopeContinuation, RuntimeScopeOwner,
     RuntimeTypeShape, RuntimeValue, StmtId, bind_seed, local_seed,
     normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
 };
@@ -19,15 +19,46 @@ impl FinalFlowLowerer<'_> {
     pub(super) fn lower_scope_value(
         &mut self,
         expression: ExprId,
-        fact: &RuntimeScopeFact,
         statements: &[StmtId],
         tail: ExprId,
         outer: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let fact = self
+            .semantic_facts
+            .expression_scope(expression)
+            .cloned()
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "Scope expression {expression:?} has no checked lexical identity"
+                ))
+            })?;
+        let mut ops = vec![RuntimeFlowOpSeed::EnterScope {
+            identity: fact.identity().clone(),
+        }];
+        let Some(continuation) = fact.continuation() else {
+            ops.extend(self.lower_value_block(
+                statements,
+                tail,
+                RuntimeFlowValueContinuation::ExitScope {
+                    owner: expression,
+                    outer: Box::new(outer),
+                },
+            )?);
+            if self
+                .semantic_facts
+                .semantic_value_type(HirValueTypeOwner::Expression(expression))
+                .is_none()
+                && matches!(
+                    self.expression_type(expression)?.shape(),
+                    RuntimeTypeShape::Never
+                )
+            {
+                // Resumable terminal operations still need balanced lexical fallthrough.
+                ops.push(RuntimeFlowOpSeed::ExitScope);
+            }
+            return Ok(ops);
+        };
         let owner = RuntimeScopeOwner::Expression(expression);
-        let continuation = fact
-            .continuation()
-            .ok_or_else(|| RuntimePlanLowerError::new("scope value has no continuation fact"))?;
         self.scope_continuations.push(ScopeContinuationFrame {
             owner,
             fact: continuation.clone(),
@@ -39,9 +70,6 @@ impl FinalFlowLowerer<'_> {
             RuntimeFlowValueContinuation::ScopeSuccess { owner },
         );
         self.scope_continuations.pop();
-        let mut ops = vec![RuntimeFlowOpSeed::EnterScope {
-            identity: fact.identity().clone(),
-        }];
         ops.extend(body?);
         if matches!(continuation.value_type().shape(), RuntimeTypeShape::Never) {
             ops.push(RuntimeFlowOpSeed::ExitScope);
@@ -117,6 +145,32 @@ impl FinalFlowLowerer<'_> {
         self.complete_scope_carrier(owner, carrier)
     }
 
+    pub(super) fn complete_semantic_scope_success(
+        &mut self,
+        owner: RuntimeScopeOwner,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let unit = self.semantic_scope_unit(owner).ok_or_else(|| {
+            RuntimePlanLowerError::new("semantic scope success lacks its checked Unit result")
+        })?;
+        let value = RuntimeExprSeed::new(
+            unit.identity(),
+            arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+        );
+        self.complete_scope_success(owner, value)
+    }
+
+    fn semantic_scope_unit(
+        &self,
+        owner: RuntimeScopeOwner,
+    ) -> Option<&super::RuntimeNormalizedType> {
+        let RuntimeScopeOwner::Expression(expression) = owner else {
+            return None;
+        };
+        self.semantic_facts
+            .expression_scope(expression)?
+            .semantic_unit()
+    }
+
     pub(super) fn complete_scope_carrier(
         &mut self,
         owner: RuntimeScopeOwner,
@@ -151,14 +205,18 @@ impl FinalFlowLowerer<'_> {
                 RuntimePlanLowerError::new("scope continuation has no admitted locals")
             })?;
         let carrier = frame.fact.carrier_type();
-        let success = self.apply_value_continuation(
-            local_seed(
-                frame.fact.value_type(),
-                locals.success.clone(),
-                RuntimeLocalReadMode::Move,
-            ),
-            frame.outer.clone(),
-        )?;
+        let success = if self.semantic_scope_unit(frame.owner).is_some() {
+            self.apply_semantic_value_continuation(frame.outer.clone())?
+        } else {
+            self.apply_value_continuation(
+                local_seed(
+                    frame.fact.value_type(),
+                    locals.success.clone(),
+                    RuntimeLocalReadMode::Move,
+                ),
+                frame.outer.clone(),
+            )?
+        };
         let residual = match (frame.fact.residual_type(), &locals.residual) {
             (Some(ty), Some(local)) => {
                 Some(local_seed(ty, local.clone(), RuntimeLocalReadMode::Move))

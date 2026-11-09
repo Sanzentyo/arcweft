@@ -123,6 +123,14 @@ availability is decided by the static ownership flow.
 
 In expression position, the final expression is the block value unless it is explicitly discarded with `;`.
 
+An expression block owns a lexical execution scope. Its final value is
+evaluated inside that scope. The enclosing continuation receives the value
+after the block's cleanup and release of resources still owned by the block.
+The same ordering applies to a suspended block after it resumes and to a
+`try` residual that leaves the block. A block whose tail selects a compile-time
+callable still executes its prefix in that scope before the selected call's
+remaining operands are evaluated.
+
 Assignment and lifetime-registry writes remain statements at the end of a
 value block, including a cleanup callback body. They do not require a trailing
 semicolon. A block with no final expression has type `Unit`.

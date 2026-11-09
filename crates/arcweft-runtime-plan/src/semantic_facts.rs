@@ -7119,7 +7119,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
             }
             Self::ProjectInstance(facts) => {
                 for row in facts.expressions() {
-                    if let RuntimeProjectFunctionExpressionPayload::Scope(fact) = row.payload()
+                    if let Some(fact) = row.scope()
                         && let Some(continuation) = fact.continuation()
                     {
                         visitor(RuntimeScopeOwner::Expression(row.owner()), continuation);
@@ -9400,11 +9400,21 @@ impl RuntimePlanSemanticFacts {
         }
 
         for (owner, fact) in &expression_scopes {
+            let semantic = type_projections
+                .get(&HirValueTypeOwner::Expression(*owner))
+                .is_some_and(|projection| projection.semantic_value_type().is_some());
+            lexical_scope::validate_semantic_result(&modules, *owner, fact, semantic)?;
             lexical_scope::validate_continuation(
                 &modules,
                 RuntimeScopeOwner::Expression(*owner),
                 fact,
-                expression_types.get(owner),
+                fact.semantic_unit()
+                    .or_else(|| {
+                        implicit_callables
+                            .get(owner)
+                            .map(RuntimeImplicitCallableFact::result)
+                    })
+                    .or_else(|| expression_types.get(owner)),
                 try_facts.iter().map(|(owner, tried)| (*owner, tried)),
             )?;
         }
@@ -14492,6 +14502,44 @@ fn validate_project_function_semantic_catalog(
     for row in semantics.expressions() {
         let owner = row.owner();
         let hir = resolve_expr(modules, owner)?;
+        if let Some(identity) = row.scope() {
+            let scope_owner = RuntimeScopeOwner::Expression(owner);
+            if !identity
+                .origin()
+                .validate_authority(semantics.local_uses(), scope_owner)
+            {
+                return Err(RuntimeSemanticFactsError::InvalidScopeOrigin { owner: scope_owner });
+            }
+            lexical_scope::validate_expression_scope(hir, owner, identity.identity())?;
+            let semantic = semantics
+                .semantic_value_type(HirValueTypeOwner::Expression(owner))
+                .is_some();
+            lexical_scope::validate_semantic_result(modules, owner, identity, semantic)?;
+            lexical_scope::validate_continuation(
+                modules,
+                scope_owner,
+                identity,
+                identity
+                    .semantic_unit()
+                    .or_else(|| {
+                        semantics
+                            .implicit_callable(owner)
+                            .map(RuntimeImplicitCallableFact::result)
+                    })
+                    .or_else(|| semantics.expression_type(owner)),
+                semantics
+                    .expressions()
+                    .iter()
+                    .filter_map(|row| match row.payload() {
+                        RuntimeProjectFunctionExpressionPayload::Try(tried) => {
+                            Some((row.owner(), tried))
+                        }
+                        _ => None,
+                    }),
+            )?;
+        } else if hir.value_block_scope().is_some() {
+            return Err(RuntimeSemanticFactsError::InvalidExpressionScope { expression: owner });
+        }
         match row.payload() {
             RuntimeProjectFunctionExpressionPayload::Thread => {
                 if !matches!(hir, HirExprKind::Thread(authored)
@@ -14503,33 +14551,6 @@ fn validate_project_function_semantic_catalog(
             }
             RuntimeProjectFunctionExpressionPayload::Structural
             | RuntimeProjectFunctionExpressionPayload::Consumed => {}
-            RuntimeProjectFunctionExpressionPayload::Scope(identity) => {
-                let scope_owner = RuntimeScopeOwner::Expression(owner);
-                if !identity
-                    .origin()
-                    .validate_authority(semantics.local_uses(), scope_owner)
-                {
-                    return Err(RuntimeSemanticFactsError::InvalidScopeOrigin {
-                        owner: scope_owner,
-                    });
-                }
-                lexical_scope::validate_expression_scope(hir, owner, identity.identity())?;
-                lexical_scope::validate_continuation(
-                    modules,
-                    RuntimeScopeOwner::Expression(owner),
-                    identity,
-                    semantics.expression_type(owner),
-                    semantics
-                        .expressions()
-                        .iter()
-                        .filter_map(|row| match row.payload() {
-                            RuntimeProjectFunctionExpressionPayload::Try(tried) => {
-                                Some((row.owner(), tried))
-                            }
-                            _ => None,
-                        }),
-                )?;
-            }
             RuntimeProjectFunctionExpressionPayload::Literal(_) => {
                 if !matches!(
                     hir,
@@ -15257,7 +15278,6 @@ fn validate_project_instance_dialogue_applications(
             | RuntimeProjectFunctionExpressionPayload::Consumed
             | RuntimeProjectFunctionExpressionPayload::Literal(_)
             | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)
-            | RuntimeProjectFunctionExpressionPayload::Scope(_)
             | RuntimeProjectFunctionExpressionPayload::Value(_)
             | RuntimeProjectFunctionExpressionPayload::Select(_)
             | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)

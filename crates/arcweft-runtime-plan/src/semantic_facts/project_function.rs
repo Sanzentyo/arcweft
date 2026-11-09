@@ -928,7 +928,6 @@ pub enum RuntimeExecutableTypeProjection {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeProjectFunctionExpressionPayload {
     Structural,
-    Scope(crate::semantic_facts::RuntimeScopeFact),
     Consumed,
     Literal(RuntimeValue),
     ResidualValue(RuntimeResidualValue),
@@ -990,7 +989,6 @@ impl RuntimeProjectFunctionExpressionPayload {
     pub const fn family(&self) -> CheckedExecutableRuntimeExpressionFactFamily {
         match self {
             Self::Structural => CheckedExecutableRuntimeExpressionFactFamily::Structural,
-            Self::Scope(_) => CheckedExecutableRuntimeExpressionFactFamily::Scope,
             Self::Consumed => CheckedExecutableRuntimeExpressionFactFamily::Consumed,
             Self::Literal(_) => CheckedExecutableRuntimeExpressionFactFamily::Literal,
             Self::ResidualValue(_) => CheckedExecutableRuntimeExpressionFactFamily::ResidualValue,
@@ -1031,6 +1029,7 @@ pub struct RuntimeProjectFunctionExpressionSemanticFact {
     owner: ExprId,
     children: Box<[ExprId]>,
     payload: RuntimeProjectFunctionExpressionPayload,
+    scope: Option<Box<super::RuntimeScopeFact>>,
     specialization: Option<super::RuntimeCallableValueSpecialization>,
 }
 
@@ -1055,6 +1054,7 @@ impl RuntimeProjectFunctionExpressionSemanticFact {
             owner,
             children,
             payload,
+            scope: None,
             specialization: None,
         }
     }
@@ -1069,6 +1069,15 @@ impl RuntimeProjectFunctionExpressionSemanticFact {
 
     pub const fn payload(&self) -> &RuntimeProjectFunctionExpressionPayload {
         &self.payload
+    }
+
+    pub fn with_scope(mut self, scope: super::RuntimeScopeFact) -> Self {
+        self.scope = Some(Box::new(scope));
+        self
+    }
+
+    pub fn scope(&self) -> Option<&super::RuntimeScopeFact> {
+        self.scope.as_deref()
     }
     pub fn with_specialization(
         mut self,
@@ -2361,10 +2370,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         &self,
         owner: ExprId,
     ) -> Option<&crate::semantic_facts::RuntimeScopeFact> {
-        match self.expression(owner)?.payload() {
-            RuntimeProjectFunctionExpressionPayload::Scope(identity) => Some(identity),
-            _ => None,
-        }
+        self.expression(owner)?.scope()
     }
 
     pub fn statement_scope(
@@ -2505,7 +2511,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                         .visit_dialogue_applications(nested, visitor);
                 }
                 RuntimeProjectFunctionExpressionPayload::Structural
-                | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
                 | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)
@@ -2553,7 +2558,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     closure.semantics().visit_content_fragments(nested, visitor);
                 }
                 RuntimeProjectFunctionExpressionPayload::Structural
-                | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
                 | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)
@@ -2593,7 +2597,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     closure.semantics().dialogue_content_fragment(template)
                 }
                 RuntimeProjectFunctionExpressionPayload::Structural
-                | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
                 | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)

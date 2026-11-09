@@ -20,36 +20,66 @@ pub(super) struct ScopeProjection<'a, 'instance> {
     pub world: &'a RegisteredSemanticWorld,
     pub analysis: &'a FinalSemanticAnalysis,
     pub instance: Option<ProjectInstanceTypes<'instance>>,
-    pub eligible: &'a dyn Fn(ExprId) -> bool,
+    pub try_sites: &'a [ExprId],
 }
 
 impl ScopeProjection<'_, '_> {
     pub(super) fn expression(
         &self,
         owner: ExprId,
-        identity: &arcweft_lang_sema::final_analysis::CheckedScopeIdentity,
-    ) -> Result<RuntimeScopeFact, RuntimeSemanticProjectionError> {
+        semantic_value: bool,
+    ) -> Result<Option<RuntimeScopeFact>, RuntimeSemanticProjectionError> {
         let source = self
             .module
             .resolve_expr(owner)
             .map_err(|error| failure(error.to_string()))?;
-        let HirExprKind::NamedBlock(block) = source.kind() else {
-            return Err(failure("checked scope expression has the wrong HIR family"));
+        let Some(scope) = source.kind().value_block_scope() else {
+            return Ok(None);
         };
         let expression = self
             .analysis
             .expression(owner)
             .ok_or_else(|| failure("scope expression has no final semantic value"))?;
-        self.project(
+        let identity = match (source.kind(), expression.resolution()) {
+            (HirExprKind::Block(_), _) => {
+                &arcweft_lang_sema::final_analysis::CheckedScopeIdentity::Anonymous
+            }
+            (HirExprKind::NamedBlock(_), CheckedExpressionResolution::Scope(identity)) => identity,
+            _ => {
+                return Err(failure(
+                    "checked scope expression lost its lexical identity",
+                ));
+            }
+        };
+        let result = if semantic_value {
+            &TypeKind::Unit
+        } else if let CheckedExpressionResolution::ImplicitCallable(callable) =
+            expression.resolution()
+        {
+            callable.result()
+        } else {
+            checked_expression_type(expression, owner)?
+        };
+        let mut fact = self.project(
             RuntimeScopeOrigin::Expression(
                 self.analysis
                     .expression_origin(owner)
                     .map_err(|error| failure(error.to_string()))?,
             ),
-            block.scope(),
-            checked_expression_type(expression, owner)?,
+            scope,
+            result,
             identity,
-        )
+        )?;
+        if semantic_value {
+            fact = fact.with_semantic_unit(runtime_type_under(
+                result,
+                self.instance,
+                self.symbols,
+                self.world,
+                self.analysis,
+            )?);
+        }
+        Ok(Some(fact))
     }
 
     pub(super) fn statement(
@@ -86,13 +116,7 @@ impl ScopeProjection<'_, '_> {
         let mut shape = None;
         let mut exits = Vec::new();
         let execution = self.analysis.execution_projection();
-        for (owner, expression) in self.analysis.expressions() {
-            if owner.module() != self.module.module_id()
-                || !(self.eligible)(owner)
-                || !matches!(expression.resolution(), CheckedExpressionResolution::Try(_))
-            {
-                continue;
-            }
+        for &owner in self.try_sites {
             let source = self
                 .module
                 .resolve_expr(owner)

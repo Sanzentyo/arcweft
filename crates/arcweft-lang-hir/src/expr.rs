@@ -239,6 +239,15 @@ impl HirExpressionTypeRoot {
 }
 
 impl HirExprKind {
+    /// Lexical owner of a value block with an optional authored namespace.
+    pub const fn value_block_scope(&self) -> Option<ScopeId> {
+        match self {
+            Self::Block(block) => Some(block.scope()),
+            Self::NamedBlock(block) => Some(block.scope()),
+            _ => None,
+        }
+    }
+
     /// Returns the stable semantic constructor tag used by checked
     /// expression transcripts.
     pub const fn semantic_transcript_tag(&self) -> u16 {

@@ -931,16 +931,11 @@ impl LinePlanLowerer<'_, '_> {
             HirExprKind::Call(_) if self.line_call(expression)?.is_some() => {
                 Ok(vec![self.lower_line_call(expression, None)?])
             }
-            HirExprKind::Block(block) => self.lower_callback_body(block.statements(), block.tail()),
+            HirExprKind::Block(block) => {
+                self.lower_scoped_callback(expression, block.statements(), block.tail())
+            }
             HirExprKind::NamedBlock(block) => {
-                let identity = self.flow.semantic_facts.expression_scope(expression).cloned().ok_or_else(||
-                    RuntimePlanLowerError::new(format!("scheduled Scope expression {expression:?} has no checked lexical identity")))?;
-                let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope {
-                    identity: identity.identity().clone(),
-                })];
-                actions.extend(self.lower_callback_body(block.statements(), block.tail())?);
-                actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));
-                Ok(actions)
+                self.lower_scoped_callback(expression, block.statements(), block.tail())
             }
             HirExprKind::ComputationBlock(block) => {
                 self.lower_callback_body(block.statements(), block.tail())
@@ -992,6 +987,29 @@ impl LinePlanLowerer<'_, '_> {
                 "scheduled callback {expression:?} has no typed line action body"
             ))),
         }
+    }
+
+    fn lower_scoped_callback(
+        &mut self,
+        expression: ExprId,
+        statements: &[StmtId],
+        tail: ExprId,
+    ) -> Result<Vec<FlowDraft>, RuntimePlanLowerError> {
+        let identity = self
+            .flow
+            .semantic_facts
+            .expression_scope(expression)
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "scheduled Scope expression {expression:?} has no checked lexical identity"
+                ))
+            })?
+            .identity()
+            .clone();
+        let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope { identity })];
+        actions.extend(self.lower_callback_body(statements, tail)?);
+        actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));
+        Ok(actions)
     }
 
     fn lower_callback_body(

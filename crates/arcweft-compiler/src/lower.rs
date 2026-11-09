@@ -1133,6 +1133,22 @@ fn project_runtime_semantic_fact_inventories(
         }
     }
 
+    let expression_modules = project
+        .modules()
+        .map(|(_, module)| (module.module_id(), module.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let mut scope_try_sites = BTreeMap::<_, Vec<_>>::new();
+    for (owner, expression) in analysis.expressions() {
+        if matches!(expression.resolution(), CheckedExpressionResolution::Try(_))
+            && (runtime_owners.contains_expression(owner)
+                || program_owners.is_some_and(|owners| owners.contains_expression(owner)))
+        {
+            scope_try_sites
+                .entry(owner.module())
+                .or_default()
+                .push(owner);
+        }
+    }
     for (owner, expression) in analysis.expressions() {
         if !runtime_owners.contains_expression(owner)
             && !program_owners.is_some_and(|owners| owners.contains_expression(owner))
@@ -1202,31 +1218,25 @@ fn project_runtime_semantic_fact_inventories(
                 runtime_evaluated_effect(effect, symbols, world, analysis)?,
             );
         }
+        let module = expression_modules
+            .get(&owner.module())
+            .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+        if let Some(scope) = (scopes::ScopeProjection {
+            module,
+            symbols,
+            world,
+            analysis,
+            instance: None,
+            try_sites: scope_try_sites
+                .get(&owner.module())
+                .map_or(&[], Vec::as_slice),
+        })
+        .expression(owner, is_semantic_value)?
+        {
+            input.push_expression_scope(owner, scope);
+        }
         match expression.resolution() {
-            CheckedExpressionResolution::Scope(identity) => {
-                let module = project
-                    .modules()
-                    .find_map(|(_, module)| {
-                        (module.module_id() == owner.module()).then_some(module.as_ref())
-                    })
-                    .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
-                let eligible = |id| {
-                    runtime_owners.contains_expression(id)
-                        || program_owners.is_some_and(|owners| owners.contains_expression(id))
-                };
-                input.push_expression_scope(
-                    owner,
-                    scopes::ScopeProjection {
-                        module,
-                        symbols,
-                        world,
-                        analysis,
-                        instance: None,
-                        eligible: &eligible,
-                    }
-                    .expression(owner, identity)?,
-                );
-            }
+            CheckedExpressionResolution::Scope(_) => {}
             CheckedExpressionResolution::RegistryAddress(_) => {}
             CheckedExpressionResolution::Structural => {
                 let module = project
@@ -1665,10 +1675,6 @@ fn project_runtime_semantic_fact_inventories(
                     .ok_or_else(|| RuntimeSemanticProjectionError::Type {
                         reason: format!("scope statement {owner:?} has no HIR module"),
                     })?;
-                let eligible = |id| {
-                    runtime_owners.contains_expression(id)
-                        || program_owners.is_some_and(|owners| owners.contains_expression(id))
-                };
                 input.push_statement_scope(
                     owner,
                     scopes::ScopeProjection {
@@ -1677,7 +1683,9 @@ fn project_runtime_semantic_fact_inventories(
                         world,
                         analysis,
                         instance: None,
-                        eligible: &eligible,
+                        try_sites: scope_try_sites
+                            .get(&owner.module())
+                            .map_or(&[], Vec::as_slice),
                     }
                     .statement(owner, identity)?,
                 );
@@ -7825,7 +7833,6 @@ fn discover_runtime_project_executable_dependencies(
                     }
                 }
                 CheckedExecutableRuntimeExpressionFactFamily::Structural
-                | CheckedExecutableRuntimeExpressionFactFamily::Scope
                 | CheckedExecutableRuntimeExpressionFactFamily::Consumed
                 | CheckedExecutableRuntimeExpressionFactFamily::Literal
                 | CheckedExecutableRuntimeExpressionFactFamily::ResidualValue
@@ -8153,6 +8160,20 @@ fn runtime_executable_semantic_facts<'abi>(
         .collect::<BTreeMap<_, _>>();
     let execution = analysis.execution_projection();
     let local_uses = lexical.local_uses(project, symbols, analysis, origin)?;
+    let scope_try_sites = partition
+        .expressions()
+        .iter()
+        .filter(|row| row.family() == CheckedExecutableRuntimeExpressionFactFamily::Try)
+        .map(|row| row.owner())
+        .collect::<Vec<_>>();
+    let scope_projection = scopes::ScopeProjection {
+        module,
+        symbols,
+        world,
+        analysis,
+        instance: lexical.types(),
+        try_sites: &scope_try_sites,
+    };
     let mut producer_context = None;
     let mut expressions = Vec::with_capacity(partition.expressions().len());
     for expected in partition.expressions() {
@@ -8164,30 +8185,6 @@ fn runtime_executable_semantic_facts<'abi>(
             .resolve_expr(owner)
             .map_err(|_| error(owner, "instance expression is absent from its HIR module"))?;
         let payload = match expected.family() {
-            CheckedExecutableRuntimeExpressionFactFamily::Scope => {
-                let CheckedExpressionResolution::Scope(identity) = checked.resolution() else {
-                    return Err(error(
-                        owner,
-                        "scope expression has no checked lexical identity",
-                    ));
-                };
-                RuntimeProjectFunctionExpressionPayload::Scope(
-                    scopes::ScopeProjection {
-                        module,
-                        symbols,
-                        world,
-                        analysis,
-                        instance: lexical.types(),
-                        eligible: &|id| {
-                            partition
-                                .expressions()
-                                .binary_search_by_key(&id, |row| row.owner())
-                                .is_ok()
-                        },
-                    }
-                    .expression(owner, identity)?,
-                )
-            }
             CheckedExecutableRuntimeExpressionFactFamily::Structural => {
                 RuntimeProjectFunctionExpressionPayload::Structural
             }
@@ -8702,6 +8699,14 @@ fn runtime_executable_semantic_facts<'abi>(
             expected.children().into(),
             payload,
         );
+        if let Some(scope) = scope_projection.expression(
+            owner,
+            partition
+                .semantic_value_type(HirValueTypeOwner::Expression(owner))
+                .is_some(),
+        )? {
+            fact = fact.with_scope(scope);
+        }
         let producer_kind = if matches!(fact.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if call.requires_producer_definition())
         {
             Some(arcweft_lang_sema::CheckedExpressionProducerKind::Call)
@@ -8965,20 +8970,7 @@ fn runtime_executable_semantic_facts<'abi>(
                 CheckedExecutableRuntimeStatementFactFamily::Scope,
                 CheckedStatementPayload::Scope(identity),
             ) => RuntimeProjectFunctionStatementPayload::Scope(
-                scopes::ScopeProjection {
-                    module,
-                    symbols,
-                    world,
-                    analysis,
-                    instance: lexical.types(),
-                    eligible: &|id| {
-                        partition
-                            .expressions()
-                            .binary_search_by_key(&id, |row| row.owner())
-                            .is_ok()
-                    },
-                }
-                .statement(owner, identity)?,
+                scope_projection.statement(owner, identity)?,
             ),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Include,

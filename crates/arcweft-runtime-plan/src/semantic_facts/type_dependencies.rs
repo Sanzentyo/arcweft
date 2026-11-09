@@ -336,6 +336,9 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     .map(super::RuntimeCallableValueSpecialization::source),
             );
             expression.payload().append_normalized_types(roots);
+            if let Some(scope) = expression.scope() {
+                scope.append_normalized_types(roots);
+            }
         }
         for pattern in self.patterns() {
             pattern.payload().append_normalized_types(roots);
@@ -360,7 +363,6 @@ impl RuntimeProjectFunctionExpressionPayload {
                     .visit_operand_types(&mut |ty| roots.push(ty));
             }
             Self::Try(tried) => tried.append_normalized_types(roots),
-            Self::Scope(scope) => scope.append_normalized_types(roots),
             Self::ImplicitCallable {
                 callable, tried, ..
             } => {

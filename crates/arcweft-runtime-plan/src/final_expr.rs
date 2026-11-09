@@ -880,23 +880,13 @@ impl<'hir> FinalExprLowerer<'hir> {
             },
             HirExprKind::Closure(_) => self.lower_closure(id)?,
             HirExprKind::Block(block) => {
-                return self.lower_block(id, block.statements(), block.tail());
+                return self.lower_scoped_block(id, block.statements(), block.tail());
             }
             HirExprKind::ComputationBlock(block) => {
                 return self.lower_block(id, block.statements(), block.tail());
             }
             HirExprKind::NamedBlock(block) => {
-                let identity = self
-                    .semantic_facts
-                    .expression_scope(id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        format!("Scope expression {id:?} has no checked lexical identity")
-                    })?;
-                RuntimeExprSeedKind::Scope {
-                    identity: identity.identity().clone(),
-                    body: Box::new(self.lower_block(id, block.statements(), block.tail())?),
-                }
+                return self.lower_scoped_block(id, block.statements(), block.tail());
             }
             HirExprKind::If(branch) => RuntimeExprSeedKind::If {
                 condition: Box::new(self.lower(branch.condition())?),
@@ -1454,9 +1444,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         continuation: PureTryContinuation,
     ) -> Option<Result<RuntimeExprSeed, String>> {
         match kind {
-            HirExprKind::Block(block) => {
-                Some(self.lower_function_block(block.statements(), block.tail(), continuation))
-            }
+            HirExprKind::Block(block) => Some(self.lower_scope_continuation(
+                owner,
+                block.statements(),
+                block.tail(),
+                continuation,
+            )),
             HirExprKind::NamedBlock(block) => Some(self.lower_scope_continuation(
                 owner,
                 block.statements(),

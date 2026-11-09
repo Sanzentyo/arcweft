@@ -560,6 +560,110 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn value_block_retires_only_its_own_view_after_wait_and_restore() {
+    use arcweft_presentation::input::{InputEpoch, InputEvent};
+    use arcweft_view::ViewHandlerInvocation;
+
+    let source = r#"
+pub action finish(value: i64)
+view Card(caption: String) {
+    Text(caption)
+}
+view Inner() {
+    Text("inner")
+    Button("Finish").on_click(|| finish(value = 42i64))
+}
+flow main() -> i64 {
+    let outer = mount(Card(caption = "outer"))
+    let result = BLOCK {
+        let inner = mount(Inner())
+        let received = await receive(finish)
+        received.value
+    }
+    wait(10ms)
+    outer.unmount();
+    return result
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    for (form, prefix) in [
+        ("named", "scope inner_region "),
+        ("plain", ""),
+        ("anonymous", "scope "),
+    ] {
+        let bytes = source_bundle(&source.replace("BLOCK ", prefix));
+        let mut session = session_from_bytes(&bytes);
+        let mut restored = false;
+        let mut sent = false;
+        let mut saw_outer_after_inner = false;
+        let mut completed = false;
+        for tick in 1..=256 {
+            let step = session.step_with_clock(
+                RuntimeClockStep::from_millis(tick, 1).unwrap(),
+                BundleStepInput::default(),
+            );
+            assert!(step.stats.executed_ops <= 1);
+            assert!(
+                step.diagnostics.is_empty(),
+                "{form}: {:?}",
+                step.diagnostics
+            );
+            let contains = |caption: &str| {
+                session.presentation().view.mounts.iter().any(|mount| {
+                    mount.text.iter().any(|text| {
+                        matches!(&text.value, BundleViewTextValue::Plain { value } if value == caption)
+                    })
+                })
+            };
+            let (outer, inner) = (contains("outer"), contains("inner"));
+            assert!(!inner || outer, "{form}: inner mount escaped outer custody");
+            let waiting = matches!(step.fiber_status, FlowFiberStatus::NeedWaiting(_));
+            if waiting && !restored {
+                assert!(inner && outer, "{form}: both mounts must survive the wait");
+                let save = session.export_session_save_bytes().unwrap();
+                let mut cold = session_from_bytes(&bytes);
+                cold.import_session_save_bytes(&save, &Default::default())
+                    .unwrap();
+                assert_eq!(cold.export_session_save_bytes().unwrap(), save);
+                session = cold;
+                restored = true;
+                continue;
+            }
+            if waiting && !sent {
+                assert!(inner && outer, "{form}: both mounts must survive restore");
+                let event = session
+                    .presentation()
+                    .view
+                    .mounts
+                    .iter()
+                    .flat_map(|mount| &mount.events)
+                    .next()
+                    .expect("restored inner button retains its route");
+                let invocation = ViewHandlerInvocation::from_input(
+                    &InputEvent::activate(InputEpoch(1), event.target().clone()),
+                    event.event(),
+                    event.route(),
+                )
+                .unwrap();
+                session.queue_view_handler_invocation(&invocation).unwrap();
+                sent = true;
+            }
+            saw_outer_after_inner |= sent && outer && !inner;
+            if let FlowFiberStatus::Done(exit) = step.fiber_status {
+                assert_eq!(exit, FlowExit::Return("42".into()));
+                completed = true;
+                break;
+            }
+        }
+        assert!(sent && completed, "{form}: Action did not resume the wait");
+        assert!(
+            saw_outer_after_inner,
+            "{form}: inner View did not retire at value-block exit"
+        );
+    }
+}
+
+#[test]
 fn source_background_replacement_and_old_handle_release_keep_the_current_occupant() {
     let mut session = session(
         r#"

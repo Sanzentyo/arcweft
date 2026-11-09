@@ -7742,53 +7742,10 @@ impl<'a> FinalFlowLowerer<'a> {
                 self.lower_pipe_value(expression, pipe, continuation, overrides)
             }
             HirExprKind::Block(block) => {
-                self.lower_value_block(block.statements(), block.tail(), continuation)
+                self.lower_scope_value(expression, block.statements(), block.tail(), continuation)
             }
             HirExprKind::NamedBlock(block) => {
-                let fact = self
-                    .semantic_facts
-                    .expression_scope(expression)
-                    .cloned()
-                    .ok_or_else(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "Scope expression {expression:?} has no checked lexical identity"
-                        ))
-                    })?;
-                if fact.continuation().is_some() {
-                    return self.lower_scope_value(
-                        expression,
-                        &fact,
-                        block.statements(),
-                        block.tail(),
-                        continuation,
-                    );
-                }
-                let mut ops = vec![RuntimeFlowOpSeed::EnterScope {
-                    identity: fact.identity().clone(),
-                }];
-                ops.extend(self.lower_value_block(
-                    block.statements(),
-                    block.tail(),
-                    RuntimeFlowValueContinuation::ExitScope {
-                        owner: expression,
-                        outer: Box::new(continuation),
-                    },
-                )?);
-                if self
-                    .semantic_facts
-                    .semantic_value_type(HirValueTypeOwner::Expression(expression))
-                    .is_none()
-                    && matches!(
-                        self.expression_type(expression)?.shape(),
-                        RuntimeTypeShape::Never
-                    )
-                {
-                    // A Never tail has no value continuation. Retain a balanced
-                    // lexical fallthrough for resumable terminal operations;
-                    // a real return/goto unwinds before reaching this marker.
-                    ops.push(RuntimeFlowOpSeed::ExitScope);
-                }
-                Ok(ops)
+                self.lower_scope_value(expression, block.statements(), block.tail(), continuation)
             }
             HirExprKind::ComputationBlock(block)
                 if matches!(
@@ -8880,6 +8837,9 @@ impl<'a> FinalFlowLowerer<'a> {
                 let mut ops = vec![RuntimeFlowOpSeed::ExitScope];
                 ops.extend(self.apply_semantic_value_continuation(*outer)?);
                 Ok(ops)
+            }
+            RuntimeFlowValueContinuation::ScopeSuccess { owner } => {
+                self.complete_semantic_scope_success(owner)
             }
             RuntimeFlowValueContinuation::Compose {
                 owner,

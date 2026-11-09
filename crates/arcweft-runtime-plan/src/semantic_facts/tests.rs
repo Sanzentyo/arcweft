@@ -1039,6 +1039,7 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     let mut input = RuntimePlanSemanticFactInput::new();
     let runtime_owners = runtime_reachability(project);
     let analysis = analyze_identity_fixture(project);
+    push_fixture_anonymous_scopes(&mut input, project, &runtime_owners, &analysis);
     for owner in runtime_owners.locals() {
         input.push_local_declaration(
             owner,
@@ -1085,6 +1086,32 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         }
     }
     input
+}
+
+fn push_fixture_anonymous_scopes(
+    input: &mut RuntimePlanSemanticFactInput,
+    project: &HirProject,
+    owners: &HirRuntimeSemanticReachability<'_>,
+    analysis: &arcweft_lang_sema::final_analysis::FinalSemanticAnalysis,
+) {
+    for (_, module) in project.analysis_view().unwrap().modules() {
+        for (owner, expression) in module.expressions() {
+            if owners.contains_expression(owner)
+                && matches!(expression.kind(), HirExprKind::Block(_))
+            {
+                input.push_expression_scope(
+                    owner,
+                    super::RuntimeScopeFact::new(
+                        super::RuntimeScopeOrigin::Expression(
+                            analysis.expression_origin(owner).unwrap(),
+                        ),
+                        arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
+                        None,
+                    ),
+                );
+            }
+        }
+    }
 }
 
 fn projected_type_mut(
@@ -3101,6 +3128,12 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
 
     let complete_selected_input = || {
         let mut input = RuntimePlanSemanticFactInput::new();
+        push_fixture_anonymous_scopes(
+            &mut input,
+            &project,
+            &runtime_owners,
+            &analyze_identity_fixture(&project),
+        );
         for owner in runtime_owners.locals() {
             input.push_local_declaration(owner, unit_type(), fixture_local_origin(&project, owner));
         }
