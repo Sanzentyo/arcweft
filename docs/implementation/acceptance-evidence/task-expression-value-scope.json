@@ -2023,6 +2023,24 @@
             },
             "doctestPassed": 82,
             "failedTestIds": []
+          },
+          "genericMatchReconciliation": {
+            "sourceCommit": "30b1fd3a06d20b9f15580bf602297a76617fbdc1",
+            "expected": 151,
+            "exactIdPasses": 150,
+            "passedIncludingSuccessor": 151,
+            "successor": {
+              "original": "arcweft-lang-sema final_analysis::tests::semantic_transcript_acceptance::expression_corpus::contextual_expressions::style_length_values_use_registered_roots_and_shared_scalar_reduction",
+              "current": "arcweft-lang-sema final_analysis::tests::semantic_transcript_acceptance::expression_corpus::contextual_expressions::style_length_values_use_specified_values_and_exact_decimal_scaling",
+              "passed": true,
+              "commits": [
+                "c4824f38ebce38305adb7f8ac757e13edb4b8e4e",
+                "300162fe9b638be752b4661e1daf5bae85151081"
+              ],
+              "reason": "The authored input and exact five numeric results were retained across the specified-Style migration. The replacement checks the checked Style value variant and exact decimal scaling."
+            },
+            "exactComparison": "carrier/terminal-transfer/repair/quality/generic-match-exact.receipt.json",
+            "reconciledComparison": "carrier/terminal-transfer/repair/quality/generic-match-reconciled.receipt.json"
           }
         }
       }
@@ -2030,8 +2048,8 @@
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 4392526,
-    "sha256": "80921097f740b828a0e779ebe67590bc0748cbb146ba63e0bb6e98b499dba002",
+    "bytes": 4480505,
+    "sha256": "a91c30b6736169538a48ab768976701c553b77c728f1dd5b60ee912b556cb18d",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -2347,7 +2365,10 @@
       "carrier/terminal-transfer/repair/quality/workspace-clippy.log": "d54506213894f32ca5aa548ed1a3fde535011f2e77599ad7e669d08fc8045856",
       "carrier/terminal-transfer/repair/quality/owner-doctests.log": "b42ccaa0c267e08954d5a5394faa32dce7da5c58d999bb9d4b02768a04c112c2",
       "carrier/terminal-transfer/repair/quality/core.log": "b37b418edb187085de32e845f7e188888a33eb9c4b26ef5463aaff4e2aa95ddb",
-      "carrier/terminal-transfer/repair/quality/checkpoint.receipt.json": "9c98045c50d5032353c1341a54e0a7b72af93b5481523a3bd6bcfa37d02ded61"
+      "carrier/terminal-transfer/repair/quality/checkpoint.receipt.json": "9c98045c50d5032353c1341a54e0a7b72af93b5481523a3bd6bcfa37d02ded61",
+      "carrier/terminal-transfer/repair/quality/generic-match-exact.receipt.json": "d70f7f64fa8220f064cdba6db0368277184404c64446747e7e0134412ce39562",
+      "carrier/terminal-transfer/repair/quality/generic-match-reconciled.receipt.json": "15d409b195eabca6225b18068ecbdc0ca9b3ce3e41d0e502facbc3833e065155",
+      "carrier/terminal-transfer/repair/quality/owners.log": "d739eb41fb5b447ff428db76467e2dfe7bbf2c30f4a3eca5c4dbe732f05de163"
     }
   }
 }
