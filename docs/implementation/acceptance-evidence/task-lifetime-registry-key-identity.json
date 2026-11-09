@@ -4401,8 +4401,8 @@
     },
     "raw": {
       "path": "docs/implementation/acceptance-evidence/task-await-pending-registry.raw.zip",
-      "bytes": 1752594,
-      "sha256": "82c42767b5a53c6a2c002a3ec081831c183cf1d3e4d40d523cb65d9722546008",
+      "bytes": 2000173,
+      "sha256": "2e76d7c420314ffac8c60e3e8c709af597b346e936c1a4797c26ffc23332ff36",
       "entries": [
         {
           "entry": "await-pending-registry-efd5dd36/source.publication.json",
@@ -4673,8 +4673,247 @@
           "entry": "await-pending-registry-efd5dd36/quality/checkpoint.receipt.json",
           "bytes": 4825,
           "sha256": "a87cc9436d54a39a73af9ad4d400196610076bed0a71ae8990bb3bf45e13110e"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/quality.retry.receipt.json",
+          "bytes": 1925,
+          "sha256": "c2892639c29454307d2e24b9159f4b907f3052055f23c65016b598cb47641f90"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/retry-quality.ps1",
+          "bytes": 2591,
+          "sha256": "a0f328c5c3e1de57f91b8c5e112f968f6190a0ee207dae3e3a65fca9027b1143"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/plan-compiler.log",
+          "bytes": 164659,
+          "sha256": "e713fa76a31f43412e110a7da11a979b7c558e150f9e6663f887a26ea2b8676f"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/quality-plan-compiler-retry.log",
+          "bytes": 264222,
+          "sha256": "bf94eb4013611c855c2fec5c7bc94dcc18dc60ed6d1087557d2717658ac7b1a3"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/runtime-host.log",
+          "bytes": 102157,
+          "sha256": "5ebf60c6f2129474fab38dfdc60ebdf6a06df4be76942e48de50eb45084d4130"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/driver-scene.log",
+          "bytes": 129775,
+          "sha256": "4ef4489847c7404bd57c13da465613e9aa05b7e9c30ba712608724c7af3ef2df"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/player-native.log",
+          "bytes": 99499,
+          "sha256": "d2559651d22f85b2b46806dd5729be9a9b6a886e4d538a824dcded5974bbaad3"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/player-web.log",
+          "bytes": 94293,
+          "sha256": "da5d53bff3ec7607d70ae34485ce802293ebb8befb8f9eb032f8addb3ba7e6f7"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/agent-execution.log",
+          "bytes": 102761,
+          "sha256": "71349a0a2938c6bff8a72a89634b1efadae4cedd2014e832f2e6e0bf86412fe2"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/agent-transport.log",
+          "bytes": 95243,
+          "sha256": "4c54bd51c7d4b5ad5e8aaed8373f09e789feec42149f274e19694f5a1937f180"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/tools-lsp.log",
+          "bytes": 147796,
+          "sha256": "0e330a898c2f7489ca9276ddb2b6a1c655912530c058539ab6c252528de6fc6f"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/verify.log",
+          "bytes": 93963,
+          "sha256": "b4eb838fef02b817939f3fd48f51baab6dd940ab908e48e85532f3a279716f43"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/cli-library-binaries.log",
+          "bytes": 121034,
+          "sha256": "23ea65fb1c78e77a5cceb69775433209296f8647554bac9e7765f30dea485f5f"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/cli-integration.log",
+          "bytes": 95735,
+          "sha256": "108e5f1f95dcc1fc948783d39d2e4ee6506aad01ea2ce80503c765813104350e"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/terminal.receipt.json",
+          "bytes": 11939,
+          "sha256": "54b084806f8be3c3aca39f3ca464c6eee74f598a50b27f296119b346e278f97b"
         }
       ]
+    },
+    "terminalQuality": {
+      "receipt": "await-pending-registry-efd5dd36/quality/terminal.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 3882,
+        "pass": 3882,
+        "fail": 0,
+        "skip": 1
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.01s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.64s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 0.54s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.99s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.26s",
+            "Summary [  68.090s] 1443 tests run: 1443 passed, 0 skipped"
+          ]
+        },
+        "plan-compiler": {
+          "exit": 101,
+          "summary": [],
+          "retry": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 17s",
+              "Summary [ 115.385s] 1172 tests run: 1172 passed (2 slow), 1 skipped"
+            ],
+            "log": "await-pending-registry-efd5dd36/quality/quality-plan-compiler-retry.log"
+          }
+        },
+        "runtime-host": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 03s",
+            "Summary [   2.561s] 72 tests run: 72 passed, 0 skipped"
+          ]
+        },
+        "driver-scene": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 00s",
+            "Summary [   3.143s] 278 tests run: 278 passed, 0 skipped"
+          ]
+        },
+        "player-native": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s",
+            "Summary [   1.088s] 59 tests run: 59 passed, 0 skipped"
+          ]
+        },
+        "player-web": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s",
+            "Summary [   0.374s] 37 tests run: 37 passed, 0 skipped"
+          ]
+        },
+        "agent-execution": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 30.75s",
+            "Summary [  45.335s] 106 tests run: 106 passed, 0 skipped"
+          ]
+        },
+        "agent-transport": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 14.85s",
+            "Summary [   0.393s] 46 tests run: 46 passed, 0 skipped"
+          ]
+        },
+        "tools-lsp": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 41.60s",
+            "Summary [  80.562s] 412 tests run: 412 passed, 0 skipped"
+          ]
+        },
+        "verify": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 46.88s",
+            "Summary [   0.244s] 31 tests run: 31 passed, 0 skipped"
+          ]
+        },
+        "cli-library-binaries": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 19s",
+            "Summary [  31.355s] 196 tests run: 196 passed, 0 skipped"
+          ]
+        },
+        "cli-integration": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 25.44s",
+            "Summary [   7.896s] 30 tests run: 30 passed, 0 skipped"
+          ]
+        }
+      },
+      "cliScope": "CLI libraries, binaries and six prescribed integration targets.",
+      "recoveredAfterBuildFailure": [
+        "plan-compiler"
+      ],
+      "unresolvedStages": []
     }
   }
 }
