@@ -120,6 +120,10 @@ At most the first matching observer body runs for one Pending publication. If
 none matches, Await remains suspended without running a body. Normal observer
 fallthrough re-enters the same Await without evaluating its operand or starting
 its producer again; non-local control transfer does not re-wait.
+The observer runs within the Await's reached lifetime activations. A Flow
+registry read in an observer uses the same Flow registration as the Await.
+The read must be valid on every possible invocation, including after a prior
+observer changed the registration.
 
 Await-specific `error` and `denied` branches are removed. Handle domain errors
 after Await or use Try:

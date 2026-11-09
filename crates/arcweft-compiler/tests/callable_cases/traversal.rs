@@ -1,10 +1,17 @@
 use super::*;
 use arcweft_core::awbc::{
-    codec::AwbcDecodeBudget, product_step::AwbcProductStepExecutor, schema::AwbcProgram,
+    codec::AwbcDecodeBudget,
+    product_step::{
+        AwbcProductExecutorSaveSnapshot, AwbcProductSaveError, AwbcProductStepExecutor,
+    },
+    schema::AwbcProgram,
 };
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot};
-use arcweft_core::step::{RuntimeStepBudget, RuntimeStepMode, RuntimeStepOptions};
+use arcweft_core::step::{
+    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
+    RuntimeStepStopReason,
+};
 use arcweft_lang_sema::final_analysis::{CheckedExecutionBodyOwner, CheckedExecutionSource};
 
 #[test]
@@ -355,6 +362,252 @@ fn parallel_options() -> RuntimeStepOptions {
         budget: RuntimeStepBudget { max_ops: 1 },
         ..Default::default()
     }
+}
+
+#[test]
+fn pending_await_observers_use_the_original_flow_registry_on_each_publication() {
+    let source = r#"
+extern capability fs {
+    fn read_text(path: String) -> Need<Result<String, String>> effects { fs.read }
+}
+flow main() -> String {
+    'flow.progress_count <- 0i64
+    let result = await fs.read_text("observed.txt") with {
+        pending _ => {
+            let count = 'flow.progress_count
+            'flow.progress_count <- count + 1i64
+            log.info(count)
+        }
+        pending _ => { log.info("wrong observer") }
+    }
+    assert.check('flow.progress_count == 2i64)
+    return match result {
+        .Ok(value) => value,
+        .Err(_) => "read failed",
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_traversal_source_with_parameters(source, &["path"]);
+    let report = compiled.runtime_plan();
+    let encoded = AwbcLowerer::new(
+        &report.plan,
+        &report.dialogue_content_catalog,
+        "await_registry.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program
+    .encode_canonical()
+    .unwrap();
+    let mut plan = report.plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+            *blake3::hash(&encoded).as_bytes(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let flow = plan.flows()[0].id.clone();
+    let mut native = Engine::for_flow(plan, &flow).unwrap();
+    drive_pending_registry_observers(RuntimeProgramOwner::Plan(native.program_plan()), |input| {
+        native.step(input, parallel_options())
+    });
+
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    let executor = ArcweftRuntimeExecutor::from_awbc_product(
+        decoded,
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+    )
+    .unwrap();
+    let owner = executor.program_owner();
+    let mut awbc = Some(executor);
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+    let mut public_saves = 0;
+    let mut pending_rollbacks = 0;
+    drive_pending_registry_observers(owner, |input| {
+        let mut current = awbc.take().unwrap();
+        let result = current.step_with_pure_backend(input, parallel_options(), &mut backend);
+        let image = current.product_inert_rollback_image().unwrap();
+        let restored = match AwbcProductExecutorSaveSnapshot::from_live(
+            &image,
+            current.admitted_product_awbc_program().unwrap(),
+        ) {
+            Ok(saved) => {
+                let saved = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+                public_saves += 1;
+                let bound = current.bind_product_save_snapshot(saved).unwrap();
+                current.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+            }
+            Err(AwbcProductSaveError::NeedsQuiescence { needs }) => {
+                assert_eq!(needs.len(), 1);
+                pending_rollbacks += 1;
+                current.restore_current_product_rollback_image(image)
+            }
+            Err(error) => panic!("unexpected observer save rejection: {error}"),
+        };
+        awbc = Some(restored.unwrap_or_else(|error| panic!("observer restore: {error}")));
+        result
+    });
+    assert!(public_saves > 0);
+    assert!(pending_rollbacks > 0);
+}
+
+#[derive(Default)]
+struct PendingRegistryTrace {
+    submission: Option<arcweft_core::task::TaskSubmission>,
+    logs: Vec<String>,
+    progress_events: usize,
+}
+
+impl PendingRegistryTrace {
+    fn advance(
+        &mut self,
+        event: Option<arcweft_core::task::TaskEvent>,
+        step: &mut impl FnMut(RuntimeStepInput) -> RuntimeStepResult,
+    ) -> FlowFiberStatus {
+        use arcweft_core::{effect::LineEffectRequest, plan::FlowEvent, step::RuntimeDiagnostic};
+
+        let mut expected_diagnostics = event
+            .as_ref()
+            .map(|event| {
+                RuntimeDiagnostic::new(format!(
+                    "task {} sequence {} delivered",
+                    event.correlation.task_id, event.cursor.sequence.0,
+                ))
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut input = RuntimeStepInput {
+            task_events: event.into_iter().collect(),
+            ..Default::default()
+        };
+        for _ in 0..128 {
+            let result = step(std::mem::take(&mut input));
+            assert!(result.stats.executed_ops <= 1);
+            assert_eq!(
+                result.output.diagnostics,
+                std::mem::take(&mut expected_diagnostics)
+            );
+            assert_eq!(result.output.requests.host_calls.len(), 0);
+            for task in result.output.requests.tasks {
+                assert!(
+                    self.submission.replace(task).is_none(),
+                    "one original dispatch"
+                );
+            }
+            self.logs
+                .extend(
+                    result
+                        .output
+                        .effects
+                        .line
+                        .into_iter()
+                        .filter_map(|effect| match effect {
+                            LineEffectRequest::Log(event) => Some(event.message),
+                            _ => None,
+                        }),
+                );
+            self.progress_events += result
+                .output
+                .flow_events
+                .iter()
+                .filter(|event| matches!(event, FlowEvent::AwaitProgress { .. }))
+                .count();
+            if result.stop_reason == RuntimeStepStopReason::Blocked
+                || matches!(
+                    result.fiber_status,
+                    FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+                )
+            {
+                return result.fiber_status;
+            }
+        }
+        panic!("await observer did not reach its next stop");
+    }
+}
+
+fn drive_pending_registry_observers(
+    owner: RuntimeProgramOwner,
+    mut step: impl FnMut(RuntimeStepInput) -> RuntimeStepResult,
+) {
+    use arcweft_core::{
+        engine::FlowExit,
+        task::{
+            BoundTaskSpec, HostTaskRequest, LogicalEpoch, Progress, TaskDispatchIdentity,
+            TaskEvent, TaskEventKind, TaskPublicationRevision, TaskRequest, TaskSequence,
+        },
+    };
+
+    let mut trace = PendingRegistryTrace::default();
+    assert!(matches!(
+        trace.advance(None, &mut step),
+        FlowFiberStatus::NeedWaiting(_)
+    ));
+    let bound = BoundTaskSpec::bind(
+        trace
+            .submission
+            .take()
+            .expect("the source issued one Host task"),
+        Some(owner),
+        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    let TaskRequest::Host(HostTaskRequest::Custom {
+        capability,
+        operation,
+        args,
+        ..
+    }) = &bound.spec().request
+    else {
+        panic!("expected the actual fs.read_text request");
+    };
+    assert_eq!(capability.0, "fs");
+    assert_eq!(operation, "read_text");
+    assert!(
+        matches!(args.as_slice(), [path] if path.value() == &RuntimeValue::String("observed.txt".into()))
+    );
+    let dispatch =
+        TaskDispatchIdentity::new(bound.handle().correlation, LogicalEpoch(1), TaskSequence(1));
+    let first = TaskPublicationRevision::FIRST;
+    let second = first.checked_next().unwrap();
+    for (index, (revision, amount)) in [(first, 0.25), (second, 0.75)].into_iter().enumerate() {
+        let progress = TaskEvent::from_dispatch(
+            dispatch.clone(),
+            revision,
+            TaskEventKind::Progress(Progress::new(amount).unwrap()),
+        );
+        assert!(matches!(
+            trace.advance(Some(progress), &mut step),
+            FlowFiberStatus::NeedWaiting(_)
+        ));
+        assert_eq!(trace.progress_events, index + 1);
+        assert_eq!(trace.logs.len(), index + 1);
+        assert!(
+            trace.submission.is_none(),
+            "a progress update restarted its Need"
+        );
+    }
+    let ready = TaskEvent::from_dispatch(
+        dispatch,
+        second.checked_next().unwrap(),
+        TaskEventKind::Ready(
+            bound
+                .outcome()
+                .try_result_ok(RuntimeValue::String("observed".into()))
+                .unwrap(),
+        ),
+    );
+    assert_eq!(
+        trace.advance(Some(ready), &mut step),
+        FlowFiberStatus::Done(FlowExit::Return("observed".into()))
+    );
+    assert_eq!(trace.logs, ["0", "1"]);
+    assert_eq!(trace.progress_events, 2);
+    assert!(
+        trace.submission.is_none(),
+        "the observer must not start the producer again"
+    );
 }
 
 fn drive_source_parallel(

@@ -1298,6 +1298,15 @@ fn lifetime_promotion_resolves_the_reached_target_activation() {
             "42i64.promote('flow)",
         ),
         (
+            "flow main(need: Need<i64>) {
+                let _ = await need with {
+                    pending _ => { let _ = 42i64.promote('flow); }
+                }
+            }",
+            "sema.lifetime.promotion_execution",
+            "42i64.promote('flow)",
+        ),
+        (
             "fn lookup() { let _ = 42i64.promote('flow); }",
             "sema.lifetime.promotion_target",
             "'flow",

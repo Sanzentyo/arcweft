@@ -893,6 +893,16 @@ fn optional_registry_reads_require_a_reached_scope() {
             "fn lookup() -> Option<bool> { let value: Option<bool> = 'flow.flag?; value }",
             LifetimeScopeKind::Flow,
         ),
+        (
+            "flow main(need: Need<i64>) {
+                thread {
+                    let _ = await need with {
+                        pending _ => { let value: Option<bool> = 'flow.flag?; }
+                    }
+                }
+            }",
+            LifetimeScopeKind::Flow,
+        ),
     ] {
         let world = fixture(source, None);
         let result = super::analyze(&world);
@@ -901,6 +911,32 @@ fn optional_registry_reads_require_a_reached_scope() {
             "{result:?}",
         );
     }
+}
+
+#[test]
+fn a_pending_observer_read_must_be_valid_on_its_next_invocation() {
+    let world = fixture(
+        "flow main(need: Need<i64>) {
+            'flow.count <- 0i64
+            let _ = await need with {
+                pending _ => {
+                    let count: i64 = 'flow.count
+                    'flow.count <- true
+                }
+            }
+        }",
+        None,
+    );
+    let result = super::analyze(&world);
+    assert!(
+        matches!(
+            result,
+            Err(FinalSemanticAnalysisError::LocalUse(
+                crate::final_analysis::CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
+            ))
+        ),
+        "{result:?}",
+    );
 }
 
 #[test]

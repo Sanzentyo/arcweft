@@ -55,8 +55,8 @@ impl<'a> LifetimeLexicalActivation<'a> {
             ))
         );
         let mut line = None;
-        // Flow control blocks also contain ThreadItems. Their enclosing
-        // statement-body edge distinguishes them from an independent Thread.
+        // ThreadItems also occur in Flow control bodies and Await observers.
+        // Those bodies execute in the current activation.
         for (index, step) in steps.iter().enumerate().skip(2) {
             match (&steps[index - 1], step) {
                 (
@@ -69,6 +69,12 @@ impl<'a> LifetimeLexicalActivation<'a> {
                     HirSemanticPathStep::StatementBody(role),
                     HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. }),
                 ) if *role != HirStatementBodyRole::CancelRule || line.is_some() => {}
+                (
+                    HirSemanticPathStep::ExpressionOwned(
+                        HirExpressionOwnedBodyRole::AwaitBranchBody { .. },
+                    ),
+                    HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. }),
+                ) => {}
                 (
                     _,
                     HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. })
