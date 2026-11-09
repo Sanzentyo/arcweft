@@ -243,7 +243,6 @@ fn view_program() -> ViewProgramResource {
             text_control_layout("input.secret_secure_field", 48, 264, 420, 48),
             semantic_layout("target.secret_secure_field", 48, 264, 420, 48),
         ],
-        scroll_regions: Vec::new(),
         surfaces: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: Vec::new(),
