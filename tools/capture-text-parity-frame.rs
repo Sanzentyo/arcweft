@@ -4,7 +4,6 @@
 edition = "2024"
 
 [dependencies]
-arcweft-bundle = { path = "../crates/arcweft-bundle" }
 arcweft-layout = { path = "../crates/arcweft-layout" }
 arcweft-player-scene = { path = "../crates/arcweft-player-scene" }
 arcweft-player-web = { path = "../crates/arcweft-player-web" }
@@ -22,7 +21,6 @@ glyphon = { path = "../vendor/glyphon" }
 
 // Captures the shared headless-prepared text frame through native WGPU.
 
-use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::{
     frame::{PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest},
@@ -46,7 +44,7 @@ use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse(env::args().skip(1).collect())?;
-    let bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &fs::read(&args.bundle)?)?;
+    let bundle_bytes = fs::read(&args.bundle)?;
     let font_paths = args
         .additional_fonts
         .iter()
@@ -57,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|path| fs::read(path))
         .collect::<Result<Vec<_>, _>>()?;
     let prepared = prepare_text_parity_frame(
-        &bundle,
+        &bundle_bytes,
         args.viewport.render_viewport(),
         args.max_ticks,
         args.visual_time_millis,
@@ -108,15 +106,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn prepare_text_parity_frame(
-    bundle: &ArcweftBundle,
+    bundle_bytes: &[u8],
     viewport: RenderViewport,
     max_ticks: u64,
     visual_time_millis: u64,
     mut advance_count: usize,
     font_resources: &[Vec<u8>],
 ) -> Result<PreparedTextParityFrame, Box<dyn Error>> {
-    let mut session = BundleSession::new(bundle, BundleSessionOptions::default())?;
-    let images = BundleImageCatalog::from_bundle(bundle)?;
+    let (mut session, artifact) =
+        BundleSession::from_awfb_bytes_with_bundle(bundle_bytes, BundleSessionOptions::default())?;
+    let images = BundleImageCatalog::from_bundle(artifact.bundle())?;
     let mut presentation = None;
     let mut next_tick = 1_u64;
     for _ in 0..max_ticks {
@@ -177,7 +176,7 @@ fn prepare_text_parity_frame(
             style_program: session.view_style_program(),
             style_environment: &style_environment,
             style_palettes: session.view_style_palettes(),
-            fx_definitions: &bundle.fx_definitions,
+            fx_definitions: session.fx_definitions(),
             images: &images,
             viewport,
             fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
@@ -521,7 +520,8 @@ fn write_text_scope_capture(
             matches!(
                 owner.kind,
                 arcweft_text_model::PreparedTextOwnerKind::DialogueView {
-                    role: arcweft_text_model::DialoguePreparedTextRole::Content, ..
+                    role: arcweft_text_model::DialoguePreparedTextRole::Content,
+                    ..
                 }
             )
         })
