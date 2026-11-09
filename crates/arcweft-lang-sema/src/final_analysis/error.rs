@@ -444,6 +444,17 @@ pub enum FinalSemanticAnalysisError {
     LifetimePromotionProofFamily { source_span: SourceSpan },
     #[error("promote_unchecked requires an enclosing unsafe lifetime audit")]
     LifetimePromotionAuditRequired { source_span: SourceSpan },
+    #[error("lifetime promotion has no reached '{scope} activation", scope = .scope.as_str())]
+    LifetimePromotionTargetUnavailable {
+        scope: arcweft_id::LifetimeScopeKind,
+        source_span: SourceSpan,
+    },
+    #[error("lifetime promotion requires a value receiver")]
+    LifetimePromotionReceiverRequired { source_span: SourceSpan },
+    #[error("safe lifetime promotion requires an owned receiver")]
+    LifetimePromotionBorrowedReceiver { source_span: SourceSpan },
+    #[error("lifetime promotion has no executable ownership transfer")]
+    LifetimePromotionExecutionUnavailable { source_span: SourceSpan },
     #[error("call fact is not a clean selected call")]
     UnacceptedCall,
     #[error("call result/effects disagree with the expression fact")]
@@ -795,6 +806,12 @@ impl FinalSemanticAnalysisError {
             Self::LifetimePromotionProofLookup { .. }
             | Self::LifetimePromotionProofFamily { .. } => "sema.lifetime.promotion_proof",
             Self::LifetimePromotionAuditRequired { .. } => "sema.lifetime.promotion_audit",
+            Self::LifetimePromotionTargetUnavailable { .. } => "sema.lifetime.promotion_target",
+            Self::LifetimePromotionReceiverRequired { .. }
+            | Self::LifetimePromotionBorrowedReceiver { .. } => "sema.lifetime.promotion_receiver",
+            Self::LifetimePromotionExecutionUnavailable { .. } => {
+                "sema.lifetime.promotion_execution"
+            }
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
@@ -886,7 +903,11 @@ impl FinalSemanticAnalysisError {
             Self::InvalidLifetimePromotionOperands { source_span, .. }
             | Self::LifetimePromotionProofLookup { source_span, .. }
             | Self::LifetimePromotionProofFamily { source_span }
-            | Self::LifetimePromotionAuditRequired { source_span } => Some(
+            | Self::LifetimePromotionAuditRequired { source_span }
+            | Self::LifetimePromotionTargetUnavailable { source_span, .. }
+            | Self::LifetimePromotionReceiverRequired { source_span }
+            | Self::LifetimePromotionBorrowedReceiver { source_span }
+            | Self::LifetimePromotionExecutionUnavailable { source_span } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())
                     .with_label(DiagnosticLabel::primary(source_span.clone(), None)),

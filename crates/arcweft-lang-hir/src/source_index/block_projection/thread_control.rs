@@ -930,7 +930,7 @@ fn nested_body_evidence(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn nested_match_arm_body_is_poisoned(
+pub(super) fn nested_thread_body_is_poisoned(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     arenas: &BlockValidationArenas<'_>,
@@ -1069,8 +1069,6 @@ fn thread_flow_item_evidence(
     let statement = arenas.statements.resolve_prepared(slots, owner).ok()?;
     let exact = match statement.kind() {
         HirStmtKind::Choice { .. }
-        | HirStmtKind::If(_)
-        | HirStmtKind::IfLet(_)
         | HirStmtKind::SourceLocale(_)
         | HirStmtKind::Scope(_)
         | HirStmtKind::Include(_)
@@ -1092,8 +1090,6 @@ fn thread_flow_item_evidence(
         if !matches!(
             statement.kind(),
             HirStmtKind::Choice { .. }
-                | HirStmtKind::If(_)
-                | HirStmtKind::IfLet(_)
                 | HirStmtKind::SourceLocale(_)
                 | HirStmtKind::Scope(_)
                 | HirStmtKind::Include(_)

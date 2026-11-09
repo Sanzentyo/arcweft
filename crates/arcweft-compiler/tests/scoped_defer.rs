@@ -553,6 +553,33 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn unsafe_audit_flow_branch_waits_for_cleanup_before_resuming_the_audit() {
+    assert_deferred_wait(
+        r#"
+flow main() {
+    unsafe lifetime @unsafe.branch reason = "branch cleanup owns its input" {
+        /// SAFETY: this branch retains no borrowed value.
+        let picked: Option<String> = Some("selected")
+        if false {
+            log.info("unselected")
+        } else if let .Some(message) = picked {
+            defer { log.info("branch-cleanup"); wait(0.1s); log.info("branch-done") }
+            log.info(message)
+        } else {
+            log.info("unmatched")
+        }
+        log.info("after-branch")
+    }
+    log.info("after-audit")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        &["selected", "branch-cleanup"],
+        &["branch-done", "after-branch", "after-audit"],
+    );
+}
+
+#[test]
 fn scoped_defer_writes_the_reached_flow_registry_before_resuming_parent() {
     let source = r#"
 flow main() {

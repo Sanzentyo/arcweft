@@ -46,8 +46,8 @@ use crate::scope::{
 };
 use crate::slot::{HirOrigin, SlotSnapshot};
 use crate::stmt::{
-    HirAssertionMode, HirConditionalElseBranch, HirIfLetStmt, HirIfStmt, HirMatchStmt,
-    HirSelectStmt, HirStatementContext, HirStmt, HirStmtChildRole, HirStmtKind,
+    HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirIfLetStmt, HirIfStmt,
+    HirMatchStmt, HirSelectStmt, HirStatementContext, HirStmt, HirStmtChildRole, HirStmtKind,
     HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtBodyRole,
     HirThreadStmtRecoveryIssue, HirTrigger, HirTriggerIssue, HirUnsafeAuditIdentity,
     HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
@@ -1292,7 +1292,7 @@ pub(super) fn statement_matches(
         (SyntaxKind::MatchStatement, HirStmtKind::Match(statement)) => match_statement_matches(
             parsed, slots, arenas, owner, attached, scope, context, statement,
         ),
-        (SyntaxKind::IfStatement, HirStmtKind::If(statement)) => ordinary_if_statement_matches(
+        (SyntaxKind::IfStatement, HirStmtKind::If(statement)) => if_statement_matches(
             parsed, slots, arenas, owner, attached, scope, context, statement,
         ),
         (
@@ -1938,7 +1938,7 @@ fn match_statement_matches(
                 let attached_body = AttachedRequiredNestedThreadFlowBody::Present(
                     attached_body.thread_flow_body().ok()?,
                 );
-                if thread_control::nested_match_arm_body_is_poisoned(
+                if thread_control::nested_thread_body_is_poisoned(
                     parsed,
                     slots,
                     arenas,
@@ -2233,67 +2233,28 @@ fn if_let_statement_matches(
         _ => return None,
     };
 
-    let then_block = attached.then_branch().ok()?;
-    let then_statements = statement.then_body().ordinary_statements()?;
-    let then_poisoned = statement_block_matches(
+    let then_poisoned = conditional_body_is_poisoned(
         parsed,
         slots,
         arenas,
         owner,
-        &then_block,
-        statement.then_scope(),
+        &attached.then_branch().ok()?,
         outer_scope,
-        then_statements,
+        statement.then_body(),
         statement.locals(),
-        HirScopeKind::Conditional,
         context,
         &mut then_generations,
-    )?
-    .poisoned;
-
-    let else_poisoned = match (attached.else_branch().ok()?, statement.else_branch()) {
-        (None, None) => false,
-        (Some(IfStatementElseNode::Block(block)), Some(HirConditionalElseBranch::Body(body))) => {
-            let mut generations = BTreeMap::new();
-            let statements = body.ordinary_statements()?;
-            statement_block_matches(
-                parsed,
-                slots,
-                arenas,
-                owner,
-                &block,
-                body.scope(),
-                outer_scope,
-                statements,
-                &[],
-                HirScopeKind::Conditional,
-                context,
-                &mut generations,
-            )?
-            .poisoned
-        }
-        (
-            Some(IfStatementElseNode::If(nested)),
-            Some(HirConditionalElseBranch::ElseIf(nested_owner)),
-        ) => {
-            let mut generations = BTreeMap::new();
-            let evidence = statement_matches(
-                parsed,
-                slots,
-                arenas,
-                *nested_owner,
-                &nested,
-                outer_scope,
-                &mut generations,
-                context,
-            )?;
-            if !evidence.locals.is_empty() {
-                return None;
-            }
-            evidence.is_poisoned()
-        }
-        _ => return None,
-    };
+    )?;
+    let else_poisoned = conditional_else_is_poisoned(
+        parsed,
+        slots,
+        arenas,
+        owner,
+        outer_scope,
+        context,
+        attached.else_branch().ok()?,
+        statement.else_branch(),
+    )?;
 
     let scrutinee_poisoned = arenas
         .expressions
@@ -2328,7 +2289,7 @@ fn if_let_statement_matches(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ordinary_if_statement_matches(
+fn if_statement_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     arenas: &BlockValidationArenas<'_>,
@@ -2352,44 +2313,123 @@ fn ordinary_if_statement_matches(
     ) {
         return None;
     }
-    let then_block = attached.then_branch().ok()?;
-    let mut then_generations = BTreeMap::new();
-    let then_statements = statement.then_body().ordinary_statements()?;
-    let then_poisoned = statement_block_matches(
+    let then_poisoned = conditional_body_is_poisoned(
         parsed,
         slots,
         arenas,
         owner,
-        &then_block,
-        statement.then_scope(),
+        &attached.then_branch().ok()?,
         outer_scope,
-        then_statements,
+        statement.then_body(),
         &[],
+        context,
+        &mut BTreeMap::new(),
+    )?;
+    let else_poisoned = conditional_else_is_poisoned(
+        parsed,
+        slots,
+        arenas,
+        owner,
+        outer_scope,
+        context,
+        attached.else_branch().ok()?,
+        statement.else_branch(),
+    )?;
+    Some(StatementEvidence {
+        locals: Box::new([]),
+        state: if arenas
+            .expressions
+            .resolve_prepared(slots, statement.condition())
+            .is_ok_and(HirExpr::is_poisoned)
+        {
+            HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                role: HirStmtChildRole::Condition,
+            })
+        } else if then_poisoned {
+            HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                role: HirStmtChildRole::ThenBranch,
+            })
+        } else if else_poisoned {
+            HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                role: HirStmtChildRole::ElseBranch,
+            })
+        } else {
+            HirStmtPoisonState::Clean
+        },
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn conditional_body_is_poisoned(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    block: &AstNode<BlockKind>,
+    outer_scope: ScopeId,
+    body: &HirContextualStmtBody,
+    locals: &[LocalId],
+    context: HirStatementContext,
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+) -> Option<bool> {
+    if context == HirStatementContext::Thread {
+        let attached =
+            AttachedRequiredNestedThreadFlowBody::Present(block.thread_flow_body().ok()?);
+        return thread_control::nested_thread_body_is_poisoned(
+            parsed,
+            slots,
+            arenas,
+            owner,
+            outer_scope,
+            body,
+            &attached,
+            locals,
+            generations,
+        );
+    }
+    statement_block_matches(
+        parsed,
+        slots,
+        arenas,
+        owner,
+        block,
+        body.scope(),
+        outer_scope,
+        body.ordinary_statements()?,
+        locals,
         HirScopeKind::Conditional,
         context,
-        &mut then_generations,
-    )?
-    .poisoned;
-    let else_poisoned = match (attached.else_branch().ok()?, statement.else_branch()) {
+        generations,
+    )
+    .map(|evidence| evidence.poisoned)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn conditional_else_is_poisoned(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    outer_scope: ScopeId,
+    context: HirStatementContext,
+    attached: Option<IfStatementElseNode>,
+    branch: Option<&HirConditionalElseBranch>,
+) -> Option<bool> {
+    Some(match (attached, branch) {
         (None, None) => false,
         (Some(IfStatementElseNode::Block(block)), Some(HirConditionalElseBranch::Body(body))) => {
-            let mut generations = BTreeMap::new();
-            let statements = body.ordinary_statements()?;
-            statement_block_matches(
+            conditional_body_is_poisoned(
                 parsed,
                 slots,
                 arenas,
                 owner,
                 &block,
-                body.scope(),
                 outer_scope,
-                statements,
+                body,
                 &[],
-                HirScopeKind::Conditional,
                 context,
-                &mut generations,
+                &mut BTreeMap::new(),
             )?
-            .poisoned
         }
         (
             Some(IfStatementElseNode::If(nested)),
@@ -2412,28 +2452,6 @@ fn ordinary_if_statement_matches(
             evidence.is_poisoned()
         }
         _ => return None,
-    };
-    Some(StatementEvidence {
-        locals: Box::new([]),
-        state: if arenas
-            .expressions
-            .resolve_prepared(slots, statement.condition())
-            .is_ok_and(HirExpr::is_poisoned)
-        {
-            HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
-                role: HirStmtChildRole::Condition,
-            })
-        } else if then_poisoned {
-            HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
-                role: HirStmtChildRole::ThenBranch,
-            })
-        } else if else_poisoned {
-            HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
-                role: HirStmtChildRole::ElseBranch,
-            })
-        } else {
-            HirStmtPoisonState::Clean
-        },
     })
 }
 

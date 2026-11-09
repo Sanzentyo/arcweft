@@ -1285,6 +1285,137 @@ flow main() -> i64 effects { state.write('flow.input) } {
 }
 
 #[test]
+fn lifetime_promotion_resolves_the_reached_target_activation() {
+    for (source, code, offending) in [
+        (
+            "flow main() { let _ = 42i64.promote('flow); }",
+            "sema.lifetime.promotion_execution",
+            "42i64.promote('flow)",
+        ),
+        (
+            "flow main() { if true { let _ = 42i64.promote('flow); } }",
+            "sema.lifetime.promotion_execution",
+            "42i64.promote('flow)",
+        ),
+        (
+            "fn lookup() { let _ = 42i64.promote('flow); }",
+            "sema.lifetime.promotion_target",
+            "'flow",
+        ),
+        (
+            "flow main() { let _ = 42i64.promote('line); }",
+            "sema.lifetime.promotion_target",
+            "'line",
+        ),
+        (
+            "flow main() { thread { let _ = 42i64.promote('flow); } }",
+            "sema.lifetime.promotion_target",
+            "'flow",
+        ),
+        (
+            "flow main() { let callback = || { let _ = 42i64.promote('flow); }; }",
+            "sema.lifetime.promotion_target",
+            "'flow",
+        ),
+    ] {
+        let fixture = fixture(source, None);
+        let error = analyze(&fixture).expect_err("promotion transfer is not implemented");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{source}: {error:?}"));
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{source}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], offending, "{source}");
+    }
+}
+
+#[test]
+fn lifetime_promotion_reaches_the_attached_line_activation() {
+    let source = concat!(
+        "pub character akane {}\n",
+        "flow main() -> String {\n",
+        "    akane(voice=auto)[聞いて。[p]]\n",
+        "    with:\n",
+        "        let value = 42i64\n",
+        "        let _ = value.promote('line)\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let fixture = character_nominal_fixture(source);
+    let error = analyze(&fixture).expect_err("the reached line still requires a transfer");
+    let diagnostic = error
+        .source_diagnostic()
+        .unwrap_or_else(|| panic!("{error:?}"));
+    assert_eq!(
+        diagnostic.code().unwrap().as_str(),
+        "sema.lifetime.promotion_execution"
+    );
+    let span = diagnostic.span().expect("original promotion source");
+    assert_eq!(&source[span.range().as_range()], "value.promote('line)");
+}
+
+#[test]
+fn lifetime_promotion_cannot_treat_a_borrow_as_an_owned_receiver() {
+    for proof in ["", ", proof = @proof.keep"] {
+        let source = format!(
+            "proof keep() = ()\nflow main(value: &i64) {{ let _ = value.promote('flow{proof}); }}"
+        );
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("a proof does not make a borrow owned");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{error:?}"));
+        assert_eq!(
+            diagnostic.code().unwrap().as_str(),
+            "sema.lifetime.promotion_receiver"
+        );
+        let span = diagnostic.span().expect("original receiver source");
+        assert_eq!(&source[span.range().as_range()], "value");
+    }
+}
+
+#[test]
+fn lifetime_promotion_audit_stops_at_independent_execution() {
+    for (body, code, offending) in [
+        (
+            "if true { let _ = value.promote_unchecked('flow); }",
+            "sema.lifetime.promotion_execution",
+            "value.promote_unchecked('flow)",
+        ),
+        (
+            "thread { let value = 42i64; let _ = value.promote_unchecked('flow); }",
+            "sema.lifetime.promotion_audit",
+            "value.promote_unchecked('flow)",
+        ),
+        (
+            "let callback = || { let value = 42i64; let _ = value.promote_unchecked('flow); };",
+            "sema.lifetime.promotion_audit",
+            "value.promote_unchecked('flow)",
+        ),
+        (
+            "thread { unsafe lifetime @unsafe.inner reason = \"inner\" { let _ = 42i64.promote_unchecked('flow); } }",
+            "sema.lifetime.promotion_target",
+            "'flow",
+        ),
+    ] {
+        let source = format!(
+            "flow main() {{ unsafe lifetime @unsafe.outer reason = \"outer\" {{
+                let value = 42i64;
+                {body}
+            }} }}"
+        );
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("promotion transfer is not implemented");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{source}: {error:?}"));
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{source}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], offending, "{source}");
+    }
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one integration fixture proves source-order line-plan calls, bindings, output, and checked edges together"

@@ -23,14 +23,27 @@ use arcweft_lang_hir::{
 use super::super::FinalSemanticAnalysisError;
 use crate::{effects::EffectId, types::TypeKind};
 
-/// Root-relative activation that can supply authored registry type evidence.
+/// Root-relative lifetime activation reached by an authored operation.
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub(in crate::final_analysis) enum RegistryLexicalActivation<'a> {
+pub(in crate::final_analysis) enum LifetimeLexicalActivation<'a> {
     Flow,
     Line(&'a [HirSemanticPathStep]),
 }
 
-impl<'a> RegistryLexicalActivation<'a> {
+impl<'a> LifetimeLexicalActivation<'a> {
+    pub(in crate::final_analysis) fn for_expression(
+        topology: &'a HirProjectEvaluationTopology,
+        owner: ExprId,
+        scope: &LifetimeScopeKind,
+    ) -> Result<Option<(HirSemanticPathLocation<'a>, Self)>, FinalSemanticAnalysisError> {
+        let location = topology
+            .semantic_path(HirSemanticPathOwnerId::Expression(owner))
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        Ok(location.and_then(|location| {
+            Self::at(location.path().steps(), scope).map(|activation| (location, activation))
+        }))
+    }
+
     pub(in crate::final_analysis) fn at(
         steps: &'a [HirSemanticPathStep],
         scope: &LifetimeScopeKind,
@@ -154,17 +167,13 @@ impl CheckedRegistryRead {
         (
             Self,
             HirSemanticPathLocation<'a>,
-            RegistryLexicalActivation<'a>,
+            LifetimeLexicalActivation<'a>,
         ),
         FinalSemanticAnalysisError,
     > {
-        let location = topology
-            .semantic_path(HirSemanticPathOwnerId::Expression(owner))
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let Some((location, activation)) = location.and_then(|location| {
-            RegistryLexicalActivation::at(location.path().steps(), path.scope())
-                .map(|activation| (location, activation))
-        }) else {
+        let Some((location, activation)) =
+            LifetimeLexicalActivation::for_expression(topology, owner, path.scope())?
+        else {
             return Err(FinalSemanticAnalysisError::RegistryReadScope {
                 owner,
                 scope: path.scope().clone(),

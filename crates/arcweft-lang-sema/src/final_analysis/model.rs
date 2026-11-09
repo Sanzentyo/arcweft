@@ -3190,7 +3190,7 @@ mod registry;
 pub use registry::{
     CheckedRegistryAddress, CheckedRegistryDrop, CheckedRegistryRead, CheckedRegistryWrite,
 };
-pub(in crate::final_analysis) use registry::{RegistryLexicalActivation, RegistryWritePosition};
+pub(in crate::final_analysis) use registry::{LifetimeLexicalActivation, RegistryWritePosition};
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{

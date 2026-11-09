@@ -6,7 +6,7 @@ use thiserror::Error;
 use super::{
     HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallInvocation,
     HirCallInvocationForm, HirCallTypeApplication, HirCallValue, HirExprKind,
-    HirRequiredTokenState,
+    HirRequiredTokenState, HirSelectedMember,
 };
 use crate::{identity::ExprId, leaf::HirIdRef, module::HirModule};
 
@@ -48,15 +48,27 @@ impl HirCallInvocation {
         &self,
         module: &HirModule,
     ) -> Result<Option<HirLifetimePromotion>, HirLifetimePromotionError> {
-        let HirCallCallee::UnresolvedDot {
-            value_receiver,
-            member,
-            ..
-        } = self.callee()
-        else {
-            return Ok(None);
+        let (receiver, member) = match self.callee() {
+            HirCallCallee::UnresolvedDot {
+                value_receiver,
+                member,
+                ..
+            } => (*value_receiver, member.resolved()),
+            HirCallCallee::Value { value } => {
+                let expression = module.resolve_expr(*value).map_err(|_| {
+                    HirLifetimePromotionError::UnresolvedOperand { operand: *value }
+                })?;
+                let HirExprKind::Select(select) = expression.kind() else {
+                    return Ok(None);
+                };
+                let HirSelectedMember::Name(member) = select.member() else {
+                    return Ok(None);
+                };
+                (select.target(), Some(member))
+            }
+            HirCallCallee::Associated { .. } => return Ok(None),
         };
-        let audited = match member.resolved().map(crate::leaf::HirName::as_str) {
+        let audited = match member.map(crate::leaf::HirName::as_str) {
             Some("promote") => false,
             Some("promote_unchecked") => true,
             _ => return Ok(None),
@@ -131,7 +143,7 @@ impl HirCallInvocation {
             _ => return Err(HirLifetimePromotionError::InvalidArguments),
         };
         Ok(Some(HirLifetimePromotion {
-            receiver: *value_receiver,
+            receiver,
             target_source: *target_source,
             target: target.clone(),
             authorization,

@@ -132,12 +132,12 @@ Rules:
 Write the reason as a nonempty string literal. The checked audit retains the
 source operand, and the report retains the decoded text.
 
-The block executes its body in source order in its own lexical scope. Its
-locals and deferred cleanup belong to that scope; cleanup completes before
-execution continues after the block. A return or loop transfer keeps its
-enclosing target and leaves the block through normal scope cleanup. Audit
-metadata does not suppress body execution or turn an unproved operation into
-a proven one.
+The block uses its enclosing body's statement grammar and executes in source
+order in its own lexical scope. Its locals and deferred cleanup belong to that
+scope. Cleanup completes before execution continues after the block. A return
+or loop transfer keeps its enclosing target and leaves the block through normal
+scope cleanup. An independently executed Thread or closure needs its own audit
+for operations in its body.
 
 Diagnostics should point at the operation and the required proof/audit path:
 
@@ -151,6 +151,11 @@ Both forms take a receiver and one positional bare lifetime selector, such as
 `'flow`. `promote` also accepts a named `proof = @proof.id` operand. The
 selector and proof reference are static operands. Resolve the proof in the
 caller's declaration scope and retain the source of each operand for diagnostics.
+Select the destination from the activations reached by the operation. In
+particular, a Flow body reaches its Flow activation and an attached dialogue
+body reaches its Line activation. The checked receiver of a safe promotion
+must be owned. An explicit proof supplies evidence about lifetimes and leaves
+the receiver's ownership unchanged.
 
 ## Release policy
 

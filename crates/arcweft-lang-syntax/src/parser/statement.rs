@@ -247,7 +247,9 @@ enum BlockSequenceKind {
     ThreadFlow,
     /// Ordered statement roots with the same nested bodies as Flow line work.
     DialogueWork,
-    UnsafeAuditStatement,
+    UnsafeAuditStatement {
+        thread_flow: bool,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -265,9 +267,21 @@ fn emit_block_sequence(
     parser.start(SyntaxKind::StatementList, SyntaxRole::Element(0));
     let mut statement = 0_u32;
     let mut has_tail = false;
+    let audit_flow = matches!(
+        sequence_kind,
+        BlockSequenceKind::UnsafeAuditStatement { thread_flow: true }
+    );
+    let thread_flow = audit_flow
+        || matches!(
+            sequence_kind,
+            BlockSequenceKind::ThreadFlow | BlockSequenceKind::DialogueWork
+        );
 
     while parser.cursor() < close {
-        if sequence_kind == BlockSequenceKind::UnsafeAuditStatement {
+        if matches!(
+            sequence_kind,
+            BlockSequenceKind::UnsafeAuditStatement { .. }
+        ) {
             emit_unsafe_audit_trivia(parser);
         } else {
             parser.bump_trivia();
@@ -276,10 +290,6 @@ fn emit_block_sequence(
             break;
         }
         let start = parser.cursor();
-        let thread_flow = matches!(
-            sequence_kind,
-            BlockSequenceKind::ThreadFlow | BlockSequenceKind::DialogueWork
-        );
         let dialogue_plan = thread_flow
             .then(|| dialogue_plan::dialogue_plan_interval(parser, start, close))
             .flatten();
@@ -296,7 +306,8 @@ fn emit_block_sequence(
             .or_else(|| thread_flow_await_terminator(parser, start, close, thread_flow))
             .or_else(|| thread_flow_dialogue_terminator(parser, start, close, thread_flow))
             .or_else(|| find_statement_terminator(parser, start, close));
-        let choice_expression_start = if sequence_kind == BlockSequenceKind::ThreadFlow
+        let choice_expression_start = if (audit_flow
+            || sequence_kind == BlockSequenceKind::ThreadFlow)
             && parser.current_text() == Some("choice")
         {
             Some(start)
@@ -344,7 +355,7 @@ fn emit_block_sequence(
                     statement,
                     dialogue_plan.map(dialogue_plan::DialoguePlanInterval::owner_end),
                 );
-            } else if sequence_kind == BlockSequenceKind::DialogueWork {
+            } else if thread_flow {
                 emit_statement_with_role(
                     parser,
                     end,
@@ -2019,7 +2030,7 @@ fn emit_control_children(
     }
     if kind == SyntaxKind::UnsafeLifetimeStatement {
         let open = find_statement_open_brace(parser, parser.cursor(), end);
-        emit_unsafe_lifetime_children(parser, open, end, item_kind);
+        emit_unsafe_lifetime_children(parser, open, end, item_kind, thread_flow_context);
         return;
     }
     let open = find_statement_open_brace(parser, parser.cursor(), end);
@@ -2164,6 +2175,7 @@ fn emit_unsafe_lifetime_children(
     open: Option<usize>,
     end: usize,
     item_kind: SyntaxKind,
+    thread_flow_context: bool,
 ) {
     let head_end = open.unwrap_or(end);
     debug_assert!(parser.at("unsafe"));
@@ -2219,7 +2231,7 @@ fn emit_unsafe_lifetime_children(
     }
 
     if open.is_some() {
-        emit_braced_unsafe_audit_statement_block(parser, item_kind, end);
+        emit_braced_unsafe_audit_statement_block(parser, item_kind, end, thread_flow_context);
     } else {
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
         parser.finish();
@@ -2236,6 +2248,7 @@ fn emit_braced_unsafe_audit_statement_block(
     parser: &mut DocumentParser<'_, '_>,
     item_kind: SyntaxKind,
     end: usize,
+    thread_flow: bool,
 ) {
     parser.start(SyntaxKind::Block, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
@@ -2244,7 +2257,7 @@ fn emit_braced_unsafe_audit_statement_block(
         parser,
         close,
         item_kind,
-        BlockSequenceKind::UnsafeAuditStatement,
+        BlockSequenceKind::UnsafeAuditStatement { thread_flow },
     );
     if close < end {
         emit_close_delimiter(

@@ -1,7 +1,10 @@
 //! Static source admission for lifetime promotion.
 
 use arcweft_lang_hir::{
-    expr::{HirCallInvocation, HirLifetimePromotionAuthorization, HirLifetimePromotionError},
+    expr::{
+        HirCallInvocation, HirExprKind, HirLifetimePromotionAuthorization,
+        HirLifetimePromotionError,
+    },
     identity::ExprId,
     module::HirModule,
     scope::{HirScopeKind, HirScopeOwner},
@@ -10,6 +13,10 @@ use arcweft_lang_hir::{
 };
 
 use super::{Analyzer, FinalSemanticAnalysisError, statements::expression_span};
+use crate::{
+    callable::PreparedCallCalleeConstraintInputs, final_analysis::model::LifetimeLexicalActivation,
+    types::TypeKind,
+};
 
 impl Analyzer<'_, '_, '_> {
     pub(super) fn validate_lifetime_promotion_source(
@@ -17,6 +24,7 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: ExprId,
         call: &HirCallInvocation,
+        callee: &PreparedCallCalleeConstraintInputs,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let promotion = match call.lifetime_promotion(module) {
             Ok(Some(promotion)) => promotion,
@@ -39,7 +47,7 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         match promotion.authorization() {
-            HirLifetimePromotionAuthorization::Safe { proof: None } => Ok(()),
+            HirLifetimePromotionAuthorization::Safe { proof: None } => {}
             HirLifetimePromotionAuthorization::Safe {
                 proof: Some((proof, reference)),
             } => {
@@ -59,18 +67,51 @@ impl Analyzer<'_, '_, '_> {
                         source_span,
                     });
                 }
-                Ok(())
             }
             HirLifetimePromotionAuthorization::Audited => {
-                if is_in_unsafe_audit(module, owner)? {
-                    Ok(())
-                } else {
-                    Err(FinalSemanticAnalysisError::LifetimePromotionAuditRequired {
+                if !is_in_unsafe_audit(module, owner)? {
+                    return Err(FinalSemanticAnalysisError::LifetimePromotionAuditRequired {
                         source_span: expression_span(module, owner)?,
-                    })
+                    });
                 }
             }
         }
+        if LifetimeLexicalActivation::for_expression(&self.topology, owner, promotion.target())?
+            .is_none()
+        {
+            return Err(
+                FinalSemanticAnalysisError::LifetimePromotionTargetUnavailable {
+                    scope: promotion.target().clone(),
+                    source_span: expression_span(module, promotion.target_source())?,
+                },
+            );
+        }
+        let PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual } = callee else {
+            return Err(
+                FinalSemanticAnalysisError::LifetimePromotionReceiverRequired {
+                    source_span: expression_span(module, promotion.receiver())?,
+                },
+            );
+        };
+        if *source != promotion.receiver() {
+            return Err(FinalSemanticAnalysisError::InvalidOwner);
+        }
+        if matches!(
+            promotion.authorization(),
+            HirLifetimePromotionAuthorization::Safe { .. }
+        ) && matches!(actual, TypeKind::BorrowRef { .. })
+        {
+            return Err(
+                FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver {
+                    source_span: expression_span(module, *source)?,
+                },
+            );
+        }
+        Err(
+            FinalSemanticAnalysisError::LifetimePromotionExecutionUnavailable {
+                source_span: expression_span(module, owner)?,
+            },
+        )
     }
 }
 
@@ -89,13 +130,24 @@ fn is_in_unsafe_audit(
         if scope.kind() == HirScopeKind::Closure {
             break;
         }
-        if let HirScopeOwner::Stmt(owner) = *scope.owner() {
-            let statement = module
-                .resolve_stmt(owner)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            if matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. }) {
-                return Ok(true);
+        match *scope.owner() {
+            HirScopeOwner::Expr(owner) => {
+                let expression = module
+                    .resolve_expr(owner)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                if matches!(expression.kind(), HirExprKind::Thread(_)) {
+                    break;
+                }
             }
+            HirScopeOwner::Stmt(owner) => {
+                let statement = module
+                    .resolve_stmt(owner)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                if matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. }) {
+                    return Ok(true);
+                }
+            }
+            HirScopeOwner::Module(_) | HirScopeOwner::Item(_) => {}
         }
         current = scope.parent();
     }

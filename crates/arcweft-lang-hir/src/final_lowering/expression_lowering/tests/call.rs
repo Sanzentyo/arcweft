@@ -76,6 +76,8 @@ fn lifetime_promotion_preserves_typed_receiver_target_and_proof_operands() {
             "value.other('flow)".into(),
             "promote('flow)".into(),
             "value.promote(42i64)".into(),
+            "42i64.promote('flow)".into(),
+            "make().promote('flow)".into(),
         ],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
@@ -135,6 +137,21 @@ fn lifetime_promotion_preserves_typed_receiver_target_and_proof_operands() {
     assert!(project(7).unwrap().is_none());
     assert!(project(8).unwrap().is_none());
     assert!(project(9).unwrap().is_none());
+    for ordinal in [10, 11] {
+        let promotion = project(ordinal).unwrap().unwrap();
+        let Some(callee) = call(ordinal).callee().value_expression() else {
+            panic!("expected value callee at {ordinal}");
+        };
+        let expression = module.resolve_expr(callee).expect("selected callee");
+        let HirExprKind::Select(select) = expression.kind() else {
+            panic!("expected Select at {ordinal}: {expression:?}");
+        };
+        assert_eq!(promotion.receiver(), select.target());
+        assert_eq!(
+            promotion.target_source(),
+            call(ordinal).arguments()[0].value()
+        );
+    }
 }
 
 #[test]

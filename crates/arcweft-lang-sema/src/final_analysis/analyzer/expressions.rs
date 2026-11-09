@@ -60,7 +60,7 @@ use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
 use arcweft_lang_hir::project::HirSemanticPathLocation;
 use arcweft_lang_hir::stmt::{HirStmtEvaluationPlan, HirStmtValuePlanKind, HirTrigger};
 
-use crate::final_analysis::model::{RegistryLexicalActivation, RegistryWritePosition};
+use crate::final_analysis::model::{LifetimeLexicalActivation, RegistryWritePosition};
 
 use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
@@ -5224,7 +5224,7 @@ impl Analyzer<'_, '_, '_> {
         &self,
         module: &HirModule,
         location: HirSemanticPathLocation<'_>,
-        activation: RegistryLexicalActivation<'_>,
+        activation: LifetimeLexicalActivation<'_>,
         key: &arcweft_id::LifetimeRegistryKey,
     ) -> Result<Option<&TypeKind>, AnalyzerExpressionError> {
         let paths = self
@@ -5260,7 +5260,7 @@ impl Analyzer<'_, '_, '_> {
             let path = paths.statement(address.statement()).ok_or_else(|| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
-            if RegistryLexicalActivation::at(path.steps(), key.scope()) != Some(activation) {
+            if LifetimeLexicalActivation::at(path.steps(), key.scope()) != Some(activation) {
                 continue;
             }
             let statement = module.resolve_stmt(address.statement()).map_err(|_| {
