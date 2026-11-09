@@ -16296,3 +16296,11 @@ Webクレートは全feature nextest 37件成功、ClippyとWasmビルドは終�
 
 [採取・測定・公開照合の原本](acceptance-evidence/task-webgpu-demo-native-parity.raw.zip)は39件、706,690 bytes、SHA-256
 `6a649b3120b814286fe35ebb7f582ab355e745021fce98e9aa7b03fe3146f650`。
+
+公開Sourceから再生成した上記Wasmで、画像比較を有効にした `npm --prefix web test` は既定の起動上限10秒で終了0、8件成功。
+フォーカス、ホバー、押下、高DPIは各1280×720、縮小は960×540で採取した。
+5組とも既存の組別しきい値で比較器と `imq compare` が終了0。RGBAの全チャンネルを測定した `imq image` も5組でMSE、MAE、最大差が0だった。
+比較器のSSIMは1、変化画素率は0だった。この結果で既定スモークの再試行待ちを解消した。
+
+[既定スモーク・比較結果・入力の原本](acceptance-evidence/task-webgpu-demo-native-parity-acceptance.raw.zip)は9件、5,271 bytes、SHA-256
+`94d5615c496ecf4ea9bbeb59b121ca5354ba604980fa8f4a1365f0a0777c4983`。
