@@ -219,9 +219,10 @@ fn flow_transfer_moves_the_complete_inventory_in_authored_order() {
             RuntimeValue::String(format!("input{}", argument.parameter.position())),
         );
     }
-    let prepared = env.prepare_flow_inputs(&plan, &flow, &transfer).unwrap();
+    let target = crate::plan::RuntimeFlowTransferTarget::Static(flow);
+    let prepared = env.prepare_flow_inputs(&plan, &target, &transfer).unwrap();
     assert!(prepared.declaration.type_instantiation.is_some());
-    let values = prepared.into_moves().commit(&mut env);
+    let values = prepared.into_moves().commit(&mut env, target);
     assert_eq!(
         values.input_order().unwrap(),
         transfer.input_order().unwrap()
@@ -243,6 +244,7 @@ fn flow_transfer_moves_the_complete_inventory_in_authored_order() {
 fn flow_transfer_rejects_a_later_bad_input_before_moving_the_first() {
     let (plan, flow) = string_inputs_plan(2);
     let transfer = transfer_input_reads(&plan, &flow, [0, 1]);
+    let target = crate::plan::RuntimeFlowTransferTarget::Static(flow);
     let first = crate::plan::RuntimeFlowTransfer::input_local(&transfer.arguments[0]).unwrap();
     let second = crate::plan::RuntimeFlowTransfer::input_local(&transfer.arguments[1]).unwrap();
     for later_value in [None, Some(RuntimeValue::Bool(false))] {
@@ -252,7 +254,7 @@ fn flow_transfer_rejects_a_later_bad_input_before_moving_the_first() {
             env.set(second, value.clone());
         }
         let error = env
-            .prepare_flow_inputs(&plan, &flow, &transfer)
+            .prepare_flow_inputs(&plan, &target, &transfer)
             .err()
             .expect("bad input is refused before Move");
         match later_value {
@@ -281,7 +283,8 @@ fn flow_transfer_rejects_aliased_owners_before_reading_or_moving_values() {
     let (_registry, need) = crate::tests::pending_string_need(string_type());
     let mut env = crate::value::RuntimeEnv::default();
     env.set(local, RuntimeValue::NeedHandle(need));
-    assert!(matches!(env.prepare_flow_inputs(&plan, &flow, &transfer),
+    let target = crate::plan::RuntimeFlowTransferTarget::Static(flow);
+    assert!(matches!(env.prepare_flow_inputs(&plan, &target, &transfer),
         Err(crate::value::RuntimeEvalError::FlowInvocation(error))
             if *error == RuntimeFlowInvocationError::DuplicateTransferInput { local }));
     assert!(matches!(env.get(local), Some(RuntimeValue::NeedHandle(_))));
@@ -300,7 +303,7 @@ fn retained_flow_transfer_shares_one_value_budget_across_all_inputs() {
         target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
         arguments: Box::new(borrowed_bindings(&values)),
     };
-    let (declaration, _) = plan.validate_flow_transfer_inputs(&flow, &live).unwrap();
+    let (declaration, _) = plan.validate_flow_transfer_inputs(&live).unwrap();
     let retained = live
         .try_map(|value| {
             crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, &owner)
@@ -343,7 +346,7 @@ fn retained_flow_transfer_rejects_a_forged_value_that_fails_its_original_pattern
         target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
         arguments: Box::new(borrowed_bindings(&valid)),
     };
-    let (declaration, _) = plan.validate_flow_transfer_inputs(&flow, &live).unwrap();
+    let (declaration, _) = plan.validate_flow_transfer_inputs(&live).unwrap();
     let mut retained = live
         .try_map(|value| {
             crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, &owner)

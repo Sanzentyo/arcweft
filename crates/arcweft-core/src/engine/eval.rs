@@ -7,7 +7,7 @@ use super::{
 };
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
 use crate::plan::{
-    FlowRuntimeId, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureInputType,
+    RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureInputType,
     RuntimePureOutputType,
 };
 use crate::pure::{
@@ -1348,45 +1348,6 @@ impl Engine {
         let result = f(self);
         self.pop_runtime_scope()?;
         result
-    }
-
-    pub(super) fn evaluate_entity_target(
-        &mut self,
-        expr: &RuntimeExpr,
-        backend: &mut impl RuntimeCallBackend,
-    ) -> Result<FlowRuntimeId, RuntimeEvalError> {
-        match self.evaluate_expr_with_backend(expr, backend)? {
-            RuntimeValue::EntityRef(target) => {
-                if let Some(flow) = target.exact_flow_identity() {
-                    return self.flow_index(flow).map(|_| flow.clone()).ok_or_else(|| {
-                        RuntimeEvalError::InvalidEntityTarget {
-                            target: flow.canonical_label(),
-                            reason:
-                                "the exact Flow identity is absent from the current admitted plan"
-                                    .to_owned(),
-                        }
-                    });
-                }
-                let target = target.runtime_label();
-                self.plan
-                    .resolve_flow_target_value(&target)
-                    .map_err(|error| RuntimeEvalError::InvalidEntityTarget {
-                        target,
-                        reason: error.to_string(),
-                    })
-            }
-            RuntimeValue::String(target) => {
-                self.plan
-                    .resolve_flow_target_value(&target)
-                    .map_err(|error| RuntimeEvalError::InvalidEntityTarget {
-                        target,
-                        reason: error.to_string(),
-                    })
-            }
-            value => Err(RuntimeEvalError::ExpectedEntityRef(runtime_value_label(
-                &value,
-            ))),
-        }
     }
 
     pub(super) fn try_bind_pattern_owned(

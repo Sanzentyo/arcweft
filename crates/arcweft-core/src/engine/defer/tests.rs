@@ -45,7 +45,12 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
     let mut builder = RuntimePlanBuilder::new();
     let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
-    let string = crate::pattern::RuntimeCheckedType::String.semantic_identity_digest();
+    let flow_reference = crate::value::RuntimeEntityReferenceType::family_only(
+        arcweft_id::ProjectEntityReferenceFamily::Flow,
+    );
+    let flow_reference_id =
+        crate::pattern::RuntimeCheckedType::EntityReference(flow_reference.clone())
+            .semantic_identity_digest();
     let function_type = RuntimeSemanticTypeId::from_bytes([98; 32]);
     let parameter = RuntimeFunctionParameterIdentity::from_accepted_identity([99; 32]);
     let local_source = crate::engine::manual_local_source(
@@ -59,7 +64,10 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
-                RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    flow_reference_id,
+                    RuntimePlanTypeProjection::EntityReference(flow_reference),
+                ),
                 RuntimePlanTypeSeed::new(
                     function_type,
                     RuntimePlanTypeProjection::Function {
@@ -338,10 +346,12 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                     ))
                     .unwrap();
             }
-            let target_label = |flow: &FlowRuntimeId| {
+            let target_reference = |flow: &FlowRuntimeId| {
                 RuntimeExprSeed::new(
-                    string,
-                    RuntimeExprSeedKind::Value(RuntimeValue::String(flow.canonical_label())),
+                    flow_reference_id,
+                    RuntimeExprSeedKind::EntityRef(
+                        crate::value::RuntimeEntityReference::StructuralFlow(flow.clone()),
+                    ),
                 )
             };
             Some(match case {
@@ -358,11 +368,11 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                 GotoCase::Dynamic => RuntimeFlowOpSeed::Goto(
                     crate::plan::RuntimeFlowTransfer::dynamic_without_arguments(
                         RuntimeExprSeed::new(
-                            string,
+                            flow_reference_id,
                             RuntimeExprSeedKind::If {
                                 condition: Box::new(registry_result()),
-                                then_expr: Box::new(target_label(&alternate)),
-                                else_expr: Box::new(target_label(&target)),
+                                then_expr: Box::new(target_reference(&alternate)),
+                                else_expr: Box::new(target_reference(&target)),
                             },
                         ),
                     ),
@@ -371,7 +381,7 @@ fn ordinary_flow_defer_engine(exit: OrdinaryFlowExit) -> crate::engine::Engine {
                     LineEffectRequest::Goto(target.canonical_label()),
                 )),
                 GotoCase::InvalidAbi => RuntimeFlowOpSeed::Goto(
-                    crate::plan::RuntimeFlowTransfer::dynamic_without_arguments(target_label(
+                    crate::plan::RuntimeFlowTransfer::dynamic_without_arguments(target_reference(
                         &needs_argument,
                     )),
                 ),
@@ -852,8 +862,18 @@ fn native_goto_finishes_inner_and_caller_cleanup_before_transferring() {
                 && let NativeLexicalExitAction::Goto { transfer, .. } = &exit.action
             {
                 assert_eq!(
-                    transfer.target,
-                    crate::plan::RuntimeFlowTransferTarget::Static(destination.clone())
+                    transfer
+                        .target
+                        .identity(crate::value::RuntimeStoredValue::borrowed_view)
+                        .unwrap(),
+                    &destination
+                );
+                assert_eq!(
+                    matches!(
+                        transfer.target,
+                        crate::plan::RuntimeFlowTransferTarget::Dynamic(_)
+                    ),
+                    case == GotoCase::Dynamic
                 );
                 assert!(!transferred);
                 if engine.fiber.frame.active_function().is_some() {
@@ -879,14 +899,32 @@ fn native_goto_finishes_inner_and_caller_cleanup_before_transferring() {
                             unreachable!()
                         };
                         transfer.target = crate::plan::RuntimeFlowTransferTarget::Static(
-                            FlowRuntimeId::canonical(if case == GotoCase::Dynamic {
-                                "test.goto_needs_argument"
+                            if case == GotoCase::Dynamic {
+                                destination.clone()
                             } else {
-                                "test.goto_alternate"
-                            })
-                            .unwrap(),
+                                FlowRuntimeId::canonical("test.goto_alternate").unwrap()
+                            },
                         );
                         assert!(Engine::from_rollback_image(wrong_destination, &owner).is_err());
+                        if case == GotoCase::Dynamic {
+                            let mut text_selector = image.clone();
+                            let NativeLexicalExitAction::Goto { transfer, .. } = &mut text_selector
+                                .fiber
+                                .frame
+                                .lexical_exit
+                                .as_mut()
+                                .unwrap()
+                                .action
+                            else {
+                                unreachable!()
+                            };
+                            transfer.target = crate::plan::RuntimeFlowTransferTarget::Dynamic(
+                                crate::value::AwbcRuntimeValueSnapshot::String(
+                                    destination.canonical_label(),
+                                ),
+                            );
+                            assert!(Engine::from_rollback_image(text_selector, &owner).is_err());
+                        }
                     }
                     observed_inside_call = true;
                 } else {

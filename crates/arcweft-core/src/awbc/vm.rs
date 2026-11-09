@@ -3427,30 +3427,8 @@ fn execute_terminator(
             Ok(VmExit::Running)
         }
         AwbcTerminator::GotoDynamic { target, args } => {
-            let target_value = fiber.active_frame()?.register(*target)?;
-            let function = match target_value {
-                RuntimeValue::String(target) => program
-                    .resolve_flow_target_value(target)
-                    .map(|(_, function)| function)
-                    .map_err(VmError::DynamicTarget)?,
-                RuntimeValue::EntityRef(target) => match target.exact_flow_identity() {
-                    Some(flow) => program.flow_function(flow).ok_or_else(|| {
-                        VmError::DynamicTarget(crate::plan::RuntimeFlowTargetError::Missing {
-                            target: flow.canonical_label(),
-                        })
-                    })?,
-                    None => program
-                        .resolve_flow_target_value(&target.runtime_label())
-                        .map(|(_, function)| function)
-                        .map_err(VmError::DynamicTarget)?,
-                },
-                _ => {
-                    return Err(VmError::Runtime(format!(
-                        "invalid dynamic goto target `{}`",
-                        runtime_value_label(&target_value)
-                    )));
-                }
-            };
+            let function = program
+                .flow_function_for_reference(fiber.active_frame()?.register(*target)?.view())?;
             execute_goto(
                 program,
                 fiber,

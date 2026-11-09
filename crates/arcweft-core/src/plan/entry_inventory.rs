@@ -347,6 +347,8 @@ pub enum RuntimeFlowInvocationError {
     TransferInputOrder(#[from] crate::value::RuntimeInputOrderError),
     #[error("runtime Flow transfer does not retain its resolved original target")]
     TransferTarget,
+    #[error(transparent)]
+    TransferReference(#[from] super::RuntimeFlowTargetError),
     #[error("Flow transfer parameter {parameter:?} must consume a pre-evaluated whole local input")]
     TransferInputSource { parameter: FlowParameterCoordinate },
     #[error("Flow transfer repeats owning input local {local}")]
@@ -422,7 +424,6 @@ impl RuntimePlan {
     /// projected into the canonical ABI for the shared joint input admission.
     pub(crate) fn validate_flow_transfer_inputs<V: Borrow<crate::value::RuntimeValue>>(
         &self,
-        flow: &FlowRuntimeId,
         transfer: &super::RuntimeFlowTransfer<V>,
     ) -> Result<
         (
@@ -431,6 +432,7 @@ impl RuntimePlan {
         ),
         RuntimeFlowInvocationError,
     > {
+        let flow = transfer.target.identity(|value| value.borrow().view())?;
         let (_, order) = self.validate_flow_transfer_shape(flow, transfer)?;
         let mut references = vec![None; transfer.arguments.len()];
         for argument in &transfer.arguments {
@@ -1146,7 +1148,20 @@ impl super::RuntimePlanInventory {
                         self.validate_flow_transfer_shape(target, transfer)
                             .map_err(invalid)?;
                     }
-                    super::RuntimeFlowTransferTarget::Dynamic(_) => {
+                    super::RuntimeFlowTransferTarget::Dynamic(selector) => {
+                        if !self.type_table().get(selector.ty()).is_some_and(|ty| {
+                            matches!(ty.projection(), super::RuntimePlanTypeProjection::Never)
+                                || matches!(
+                                    ty.projection(),
+                                    super::RuntimePlanTypeProjection::EntityReference(reference)
+                                        if reference.family()
+                                            == Some(arcweft_id::ProjectEntityReferenceFamily::Flow)
+                                )
+                        }) {
+                            return Err(invalid(
+                                super::RuntimeFlowTargetError::ExpectedReference.into(),
+                            ));
+                        }
                         transfer
                             .input_order()
                             .map_err(RuntimeFlowInvocationError::from)

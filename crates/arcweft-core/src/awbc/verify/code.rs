@@ -3690,8 +3690,15 @@ fn apply_terminator(
         }
         AwbcTerminator::GotoDynamic { target, args } => {
             let target_ty = read_register(verifier, function, block, *target, state)?;
-            if !is_dynamic_target(runtime_shape(program, target_ty)) {
-                return invalid_type(&at, "dynamic target string/entity/dynamic");
+            let shape = runtime_shape(program, target_ty);
+            if !matches!(shape, Some(AwbcRuntimeTypeShape::Never))
+                && !matches!(
+                    shape,
+                    Some(AwbcRuntimeTypeShape::EntityRef(reference))
+                        if reference.family() == Some(arcweft_id::ProjectEntityReferenceFamily::Flow)
+                )
+            {
+                return invalid_type(&at, "dynamic goto requires Ref<Flow>");
             }
             check_args_budget(verifier, args.len())?;
             for arg in args {
@@ -7077,17 +7084,6 @@ fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
 
 fn is_progress(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(ty, Some(AwbcRuntimeTypeShape::Progress))
-}
-
-fn is_dynamic_target(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
-    matches!(
-        ty,
-        Some(
-            AwbcRuntimeTypeShape::String
-                | AwbcRuntimeTypeShape::EntityRef(_)
-                | AwbcRuntimeTypeShape::Dynamic
-        )
-    )
 }
 
 fn is_choice_value(ty: Option<&AwbcRuntimeTypeShape>) -> bool {

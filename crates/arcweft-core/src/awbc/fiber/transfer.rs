@@ -7,12 +7,24 @@ use super::{
 };
 use super::{AwbcProgram, FiberState, FiberStateError, RuntimeStoredValue};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
+use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
 use crate::program_types::RuntimeFunctionEffectInstantiation;
-use crate::value::{RuntimeScalarView, RuntimeValueView};
+use crate::value::RuntimeValueView;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 
 impl AwbcProgram {
+    pub(in crate::awbc) fn flow_function_for_reference(
+        &self,
+        selector: RuntimeValueView<'_>,
+    ) -> Result<super::AwbcFunctionId, RuntimeFlowTargetError> {
+        let flow = FlowRuntimeId::from_reference_value(selector)?;
+        self.flow_function(flow)
+            .ok_or_else(|| RuntimeFlowTargetError::Missing {
+                target: flow.canonical_label(),
+            })
+    }
+
     pub(in crate::awbc) fn flow_transfer_effect_target(
         &self,
         effect: super::AwbcEffectPlanId,
@@ -189,17 +201,9 @@ impl<V: RuntimeStoredValue, B: Borrow<RuntimeFunctionEffectInstantiation>, R, G>
                     ty: slot.ty,
                 }
                 .validate_view(selector.borrowed_view(), binding, resources)?;
-                match selector.borrowed_view() {
-                    RuntimeValueView::Scalar(RuntimeScalarView::String(label)) => program
-                        .resolve_flow_target_value(label)
-                        .map(|(_, function)| function)
-                        .map_err(|_| invalid())?,
-                    RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(entity)) => entity
-                        .exact_flow_identity()
-                        .and_then(|flow| program.flow_function(flow))
-                        .ok_or_else(invalid)?,
-                    _ => return Err(invalid().into()),
-                }
+                program
+                    .flow_function_for_reference(selector.borrowed_view())
+                    .map_err(|_| invalid())?
             }
             FiberFlowTransferOrigin::Choice { option, .. } => {
                 choice_option(*option)?.target.ok_or_else(invalid)?

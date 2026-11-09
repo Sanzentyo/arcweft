@@ -532,6 +532,8 @@ pub struct FlowRuntimeId {
 /// public label. It never reconstructs a checked/generated semantic identity.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeFlowTargetError {
+    #[error("dynamic goto requires an exact Ref<Flow>")]
+    ExpectedReference,
     #[error(transparent)]
     Invalid(#[from] RuntimeIdError),
     #[error("runtime Flow target `{target}` is not present in the accepted plan")]
@@ -604,6 +606,18 @@ impl RuntimeFlow {
 }
 
 impl FlowRuntimeId {
+    pub(crate) fn from_reference_value(
+        value: crate::value::RuntimeValueView<'_>,
+    ) -> Result<&Self, RuntimeFlowTargetError> {
+        use crate::value::{RuntimeScalarView, RuntimeValueView};
+        match value {
+            RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(reference)) => reference
+                .exact_flow_identity()
+                .ok_or(RuntimeFlowTargetError::ExpectedReference),
+            _ => Err(RuntimeFlowTargetError::ExpectedReference),
+        }
+    }
+
     pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
         RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Flow, value).map(Self::from_runtime_path)
     }

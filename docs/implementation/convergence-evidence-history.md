@@ -15971,3 +15971,12 @@ Cargo manifest・lock・config不変のため、前回照合したCore53／Sourc
 同じ元CLIで `modern-feedback-view` を別途check0／main-profile bundle0。元pathのAWFBは945200 bytes／SHA256 `e9d77b97a91a5ecffd2524d8aeb60b69a3dd87d6ea64102a4d43dad98f86dd72` で先行WIP7と一致。Source・manifest・CLI hash前後一致。サンプル操作・画像parityは含まず、9,125件へ加算しない。
 
 原本 `docs/implementation/acceptance-evidence/task-flow-transfer-convergence-0d91.raw.zip`：21 entries／1358394 bytes／SHA256 `6ad557c9b96361f1e0b86e6a3abcbf57762620fce09fd0b3f293ab7d82d42b6c`。実行条件・log・list・元pathのhash・新旧ID差分を保存。生成物は含めない。9,124実行で出たJIT回帰と修正前のAWBC失敗はそれぞれの元履歴に保持し、現状一覧はこの入力の結果へ更新した。
+
+
+### 動的gotoの型と保存中の参照 — 2026-11-09
+
+基点 `6082bddb07295615ef7cda85be7b96a732d53e01`（親 `0d91cf3a73891486dc34af1369630f75f4114d0a`、tree `710aea01a4340cad956277ceeaca00815ff49f95`）。対象Rust 17 pathのpatch SHA256 `7b98465a6b37b1ce4ccd0e01a3568a662dd8fcc55c83b43381000dc87237b5b1`。動的gotoのPlanとAWBCの検証は `Ref<Flow>` を要求する。Never式は評価が戻らないため保持する。AWBC loweringは実際の参照型でselector registerを確保する。NativeとAWBCは共通の値からのidentity投影を使う。AWBCの実行と保存復元は同じFlow bindingを解決する。Nativeの保留packetは評価済み参照を保持し、元の動的式の型と宛先ABIを復元時に検査する。命令・保存のversionは1。
+
+locked・全featureの対象42件PASS／2662 SKIP／1.829秒。Core31、RuntimePlan2、Compiler9。AWBCで既存Flowの文字列を拒否し、Nativeでは同じ宛先を静的指定へ変えた保留packetと文字列へ変えたpacketを復元拒否した。同名で異なる宣言のimport参照の拒否、実cleanupと移管、Native／保存AWBCの実ソース転送も通過。実行前後のSource・元EXE差分0。変更Rustのfmt終了0、Core／RuntimePlan／Compilerの全target check終了0、workspace全target check／Clippy終了0。Cargo入力が前回から同じためCore逆依存53にRuntimePlan逆依存16を含む結果を再利用した。今回の全53実行は別途必要。
+
+原本 `docs/implementation/acceptance-evidence/task-flow-reference-custody.raw.zip`：31 entries／1222079 bytes／SHA256 `eb2d9742abebc4db5832ceffad9ee6cbc8ff5353844b845eef1c0b8b3d3f768d`。検証条件、元実行ファイルの前後hash、ログ、Sourceとpatchを保管。直近の9,125件は元Sourceの履歴を保持する。

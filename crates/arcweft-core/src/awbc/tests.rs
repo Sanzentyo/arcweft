@@ -2927,14 +2927,21 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
     } else {
         AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic)
     };
-    program.strings.push("target".to_owned());
     program.runtime_types = vec![
         runtime_type(1, AwbcRuntimeTypeShape::Unit),
-        runtime_type(2, AwbcRuntimeTypeShape::String),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::EntityRef(crate::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Flow,
+            )),
+        ),
     ];
+    let target = test_flow_binding("target", 2);
     program.constants = vec![
         AwbcConstant::DurationNanos(0),
-        AwbcConstant::String(AwbcStringId(1)),
+        AwbcConstant::EntityRef(crate::value::RuntimeEntityReference::StructuralFlow(
+            target.flow.clone(),
+        )),
     ];
     program.signatures.push(AwbcSignature {
         params: Vec::new(),
@@ -3040,20 +3047,23 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
         dst: AwbcRegisterId(0),
         constant: AwbcConstantId(1),
     });
-    program.flow_bindings.push(test_flow_binding("target", 2));
+    program.flow_bindings.push(target);
     program
 }
 
 fn project_call_target_goto_program(dynamic: bool) -> AwbcProgram {
     let mut program = project_call_invoke_program();
-    program.strings.push("goto-target".to_owned());
-    program
-        .runtime_types
-        .push(runtime_type(3, AwbcRuntimeTypeShape::String));
-    program
-        .constants
-        .push(AwbcConstant::String(AwbcStringId(1)));
+    let target = test_flow_binding("goto-target", 2);
     if dynamic {
+        program.runtime_types.push(runtime_type(
+            3,
+            AwbcRuntimeTypeShape::EntityRef(crate::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Flow,
+            )),
+        ));
+        program.constants.push(AwbcConstant::EntityRef(
+            crate::value::RuntimeEntityReference::StructuralFlow(target.flow.clone()),
+        ));
         program.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
         program.functions[1].flags = AwbcFunctionFlags::empty()
             .with(AwbcFunctionFlag::Deterministic)
@@ -3096,11 +3106,27 @@ fn project_call_target_goto_program(dynamic: bool) -> AwbcProgram {
         safe_point: AwbcSafePointKind::FlowEntry,
         source_map: None,
     });
-    program
-        .flow_bindings
-        .push(test_flow_binding("goto-target", 2));
+    program.flow_bindings.push(target);
     program.canonicalize_string_table();
     program
+}
+
+#[test]
+fn dynamic_goto_verification_rejects_a_text_label_for_an_existing_flow() {
+    let mut program = goto_unwind_program(true);
+    let text = AwbcStringId(program.strings.len().try_into().unwrap());
+    program.strings.push("target".to_owned());
+    program.runtime_types[1] = runtime_type(2, AwbcRuntimeTypeShape::String);
+    program.constants[1] = AwbcConstant::String(text);
+    program.canonicalize_string_table();
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("an existing label is not a Flow reference");
+    assert!(
+        error
+            .to_string()
+            .contains("dynamic goto requires Ref<Flow>")
+    );
 }
 
 fn project_call_default_goto_program() -> AwbcProgram {

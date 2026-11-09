@@ -139,10 +139,13 @@ impl NativeGotoOrigin {
             message: "Native transfer inputs differ from their original source and destination ABI"
                 .into(),
         };
-        let RuntimeFlowTransferTarget::Static(destination) = &transfer.target else {
-            return Err(invalid());
-        };
-        admission.validate_metadata(destination)?;
+        let destination = transfer
+            .target
+            .identity(RuntimeStoredValue::borrowed_view)
+            .map_err(|_| invalid())?;
+        if let RuntimeFlowTransferTarget::Static(destination) = &transfer.target {
+            admission.validate_metadata(destination)?;
+        }
         admission.validate_metadata_collection(transfer.arguments.len())?;
         admission.validate_metadata(&source_instantiation)?;
         admission.validate_metadata(&type_instantiation)?;
@@ -168,9 +171,28 @@ impl NativeGotoOrigin {
         }
         let original = match (self, self.operation().operation(&plan)) {
             (Self::Operation(_), Some(FlowOp::Goto(original))) => {
-                let target_agrees = match &original.target {
-                    RuntimeFlowTransferTarget::Static(target) => target == destination,
-                    RuntimeFlowTransferTarget::Dynamic(_) => true,
+                let target_agrees = match (&original.target, &transfer.target) {
+                    (
+                        RuntimeFlowTransferTarget::Static(original),
+                        RuntimeFlowTransferTarget::Static(selected),
+                    ) => original == selected,
+                    (
+                        RuntimeFlowTransferTarget::Dynamic(expression),
+                        RuntimeFlowTransferTarget::Dynamic(selector),
+                    ) => {
+                        let expected = plan
+                            .type_table()
+                            .get(expression.ty())
+                            .ok_or_else(invalid)?
+                            .semantic_identity();
+                        admission.validate_admitted_typed_borrowed_in_invocation(
+                            selector.borrowed_value(),
+                            expected,
+                            source_instantiation,
+                        )?;
+                        true
+                    }
+                    _ => false,
                 };
                 if !target_agrees
                     || original.arguments.len() != transfer.arguments.len()
@@ -189,6 +211,7 @@ impl NativeGotoOrigin {
                 Self::Operation(_),
                 Some(FlowOp::Effect(crate::effect::LineEffectRequest::Goto(label))),
             ) if transfer.arguments.is_empty()
+                && matches!(&transfer.target, RuntimeFlowTransferTarget::Static(_))
                 && plan
                     .resolve_flow_target_value(label)
                     .is_ok_and(|target| target == *destination) =>
@@ -197,6 +220,7 @@ impl NativeGotoOrigin {
             }
             (Self::Choice { option, .. }, Some(FlowOp::Choice { options, .. }))
                 if transfer.arguments.is_empty()
+                    && matches!(&transfer.target, RuntimeFlowTransferTarget::Static(_))
                     && options
                         .get(*option)
                         .and_then(|option| option.target.as_ref())
@@ -385,7 +409,7 @@ impl<V> NativeLexicalExitAction<V> {
         self.value().into_iter().chain(
             transfer
                 .into_iter()
-                .flat_map(|transfer| transfer.arguments.iter().map(|argument| &argument.value)),
+                .flat_map(|transfer| transfer.expressions()),
         )
     }
 }

@@ -168,7 +168,7 @@ impl PreparedRuntimeFlowInputs<'_, '_> {
 }
 
 pub(crate) struct RuntimeFlowInputMoves(
-    crate::plan::RuntimeFlowTransfer<RuntimeLocalDeclarationId>,
+    Box<[super::RuntimeFlowParameterBinding<RuntimeLocalDeclarationId>]>,
 );
 
 impl RuntimeFlowInputMoves {
@@ -176,15 +176,21 @@ impl RuntimeFlowInputMoves {
     pub(crate) fn commit(
         self,
         env: &mut RuntimeEnv,
+        target: crate::plan::RuntimeFlowTransferTarget<RuntimeValue>,
     ) -> crate::plan::RuntimeFlowTransfer<RuntimeValue> {
-        self.0
-            .try_map(|local| {
-                Ok::<_, std::convert::Infallible>(
-                    env.take(local)
+        crate::plan::RuntimeFlowTransfer {
+            target,
+            arguments: self
+                .0
+                .into_iter()
+                .map(|argument| super::RuntimeFlowParameterBinding {
+                    parameter: argument.parameter,
+                    value: env
+                        .take(argument.value)
                         .expect("the admitted input remains in its original slot until commit"),
-                )
-            })
-            .unwrap()
+                })
+                .collect(),
+        }
     }
 }
 
@@ -194,10 +200,11 @@ impl RuntimeEnv {
     pub(crate) fn prepare_flow_inputs<'env, 'plan>(
         &'env self,
         plan: &'plan crate::plan::RuntimePlan,
-        flow: &crate::plan::FlowRuntimeId,
+        target: &'env crate::plan::RuntimeFlowTransferTarget<RuntimeValue>,
         transfer: &crate::plan::RuntimeFlowTransfer<super::RuntimeExpr>,
     ) -> Result<PreparedRuntimeFlowInputs<'env, 'plan>, RuntimeEvalError> {
         let invalid = |error| RuntimeEvalError::FlowInvocation(Box::new(error));
+        let flow = target.identity(RuntimeValue::view)?;
         plan.validate_flow_transfer_shape(flow, transfer)
             .map_err(invalid)?;
         transfer.validate_input_sources().map_err(invalid)?;
@@ -213,22 +220,29 @@ impl RuntimeEnv {
                 })
             })
             .collect::<Result<Box<[_]>, RuntimeEvalError>>()?;
-        let moves = crate::plan::RuntimeFlowTransfer {
-            target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
-            arguments,
+        let values = crate::plan::RuntimeFlowTransfer {
+            target: target.borrowed(),
+            arguments: arguments
+                .iter()
+                .map(|argument| {
+                    let value = self
+                        .get(argument.value)
+                        .ok_or(RuntimeEvalError::UninitializedLocal(argument.value))?;
+                    Ok(super::RuntimeFlowParameterBinding {
+                        parameter: argument.parameter,
+                        value,
+                    })
+                })
+                .collect::<Result<Box<[_]>, RuntimeEvalError>>()?,
         };
-        let values = moves.borrowed().try_map(|local| {
-            self.get(*local)
-                .ok_or(RuntimeEvalError::UninitializedLocal(*local))
-        })?;
         let (declaration, order) = plan
-            .validate_flow_transfer_inputs(flow, &values)
+            .validate_flow_transfer_inputs(&values)
             .map_err(invalid)?;
         Ok(PreparedRuntimeFlowInputs {
             values,
             declaration,
             order,
-            moves: RuntimeFlowInputMoves(moves),
+            moves: RuntimeFlowInputMoves(arguments),
         })
     }
 

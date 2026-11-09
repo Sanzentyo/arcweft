@@ -81,6 +81,15 @@ fn build_plan(
     flows: impl IntoIterator<Item = (FlowRuntimeId, Vec<RuntimeFlowOpSeed>)>,
     entries: impl IntoIterator<Item = RuntimeEntrySpec>,
 ) -> RuntimePlan {
+    build_plan_with_types(result, flows, entries, [])
+}
+
+fn build_plan_with_types(
+    result: RuntimeSemanticTypeId,
+    flows: impl IntoIterator<Item = (FlowRuntimeId, Vec<RuntimeFlowOpSeed>)>,
+    entries: impl IntoIterator<Item = RuntimeEntrySpec>,
+    extra_types: impl IntoIterator<Item = RuntimePlanTypeSeed>,
+) -> RuntimePlan {
     let flows = flows.into_iter().collect::<Vec<_>>();
     let entries = entries.into_iter().collect::<Vec<_>>();
     let mut builder = RuntimePlanBuilder::new();
@@ -89,7 +98,9 @@ fn build_plan(
             [
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
-            ],
+            ]
+            .into_iter()
+            .chain(extra_types),
             [],
         )
         .expect("test semantic facts admit");
@@ -1550,14 +1561,24 @@ fn dynamic_goto_keeps_all_accepted_flow_targets() {
     let selected = entry_id("selected");
     let selected_flow = flow_id("selected");
     let other = flow_id("other");
-    let plan = build_plan(
+    let flow_reference = arcweft_core::value::RuntimeEntityReferenceType::family_only(
+        arcweft_id::ProjectEntityReferenceFamily::Flow,
+    );
+    let plan = build_plan_with_types(
         type_id(1),
         [
             (
                 selected_flow.clone(),
                 vec![RuntimeFlowOpSeed::Goto(
                     arcweft_core::plan::RuntimeFlowTransfer::dynamic_without_arguments(
-                        string_expr("other"),
+                        RuntimeExprSeed::new(
+                            type_id(4),
+                            RuntimeExprSeedKind::EntityRef(
+                                arcweft_core::value::RuntimeEntityReference::StructuralFlow(
+                                    other.clone(),
+                                ),
+                            ),
+                        ),
                     ),
                 )],
             ),
@@ -1573,6 +1594,10 @@ fn dynamic_goto_keeps_all_accepted_flow_targets() {
             target: RuntimeEntryTarget::Flow(selected_flow),
             roles: RuntimeEntryRoles::None,
         }],
+        [RuntimePlanTypeSeed::new(
+            type_id(4),
+            RuntimePlanTypeProjection::EntityReference(flow_reference),
+        )],
     );
     let report = AwbcLowerer::for_entry(
         &plan,

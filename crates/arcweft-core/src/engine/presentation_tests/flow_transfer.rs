@@ -317,11 +317,12 @@ fn rejected_immediate_flow_transfer_receiver_keeps_original_inputs_and_scopes_ac
         else {
             panic!("the original source owns the transfer")
         };
+        let target = RuntimeFlowTransferTarget::Static(destination.clone());
         let inputs = engine
             .fiber
             .frame
             .env
-            .prepare_flow_inputs(&engine.plan, &destination, transfer)
+            .prepare_flow_inputs(&engine.plan, &target, transfer)
             .unwrap();
         let error = engine
             .prepare_admitted_flow_root(&inputs.values, &inputs.declaration, inputs.order)

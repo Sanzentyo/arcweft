@@ -1826,7 +1826,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         }
                         let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
                             .lower(expr);
-                        let target = frame.root_temp(self.inventory.dynamic_ty());
+                        let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                        let target = frame.root_temp(ty);
                         self.inventory.push_instruction(AwbcInstruction::Move {
                             dst: target,
                             src: value,

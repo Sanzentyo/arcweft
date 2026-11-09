@@ -5,7 +5,7 @@ use super::{
     Engine, FlowControlStackEntryKind, FlowEvent, FlowExit, FlowFiberStatus, LineEffectRequest,
     RuntimeStepInput, RuntimeStepOutput,
 };
-use crate::plan::{FlowOp, FlowRuntimeId};
+use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlowTransferTarget};
 use crate::pure::RuntimeCallBackend;
 use std::borrow::Borrow;
 
@@ -91,10 +91,12 @@ impl Engine {
         backend: &mut impl RuntimeCallBackend,
     ) {
         let target = match &transfer.target {
-            crate::plan::RuntimeFlowTransferTarget::Static(target) => target.clone(),
-            crate::plan::RuntimeFlowTransferTarget::Dynamic(expression) => {
-                match self.evaluate_entity_target(expression, backend) {
-                    Ok(target) => target,
+            RuntimeFlowTransferTarget::Static(target) => {
+                RuntimeFlowTransferTarget::Static(target.clone())
+            }
+            RuntimeFlowTransferTarget::Dynamic(expression) => {
+                match self.evaluate_expr_with_backend(expression, backend) {
+                    Ok(selector) => RuntimeFlowTransferTarget::Dynamic(selector),
                     Err(error) => {
                         self.fail_format_aware_eval(error, output, backend);
                         return;
@@ -127,7 +129,9 @@ impl Engine {
             }
             let source_instantiation = self.fiber.frame.env.function_instantiation_lease().cloned();
             let type_instantiation = inputs.declaration.type_instantiation.clone();
-            let transfer = inputs.into_moves().commit(&mut self.fiber.frame.env);
+            let transfer = inputs
+                .into_moves()
+                .commit(&mut self.fiber.frame.env, target);
             self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
                 target: scope,
                 action: NativeLexicalExitAction::Goto {
@@ -152,7 +156,9 @@ impl Engine {
                     return;
                 }
             };
-            let transfer = inputs.into_moves().commit(&mut self.fiber.frame.env);
+            let transfer = inputs
+                .into_moves()
+                .commit(&mut self.fiber.frame.env, target);
             self.commit_flow_transfer_root(transfer, source.as_ref(), prepared, output, backend);
         }
     }
@@ -164,12 +170,9 @@ impl Engine {
             std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
         >,
     ) -> Result<NativePreparedFlowRoot, crate::value::RuntimeEvalError> {
-        let crate::plan::RuntimeFlowTransferTarget::Static(target) = &transfer.target else {
-            unreachable!("a prepared transition retains its resolved original Flow");
-        };
         let (declaration, input_order) = self
             .plan
-            .validate_flow_transfer_inputs(target, transfer)
+            .validate_flow_transfer_inputs(transfer)
             .map_err(|error| crate::value::RuntimeEvalError::FlowInvocation(Box::new(error)))?;
         if declaration.type_instantiation != type_instantiation {
             return Err(
@@ -188,9 +191,7 @@ impl Engine {
         declaration: &crate::plan::RuntimeFunctionInputAdmission<'_>,
         input_order: crate::value::RuntimeInputOrder,
     ) -> Result<NativePreparedFlowRoot, crate::value::RuntimeEvalError> {
-        let crate::plan::RuntimeFlowTransferTarget::Static(target) = &transfer.target else {
-            unreachable!("an admitted transition retains its resolved original Flow");
-        };
+        let target = transfer.target.identity(|value| value.borrow().view())?;
         if self.fiber.frame.has_scope_defer_work() {
             return Err(crate::scope::RuntimeScopeExitError::DeferredWorkPending.into());
         }
@@ -226,8 +227,9 @@ impl Engine {
     ) {
         let (declaration, _) = prepared
             .plan
-            .validate_flow_transfer_inputs(&prepared.target, &transfer)
+            .validate_flow_transfer_inputs(&transfer)
             .expect("exclusive root preparation retains the admitted input ABI and patterns");
+        assert_eq!(declaration.site(), prepared.site);
         let mut arguments = vec![None; transfer.arguments.len()];
         for argument in transfer.arguments {
             arguments[argument.parameter.position() as usize] = Some(argument.value);

@@ -14,6 +14,25 @@ pub enum RuntimeFlowTransferTarget<E> {
     Dynamic(E),
 }
 
+impl<E> RuntimeFlowTransferTarget<E> {
+    pub(crate) fn borrowed(&self) -> RuntimeFlowTransferTarget<&E> {
+        match self {
+            Self::Static(flow) => RuntimeFlowTransferTarget::Static(flow.clone()),
+            Self::Dynamic(selector) => RuntimeFlowTransferTarget::Dynamic(selector),
+        }
+    }
+
+    pub(crate) fn identity<'a>(
+        &'a self,
+        view: impl FnOnce(&'a E) -> crate::value::RuntimeValueView<'a>,
+    ) -> Result<&'a FlowRuntimeId, super::RuntimeFlowTargetError> {
+        match self {
+            Self::Static(flow) => Ok(flow),
+            Self::Dynamic(selector) => FlowRuntimeId::from_reference_value(view(selector)),
+        }
+    }
+}
+
 /// Unsealed transfer data shared by source seeds and admitted Plan operations.
 /// The Plan owns full target ABI admission; this carrier owns the permutation
 /// between authored evaluation order and formal parameter storage order.
@@ -26,16 +45,8 @@ pub struct RuntimeFlowTransfer<E> {
 
 impl<E> RuntimeFlowTransfer<E> {
     pub(crate) fn borrowed(&self) -> RuntimeFlowTransfer<&E> {
-        let target = match &self.target {
-            RuntimeFlowTransferTarget::Static(target) => {
-                RuntimeFlowTransferTarget::Static(target.clone())
-            }
-            RuntimeFlowTransferTarget::Dynamic(target) => {
-                RuntimeFlowTransferTarget::Dynamic(target)
-            }
-        };
         RuntimeFlowTransfer {
-            target,
+            target: self.target.borrowed(),
             arguments: self
                 .arguments
                 .iter()
