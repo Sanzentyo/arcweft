@@ -136,10 +136,15 @@ impl Args {
 }
 
 fn parse_f64(args: &[String], index: usize, name: &str) -> Result<f64, String> {
-    args.get(index)
-        .ok_or_else(|| format!("{name} requires a number"))?
+    let value: f64 = args
+        .get(index)
+        .ok_or_else(|| format!("{name} requires a finite number"))?
         .parse()
-        .map_err(|error| format!("{name} must be a number: {error}"))
+        .map_err(|error| format!("{name} must be a finite number: {error}"))?;
+    if !value.is_finite() {
+        return Err(format!("{name} must be a finite number"));
+    }
+    Ok(value)
 }
 
 #[derive(Clone, Debug)]
@@ -318,6 +323,12 @@ impl VisualParityReport {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+        // Zero MSE has infinite PSNR, which JSON represents here as null.
+        let psnr = if self.psnr.is_finite() {
+            format!("{:.12}", self.psnr)
+        } else {
+            "null".to_owned()
+        };
         fs::write(
             path,
             format!(
@@ -326,7 +337,7 @@ impl VisualParityReport {
                     "  \"passed\": {},\n",
                     "  \"dimensions\": {{ \"width\": {}, \"height\": {} }},\n",
                     "  \"metrics\": {{\n",
-                    "    \"psnr\": {:.12},\n",
+                    "    \"psnr\": {},\n",
                     "    \"ssim\": {:.12},\n",
                     "    \"mse\": {:.12},\n",
                     "    \"mae\": {:.12},\n",
@@ -346,7 +357,7 @@ impl VisualParityReport {
                 passed,
                 self.width,
                 self.height,
-                self.psnr,
+                psnr,
                 self.ssim,
                 self.mse,
                 self.mae,

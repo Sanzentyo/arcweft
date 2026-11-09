@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { advanceLogicalClockSteps, installManualLogicalClock } from "./manual-logical-clock.mjs";
 
 // Drives deterministic prepared-text checkpoints through the browser player.
 
@@ -181,55 +182,6 @@ function collectConsoleErrors(page) {
   return errors;
 }
 
-async function installDeterministicClock(page, visualTimeMillis) {
-  await page.addInitScript(() => {
-    let now = 0;
-    let remainingSteps = 1;
-    globalThis.__arcweftNowMillis = () => {
-      const consumed = Math.min(remainingSteps, 4);
-      remainingSteps -= consumed;
-      now += consumed * 16;
-      return now;
-    };
-    globalThis.__arcweftGrantLogicalClockSteps = (count) => {
-      if (!Number.isSafeInteger(count) || count < 0) {
-        throw new Error(`invalid logical clock step count: ${count}`);
-      }
-      remainingSteps += count;
-    };
-    globalThis.__arcweftRemainingLogicalClockSteps = () => remainingSteps;
-  });
-  await page.addInitScript((value) => {
-    globalThis.__arcweftDialogueVisualTimeMillis = value;
-  }, visualTimeMillis);
-}
-
-async function advanceLogicalClockSteps(page, steps) {
-  const startTick = await page.evaluate(() =>
-    window.__arcweftLastObservation?.logical_tick ?? null
-  );
-  expect(Number.isSafeInteger(startTick), "runtime observation has no logical tick");
-  const targetTick = startTick + steps;
-  await page.evaluate((count) => {
-    globalThis.__arcweftGrantLogicalClockSteps(count);
-  }, steps);
-  await page.waitForFunction(
-    (target) =>
-      window.__arcweftLastObservation?.logical_tick >= target &&
-      globalThis.__arcweftRemainingLogicalClockSteps() === 0,
-    targetTick,
-    { timeout: 10_000 },
-  );
-  const captureTick = await page.evaluate(() =>
-    window.__arcweftLastObservation?.logical_tick ?? null
-  );
-  expect(
-    captureTick === targetTick,
-    `logical clock overshot target ${targetTick}: ${captureTick}`,
-  );
-  return { startTick, captureTick };
-}
-
 async function advanceLogicalClockDuration(page, elapsedMillis) {
   const elapsedSteps = Math.ceil(elapsedMillis / 16);
   const { startTick, captureTick } = await advanceLogicalClockSteps(page, elapsedSteps);
@@ -264,7 +216,7 @@ async function openReady(browser, baseUrl, checkpoint) {
   const page = await browser.newPage(options);
   const visualTimeMillis = checkpointVisualTime(checkpoint);
   const requiredText = checkpointRequiredText(checkpoint);
-  await installDeterministicClock(page, visualTimeMillis);
+  await installManualLogicalClock(page);
   const errors = collectConsoleErrors(page);
   const search = new URLSearchParams({
     bundle: bundleUrl,

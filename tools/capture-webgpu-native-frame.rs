@@ -4,7 +4,7 @@
 edition = "2024"
 
 [dependencies]
-arcweft-bundle = { path = "../crates/arcweft-bundle" }
+arcweft-player-scene = { path = "../crates/arcweft-player-scene" }
 arcweft-player-web = { path = "../crates/arcweft-player-web" }
 arcweft-render-wgpu = { path = "../crates/arcweft-render-wgpu" }
 png = "0.18.1"
@@ -15,8 +15,10 @@ wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl"
 glyphon = { path = "../vendor/glyphon" }
 ---
 
-use arcweft_bundle::ArcweftBundle;
-use arcweft_player_web::parity::{WebGpuParityCheckpoint, prepare_bundle_parity_frame};
+use arcweft_player_scene::fonts::{
+    DEFAULT_PLAYER_EMOJI_FONT_BYTES, DEFAULT_PLAYER_JAPANESE_FONT_BYTES, PlayerFontSet,
+};
+use arcweft_player_web::parity::{WebGpuParityCheckpoint, prepare_awfb_parity_frame};
 use arcweft_render_wgpu::offscreen::{CaptureAttachment, CaptureRequest, SharedOffscreenCapture};
 use png::{BitDepth, ColorType, Encoder};
 use std::env;
@@ -26,11 +28,19 @@ use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse(env::args().skip(1).collect())?;
-    let bundle = ArcweftBundle::from_json_slice(&fs::read(&args.bundle)?)?;
-    let frame =
-        prepare_bundle_parity_frame(&bundle, args.checkpoint.options(args.visual_time_millis))?;
+    let bytes = fs::read(&args.bundle)?;
+    let fonts = PlayerFontSet::from_font_resource_bytes(vec![
+        DEFAULT_PLAYER_JAPANESE_FONT_BYTES.to_vec(),
+        DEFAULT_PLAYER_EMOJI_FONT_BYTES.to_vec(),
+        fs::read(&args.font)?,
+    ])?;
+    let frame = prepare_awfb_parity_frame(
+        &bytes,
+        &fonts,
+        args.checkpoint.options(args.visual_time_millis),
+    )?;
     let mut capture = pollster::block_on(SharedOffscreenCapture::new(args.target_format.wgpu()))?;
-    capture.register_font_bytes(fs::read(&args.font)?)?;
+    fonts.register_with_offscreen_capture(&mut capture)?;
     let image = capture.capture(&frame, &CaptureRequest::whole_frame_color())?;
     let rgba = image
         .attachment_rgba(CaptureAttachment::Color)

@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { advanceLogicalClockSteps, installManualLogicalClock } from "./manual-logical-clock.mjs";
 
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
 const maxBlockedAdvances = 16;
@@ -110,7 +111,11 @@ function collectConsoleErrors(page) {
 
 async function openReady(browser, baseUrl, options = {}) {
   const { page, errors } = await openBooted(browser, baseUrl, options);
-  await advanceDialogueToChoices(page);
+  if (options.deterministicClock) {
+    await advanceParityDialogueToChoices(page);
+  } else {
+    await advanceDialogueToChoices(page);
+  }
   try {
     await page.waitForFunction(
       () =>
@@ -141,7 +146,7 @@ async function openBooted(browser, baseUrl, options = {}) {
     deviceScaleFactor: options.deviceScaleFactor ?? 1,
   });
   if (options.deterministicClock) {
-    await installDeterministicClock(page);
+    await installManualLogicalClock(page);
   }
   const errors = collectConsoleErrors(page);
   await page.goto(`${baseUrl}/index.html`);
@@ -223,14 +228,27 @@ async function finishBlockedDialogue(page) {
   await page.waitForFunction(() => window.__arcweftLastObservation?.finished === true);
 }
 
-async function installDeterministicClock(page) {
-  await page.addInitScript(() => {
-    let now = 0;
-    globalThis.__arcweftNowMillis = () => {
-      now = Math.min(now + 16, 160);
-      return now;
-    };
-  });
+async function advanceParityDialogueToChoices(page) {
+  const captureTick = 10;
+  await page.locator("#arcweft-canvas").focus();
+  for (let attempt = 0; attempt < maxBlockedAdvances; attempt += 1) {
+    const observation = await page.evaluate(() => window.__arcweftLastObservation);
+    expect(Number.isSafeInteger(observation?.logical_tick), "runtime observation has no logical tick");
+    if (observation.choice_count > 0) {
+      expect(
+        observation.logical_tick <= captureTick,
+        `choice exceeds the parity capture tick: ${observation.logical_tick}`,
+      );
+      await advanceLogicalClockSteps(page, captureTick - observation.logical_tick);
+      return;
+    }
+    expect(observation.logical_tick < captureTick, "choices did not reach the parity capture tick");
+    if (observation.dialogue && observation.stop_reason === "Blocked") {
+      await page.keyboard.press("Enter");
+    }
+    await advanceLogicalClockSteps(page, 1);
+  }
+  fail("manual parity clock did not reach choices");
 }
 
 async function assertFrameObservation(page, expected) {
@@ -453,7 +471,7 @@ async function main() {
 
     await runSmoke("missing WebGPU produces a structured fatal bootstrap error", async () => {
       const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-      await installDeterministicClock(page);
+      await installManualLogicalClock(page);
       try {
         await page.addInitScript(() => {
           Object.defineProperty(Navigator.prototype, "gpu", {
@@ -486,7 +504,7 @@ async function writeCanvasParityScreenshots(browser, baseUrl) {
   }
   await mkdir(directory, { recursive: true });
   const names = (process.env.ARW_WEB_PARITY_CHECKPOINTS ??
-    "focus-first-choice,hover-second-choice,press-first-choice,compact-focus-first-choice")
+    "focus-first-choice,hover-second-choice,press-first-choice,compact-focus-first-choice,hidpi-focus-first-choice")
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
@@ -502,7 +520,7 @@ async function writeCanvasParityScreenshots(browser, baseUrl) {
       expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
       await page.locator("#arcweft-canvas").screenshot({
         path: join(directory, `web-${name}.png`),
-        scale: "css",
+        scale: "device",
       });
     } finally {
       await page.close();
