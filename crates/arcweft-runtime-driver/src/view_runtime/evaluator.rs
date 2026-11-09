@@ -20,13 +20,15 @@ use super::owner::{AcceptedViewProgramGeneration, ResolvedMountedViewOwner};
 use super::part::ViewPartRuntimeCatalog;
 use super::value::{fx_placeholder, runtime_to_fx};
 use super::{
-    BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewEventBinding, BundleViewFrame,
-    BundleViewFxApplication, BundleViewFxArgument, BundleViewInstancePath,
-    BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem, BundleViewRootInput,
-    BundleViewRuntime, BundleViewTextOutput, MountedView, MountedViewExecutionLocal,
-    MountedViewHandlerInput, MountedViewHandlerKey, MountedViewHandlerPublication,
-    MountedViewHandlerSeal, PublishedViewEventToken, RuntimeDialogueActionToken, ViewOccurrenceKey,
-    ViewProgramRuntimeAuthority, deterministic_mount_seed, mount_scoped_interaction_target,
+    BundleViewActionButtonOutput, BundleViewDiagnostic, BundleViewDiagnosticCode,
+    BundleViewEventBinding, BundleViewFrame, BundleViewFxApplication, BundleViewFxArgument,
+    BundleViewInstancePath, BundleViewInstancePathSegment, BundleViewMountOutput,
+    BundleViewPaintItem, BundleViewRootInput, BundleViewRuntime, BundleViewStyleNodeId,
+    BundleViewTextOrigin, BundleViewTextOutput, BundleViewTextOutputIndex, MountedView,
+    MountedViewExecutionLocal, MountedViewHandlerInput, MountedViewHandlerKey,
+    MountedViewHandlerPublication, MountedViewHandlerSeal, PublishedViewEventToken,
+    RuntimeDialogueActionToken, ViewOccurrenceKey, ViewProgramRuntimeAuthority,
+    deterministic_mount_seed, mount_scoped_interaction_target,
 };
 use crate::dialogue::DialogueViewInput;
 use crate::presentation_handles::{PresentationHandleRecord, PresentationResourceState};
@@ -111,7 +113,7 @@ struct MountRenderBuilder {
     targets: BTreeSet<String>,
     images: BTreeSet<String>,
     text: Vec<BundleViewTextOutput>,
-    action_buttons: Vec<arcweft_bundle::resource_codec::ViewRuntimeActionButton>,
+    action_buttons: Vec<BundleViewActionButtonOutput>,
     text_inputs: Vec<arcweft_bundle::resource_codec::ViewRuntimeTextControl>,
     text_input_seals: BTreeSet<(BundleViewInstancePath, u32)>,
     paint: Vec<BundleViewPaintItem>,
@@ -119,12 +121,19 @@ struct MountRenderBuilder {
     style_scopes: ViewStyleScopeRuntime,
     element_targets: Vec<Option<String>>,
     last_target: Option<String>,
-    last_node: Option<(BundleViewInstancePath, u32, Option<String>)>,
+    last_node: Option<RetainedNode>,
     events: Vec<BundleViewEventBinding>,
     event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
     handler_seals: BTreeSet<MountedViewHandlerKey>,
     /// Current finite source domains, issued by the existing key preflight.
     repeat_keys: BTreeMap<(BundleViewInstancePath, u32), BTreeSet<arcweft_view::ViewRepeatKey>>,
+}
+
+#[derive(Clone)]
+struct RetainedNode {
+    id: BundleViewStyleNodeId,
+    target: Option<String>,
+    button: Option<usize>,
 }
 
 impl MountRenderBuilder {
@@ -189,12 +198,19 @@ impl MountRenderBuilder {
         instruction: u32,
         target: Option<&str>,
     ) {
-        self.last_node = Some((path.clone(), instruction, target.map(str::to_owned)));
+        self.last_node = Some(RetainedNode {
+            id: BundleViewStyleNodeId {
+                path: path.clone(),
+                instruction,
+            },
+            target: target.map(str::to_owned),
+            button: None,
+        });
     }
 
     fn attach_semantic_target(&mut self, target: &str) {
-        if let Some((_, _, node_target)) = &mut self.last_node {
-            *node_target = Some(target.to_owned());
+        if let Some(node) = &mut self.last_node {
+            node.target = Some(target.to_owned());
         }
     }
 
@@ -2246,20 +2262,18 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 }
                 ViewProgramInstruction::OpenElement {
                     element,
-                    target,
+                    target: declaration_target,
                     styles,
                     part,
                     ..
                 } => {
-                    let occurrence_target;
-                    let target = if element.is_text_input() {
-                        occurrence_target = target
-                            .as_deref()
-                            .map(|target| structural_path.qualify_target(target));
-                        &occurrence_target
-                    } else {
-                        target
-                    };
+                    let target = declaration_target.as_deref().map(|target| {
+                        if element.is_text_input() {
+                            structural_path.qualify_target(target)
+                        } else {
+                            structural_path.qualify_repeated_target(target)
+                        }
+                    });
                     builder.retain_node(
                         structural_path,
                         instruction_ordinal(cursor)?,
@@ -2286,21 +2300,21 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         )
                         .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
                     builder.style_scopes.enter_element(&mut local_styles);
-                    if let Some(target) = target {
+                    if let Some(target) = &target {
                         builder.retain_target(target);
                         builder.paint.push(BundleViewPaintItem::Element {
                             target: target.clone(),
                         });
                     }
                     if element.is_action_control()
-                        && let Some(target) = target
+                        && let (Some(declaration), Some(target)) = (declaration_target, &target)
                     {
                         let button = self
                             .program
                             .action_buttons
                             .iter()
                             .find(|button| {
-                                button.public_id == *target
+                                button.public_id == *declaration
                                     && button.view.as_deref() == Some(definition.public_id.as_str())
                             })
                             .ok_or_else(|| {
@@ -2315,7 +2329,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         for input in button.inputs.iter() {
                             match input {
                                 arcweft_bundle::resource_codec::view::ViewActionButtonInput::Label { text_source } => {
-                                    let text = self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?.value;
+                                    let text = self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?;
                                     let super::BundleViewTextValue::Plain { value } = text else { return Err(EvaluationFailure::new(BundleViewDiagnosticCode::UnsupportedTextValue, Some(cursor), "button label is not plain String text")); };
                                     label = Some(value);
                                 }
@@ -2337,11 +2351,21 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 "button input inventory is incomplete",
                             ));
                         };
+                        let button = button.runtime_value(label, enabled);
+                        let node = builder
+                            .last_node
+                            .as_mut()
+                            .expect("action control was retained");
+                        node.button = Some(builder.action_buttons.len());
                         builder
                             .action_buttons
-                            .push(button.runtime_value(label, enabled));
+                            .push(BundleViewActionButtonOutput::new(
+                                node.id.clone(),
+                                button,
+                                target,
+                            ));
                     }
-                    builder.element_targets.push(target.clone());
+                    builder.element_targets.push(target);
                     cursor += 1;
                 }
                 ViewProgramInstruction::OpenScroll {
@@ -2406,22 +2430,33 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 }
                 ViewProgramInstruction::EmitText {
                     text_source,
+                    text_block,
                     styles,
                     part,
                     ..
                 } => {
-                    builder.retain_node(structural_path, instruction_ordinal(cursor)?, None);
+                    let instruction = instruction_ordinal(cursor)?;
+                    let node = BundleViewStyleNodeId {
+                        path: structural_path.clone(),
+                        instruction,
+                    };
+                    let origin =
+                        self.retain_text_block(node, definition, text_source, text_block)?;
+                    let BundleViewTextOrigin::Block { target, .. } = &origin else {
+                        unreachable!("EmitText only retains blocks");
+                    };
+                    builder.retain_node(structural_path, instruction, None);
                     let root = builder.is_root_node();
-                    let text =
+                    let value =
                         self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?;
-                    let kind = match text.value.style_target_kind() {
-                        arcweft_view::ViewStyleTargetKind::Text => BundleViewStyleNodeKind::Text {
-                            text_source: text_source.clone(),
-                        },
+                    let output =
+                        BundleViewTextOutputIndex::new(instruction_ordinal(builder.text.len())?);
+                    let kind = match value.style_target_kind() {
+                        arcweft_view::ViewStyleTargetKind::Text => {
+                            BundleViewStyleNodeKind::Text { output }
+                        }
                         arcweft_view::ViewStyleTargetKind::RichText => {
-                            BundleViewStyleNodeKind::RichText {
-                                text_source: text_source.clone(),
-                            }
+                            BundleViewStyleNodeKind::RichText { output }
                         }
                         _ => {
                             return Err(EvaluationFailure::new(
@@ -2438,7 +2473,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 parts: self.parts,
                                 owner: &mounted.owner,
                                 path: structural_path,
-                                instruction: instruction_ordinal(cursor)?,
+                                instruction,
                                 kind,
                                 part: part.as_ref(),
                                 local: styles,
@@ -2447,15 +2482,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             &mut self.style_scope_allocator,
                         )
                         .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
-                    for target in &text.targets {
-                        builder.retain_target(&target.public_id);
-                        builder.paint.push(BundleViewPaintItem::Text {
-                            source_id: text.source_id.clone(),
-                            target: target.public_id.clone(),
-                        });
-                    }
-                    builder.text.push(text);
-                    builder.last_target = Some(text_source.clone());
+                    builder.retain_target(&target.public_id);
+                    builder.paint.push(BundleViewPaintItem::Text { output });
+                    builder
+                        .text
+                        .push(self.retain_text_output(text_source, origin, value));
                     cursor += 1;
                 }
                 ViewProgramInstruction::EmitImage {
@@ -2504,17 +2535,21 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     label_text_source,
                     ..
                 } => {
-                    builder.retain_target(target);
-                    builder.attach_semantic_target(target);
-                    if let Some(source) = label_text_source
-                        && !builder.text.iter().any(|text| text.source_id == *source)
-                    {
-                        let text =
+                    let target = structural_path.qualify_repeated_target(target);
+                    builder.retain_target(&target);
+                    builder.attach_semantic_target(&target);
+                    if let Some(source) = label_text_source {
+                        let value =
                             self.resolve_text(&key.handle, definition, mounted, source, cursor)?;
-                        for target in &text.targets {
-                            builder.retain_target(&target.public_id);
-                        }
-                        builder.text.push(text);
+                        let instruction = BundleViewStyleNodeId {
+                            path: structural_path.clone(),
+                            instruction: instruction_ordinal(cursor)?,
+                        };
+                        builder.text.push(self.retain_text_output(
+                            source,
+                            BundleViewTextOrigin::SemanticLabel { instruction },
+                            value,
+                        ));
                     }
                     cursor += 1;
                 }
@@ -2656,19 +2691,21 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 retained,
             });
         }
-        let (path, target_instruction, authored_target) = builder
+        let RetainedNode {
+            id:
+                BundleViewStyleNodeId {
+                    path,
+                    instruction: target_instruction,
+                },
+            target: authored_target,
+            button,
+        } = builder
             .last_node
             .clone()
             .ok_or_else(|| failure("View handler has no retained node target".to_owned()))?;
         if event == EventKind::Activate
-            && let Some(ViewProgramInstruction::OpenElement {
-                target: Some(control),
-                ..
-            }) = self.program.instructions.get(target_instruction as usize)
-            && builder
-                .action_buttons
-                .iter()
-                .any(|button| button.public_id == *control && !button.enabled)
+            && let Some(button) = button
+            && !builder.action_buttons[button].value.enabled
         {
             return Ok(());
         }

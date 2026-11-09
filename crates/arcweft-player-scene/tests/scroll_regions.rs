@@ -34,8 +34,8 @@ use arcweft_render_wgpu::view_scene::ViewPrimitive;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewStyleNode,
-    BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget,
-    BundleViewTextValue,
+    BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOrigin, BundleViewTextOutput,
+    BundleViewTextOutputIndex, BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
@@ -122,18 +122,23 @@ fn push_view_text(
         action_buttons: Vec::new(),
         text_inputs: Vec::new(),
         paint: vec![BundleViewPaintItem::Text {
-            source_id: source_id.clone(),
-            target: target.to_owned(),
+            output: BundleViewTextOutputIndex::new(0),
         }],
         text: vec![BundleViewTextOutput {
             source_id,
-            targets: vec![BundleViewTextTarget {
-                public_id: target.to_owned(),
-                containing_scroll_region: containing_scroll_region.map(str::to_owned),
-                bounds,
-                selection_policy,
-                style,
-            }],
+            origin: BundleViewTextOrigin::Block {
+                node: BundleViewStyleNodeId {
+                    path: BundleViewInstancePath::default(),
+                    instruction: 0,
+                },
+                target: BundleViewTextTarget {
+                    public_id: target.to_owned(),
+                    containing_scroll_region: containing_scroll_region.map(str::to_owned),
+                    bounds,
+                    selection_policy,
+                    style,
+                },
+            },
             value: BundleViewTextValue::Plain {
                 value: text.to_owned(),
             },
@@ -147,7 +152,7 @@ fn push_view_text(
             instruction: 0,
             parent: None,
             kind: BundleViewStyleNodeKind::Text {
-                text_source: format!("source.{target}"),
+                output: BundleViewTextOutputIndex::new(0),
             },
             part: None,
             exported_part: None,
@@ -229,6 +234,10 @@ fn retained_scroll_fixture() -> (BundlePresentationSnapshot, ViewStyleProgram) {
         );
         let mount = presentation.view.mounts.last_mut().unwrap();
         mount.style_nodes[0].instruction = 1;
+        let BundleViewTextOrigin::Block { node, .. } = &mut mount.text[0].origin else {
+            unreachable!();
+        };
+        node.instruction = 1;
         mount.style_nodes[0].parent = Some(BundleViewStyleNodeId {
             path: BundleViewInstancePath::default(),
             instruction: 0,
@@ -350,7 +359,11 @@ fn retained_scroll_routes_each_occurrence_and_uses_child_extents() {
     assert_px(updated.scroll_regions[2].offset_y, 0.0);
 
     let mut shrunk = presentation.clone();
-    shrunk.view.mounts[0].text[0].targets[0].bounds.height_milli = 110_000;
+    let BundleViewTextOrigin::Block { target, .. } = &mut shrunk.view.mounts[0].text[0].origin
+    else {
+        unreachable!();
+    };
+    target.bounds.height_milli = 110_000;
     let reflow = prepare(
         &mut input,
         PlayerFrameRequest {
@@ -567,7 +580,7 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
         ViewRuntimeControlVisualStyle::default(),
     );
     presentation.view.mounts[0].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
-        text_source: presentation.view.mounts[0].text[0].source_id.clone(),
+        output: BundleViewTextOutputIndex::new(0),
     };
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![RichTextNode::Scope {
@@ -641,7 +654,7 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         ViewRuntimeControlVisualStyle::default(),
     );
     presentation.view.mounts[0].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
-        text_source: presentation.view.mounts[0].text[0].source_id.clone(),
+        output: BundleViewTextOutputIndex::new(0),
     };
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::Localized {
         key: "text.greeting".to_owned(),
@@ -701,7 +714,7 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
     let display =
         resolve_frame_with_template(&spec, &template, &content, &test_line_context()).unwrap();
     presentation.view.mounts[1].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
-        text_source: presentation.view.mounts[1].text[0].source_id.clone(),
+        output: BundleViewTextOutputIndex::new(0),
     };
     presentation.view.mounts[1].text[0].value = BundleViewTextValue::DisplayFrame {
         frame: Box::new(display),

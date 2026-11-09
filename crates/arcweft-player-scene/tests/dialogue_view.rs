@@ -356,16 +356,14 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         .collect();
     presentation.action_buttons = mount
         .action_buttons
-        .clone()
-        .into_iter()
-        .map(|mut button| {
+        .iter()
+        .map(|output| {
+            let mut button = output.value.clone();
             button.public_id = mount.scoped_id(&button.public_id);
             button.target = mount.scoped_id(&button.target);
             button.view = Some(mount.scoped_id(mount.view.as_str()));
             let handler = mount
-                .events
-                .iter()
-                .find(|binding| binding.event() == arcweft_view::EventKind::Activate)
+                .activation_binding(&output.node)
                 .expect("standard action button publishes its typed route");
             button.action = ViewRuntimeActionButtonAction::ViewHandler {
                 event: handler.event(),

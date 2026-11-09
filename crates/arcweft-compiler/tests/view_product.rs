@@ -392,7 +392,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
     let disabled_frame =
         runtime.evaluate_with_dialogue(&[], &[dialogue_input.clone()], &disabled, false);
     assert!(disabled_frame.diagnostics.is_empty(), "{disabled_frame:?}");
-    assert!(!disabled_frame.mounts[0].action_buttons[0].enabled);
+    assert!(!disabled_frame.mounts[0].action_buttons[0].value.enabled);
     assert!(disabled_frame.mounts[0].events.is_empty());
     assert!(
         runtime.dispatch_invocation(&invocation).is_err(),
@@ -404,7 +404,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
     }];
     let enabled_frame = runtime.evaluate_with_dialogue(&[], &[dialogue_input], &enabled, false);
     assert!(enabled_frame.diagnostics.is_empty(), "{enabled_frame:?}");
-    assert!(enabled_frame.mounts[0].action_buttons[0].enabled);
+    assert!(enabled_frame.mounts[0].action_buttons[0].value.enabled);
     assert_eq!(enabled_frame.mounts[0].events.len(), 1);
 }
 
@@ -2144,7 +2144,7 @@ view Main(label: String = "seed") {
             matches!(&output.value, arcweft_runtime_driver::view_runtime::BundleViewTextValue::Plain { value } if value == "seed")
         );
     }
-    assert_eq!(frame.mounts[0].action_buttons[0].label, "seed");
+    assert_eq!(frame.mounts[0].action_buttons[0].value.label, "seed");
     let snapshot = runtime.snapshot().unwrap();
     let mut restored = BundleViewRuntime::try_new_with_awbc(product, Some(text), awbc).unwrap();
     restored
@@ -2438,7 +2438,7 @@ view Main(label: String = "hello", enabled: bool = true) {
             let output = runtime.evaluate(&handles, &bindings, false);
             assert!(output.diagnostics.is_empty(), "{output:?}");
             assert_eq!(output.mounts[0].action_buttons.len(), 1);
-            let button = &output.mounts[0].action_buttons[0];
+            let button = &output.mounts[0].action_buttons[0].value;
             assert_eq!(button.label, label);
             assert_eq!(button.enabled, enabled);
         }
@@ -2447,8 +2447,8 @@ view Main(label: String = "hello", enabled: bool = true) {
         restored.restore(&saved, &handles).unwrap();
         let output = restored.evaluate(&handles, &[], false);
         assert!(output.diagnostics.is_empty(), "{output:?}");
-        assert_eq!(output.mounts[0].action_buttons[0].label, "again");
-        assert!(output.mounts[0].action_buttons[0].enabled);
+        assert_eq!(output.mounts[0].action_buttons[0].value.label, "again");
+        assert!(output.mounts[0].action_buttons[0].value.enabled);
     }
 }
 
@@ -3068,8 +3068,8 @@ view Main(label: String = "seed") {
             })
             .collect::<Vec<_>>();
         assert_eq!(values, [label, "shadow", label]);
-        assert_eq!(frame.mounts[0].action_buttons[0].label, label);
-        assert!(frame.mounts[0].action_buttons[0].enabled);
+        assert_eq!(frame.mounts[0].action_buttons[0].value.label, label);
+        assert!(frame.mounts[0].action_buttons[0].value.enabled);
         let saved = runtime.snapshot().unwrap();
         let mut cold = BundleViewRuntime::try_new_with_awbc(
             product.clone(),
@@ -4034,7 +4034,10 @@ fn authored_view_matches_select_core_patterns_and_export_arm_bindings() {
                 assert!(frame.mounts[0].action_buttons.is_empty());
             } else {
                 assert_eq!(frame.mounts[0].action_buttons.len(), 1);
-                assert_eq!(frame.mounts[0].action_buttons[0].label, expected_label);
+                assert_eq!(
+                    frame.mounts[0].action_buttons[0].value.label,
+                    expected_label
+                );
                 assert!(frame.mounts[0].text.is_empty());
             }
             let saved = runtime.snapshot().unwrap();

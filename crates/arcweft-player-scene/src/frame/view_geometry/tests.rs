@@ -18,8 +18,9 @@ use arcweft_presentation::appearance::{PresentationEnvironment, SystemPaletteSet
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewInstancePath, BundleViewMountOutput, BundleViewStyleNode, BundleViewStyleNodeId,
-    BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
+    BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewStyleNode,
+    BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOrigin, BundleViewTextOutput,
+    BundleViewTextOutputIndex, BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_view::geometry::ViewGeometryConsumer;
 use arcweft_view::style::{
@@ -38,35 +39,27 @@ impl GeometryFixture {
     fn text(width_milli: u32) -> Self {
         let mount = ViewMountId::from_raw(1);
         let target = "text.fixture";
-        let source = "source.fixture";
         let mut presentation = BundlePresentationSnapshot::default();
         let mut mounted = mount_with_node(
             mount,
             BundleViewStyleNodeKind::Text {
-                text_source: source.to_owned(),
+                output: BundleViewTextOutputIndex::new(0),
             },
             vec![target.to_owned()],
         );
-        mounted.text.push(BundleViewTextOutput {
-            source_id: source.to_owned(),
-            targets: vec![BundleViewTextTarget {
-                public_id: target.to_owned(),
-                containing_scroll_region: None,
-                bounds: ViewTextBlockBounds {
-                    x_milli: 75_000,
-                    y_milli: 90_000,
-                    width_milli,
-                    height_milli: 40_000,
-                },
-                selection_policy: ViewTextSelectionPolicy::Disabled,
-                style: ViewRuntimeControlVisualStyle::default(),
-            }],
-            value: BundleViewTextValue::Plain {
-                value: "Geometry fixture".to_owned(),
-            },
-            classification: ViewObserveClassification::default(),
-            replacement: None,
+        mounted.paint.push(BundleViewPaintItem::Text {
+            output: BundleViewTextOutputIndex::new(0),
         });
+        let mut text = text_output("source.fixture", target, 0, width_milli, 40_000);
+        let BundleViewTextOrigin::Block { target, .. } = &mut text.origin else {
+            unreachable!();
+        };
+        target.bounds.x_milli = 75_000;
+        target.bounds.y_milli = 90_000;
+        text.value = BundleViewTextValue::Plain {
+            value: "Geometry fixture".to_owned(),
+        };
+        mounted.text.push(text);
         presentation.view.mounts.push(mounted);
         Self {
             presentation,
@@ -147,7 +140,7 @@ impl GeometryFixture {
                 instruction: 1,
                 parent: Some(parent.clone()),
                 kind: BundleViewStyleNodeKind::Text {
-                    text_source: "source.first".to_owned(),
+                    output: BundleViewTextOutputIndex::new(0),
                 },
                 part: None,
                 exported_part: None,
@@ -158,7 +151,7 @@ impl GeometryFixture {
                 instruction: 2,
                 parent: Some(parent),
                 kind: BundleViewStyleNodeKind::Text {
-                    text_source: "source.second".to_owned(),
+                    output: BundleViewTextOutputIndex::new(1),
                 },
                 part: None,
                 exported_part: None,
@@ -166,9 +159,14 @@ impl GeometryFixture {
             },
         ]);
         mounted.text = vec![
-            text_output("source.first", "text.first", 50_000, 20_000),
-            text_output("source.second", "text.second", 80_000, 30_000),
+            text_output("source.shared", "text.first", 1, 50_000, 20_000),
+            text_output("source.shared", "text.second", 2, 80_000, 30_000),
         ];
+        mounted.paint = [0, 1]
+            .map(|index| BundleViewPaintItem::Text {
+                output: BundleViewTextOutputIndex::new(index),
+            })
+            .to_vec();
         let mut presentation = BundlePresentationSnapshot::default();
         presentation.view.mounts.push(mounted);
         Self {
@@ -195,13 +193,16 @@ impl GeometryFixture {
                 instruction: 0,
             }),
             kind: BundleViewStyleNodeKind::Text {
-                text_source: "source.child".to_owned(),
+                output: BundleViewTextOutputIndex::new(0),
             },
             part: None,
             exported_part: None,
             applications: Vec::new(),
         });
-        mounted.text = vec![text_output("source.child", "text.child", 90_000, 25_000)];
+        mounted.text = vec![text_output("source.child", "text.child", 1, 90_000, 25_000)];
+        mounted.paint.push(BundleViewPaintItem::Text {
+            output: BundleViewTextOutputIndex::new(0),
+        });
         let mut presentation = BundlePresentationSnapshot::default();
         presentation.view.mounts.push(mounted);
         Self {
@@ -236,23 +237,30 @@ impl GeometryFixture {
 fn text_output(
     source_id: &str,
     public_id: &str,
+    instruction: u32,
     width_milli: u32,
     height_milli: u32,
 ) -> BundleViewTextOutput {
     BundleViewTextOutput {
         source_id: source_id.to_owned(),
-        targets: vec![BundleViewTextTarget {
-            public_id: public_id.to_owned(),
-            containing_scroll_region: None,
-            bounds: ViewTextBlockBounds {
-                x_milli: 70_000,
-                y_milli: 80_000,
-                width_milli,
-                height_milli,
+        origin: BundleViewTextOrigin::Block {
+            node: BundleViewStyleNodeId {
+                path: BundleViewInstancePath::default(),
+                instruction,
             },
-            selection_policy: ViewTextSelectionPolicy::Disabled,
-            style: ViewRuntimeControlVisualStyle::default(),
-        }],
+            target: BundleViewTextTarget {
+                public_id: public_id.to_owned(),
+                containing_scroll_region: None,
+                bounds: ViewTextBlockBounds {
+                    x_milli: 70_000,
+                    y_milli: 80_000,
+                    width_milli,
+                    height_milli,
+                },
+                selection_policy: ViewTextSelectionPolicy::Disabled,
+                style: ViewRuntimeControlVisualStyle::default(),
+            },
+        },
         value: BundleViewTextValue::Plain {
             value: public_id.to_owned(),
         },

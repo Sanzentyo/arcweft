@@ -1,6 +1,6 @@
 //! Ordered Style application scopes retained during View evaluation.
 
-use super::BundleViewInstancePath;
+use super::{BundleViewInstancePath, BundleViewTextOutputIndex};
 use arcweft_bundle::resource_codec::view::{
     ViewElementKind, ViewRuntimeGeometryOwner, ViewScrollPolicy,
 };
@@ -55,10 +55,10 @@ pub enum BundleViewStyleNodeKind {
         policy: ViewScrollPolicy,
     },
     Text {
-        text_source: String,
+        output: BundleViewTextOutputIndex,
     },
     RichText {
-        text_source: String,
+        output: BundleViewTextOutputIndex,
     },
     Image {
         image: String,
@@ -74,6 +74,10 @@ pub enum BundleViewStyleNodeKind {
 }
 
 impl BundleViewStyleNodeId {
+    pub fn matches_node(&self, node: &BundleViewStyleNode) -> bool {
+        self.instruction == node.instruction && self.path == node.path
+    }
+
     #[must_use]
     pub fn style_node_key(&self, mount: ViewMountId) -> ViewStyleNodeKey {
         ViewStyleNodeKey::new(mount, self.path.style_path_words(), self.instruction)

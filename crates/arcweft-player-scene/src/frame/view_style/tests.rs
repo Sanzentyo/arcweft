@@ -26,7 +26,8 @@ use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::session::SessionEnvironmentState;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewStyleNode, BundleViewStyleNodeId,
-    BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
+    BundleViewStyleNodeKind, BundleViewTextOrigin, BundleViewTextOutput, BundleViewTextOutputIndex,
+    BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_text_model::{
     RichTextDocument, RichTextInlineDirection, RichTextLayoutUpdate, RichTextNode, RichTextStyle,
@@ -157,26 +158,30 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
         ),
     ]
     .into_iter()
-    .map(|(source_id, target, value)| BundleViewTextOutput {
-        source_id: source_id.to_owned(),
-        targets: vec![BundleViewTextTarget {
-            public_id: target.to_owned(),
-            containing_scroll_region: None,
-            bounds: ViewTextBlockBounds {
-                x_milli: 0,
-                y_milli: 0,
-                width_milli: 100_000,
-                height_milli: 20_000,
+    .zip(0..)
+    .map(
+        |((source_id, target, value), instruction)| BundleViewTextOutput {
+            source_id: source_id.to_owned(),
+            origin: BundleViewTextOrigin::Block {
+                node: BundleViewStyleNodeId {
+                    path: child_path.clone(),
+                    instruction,
+                },
+                target: BundleViewTextTarget {
+                    public_id: target.to_owned(),
+                    containing_scroll_region: None,
+                    bounds: ViewTextBlockBounds::from_px(0, 0, 100, 20),
+                    selection_policy: ViewTextSelectionPolicy::default(),
+                    style: ViewRuntimeControlVisualStyle::default(),
+                },
             },
-            selection_policy: ViewTextSelectionPolicy::default(),
-            style: ViewRuntimeControlVisualStyle::default(),
-        }],
-        value: BundleViewTextValue::Plain {
-            value: value.to_owned(),
+            value: BundleViewTextValue::Plain {
+                value: value.to_owned(),
+            },
+            classification: ViewObserveClassification::default(),
+            replacement: None,
         },
-        classification: ViewObserveClassification::default(),
-        replacement: None,
-    })
+    )
     .collect();
     child.style_nodes = vec![
         BundleViewStyleNode {
@@ -184,7 +189,7 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
             instruction: 0,
             parent: None,
             kind: BundleViewStyleNodeKind::Text {
-                text_source: "text.child".to_owned(),
+                output: BundleViewTextOutputIndex::new(0),
             },
             part: None,
             exported_part: None,
@@ -198,7 +203,7 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
                 instruction: 0,
             }),
             kind: BundleViewStyleNodeKind::Text {
-                text_source: "text.child.exported".to_owned(),
+                output: BundleViewTextOutputIndex::new(1),
             },
             part: Some(ViewPartLocalName::try_new("part.child-exported").unwrap()),
             exported_part: Some(ViewPartName::try_new("part.public-child").unwrap()),
@@ -212,7 +217,7 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
                 instruction: 1,
             }),
             kind: BundleViewStyleNodeKind::Text {
-                text_source: "text.child.exported.descendant".to_owned(),
+                output: BundleViewTextOutputIndex::new(2),
             },
             part: None,
             exported_part: None,
@@ -226,7 +231,7 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
                 instruction: 0,
             }),
             kind: BundleViewStyleNodeKind::Text {
-                text_source: "text.child.exported.inherited".to_owned(),
+                output: BundleViewTextOutputIndex::new(3),
             },
             part: Some(ViewPartLocalName::try_new("part.child-inherited-export").unwrap()),
             exported_part: Some(ViewPartName::try_new("part.public-inherited").unwrap()),
@@ -416,18 +421,19 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
     let inherited = mount.host_axis_seed.unwrap();
     mount.text = vec![BundleViewTextOutput {
         source_id: "text.no-axis-inference".to_owned(),
-        targets: vec![BundleViewTextTarget {
-            public_id: "text.no-axis-inference.target".to_owned(),
-            containing_scroll_region: None,
-            bounds: ViewTextBlockBounds {
-                x_milli: 0,
-                y_milli: 0,
-                width_milli: 100_000,
-                height_milli: 20_000,
+        origin: BundleViewTextOrigin::Block {
+            node: BundleViewStyleNodeId {
+                path: mount.path.clone(),
+                instruction: 0,
             },
-            selection_policy: ViewTextSelectionPolicy::default(),
-            style: ViewRuntimeControlVisualStyle::default(),
-        }],
+            target: BundleViewTextTarget {
+                public_id: "text.no-axis-inference.target".to_owned(),
+                containing_scroll_region: None,
+                bounds: ViewTextBlockBounds::from_px(0, 0, 100, 20),
+                selection_policy: ViewTextSelectionPolicy::default(),
+                style: ViewRuntimeControlVisualStyle::default(),
+            },
+        },
         value: BundleViewTextValue::Plain {
             value: "baseline".to_owned(),
         },
@@ -439,7 +445,7 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
         instruction: 0,
         parent: None,
         kind: BundleViewStyleNodeKind::Text {
-            text_source: "text.no-axis-inference".to_owned(),
+            output: BundleViewTextOutputIndex::new(0),
         },
         part: None,
         exported_part: None,
@@ -474,7 +480,7 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
         }])),
     };
     presentation.view.mounts[0].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
-        text_source: "text.no-axis-inference".to_owned(),
+        output: BundleViewTextOutputIndex::new(0),
     };
     let changed_text = state
         .resolve(
@@ -1360,12 +1366,24 @@ fn interaction_target(id: &str) -> InteractionTarget {
 }
 
 #[test]
-fn live_text_style_target_is_bound_to_its_actual_payload_and_source() {
+fn live_text_style_target_is_bound_to_its_actual_payload_and_node() {
     use arcweft_view::ViewStyleTargetKind;
     let mut mount = empty_mount();
     mount.text = vec![BundleViewTextOutput {
         source_id: "text.target-proof".to_owned(),
-        targets: Vec::new(),
+        origin: BundleViewTextOrigin::Block {
+            node: BundleViewStyleNodeId {
+                path: mount.path.clone(),
+                instruction: 7,
+            },
+            target: BundleViewTextTarget {
+                public_id: "text.target-proof.target".to_owned(),
+                containing_scroll_region: None,
+                bounds: ViewTextBlockBounds::from_px(0, 0, 100, 20),
+                selection_policy: ViewTextSelectionPolicy::default(),
+                style: ViewRuntimeControlVisualStyle::default(),
+            },
+        },
         value: BundleViewTextValue::RichTextDocument {
             document: Box::new(RichTextDocument::new(vec![RichTextNode::Text {
                 text: "rich".to_owned(),
@@ -1379,7 +1397,7 @@ fn live_text_style_target_is_bound_to_its_actual_payload_and_source() {
         instruction: 7,
         parent: None,
         kind: BundleViewStyleNodeKind::RichText {
-            text_source: "text.target-proof".to_owned(),
+            output: BundleViewTextOutputIndex::new(0),
         },
         part: None,
         exported_part: None,
@@ -1394,17 +1412,18 @@ fn live_text_style_target_is_bound_to_its_actual_payload_and_source() {
         composing: false,
         placeholder_shown: false,
     };
-    assert!(
-        node_bindings(&presentation, &input, &mount, &node)
-            .unwrap()
-            .is_empty()
+    let bindings = node_bindings(&presentation, &input, &mount, &node).unwrap();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(
+        bindings[0].keys[0].id,
+        mount.scoped_id("text.target-proof.target")
     );
     assert_eq!(
         node_facts(&input, &node, &binding).target(),
         Some(ViewStyleTargetKind::RichText)
     );
     node.kind = BundleViewStyleNodeKind::Text {
-        text_source: "text.target-proof".to_owned(),
+        output: BundleViewTextOutputIndex::new(0),
     };
     assert!(matches!(
         node_bindings(&presentation, &input, &mount, &node),
@@ -1416,10 +1435,18 @@ fn live_text_style_target_is_bound_to_its_actual_payload_and_source() {
         })
     ));
     node.kind = BundleViewStyleNodeKind::RichText {
-        text_source: "text.foreign".to_owned(),
+        output: BundleViewTextOutputIndex::new(1),
     };
     assert!(matches!(
         node_bindings(&presentation, &input, &mount, &node),
-        Err(PlayerFrameError::MissingStyleTextSource { instruction: 7, .. })
+        Err(PlayerFrameError::MissingStyleTextOutput { instruction: 7, .. })
+    ));
+    node.kind = BundleViewStyleNodeKind::RichText {
+        output: BundleViewTextOutputIndex::new(0),
+    };
+    node.instruction = 8;
+    assert!(matches!(
+        node_bindings(&presentation, &input, &mount, &node),
+        Err(PlayerFrameError::MissingStyleTextOutput { instruction: 8, .. })
     ));
 }

@@ -30,7 +30,9 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
                 "text input has no exact retained field/element owner",
             )
         };
-        let (path, ordinal, target) = builder.last_node.as_ref().ok_or_else(invalid)?;
+        let node = builder.last_node.as_ref().ok_or_else(invalid)?;
+        let path = &node.id.path;
+        let ordinal = node.id.instruction;
         let ViewProgramInstruction::OpenElement {
             element,
             target: authored_target,
@@ -38,13 +40,13 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
         } = self
             .program
             .instructions
-            .get(*ordinal as usize)
+            .get(ordinal as usize)
             .ok_or_else(invalid)?
         else {
             return Err(invalid());
         };
         let kind = ViewInputKind::from_element(*element).ok_or_else(invalid)?;
-        let target = target.as_deref().ok_or_else(invalid)?;
+        let target = node.target.as_deref().ok_or_else(invalid)?;
         let ViewExecutionInputSource::Local(coordinate) = input.source else {
             return Err(invalid());
         };
@@ -63,7 +65,7 @@ impl<B: super::RuntimeCallBackend> super::ViewEvaluator<'_, B> {
             return Err(invalid());
         };
         let value = value.clone();
-        let seal_key = (path.clone(), *ordinal);
+        let seal_key = (path.clone(), ordinal);
         let scoped_target = mount_scoped_id(builder.mount, target);
         let session = if let Some(seal) = mounted.text_input_seals.get(&seal_key) {
             if seal.address != address

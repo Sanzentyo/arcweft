@@ -148,12 +148,17 @@ pub enum PlayerFrameError {
     #[error("View Style node identity repeats in mount {mount} at instruction {instruction}")]
     DuplicateStyleNode { mount: u64, instruction: u32 },
     #[error(
-        "View Style text source {text_source} is missing for mount {mount} instruction {instruction}"
+        "View Style text output {output:?} is missing for mount {mount} instruction {instruction}"
     )]
-    MissingStyleTextSource {
+    MissingStyleTextOutput {
         mount: u64,
         instruction: u32,
-        text_source: String,
+        output: arcweft_runtime_driver::view_runtime::BundleViewTextOutputIndex,
+    },
+    #[error("View paint has no text block at output {output:?} on mount {mount}")]
+    MissingTextPaintOutput {
+        mount: u64,
+        output: arcweft_runtime_driver::view_runtime::BundleViewTextOutputIndex,
     },
     #[error(
         "View Style text kind differs from its actual source for mount {mount} instruction {instruction}: expected {expected:?}, actual {actual:?}"

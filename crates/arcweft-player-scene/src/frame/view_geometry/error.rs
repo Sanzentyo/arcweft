@@ -41,7 +41,6 @@ pub enum ViewGeometryFailureCode {
     ProductDuplicate,
     ProductOwnerMismatch,
     IntrinsicMissingMeasure,
-    IntrinsicBoundsOverflow,
     NegativeNonNegativeField,
     ConflictingConstraints,
     EdgesExceedUsedBorderBox,
@@ -88,7 +87,6 @@ impl ViewGeometryFailureCode {
             Self::ProductDuplicate => "view.geometry.product.duplicate",
             Self::ProductOwnerMismatch => "view.geometry.product.owner_mismatch",
             Self::IntrinsicMissingMeasure => "view.geometry.intrinsic.missing_measure",
-            Self::IntrinsicBoundsOverflow => "view.geometry.intrinsic.bounds_overflow",
             Self::NegativeNonNegativeField => "view.geometry.negative_non_negative_field",
             Self::ConflictingConstraints => "view.geometry.conflicting_constraints",
             Self::EdgesExceedUsedBorderBox => "view.geometry.edges_exceed_used_border_box",
@@ -366,9 +364,6 @@ impl ViewGeometryRuntimeError {
                 match source {
                     ViewIntrinsicGeometryError::MissingIntrinsicMeasure => {
                         ViewGeometryFailureCode::IntrinsicMissingMeasure
-                    }
-                    ViewIntrinsicGeometryError::IntrinsicBoundsOverflow => {
-                        ViewGeometryFailureCode::IntrinsicBoundsOverflow
                     }
                 },
                 node,

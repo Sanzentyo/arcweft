@@ -29,7 +29,8 @@ use arcweft_render_wgpu::geometry::{
 };
 use arcweft_render_wgpu::view_scene::PreparedTextId;
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewMountOutput, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
+    BundleViewMountOutput, BundleViewPaintItem, BundleViewTextOrigin, BundleViewTextOutput,
+    BundleViewTextOutputIndex, BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_runtime_driver::{
     dialogue::{DialogueEntryState, DialoguePresentation},
@@ -37,19 +38,20 @@ use arcweft_runtime_driver::{
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
 use arcweft_text_model::{LineDisplayFrame, LineDisplayStage, RichTextPresentation, RichTextRange};
+use arcweft_view::ViewMountId;
 use arcweft_view::geometry::ViewGeometryConsumer;
 use std::collections::BTreeMap;
 
 /// Prepared ID associated with one exact mounted View text paint target.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct PreparedMountedViewText {
-    pub(super) mount: u64,
-    pub(super) source_id: String,
-    pub(super) target: String,
     pub(super) text: PreparedTextId,
     pub(super) bounds: HitRect,
     pub(super) clip: Option<HitRect>,
 }
+
+pub(super) type PreparedViewText =
+    BTreeMap<(ViewMountId, BundleViewTextOutputIndex), PreparedMountedViewText>;
 
 #[derive(Clone, Copy)]
 struct DialogueTextContext<'a> {
@@ -133,7 +135,7 @@ struct PushedTextValue {
 struct PreparedTargetRecord<'a> {
     mount: &'a BundleViewMountOutput,
     output: &'a BundleViewTextOutput,
-    target: &'a BundleViewTextTarget,
+    output_index: BundleViewTextOutputIndex,
     dialogue: Option<DialogueTextContext<'a>>,
     semantic_id: PublicId,
     bounds: HitRect,
@@ -144,7 +146,7 @@ struct PreparedTargetRecord<'a> {
 struct DialoguePreparedState {
     dialogue: u64,
     entry: u64,
-    mount: arcweft_view::ViewMountId,
+    mount: ViewMountId,
     revision: u64,
     instance: u64,
     stage: u32,
@@ -177,7 +179,7 @@ struct RuntimeViewTextPreparer<'a, 'request> {
     shared: &'a mut SharedFramePlanContext,
     frame: &'a mut PreparedFrame,
     request: RuntimeViewTextRequest<'request>,
-    prepared: Vec<PreparedMountedViewText>,
+    prepared: PreparedViewText,
     dialogue_states: BTreeMap<PresentationHandleId, DialoguePreparedState>,
 }
 
@@ -185,7 +187,7 @@ pub(super) fn prepare_runtime_view_text(
     shared: &mut SharedFramePlanContext,
     frame: &mut PreparedFrame,
     request: RuntimeViewTextRequest<'_>,
-) -> Result<Vec<PreparedMountedViewText>, PlayerFrameError> {
+) -> Result<PreparedViewText, PlayerFrameError> {
     RuntimeViewTextPreparer::new(shared, frame, request).prepare()
 }
 
@@ -199,14 +201,14 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             shared,
             frame,
             request,
-            prepared: Vec::new(),
+            prepared: BTreeMap::new(),
             dialogue_states: BTreeMap::new(),
         }
     }
 
-    fn prepare(mut self) -> Result<Vec<PreparedMountedViewText>, PlayerFrameError> {
-        let mounts = self.request.presentation.view.mounts.clone();
-        for mount in &mounts {
+    fn prepare(mut self) -> Result<PreparedViewText, PlayerFrameError> {
+        let presentation = self.request.presentation;
+        for mount in &presentation.view.mounts {
             self.prepare_mount(mount)?;
         }
         for state in self.dialogue_states.into_values() {
@@ -231,12 +233,19 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         if let Some(dialogue) = dialogue {
             self.retain_dialogue_state(mount, dialogue)?;
         }
-        for output in &mount.text {
-            for target in &output.targets {
-                if mount.active_targets.contains(&target.public_id) {
-                    self.prepare_target(mount, output, target, dialogue)?;
-                }
-            }
+        for paint in &mount.paint {
+            let BundleViewPaintItem::Text { output: index } = paint else {
+                continue;
+            };
+            let missing = || PlayerFrameError::MissingTextPaintOutput {
+                mount: mount.mount.get(),
+                output: *index,
+            };
+            let output = mount.text_output(*index).ok_or_else(missing)?;
+            let BundleViewTextOrigin::Block { target, .. } = &output.origin else {
+                return Err(missing());
+            };
+            self.prepare_target(mount, *index, output, target, dialogue)?;
         }
         Ok(())
     }
@@ -275,6 +284,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
     fn prepare_target(
         &mut self,
         mount: &BundleViewMountOutput,
+        output_index: BundleViewTextOutputIndex,
         output: &BundleViewTextOutput,
         target: &BundleViewTextTarget,
         dialogue: Option<DialogueTextContext<'request>>,
@@ -356,7 +366,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         self.record_prepared_target(PreparedTargetRecord {
             mount,
             output,
-            target,
+            output_index,
             dialogue,
             semantic_id,
             bounds,
@@ -372,7 +382,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         let PreparedTargetRecord {
             mount,
             output,
-            target,
+            output_index,
             dialogue,
             semantic_id,
             bounds,
@@ -437,14 +447,14 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
                 state.reveal_complete = reveal_complete;
             }
         }
-        self.prepared.push(PreparedMountedViewText {
-            mount: mount.mount.get(),
-            source_id: output.source_id.clone(),
-            target: target.public_id.clone(),
-            text: pushed.text,
-            bounds,
-            clip,
-        });
+        self.prepared.insert(
+            (mount.mount, output_index),
+            PreparedMountedViewText {
+                text: pushed.text,
+                bounds,
+                clip,
+            },
+        );
         Ok(())
     }
 }

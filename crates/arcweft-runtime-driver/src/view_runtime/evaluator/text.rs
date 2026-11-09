@@ -2,8 +2,8 @@ use super::support::resolve_mount_path;
 use super::{EvaluationFailure, ViewEvaluator};
 use crate::view_runtime::value::runtime_scalar_text;
 use crate::view_runtime::{
-    BundleViewDiagnosticCode, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
-    MountedView,
+    BundleViewDiagnosticCode, BundleViewStyleNodeId, BundleViewTextOrigin, BundleViewTextOutput,
+    BundleViewTextTarget, BundleViewTextValue, MountedView,
 };
 use arcweft_bundle::resource_codec::ViewDefinitionResource;
 use arcweft_bundle::resource_codec::ViewRuntimeControlVisualStyle;
@@ -20,7 +20,7 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
         mounted: &mut MountedView,
         source_id: &str,
         instruction: usize,
-    ) -> Result<BundleViewTextOutput, EvaluationFailure> {
+    ) -> Result<BundleViewTextValue, EvaluationFailure> {
         let source = self
             .text
             .and_then(|text| {
@@ -35,36 +35,62 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
                     format!("View text source `{source_id}` does not exist"),
                 )
             })?;
-        let value =
-            self.resolve_text_value(handle, definition, mounted, &source.kind, instruction)?;
-        let targets = self
+        self.resolve_text_value(handle, definition, mounted, &source.kind, instruction)
+    }
+
+    pub(super) fn retain_text_block(
+        &self,
+        node: BundleViewStyleNodeId,
+        definition: &ViewDefinitionResource,
+        source_id: &str,
+        block_id: &str,
+    ) -> Result<BundleViewTextOrigin, EvaluationFailure> {
+        let block = self
             .program
             .text_blocks
             .iter()
-            .filter(|block| {
-                block.text_source == source_id
+            .find(|block| {
+                block.public_id == block_id
+                    && block.text_source == source_id
                     && block.view.as_deref() == Some(definition.public_id.as_str())
             })
-            .map(|block| BundleViewTextTarget {
-                public_id: block.public_id.clone(),
+            .ok_or_else(|| {
+                EvaluationFailure::new(
+                    BundleViewDiagnosticCode::InvalidControlFlow,
+                    Some(node.instruction as usize),
+                    format!("View Text instruction has no accepted block `{block_id}`"),
+                )
+            })?;
+        Ok(BundleViewTextOrigin::Block {
+            target: BundleViewTextTarget {
+                public_id: node.path.qualify_repeated_target(&block.public_id),
                 containing_scroll_region: block.containing_scroll_region.clone(),
                 bounds: block.bounds,
                 selection_policy: block.selection_policy,
                 style: ViewRuntimeControlVisualStyle::default(),
-            })
-            .collect();
+            },
+            node,
+        })
+    }
+
+    pub(super) fn retain_text_output(
+        &self,
+        source_id: &str,
+        origin: BundleViewTextOrigin,
+        value: BundleViewTextValue,
+    ) -> BundleViewTextOutput {
         let redaction = self.text.and_then(|text| {
             text.redactions
                 .iter()
                 .find(|redaction| redaction.text_source == source_id)
         });
-        Ok(BundleViewTextOutput {
+        BundleViewTextOutput {
             source_id: source_id.to_owned(),
-            targets,
+            origin,
             value,
             classification: redaction.map_or_else(Default::default, |value| value.classification),
             replacement: redaction.and_then(|value| value.replacement.clone()),
-        })
+        }
     }
 
     fn resolve_text_value(

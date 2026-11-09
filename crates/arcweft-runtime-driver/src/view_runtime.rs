@@ -18,6 +18,7 @@ mod roots;
 pub use roots::BundleViewRootInput;
 mod snapshot;
 pub(crate) use snapshot::BundleViewRuntimeSaveSnapshot;
+mod retained_publication;
 mod style_scope;
 mod value;
 
@@ -243,16 +244,58 @@ pub struct BundleViewTextTarget {
     pub style: ViewRuntimeControlVisualStyle,
 }
 
-/// One active text source in a concrete mounted occurrence.
+/// Frame-local address of one evaluated text output within its owning mount.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct BundleViewTextOutputIndex(u32);
+
+impl BundleViewTextOutputIndex {
+    pub const fn new(index: u32) -> Self {
+        Self(index)
+    }
+
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// Binding from an evaluated text value to its exact producing instruction.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BundleViewTextOrigin {
+    Block {
+        node: BundleViewStyleNodeId,
+        target: BundleViewTextTarget,
+    },
+    SemanticLabel {
+        instruction: BundleViewStyleNodeId,
+    },
+}
+
+/// One active text value in a concrete mounted occurrence.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BundleViewTextOutput<F = LineDisplayFrame> {
     pub source_id: String,
-    pub targets: Vec<BundleViewTextTarget>,
+    pub origin: BundleViewTextOrigin,
     pub value: BundleViewTextValue<F>,
     #[serde(default)]
     pub classification: ViewObserveClassification,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement: Option<String>,
+}
+
+impl<F> BundleViewTextOutput<F> {
+    /// Provides the block only to its exact evaluated node.
+    pub fn block_for(&self, node: &BundleViewStyleNode) -> Option<&BundleViewTextTarget> {
+        match &self.origin {
+            BundleViewTextOrigin::Block {
+                node: owner,
+                target,
+            } if owner.matches_node(node) => Some(target),
+            _ => None,
+        }
+    }
 }
 
 /// One evaluated named Fx argument.
@@ -277,7 +320,7 @@ pub struct BundleViewFxApplication {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BundleViewPaintItem {
     Element { target: String },
-    Text { source_id: String, target: String },
+    Text { output: BundleViewTextOutputIndex },
     Image { target: String },
     Mount { mount: ViewMountId },
 }
@@ -295,7 +338,7 @@ pub struct BundleViewMountOutput<F = LineDisplayFrame> {
     pub dialogue: Option<DialogueViewState>,
     pub active_targets: Vec<String>,
     pub active_images: Vec<String>,
-    pub action_buttons: Vec<arcweft_bundle::resource_codec::ViewRuntimeActionButton>,
+    pub action_buttons: Vec<BundleViewActionButtonOutput>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_inputs: Vec<arcweft_bundle::resource_codec::ViewRuntimeTextControl>,
     pub paint: Vec<BundleViewPaintItem>,
@@ -306,6 +349,26 @@ pub struct BundleViewMountOutput<F = LineDisplayFrame> {
     pub events: Vec<BundleViewEventBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub style_nodes: Vec<BundleViewStyleNode>,
+}
+
+/// Evaluated button value and its retained node. Event leases live in the mount's event bindings.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BundleViewActionButtonOutput {
+    pub node: BundleViewStyleNodeId,
+    pub value: arcweft_bundle::resource_codec::ViewRuntimeActionButton,
+}
+
+impl BundleViewActionButtonOutput {
+    fn new(
+        node: BundleViewStyleNodeId,
+        mut value: arcweft_bundle::resource_codec::ViewRuntimeActionButton,
+        target: &str,
+    ) -> Self {
+        value.public_id = target.to_owned();
+        value.target = target.to_owned();
+        Self { node, value }
+    }
 }
 
 /// Exact retained node/event route for one sealed mount-time handler token.
@@ -411,7 +474,27 @@ pub struct BundleViewExportedPartEvidence {
     pub part: ViewPartName,
 }
 
-impl BundleViewMountOutput {
+impl<F> BundleViewMountOutput<F> {
+    /// The live activation lease for this exact retained node.
+    pub fn activation_binding(
+        &self,
+        node: &BundleViewStyleNodeId,
+    ) -> Option<&BundleViewEventBinding> {
+        self.events.iter().find(|binding| {
+            binding.mount() == self.mount
+                && binding.event() == EventKind::Activate
+                && binding.path() == &node.path
+                && binding.instruction() == node.instruction
+        })
+    }
+
+    pub fn text_output(
+        &self,
+        output: BundleViewTextOutputIndex,
+    ) -> Option<&BundleViewTextOutput<F>> {
+        self.text.get(output.index())
+    }
+
     /// Qualifies one authored resource identity for this concrete mount occurrence.
     #[must_use]
     pub fn scoped_id(&self, authored: &str) -> String {
@@ -541,7 +624,7 @@ impl<F> BundleViewFrame<F> {
                                 };
                                 Ok(BundleViewTextOutput {
                                     source_id: text.source_id,
-                                    targets: text.targets,
+                                    origin: text.origin,
                                     value,
                                     classification: text.classification,
                                     replacement: text.replacement,
@@ -872,6 +955,15 @@ impl Default for BundleViewRuntime {
 }
 
 impl BundleViewInstancePath {
+    /// The mount already distinguishes nested View calls. A repeat inside
+    /// that mount additionally qualifies targets authored in its body.
+    fn qualify_repeated_target(&self, authored: &str) -> String {
+        match self.0.last() {
+            Some(BundleViewInstancePathSegment::Repeat { .. }) => self.qualify_target(authored),
+            _ => authored.to_owned(),
+        }
+    }
+
     /// Qualifies a node's interaction identity by its accepted structural
     /// occurrence. A repeated declaration must not reuse another item's target.
     fn qualify_target(&self, authored: &str) -> String {
@@ -1967,6 +2059,9 @@ impl BundleViewRuntime {
                 .and_then(|catalog| catalog.definition_index(&output.view))
                 .map(|index| self.definition(index).body);
             let program = self.product.program().map(|program| program.resource());
+            if let Some((span, program)) = span.zip(program) {
+                retained_publication::validate(output, span, program)?;
+            }
             for node in &output.style_nodes {
                 let valid_instruction = span
                     .zip(program)

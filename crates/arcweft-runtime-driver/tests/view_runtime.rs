@@ -45,8 +45,8 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewDiagnosticCode, BundleViewEventDispatchError, BundleViewInstancePath,
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem,
     BundleViewRuntime as AcceptedBundleViewRuntime, BundleViewRuntimeError, BundleViewStyleNode,
-    BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextValue, SavedViewOwner,
-    ViewOwnerEvidence, ViewProgramCatalogError, ViewProgramReplacementError,
+    BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOutputIndex, BundleViewTextValue,
+    SavedViewOwner, ViewOwnerEvidence, ViewProgramCatalogError, ViewProgramReplacementError,
     ViewProgramReplacementOutcome,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
@@ -1819,7 +1819,7 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
         ],
         instructions: vec![
             ViewProgramInstruction::EmitText {
-                text_source: "text.parent.before".to_owned(),
+                text_source: "text.parent.shared".to_owned(),
                 text_block: "text.parent.before.target".to_owned(),
                 styles: Vec::new(),
                 part: None,
@@ -1838,7 +1838,7 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
                 source: None,
             },
             ViewProgramInstruction::EmitText {
-                text_source: "text.parent.after".to_owned(),
+                text_source: "text.parent.shared".to_owned(),
                 text_block: "text.parent.after.target".to_owned(),
                 styles: Vec::new(),
                 part: None,
@@ -1857,15 +1857,15 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
                 "text.parent.before.target",
                 Some("view.Parent".to_owned()),
                 None,
-                "text.parent.before",
+                "text.parent.shared",
                 ViewTextBlockBounds::from_px(0, 0, 100, 20),
             ),
             ViewTextBlockResource::new(
                 "text.parent.after.target",
                 Some("view.Parent".to_owned()),
                 None,
-                "text.parent.after",
-                ViewTextBlockBounds::from_px(0, 40, 100, 20),
+                "text.parent.shared",
+                ViewTextBlockBounds::from_px(0, 40, 80, 30),
             ),
             ViewTextBlockResource::new(
                 "text.child.count.target",
@@ -1879,15 +1879,9 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
     };
     let text = text_resource([
         (
-            "text.parent.before",
+            "text.parent.shared",
             ViewTextSourceKind::Literal {
-                value: "before".to_owned(),
-            },
-        ),
-        (
-            "text.parent.after",
-            ViewTextSourceKind::Literal {
-                value: "after".to_owned(),
+                value: "shared".to_owned(),
             },
         ),
         (
@@ -1919,18 +1913,39 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
         first.mounts[0].paint,
         [
             BundleViewPaintItem::Text {
-                source_id: "text.parent.before".to_owned(),
-                target: "text.parent.before.target".to_owned(),
+                output: BundleViewTextOutputIndex::new(0),
             },
             BundleViewPaintItem::Mount {
                 mount: first.mounts[1].mount,
             },
             BundleViewPaintItem::Text {
-                source_id: "text.parent.after".to_owned(),
-                target: "text.parent.after.target".to_owned(),
+                output: BundleViewTextOutputIndex::new(1),
             },
         ]
     );
+    let parent = &first.mounts[0];
+    assert_eq!(parent.text.len(), 2);
+    for (row, node, id, bounds) in [
+        (
+            &parent.text[0],
+            &parent.style_nodes[0],
+            "text.parent.before.target",
+            ViewTextBlockBounds::from_px(0, 0, 100, 20),
+        ),
+        (
+            &parent.text[1],
+            &parent.style_nodes[2],
+            "text.parent.after.target",
+            ViewTextBlockBounds::from_px(0, 40, 80, 30),
+        ),
+    ] {
+        assert_eq!(row.source_id, "text.parent.shared");
+        let block = row
+            .block_for(node)
+            .expect("text belongs to its exact instruction");
+        assert_eq!(block.public_id, id);
+        assert_eq!(block.bounds, bounds);
+    }
     assert_eq!(
         first.mounts[1].text[0].value,
         BundleViewTextValue::Plain {
@@ -2287,7 +2302,7 @@ fn style_path_words_are_little_endian_injective_and_feed_the_single_node_key() {
     );
     assert_eq!(
         BundleViewStyleNodeKind::Text {
-            text_source: "text.main".to_owned(),
+            output: BundleViewTextOutputIndex::new(0),
         }
         .runtime_geometry_owner(),
         ViewRuntimeGeometryOwner::Text
@@ -2477,10 +2492,11 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
             node.kind.style_target_kind(),
             text.value.style_target_kind()
         );
-        let BundleViewStyleNodeKind::RichText { text_source } = &node.kind else {
+        let BundleViewStyleNodeKind::RichText { output } = node.kind else {
             panic!("rich stores retain the rich node producer");
         };
-        assert_eq!(text_source, &text.source_id);
+        assert_eq!(frame.mounts[0].text_output(output), Some(text));
+        assert!(text.block_for(node).is_some());
         let encoded = serde_json::to_vec(node).unwrap();
         assert_eq!(
             serde_json::from_slice::<BundleViewStyleNode>(&encoded).unwrap(),
@@ -2506,7 +2522,10 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
             if frame.as_ref() == &display_frame
     ));
     assert_eq!(
-        frame.mounts[0].text[0].targets[0].public_id,
+        frame.mounts[0].text[0]
+            .block_for(&frame.mounts[0].style_nodes[0])
+            .unwrap()
+            .public_id,
         "text.block.localized"
     );
 

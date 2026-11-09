@@ -280,6 +280,10 @@ mount の `action_buttons` は評価済みの label／enabled を持つ。セッ
 は activation route を公開せず、以前の route を失効させる。restore 後も retained
 parameter と同じ式から control value を再評価する。
 
+キー付き反復内の Button は、評価したノードの path と命令番号を保持する。
+セッションはそのノードの activation route を入力用の Button に結び付ける。
+反復の並びが変わっても同じキーの操作先は維持され、復元時にはルートを再発行する。
+
 builtin element の x／y／width／height は registered Length 型で検査し、受理した
 compile-time scalar fact をその要素の inline Style patch へ投影する。現在の layout
 profile は px の固定小数点 thousandths を使い、pt／em は換算規則を持たない
@@ -628,6 +632,11 @@ provenance、state 初期化状態を保存する。handler、Fx projection、sn
 restore は program/schema/type/allocator と、保存済み
 presentation frame が retained mount table の handle/path/View/mount identity に一致
 することを代入前に検証する。
+
+`EmitText` は指定された一つの text block を評価したノードに結び付ける。同じ
+text source を複数の block から参照しても、各 block の寸法・描画順・操作先は
+個別に保持する。Style・layout・paint は同じ mount 内の text output を参照する。
+restore はその参照、paint の順序、Button のノードとの対応を代入前に検証する。
 
 replacement は View/general expression、正確な handler runtime 世代、Style、text と
 resource、field 単位の state migration を一つの候補にする。同じ field identity/型の

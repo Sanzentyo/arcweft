@@ -321,7 +321,9 @@ entry cli @entry.main { goto @flow.main }
 #[test]
 fn source_scroll_and_virtual_list_share_live_ownership_across_cold_restore() {
     use arcweft_bundle::resource_codec::ViewScrollAxis;
-    use arcweft_runtime_driver::view_runtime::BundleViewStyleNodeKind;
+    use arcweft_runtime_driver::view_runtime::{
+        BundleViewPaintItem, BundleViewStyleNodeKind, BundleViewTextOutputIndex,
+    };
     use arcweft_view::{
         program::{ViewStableKey, ViewVirtualAxis},
         virtualization::{ViewVirtualItem, ViewVirtualScrollTarget},
@@ -332,6 +334,8 @@ fn source_scroll_and_virtual_list_share_live_ownership_across_cold_restore() {
 view Inventory() {
     Scroll(target = @scroll:.inventory, width = 200px, height = 100px) {
         Text("Inventory")
+        Text("Details")
+        Button("Confirm")
     }
 }
 flow main() -> i64 {
@@ -404,6 +408,55 @@ entry cli @entry.main { goto @flow.main }
             unreachable!()
         };
         policy.axis = ViewScrollAxis::Horizontal;
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::ViewRuntime { .. })
+        ));
+        assert_eq!(session.snapshot_session().unwrap(), before);
+
+        let mut forged = session.snapshot_session().unwrap();
+        let mount = &mut forged.presentation.view.mounts[0];
+        let first_text = mount
+            .style_nodes
+            .iter_mut()
+            .find_map(|node| match &mut node.kind {
+                BundleViewStyleNodeKind::Text { output } => Some(output),
+                _ => None,
+            })
+            .unwrap();
+        *first_text = BundleViewTextOutputIndex::new(1);
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::ViewRuntime { .. })
+        ));
+        assert_eq!(session.snapshot_session().unwrap(), before);
+
+        let mut forged = session.snapshot_session().unwrap();
+        let mount = &mut forged.presentation.view.mounts[0];
+        let text_slots = mount
+            .paint
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                matches!(item, BundleViewPaintItem::Text { .. }).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(text_slots.len(), 2);
+        mount.paint.swap(text_slots[0], text_slots[1]);
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::ViewRuntime { .. })
+        ));
+        assert_eq!(session.snapshot_session().unwrap(), before);
+
+        let mut forged = session.snapshot_session().unwrap();
+        let mount = &mut forged.presentation.view.mounts[0];
+        let first_text = mount
+            .style_nodes
+            .iter()
+            .find(|node| matches!(node.kind, BundleViewStyleNodeKind::Text { .. }))
+            .unwrap();
+        mount.action_buttons[0].node.instruction = first_text.instruction;
         assert!(matches!(
             session.restore_session_snapshot(forged),
             Err(BundleSessionSaveError::ViewRuntime { .. })

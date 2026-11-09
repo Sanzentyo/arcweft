@@ -623,43 +623,30 @@ fn node_bindings(
             .transpose()?
             .into_iter()
             .collect(),
-        BundleViewStyleNodeKind::Text { text_source }
-        | BundleViewStyleNodeKind::RichText { text_source } => {
+        BundleViewStyleNodeKind::Text { output } | BundleViewStyleNodeKind::RichText { output } => {
             let expected = node.kind.style_target_kind();
-            let mut found = false;
-            let mut bindings = Vec::new();
-            for text in mount
-                .text
-                .iter()
-                .filter(|text| text.source_id == *text_source)
-            {
-                found = true;
-                let actual = text.value.style_target_kind();
-                if expected != actual {
-                    return Err(PlayerFrameError::StyleTextKindMismatch {
-                        mount: mount.mount.get(),
-                        instruction: node.instruction,
-                        expected,
-                        actual,
-                    });
-                }
-                for target in &text.targets {
-                    bindings.push(binding_for_target(
-                        presentation,
-                        input,
-                        mount.scoped_id(&target.public_id),
-                        StyleTargetKind::Text,
-                    )?);
-                }
-            }
-            if !found {
-                return Err(PlayerFrameError::MissingStyleTextSource {
+            let missing = || PlayerFrameError::MissingStyleTextOutput {
+                mount: mount.mount.get(),
+                instruction: node.instruction,
+                output: *output,
+            };
+            let text = mount.text_output(*output).ok_or_else(missing)?;
+            let target = text.block_for(node).ok_or_else(missing)?;
+            let actual = text.value.style_target_kind();
+            if expected != actual {
+                return Err(PlayerFrameError::StyleTextKindMismatch {
                     mount: mount.mount.get(),
                     instruction: node.instruction,
-                    text_source: text_source.clone(),
+                    expected,
+                    actual,
                 });
             }
-            bindings
+            vec![binding_for_target(
+                presentation,
+                input,
+                mount.scoped_id(&target.public_id),
+                StyleTargetKind::Text,
+            )?]
         }
         BundleViewStyleNodeKind::Image { image, target } => vec![binding_for_target(
             presentation,

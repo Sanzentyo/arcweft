@@ -2486,6 +2486,123 @@ flow scroll_agent_destroyed() -> String {
 }
 "#;
 
+#[test]
+fn keyed_scroll_descendants_keep_distinct_text_and_button_targets_in_native_observe() {
+    let fixture = temp_authored_native_cli_fixture(
+        "agent-keyed-scroll-children",
+        KEYED_SCROLL_AGENT_SOURCE,
+        "entry.keyed_forward",
+    );
+    let observe = |entry| {
+        agent_observe_json_for_path(
+            &fixture,
+            &[
+                "--entry",
+                entry,
+                "--steps",
+                "3",
+                "--max-ops",
+                "64",
+                "--mode",
+                "drain",
+                "--json",
+            ],
+            "keyed Scroll descendants",
+        )
+    };
+    let forward = observe("entry.keyed_forward");
+    let reverse = observe("entry.keyed_reverse");
+    let forward = keyed_scroll_observation(&forward, ["Alpha", "Bravo"]);
+    let reverse = keyed_scroll_observation(&reverse, ["Bravo", "Alpha"]);
+    assert_ne!(forward[0], forward[1]);
+    assert_eq!(forward, [reverse[1].clone(), reverse[0].clone()]);
+    fs::remove_file(&fixture).expect("remove keyed Scroll source");
+}
+
+fn keyed_scroll_observation(
+    report: &serde_json::Value,
+    order: [&str; 2],
+) -> [(String, String, String); 2] {
+    let regions = report["scroll_regions"].as_array().unwrap();
+    assert_eq!(regions.len(), 2);
+    let objects = report["objects"].as_array().unwrap();
+    let mut text = objects
+        .iter()
+        .filter(|object| {
+            object["role"] == "text"
+                && object["layer"] == "view.text"
+                && order.iter().any(|label| object["text"] == *label)
+        })
+        .collect::<Vec<_>>();
+    let mut buttons = objects
+        .iter()
+        .filter(|object| object["role"] == "button")
+        .collect::<Vec<_>>();
+    assert_eq!(text.len(), 2);
+    assert_eq!(buttons.len(), 2);
+    text.sort_by_key(|object| object["bbox"]["y"].as_i64().unwrap());
+    buttons.sort_by_key(|object| object["bbox"]["y"].as_i64().unwrap());
+    std::array::from_fn(|index| {
+        let y = 86 * index as u32;
+        assert_eq!(
+            regions[index]["parts"]["viewport"]["bounds"],
+            serde_json::json!([0.0, f64::from(y), 420.0, 74.0])
+        );
+        assert_eq!(
+            regions[index]["parts"]["content"]["max_offset"],
+            serde_json::json!([0.0, 12.0])
+        );
+        assert_eq!(text[index]["text"], order[index]);
+        assert_eq!(text[index]["bbox"]["y"], y);
+        assert_eq!(buttons[index]["bbox"]["y"], y + 38);
+        assert_eq!(buttons[index]["bbox"]["height"], 36);
+        assert_eq!(buttons[index]["enabled"], order[index] == "Alpha");
+        (
+            regions[index]["target"].as_str().unwrap().to_owned(),
+            text[index]["entity"].as_str().unwrap().to_owned(),
+            buttons[index]["id"].as_str().unwrap().to_owned(),
+        )
+    })
+}
+
+const KEYED_SCROLL_AGENT_SOURCE: &str = r#"
+pub action completed(value: String)
+
+entry cli @entry.keyed_forward { goto @flow.keyed_forward }
+entry cli @entry.keyed_reverse { goto @flow.keyed_reverse }
+
+fn inventory(reverse: bool) -> Vec<String> {
+    if reverse { ["Bravo", "Alpha"] } else { ["Alpha", "Bravo"] }
+}
+
+pub view ScrollPair(reverse: bool) {
+    Column(spacing = 12) {
+        for item in inventory(reverse) key = item {
+            Scroll(target = @scroll:.item, width = 420px, height = 74px) {
+                Column(spacing = 14) {
+                    Text(item)
+                    Button("Activate", target = @button:.activate, enabled = item == "Alpha",
+                        width = 420px, height = 48px)
+                        .on_click(|| completed(value = item))
+                }
+            }
+        }
+    }
+}
+
+flow keyed_forward() -> String {
+    let pair = mount(ScrollPair(false));
+    let event = await receive(completed);
+    return event.value
+}
+
+flow keyed_reverse() -> String {
+    let pair = mount(ScrollPair(true));
+    let event = await receive(completed);
+    return event.value
+}
+"#;
+
 fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
     let released_view = agent_observe_json_for_path(
         path,

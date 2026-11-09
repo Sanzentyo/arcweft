@@ -451,7 +451,12 @@ mod dynamic_character_dialogue_context_tests {
                     text: vec![
                         crate::view_runtime::BundleViewTextOutput {
                             source_id: "name".to_owned(),
-                            targets: Vec::new(),
+                            origin: crate::view_runtime::BundleViewTextOrigin::SemanticLabel {
+                                instruction: crate::view_runtime::BundleViewStyleNodeId {
+                                    path: Default::default(),
+                                    instruction: 0,
+                                },
+                            },
                             value: crate::view_runtime::BundleViewTextValue::CharacterDisplayName {
                                 frame: Box::new(retained.clone()),
                             },
@@ -460,7 +465,12 @@ mod dynamic_character_dialogue_context_tests {
                         },
                         crate::view_runtime::BundleViewTextOutput {
                             source_id: "content".to_owned(),
-                            targets: Vec::new(),
+                            origin: crate::view_runtime::BundleViewTextOrigin::SemanticLabel {
+                                instruction: crate::view_runtime::BundleViewStyleNodeId {
+                                    path: Default::default(),
+                                    instruction: 1,
+                                },
+                            },
                             value: crate::view_runtime::BundleViewTextValue::DisplayFrame {
                                 frame: Box::new(retained),
                                 stage_index: 0,

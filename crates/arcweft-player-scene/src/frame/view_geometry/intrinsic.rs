@@ -4,7 +4,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeGeometryOwner, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
 use arcweft_interaction_model::presentation::PresentationImage;
-use arcweft_runtime_driver::view_runtime::BundleViewTextOutput;
+use arcweft_runtime_driver::view_runtime::BundleViewTextTarget;
 use arcweft_view::geometry::{
     ViewAvailableGeometrySize, ViewGeometrySize, ViewIntrinsicMeasure, ViewIntrinsicMeasureRevision,
 };
@@ -17,7 +17,7 @@ pub(crate) enum ViewIntrinsicProductRef<'a> {
     ActionButton(&'a ViewRuntimeActionButton),
     TextControl(&'a ViewRuntimeTextControl),
     Surface(&'a ViewRuntimeSurface),
-    TextOutput(&'a BundleViewTextOutput),
+    TextOutput(&'a BundleViewTextTarget),
     Image(&'a PresentationImage),
 }
 
@@ -50,8 +50,6 @@ pub(crate) trait ViewIntrinsicGeometryProvider {
 pub(crate) enum ViewIntrinsicGeometryError {
     #[error("the retained product has no intrinsic measurement")]
     MissingIntrinsicMeasure,
-    #[error("the retained product intrinsic bounds exceed the physical milli range")]
-    IntrinsicBoundsOverflow,
 }
 
 #[derive(Debug, Default)]
@@ -97,18 +95,20 @@ impl ViewIntrinsicGeometryProvider for PresentationIntrinsicGeometryProvider {
                     &surface.bounds.height_milli.to_le_bytes(),
                 ]),
             ),
-            ViewIntrinsicProductRef::TextOutput(text) => {
-                let size = text_outer_size(text)?;
-                let mut transcript = RevisionTranscript::new();
-                transcript.bytes(text.source_id.as_bytes());
-                for target in &text.targets {
-                    transcript.bytes(target.public_id.as_bytes());
-                    transcript.i32(target.bounds.x_milli);
-                    transcript.i32(target.bounds.y_milli);
-                    transcript.u32(target.bounds.width_milli);
-                    transcript.u32(target.bounds.height_milli);
+            ViewIntrinsicProductRef::TextOutput(target) => {
+                if !target.bounds.is_valid() {
+                    return Err(ViewIntrinsicGeometryError::MissingIntrinsicMeasure);
                 }
-                (size, transcript.finish())
+                (
+                    ViewGeometrySize::new(target.bounds.width_milli, target.bounds.height_milli),
+                    revision([
+                        target.public_id.as_bytes(),
+                        &target.bounds.x_milli.to_le_bytes(),
+                        &target.bounds.y_milli.to_le_bytes(),
+                        &target.bounds.width_milli.to_le_bytes(),
+                        &target.bounds.height_milli.to_le_bytes(),
+                    ]),
+                )
             }
             ViewIntrinsicProductRef::Image(image) => (
                 ViewGeometrySize::new(image.bounds.width_milli, image.bounds.height_milli),
@@ -127,32 +127,6 @@ impl ViewIntrinsicGeometryProvider for PresentationIntrinsicGeometryProvider {
             revision: ViewIntrinsicMeasureRevision::new(revision),
         })
     }
-}
-
-fn text_outer_size(
-    text: &BundleViewTextOutput,
-) -> Result<ViewGeometrySize, ViewIntrinsicGeometryError> {
-    let mut targets = text.targets.iter();
-    let Some(first) = targets.next() else {
-        return Err(ViewIntrinsicGeometryError::MissingIntrinsicMeasure);
-    };
-    let mut left = i64::from(first.bounds.x_milli);
-    let mut top = i64::from(first.bounds.y_milli);
-    let mut right = left + i64::from(first.bounds.width_milli);
-    let mut bottom = top + i64::from(first.bounds.height_milli);
-    for target in targets {
-        let target_left = i64::from(target.bounds.x_milli);
-        let target_top = i64::from(target.bounds.y_milli);
-        left = left.min(target_left);
-        top = top.min(target_top);
-        right = right.max(target_left + i64::from(target.bounds.width_milli));
-        bottom = bottom.max(target_top + i64::from(target.bounds.height_milli));
-    }
-    let width = u32::try_from(right - left)
-        .map_err(|_| ViewIntrinsicGeometryError::IntrinsicBoundsOverflow)?;
-    let height = u32::try_from(bottom - top)
-        .map_err(|_| ViewIntrinsicGeometryError::IntrinsicBoundsOverflow)?;
-    Ok(ViewGeometrySize::new(width, height))
 }
 
 fn revision<const N: usize>(parts: [&[u8]; N]) -> u64 {
@@ -176,14 +150,6 @@ impl RevisionTranscript {
             self.0 ^= u64::from(*byte);
             self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
         }
-    }
-
-    fn i32(&mut self, value: i32) {
-        self.bytes(&value.to_le_bytes());
-    }
-
-    fn u32(&mut self, value: u32) {
-        self.bytes(&value.to_le_bytes());
     }
 
     fn u64(&mut self, value: u64) {

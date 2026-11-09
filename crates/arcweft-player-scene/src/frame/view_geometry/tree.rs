@@ -465,35 +465,21 @@ fn bind_product<'a>(
             )?;
             Ok((ViewIntrinsicProductRef::EmptyContainer, vec![key]))
         }
-        BundleViewStyleNodeKind::Text { text_source }
-        | BundleViewStyleNodeKind::RichText { text_source } => {
-            let matches = mount
-                .text
-                .iter()
-                .filter(|text| text.source_id == *text_source)
-                .collect::<Vec<_>>();
+        BundleViewStyleNodeKind::Text { output } | BundleViewStyleNodeKind::RichText { output } => {
+            let block = mount
+                .text_output(*output)
+                .and_then(|text| text.block_for(source))
+                .ok_or_else(|| ViewGeometryProductError::MissingProductRecord {
+                    node: node.clone(),
+                    owner,
+                    expected: ViewGeometryProductKind::TextOutput,
+                    target: None,
+                })?;
             let target = ViewGeometryTargetKey::new(
                 ViewGeometryProductKind::TextOutput,
-                mount.scoped_id(text_source),
+                mount.scoped_id(&block.public_id),
             );
-            let text = exactly_one(
-                node,
-                owner,
-                ViewGeometryProductKind::TextOutput,
-                target,
-                &matches,
-            )?;
-            let targets = text
-                .targets
-                .iter()
-                .map(|fragment| {
-                    ViewGeometryTargetKey::new(
-                        ViewGeometryProductKind::TextOutput,
-                        mount.scoped_id(&fragment.public_id),
-                    )
-                })
-                .collect();
-            Ok((ViewIntrinsicProductRef::TextOutput(text), targets))
+            Ok((ViewIntrinsicProductRef::TextOutput(block), vec![target]))
         }
         BundleViewStyleNodeKind::Image { image, target } => {
             let id = mount.scoped_id(target.as_deref().unwrap_or(image));

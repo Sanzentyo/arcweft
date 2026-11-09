@@ -1,5 +1,5 @@
 use super::view_style::ResolvedViewStyleFrame;
-use super::view_text::PreparedMountedViewText;
+use super::view_text::{PreparedMountedViewText, PreparedViewText};
 use super::{
     PlayerFrameError, ViewCommittedGeometryFrame, ViewGeometryConversionError,
     ViewGeometryConversionField, ViewGeometryPlatform, ViewGeometryProductKind,
@@ -27,7 +27,8 @@ use arcweft_render_wgpu::view_scene::{
     ViewSurfaceBackground, ViewSurfaceBorder, ViewSurfacePaint, ViewTextPrimitive,
 };
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewFrame, BundleViewMountOutput, BundleViewPaintItem,
+    BundleViewFrame, BundleViewMountOutput, BundleViewPaintItem, BundleViewTextOrigin,
+    BundleViewTextOutputIndex,
 };
 use arcweft_view::geometry::ViewGeometryConsumer;
 use std::collections::{BTreeMap, BTreeSet};
@@ -45,7 +46,7 @@ pub(super) fn push_runtime_view_scene(
     frame: &mut PreparedFrame,
     surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
-    text: &[PreparedMountedViewText],
+    text: &PreparedViewText,
     styles: &ResolvedViewStyleFrame,
     geometry: &ViewCommittedGeometryFrame,
     content: Option<ContentRect>,
@@ -110,7 +111,7 @@ fn push_mount_paint(
     active_mounts: &mut BTreeSet<u64>,
     surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
-    text: &[PreparedMountedViewText],
+    text: &PreparedViewText,
     styles: &ResolvedViewStyleFrame,
     geometry: &ViewCommittedGeometryFrame,
     mount: &BundleViewMountOutput,
@@ -136,8 +137,10 @@ fn push_mount_paint(
                     consumed_surfaces.insert(surface.public_id.clone());
                 }
             }
-            BundleViewPaintItem::Text { source_id, target } => {
-                push_mount_text(output, mount, text, styles, source_id, target)?;
+            BundleViewPaintItem::Text {
+                output: text_output,
+            } => {
+                push_mount_text(output, mount, text, styles, *text_output)?;
             }
             BundleViewPaintItem::Image { target } => {
                 let scoped = mount.scoped_id(target);
@@ -184,38 +187,27 @@ fn push_mount_paint(
 fn push_mount_text(
     output: &mut ViewScene,
     mount: &BundleViewMountOutput,
-    text: &[PreparedMountedViewText],
+    text: &PreparedViewText,
     styles: &ResolvedViewStyleFrame,
-    source_id: &str,
-    target: &str,
+    output_index: BundleViewTextOutputIndex,
 ) -> Result<(), PlayerFrameError> {
-    let Some(prepared) = text.iter().find(|prepared| {
-        prepared.mount == mount.mount.get()
-            && prepared.source_id == source_id
-            && prepared.target == target
-    }) else {
+    let Some(prepared) = text.get(&(mount.mount, output_index)) else {
         return Ok(());
     };
-    let scoped = mount.scoped_id(target);
+    let missing = || PlayerFrameError::MissingTextPaintOutput {
+        mount: mount.mount.get(),
+        output: output_index,
+    };
+    let text = mount.text_output(output_index).ok_or_else(missing)?;
+    let BundleViewTextOrigin::Block { target, .. } = &text.origin else {
+        return Err(missing());
+    };
+    let scoped = mount.scoped_id(&target.public_id);
     let resolved_visual = styles
         .text(&scoped)
         .or_else(|| styles.part(&scoped))
         .map(ViewRuntimeNodeStyle::visual);
-    let authored_visual = mount
-        .text
-        .iter()
-        .find(|output| output.source_id == source_id)
-        .and_then(|output| {
-            output
-                .targets
-                .iter()
-                .find(|candidate| candidate.public_id == target)
-        })
-        .map(|target| &target.style);
-    let effects = match resolved_visual.or(authored_visual) {
-        Some(visual) => compositing_effects_from_style(visual)?,
-        None => ViewCompositingEffects::default(),
-    };
+    let effects = compositing_effects_from_style(resolved_visual.unwrap_or(&target.style))?;
     push_text(output, prepared, effects)?;
     Ok(())
 }
@@ -709,6 +701,8 @@ mod tests {
     use arcweft_render_wgpu::view_scene::{PreparedTextId, ViewPrimitive, ViewScene};
     use arcweft_runtime_driver::view_runtime::{
         BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
+        BundleViewStyleNodeId, BundleViewTextOrigin, BundleViewTextOutput,
+        BundleViewTextOutputIndex, BundleViewTextTarget, BundleViewTextValue,
     };
     use arcweft_view::{
         ViewMountId,
@@ -767,16 +761,14 @@ mod tests {
             text_inputs: Vec::new(),
             paint: vec![
                 BundleViewPaintItem::Text {
-                    source_id: "before".to_owned(),
-                    target: "before.target".to_owned(),
+                    output: BundleViewTextOutputIndex::new(0),
                 },
                 BundleViewPaintItem::Mount { mount: child_mount },
                 BundleViewPaintItem::Text {
-                    source_id: "after".to_owned(),
-                    target: "after.target".to_owned(),
+                    output: BundleViewTextOutputIndex::new(1),
                 },
             ],
-            text: Vec::new(),
+            text: vec![text_output("before", 0), text_output("after", 2)],
             fx: Vec::new(),
             events: Vec::new(),
             style_nodes: Vec::new(),
@@ -793,10 +785,9 @@ mod tests {
             action_buttons: Vec::new(),
             text_inputs: Vec::new(),
             paint: vec![BundleViewPaintItem::Text {
-                source_id: "child".to_owned(),
-                target: "child.target".to_owned(),
+                output: BundleViewTextOutputIndex::new(0),
             }],
-            text: Vec::new(),
+            text: vec![text_output("child", 0)],
             fx: Vec::new(),
             events: Vec::new(),
             style_nodes: Vec::new(),
@@ -806,10 +797,21 @@ mod tests {
             diagnostics: Vec::new(),
         };
         let text = [
-            prepared_text(root_mount, "before", "before.target", 0),
-            prepared_text(child_mount, "child", "child.target", 1),
-            prepared_text(root_mount, "after", "after.target", 2),
-        ];
+            (
+                (root_mount, BundleViewTextOutputIndex::new(0)),
+                prepared_text(0),
+            ),
+            (
+                (child_mount, BundleViewTextOutputIndex::new(0)),
+                prepared_text(1),
+            ),
+            (
+                (root_mount, BundleViewTextOutputIndex::new(1)),
+                prepared_text(2),
+            ),
+        ]
+        .into_iter()
+        .collect();
         let mut output = ViewScene::new(320.0, 180.0);
         let mut resources = PreparedViewSceneResources::default();
         let mut available_images = Vec::new();
@@ -847,19 +849,37 @@ mod tests {
         assert_eq!(output.paint_nodes().len(), 3);
     }
 
-    fn prepared_text(
-        mount: ViewMountId,
-        source_id: &str,
-        target: &str,
-        index: u32,
-    ) -> PreparedMountedViewText {
+    fn prepared_text(text: u32) -> PreparedMountedViewText {
         PreparedMountedViewText {
-            mount: mount.get(),
-            source_id: source_id.to_owned(),
-            target: target.to_owned(),
-            text: PreparedTextId::from_index(index),
+            text: PreparedTextId::from_index(text),
             bounds: HitRect::new(0.0, 0.0, 10.0, 10.0),
             clip: None,
+        }
+    }
+
+    fn text_output(source: &str, instruction: u32) -> BundleViewTextOutput {
+        BundleViewTextOutput {
+            source_id: source.to_owned(),
+            origin: BundleViewTextOrigin::Block {
+                node: BundleViewStyleNodeId {
+                    path: BundleViewInstancePath::default(),
+                    instruction,
+                },
+                target: BundleViewTextTarget {
+                    public_id: format!("{source}.target"),
+                    containing_scroll_region: None,
+                    bounds: arcweft_bundle::resource_codec::ViewTextBlockBounds::from_px(
+                        0, 0, 10, 10,
+                    ),
+                    selection_policy: Default::default(),
+                    style: Default::default(),
+                },
+            },
+            value: BundleViewTextValue::Plain {
+                value: source.to_owned(),
+            },
+            classification: Default::default(),
+            replacement: None,
         }
     }
 }

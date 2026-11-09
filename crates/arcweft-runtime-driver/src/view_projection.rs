@@ -1,6 +1,6 @@
 //! Projects mount-scoped executable View output into existing scene resources.
 
-use crate::view_runtime::{BundleViewFrame, BundleViewMountOutput, BundleViewStyleNodeKind};
+use crate::view_runtime::{BundleViewFrame, BundleViewMountOutput};
 use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewFocusInitialPolicy, ViewFocusTargetResolution,
     ViewRuntimeActionButtonAction,
@@ -11,7 +11,7 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_id::view::ViewId;
 use arcweft_interaction_model::presentation::PresentationImage;
-use arcweft_view::{EventKind, ViewMountId};
+use arcweft_view::ViewMountId;
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -156,37 +156,26 @@ fn project_action_buttons(
         mount
             .action_buttons
             .iter()
-            .filter(|button| {
+            .filter(|output| {
+                let button = &output.value;
                 owned_and_active(button.view.as_deref(), &button.target, mount, active)
             })
-            .cloned()
-            .map(|mut button| {
+            .map(|output| {
+                let mut button = output.value.clone();
+                if matches!(button.action, ViewRuntimeActionButtonAction::Noop)
+                    && let Some(handler) = mount.activation_binding(&output.node)
+                {
+                    button.action = ViewRuntimeActionButtonAction::ViewHandler {
+                        event: handler.event(),
+                        route: handler.route(),
+                    };
+                }
                 button.dialogue_mount = matches!(
                     &button.action,
                     ViewRuntimeActionButtonAction::ActionInvoke { .. }
                 )
                 .then_some(dialogue_mount)
                 .flatten();
-                let authored_target = button.target.clone();
-                let handler = mount
-                    .style_nodes
-                    .iter()
-                    .find(|node| {
-                        matches!(
-                            &node.kind,
-                            BundleViewStyleNodeKind::Element {
-                                target: Some(target),
-                                ..
-                            } if target == &authored_target
-                        )
-                    })
-                    .and_then(|node| {
-                        mount.events.iter().find(|binding| {
-                            binding.path() == &node.path
-                                && binding.instruction() == node.instruction
-                                && binding.event() == EventKind::Activate
-                        })
-                    });
                 button.public_id = scoped_id(mount, &button.public_id);
                 button.target = scoped_id(mount, &button.target);
                 scope_owner(
@@ -200,14 +189,6 @@ fn project_action_buttons(
                 } = &mut button.action
                 {
                     *input = scoped_id(mount, input);
-                }
-                if matches!(button.action, ViewRuntimeActionButtonAction::Noop)
-                    && let Some(handler) = handler
-                {
-                    button.action = ViewRuntimeActionButtonAction::ViewHandler {
-                        event: handler.event(),
-                        route: handler.route(),
-                    };
                 }
                 button
             }),
@@ -375,7 +356,10 @@ mod tests {
         DialoguePageIndex, DialogueViewOccurrence, DialogueViewPrimaryAction, DialogueViewReveal,
         DialogueViewStage,
     };
-    use crate::view_runtime::{BundleViewInstancePath, BundleViewMountOutput};
+    use crate::view_runtime::{
+        BundleViewActionButtonOutput, BundleViewInstancePath, BundleViewMountOutput,
+        BundleViewStyleNodeId,
+    };
     use arcweft_bundle::resource_codec::{ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle};
     use arcweft_id::presentation::PresentationHandleId;
     use arcweft_id::view::ViewId;
@@ -445,7 +429,13 @@ mod tests {
             .find(|mount| mount.view.as_str() == button.view.as_deref().unwrap())
             .unwrap()
             .action_buttons
-            .push(button.clone());
+            .push(BundleViewActionButtonOutput {
+                node: BundleViewStyleNodeId {
+                    path: BundleViewInstancePath::default(),
+                    instruction: 0,
+                },
+                value: button.clone(),
+            });
         let projected = project_view_resources(
             &frame,
             &ViewProjectionInput {
@@ -509,7 +499,13 @@ mod tests {
             .find(|mount| mount.view.as_str() == button.view.as_deref().unwrap())
             .unwrap()
             .action_buttons
-            .push(button.clone());
+            .push(BundleViewActionButtonOutput {
+                node: BundleViewStyleNodeId {
+                    path: BundleViewInstancePath::default(),
+                    instruction: 0,
+                },
+                value: button.clone(),
+            });
         let projected = project_view_resources(
             &frame,
             &ViewProjectionInput {
