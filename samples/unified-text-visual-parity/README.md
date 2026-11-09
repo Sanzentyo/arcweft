@@ -22,10 +22,12 @@ batch and `ViewPrimitive::Text` path.
 Run `just unified-text-visual-parity` to build the bundle and collect the
 Native/headless offscreen and WebGPU parity packet under
 `target/unified-text-visual-parity/`. The command never overwrites a checked-in
-native-system-font golden.
+native-system-font golden. The recipe builds the Web player with Cargo's
+release profile for the timed captures.
 
 The harness stops the runtime clock at each target page's activation tick and
 then advances the same 16 ms logical quanta on Native and Web. The final
 verifier requires pixel-exact cross-backend frames, distinct loose/strict JLREQ
-images, moving source-defined Fx, one-glyph reveal progression, and color,
-mask, and object-ID attachments for representative dialogue-View content.
+images, moving source-defined Fx, and ink from the newly revealed glyph on both
+backends. It also checks the color, mask, and object-ID attachments for
+representative dialogue-View content.

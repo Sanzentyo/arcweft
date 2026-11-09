@@ -63,10 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         native("fx-4000")?,
         native("fx-4500")?,
     )?;
-    verify_reveal(
-        body(native("reveal-20000")?)?,
-        body(native("reveal-20500")?)?,
-    )?;
+    verify_reveal(&root, native("reveal-20000")?, native("reveal-20500")?)?;
     verify_scoped_packets(&root, &reports)?;
 
     let temporal_mse = ["jlreq", "fx", "reveal"]
@@ -354,7 +351,13 @@ fn verify_fx(
     Ok(())
 }
 
-fn verify_reveal(earlier: &Value, later: &Value) -> Result<(), Box<dyn Error>> {
+fn verify_reveal(
+    root: &Path,
+    earlier_report: &Value,
+    later_report: &Value,
+) -> Result<(), Box<dyn Error>> {
+    let earlier = body(earlier_report)?;
+    let later = body(later_report)?;
     require(
         earlier["layout_hash"] == later["layout_hash"],
         "typewriter reveal changed the stable text layout hash",
@@ -371,7 +374,91 @@ fn verify_reveal(earlier: &Value, later: &Value) -> Result<(), Box<dyn Error>> {
         later_text.starts_with(earlier_text) && later_text.len() > earlier_text.len(),
         "typewriter visible text did not progress by prefix",
     )?;
-    Ok(())
+
+    let before = array(earlier, "glyphs")?;
+    let after = array(later, "glyphs")?;
+    require(
+        before.len() == after.len(),
+        "reveal changed the glyph count",
+    )?;
+    let mut newly_visible = before
+        .iter()
+        .zip(after)
+        .filter(|(previous, next)| previous["visible"] == false && next["visible"] == true);
+    let (hidden, shown) = newly_visible
+        .next()
+        .ok_or_else(|| failure("typewriter did not reveal a glyph"))?;
+    require(
+        newly_visible.next().is_none(),
+        "typewriter revealed multiple glyphs",
+    )?;
+    for field in [
+        "source_start",
+        "source_end",
+        "line_index",
+        "logical_ordinal",
+    ] {
+        require(
+            hidden[field] == shown[field],
+            "revealed glyph identity changed",
+        )?;
+    }
+
+    verify_reveal_ink(root, earlier_report, earlier, hidden, false)?;
+    verify_reveal_ink(root, later_report, later, shown, true)
+}
+
+fn verify_reveal_ink(
+    root: &Path,
+    frame: &Value,
+    body: &Value,
+    glyph: &Value,
+    shown: bool,
+) -> Result<(), Box<dyn Error>> {
+    let checkpoint = str_field(frame, "checkpoint")?;
+    let report = read_json(&root.join(format!("text-raster-{checkpoint}.json")))?;
+    require(
+        report["schema_version"] == "arcweft.text_raster_parity.v1"
+            && report["checkpoint"] == checkpoint
+            && report["passed"] == true,
+        format!("{checkpoint}: missing passing text raster report"),
+    )?;
+    let body_index = array(frame, "text")?
+        .iter()
+        .position(|item| std::ptr::eq(item, body))
+        .ok_or_else(|| failure("reveal body has no prepared text index"))?;
+    let mut matching = array(&report, "runs")?.iter().filter(|run| {
+        let source = &run["source"];
+        source["kind"] == "prepared_text_glyph"
+            && source["prepared_text_index"] == body_index
+            && ["source_start", "source_end", "line_index"]
+                .into_iter()
+                .all(|field| source[field] == glyph[field])
+    });
+    let run = matching.next().ok_or_else(|| {
+        failure(format!(
+            "{checkpoint}: missing raster run for the reveal glyph"
+        ))
+    })?;
+    require(
+        matching.next().is_none(),
+        format!("{checkpoint}: ambiguous reveal glyph raster run"),
+    )?;
+
+    let min_ink = u64_field(&report["thresholds"], "min_ink_pixels")?;
+    let native = u64_field(&run["native_mask"], "ink_pixels")?;
+    let web = u64_field(&run["web_mask"], "ink_pixels")?;
+    let ink_matches = if shown {
+        native >= min_ink && web >= min_ink
+    } else {
+        native == 0 && web == 0
+    };
+    require(
+        run["source"]["visible"] == shown && ink_matches,
+        format!(
+            "{checkpoint}: reveal glyph raster visibility differs (Native {native}, Web {web} ink pixels)"
+        ),
+    )
 }
 
 fn verify_scoped_packets(

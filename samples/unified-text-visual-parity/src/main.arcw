@@ -103,8 +103,7 @@ flow unified_text_visual_parity(state: GameState) -> String {
         #size(34px)[#layout(.vertical_rl, jlreq=.strict)[#font("Noto Sans JP")[天地。「人山川海]]][p]
 
     parity(id=@say.unified_text_visual_parity.fx_reveal, voice=auto):
-        #color(rgb("#b9dcff"))[FX] #fx(parity_orbit(amplitude=5px, speed=0.8))[#size(42pt)[#color(rgb("#9be7ff"))[波動光]]][r]
-        #color(rgb("#ffd8b0"))[REVEAL] #fx(typewriter(characters_per_second=2, delay=18s, phase=.glyph_mask))[#size(36pt)[開示2026]][p]
+        #color(rgb("#b9dcff"))[FX] #fx(parity_orbit(amplitude=5px, speed=0.8))[#size(42pt)[#color(rgb("#9be7ff"))[波動光]]] #color(rgb("#ffd8b0"))[REVEAL] #fx(typewriter(characters_per_second=2, delay=18s, phase=.glyph_mask))[#size(36pt)[開示2026]][p]
 
     return "unified_text_visual_parity_done"
 }

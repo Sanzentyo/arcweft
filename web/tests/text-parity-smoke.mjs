@@ -217,6 +217,11 @@ async function openReady(browser, baseUrl, checkpoint) {
   const visualTimeMillis = checkpointVisualTime(checkpoint);
   const requiredText = checkpointRequiredText(checkpoint);
   await installManualLogicalClock(page);
+  await page.addInitScript(() => {
+    document.addEventListener("arcweft-frame-observation", (event) => {
+      window.__arcweftTextParityFrameJson = event.detail;
+    });
+  });
   const errors = collectConsoleErrors(page);
   const search = new URLSearchParams({
     bundle: bundleUrl,
@@ -435,9 +440,11 @@ async function main() {
       try {
         await assertCanvasOnlySample(page, checkpoint);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
-        const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
-        const frameEvidence = {
-          ...frame,
+        const frameJson = await page.evaluate(() => window.__arcweftTextParityFrameJson);
+        expect(typeof frameJson === "string" && frameJson.startsWith("{") && frameJson.endsWith("}"),
+          `missing raw frame observation for ${checkpoint}`);
+        const frame = JSON.parse(frameJson);
+        const captureMetadata = {
           checkpoint,
           visual_time_millis: checkpointVisualTime(checkpoint),
           logical_clock: logicalClock,
@@ -447,9 +454,11 @@ async function main() {
           },
           fonts,
         };
+        // Preserve the Rust report's numeric tokens when adding capture metadata.
+        const metadataJson = JSON.stringify(captureMetadata, null, 2);
         await writeFile(
           join(outputDir, `web-${checkpoint}.frame.json`),
-          `${JSON.stringify(frameEvidence, null, 2)}\n`,
+          `${frameJson.slice(0, -1)},${metadataJson.slice(1)}\n`,
         );
         await page.locator("#arcweft-canvas").screenshot({
           path: join(outputDir, `web-${checkpoint}.png`),

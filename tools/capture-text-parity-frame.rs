@@ -13,6 +13,7 @@ arcweft-runtime-driver = { path = "../crates/arcweft-runtime-driver" }
 arcweft-text-model = { path = "../crates/arcweft-text-model" }
 png = "0.18.1"
 pollster = "0.4.0"
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl", "dx12", "metal", "vulkan"] }
 
@@ -38,6 +39,7 @@ use arcweft_render_wgpu::offscreen::{
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use png::{BitDepth, ColorType, Encoder};
+use serde::Serialize;
 use serde_json::json;
 use std::env;
 use std::error::Error;
@@ -189,6 +191,7 @@ fn prepare_text_parity_frame(
         session.step_with_clock(clock, BundleStepInput::default());
     }
     let logical_clock = LogicalCaptureClock {
+        quantum_millis: LOGICAL_STEP_MILLIS,
         activation_tick,
         capture_tick,
         elapsed_steps,
@@ -243,8 +246,9 @@ struct PreparedTextParityFrame {
     logical_clock: LogicalCaptureClock,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize)]
 struct LogicalCaptureClock {
+    quantum_millis: u32,
     activation_tick: u64,
     capture_tick: u64,
     elapsed_steps: u64,
@@ -494,6 +498,30 @@ impl std::str::FromStr for CaptureTargetFormat {
     }
 }
 
+#[derive(Serialize)]
+struct NativeFrameReport<'a> {
+    #[serde(flatten)]
+    observation: WebFrameObservationReport,
+    checkpoint: &'a str,
+    visual_time_millis: u64,
+    logical_clock: LogicalCaptureClock,
+    execution_path: NativeFrameExecutionPath,
+    fonts: Vec<NativeFrameFont>,
+}
+
+#[derive(Serialize)]
+struct NativeFrameExecutionPath {
+    layout: &'static str,
+    raster: &'static str,
+}
+
+#[derive(Serialize)]
+struct NativeFrameFont {
+    path: String,
+    byte_len: usize,
+    fnv1a64: String,
+}
+
 fn write_frame_report(
     path: &Path,
     frame: &PreparedFrame,
@@ -506,43 +534,25 @@ fn write_frame_report(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut report = serde_json::to_value(WebFrameObservationReport::from_prepared_frame(frame)?)?;
-    let object = report
-        .as_object_mut()
-        .ok_or("canonical frame report did not serialize as an object")?;
-    object.insert("checkpoint".to_owned(), json!(checkpoint));
-    object.insert("visual_time_millis".to_owned(), json!(visual_time_millis));
-    object.insert(
-        "logical_clock".to_owned(),
-        json!({
-            "quantum_millis": LOGICAL_STEP_MILLIS,
-            "activation_tick": logical_clock.activation_tick,
-            "capture_tick": logical_clock.capture_tick,
-            "elapsed_steps": logical_clock.elapsed_steps,
-            "elapsed_millis": logical_clock.elapsed_millis,
-        }),
-    );
-    object.insert(
-        "execution_path".to_owned(),
-        json!({
-            "layout": "headless-player-scene",
-            "raster": "native-shared-wgpu-offscreen",
-        }),
-    );
-    object.insert(
-        "fonts".to_owned(),
-        json!(
-            font_paths
-                .iter()
-                .zip(font_resources)
-                .map(|(path, bytes)| json!({
-                    "path": path.display().to_string(),
-                    "byte_len": bytes.len(),
-                    "fnv1a64": fnv1a64_hex(bytes),
-                }))
-                .collect::<Vec<_>>()
-        ),
-    );
+    let report = NativeFrameReport {
+        observation: WebFrameObservationReport::from_prepared_frame(frame)?,
+        checkpoint,
+        visual_time_millis,
+        logical_clock,
+        execution_path: NativeFrameExecutionPath {
+            layout: "headless-player-scene",
+            raster: "native-shared-wgpu-offscreen",
+        },
+        fonts: font_paths
+            .iter()
+            .zip(font_resources)
+            .map(|(path, bytes)| NativeFrameFont {
+                path: path.display().to_string(),
+                byte_len: bytes.len(),
+                fnv1a64: fnv1a64_hex(bytes),
+            })
+            .collect(),
+    };
     fs::write(
         path,
         format!("{}\n", serde_json::to_string_pretty(&report)?),
