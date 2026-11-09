@@ -1084,6 +1084,156 @@
             }
           ],
           "classification": "All six stages passed against the exact published Rust sources. The fresh Runtime Host stage replaces the mixed-input attempt in the earlier value-block follow-up."
+        },
+        "reverseTerminal": {
+          "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+          "reversePackages": [
+            "arcweft-adapter-sema",
+            "arcweft-agent-mcp",
+            "arcweft-agent-mcp-client",
+            "arcweft-agent-repl",
+            "arcweft-agent-runner",
+            "arcweft-cli",
+            "arcweft-compiler",
+            "arcweft-lang-hir",
+            "arcweft-lang-sema",
+            "arcweft-lsp",
+            "arcweft-player-native",
+            "arcweft-player-scene",
+            "arcweft-player-web",
+            "arcweft-project-loader",
+            "arcweft-runtime-driver",
+            "arcweft-runtime-host",
+            "arcweft-runtime-plan",
+            "arcweft-test",
+            "arcweft-tooling",
+            "arcweft-verify",
+            "arcweft-verify-lsp",
+            "arcweft-verify-oxiz",
+            "arcweft-verify-z3"
+          ],
+          "nextest": {
+            "run": 4847,
+            "pass": 4847,
+            "fail": 0,
+            "skip": 9
+          },
+          "statuses": [
+            {
+              "name": "workspace-check",
+              "exitCode": 0,
+              "summary": [
+                "Finished `dev` profile [unoptimized + debuginfo] target(s) in 51.77s"
+              ]
+            },
+            {
+              "name": "workspace-clippy",
+              "exitCode": 0,
+              "summary": [
+                "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 02s"
+              ]
+            },
+            {
+              "name": "owner-doctests",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s",
+                "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+                "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+                "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+                "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+              ]
+            },
+            {
+              "name": "runtime-host",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 14s",
+                "Summary [   5.095s] 72 tests run: 72 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "owners",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 04s",
+                "Summary [ 257.404s] 3580 tests run: 3580 passed (5 slow), 9 skipped"
+              ]
+            },
+            {
+              "name": "driver-scene",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 44s",
+                "Summary [   2.950s] 278 tests run: 278 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "player-native",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 22s",
+                "Summary [   1.127s] 59 tests run: 59 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "player-web",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 09s",
+                "Summary [   0.427s] 37 tests run: 37 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "agent-execution",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 32.02s",
+                "Summary [  17.923s] 106 tests run: 106 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "tools-lsp",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 54s",
+                "Summary [ 213.783s] 412 tests run: 412 passed (1 slow), 0 skipped"
+              ]
+            },
+            {
+              "name": "agent-transport",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 17.25s",
+                "Summary [   0.427s] 46 tests run: 46 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "verify",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 55s",
+                "Summary [   0.233s] 31 tests run: 31 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "cli-library-binaries",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 37s",
+                "Summary [  32.035s] 196 tests run: 196 passed, 0 skipped"
+              ]
+            },
+            {
+              "name": "cli-integration",
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 21.70s",
+                "Summary [   9.977s] 30 tests run: 30 passed, 0 skipped"
+              ]
+            }
+          ],
+          "receipt": "carrier/repair/quality/final.receipt.json"
         }
       },
       "replay": {
@@ -1549,8 +1699,8 @@
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 3240164,
-    "sha256": "c6280ba4939e053bdd1a30e30969144bcd8ca8c36e8c9ff2d94db2367f080ac3",
+    "bytes": 3335126,
+    "sha256": "fb5a341ae9b9abb812f927be8b5d87f4e11290252d317bdbe81d36e9017673d6",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -1750,7 +1900,13 @@
       "carrier/terminal-transfer/controls/result-typed-terminal-tail.arcw": "328820695df49c656cfebf271b3663bba037ebbbcf308b0f38e225673b7541df",
       "carrier/terminal-transfer/controls/result-typed-terminal-tail.log": "f3d4b99714539322d556361e692c7b9e123f815a52ce9643fe50e5138270156c",
       "carrier/terminal-transfer/controls/pure-carrier-never.arcw": "23b6b331f27bf41eee772eb957d35dc5e2d16725523fd7098293310b97a71169",
-      "carrier/terminal-transfer/controls/pure-carrier-never.log": "eb1d8eabd94aca5d043b50ccdba4ee1fa599b996432959f5aff91d3f7738cc82"
+      "carrier/terminal-transfer/controls/pure-carrier-never.log": "eb1d8eabd94aca5d043b50ccdba4ee1fa599b996432959f5aff91d3f7738cc82",
+      "carrier/repair/quality/final.receipt.json": "015e58b9b8b5f643dfa7b3bffbcc5a2c6eb680bf6eb8c2c6bf94e56680972f47",
+      "carrier/repair/quality/tools-lsp.log": "ff1411990dd5890afe19a4da44c6d3e36bb47bd89f204437940f5ff02b44183f",
+      "carrier/repair/quality/agent-transport.log": "f02748aacb1a41581a010cfa535a30cbc30e72b2a5c12a2def44ed3d8a31b6b0",
+      "carrier/repair/quality/verify.log": "c64b06f105147c282dbfe6ff9b85fc3de58f5627f6027220962647a1c2bdf6d7",
+      "carrier/repair/quality/cli-library-binaries.log": "f437ab2f6fc5d480568bc3450ee4e3929588b3f5cae700c5c148ec0ad71bd4ab",
+      "carrier/repair/quality/cli-integration.log": "94ed0760849f2d099ef7fda3da580f214c9828f4cb51351088a2c2f1c3171f64"
     }
   }
 }
