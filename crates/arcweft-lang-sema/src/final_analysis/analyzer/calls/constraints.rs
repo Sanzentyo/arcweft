@@ -4235,6 +4235,21 @@ impl AnalyzerPreparedCandidateRecord {
         &self.inputs
     }
 
+    /// Actual value slots sealed by this application's selected type solution.
+    pub(crate) fn value_inputs(&self) -> impl Iterator<Item = (ExprId, &TypeKind)> {
+        self.component.sources().selected().filter_map(|probe| {
+            let source = match probe.source().local() {
+                AnalyzerCallConstraintSource::Receiver { source }
+                | AnalyzerCallConstraintSource::Argument {
+                    source: CheckedCallArgumentSlotSource::Expression(source),
+                    ..
+                } => source,
+                _ => return None,
+            };
+            Some((source, probe.actual()))
+        })
+    }
+
     pub(crate) fn function_value_origin(&self) -> Option<&PreparedFunctionValueOriginEvidence> {
         self.metadata.function_value_origin.as_ref()
     }

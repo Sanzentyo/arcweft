@@ -4606,7 +4606,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(Arc::new(rows))
     }
 
-    fn map_function_value_origin_query_error(
+    pub(super) fn map_function_value_origin_query_error(
         &self,
         owner: ExprId,
         error: PreparedFunctionValueOriginQueryError,

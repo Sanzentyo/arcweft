@@ -1494,6 +1494,176 @@ fn safe_lifetime_promotion_propagates_only_changed_nominal_storage() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "paired source cases share the same diagnostic and exact-span assertions"
+)]
+fn safe_lifetime_promotion_checks_the_function_value_captures() {
+    let borrow = "|| -> i64 { let _ = loan; 42i64 }";
+    let owned = "|| -> i64 { 7i64 }";
+    for (case, parameter, body, receiver, proof, borrowed) in [
+        (
+            "direct",
+            "loan: &i64",
+            String::new(),
+            format!("({borrow})"),
+            "",
+            true,
+        ),
+        (
+            "alias",
+            "loan: &i64",
+            format!("let callback = {borrow}; let alias = callback;"),
+            "alias".into(),
+            "",
+            true,
+        ),
+        (
+            "captured option",
+            "loan: Option<&i64>",
+            format!("let callback = {borrow};"),
+            "callback".into(),
+            "",
+            true,
+        ),
+        (
+            "transitive",
+            "loan: &i64",
+            format!("let inner = {borrow}; let callback = || -> i64 {{ let _ = inner; 7i64 }};"),
+            "callback".into(),
+            "",
+            true,
+        ),
+        (
+            "branch result",
+            "loan: &i64, flag: bool",
+            format!("let callback = if flag {{ {borrow} }} else {{ {owned} }};"),
+            "callback".into(),
+            "",
+            true,
+        ),
+        (
+            "match result",
+            "loan: &i64, flag: bool",
+            format!("let callback = match flag {{ true => {borrow}, false => {owned} }};"),
+            "callback".into(),
+            "",
+            true,
+        ),
+        (
+            "if-let result",
+            "loan: &i64, flag: Option<i64>",
+            format!("let callback = if let .Some(_) = flag {{ {borrow} }} else {{ {owned} }};"),
+            "callback".into(),
+            "",
+            true,
+        ),
+        (
+            "implicit callable",
+            "loan: &i64",
+            "let mut outer = 1i64
+             let callback: (i64) -> Result<Unit, Never> = result { let _ = loan; outer; outer = _; () }"
+                .into(),
+            "callback".into(),
+            "",
+            true,
+        ),
+        (
+            "proof",
+            "loan: &i64",
+            format!("let callback = {borrow};"),
+            "callback".into(),
+            ", proof = @proof.keep",
+            true,
+        ),
+        (
+            "owned capture",
+            "number: i64",
+            "let callback = || -> i64 { number };".into(),
+            "callback".into(),
+            "",
+            false,
+        ),
+        (
+            "signature",
+            "callback: (&i64) -> i64 effects {}",
+            String::new(),
+            "callback".into(),
+            "",
+            false,
+        ),
+        (
+            "discarded value",
+            "loan: &i64",
+            format!("let callback = {{ let discarded = {borrow}; let _ = discarded; {owned} }};"),
+            "callback".into(),
+            "",
+            false,
+        ),
+        (
+            "reassigned binding",
+            "loan: &i64",
+            format!("let mut callback = {borrow}; callback = {owned};"),
+            "callback".into(),
+            "",
+            false,
+        ),
+    ] {
+        let call = format!("{receiver}.promote('flow{proof})");
+        let source =
+            format!("proof keep() = ()\nflow main({parameter}) {{\n{body}\nlet _ = {call};\n}}");
+        let fixture = fixture(&source, None);
+        fixture
+            .project
+            .analysis_view()
+            .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{case}: {error:?}"));
+        let (code, offending) = if borrowed {
+            let checked_receiver = if case == "direct" {
+                borrow
+            } else {
+                receiver.as_str()
+            };
+            ("sema.lifetime.promotion_receiver", checked_receiver)
+        } else {
+            ("sema.lifetime.promotion_execution", call.as_str())
+        };
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+    }
+}
+
+#[test]
+fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
+    for (parameter, code) in [
+        ("&i64", "sema.lifetime.promotion_receiver"),
+        ("i64", "sema.lifetime.promotion_execution"),
+    ] {
+        let source = format!(
+            "fn carry(loan: {parameter})(middle: i64)(last: i64) -> i64 {{
+                let _ = loan;
+                middle + last
+            }}
+            flow main(loan: {parameter}) {{
+                let prefix = carry(loan)
+                let callback = prefix(2i64)
+                let _ = callback.promote('flow)
+            }}"
+        );
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{parameter}: {error:?}"));
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{parameter}");
+    }
+}
+
+#[test]
 fn lifetime_promotion_audit_stops_at_independent_execution() {
     for (body, code, offending) in [
         (

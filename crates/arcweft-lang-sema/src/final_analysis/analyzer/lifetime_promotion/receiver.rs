@@ -75,7 +75,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
     }
 
     pub(super) fn contains_borrow(
-        mut self,
+        &mut self,
         root: &TypeKind,
     ) -> Result<bool, FinalSemanticAnalysisError> {
         loop {
@@ -118,7 +118,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
         Ok(())
     }
 
-    fn charge(&mut self, work: u64) -> Result<(), FinalSemanticAnalysisError> {
+    pub(super) fn charge(&mut self, work: u64) -> Result<(), FinalSemanticAnalysisError> {
         self.control.check()?;
         self.remaining = self
             .remaining

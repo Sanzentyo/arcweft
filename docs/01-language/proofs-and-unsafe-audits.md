@@ -157,8 +157,11 @@ body reaches its Line activation. The checked receiver of a safe promotion
 must be owned. A borrow or borrowed slice carried in a field, enum payload, or
 collection element also makes the receiver borrowed. A generic argument
 contributes to this check when it is used in the value's storage. Callable
-signatures and deferred result types describe operations. Checking their
-captures requires the owner of the actual value. An explicit proof supplies
+signatures and deferred result types describe operations. The ownership
+check follows resolved capture bindings and the function values returned by
+the receiver expression. A borrow retained in a closure's captures makes that
+closure a borrowed receiver. A partial application retains the runtime inputs
+of its completed parameter groups. An explicit proof supplies
 evidence about lifetimes and leaves the receiver's ownership unchanged.
 
 ## Release policy

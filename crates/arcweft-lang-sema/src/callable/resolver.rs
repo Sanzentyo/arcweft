@@ -1130,6 +1130,10 @@ impl PreparedFunctionValueOriginEvidence {
         }
     }
 
+    pub(crate) const fn callee(&self) -> ExprId {
+        self.callee
+    }
+
     pub(crate) const fn producer(&self) -> &PreparedFunctionValueOriginProducer {
         &self.producer
     }
