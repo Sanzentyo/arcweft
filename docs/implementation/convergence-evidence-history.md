@@ -15958,3 +15958,16 @@ Core全targets／全features check終了0／1m08s、Clippy終了0（Finished `de
 修復patch SHA256 `1d041ca1a2938809a8518a9c65f9c57a4a57c1b838af22bfeeff91b2dc5fedb7`。AWBCの静的・動的gotoが共用するterminatorで、選択先とABIを検査して受け取りframeを準備した後に、元scopeの退出を始める。loweringの先行 `ExitScope` を除去し、最初のscope退出は転送を受理したopで始め、残りのscopeは各退出stepで処理する。open scopeのない従来のcallbackなし転送は元の1 VM opで確定する。保留状態でVM loopが同一のcleanup通知を先走らないようにした。version 1保存形状は変更なし。言語章に成功scopeの退出と不正target／引数の失敗cleanupの順序を記載した。
 
 locked・全featureのCore30／Compiler33、63／63 PASS・2314 SKIP／2.669秒。list構築1m05s。上の同じ正負assertionで、NativeとAWBCはともに引数不足を報告し、失敗cleanupの内側・外側順序を維持した。既存のstatic／dynamic、関数をまたぐdefer、失敗・取消し、実handle移譲、callbackなし1 VM op、公開JSON保存と復元も対象に含む。元Source／元EXE前後差分0。Core／RuntimePlan／Compilerのlocked・全target・全feature Clippy終了0（Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 23s）、変更4 Rust path fmt終了0。全逆依存・workspace gateはこのpatchでは未実行、Generic Match受入とregistry153 propertyは変更なし。原本 `docs/implementation/acceptance-evidence/task-flow-transfer-awbc-admission-wip10.raw.zip`：22 entries／926884 bytes／SHA256 `4dbe3ebbebf937ef1e8e5a198cd898722566011bec25bf3e6867bec4a231177d`。生成物なし。
+
+
+### Flow transfer: Native／AWBC修復後の54逆依存 — 2026-11-09
+
+固定Source `0d91cf3a73891486dc34af1369630f75f4114d0a`、親 `b69d21870167a84bdfbc7cd0e0073a47bb3d4d8c`、tree `7677cd9a1d20799f085d1741b310b6c07ea001c0`、公開patch SHA256 `15c721e8ef73f874c6cf595ae61476714195f6df9a06f8fc1ca3e5616dd54003`。追跡差分とindex空、保持cache4。全workspace・locked・全target・全feature check／Clippy終了0（86.80秒／98.01秒、警告あり）、Wasm向けplayer-web／render-webのlib check終了0（103.13秒）、構造gate終了0（14.96秒、3410 files／98 package、review trigger388・blocking0）。Wasm実行とsample操作・画像parityは対象外。
+
+Cargo manifest・lock・config不変のため、前回照合したCore53／Source23の和集合54を再利用。Windowsの全54一括listは前回のメモリ割り当てエラーなしで終了0、構築9m52s。選択は9,124→9,125 ID：AWBCの引数拒否1件を追加、Nativeの受け取り拒否を元slotの借用検査に合わせた1件へ置換、他の欠落・重複なし。locked・全feature・既定filter／`--no-fail-fast --no-tests fail`。終端 `Summary [1240.355s] 9125 tests run: 9121 passed (74 slow), 4 failed, 49 skipped`、非CLI 8,412 PASS／26 SKIP、CLI 709 PASS／4 FAIL／23 SKIP。対象外3 packageの理由は前回と同じ。Source／元pathの220実行ファイル差分0。実 `arcw.exe` は305961472 bytes／SHA256 `e61f80b1926fc71a959a083e4b01aca7e248efd3011e79bbdf7f517f8f5ee98d`。
+
+4失敗ID・診断は前回までのScroll／対話voice／promotion 2件と一致。JIT benchは修復対象のassertionを変更せず9操作・`[8, 1]`、ログ `12`・戻り値と元のJIT測定条件でPASS。AWBCの引数不足で成功cleanupが走らない回帰testもPASS。元のNative／AWBC転送・formal receiverを含む対象5件がPASS。Generic Match受入151件の150同一ID・Style後継1件も151／151 PASS、受入・公開状態は不変。registry153 propertyを保持した。
+
+同じ元CLIで `modern-feedback-view` を別途check0／main-profile bundle0。元pathのAWFBは945200 bytes／SHA256 `e9d77b97a91a5ecffd2524d8aeb60b69a3dd87d6ea64102a4d43dad98f86dd72` で先行WIP7と一致。Source・manifest・CLI hash前後一致。サンプル操作・画像parityは含まず、9,125件へ加算しない。
+
+原本 `docs/implementation/acceptance-evidence/task-flow-transfer-convergence-0d91.raw.zip`：21 entries／1358394 bytes／SHA256 `6ad557c9b96361f1e0b86e6a3abcbf57762620fce09fd0b3f293ab7d82d42b6c`。実行条件・log・list・元pathのhash・新旧ID差分を保存。生成物は含めない。9,124実行で出たJIT回帰と修正前のAWBC失敗はそれぞれの元履歴に保持し、現状一覧はこの入力の結果へ更新した。
