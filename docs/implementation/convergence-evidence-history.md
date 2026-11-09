@@ -16304,3 +16304,18 @@ Webクレートは全feature nextest 37件成功、ClippyとWasmビルドは終�
 
 [既定スモーク・比較結果・入力の原本](acceptance-evidence/task-webgpu-demo-native-parity-acceptance.raw.zip)は9件、5,271 bytes、SHA-256
 `94d5615c496ecf4ea9bbeb59b121ca5354ba604980fa8f4a1365f0a0777c4983`。
+
+### 文字表示比較サンプルの再生成 — 2026-11-09
+
+公開Source `2bf3a5b17c9d18c3083cfcd5cb7223a46a5bcb34`、親 `faad7382c01f2f096ea169b403c0bb5a36343668`、tree `603c87a7d3face8c6ab69b71aa27a9b3bcfe88c6`。公開先の3 blobを照合した。indexは空で、既存の未追跡 `%SystemDrive%/` があった。
+
+7月生成のローカルAWFBを使った起動は再試行でも停止した。起動時のfatalをテストが待機中に拾うよう変更し、同じ入力で `artifact_fingerprint` の欠落を報告することを確認した。
+現行CLIでの再生成は、旧 `dialogue.speaker` と戻り型のないFlowの文字列 `return` が最終型検査で拒否されていた。HIRのSource範囲から対象式を照合した。統合サンプルは重複したPanelの `part` もView投影で拒否された。
+両サンプルを `dialogue.character.display_name` と明示的な `String` 戻り型へ移行した。子の座標はPanelからの相対位置で表し、統合サンプルは一つのroot `part` に既存のStyleを適用した。台詞、フォント、Fx入力、比較時刻と上限を維持した。
+
+両サンプルのCLI `check` とAWFB生成は終了0。生成AWFBのSHA-256は `6769268f6688c246970b502090f00255b43d0c7731060e002a06cf43f9eaa513` と `8261b6c408e0decf10df89aeadb8e44958a1525909df28153228d4b5e5a70007`。
+前者の新しいAWFBを使ったブラウザー観測で、話者名 `Style Guide` と本文を保持Viewの役割別に取得した。話者名の描画原点は85.6×480.8論理pxだった。
+既定スモークはブラウザー起動後、9,000 ms相当へ論理時計を進める処理で10秒の上限に達し終了1。画像の受入は保留した。
+
+[旧入力・修復後の生成・ブラウザー観測・公開照合の原本](acceptance-evidence/task-text-parity-current-fixtures.raw.zip)は17件、11,489 bytes、SHA-256
+`741ea3aeebf1f98723a0b4b41aa38526f635fcb8b222cd82241ff77b6b2e6902`。
