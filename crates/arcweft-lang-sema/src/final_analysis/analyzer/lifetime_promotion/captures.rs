@@ -26,7 +26,7 @@ use crate::{
         PreparedCaptureIdentityRow, PreparedFunctionValueOriginEvidence,
         PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
         PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
-        prepare_function_value_origin_query_with_pending_captures,
+        PreparedResolvedCallable, prepare_function_value_origin_query_with_pending_captures,
     },
     final_analysis::{
         CheckedMatchArmFact, FinalCallConstraintFailure, PreparedExpressionFact,
@@ -41,6 +41,15 @@ use crate::{
 
 #[path = "captures/invocation.rs"]
 mod invocation;
+
+#[path = "captures/continuation.rs"]
+mod continuation;
+
+#[path = "captures/inputs.rs"]
+mod inputs;
+
+#[path = "captures/localization.rs"]
+mod localization;
 
 #[path = "captures/projection.rs"]
 mod projection;
@@ -66,6 +75,7 @@ struct CaptureEvaluation {
 enum CallStorage {
     Borrowed,
     SourceResult(CallableDeclarationKey),
+    SourcePrefix(Arc<PreparedResolvedCallable>),
     ValueResult(ExprId),
     NoWitness,
 }
@@ -214,6 +224,10 @@ impl Analyzer<'_, '_, '_> {
                         query,
                         receiver,
                     );
+                }
+                CallStorage::SourcePrefix(selected) => {
+                    return self
+                        .invoke_returned_prefix(context, origin, call, &selected, query, receiver);
                 }
                 CallStorage::ValueResult(callee) => {
                     let id = query.work.intern_invocation(call, receiver)?;
@@ -430,7 +444,11 @@ impl Analyzer<'_, '_, '_> {
             .facts
             .expressions()
             .get(&owner)
-            .and_then(PreparedExpressionFact::value_type)
+            .and_then(|fact| {
+                fact.complete()
+                    .and_then(crate::final_analysis::CheckedExpression::source_value_type)
+                    .or_else(|| fact.value_type())
+            })
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
         let graph = self
             .facts
@@ -459,7 +477,15 @@ impl Analyzer<'_, '_, '_> {
                         });
                     }
                     if call.result != Observation::Stored {
-                        return Ok(CallStorage::NoWitness);
+                        let selected = prefix.application().selected_shared();
+                        return Ok(match selected.id() {
+                            CallableCandidateId::Project(declaration)
+                                if declaration.owner() == CallableDeclarationOwner::Function =>
+                            {
+                                CallStorage::SourcePrefix(Arc::clone(selected))
+                            }
+                            _ => CallStorage::NoWitness,
+                        });
                     }
                     for (source, ty) in prefix.record().value_inputs() {
                         receiver.charge(1)?;

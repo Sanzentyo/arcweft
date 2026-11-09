@@ -11,7 +11,9 @@ use crate::callable::{
     CallableParameterCoordinate, CheckedCallSite, SpecializedDeclarationProjection,
 };
 
-use super::{FinalSemanticAnalysisError, ReceiverBorrowQuery};
+use super::{
+    FinalSemanticAnalysisError, ReceiverBorrowQuery, localization::RetainedBodyProjection,
+};
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum TypeStorage {
@@ -23,6 +25,7 @@ pub(super) enum TypeStorage {
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ApplicationStorage {
     pub(super) site: CheckedCallSite,
+    pub(super) prefix: Option<CheckedCallSite>,
     pub(super) item: ItemId,
     pub(super) types: Box<[TypeStorage]>,
     pub(super) zero_lengths: Box<[bool]>,
@@ -51,6 +54,7 @@ pub(super) struct StorageFrame {
 pub(super) enum BodyProjection {
     SelectedCall(CheckedCallSite),
     SpecializedValue(Rc<SpecializedDeclarationProjection>),
+    RetainedPrefix(Rc<RetainedBodyProjection>),
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -205,7 +209,7 @@ impl CaptureWorklist {
     pub(super) fn intern(
         &mut self,
         key: ApplicationStorage,
-        parent: &StorageFrame,
+        parent: &[BodyProjection],
         projection: BodyProjection,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<StorageFrameId, FinalSemanticAnalysisError> {
@@ -214,11 +218,11 @@ impl CaptureWorklist {
             Entry::Vacant(entry) => entry,
         };
         receiver.charge(
-            u64::try_from(parent.projections.len())
+            u64::try_from(parent.len())
                 .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
                 + 1,
         )?;
-        let mut projections = parent.projections.to_vec();
+        let mut projections = parent.to_vec();
         projections.push(projection);
         let frame = StorageFrameId(self.frames.len());
         // The first path supplies the exact projection for this storage shape.

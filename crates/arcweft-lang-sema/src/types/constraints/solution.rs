@@ -30,6 +30,7 @@ mod instantiation;
 #[cfg(test)]
 mod predicate_tests;
 mod template;
+pub(crate) use template::{LocalizedTypeTemplate, TypeTemplateLocalizer};
 #[cfg(test)]
 mod tests;
 pub(crate) use instantiation::ClosedTypeInstantiation;

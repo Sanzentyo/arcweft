@@ -21,26 +21,27 @@ use crate::{
 
 use super::{
     Analyzer, AnalyzerExpressionContext, CaptureEvaluation, FinalSemanticAnalysisError,
-    ReceiverBorrowQuery, call_storage_error,
+    ReceiverBorrowQuery,
+    inputs::{InvocationInputs, SuffixInput},
+    localization::RetainedBodyProjection,
     worklist::{
-        BodyProjection, BorrowDependencies, CaptureWorklist, FrameOwner, Invocation, InvocationId,
-        InvokedValue, ParameterDemand, StorageFrameId, ValueOrigin,
+        BodyProjection, BorrowDependencies, CaptureWorklist, FrameOwner, Invocation, InvokedValue,
+        ParameterDemand, StorageFrameId, ValueOrigin,
     },
 };
 
-#[derive(Clone, Copy)]
 struct BoundInvocation {
     call: Invocation,
     frame: StorageFrameId,
-    requester: Option<InvocationId>,
+    inputs: InvocationInputs,
 }
 
 pub(super) struct SourceInvocation {
     call: Invocation,
     declaration: CallableDeclarationKey,
-    requester: Option<InvocationId>,
+    inputs: InvocationInputs,
     projection: BodyProjection,
-    parent: StorageFrameId,
+    parent: Option<StorageFrameId>,
 }
 
 impl SourceInvocation {
@@ -48,9 +49,29 @@ impl SourceInvocation {
         Self {
             call,
             declaration,
-            requester: None,
+            inputs: InvocationInputs::selected(call, None),
             projection: BodyProjection::SelectedCall(call.site),
-            parent: call.caller,
+            parent: Some(call.caller),
+        }
+    }
+
+    pub(super) fn retained(
+        prefix: Invocation,
+        suffix: Vec<SuffixInput>,
+        terminal: Invocation,
+        declaration: CallableDeclarationKey,
+        projection: RetainedBodyProjection,
+    ) -> Self {
+        Self {
+            call: terminal,
+            declaration,
+            inputs: InvocationInputs {
+                prefix,
+                requester: None,
+                suffix,
+            },
+            projection: BodyProjection::RetainedPrefix(Rc::new(projection)),
+            parent: None,
         }
     }
 }
@@ -91,7 +112,7 @@ impl Analyzer<'_, '_, '_> {
                     BoundInvocation {
                         call,
                         frame,
-                        requester: Some(invoked.id),
+                        inputs: InvocationInputs::selected(call, Some(invoked.id)),
                     },
                     &query.closure_results[&producer],
                     &mut query.work,
@@ -118,7 +139,7 @@ impl Analyzer<'_, '_, '_> {
             };
             let declaration = callable.declaration().clone();
             let mut source = SourceInvocation::selected(call, declaration);
-            source.requester = Some(invoked.id);
+            source.inputs.requester = Some(invoked.id);
             if !function.generic_parameters().is_empty() {
                 let (parent, witness) = if let Some(specialization) = invoked.specialization {
                     (
@@ -134,7 +155,7 @@ impl Analyzer<'_, '_, '_> {
                 if fact.source_value_type() != Some(witness.source_type()) {
                     return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
                 }
-                source.parent = parent;
+                source.parent = Some(parent);
                 source.projection =
                     self.specialized_body_projection(&source.declaration, witness, receiver)?;
             }
@@ -152,7 +173,7 @@ impl Analyzer<'_, '_, '_> {
         SourceInvocation {
             call,
             declaration,
-            requester,
+            inputs,
             projection,
             parent,
         }: SourceInvocation,
@@ -176,15 +197,18 @@ impl Analyzer<'_, '_, '_> {
             .results
             .get(&declaration)
             .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
-        let parent = query.work.frame(parent)?;
-        let storage = self.application_storage(call.site, *item, &projection, &parent, receiver)?;
-        let frame = query.work.intern(storage, &parent, projection, receiver)?;
+        let parent = parent.map(|parent| query.work.frame(parent)).transpose()?;
+        let parent = parent
+            .as_ref()
+            .map_or(&[][..], |frame| frame.projections.as_ref());
+        let storage = self.application_storage(call.site, *item, &projection, parent, receiver)?;
+        let frame = query.work.intern(storage, parent, projection, receiver)?;
         self.result_dependencies(
             origin,
             BoundInvocation {
                 call,
                 frame,
-                requester,
+                inputs,
             },
             values,
             &mut query.work,
@@ -217,91 +241,14 @@ impl Analyzer<'_, '_, '_> {
         }
         match dependencies {
             BorrowDependencies::Borrowed => Ok(BorrowDependencies::Borrowed),
-            BorrowDependencies::Parameters(parameters) => {
-                self.substitute_call_parameters(binding, origin, parameters, work, receiver)
-            }
+            BorrowDependencies::Parameters(parameters) => self.substitute_call_parameters(
+                (binding.frame, binding.inputs),
+                origin,
+                parameters,
+                work,
+                receiver,
+            ),
         }
-    }
-
-    fn substitute_call_parameters(
-        &self,
-        binding: BoundInvocation,
-        origin: ValueOrigin,
-        parameters: BTreeSet<ParameterDemand>,
-        work: &mut CaptureWorklist,
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
-        let mut mapped = Vec::new();
-        let mut external = BTreeSet::new();
-        for parameter in parameters {
-            receiver.charge(1)?;
-            if parameter.frame == binding.frame && parameter.invocation_caller.is_none() {
-                mapped.push(parameter);
-            } else {
-                external.insert(parameter);
-            }
-        }
-        let mut dependencies = BorrowDependencies::Parameters(external);
-        if mapped.is_empty() {
-            return Ok(dependencies);
-        }
-        let graph = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?;
-        graph
-            .project_site_payload(
-                binding.call.site,
-                |prefix| {
-                    let enclosing = prefix.record().enclosing_callable();
-                    let mut input = prefix;
-                    loop {
-                        receiver.charge(1)?;
-                        if input.record().enclosing_callable() == enclosing {
-                            let group = input.application().completed_group();
-                            for &parameter in &mapped {
-                                receiver.charge(1)?;
-                                if parameter.coordinate.group() == group
-                                    && let Some(expression) =
-                                        input.parameter_value_source(parameter.coordinate)
-                                {
-                                    let mut supplied = work.demand(
-                                        ValueOrigin {
-                                            expression,
-                                            frame: binding.call.caller,
-                                            observation: parameter.observation,
-                                        },
-                                        origin,
-                                        receiver,
-                                    )?;
-                                    if let Some(requester) = binding.requester {
-                                        supplied = supplied.map_parameters(|mut demand| {
-                                            if demand.invocation_caller.is_none() {
-                                                demand.invocation_caller = Some(requester);
-                                            }
-                                            demand
-                                        });
-                                    }
-                                    dependencies.include(supplied);
-                                    if dependencies.is_borrowed() {
-                                        return Ok(dependencies);
-                                    }
-                                }
-                            }
-                        }
-                        let Some(previous) = input.application().selected().prepared_continuation()
-                        else {
-                            break;
-                        };
-                        input = graph
-                            .continuation_prefix(previous)
-                            .map_err(|error| call_storage_error(binding.call.site, error))?;
-                    }
-                    Ok(dependencies)
-                },
-                |_| Err(FinalSemanticAnalysisError::InvalidOwner),
-            )
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
     }
 
     pub(super) fn lexical_frame(

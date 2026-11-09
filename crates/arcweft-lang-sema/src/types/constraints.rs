@@ -56,6 +56,7 @@ pub(super) use normalization::{occurs_in_shape, seal_path, seal_type, validate_t
 pub(crate) use shape::TypeConstraintShape;
 pub(crate) use solution::ClosedTypeInstantiation;
 pub(crate) use solution::TypeConstraintSolution;
+pub(crate) use solution::{LocalizedTypeTemplate, TypeTemplateLocalizer};
 mod completion;
 pub(crate) use completion::{
     CompletedCandidateAlternatives, CompletedConstraintApplication, CompletedConstraintComponent,

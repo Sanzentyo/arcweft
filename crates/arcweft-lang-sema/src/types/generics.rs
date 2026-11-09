@@ -43,6 +43,10 @@ impl ScopedType {
     pub(crate) const fn view(&self) -> ScopedTypeView<'_> {
         ScopedTypeView::sealed(&self.value, &self.scope)
     }
+
+    pub(in crate::types) fn into_value(self) -> TypeKind {
+        self.value
+    }
 }
 
 /// A borrowed semantic term together with its incoming lexical scope. This

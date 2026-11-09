@@ -14,6 +14,19 @@ use crate::types::projection_control::{visit_effect_predicate, visit_effect_row}
 
 use super::{TypeConstraintSolution, TypeInstantiationError};
 
+mod localized;
+pub(crate) use localized::{LocalizedTypeTemplate, TypeTemplateLocalizer};
+
+impl EffectRow {
+    pub(crate) fn clone_with_projection_control<C: TypeProjectionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<C::Error>> {
+        visit_effect_row(control, self, 1)?;
+        Ok(self.clone())
+    }
+}
+
 impl TypeConstraintSolution {
     /// A returned callable carries the exact residual predicate owned by the
     /// same solution that projects its parameter and result terms.
@@ -42,24 +55,85 @@ impl TypeConstraintSolution {
         ty: &TypeKind,
         control: &mut C,
     ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
-        let residual = self.residual.scope();
-        let template = self.authority.parameter_scope.template_scope();
+        self.apply_template_under(ty, &GenericScope::default(), control)
+    }
+
+    pub(crate) fn apply_template_under<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
+        self.template_projection(None)
+            .project_type(ty, under, control)
+    }
+
+    fn template_projection<'a>(
+        &'a self,
+        values: Option<&'a localized::LocalizedValues>,
+    ) -> localized::TemplateProjection<'a> {
+        localized::TemplateProjection {
+            solution: self,
+            values,
+        }
+    }
+
+    pub(crate) fn apply_length_under<C: TypeProjectionControl>(
+        &self,
+        length: &ArrayLength,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
+        self.template_projection(None)
+            .project_length(length, under, control)
+    }
+
+    pub(crate) fn apply_effects_under<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        self.template_projection(None)
+            .project_effects(row, under, control)
+    }
+}
+
+impl localized::TemplateProjection<'_> {
+    fn scopes(&self, under: &GenericScope) -> (GenericScope, GenericScope) {
+        scoped_pair(
+            self.solution.template_scope(),
+            self.solution.residual.scope(),
+            under,
+        )
+    }
+
+    pub(super) fn project_type<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
+        let residual = self.solution.residual.scope();
+        let template = self.solution.template_scope();
+        let (source_scope, target_scope) = self.scopes(under);
         let value = map_term_with_control(
             ty,
-            template,
-            residual,
+            &source_scope,
+            &target_scope,
             1,
             control,
             &|reference, source, target, depth, control| {
                 if let Some(parameter) = reference.template_key(template, source)? {
                     if let Ok(index) = self
+                        .solution
                         .bindings
                         .binary_search_by(|row| row.parameter.cmp(&parameter))
                     {
-                        let value = ScopedTypeView::sealed(&self.bindings[index].value, residual);
+                        let value = ScopedTypeView::sealed(self.type_value(index), residual);
                         return lift_value(value, target, depth, control);
                     }
-                    if let Some(slot) = self.residual.type_slot(&parameter) {
+                    if let Some(slot) = self.solution.residual.type_slot(&parameter) {
                         return Ok(TypeKind::GenericParam(
                             target.bound_type(depth_difference(target, residual)?, slot)?,
                         ));
@@ -75,54 +149,76 @@ impl TypeConstraintSolution {
                     .map_err(Into::into)
             },
             &|row, source, target, depth, control| {
-                map_effects_with_control(row, depth, control, &|reference, control| {
-                    if let Some(parameter) = reference.template_key(template, source)? {
-                        if let Ok(index) = self
-                            .effect_bindings
-                            .binary_search_by(|row| row.variable.cmp(&parameter))
-                        {
-                            return lift_effects(
-                                &self.effect_bindings[index].value,
-                                residual,
-                                target,
-                                depth,
-                                control,
-                            );
-                        }
-                        if let Some(slot) = self.residual.effect_slot(&parameter) {
-                            return Ok(EffectRow::open(
-                                crate::effects::EffectSet::new(),
-                                target.bound_effect(depth_difference(target, residual)?, slot)?,
-                            ));
-                        }
-                        if matches!(parameter, GenericEffectReference::Bound(_)) {
-                            return Err(TypeInstantiationError::UnboundEffect { parameter }.into());
-                        }
-                    }
-                    Ok(EffectRow::open(
-                        crate::effects::EffectSet::new(),
-                        keep_effect(reference, source)?,
-                    ))
-                })
+                self.project_effects_at(row, source, target, depth, control)
             },
         )?;
-        Ok(ScopedType::new(value, residual.clone()))
+        Ok(ScopedType::new(value, target_scope))
     }
 
-    pub(crate) fn apply_length_template<C: TypeProjectionControl>(
+    fn project_effects_at<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        let template = self.solution.template_scope();
+        let residual = self.solution.residual.scope();
+        map_effects_with_control(row, depth, control, &|reference, control| {
+            if let Some(parameter) = reference.template_key(template, source)? {
+                if let Ok(index) = self
+                    .solution
+                    .effect_bindings
+                    .binary_search_by(|row| row.variable.cmp(&parameter))
+                {
+                    return lift_effects(
+                        self.effect_value(index),
+                        residual,
+                        target,
+                        depth,
+                        control,
+                    );
+                }
+                if let Some(slot) = self.solution.residual.effect_slot(&parameter) {
+                    return Ok(EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        target.bound_effect(depth_difference(target, residual)?, slot)?,
+                    ));
+                }
+                if matches!(parameter, GenericEffectReference::Bound(_)) {
+                    return Err(TypeInstantiationError::UnboundEffect { parameter }.into());
+                }
+            }
+            Ok(EffectRow::open(
+                crate::effects::EffectSet::new(),
+                keep_effect(reference, source)?,
+            ))
+        })
+    }
+
+    pub(super) fn project_effects<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        let (source, target) = self.scopes(under);
+        self.project_effects_at(row, &source, &target, 1, control)
+    }
+
+    pub(super) fn project_length<C: TypeProjectionControl>(
         &self,
         length: &ArrayLength,
+        under: &GenericScope,
         control: &mut C,
     ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
         control
             .visit_node(TypeProjectionNodeKind::Const, 1)
             .map_err(TypeProjectionError::Control)?;
-        self.apply_length_at(
-            length,
-            self.authority.parameter_scope.template_scope(),
-            self.residual.scope(),
-        )
-        .map_err(Into::into)
+        let (source, target) = self.scopes(under);
+        self.apply_length_at(length, &source, &target)
+            .map_err(Into::into)
     }
 
     fn apply_length_at(
@@ -137,16 +233,17 @@ impl TypeConstraintSolution {
                 _ => Err(TypeInstantiationError::UnresolvedType),
             };
         };
-        let template = self.authority.parameter_scope.template_scope();
-        let residual = self.residual.scope();
+        let template = self.solution.template_scope();
+        let residual = self.solution.residual.scope();
         if let Some(parameter) = reference.template_key(template, source)? {
             if let Ok(index) = self
+                .solution
                 .const_bindings
                 .binary_search_by(|row| row.parameter.cmp(&parameter))
             {
-                return lift_length(&self.const_bindings[index].value, residual, target);
+                return lift_length(self.const_value(index), residual, target);
             }
-            if let Some(slot) = self.residual.const_slot(&parameter) {
+            if let Some(slot) = self.solution.residual.const_slot(&parameter) {
                 return Ok(ArrayLength::Generic(
                     target.bound_const(depth_difference(target, residual)?, slot)?,
                 ));
@@ -159,16 +256,29 @@ impl TypeConstraintSolution {
     }
 }
 
+fn scoped_pair(
+    source: &GenericScope,
+    target: &GenericScope,
+    under: &GenericScope,
+) -> (GenericScope, GenericScope) {
+    under.binders().iter().fold(
+        (source.clone(), target.clone()),
+        |(source, target), binder| (source.with_binder(*binder), target.with_binder(*binder)),
+    )
+}
+
 impl GenericDeclarationBinder {
-    pub(crate) fn project_length_with_control<C: TypeProjectionControl>(
+    pub(crate) fn project_length_under<C: TypeProjectionControl>(
         &self,
         length: &ArrayLength,
+        under: &GenericScope,
         control: &mut C,
     ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
         control
             .visit_node(TypeProjectionNodeKind::Const, 1)
             .map_err(TypeProjectionError::Control)?;
-        self.project_length_at(length, self.template_scope(), self.scope(), control)
+        let (source, target) = scoped_pair(self.template_scope(), self.scope(), under);
+        self.project_length_at(length, &source, &target, control)
     }
 
     fn project_length_at<C: TypeProjectionControl>(
@@ -209,11 +319,21 @@ impl GenericDeclarationBinder {
         ty: &TypeKind,
         control: &mut C,
     ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
+        self.project_under(ty, &GenericScope::default(), control)
+    }
+
+    pub(crate) fn project_under<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
         let arity = |kind, count| GenericScopeError::BinderArityOverflow { kind, count };
+        let (source_scope, target_scope) = scoped_pair(self.template_scope(), self.scope(), under);
         let value = map_term_with_control(
             ty,
-            self.template_scope(),
-            self.scope(),
+            &source_scope,
+            &target_scope,
             1,
             control,
             &|reference, source, target, _, control| {
@@ -239,31 +359,53 @@ impl GenericDeclarationBinder {
                 self.project_length_at(length, source, target, control)
             },
             &|row, source, target, depth, control| {
-                map_effects_with_control(row, depth, control, &|reference, control| {
-                    control
-                        .visit_binding()
-                        .map_err(TypeProjectionError::Control)?;
-                    let reference = if let Some(key) =
-                        reference.template_key(self.template_scope(), source)?
-                        && let Some(slot) = self
-                            .effect_parameters()
-                            .iter()
-                            .position(|candidate| candidate == &key)
-                    {
-                        target.bound_effect(
-                            depth_difference(target, self.scope())?,
-                            u32::try_from(slot).map_err(|_| {
-                                arity(GenericParameterKind::Effect, self.effect_parameters().len())
-                            })?,
-                        )?
-                    } else {
-                        keep_effect(reference, source)?
-                    };
-                    Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
-                })
+                self.project_effects_at(row, source, target, depth, control)
             },
         )?;
-        Ok(ScopedType::new(value, self.scope().clone()))
+        Ok(ScopedType::new(value, target_scope))
+    }
+
+    pub(crate) fn project_effects_under<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        let (source, target) = scoped_pair(self.template_scope(), self.scope(), under);
+        self.project_effects_at(row, &source, &target, 1, control)
+    }
+
+    fn project_effects_at<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        map_effects_with_control(row, depth, control, &|reference, control| {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+            let reference = if let Some(key) =
+                reference.template_key(self.template_scope(), source)?
+                && let Some(slot) = self
+                    .effect_parameters()
+                    .iter()
+                    .position(|candidate| candidate == &key)
+            {
+                target.bound_effect(
+                    depth_difference(target, self.scope())?,
+                    u32::try_from(slot).map_err(|_| GenericScopeError::BinderArityOverflow {
+                        kind: GenericParameterKind::Effect,
+                        count: self.effect_parameters().len(),
+                    })?,
+                )?
+            } else {
+                keep_effect(reference, source)?
+            };
+            Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
+        })
     }
 
     pub(crate) fn quantify_function_with_control<C: TypeProjectionControl>(
@@ -278,6 +420,14 @@ impl GenericDeclarationBinder {
 }
 
 impl ScopedTypeView<'_> {
+    pub(crate) fn clone_with_control<C: TypeProjectionControl>(
+        self,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
+        let value = clone_scoped_term_with_control(self.value(), self.scope(), 1, control)?;
+        Ok(ScopedType::new(value, self.scope().clone()))
+    }
+
     /// Closes a value projection without granting it the solution's residual
     /// quantifiers. Unused incoming scope can disappear only after this walk
     /// proves every retained bound reference has an owner in the value itself.
@@ -974,11 +1124,19 @@ pub(super) fn clone_term_with_control<C: TypeProjectionControl>(
     depth: u64,
     control: &mut C,
 ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
-    let root = GenericScope::default();
+    clone_scoped_term_with_control(ty, &GenericScope::default(), depth, control)
+}
+
+fn clone_scoped_term_with_control<C: TypeProjectionControl>(
+    ty: &TypeKind,
+    scope: &GenericScope,
+    depth: u64,
+    control: &mut C,
+) -> Result<TypeKind, TypeProjectionError<C::Error>> {
     map_term_with_control(
         ty,
-        &root,
-        &root,
+        scope,
+        scope,
         depth,
         control,
         &|reference, scope, _, _, _| keep_type(reference, scope).map_err(Into::into),

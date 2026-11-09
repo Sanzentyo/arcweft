@@ -2254,6 +2254,137 @@ fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture matrix checks each group and the exact diagnostic span"
+)]
+fn safe_lifetime_promotion_follows_invoked_returned_prefixes() {
+    let result = "(Unit) -> i64 effects {}";
+    let captured = "|_unit: Unit| -> i64 { let _ = early; 42i64 }";
+    let discarded = "let _ = early; |_unit: Unit| -> i64 { 42i64 }";
+    let callable = format!("({result}) -> ({result}) effects {{}}");
+    let forwarded = |retained, ignored| {
+        format!(
+        "fn stage(first: {result})(second: {result}) -> ({result}) {{ let _ = {ignored}; {retained} }}
+         fn deliver(first: {result}) -> ({callable}) {{ stage(first) }}"
+    )
+    };
+    let staged = |body| {
+        format!(
+            "fn stage<T>(early: T)(_unit: Unit) -> ({result}) {{ {body} }}
+         fn deliver<T>(early: T) -> ((Unit) -> ({result}) effects {{}}) {{ stage(early) }}"
+        )
+    };
+    let two_suffix_groups = format!(
+        "fn stage<T>(early: T)(late: &i64)(_unit: Unit) -> ({result}) {{
+             let _ = early
+             |_unit: Unit| -> i64 {{ let _ = late; 42i64 }}
+         }}
+         fn deliver<T>(early: T) -> ((&i64) -> ((Unit) -> ({result}) effects {{}}) effects {{}}) {{ stage(early) }}"
+    );
+    let poly_prefix = format!(
+        "fn stage<A, B>(early: A)(late: B) -> ({result}) {{
+        |_unit: Unit| -> i64 {{ let _ = early; let _ = late; 42i64 }}
+    }}"
+    );
+    let enclosing_generic = format!(
+        "{poly_prefix}
+        fn relay<T>(value: T) -> ({result}) {{
+            let create = |seed: T| {{ stage(seed) }}
+            let partial = create(value)
+            partial(\"late\")
+        }}"
+    );
+    let two_poly_suffix_groups = format!(
+        "fn stage<A, B, C>(early: A)(middle: B)(late: C) -> ({result}) {{
+        let _ = middle
+        |_unit: Unit| -> i64 {{ let _ = early; let _ = late; 42i64 }}
+    }}"
+    );
+    for (definition, invocation, borrowed) in [
+        (staged(captured), "deliver(loan)(())", true),
+        (staged(discarded), "deliver(loan)(())", false),
+        (staged(captured), "deliver(7i64)(())", false),
+        (
+            forwarded("first", "second"),
+            "deliver(borrowed)(owned)",
+            true,
+        ),
+        (
+            forwarded("second", "first"),
+            "deliver(borrowed)(owned)",
+            false,
+        ),
+        (
+            forwarded("second", "first"),
+            "deliver(owned)(borrowed)",
+            true,
+        ),
+        (two_suffix_groups.clone(), "deliver(7i64)(loan)(())", true),
+        (two_suffix_groups, "deliver(7i64)(loan)", true),
+        (
+            poly_prefix.clone(),
+            "{ let create = |seed: i64| { stage(seed) }; let partial = create(7i64); let _ = partial(\"owned\"); partial(loan) }",
+            true,
+        ),
+        (
+            poly_prefix.clone(),
+            "{ let create = |seed: i64| { stage(seed) }; let partial = create(7i64); let _ = partial(loan); partial(\"owned\") }",
+            false,
+        ),
+        (
+            poly_prefix,
+            "{ let create = |seed: i64| { stage(seed) }; let scheme = create(7i64); let partial: (&i64) -> ((Unit) -> i64 effects {}) effects {} = scheme; partial(loan) }",
+            true,
+        ),
+        (enclosing_generic.clone(), "relay(loan)", true),
+        (enclosing_generic, "relay(7i64)", false),
+        (
+            two_poly_suffix_groups.clone(),
+            "{ let create = |seed: i64| { stage(seed) }; let partial = create(7i64); let second: (String) -> ((Unit) -> i64 effects {}) effects {} = partial(loan); second(\"owned\") }",
+            false,
+        ),
+        (
+            two_poly_suffix_groups,
+            "{ let create = |seed: i64| { stage(seed) }; let partial = create(7i64); let second: (&i64) -> ((Unit) -> i64 effects {}) effects {} = partial(\"owned\"); second(loan) }",
+            true,
+        ),
+    ] {
+        let source = format!(
+            "{definition}\nflow main(loan: &i64) {{
+            let borrowed = |_unit: Unit| -> i64 {{ let _ = loan; 1i64 }}
+            let owned = |_unit: Unit| -> i64 {{ 2i64 }}
+            let callback = {invocation}
+            let _ = callback.promote('flow)
+        }}"
+        );
+        let fixture = fixture(&source, None);
+        fixture
+            .project
+            .analysis_view()
+            .unwrap_or_else(|error| panic!("{invocation}: {error:?}"));
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{invocation}: {error:?}"));
+        let (code, span) = if borrowed {
+            ("sema.lifetime.promotion_receiver", "callback")
+        } else {
+            (
+                "sema.lifetime.promotion_execution",
+                "callback.promote('flow)",
+            )
+        };
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{invocation}");
+        assert_eq!(
+            &source[diagnostic.span().unwrap().range().as_range()],
+            span,
+            "{invocation}"
+        );
+    }
+}
+
+#[test]
 fn lifetime_promotion_audit_stops_at_independent_execution() {
     for (body, code, offending) in [
         (

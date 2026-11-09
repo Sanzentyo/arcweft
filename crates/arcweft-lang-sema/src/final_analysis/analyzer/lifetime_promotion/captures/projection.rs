@@ -12,9 +12,10 @@ use crate::{
         CheckedCallSite, CheckedFunctionSpecialization, FunctionSpecializationSealFailure,
         PreparedCallableApplication, SpecializedDeclarationProjection,
     },
+    effect_row::EffectRow,
     final_analysis::PreparedExpressionFact,
     types::{
-        ArrayLength, ScopedArrayLengthView, ScopedType, ScopedTypeView, TypeKind,
+        ArrayLength, GenericScope, ScopedArrayLengthView, ScopedType, ScopedTypeView, TypeKind,
         TypeProjectionError,
     },
 };
@@ -22,7 +23,7 @@ use crate::{
 use super::{
     Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery, call_storage_error,
     storage_projection_error,
-    worklist::{ApplicationStorage, BodyProjection, StorageFrame, TypeStorage},
+    worklist::{ApplicationStorage, BodyProjection, TypeStorage},
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -128,7 +129,7 @@ impl Analyzer<'_, '_, '_> {
         site: CheckedCallSite,
         item: ItemId,
         projection: &BodyProjection,
-        parent: &StorageFrame,
+        parent: &[BodyProjection],
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<ApplicationStorage, FinalSemanticAnalysisError> {
         match projection {
@@ -138,7 +139,7 @@ impl Analyzer<'_, '_, '_> {
                         (site, item),
                         application.body_type_arguments(),
                         application.body_const_arguments(),
-                        &parent.projections,
+                        parent,
                         receiver,
                     )
                 })
@@ -147,9 +148,36 @@ impl Analyzer<'_, '_, '_> {
                 (site, item),
                 body.type_arguments(),
                 body.const_arguments(),
-                &parent.projections,
+                parent,
                 receiver,
             ),
+            BodyProjection::RetainedPrefix(body) => {
+                let root = body.declaration_template();
+                let under = GenericScope::default();
+                let mut types = Vec::new();
+                for key in root.body_type_parameters() {
+                    receiver.charge(1)?;
+                    let term = body
+                        .project_type(&TypeKind::GenericParam(key.clone()), &under, receiver)
+                        .map_err(storage_projection_error)?;
+                    types.push(self.inspect_value_storage(term.view().value(), &[], receiver)?);
+                }
+                let mut zero_lengths = Vec::new();
+                for key in root.body_const_parameters() {
+                    receiver.charge(1)?;
+                    let term = body
+                        .project_length(&ArrayLength::Generic(key.clone()), &under, receiver)
+                        .map_err(storage_projection_error)?;
+                    zero_lengths.push(matches!(term, ArrayLength::Const(0)));
+                }
+                Ok(ApplicationStorage {
+                    site,
+                    prefix: Some(body.site),
+                    item,
+                    types: types.into_boxed_slice(),
+                    zero_lengths: zero_lengths.into_boxed_slice(),
+                })
+            }
         }
     }
 
@@ -176,6 +204,7 @@ impl Analyzer<'_, '_, '_> {
             .collect::<Result<_, _>>()?;
         Ok(ApplicationStorage {
             site,
+            prefix: None,
             item,
             types,
             zero_lengths,
@@ -205,6 +234,16 @@ impl Analyzer<'_, '_, '_> {
         projections: &[BodyProjection],
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<Option<ScopedType>, FinalSemanticAnalysisError> {
+        self.project_type_chain(ty, &GenericScope::default(), projections, receiver)
+    }
+
+    pub(super) fn project_type_chain(
+        &self,
+        ty: &TypeKind,
+        under: &GenericScope,
+        projections: &[BodyProjection],
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<ScopedType>, FinalSemanticAnalysisError> {
         let mut projected: Option<ScopedType> = None;
         // Substituting a body's generics can expose free parameters owned
         // by the caller or by the site that specialized the function value.
@@ -215,12 +254,15 @@ impl Analyzer<'_, '_, '_> {
                 BodyProjection::SelectedCall(site) => {
                     self.with_selected_application(*site, |application| {
                         application
-                            .project_body_storage(input, receiver)
+                            .project_body_storage(input, under, receiver)
                             .map_err(storage_projection_error)
                     })?
                 }
                 BodyProjection::SpecializedValue(body) => body
-                    .project_type(input, receiver)
+                    .project_type(input, under, receiver)
+                    .map_err(storage_projection_error)?,
+                BodyProjection::RetainedPrefix(body) => body
+                    .project_type(input, under, receiver)
                     .map_err(storage_projection_error)?,
             });
         }
@@ -237,25 +279,72 @@ impl Analyzer<'_, '_, '_> {
         if let ArrayLength::Const(length) = length {
             return Ok(*length == 0);
         }
+        let length =
+            self.project_length_chain(length, &GenericScope::default(), projections, receiver)?;
+        Ok(matches!(length, ArrayLength::Const(0)))
+    }
+
+    pub(super) fn project_length_chain(
+        &self,
+        length: &ArrayLength,
+        under: &GenericScope,
+        projections: &[BodyProjection],
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<ArrayLength, FinalSemanticAnalysisError> {
         let mut length = length.clone();
         for projection in projections.iter().rev() {
+            receiver.charge(1)?;
             length = match projection {
                 BodyProjection::SelectedCall(site) => {
                     self.with_selected_application(*site, |application| {
                         application
-                            .project_body_length(&length, receiver)
+                            .project_body_length(&length, under, receiver)
                             .map_err(storage_projection_error)
                     })?
                 }
                 BodyProjection::SpecializedValue(body) => body
-                    .project_length(&length, receiver)
+                    .project_length(&length, under, receiver)
+                    .map_err(storage_projection_error)?,
+                BodyProjection::RetainedPrefix(body) => body
+                    .project_length(&length, under, receiver)
                     .map_err(storage_projection_error)?,
             };
         }
-        Ok(matches!(length, ArrayLength::Const(0)))
+        Ok(length)
     }
 
-    fn with_selected_application<T>(
+    pub(super) fn project_effect_chain(
+        &self,
+        row: &EffectRow,
+        under: &GenericScope,
+        projections: &[BodyProjection],
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<EffectRow, FinalSemanticAnalysisError> {
+        let mut row = row
+            .clone_with_projection_control(receiver)
+            .map_err(storage_projection_error)?;
+        for projection in projections.iter().rev() {
+            receiver.charge(1)?;
+            row = match projection {
+                BodyProjection::SelectedCall(site) => {
+                    self.with_selected_application(*site, |application| {
+                        application
+                            .project_body_effects(&row, under, receiver)
+                            .map_err(storage_projection_error)
+                    })?
+                }
+                BodyProjection::SpecializedValue(body) => body
+                    .project_effects(&row, under, receiver)
+                    .map_err(storage_projection_error)?,
+                BodyProjection::RetainedPrefix(body) => body
+                    .project_effects(&row, under, receiver)
+                    .map_err(storage_projection_error)?,
+            };
+        }
+        Ok(row)
+    }
+
+    pub(super) fn with_selected_application<T>(
         &self,
         site: CheckedCallSite,
         project: impl FnOnce(&PreparedCallableApplication) -> Result<T, FinalSemanticAnalysisError>,

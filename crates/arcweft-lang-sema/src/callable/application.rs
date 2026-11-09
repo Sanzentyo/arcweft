@@ -178,9 +178,10 @@ impl PreparedCallableApplication {
     pub(crate) fn project_body_storage<C: crate::types::TypeProjectionControl>(
         &self,
         ty: &TypeKind,
+        under: &crate::types::GenericScope,
         control: &mut C,
     ) -> Result<crate::types::ScopedType, crate::types::TypeProjectionError<C::Error>> {
-        self.solution.apply_template_with_control(ty, control)
+        self.solution.apply_template_under(ty, under, control)
     }
 
     pub(crate) fn body_type_arguments(
@@ -198,9 +199,34 @@ impl PreparedCallableApplication {
     pub(crate) fn project_body_length<C: crate::types::TypeProjectionControl>(
         &self,
         length: &crate::types::ArrayLength,
+        under: &crate::types::GenericScope,
         control: &mut C,
     ) -> Result<crate::types::ArrayLength, crate::types::TypeProjectionError<C::Error>> {
-        self.solution.apply_length_template(length, control)
+        self.solution.apply_length_under(length, under, control)
+    }
+
+    pub(crate) fn project_body_effects<C: crate::types::TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        under: &crate::types::GenericScope,
+        control: &mut C,
+    ) -> Result<EffectRow, crate::types::TypeProjectionError<C::Error>> {
+        self.solution.apply_effects_under(row, under, control)
+    }
+
+    pub(crate) fn localize_body_template<C: crate::types::TypeProjectionControl>(
+        &self,
+        localizer: &impl crate::types::constraints::TypeTemplateLocalizer<C>,
+        control: &mut C,
+    ) -> Result<
+        crate::types::constraints::LocalizedTypeTemplate,
+        crate::types::TypeProjectionError<C::Error>,
+    > {
+        crate::types::constraints::LocalizedTypeTemplate::new(
+            Arc::clone(&self.solution),
+            localizer,
+            control,
+        )
     }
 
     /// Applies this exact selected application's effect bindings while

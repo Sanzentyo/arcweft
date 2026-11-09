@@ -6,6 +6,7 @@ use arcweft_lang_hir::identity::ExprId;
 use thiserror::Error;
 
 use super::{CallConstraintInvariant, CallableConstraintApplication};
+use crate::effect_row::EffectRow;
 use crate::types::{
     ArrayLength, GenericBinder, GenericDeclarationBinder, GenericScope, ScopedArrayLengthView,
     ScopedType, ScopedTypeView, TypeKind, TypeProjectionControl, TypeProjectionError,
@@ -126,23 +127,37 @@ impl SpecializedDeclarationProjection {
     pub(crate) fn project_type<C: TypeProjectionControl>(
         &self,
         ty: &TypeKind,
+        under: &GenericScope,
         control: &mut C,
     ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
-        let scheme = self.binder.project_with_control(ty, control)?;
+        let scheme = self.binder.project_under(ty, under, control)?;
         self.witness
             .solution
-            .apply_template_with_control(scheme.view().value(), control)
+            .apply_template_under(scheme.view().value(), under, control)
     }
 
     pub(crate) fn project_length<C: TypeProjectionControl>(
         &self,
         length: &ArrayLength,
+        under: &GenericScope,
         control: &mut C,
     ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
-        let scheme = self.binder.project_length_with_control(length, control)?;
+        let scheme = self.binder.project_length_under(length, under, control)?;
         self.witness
             .solution
-            .apply_length_template(&scheme, control)
+            .apply_length_under(&scheme, under, control)
+    }
+
+    pub(crate) fn project_effects<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        under: &GenericScope,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        let scheme = self.binder.project_effects_under(row, under, control)?;
+        self.witness
+            .solution
+            .apply_effects_under(&scheme, under, control)
     }
 }
 
@@ -155,6 +170,19 @@ pub(crate) enum FunctionSpecializationSealFailure<E: std::error::Error + 'static
 }
 
 impl CheckedFunctionSpecialization {
+    pub(crate) fn localize_template<C: TypeProjectionControl>(
+        &self,
+        localizer: &impl crate::types::constraints::TypeTemplateLocalizer<C>,
+        control: &mut C,
+    ) -> Result<crate::types::constraints::LocalizedTypeTemplate, TypeProjectionError<C::Error>>
+    {
+        crate::types::constraints::LocalizedTypeTemplate::new(
+            Arc::clone(&self.solution),
+            localizer,
+            control,
+        )
+    }
+
     /// The input of an invocation is specialized by that invocation's completed
     /// solution. It shares the candidate opening; no second solve or fabricated
     /// value-use application is involved.

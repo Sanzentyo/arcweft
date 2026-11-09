@@ -176,7 +176,11 @@ the scope where the function value was specialized. If the selected invocation
 specializes the scheme, use its type arguments in the call's scope.
 A function value produced by a loop can carry captures from a reachable break
 that targets that loop. A partial application retains the runtime inputs of its
-completed parameter groups.
+completed parameter groups. When a returned partial application is called,
+each completed group supplies values from the scope where that group was
+applied. Later groups specialize the remaining type parameters of that call.
+The receiver check follows the completed body's result, including any earlier
+or later inputs that it keeps in the returned value.
 An explicit proof supplies evidence about lifetimes and leaves the receiver's
 ownership unchanged.
 
