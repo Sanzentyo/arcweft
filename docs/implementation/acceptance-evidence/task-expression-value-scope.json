@@ -781,12 +781,424 @@
         ],
         "sourceSha256": "a8beebd9de1ccb6662f325b16765211affb68e138e8df739800316faf9574a5a"
       }
-    ]
+    ],
+    "repair": {
+      "recordedUtc": "2026-11-09T13:21:30.15172Z",
+      "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+      "publication": {
+        "version": 1,
+        "base": "22e805fbdf71d03b8543763abfd8849df8c5fe1c",
+        "commit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+        "tree": "fb3ef967dfeed67a3b8d6d5fa669462da5882c7b",
+        "remoteHead": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+        "blobs": [
+          {
+            "path": "crates/arcweft-compiler/src/lower/scopes.rs",
+            "oid": "9ecb279617f2361a20e6a144459b356ebe895960"
+          },
+          {
+            "path": "crates/arcweft-compiler/tests/source_presentation_driver.rs",
+            "oid": "4b7afb73f37f47001e38a1034bd8efe084ced949"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/expr.rs",
+            "oid": "d0ba087d06b52001e18d29d185f1464fd8dd47e0"
+          },
+          {
+            "path": "crates/arcweft-lang-hir/src/expr/control.rs",
+            "oid": "d6e7be494d116d4b1875ea00f54f9aa7c738494f"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+            "oid": "d709d03e6ac4c47652f1717413fc16cbb98ce69d"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+            "oid": "7be40a7b6d30ddec2806a788201c3a7c96ac0cfe"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+            "oid": "eaed8c2a81e3ddf77f018039076483dfda17862c"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/final_expr/scopes.rs",
+            "oid": "ef10eddf825d707f7ee0985f7d5282ad18eb7e66"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+            "oid": "79dbde48aae6e3fff7ea27343b4275818827113d"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+            "oid": "ecb65ff452f1f4c6a9c7be8f5c61b55f4a3b3f53"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/final_flow/scopes.rs",
+            "oid": "58138ecc0bddd14613ae01eab024dd3edeb39257"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/semantic_facts/lexical_scope.rs",
+            "oid": "0afedd98bf80b612b0cfade026aaeb0026fb9108"
+          },
+          {
+            "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+            "oid": "d047a696d23d3dcdeb87a02a40ef315096afb56d"
+          },
+          {
+            "path": "docs/01-language/block-scopes.md",
+            "oid": "c156b7ce459f1209e6eaa72896e45b86359ccd4e"
+          }
+        ]
+      },
+      "lexicalContract": "Result and Option body scopes are entered from the same checked expression-scope authority as ordinary blocks. A local success or residual closes that scope before the caller continuation. The checked local Try destination is inside the carrier frame and outside intervening nested value scopes.",
+      "firstObservation": {
+        "summary": "Summary [   7.087s] 82 tests run: 81 passed, 1 failed, 2000 skipped",
+        "reason": "The test observed a View while its callee was still executing one operation at a time. The corrected fixture observes after the caller mounts its second sentinel and checks that both caller mounts are live and all four callee mounts have retired.",
+        "raw": "carrier/repair/first-observation.log"
+      },
+      "verification": {
+        "targetedSummary": "Summary [  26.775s] 85 tests run: 85 passed, 1997 skipped",
+        "targetedReceipt": "carrier/repair/targeted.receipt.json",
+        "structuralGateExit": 0,
+        "structuralBlocking": 0,
+        "formatExit": 0,
+        "qualityAndReverse": "Workspace all-target/all-feature check and Clippy and the owner doctests passed. The 23-package Windows reverse test run was in progress at publication.",
+        "completedQuality": [
+          {
+            "name": "workspace-check",
+            "command": [
+              "cargo",
+              "check",
+              "--locked",
+              "--workspace",
+              "--all-targets",
+              "--all-features"
+            ],
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 51.77s"
+            ],
+            "logSha256": "30b64467f7fbd94216215448ce86e80b35e285e8f39afd73ae6bb56e184e9350",
+            "startedUtc": "2026-11-09T13:19:59.7670587Z",
+            "finishedUtc": "2026-11-09T13:20:53.1783221Z",
+            "headAtFinish": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09"
+          },
+          {
+            "name": "workspace-clippy",
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "--workspace",
+              "--all-targets",
+              "--all-features"
+            ],
+            "exitCode": 0,
+            "summary": [
+              "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 02s"
+            ],
+            "logSha256": "4cde467c59fbd1f49fe5327605d147fa151958ffb2e52b104ae59c1eba84a0f4",
+            "startedUtc": "2026-11-09T13:20:53.3041824Z",
+            "finishedUtc": "2026-11-09T13:21:57.8054513Z",
+            "headAtFinish": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09"
+          },
+          {
+            "name": "owner-doctests",
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "--doc",
+              "-p",
+              "arcweft-lang-hir",
+              "-p",
+              "arcweft-lang-sema",
+              "-p",
+              "arcweft-runtime-plan",
+              "-p",
+              "arcweft-compiler"
+            ],
+            "exitCode": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s",
+              "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+              "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+              "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+              "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+            ],
+            "logSha256": "37f929ea6ef2f5d032425bbfdf9b0a52be22698b07b19ee4876fc3ac331df749",
+            "startedUtc": "2026-11-09T13:21:57.9226818Z",
+            "finishedUtc": "2026-11-09T13:22:03.709518Z",
+            "headAtFinish": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09"
+          }
+        ]
+      },
+      "replay": {
+        "version": 1,
+        "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+        "cliSha256": "b0c17b89550fbdc06031b0343e0b2125204201ee97ca230423f4a3c7b4a2f0e5",
+        "wasmSha256": "279edac227d1b35c1c355dbbe33637db839ce989cc1685eb70e92a3e11af72d2",
+        "nativeHarnessSha256": "6f80b9ff187a66197c7cd7316c2b56aff55ffb4571a98a74711f39cc3fc21c97",
+        "webHarnessSha256": "80ebe877edf11023bac6af332ad609aa858865dcc36019f6e8030b32c74ca058",
+        "results": [
+          {
+            "kind": "option",
+            "sourceSha256": "aee42bb4c80fa6dfdf7b772649d1bba6e32077a723db4dbc1f9bffd47d5a7019",
+            "manifestSha256": "ed52b65a7d45ca29a8c0c0129dff62d6dd36ddc28c4ac6e3e399ad5b15c66c0b",
+            "awfbSha256": "aa35e3d3ddd05266c1fb5c259bb4803a5cbff6f9df098ccaa936fe336c838432",
+            "awfbBytes": 946736,
+            "bundleExit": 0,
+            "nativeExit": 0,
+            "webExit": 0,
+            "capture": [
+              {
+                "frame": "opening",
+                "nativeTick": 1,
+                "webTick": 1,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "6273726b3c39bd936fc1eb7d1ab81a01ab9597887063e9a9100df4ffd8ab09a8",
+                "webFrameSha256": "6fc9d90054f494ac041e846ccb298c1516de75df395dbd5894fbd0f96cca7475",
+                "comparisonSha256": "2bfdd3d6a9f1ae0fb5e553b18a698fcf0512bfa397ca515c78a84964e0657a9b"
+              },
+              {
+                "frame": "name-panel",
+                "nativeTick": 17,
+                "webTick": 17,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "32bcd017b88e748d9dd59c571f508d3fa98fa54f3f07597a8cdd3ff1671dc978",
+                "webPngSha256": "f88fdb92cc468911499db09b61be277e72e2fd1536d930b0b71f9dcd7f55834b",
+                "nativeFrameSha256": "5be2da4a5dc75fd5780f79b887efe1383016a5a8365da511a07582bbd1d55853",
+                "webFrameSha256": "5620ece390a68675870d95415262fdc519f8795d14a4ad5ada41102c0cf9b5df",
+                "comparisonSha256": "7fb50ad4b7cd970cab199aa412e6083771fd5fe947be49c338d1397cbebff28d"
+              },
+              {
+                "frame": "name-action",
+                "nativeTick": 29,
+                "webTick": 29,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "abad0003613aeb8b6cd9ee70a94634932e0b79856a19ea6e215ae1a9608f4c98",
+                "webFrameSha256": "e25ba72e344320e698d3773809111809a0d126686edfce913586b9531061d6f0",
+                "comparisonSha256": "597ffdae046d41e6cfce5ebad555b98ebfd8deb816c02442237a7724b97e7ee7"
+              },
+              {
+                "frame": "brief-panel",
+                "nativeTick": 53,
+                "webTick": 53,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "96ed60c9feb40ee16c2bc18df81c990ee247bc2c99414733f9955bb2bf90b0e8",
+                "webPngSha256": "73a0b7b89397c7d7b90755563fe93061ef42ed9c20d82b50e5e007aec5671845",
+                "nativeFrameSha256": "b760462687d0759fccecd8e017a58b0739c883cfbba6049b74fbfbb2bc0ba168",
+                "webFrameSha256": "e01483180570451835f6283e9bb0de8ea59acf70afa01681806c184b2281db93",
+                "comparisonSha256": "efca8fc972f0e8ba9b227fef56b6d346d6e8103d22b05b2682e5cd556ca9f18b"
+              },
+              {
+                "frame": "brief-action",
+                "nativeTick": 77,
+                "webTick": 77,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "8d58ece88176c1ae5d694ddebe71bab093e8bb922f49547e3e97026d8d4dc480",
+                "webFrameSha256": "3aecc546c78f5d75713d029a54c2e3e523a7d226a2f2aceca99c2c7b4843bc08",
+                "comparisonSha256": "3d623273e639222d577c1120c5162cf647887b8c1fc9fe1e0b8275bbcf0d3be9"
+              },
+              {
+                "frame": "loop-return",
+                "nativeTick": 93,
+                "webTick": 93,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "b1e138e2740d24aaa2bf1cca8a7b90e7e2b3f04c7811de13c1033f1df8cc97c7",
+                "webFrameSha256": "4b2b16ef2d3d32350466842d444244fe33abc945fd00045e2556421c6b786399",
+                "comparisonSha256": "8ccf3a0e7718cbc4b6be7b968ef98eef66bbcaa24684119a02dcc9415b8330de"
+              }
+            ]
+          },
+          {
+            "kind": "result",
+            "sourceSha256": "a8beebd9de1ccb6662f325b16765211affb68e138e8df739800316faf9574a5a",
+            "manifestSha256": "ed52b65a7d45ca29a8c0c0129dff62d6dd36ddc28c4ac6e3e399ad5b15c66c0b",
+            "awfbSha256": "a035db912c7ce85f374c8eab358d7b657a4bbe0c7e5c1bda0f95a961001bc2fd",
+            "awfbBytes": 946944,
+            "bundleExit": 0,
+            "nativeExit": 0,
+            "webExit": 0,
+            "capture": [
+              {
+                "frame": "opening",
+                "nativeTick": 1,
+                "webTick": 1,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "ff50b832408aabb37e870225ca30fc2bed6d1fce3c97b48287c1e34c7a501492",
+                "webFrameSha256": "f4447d7ceadafa53f0834efefc81c6471daba82baa83f303eca6af9f8edfd292",
+                "comparisonSha256": "2839f82fc9fc9ec65be5d9a2d3476f086667e1fcff8c8520fa7768ee6f97f421"
+              },
+              {
+                "frame": "name-panel",
+                "nativeTick": 17,
+                "webTick": 17,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "32bcd017b88e748d9dd59c571f508d3fa98fa54f3f07597a8cdd3ff1671dc978",
+                "webPngSha256": "f88fdb92cc468911499db09b61be277e72e2fd1536d930b0b71f9dcd7f55834b",
+                "nativeFrameSha256": "94663f099ee241af9c04f43c503116632bcb82428be3c813c26e4a6772f62caa",
+                "webFrameSha256": "dcb40ffda764f81090dc1d28ecef8835a8f303a7c5d8f23d24df953e65e564b2",
+                "comparisonSha256": "5a80aca96b972dbf41d2abeb9ef48af046605367818c0397c93a1e80bc7ad18a"
+              },
+              {
+                "frame": "name-action",
+                "nativeTick": 29,
+                "webTick": 29,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "e952865aec16cf8e8073ea4c9807cef59c1569b2a759cd05fb4abf4a6a95ac90",
+                "webFrameSha256": "ef2c75c485c0291fead84d027504b9c65e41e3aa72755eb545bafde979f60693",
+                "comparisonSha256": "9357c3fa2aa7781ccd7116c666f0c5f2c1c7dcadd5068f9fab3e6e7ab529edba"
+              },
+              {
+                "frame": "brief-panel",
+                "nativeTick": 53,
+                "webTick": 53,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "96ed60c9feb40ee16c2bc18df81c990ee247bc2c99414733f9955bb2bf90b0e8",
+                "webPngSha256": "73a0b7b89397c7d7b90755563fe93061ef42ed9c20d82b50e5e007aec5671845",
+                "nativeFrameSha256": "616772cf1e3a6473bc670b3bcb01a6001cd680956f23e8dc4376642d706234dc",
+                "webFrameSha256": "2be88882da88869693c08ac3f270baaef01f46718b59510803edfea92c3384ee",
+                "comparisonSha256": "10f2b673fb0a43b2b0a28144362211ddaca28babad43527d27ad8b065d3b8fd3"
+              },
+              {
+                "frame": "brief-action",
+                "nativeTick": 77,
+                "webTick": 77,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "3a60728adbdbeb119a1c620fb917dd1eab8f5ac1b902f5775ba03e0b4ebe80bc",
+                "webFrameSha256": "694c1df2994174e5732c025227a236fcd5743c4f6a181f0841268fcd1fc11422",
+                "comparisonSha256": "83ca4ecb7384628de709da8ee10d8b05ab763b1cc2718eac43d37e77b0b3231c"
+              },
+              {
+                "frame": "loop-return",
+                "nativeTick": 93,
+                "webTick": 93,
+                "samples": 3686400,
+                "mse": 0,
+                "mae": 0,
+                "maxae": 0,
+                "nativePngSha256": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+                "webPngSha256": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+                "nativeFrameSha256": "e2d80732e88bdf8125ede98fb6d15a5e16e5e083f2f9d5f3e08c8b433de42547",
+                "webFrameSha256": "0f33f3a672d26aa9aecdbe9669492ad2a2187ff2ec553da2aa507fc8326206d1",
+                "comparisonSha256": "027af1bbfb777fcc781dab8ef01c435b6877eb0871820baef2b4adbb9128baed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "terminalTransferProbe": {
+      "scope": "Separate acceptance condition. The local Try residual can complete the carrier even though the success path performs a nonlocal Return. The four Try/Return inputs fail during checked Try boundary validation while the same direct Return without Try passes.",
+      "raw": "carrier/terminal-transfer/receipt.json",
+      "observed": {
+        "version": 1,
+        "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+        "cliSha256": "b0c17b89550fbdc06031b0343e0b2125204201ee97ca230423f4a3c7b4a2f0e5",
+        "results": [
+          {
+            "name": "option-none",
+            "exit": 1,
+            "diagnostics": [
+              "    Checking C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-none.arcw",
+              "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 18, kind: Expr }) propagation boundary does not accept its operand carrier",
+              "      Failed C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-none.arcw in 71ms"
+            ]
+          },
+          {
+            "name": "option-some",
+            "exit": 1,
+            "diagnostics": [
+              "    Checking C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-some.arcw",
+              "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) propagation boundary does not accept its operand carrier",
+              "      Failed C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-some.arcw in 58ms"
+            ]
+          },
+          {
+            "name": "result-err",
+            "exit": 1,
+            "diagnostics": [
+              "    Checking C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\result-err.arcw",
+              "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }) propagation boundary does not accept its operand carrier",
+              "      Failed C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\result-err.arcw in 61ms"
+            ]
+          },
+          {
+            "name": "result-ok",
+            "exit": 1,
+            "diagnostics": [
+              "    Checking C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\result-ok.arcw",
+              "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 21, kind: Expr }) propagation boundary does not accept its operand carrier",
+              "      Failed C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\result-ok.arcw in 55ms"
+            ]
+          },
+          {
+            "name": "direct-return",
+            "exit": 0,
+            "diagnostics": [
+              "    Checking C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\direct-return.arcw",
+              "    Finished C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\direct-return.arcw in 67ms",
+              "   Verifying C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\direct-return.arcw",
+              "    Finished C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\direct-return.arcw in <1ms",
+              "ok: C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\direct-return.arcw (emit=check, 1 flow(s), 0 line task group(s), 0 warning(s), 0 obligation(s))"
+            ]
+          }
+        ]
+      }
+    }
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 1497054,
-    "sha256": "2e16b199cff33847869b2265da8ce5d6bd7c7caa350b9c231eaec0fceecdade5",
+    "bytes": 3021507,
+    "sha256": "1fcb0d8dac0084f61586123f0b5d9a501654ddc8ab532462dff12684e2c3d85e",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -847,7 +1259,98 @@
       "quality/workspace-check.log": "b7e824208a963657a94209f18f9b80b48fcb96c452da47a402bc5e02508bdcc1",
       "quality/workspace-clippy.log": "621c3800e2d9df9d2e609a1ed80d361f8d418186737800aef7265638961d0db0",
       "quality/owners.log": "4a60fc036d02181cf8c37b2fb25c68d0ea3d90307157605a91a63c2008c168fe",
-      "quality/runtime-host.log": "a1912c3620a822cace04bbf36197ef4811699f8166f131a82347cd8bc3e2ce24"
+      "quality/runtime-host.log": "a1912c3620a822cace04bbf36197ef4811699f8166f131a82347cd8bc3e2ce24",
+      "carrier/repair/publication.json": "c6aa67eab131550f547d13a3b41cc1e8b2df31a09182bc77bfc19346ee829b5c",
+      "carrier/repair/targeted.receipt.json": "a2f7aaf34ca96297177df34514378f9b0029f01e7016d386d768d6b28b1263b1",
+      "carrier/repair/targeted.log": "4989c3cae6d30a70c817bdcef48b76e2b8594abd24c41076c30ed866475fe959",
+      "carrier/repair/first-observation.receipt.json": "161c032e20906f5a7f21b1ca3137ceb94f92ad11c65b44c4b3309f92dc585629",
+      "carrier/repair/first-observation.log": "ed76da8caebc938f930be2169675124628b06089ed2f6e9fb1f12efe8d8227a6",
+      "carrier/repair/structure.log": "da76630f73ae4ff79c4bf70693bc2d1d09062c87d542914fccd1390ee511546c",
+      "carrier/repair/cli-build.log": "c8a13a2eb71ef8fc8e2c96ad5d17d9a490802be31e6a0854786512d0880eea28",
+      "carrier/repair/replay.receipt.json": "f26cc1deeb9c7b552760bda2b8208bd8a148d0fa533a96fc089dfcfa1cb74fd8",
+      "carrier/repair/rdeps-tree.log": "d98f3711ca6742c3ba991867c22f728da09dae4976ecc010f384664a81735d0b",
+      "carrier/repair/option/bundle.log": "a81a9cf89c50684b5dd3f97ef90fbc48435c5e3147a82207cc9c740f361b5556",
+      "carrier/repair/option/native-operation.log": "543d2b04814782f4fc8d33a657c3e467bb98372c5dc776fc04e70041044622c0",
+      "carrier/repair/option/web-operation.stdout": "2f7571775045060ac909c3854921876a55119f0001509a8a76578de76f3c309e",
+      "carrier/repair/option/web-operation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "carrier/repair/option/native/native-operation-opening.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/option/native/native-operation-opening.json": "6273726b3c39bd936fc1eb7d1ab81a01ab9597887063e9a9100df4ffd8ab09a8",
+      "carrier/repair/option/web-opening.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/option/web-opening.json": "6fc9d90054f494ac041e846ccb298c1516de75df395dbd5894fbd0f96cca7475",
+      "carrier/repair/option/rgba-opening.json": "2bfdd3d6a9f1ae0fb5e553b18a698fcf0512bfa397ca515c78a84964e0657a9b",
+      "carrier/repair/option/native/native-operation-name-panel.png": "32bcd017b88e748d9dd59c571f508d3fa98fa54f3f07597a8cdd3ff1671dc978",
+      "carrier/repair/option/native/native-operation-name-panel.json": "5be2da4a5dc75fd5780f79b887efe1383016a5a8365da511a07582bbd1d55853",
+      "carrier/repair/option/web-name-panel.png": "f88fdb92cc468911499db09b61be277e72e2fd1536d930b0b71f9dcd7f55834b",
+      "carrier/repair/option/web-name-panel.json": "5620ece390a68675870d95415262fdc519f8795d14a4ad5ada41102c0cf9b5df",
+      "carrier/repair/option/rgba-name-panel.json": "7fb50ad4b7cd970cab199aa412e6083771fd5fe947be49c338d1397cbebff28d",
+      "carrier/repair/option/native/native-operation-name-action.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/option/native/native-operation-name-action.json": "abad0003613aeb8b6cd9ee70a94634932e0b79856a19ea6e215ae1a9608f4c98",
+      "carrier/repair/option/web-name-action.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/option/web-name-action.json": "e25ba72e344320e698d3773809111809a0d126686edfce913586b9531061d6f0",
+      "carrier/repair/option/rgba-name-action.json": "597ffdae046d41e6cfce5ebad555b98ebfd8deb816c02442237a7724b97e7ee7",
+      "carrier/repair/option/native/native-operation-brief-panel.png": "96ed60c9feb40ee16c2bc18df81c990ee247bc2c99414733f9955bb2bf90b0e8",
+      "carrier/repair/option/native/native-operation-brief-panel.json": "b760462687d0759fccecd8e017a58b0739c883cfbba6049b74fbfbb2bc0ba168",
+      "carrier/repair/option/web-brief-panel.png": "73a0b7b89397c7d7b90755563fe93061ef42ed9c20d82b50e5e007aec5671845",
+      "carrier/repair/option/web-brief-panel.json": "e01483180570451835f6283e9bb0de8ea59acf70afa01681806c184b2281db93",
+      "carrier/repair/option/rgba-brief-panel.json": "efca8fc972f0e8ba9b227fef56b6d346d6e8103d22b05b2682e5cd556ca9f18b",
+      "carrier/repair/option/native/native-operation-brief-action.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/option/native/native-operation-brief-action.json": "8d58ece88176c1ae5d694ddebe71bab093e8bb922f49547e3e97026d8d4dc480",
+      "carrier/repair/option/web-brief-action.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/option/web-brief-action.json": "3aecc546c78f5d75713d029a54c2e3e523a7d226a2f2aceca99c2c7b4843bc08",
+      "carrier/repair/option/rgba-brief-action.json": "3d623273e639222d577c1120c5162cf647887b8c1fc9fe1e0b8275bbcf0d3be9",
+      "carrier/repair/option/native/native-operation-loop-return.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/option/native/native-operation-loop-return.json": "b1e138e2740d24aaa2bf1cca8a7b90e7e2b3f04c7811de13c1033f1df8cc97c7",
+      "carrier/repair/option/web-loop-return.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/option/web-loop-return.json": "4b2b16ef2d3d32350466842d444244fe33abc945fd00045e2556421c6b786399",
+      "carrier/repair/option/rgba-loop-return.json": "8ccf3a0e7718cbc4b6be7b968ef98eef66bbcaa24684119a02dcc9415b8330de",
+      "carrier/repair/result/bundle.log": "29394710a1b8af9876aec3a3de8ca248b7efd92a4df09af5c84368c2524ec34e",
+      "carrier/repair/result/native-operation.log": "543d2b04814782f4fc8d33a657c3e467bb98372c5dc776fc04e70041044622c0",
+      "carrier/repair/result/web-operation.stdout": "5a5cd3357f8c7814db1c27ed372430e8f1c3b5a6eac96d5e1232298a85374eee",
+      "carrier/repair/result/web-operation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "carrier/repair/result/native/native-operation-opening.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/result/native/native-operation-opening.json": "ff50b832408aabb37e870225ca30fc2bed6d1fce3c97b48287c1e34c7a501492",
+      "carrier/repair/result/web-opening.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/result/web-opening.json": "f4447d7ceadafa53f0834efefc81c6471daba82baa83f303eca6af9f8edfd292",
+      "carrier/repair/result/rgba-opening.json": "2839f82fc9fc9ec65be5d9a2d3476f086667e1fcff8c8520fa7768ee6f97f421",
+      "carrier/repair/result/native/native-operation-name-panel.png": "32bcd017b88e748d9dd59c571f508d3fa98fa54f3f07597a8cdd3ff1671dc978",
+      "carrier/repair/result/native/native-operation-name-panel.json": "94663f099ee241af9c04f43c503116632bcb82428be3c813c26e4a6772f62caa",
+      "carrier/repair/result/web-name-panel.png": "f88fdb92cc468911499db09b61be277e72e2fd1536d930b0b71f9dcd7f55834b",
+      "carrier/repair/result/web-name-panel.json": "dcb40ffda764f81090dc1d28ecef8835a8f303a7c5d8f23d24df953e65e564b2",
+      "carrier/repair/result/rgba-name-panel.json": "5a80aca96b972dbf41d2abeb9ef48af046605367818c0397c93a1e80bc7ad18a",
+      "carrier/repair/result/native/native-operation-name-action.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/result/native/native-operation-name-action.json": "e952865aec16cf8e8073ea4c9807cef59c1569b2a759cd05fb4abf4a6a95ac90",
+      "carrier/repair/result/web-name-action.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/result/web-name-action.json": "ef2c75c485c0291fead84d027504b9c65e41e3aa72755eb545bafde979f60693",
+      "carrier/repair/result/rgba-name-action.json": "9357c3fa2aa7781ccd7116c666f0c5f2c1c7dcadd5068f9fab3e6e7ab529edba",
+      "carrier/repair/result/native/native-operation-brief-panel.png": "96ed60c9feb40ee16c2bc18df81c990ee247bc2c99414733f9955bb2bf90b0e8",
+      "carrier/repair/result/native/native-operation-brief-panel.json": "616772cf1e3a6473bc670b3bcb01a6001cd680956f23e8dc4376642d706234dc",
+      "carrier/repair/result/web-brief-panel.png": "73a0b7b89397c7d7b90755563fe93061ef42ed9c20d82b50e5e007aec5671845",
+      "carrier/repair/result/web-brief-panel.json": "2be88882da88869693c08ac3f270baaef01f46718b59510803edfea92c3384ee",
+      "carrier/repair/result/rgba-brief-panel.json": "10f2b673fb0a43b2b0a28144362211ddaca28babad43527d27ad8b065d3b8fd3",
+      "carrier/repair/result/native/native-operation-brief-action.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/result/native/native-operation-brief-action.json": "3a60728adbdbeb119a1c620fb917dd1eab8f5ac1b902f5775ba03e0b4ebe80bc",
+      "carrier/repair/result/web-brief-action.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/result/web-brief-action.json": "694c1df2994174e5732c025227a236fcd5743c4f6a181f0841268fcd1fc11422",
+      "carrier/repair/result/rgba-brief-action.json": "83ca4ecb7384628de709da8ee10d8b05ab763b1cc2718eac43d37e77b0b3231c",
+      "carrier/repair/result/native/native-operation-loop-return.png": "e1133fbd857b97a6e1c7f5ab87acd5ead9e14b4e15b272e64443e14d222e1055",
+      "carrier/repair/result/native/native-operation-loop-return.json": "e2d80732e88bdf8125ede98fb6d15a5e16e5e083f2f9d5f3e08c8b433de42547",
+      "carrier/repair/result/web-loop-return.png": "92387e35d0eb7728ee5e308ec1d14e857350a3e6557c7e4747e242deab9c77c4",
+      "carrier/repair/result/web-loop-return.json": "0f33f3a672d26aa9aecdbe9669492ad2a2187ff2ec553da2aa507fc8326206d1",
+      "carrier/repair/result/rgba-loop-return.json": "027af1bbfb777fcc781dab8ef01c435b6877eb0871820baef2b4adbb9128baed",
+      "carrier/terminal-transfer/receipt.json": "605796e88b5061e518d8a2e9c0e2323941fe9f5f297cc9b8154e1739edc16cf3",
+      "carrier/terminal-transfer/option-none.arcw": "e8840ce90aba0ce0663242b46c0533087020c6f3c5ccfab0deeabbd10931300d",
+      "carrier/terminal-transfer/option-none.log": "90ada8b8ed0e3155d81e744e54c39ce21a67f5b1899c5724672d854ae7b6405a",
+      "carrier/terminal-transfer/option-some.arcw": "6c1ea87424b8d43b61b8da2dc2fadf43dd9eddd5c465eb2a671c899d6389a418",
+      "carrier/terminal-transfer/option-some.log": "8ea1305b536ecc04cd930ebe8b8cb31addac20a9f2333c56f9cc7bc4271a0283",
+      "carrier/terminal-transfer/result-err.arcw": "585cfa5599f3113f56b3320ceee0c38f8c0c217fe692821709f070e10c70df22",
+      "carrier/terminal-transfer/result-err.log": "aeac11d0e7d9f6579788ea86d23e0499ebfcd3e69bd1c894c160367ccbe29e45",
+      "carrier/terminal-transfer/result-ok.arcw": "f1674821380f9df3130bde1dfd6db4204fdb70f6280f6458bab472292f8c135f",
+      "carrier/terminal-transfer/result-ok.log": "ddd2332a1bb6368ff7ea0b4b54e86b686e148f9ccc46fe7a68f680c4cfd9ef40",
+      "carrier/terminal-transfer/direct-return.arcw": "19e49745a7a48a61f88713bf7326bbab2df6be57708a6aaacd47a73e6518cc4b",
+      "carrier/terminal-transfer/direct-return.log": "8bb07085a5396393e495818475bd4232f607aaf7e9684a4e2ac32379c5c9f4d4",
+      "carrier/repair/quality/workspace-check.log": "30b64467f7fbd94216215448ce86e80b35e285e8f39afd73ae6bb56e184e9350",
+      "carrier/repair/quality/workspace-clippy.log": "4cde467c59fbd1f49fe5327605d147fa151958ffb2e52b104ae59c1eba84a0f4",
+      "carrier/repair/quality/owner-doctests.log": "37f929ea6ef2f5d032425bbfdf9b0a52be22698b07b19ee4876fc3ac331df749"
     }
   }
 }
