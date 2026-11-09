@@ -1115,6 +1115,7 @@ pub(crate) struct PreparedFunctionValueOriginEvidence {
     callee: ExprId,
     producer: PreparedFunctionValueOriginProducer,
     captures: Box<[super::PreparedCaptureIdentityRow]>,
+    storage_specialization: Option<ExprId>,
 }
 
 impl PreparedFunctionValueOriginEvidence {
@@ -1127,6 +1128,7 @@ impl PreparedFunctionValueOriginEvidence {
             callee,
             producer,
             captures: captures.into(),
+            storage_specialization: None,
         }
     }
 
@@ -1140,6 +1142,10 @@ impl PreparedFunctionValueOriginEvidence {
 
     pub(crate) const fn captures(&self) -> &[super::PreparedCaptureIdentityRow] {
         &self.captures
+    }
+
+    pub(crate) const fn storage_specialization(&self) -> Option<ExprId> {
+        self.storage_specialization
     }
 
     pub(crate) fn into_parts(
@@ -1160,6 +1166,14 @@ pub(crate) struct PreparedFunctionValueOriginQuery {
     current: ExprId,
     visited: std::collections::BTreeSet<LocalId>,
     pending_capture_rows: Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>,
+    purpose: PreparedFunctionValueOriginPurpose,
+    storage_specialization: Option<ExprId>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum PreparedFunctionValueOriginPurpose {
+    Selection,
+    Storage,
 }
 
 pub(crate) struct PreparedFunctionValueOriginNeed {
@@ -1256,6 +1270,7 @@ impl PreparedFunctionValueOriginQuery {
         module: &HirModule,
         callee: ExprId,
         pending_capture_rows: Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>,
+        purpose: PreparedFunctionValueOriginPurpose,
     ) -> Self {
         Self {
             topology,
@@ -1264,7 +1279,20 @@ impl PreparedFunctionValueOriginQuery {
             current: callee,
             visited: std::collections::BTreeSet::new(),
             pending_capture_rows,
+            purpose,
+            storage_specialization: None,
         }
+    }
+
+    fn ready(
+        &self,
+        producer: PreparedFunctionValueOriginProducer,
+        captures: impl Into<Box<[PreparedCaptureIdentityRow]>>,
+    ) -> PreparedFunctionValueOriginProgress {
+        let mut evidence =
+            PreparedFunctionValueOriginEvidence::new(self.callee, producer, captures);
+        evidence.storage_specialization = self.storage_specialization;
+        PreparedFunctionValueOriginProgress::Ready(evidence)
     }
 
     fn local_origins(
@@ -1315,14 +1343,11 @@ impl PreparedFunctionValueOriginQuery {
                     .get(&self.current)
                     .cloned()
                     .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
-                return Ok(PreparedFunctionValueOriginProgress::Ready(
-                    PreparedFunctionValueOriginEvidence::new(
-                        self.callee,
-                        PreparedFunctionValueOriginProducer::IndependentExpression {
-                            producer: self.current,
-                        },
-                        captures,
-                    ),
+                return Ok(self.ready(
+                    PreparedFunctionValueOriginProducer::IndependentExpression {
+                        producer: self.current,
+                    },
+                    captures,
                 ));
             }
             return Err(PreparedFunctionValueOriginQueryError::Invalid);
@@ -1334,48 +1359,38 @@ impl PreparedFunctionValueOriginQuery {
             checked,
         )) = fact.resolution()
         {
-            return Ok(PreparedFunctionValueOriginProgress::Ready(
-                PreparedFunctionValueOriginEvidence::new(
-                    self.callee,
-                    PreparedFunctionValueOriginProducer::Declaration {
-                        producer: self.current,
-                        checked: checked.clone(),
-                    },
-                    Vec::new(),
-                ),
+            return Ok(self.ready(
+                PreparedFunctionValueOriginProducer::Declaration {
+                    producer: self.current,
+                    checked: checked.clone(),
+                },
+                Vec::new(),
             ));
         }
         if fact.function_specialization().is_some() {
-            return Ok(PreparedFunctionValueOriginProgress::Ready(
-                PreparedFunctionValueOriginEvidence::new(
-                    self.callee,
+            if self.purpose == PreparedFunctionValueOriginPurpose::Selection {
+                return Ok(self.ready(
                     PreparedFunctionValueOriginProducer::IndependentExpression {
                         producer: self.current,
                     },
                     self.validated_terminal_capture_rows(self.current, fact)?,
-                ),
-            ));
+                ));
+            }
+            if self.storage_specialization.replace(self.current).is_some() {
+                return Err(PreparedFunctionValueOriginQueryError::Invalid);
+            }
         }
         if let Some(site) = fact.resolution().checked_call_site(self.current) {
-            return Ok(PreparedFunctionValueOriginProgress::Ready(
-                PreparedFunctionValueOriginEvidence::new(
-                    self.callee,
-                    PreparedFunctionValueOriginProducer::Call(site),
-                    Vec::new(),
-                ),
-            ));
+            return Ok(self.ready(PreparedFunctionValueOriginProducer::Call(site), Vec::new()));
         }
         let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
             fact.resolution()
         else {
-            return Ok(PreparedFunctionValueOriginProgress::Ready(
-                PreparedFunctionValueOriginEvidence::new(
-                    self.callee,
-                    PreparedFunctionValueOriginProducer::IndependentExpression {
-                        producer: self.current,
-                    },
-                    self.validated_terminal_capture_rows(self.current, fact)?,
-                ),
+            return Ok(self.ready(
+                PreparedFunctionValueOriginProducer::IndependentExpression {
+                    producer: self.current,
+                },
+                self.validated_terminal_capture_rows(self.current, fact)?,
             ));
         };
         if !self.visited.insert(*local) {
@@ -1398,12 +1413,9 @@ impl PreparedFunctionValueOriginQuery {
                     },
                 ))
             }
-            HirLocalValueOrigin::Independent => Ok(PreparedFunctionValueOriginProgress::Ready(
-                PreparedFunctionValueOriginEvidence::new(
-                    self.callee,
-                    PreparedFunctionValueOriginProducer::Lexical { local: *local },
-                    Vec::new(),
-                ),
+            HirLocalValueOrigin::Independent => Ok(self.ready(
+                PreparedFunctionValueOriginProducer::Lexical { local: *local },
+                Vec::new(),
             )),
             HirLocalValueOrigin::Composite => Err(PreparedFunctionValueOriginQueryError::Composite),
         }

@@ -160,6 +160,50 @@ impl TypeConstraintSolution {
 }
 
 impl GenericDeclarationBinder {
+    pub(crate) fn project_length_with_control<C: TypeProjectionControl>(
+        &self,
+        length: &ArrayLength,
+        control: &mut C,
+    ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
+        control
+            .visit_node(TypeProjectionNodeKind::Const, 1)
+            .map_err(TypeProjectionError::Control)?;
+        self.project_length_at(length, self.template_scope(), self.scope(), control)
+    }
+
+    fn project_length_at<C: TypeProjectionControl>(
+        &self,
+        length: &ArrayLength,
+        source: &GenericScope,
+        target: &GenericScope,
+        control: &mut C,
+    ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
+        let ArrayLength::Generic(reference) = length else {
+            return match length {
+                ArrayLength::Const(_) => Ok(length.clone()),
+                _ => Err(TypeInstantiationError::UnresolvedType.into()),
+            };
+        };
+        control
+            .visit_binding()
+            .map_err(TypeProjectionError::Control)?;
+        if let Some(key) = reference.template_key(self.template_scope(), source)?
+            && let Some(slot) = self
+                .const_parameters()
+                .iter()
+                .position(|candidate| candidate == &key)
+        {
+            let slot = u16::try_from(slot).map_err(|_| GenericScopeError::BinderArityOverflow {
+                kind: GenericParameterKind::Const,
+                count: self.const_parameters().len(),
+            })?;
+            return Ok(ArrayLength::Generic(
+                target.bound_const(depth_difference(target, self.scope())?, slot)?,
+            ));
+        }
+        keep_const(reference, source).map_err(Into::into)
+    }
+
     pub(crate) fn project_with_control<C: TypeProjectionControl>(
         &self,
         ty: &TypeKind,
@@ -192,29 +236,7 @@ impl GenericDeclarationBinder {
                 keep_type(reference, source).map_err(Into::into)
             },
             &|length, source, target, _, control| {
-                let ArrayLength::Generic(reference) = length else {
-                    return match length {
-                        ArrayLength::Const(_) => Ok(length.clone()),
-                        _ => Err(TypeInstantiationError::UnresolvedType.into()),
-                    };
-                };
-                control
-                    .visit_binding()
-                    .map_err(TypeProjectionError::Control)?;
-                if let Some(key) = reference.template_key(self.template_scope(), source)?
-                    && let Some(slot) = self
-                        .const_parameters()
-                        .iter()
-                        .position(|candidate| candidate == &key)
-                {
-                    return Ok(ArrayLength::Generic(target.bound_const(
-                        depth_difference(target, self.scope())?,
-                        u16::try_from(slot).map_err(|_| {
-                            arity(GenericParameterKind::Const, self.const_parameters().len())
-                        })?,
-                    )?));
-                }
-                keep_const(reference, source).map_err(Into::into)
+                self.project_length_at(length, source, target, control)
             },
             &|row, source, target, depth, control| {
                 map_effects_with_control(row, depth, control, &|reference, control| {

@@ -7,8 +7,12 @@ use thiserror::Error;
 
 use super::{CallConstraintInvariant, CallableConstraintApplication};
 use crate::types::{
-    GenericBinder, GenericScope, TypeKind, TypeProjectionControl, TypeProjectionError,
-    constraints::{CompletedResultProjectionView, ConstraintDomain, TypeConstraintSolution},
+    ArrayLength, GenericBinder, GenericDeclarationBinder, GenericScope, ScopedArrayLengthView,
+    ScopedType, ScopedTypeView, TypeKind, TypeProjectionControl, TypeProjectionError,
+    constraints::{
+        CompletedResultProjectionView, ConstraintDomain, TypeConstraintSolution,
+        TypeInstantiationError,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -85,6 +89,61 @@ pub struct CheckedFunctionSpecialization {
     specialized: TypeKind,
     solution: Arc<TypeConstraintSolution>,
     digest: CheckedFunctionSpecializationDigest,
+}
+
+/// Projects the declaration body through the same ordinal mapping that
+/// produced the function scheme. Replacements may still name the lexical
+/// scope where that value was specialized.
+pub(crate) struct SpecializedDeclarationProjection {
+    binder: GenericDeclarationBinder,
+    witness: Arc<CheckedFunctionSpecialization>,
+}
+
+impl SpecializedDeclarationProjection {
+    pub(crate) fn new(
+        binder: GenericDeclarationBinder,
+        witness: Arc<CheckedFunctionSpecialization>,
+    ) -> Result<Self, TypeInstantiationError> {
+        if binder.scope() != witness.solution.template_scope() {
+            return Err(TypeInstantiationError::SpecializationScopeMismatch);
+        }
+        Ok(Self { binder, witness })
+    }
+
+    pub(crate) fn type_arguments(&self) -> impl ExactSizeIterator<Item = ScopedTypeView<'_>> {
+        self.witness.solution.bindings().map(|(_, value)| value)
+    }
+
+    pub(crate) fn const_arguments(
+        &self,
+    ) -> impl ExactSizeIterator<Item = ScopedArrayLengthView<'_>> {
+        self.witness
+            .solution
+            .const_bindings()
+            .map(|(_, value)| value)
+    }
+
+    pub(crate) fn project_type<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
+        let scheme = self.binder.project_with_control(ty, control)?;
+        self.witness
+            .solution
+            .apply_template_with_control(scheme.view().value(), control)
+    }
+
+    pub(crate) fn project_length<C: TypeProjectionControl>(
+        &self,
+        length: &ArrayLength,
+        control: &mut C,
+    ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
+        let scheme = self.binder.project_length_with_control(length, control)?;
+        self.witness
+            .solution
+            .apply_length_template(&scheme, control)
+    }
 }
 
 #[derive(Debug, Error)]

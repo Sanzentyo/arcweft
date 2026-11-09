@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, rc::Rc};
 
 use arcweft_lang_hir::{
     expr::HirExprKind,
-    identity::{ExprId, ItemId, LocalId, ScopeId},
+    identity::{ExprId, LocalId, ScopeId},
     item::{HirItemKind, HirParameterKind},
     module::HirModule,
     pattern::{HirPatternBinding, HirPatternKind},
@@ -15,24 +15,44 @@ use arcweft_lang_hir::{
 };
 
 use crate::{
-    callable::{CallableParameterCoordinate, CheckedCallSite},
+    callable::CallableParameterCoordinate,
     final_analysis::{CheckedExpressionResolution, CheckedValueResolution, PreparedExpressionFact},
-    types::ArrayLength,
 };
 
 use super::{
     Analyzer, AnalyzerExpressionContext, CaptureEvaluation, FinalSemanticAnalysisError,
-    ReceiverBorrowQuery, call_storage_error, storage_projection_error,
+    ReceiverBorrowQuery, call_storage_error,
     worklist::{
-        ApplicationStorage, BorrowDependencies, CaptureWorklist, FrameOwner, Invocation,
-        InvocationId, ParameterDemand, StorageFrame, StorageFrameId, ValueOrigin,
+        BodyProjection, BorrowDependencies, CaptureWorklist, FrameOwner, Invocation, InvocationId,
+        InvokedValue, ParameterDemand, StorageFrameId, ValueOrigin,
     },
 };
 
+#[derive(Clone, Copy)]
 struct BoundInvocation {
     call: Invocation,
     frame: StorageFrameId,
     requester: Option<InvocationId>,
+}
+
+pub(super) struct SourceInvocation {
+    call: Invocation,
+    declaration: CallableDeclarationKey,
+    requester: Option<InvocationId>,
+    projection: BodyProjection,
+    parent: StorageFrameId,
+}
+
+impl SourceInvocation {
+    pub(super) fn selected(call: Invocation, declaration: CallableDeclarationKey) -> Self {
+        Self {
+            call,
+            declaration,
+            requester: None,
+            projection: BodyProjection::SelectedCall(call.site),
+            parent: call.caller,
+        }
+    }
 }
 
 impl Analyzer<'_, '_, '_> {
@@ -41,11 +61,11 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         origin: ValueOrigin,
-        (producer, id): (ExprId, InvocationId),
+        (producer, invoked): (ExprId, InvokedValue),
         query: &mut CaptureEvaluation,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<Option<BorrowDependencies>, FinalSemanticAnalysisError> {
-        let call = query.work.invocation(id)?;
+        let call = query.work.invocation(invoked.id)?;
         let source = module
             .resolve_expr(producer)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
@@ -71,7 +91,7 @@ impl Analyzer<'_, '_, '_> {
                     BoundInvocation {
                         call,
                         frame,
-                        requester: Some(id),
+                        requester: Some(invoked.id),
                     },
                     &query.closure_results[&producer],
                     &mut query.work,
@@ -79,34 +99,48 @@ impl Analyzer<'_, '_, '_> {
                 )
                 .map(Some);
         }
-        if let Some(CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
-            callable,
-        ))) = self
+        if let Some(fact) = self
             .facts
             .expressions()
             .get(&producer)
-            .and_then(PreparedExpressionFact::checked_resolution)
+            .and_then(PreparedExpressionFact::complete)
+            && let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                callable,
+            )) = fact.resolution()
             && callable.declaration().owner() == CallableDeclarationOwner::Function
         {
             let item = self
                 .module(callable.owner().module())?
                 .resolve_item(callable.owner())
                 .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
-            // A generic declaration value needs its checked specialization
-            // translated into the declaration's own type binder before its
-            // body can provide a storage witness.
-            if matches!(item.kind(), HirItemKind::Function(function) if function.generic_parameters().is_empty())
-            {
-                return self
-                    .source_result_dependencies(
-                        context,
-                        origin,
-                        (call, Some(id), callable.declaration().clone()),
-                        query,
-                        receiver,
+            let HirItemKind::Function(function) = item.kind() else {
+                return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+            };
+            let declaration = callable.declaration().clone();
+            let mut source = SourceInvocation::selected(call, declaration);
+            source.requester = Some(invoked.id);
+            if !function.generic_parameters().is_empty() {
+                let (parent, witness) = if let Some(specialization) = invoked.specialization {
+                    (
+                        specialization.frame,
+                        self.value_specialization(specialization.owner)?,
                     )
-                    .map(Some);
+                } else {
+                    let Some(witness) = self.invocation_specialization(call.site, receiver)? else {
+                        return Ok(None);
+                    };
+                    (call.caller, witness)
+                };
+                if fact.source_value_type() != Some(witness.source_type()) {
+                    return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+                }
+                source.parent = parent;
+                source.projection =
+                    self.specialized_body_projection(&source.declaration, witness, receiver)?;
             }
+            return self
+                .source_result_dependencies(context, origin, source, query, receiver)
+                .map(Some);
         }
         Ok(None)
     }
@@ -115,7 +149,13 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         origin: ValueOrigin,
-        (call, requester, declaration): (Invocation, Option<InvocationId>, CallableDeclarationKey),
+        SourceInvocation {
+            call,
+            declaration,
+            requester,
+            projection,
+            parent,
+        }: SourceInvocation,
         query: &mut CaptureEvaluation,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
@@ -136,9 +176,9 @@ impl Analyzer<'_, '_, '_> {
             .results
             .get(&declaration)
             .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
-        let caller = query.work.frame(call.caller)?;
-        let storage = self.application_storage(call.site, *item, &caller, receiver)?;
-        let frame = query.work.intern(storage, &caller, receiver)?;
+        let parent = query.work.frame(parent)?;
+        let storage = self.application_storage(call.site, *item, &projection, &parent, receiver)?;
+        let frame = query.work.intern(storage, &parent, projection, receiver)?;
         self.result_dependencies(
             origin,
             BoundInvocation {
@@ -181,56 +221,6 @@ impl Analyzer<'_, '_, '_> {
                 self.substitute_call_parameters(binding, origin, parameters, work, receiver)
             }
         }
-    }
-
-    /// Equal storage shapes agree on the type observations made by this
-    /// query. Value provenance stays symbolic in each result dependency.
-    fn application_storage(
-        &self,
-        site: CheckedCallSite,
-        item: ItemId,
-        caller: &StorageFrame,
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<ApplicationStorage, FinalSemanticAnalysisError> {
-        let graph = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?;
-        graph
-            .project_site_payload(
-                site,
-                |prefix| {
-                    let application = prefix.application();
-                    let type_arguments = application.body_type_arguments();
-                    let const_arguments = application.body_const_arguments();
-                    let argument_count = type_arguments
-                        .len()
-                        .checked_add(const_arguments.len())
-                        .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
-                    receiver.charge(
-                        u64::try_from(argument_count)
-                            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
-                    )?;
-                    let types = type_arguments
-                        .map(|ty| {
-                            self.inspect_value_storage(ty.value(), &caller.applications, receiver)
-                        })
-                        .collect::<Result<Box<[_]>, _>>()?;
-                    let zero_lengths = const_arguments
-                        .map(|length| {
-                            self.project_zero_length(length.value(), &caller.applications, receiver)
-                        })
-                        .collect::<Result<Box<[_]>, _>>()?;
-                    Ok(ApplicationStorage {
-                        site,
-                        item,
-                        types,
-                        zero_lengths,
-                    })
-                },
-                |_| Err(FinalSemanticAnalysisError::InvalidOwner),
-            )
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
     }
 
     fn substitute_call_parameters(
@@ -314,40 +304,7 @@ impl Analyzer<'_, '_, '_> {
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
     }
 
-    fn project_zero_length(
-        &self,
-        length: &ArrayLength,
-        applications: &[CheckedCallSite],
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<bool, FinalSemanticAnalysisError> {
-        receiver.charge(1)?;
-        if let ArrayLength::Const(length) = length {
-            return Ok(*length == 0);
-        }
-        let graph = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?;
-        let mut projected = length.clone();
-        for site in applications.iter().rev().copied() {
-            projected = graph
-                .project_site_payload(
-                    site,
-                    |prefix| {
-                        prefix
-                            .application()
-                            .project_body_length(&projected, receiver)
-                            .map_err(storage_projection_error)
-                    },
-                    |_| Err(FinalSemanticAnalysisError::InvalidOwner),
-                )
-                .ok_or(FinalSemanticAnalysisError::InvalidOwner)??;
-        }
-        Ok(matches!(projected, ArrayLength::Const(0)))
-    }
-
     pub(super) fn lexical_frame(
-        &self,
         module: &HirModule,
         scope: ScopeId,
         mut frame: StorageFrameId,
@@ -393,7 +350,7 @@ impl Analyzer<'_, '_, '_> {
             .resolve_local(local)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
             .scope();
-        let frame = self.lexical_frame(module, local_scope, origin.frame, work, receiver)?;
+        let frame = Self::lexical_frame(module, local_scope, origin.frame, work, receiver)?;
         let Some(coordinate) =
             self.whole_parameter_coordinate(module, local, work.frame(frame)?.owner)?
         else {

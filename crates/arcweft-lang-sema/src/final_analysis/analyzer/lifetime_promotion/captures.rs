@@ -25,7 +25,7 @@ use crate::{
         CallableCandidateId, CheckedCallSite, PreparedCallGraphIngress, PreparedCallSiteDelivery,
         PreparedCaptureIdentityRow, PreparedFunctionValueOriginEvidence,
         PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-        PreparedFunctionValueOriginQueryError,
+        PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
         prepare_function_value_origin_query_with_pending_captures,
     },
     final_analysis::{
@@ -36,18 +36,21 @@ use crate::{
             expression_error::AnalyzerExpressionError,
         },
     },
-    types::{ScopedType, TypeKind, TypeProjectionError},
+    types::{TypeKind, TypeProjectionError},
 };
 
 #[path = "captures/invocation.rs"]
 mod invocation;
 
+#[path = "captures/projection.rs"]
+mod projection;
+
 #[path = "captures/worklist.rs"]
 mod worklist;
 
 use self::worklist::{
-    BorrowDependencies, CaptureWorklist, Invocation, Observation, StorageFrame, TypeStorage,
-    ValueOrigin,
+    BodyProjection, BorrowDependencies, CaptureWorklist, Invocation, InvokedValue, Observation,
+    StorageFrame, TypeStorage, ValueOrigin, ValueSpecialization,
 };
 
 type PendingCaptures = Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>;
@@ -116,12 +119,38 @@ impl Analyzer<'_, '_, '_> {
         else {
             return Ok(BorrowDependencies::default());
         };
+        let mut observation = origin.observation;
+        if let Observation::Invoke(invoked) = &mut observation
+            && let Some(owner) = evidence.storage_specialization()
+        {
+            let scope = module
+                .resolve_expr(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                .scope();
+            let specialization = ValueSpecialization {
+                owner,
+                frame: Self::lexical_frame(module, scope, origin.frame, &query.work, receiver)?,
+            };
+            if let Some(existing) = invoked.specialization
+                && existing != specialization
+            {
+                return Err(FinalSemanticAnalysisError::InvalidOwner);
+            }
+            invoked.specialization = Some(specialization);
+        }
         let producer = match evidence.producer() {
             PreparedFunctionValueOriginProducer::Lexical { local } => {
                 let mut parameters = BTreeSet::new();
-                if let Some(parameter) =
-                    self.parameter_demand(module, *local, origin, &query.work, receiver)?
-                {
+                if let Some(parameter) = self.parameter_demand(
+                    module,
+                    *local,
+                    ValueOrigin {
+                        observation,
+                        ..origin
+                    },
+                    &query.work,
+                    receiver,
+                )? {
                     receiver.charge(1)?;
                     parameters.insert(parameter);
                 }
@@ -137,13 +166,13 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
             .scope();
         let producer_frame =
-            self.lexical_frame(module, producer_scope, origin.frame, &query.work, receiver)?;
-        if producer_frame != origin.frame {
+            Self::lexical_frame(module, producer_scope, origin.frame, &query.work, receiver)?;
+        if producer_frame != origin.frame || observation != origin.observation {
             return query.work.demand(
                 ValueOrigin {
                     expression: producer,
                     frame: producer_frame,
-                    ..origin
+                    observation,
                 },
                 origin,
                 receiver,
@@ -175,13 +204,13 @@ impl Analyzer<'_, '_, '_> {
                 caller: origin.frame,
                 result: origin.observation,
             };
-            match self.call_storage(call, &frame.applications, receiver, &mut next)? {
+            match self.call_storage(call, &frame.projections, receiver, &mut next)? {
                 CallStorage::Borrowed => return Ok(BorrowDependencies::Borrowed),
                 CallStorage::SourceResult(declaration) => {
                     return self.source_result_dependencies(
                         context,
                         origin,
-                        (call, None, declaration),
+                        invocation::SourceInvocation::selected(call, declaration),
                         query,
                         receiver,
                     );
@@ -193,7 +222,10 @@ impl Analyzer<'_, '_, '_> {
                         .demand(
                             ValueOrigin {
                                 expression: callee,
-                                observation: Observation::Invoke(id),
+                                observation: Observation::Invoke(InvokedValue {
+                                    id,
+                                    specialization: None,
+                                }),
                                 ..origin
                             },
                             origin,
@@ -224,14 +256,14 @@ impl Analyzer<'_, '_, '_> {
                     return Ok(dependencies);
                 }
             }
-            Observation::Invoke(id) => {
+            Observation::Invoke(invoked) => {
                 if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
                     evidence.producer()
                     && let Some(dependencies) = self.invoke_producer(
                         context,
                         module,
                         origin,
-                        (*producer, id),
+                        (*producer, invoked),
                         query,
                         receiver,
                     )?
@@ -285,7 +317,7 @@ impl Analyzer<'_, '_, '_> {
                 .locals()
                 .get(&local)
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-            match self.inspect_value_storage(ty, &frame.applications, receiver)? {
+            match self.inspect_value_storage(ty, &frame.projections, receiver)? {
                 TypeStorage::Borrowed => return Ok(BorrowDependencies::Borrowed),
                 TypeStorage::Callable => {
                     if let Some(HirLocalValueOrigin::DirectInitializer(expression)) =
@@ -327,7 +359,7 @@ impl Analyzer<'_, '_, '_> {
         let Some(fact) = expressions.get(&expression) else {
             return Ok(None);
         };
-        if !self.has_function_origin_fact(fact, &frame.applications, receiver)? {
+        if !self.has_function_origin_fact(fact, &frame.projections, receiver)? {
             return Ok(None);
         }
         let mut progress = prepare_function_value_origin_query_with_pending_captures(
@@ -336,6 +368,7 @@ impl Analyzer<'_, '_, '_> {
             expression,
             expressions,
             Arc::clone(captures),
+            PreparedFunctionValueOriginPurpose::Storage,
         );
         loop {
             match progress {
@@ -348,7 +381,7 @@ impl Analyzer<'_, '_, '_> {
                     let Some(fact) = expressions.get(&requested) else {
                         return Ok(None);
                     };
-                    if !self.has_function_origin_fact(fact, &frame.applications, receiver)? {
+                    if !self.has_function_origin_fact(fact, &frame.projections, receiver)? {
                         return Ok(None);
                     }
                     progress = need.resume(requested, fact, module);
@@ -363,63 +396,10 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
-    fn inspect_value_storage(
-        &self,
-        ty: &TypeKind,
-        applications: &[CheckedCallSite],
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<TypeStorage, FinalSemanticAnalysisError> {
-        let projected = self.project_value_storage(ty, applications, receiver)?;
-        let ty = projected.as_ref().map_or(ty, |term| term.view().value());
-        if receiver.contains_borrow(ty, &self.types)? {
-            Ok(TypeStorage::Borrowed)
-        } else if matches!(ty, TypeKind::Function { .. }) {
-            Ok(TypeStorage::Callable)
-        } else {
-            Ok(TypeStorage::Ordinary)
-        }
-    }
-
-    fn project_value_storage(
-        &self,
-        ty: &TypeKind,
-        applications: &[CheckedCallSite],
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<Option<ScopedType>, FinalSemanticAnalysisError> {
-        let mut projected: Option<ScopedType> = None;
-        if !applications.is_empty() {
-            let graph = self
-                .facts
-                .prepared_calls()
-                .map_err(FinalSemanticAnalysisError::from)?;
-            // The innermost declaration owns the captured type template.
-            // Its replacements can name parameters of an enclosing caller.
-            for site in applications.iter().rev().copied() {
-                receiver.charge(1)?;
-                let input = projected.as_ref().map_or(ty, |term| term.view().value());
-                projected = Some(
-                    graph
-                        .project_site_payload(
-                            site,
-                            |prefix| {
-                                prefix
-                                    .application()
-                                    .project_body_storage(input, receiver)
-                                    .map_err(storage_projection_error)
-                            },
-                            |_| Err(FinalSemanticAnalysisError::InvalidOwner),
-                        )
-                        .ok_or(FinalSemanticAnalysisError::InvalidOwner)??,
-                );
-            }
-        }
-        Ok(projected)
-    }
-
     fn has_function_origin_fact(
         &self,
         fact: &PreparedExpressionFact,
-        applications: &[CheckedCallSite],
+        projections: &[BodyProjection],
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<bool, FinalSemanticAnalysisError> {
         if let PreparedExpressionFact::OwnerBound(prepared) = fact {
@@ -431,7 +411,7 @@ impl Analyzer<'_, '_, '_> {
         match fact.complete().and_then(|checked| checked.value_type()) {
             Some(TypeKind::Function { .. }) => Ok(true),
             Some(ty @ TypeKind::GenericParam(_)) => Ok(self
-                .project_value_storage(ty, applications, receiver)?
+                .project_value_storage(ty, projections, receiver)?
                 .is_some_and(|term| matches!(term.view().value(), TypeKind::Function { .. }))),
             _ => Ok(false),
         }
@@ -440,7 +420,7 @@ impl Analyzer<'_, '_, '_> {
     fn call_storage(
         &self,
         call: Invocation,
-        applications: &[CheckedCallSite],
+        projections: &[BodyProjection],
         receiver: &mut ReceiverBorrowQuery<'_>,
         pending: &mut Vec<ExprId>,
     ) -> Result<CallStorage, FinalSemanticAnalysisError> {
@@ -483,7 +463,7 @@ impl Analyzer<'_, '_, '_> {
                     }
                     for (source, ty) in prefix.record().value_inputs() {
                         receiver.charge(1)?;
-                        match self.inspect_value_storage(ty, applications, receiver)? {
+                        match self.inspect_value_storage(ty, projections, receiver)? {
                             TypeStorage::Borrowed => return Ok(CallStorage::Borrowed),
                             TypeStorage::Callable => pending.push(source),
                             TypeStorage::Ordinary => {}

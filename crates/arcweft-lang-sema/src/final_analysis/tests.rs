@@ -2129,6 +2129,105 @@ fn safe_lifetime_promotion_follows_dynamic_callable_results() {
 }
 
 #[test]
+fn safe_lifetime_promotion_applies_specialized_declaration_storage() {
+    let make = "fn make<T>(value: T) -> ((Unit) -> i64 effects {}) {
+        |_unit: Unit| -> i64 { let _ = value; 42i64 }
+    }";
+    let direct = "let factory: (&i64) -> ((Unit) -> i64 effects {}) effects {} = make";
+    let alias = "let scheme = make
+        let factory: (&i64) -> ((Unit) -> i64 effects {}) effects {} = scheme";
+    let wrapper = "fn relay<T>(value: T) -> ((Unit) -> i64 effects {}) {
+        let factory: (T) -> ((Unit) -> i64 effects {}) effects {} = make
+        factory(value)
+    }";
+    for (setup, invocation, borrowed) in [
+        (direct, "factory(loan)", true),
+        (alias, "factory(loan)", true),
+        (
+            "let factory: (i64) -> ((Unit) -> i64 effects {}) effects {} = make",
+            "factory(7i64)",
+            false,
+        ),
+        ("", "relay(loan)", true),
+        ("", "relay(7i64)", false),
+        ("", "relay_distinct(7i64, loan)", true),
+        ("", "relay_distinct(loan, 7i64)", false),
+        ("let factory = make", "factory(loan)", true),
+        ("let factory = make", "factory(7i64)", false),
+        (
+            "let factory = if flag { make } else { discard }",
+            "factory(loan)",
+            true,
+        ),
+        (
+            "let factory: (&i64) -> ((Unit) -> i64 effects {}) effects {} = if flag { make } else { discard }",
+            "factory(loan)",
+            true,
+        ),
+        (
+            "let factory: (Array<&i64, 0>) -> ((Unit) -> i64 effects {}) effects {} = make",
+            "factory(empty)",
+            false,
+        ),
+        (
+            "let factory: (Array<&i64, 1>) -> ((Unit) -> i64 effects {}) effects {} = make",
+            "factory([loan])",
+            true,
+        ),
+    ] {
+        let source = format!(
+            "{make}\n{wrapper}
+            fn discard<T>(_value: T) -> ((Unit) -> i64 effects {{}}) {{
+                |_unit: Unit| -> i64 {{ 42i64 }}
+            }}
+            fn first<A, B>(left: A, _right: B) -> ((Unit) -> i64 effects {{}}) {{
+                |_unit: Unit| -> i64 {{ let _ = left; 42i64 }}
+            }}
+            fn select_factory<X, Y>(_left: X, _right: Y) -> ((Y, X) -> ((Unit) -> i64 effects {{}}) effects {{}}) {{
+                let factory: (Y, X) -> ((Unit) -> i64 effects {{}}) effects {{}} = first
+                factory
+            }}
+            fn relay_distinct<X, Y>(left: X, right: Y) -> ((Unit) -> i64 effects {{}}) {{
+                let factory = select_factory(left, right)
+                factory(right, left)
+            }}
+            flow main(loan: &i64, empty: Array<&i64, 0>, flag: bool) {{
+            {setup}
+            let callback = {invocation}
+            let _ = callback.promote('flow)
+        }}"
+        );
+        let fixture = fixture(&source, None);
+        fixture
+            .project
+            .analysis_view()
+            .unwrap_or_else(|error| panic!("{setup} {invocation}: {error:?}"));
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{setup} {invocation}: {error:?}"));
+        let (code, span) = if borrowed {
+            ("sema.lifetime.promotion_receiver", "callback")
+        } else {
+            (
+                "sema.lifetime.promotion_execution",
+                "callback.promote('flow)",
+            )
+        };
+        assert_eq!(
+            diagnostic.code().unwrap().as_str(),
+            code,
+            "{setup} {invocation}"
+        );
+        assert_eq!(
+            &source[diagnostic.span().unwrap().range().as_range()],
+            span,
+            "{setup} {invocation}"
+        );
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
     for (parameter, code) in [
         ("&i64", "sema.lifetime.promotion_receiver"),

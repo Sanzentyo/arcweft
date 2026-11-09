@@ -216,11 +216,12 @@ pub(crate) use resolver::{
     PreparedCaptureIdentityRow, PreparedCatalogCallee, PreparedDialogueCalleeIdentity,
     PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginIdentity,
     PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-    PreparedFunctionValueOriginQueryError, PreparedImplicitExtensionReceiver,
-    PreparedResolvedCallable, PreparedResolvedCallableDefinition,
-    PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDefinitionSealInput,
-    PreparedResolvedCallableDetachArena, PreparedResolvedCallableIdentity,
-    PreparedStaticContentCallee, ResolveCallOutcome, ResolvedCallTarget, prepare_final_call_callee,
+    PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
+    PreparedImplicitExtensionReceiver, PreparedResolvedCallable,
+    PreparedResolvedCallableDefinition, PreparedResolvedCallableDefinitionBatch,
+    PreparedResolvedCallableDefinitionSealInput, PreparedResolvedCallableDetachArena,
+    PreparedResolvedCallableIdentity, PreparedStaticContentCallee, ResolveCallOutcome,
+    ResolvedCallTarget, prepare_final_call_callee,
     prepare_function_value_origin_query_with_pending_captures, prepare_language_free_dot_path,
     prepare_presentation_callee_id, resolve_call_target, resolve_callable_reference,
 };
@@ -253,6 +254,8 @@ pub(crate) use schema::{
     CallableGenericParameterInventory, CallableGenericTypeUse, CallableSchemaGenericRole,
     ObservedSemanticValueEvidence, presentation_content_schema,
 };
-pub(crate) use specialization::FunctionSpecializationSealFailure;
 pub use specialization::{CheckedFunctionSpecialization, CheckedFunctionSpecializationDigest};
+pub(crate) use specialization::{
+    FunctionSpecializationSealFailure, SpecializedDeclarationProjection,
+};
 pub use view_modifier::ViewModifierId;

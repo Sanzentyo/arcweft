@@ -154,6 +154,25 @@ impl PreparedCallableApplication {
         Ok(result)
     }
 
+    pub(crate) fn function_input_specialization_with_control<
+        C: crate::types::TypeProjectionControl,
+    >(
+        &self,
+        owner: arcweft_lang_hir::identity::ExprId,
+        source: &TypeKind,
+        control: &mut C,
+    ) -> Result<
+        Arc<super::CheckedFunctionSpecialization>,
+        super::FunctionSpecializationSealFailure<C::Error>,
+    > {
+        super::CheckedFunctionSpecialization::seal_call_input(
+            owner,
+            source,
+            &self.solution,
+            control,
+        )
+    }
+
     /// Applies the selected application's exact substitutions to storage
     /// originating in its declaration body.
     pub(crate) fn project_body_storage<C: crate::types::TypeProjectionControl>(

@@ -2812,8 +2812,14 @@ impl CheckedExpression {
     pub fn function_specialization(
         &self,
     ) -> Option<&crate::callable::CheckedFunctionSpecialization> {
+        self.function_specialization_shared().map(Arc::as_ref)
+    }
+
+    pub(crate) fn function_specialization_shared(
+        &self,
+    ) -> Option<&Arc<crate::callable::CheckedFunctionSpecialization>> {
         match &self.data.result {
-            CheckedExpressionResult::Value(value) => value.specialization(),
+            CheckedExpressionResult::Value(value) => value.specialization.as_ref(),
             CheckedExpressionResult::NonValue(_) | CheckedExpressionResult::Unavailable => None,
         }
     }

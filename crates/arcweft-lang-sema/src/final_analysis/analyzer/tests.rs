@@ -1697,6 +1697,7 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
                 analyzer
                     .pending_capture_identity_rows()
                     .expect("pending capture identity rows"),
+                crate::callable::PreparedFunctionValueOriginPurpose::Selection,
             )
             .expect("origin query");
         let evidence = loop {

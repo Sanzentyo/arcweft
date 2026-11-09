@@ -13,10 +13,10 @@ use super::{
     PreparedCallCallee, PreparedFinalCallCallee, PreparedFreeCallContext, PreparedFreeCallScope,
     PreparedFunctionValueCallee, PreparedFunctionValueOriginEvidence,
     PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-    PreparedFunctionValueOriginQuery, PreparedFunctionValueOriginQueryError,
-    PresentationCallableId, ProjectValueLookup, PromotionCallableId, ResolveCallError,
-    ResolvedAssociatedTypeReceiver, ResolvedFunctionValueSeed, TypeId, TypeKind,
-    TypeResolutionReport,
+    PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQuery,
+    PreparedFunctionValueOriginQueryError, PresentationCallableId, ProjectValueLookup,
+    PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver,
+    ResolvedFunctionValueSeed, TypeId, TypeKind, TypeResolutionReport,
 };
 use crate::{
     callable::{
@@ -385,6 +385,7 @@ pub(crate) fn prepare_function_value_origin_query(
         expression,
         expressions,
         std::sync::Arc::new(BTreeMap::new()),
+        PreparedFunctionValueOriginPurpose::Selection,
     )
 }
 
@@ -396,9 +397,16 @@ pub(crate) fn prepare_function_value_origin_query_with_pending_captures(
     pending_capture_rows: std::sync::Arc<
         BTreeMap<ExprId, Box<[super::PreparedCaptureIdentityRow]>>,
     >,
+    purpose: PreparedFunctionValueOriginPurpose,
 ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
-    PreparedFunctionValueOriginQuery::start(topology, module, expression, pending_capture_rows)
-        .advance(module, expressions)
+    PreparedFunctionValueOriginQuery::start(
+        topology,
+        module,
+        expression,
+        pending_capture_rows,
+        purpose,
+    )
+    .advance(module, expressions)
 }
 
 pub(crate) fn prepare_presentation_callee_id(

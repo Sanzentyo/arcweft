@@ -169,7 +169,11 @@ propagates capture dependencies until they stop growing, using the storage
 properties of the selected type arguments and the supplied value parameters.
 A call through a known function value follows the returned callable's
 storage. The closure's creation scope supplies captured values, and the
-selected invocation supplies its parameters.
+selected invocation supplies its parameters. For a generic source function
+used as a value, the checked specialization maps the function scheme's type
+arguments back to the declaration's parameters. Resolve those arguments in
+the scope where the function value was specialized. If the selected invocation
+specializes the scheme, use its type arguments in the call's scope.
 A function value produced by a loop can carry captures from a reachable break
 that targets that loop. A partial application retains the runtime inputs of its
 completed parameter groups.

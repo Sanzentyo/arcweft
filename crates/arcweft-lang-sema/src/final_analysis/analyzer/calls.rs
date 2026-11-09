@@ -55,7 +55,7 @@ use crate::callable::{
     CallableCandidateId, CallableResultSchema, DialogueCallableId, EnclosingGenericParameterScope,
     PreparedCallGraphIngress, PreparedCaptureIdentityRow, PreparedFunctionValueOriginEvidence,
     PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-    PreparedFunctionValueOriginQueryError,
+    PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
     prepare_function_value_origin_query_with_pending_captures, prepare_presentation_callee_id,
 };
 use crate::final_analysis::PreparedProjectNominalTypeValueExpression;
@@ -4477,6 +4477,7 @@ impl Analyzer<'_, '_, '_> {
             expression,
             self.facts.expressions(),
             pending_capture_rows,
+            PreparedFunctionValueOriginPurpose::Selection,
         )
         .map_err(|error| self.map_function_value_origin_query_error(expression, error))?;
         loop {

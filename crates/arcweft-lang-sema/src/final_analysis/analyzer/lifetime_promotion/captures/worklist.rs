@@ -7,7 +7,9 @@ use std::{
 
 use arcweft_lang_hir::identity::{ExprId, ItemId};
 
-use crate::callable::{CallableParameterCoordinate, CheckedCallSite};
+use crate::callable::{
+    CallableParameterCoordinate, CheckedCallSite, SpecializedDeclarationProjection,
+};
 
 use super::{FinalSemanticAnalysisError, ReceiverBorrowQuery};
 
@@ -42,7 +44,13 @@ pub(super) enum FrameOwner {
 #[derive(Clone)]
 pub(super) struct StorageFrame {
     pub(super) owner: FrameOwner,
-    pub(super) applications: Rc<[CheckedCallSite]>,
+    pub(super) projections: Rc<[BodyProjection]>,
+}
+
+#[derive(Clone)]
+pub(super) enum BodyProjection {
+    SelectedCall(CheckedCallSite),
+    SpecializedValue(Rc<SpecializedDeclarationProjection>),
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -51,7 +59,19 @@ pub(super) struct InvocationId(usize);
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum Observation {
     Stored,
-    Invoke(InvocationId),
+    Invoke(InvokedValue),
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct InvokedValue {
+    pub(super) id: InvocationId,
+    pub(super) specialization: Option<ValueSpecialization>,
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct ValueSpecialization {
+    pub(super) owner: ExprId,
+    pub(super) frame: StorageFrameId,
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -158,7 +178,7 @@ impl CaptureWorklist {
             )]),
             frames: vec![StorageFrame {
                 owner: FrameOwner::Root,
-                applications: Rc::from([]),
+                projections: Rc::from([]),
             }],
             applications: BTreeMap::new(),
             closures: BTreeMap::new(),
@@ -185,7 +205,8 @@ impl CaptureWorklist {
     pub(super) fn intern(
         &mut self,
         key: ApplicationStorage,
-        caller: &StorageFrame,
+        parent: &StorageFrame,
+        projection: BodyProjection,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<StorageFrameId, FinalSemanticAnalysisError> {
         let entry = match self.applications.entry(key) {
@@ -193,17 +214,17 @@ impl CaptureWorklist {
             Entry::Vacant(entry) => entry,
         };
         receiver.charge(
-            u64::try_from(caller.applications.len())
+            u64::try_from(parent.projections.len())
                 .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
                 + 1,
         )?;
-        let mut applications = caller.applications.to_vec();
-        applications.push(entry.key().site);
+        let mut projections = parent.projections.to_vec();
+        projections.push(projection);
         let frame = StorageFrameId(self.frames.len());
         // The first path supplies the exact projection for this storage shape.
         self.frames.push(StorageFrame {
             owner: FrameOwner::Function(entry.key().item),
-            applications: Rc::from(applications),
+            projections: Rc::from(projections),
         });
         entry.insert(frame);
         Ok(frame)
@@ -220,17 +241,17 @@ impl CaptureWorklist {
             Entry::Vacant(entry) => entry,
         };
         receiver.charge(1)?;
-        let applications = Rc::clone(
+        let projections = Rc::clone(
             &self
                 .frames
                 .get(creator.0)
                 .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-                .applications,
+                .projections,
         );
         let frame = StorageFrameId(self.frames.len());
         self.frames.push(StorageFrame {
             owner: FrameOwner::Closure { producer, creator },
-            applications,
+            projections,
         });
         entry.insert(frame);
         Ok(frame)
