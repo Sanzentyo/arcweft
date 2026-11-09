@@ -16374,3 +16374,18 @@ Webの20,500 msを調べた別実行ではtick 9から581へ進み、要求1,282
 
 [8場面のNative、6組の画像比較、Web停止の原本](acceptance-evidence/task-unified-text-six-pairs.raw.zip)は92件、456,656 bytes、SHA-256
 `b95af956965b0036aae1f4bddfb6115129b89a3600494bede2274c2fc350e535`。
+
+### 統合サンプルの全8場面とrevealの実画素 — 2026-11-09
+
+公開Source `8c1731ab7f52b394e947e0adf063e9dbd0eb87a6`、親 `e0660645a602447fe72cad5b88b622c9a61f5b14`、tree `baaaf34c2a04d1577ac6d501c8d0df8bb57e3a9a`。公開先の6 blobを照合した。indexは空で、既存の未追跡 `%SystemDrive%/` があった。
+
+`cargo clean` はワークスペースの32,163ファイル（100.0 GiB）を削除した。空き容量確保後も、開発用Wasmの20,500 ms場面は既定の10秒上限に達した。tick 9から601まで進み、要求1,282ステップのうち690が残った。再描画148回の中央値は、4論理ステップと観測通知が37.7 ms、続くフレーム処理が27.3 ms。統合レシピを最適化Wasmへ切り替え、10秒上限、16 ms刻み、最大4ステップを維持した。
+
+旧配置でも最適化Wasmは全8場面を採取し、24件の画像比較が通った。最終検証はNativeの中間JSON変換で `0.8` が `0.800000011920929` になり、Native修正後もWebの再シリアライズで `5.0` が `5` になったため、型付きフレーム比較で失敗した。Nativeの採取は型付きレポートを直接シリアライズし、Webの採取はRustが出力したJSONの数値表記を保持するようにした。最終検証の構造比較を維持した。
+
+旧配置では、表示状態に移ったグリフが本文の枠外にあり、両環境でインク0画素だった。同時に動くFxでも全画像の差が生じていた。Fxとrevealを同じ行に配置し、既存の文字ラスタ報告を使って同一グリフの非表示時0画素と表示後の最小インク画素数を検証する。修正した採取と強化した検証器を旧AWFBに対して実行し、20,500 msでNative／Webとも0画素として拒否した。
+
+修正済みの `just unified-text-visual-parity` はAWFBの再生成から最終検証まで終了0。Native／Web各8場面の文字単位、全画像、imq比較が各8件成功し、全RGBAサンプルのMSE、MAE、最大差は0。縦書き2場面とFx 4,500 msのcolor・mask・object IDも検証した。revealはtick 9から1259／1291へ進み、対象の「2」のインクは両環境で0から360画素になった。両時点間の画像MSEは両環境で `0.0005445675624272934`。AWFBのSHA-256は `420b79edbd2eb40ea238544a3cc0e89c938e39948ca33783dd2ef02ec729b313`、最適化Wasmは `8fab888cb5b87a28b63e18d2a3ac0f791d65c0f3b53fe7af9e5bc99dd7c4abf6`。
+
+[正例・旧配置の拒否・開発用Wasmの計測の原本](acceptance-evidence/task-unified-text-reveal-raster.raw.zip)は109件、796,200 bytes、SHA-256
+`8810a300039a50b1f1200282d29eeb6abcc2a255fa892fee1ef8611c1a2d92f5`。
