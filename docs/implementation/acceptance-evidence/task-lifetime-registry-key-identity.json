@@ -13188,5 +13188,1240 @@
       "unresolvedStages": [],
       "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
     }
+  },
+  "specializedFunctionPromotionReceiver": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-09T22:20:59.1405775Z",
+    "source": "679ef8df8ca5075e45ad566679b928c590eaf191",
+    "base": "336e305a19825252e46ae951c5e52d52af17e1a7",
+    "publication": {
+      "version": 1,
+      "commit": "679ef8df8ca5075e45ad566679b928c590eaf191",
+      "parent": "336e305a19825252e46ae951c5e52d52af17e1a7",
+      "remote": "679ef8df8ca5075e45ad566679b928c590eaf191",
+      "tree": "5322815c61253935211badb6de30d10fdc7d1b19",
+      "patchSha256": "83cd089a74152c69a40283cc7081e0028373aa5204ca71eae33255469bdd8173",
+      "cliSha256": "75672252e6983556e955f7fd6c38e906c6f1354922442ea2d53dd22af1582261",
+      "remoteBlobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable.rs",
+          "blob": "ed12b316506e99fb2dabc2e192138de61db965bf",
+          "validatedSha256": "12f5cff62ae49ae092c442c4afe5066c70e95dc7a1c01318e3bbdfc71bc335e4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+          "blob": "acedb95b0b93aa5215b1c03c7cf8457c7ade4aff",
+          "validatedSha256": "3cb5e75c686dcebcacc7b57136f92a51dfc68988f425df781fd225bde4778473"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+          "blob": "76e44edfd2b8265833d86c066c98c13fa6d5f758",
+          "validatedSha256": "7f823f94ac4b08b6bac92142a2020b83897c0ca25fe116f0dedb70d07ac4ae63"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/preparation.rs",
+          "blob": "3465b1c7e507ac7e0d239f67df0b4e5f1ff12307",
+          "validatedSha256": "aff70ebc5bee7ecc202bc7dfc26d6e7fdb48b3d07adfa55c0afdcee864d17c42"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/specialization.rs",
+          "blob": "dd8f01f762c3a35d5c88828b2552d1fc9de8cdc9",
+          "validatedSha256": "d375d214310ddd5f9b5f843e93e86f485430bc79c3844bb6967ba029f6b59302"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "blob": "ebb76a4ef6f3c33b1727cd6c69c945cf0042bc63",
+          "validatedSha256": "59fab5f325333f84d7b6e538ce9bdcda7faa432be2045754ea5be12e7f358c5e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "blob": "881af379affccedf1858f13ba131eef2386d85f3",
+          "validatedSha256": "91014cc6df2d0f72f6d8676e80522d67a76b14f0237009b45405afda951d4f53"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "blob": "a711054267a02c32cc3c3aca6477f172f4fa4c07",
+          "validatedSha256": "6a942c38a88680695d3f028b48ed2219cec234ec2bc8fa51a06e55b2db2b4ba4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/projection.rs",
+          "blob": "43e82bbfc71902d2f8d5d12944b66264647348a4",
+          "validatedSha256": "8f8f9d15bb4e7cca5bde23ca44225f30268d54c50d988f32940ae0ba9d838205"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "blob": "a224fbb38107af2ef5406735182e0249dd371068",
+          "validatedSha256": "a9cc074c5e31bb7d50f447846705907fec35221cad7943f2a21263077cd61980"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs",
+          "blob": "7b45498ff5c56a37099c004ed21d6f8f58aeaeaf",
+          "validatedSha256": "f7b4da195d04c4a6abfc7137d16831bbd3e7d091a68fcf859f66c0e80718212a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "blob": "424391049f84bcde8aef2eab809b83014236d799",
+          "validatedSha256": "ee079d74b4867489d80b4c75b739829462412bedbca68207a9a34cf1f3ee0bcd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "d110faa23e51948b31c5c2d5dd90f1604862f303",
+          "validatedSha256": "0f25f0a82c361ba01d87b7fb04fd35bfbdf75e7fb4670f00257722cd23355af5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+          "blob": "a6bf22071c754039b15e626066fc8413e9c6842b",
+          "validatedSha256": "650b2e6f9dde9d1f8277cf9f31caec6b53fee0f981b50f8c76b38cd7ba5da27d"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "007972c7a38f1c473754520937785e4129364f58",
+          "validatedSha256": "cc3bc4b0e3931c80bd654a9f1a5efa664615f285b772805abdf2f32d432ba7bd"
+        }
+      ]
+    },
+    "worktree": "Validated the changed source bytes on existing main. Staging included only the validated paths. An unrelated untracked directory existed.",
+    "correction": "The previous dynamic receiver query reached the known source declaration but had no mapping from a function scheme use to the authored body. The checked specialization now projects through the declaration binder. The storage view follows immutable aliases through the existing origin query. Value-use specialization uses its lexical frame and selected-call inference uses the invocation frame. The checked argument mapper still uses the invocation caller.",
+    "scope": "Static receiver rejection for known specialized named functions, including local aliases, conditional values, selected invocation inference, enclosing generic arguments and reordered arguments in a returned factory. Opaque callable producers, prefixes formed in another declaration, attached defaults, aggregate callable provenance and executable ownership transfer remain open.",
+    "statusReconciliation": "The former row is retained verbatim in the raw history entry. It listed dated commit milestones that already have source SHAs, results and raw logs in this manifest. The current row consolidates the verified behavior and replaces the obsolete specialized-value counterexample with its corrected outcome.",
+    "cli": {
+      "version": 1,
+      "base": "336e305a19825252e46ae951c5e52d52af17e1a7",
+      "validatedInputs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable.rs",
+          "sha256": "12f5cff62ae49ae092c442c4afe5066c70e95dc7a1c01318e3bbdfc71bc335e4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+          "sha256": "3cb5e75c686dcebcacc7b57136f92a51dfc68988f425df781fd225bde4778473"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+          "sha256": "7f823f94ac4b08b6bac92142a2020b83897c0ca25fe116f0dedb70d07ac4ae63"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/preparation.rs",
+          "sha256": "aff70ebc5bee7ecc202bc7dfc26d6e7fdb48b3d07adfa55c0afdcee864d17c42"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/specialization.rs",
+          "sha256": "d375d214310ddd5f9b5f843e93e86f485430bc79c3844bb6967ba029f6b59302"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "sha256": "59fab5f325333f84d7b6e538ce9bdcda7faa432be2045754ea5be12e7f358c5e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "sha256": "91014cc6df2d0f72f6d8676e80522d67a76b14f0237009b45405afda951d4f53"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "sha256": "6a942c38a88680695d3f028b48ed2219cec234ec2bc8fa51a06e55b2db2b4ba4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/projection.rs",
+          "sha256": "8f8f9d15bb4e7cca5bde23ca44225f30268d54c50d988f32940ae0ba9d838205"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "sha256": "a9cc074c5e31bb7d50f447846705907fec35221cad7943f2a21263077cd61980"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs",
+          "sha256": "f7b4da195d04c4a6abfc7137d16831bbd3e7d091a68fcf859f66c0e80718212a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "sha256": "ee079d74b4867489d80b4c75b739829462412bedbca68207a9a34cf1f3ee0bcd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "sha256": "0f25f0a82c361ba01d87b7fb04fd35bfbdf75e7fb4670f00257722cd23355af5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+          "sha256": "650b2e6f9dde9d1f8277cf9f31caec6b53fee0f981b50f8c76b38cd7ba5da27d"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "sha256": "cc3bc4b0e3931c80bd654a9f1a5efa664615f285b772805abdf2f32d432ba7bd"
+        }
+      ],
+      "cliSha256": "75672252e6983556e955f7fd6c38e906c6f1354922442ea2d53dd22af1582261",
+      "baseline": {
+        "source": "da9400a2ff8f84ad8595658aef544d4743781189",
+        "cliSha256": "f6b61910a40be2a475c8a5a5782dddf30d978bec5743e80e4910c4428a95bdee",
+        "observation": {
+          "name": "dynamic-specialized-named",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "inputSha256": "c88fe0b24d0daa467762ab4a88a95c34aedba42344e5e9bfcbe63c9f23573adc",
+          "reportSha256": "9443079bfa59bc4b5406999f676a1193241e042de11c37656c632c92cd8d43d5",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "cases": [
+        {
+          "name": "dynamic-specialized-named",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "c88fe0b24d0daa467762ab4a88a95c34aedba42344e5e9bfcbe63c9f23573adc",
+          "reportSha256": "36493fe24411f2aa5be0c9307d34c2a0c40149ffb6fb415f5c3edec5460ef941",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "dynamic-specialized-named",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "c88fe0b24d0daa467762ab4a88a95c34aedba42344e5e9bfcbe63c9f23573adc",
+          "reportSha256": "36493fe24411f2aa5be0c9307d34c2a0c40149ffb6fb415f5c3edec5460ef941",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-alias",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "dcb72037ba94b1ad68fb7f12bd3520d57f7de5ae9e946fc795742b7b82e3a380",
+          "reportSha256": "0a309945b561a4794429a86fb1370cf596648f6b5df036ecab20394452ef7a63",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-owned",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "725f6328b30245941ab9ee817edb7f9d5a3bfed2c9eaded2d4f4efbef28fc3c7",
+          "reportSha256": "0a36d663d00cc8ad1c59e7531bdbc7dc953a731b6aa9d395e5552a2d285f497f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-enclosing-borrow",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "f2243761be494dd535f5e62211db4d76fbb657937a64ec5f06e98b952cb7e1b3",
+          "reportSha256": "62297a319c103ebcce9783ddca04988049345a6a35ca61fb32926a98d1ef3562",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-enclosing-borrow",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "f2243761be494dd535f5e62211db4d76fbb657937a64ec5f06e98b952cb7e1b3",
+          "reportSha256": "62297a319c103ebcce9783ddca04988049345a6a35ca61fb32926a98d1ef3562",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-enclosing-owned",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "88ed129397f3ab3d02a5e1fc8aea68f71af4a23daff41d1d58b4480e1faebe96",
+          "reportSha256": "21f6597bd27df31ebcf380ecb7a1f780facfdd2bcb16e98938aec477a0a351c4",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-inferred",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "7bc4e7acb33393c6b20014343d24c9aa9da83e69ce992bdb9005c9d2d8c57a2b",
+          "reportSha256": "ea7637e50c28c6895c2f78c56b02cd765df698a20b778f9f17acb2e8b19fbb28",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-inferred",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "7bc4e7acb33393c6b20014343d24c9aa9da83e69ce992bdb9005c9d2d8c57a2b",
+          "reportSha256": "ea7637e50c28c6895c2f78c56b02cd765df698a20b778f9f17acb2e8b19fbb28",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-inferred-owned",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "358a8085f5e7a1dc705f203432aeb877c012495db2c3e78e1f1a7edcd783edf3",
+          "reportSha256": "9b65d55d46a888458be064f390c644d7aa61e2aec62fb2741e7b1c415dc83089",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-joined",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "b455837122d3d193233671a801bc208995ad8731e6725d26f86584cff24b886c",
+          "reportSha256": "a8b5c3a69ff9fdda04056a1ecd8030917e8d44fb7d14989c9cdfa0e57c2458f6",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-joined-contextual",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "505f9e3b2bfb81c496aa382cf543893a778208fa7e62ee16b92bd7bc74169342",
+          "reportSha256": "45dac70b5e8a0b1e7ea52bb4c127d03fd7c869017087e321185a79f30a29aa25",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-empty-array",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "d8ed7bc4b454712191a0f531d34953480439f7c1ab79af41b29ad6ea8e2eec38",
+          "reportSha256": "4191da1012549ad4938a73cc38f7b9663ec1e0a492d991a55d7aa758db986832",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-empty-array",
+          "command": "verify",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "accepted": true,
+          "inputSha256": "d8ed7bc4b454712191a0f531d34953480439f7c1ab79af41b29ad6ea8e2eec38",
+          "reportSha256": "4191da1012549ad4938a73cc38f7b9663ec1e0a492d991a55d7aa758db986832",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-nonempty-array",
+          "command": "check",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "accepted": true,
+          "inputSha256": "da3ce487ca857eb31580f176388e17877252f17fb399e978b37ac402f8c1c168",
+          "reportSha256": "23cec96bcd53f34382e3dcbc4a14c335c5240d09c7d21c0943cf926554b6c90a",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "execution": {
+        "inputSha256": "6e1480a305df7105174a41a5872ca07954be8e92593f9a11b85cb5573777b8fa",
+        "runner": "headless",
+        "mode": "one-op",
+        "operationLimit": 1,
+        "stepLimit": 256,
+        "cases": [
+          {
+            "tier": "bytecode-vm",
+            "exit": 0,
+            "executor": "bytecode_vm",
+            "steps": 8,
+            "maxOps": 1.0,
+            "executedOps": 8.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "reportSha256": "46108b32cc8d4ea635b381fb8d7f299a7b0ba8f4426b3299e2b74d5909162d2e",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "tier": "aot",
+            "exit": 0,
+            "executor": "aot",
+            "steps": 8,
+            "maxOps": 1.0,
+            "executedOps": 8.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "reportSha256": "cf22e4efdbd78f47c30bd0e1214a2696b7788b572c2f503d3cba57d37a7ef234",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "tier": "awbc-product",
+            "exit": 0,
+            "executor": "awbc_product",
+            "steps": 46,
+            "maxOps": 1.0,
+            "executedOps": 46.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "reportSha256": "f10c2488f69f9ef5f59a80f2b584dfe5d0a54d80c5aebab8492ae852e3a94508",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    },
+    "returnedPrefixCounterexample": {
+      "version": 1,
+      "base": "336e305a19825252e46ae951c5e52d52af17e1a7",
+      "validatedInputs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable.rs",
+          "sha256": "12f5cff62ae49ae092c442c4afe5066c70e95dc7a1c01318e3bbdfc71bc335e4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+          "sha256": "3cb5e75c686dcebcacc7b57136f92a51dfc68988f425df781fd225bde4778473"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+          "sha256": "7f823f94ac4b08b6bac92142a2020b83897c0ca25fe116f0dedb70d07ac4ae63"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/preparation.rs",
+          "sha256": "aff70ebc5bee7ecc202bc7dfc26d6e7fdb48b3d07adfa55c0afdcee864d17c42"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/specialization.rs",
+          "sha256": "d375d214310ddd5f9b5f843e93e86f485430bc79c3844bb6967ba029f6b59302"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "sha256": "59fab5f325333f84d7b6e538ce9bdcda7faa432be2045754ea5be12e7f358c5e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "sha256": "91014cc6df2d0f72f6d8676e80522d67a76b14f0237009b45405afda951d4f53"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "sha256": "6a942c38a88680695d3f028b48ed2219cec234ec2bc8fa51a06e55b2db2b4ba4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/projection.rs",
+          "sha256": "8f8f9d15bb4e7cca5bde23ca44225f30268d54c50d988f32940ae0ba9d838205"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "sha256": "a9cc074c5e31bb7d50f447846705907fec35221cad7943f2a21263077cd61980"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs",
+          "sha256": "f7b4da195d04c4a6abfc7137d16831bbd3e7d091a68fcf859f66c0e80718212a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "sha256": "ee079d74b4867489d80b4c75b739829462412bedbca68207a9a34cf1f3ee0bcd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "sha256": "0f25f0a82c361ba01d87b7fb04fd35bfbdf75e7fb4670f00257722cd23355af5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/constraints/solution/template.rs",
+          "sha256": "650b2e6f9dde9d1f8277cf9f31caec6b53fee0f981b50f8c76b38cd7ba5da27d"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "sha256": "cc3bc4b0e3931c80bd654a9f1a5efa664615f285b772805abdf2f32d432ba7bd"
+        }
+      ],
+      "cliSha256": "75672252e6983556e955f7fd6c38e906c6f1354922442ea2d53dd22af1582261",
+      "cases": [
+        {
+          "name": "returned-prefix-discards",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "inputSha256": "de379ed35b919f0753206d521180b73e5ed112bcccab769322d24bb6c9f5b299",
+          "reportSha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-retains",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "inputSha256": "ee716478620f62754cdefae48fffeef44f6b90c5e444f315bc227def56f8f335",
+          "reportSha256": "a15fa9110c9216e060913a787d012eafe8ab1bdc4dbffe7cc09cc472f2047fa7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-storage",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "inputSha256": "7c82eb1a764c3e790963bb45e788406a6a10a3c2b5ad61f47324236655ba9537",
+          "reportSha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "priorObserved": {
+      "cliSha256": "2a42beb31625f9e55ffbe33b5f0d82f7edda1aaece98d261501934aad3ed7f21",
+      "authority": "Observed local CLI before rebuilding changed source. The separately pinned archived direct case establishes the baseline.",
+      "checks": [
+        {
+          "name": "dynamic-specialized-named",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "9443079bfa59bc4b5406999f676a1193241e042de11c37656c632c92cd8d43d5",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-alias",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "a1a938a3669340b51b669d94155f19ba981b080829c6bc247f81a5ff0b784430",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-empty-array",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "4191da1012549ad4938a73cc38f7b9663ec1e0a492d991a55d7aa758db986832",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-enclosing-borrow",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "f697e36ea2c4f04698b495eb837062d31aab21e8be170103f38dbc38c86326d6",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-enclosing-owned",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "21f6597bd27df31ebcf380ecb7a1f780facfdd2bcb16e98938aec477a0a351c4",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-inferred",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "28836db95474feb09b53f76d0f00187a2103d0c55cfd47099e57b12582cf266c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-inferred-owned",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "9b65d55d46a888458be064f390c644d7aa61e2aec62fb2741e7b1c415dc83089",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-joined",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "ca83f879067477fed86450670e64c48ffcf7c7180977d00a1484f2dfbec6a5bf",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-joined-contextual",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "7f64f39fb216dc6b6bf95e9e1e314da8649afecd1e62833917aefe9bd53867dd",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-nonempty-array",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "ae05a78164bb4df58d9aca92d36165808ae84c203631cc806d99a558ebd9d576",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "specialized-owned",
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "reportSha256": "0a36d663d00cc8ad1c59e7531bdbc7dc953a731b6aa9d395e5552a2d285f497f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "tests": {
+      "focused": 15,
+      "matrixInputs": 13,
+      "log": "specialized-function-promotion-receiver-679ef8df/focused-final.log",
+      "initialCompileFailure": "specialized-function-promotion-receiver-679ef8df/focused-initial.log",
+      "explicitCheckpoint": "specialized-function-promotion-receiver-679ef8df/focused-explicit.log",
+      "inferenceCounterexample": "specialized-function-promotion-receiver-679ef8df/focused-extended.log",
+      "inferredCheckpoint": "specialized-function-promotion-receiver-679ef8df/focused-inferred.log"
+    },
+    "ownership": {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/projection.rs",
+      "crate": "arcweft-lang-sema",
+      "classification": "production",
+      "lines": 272,
+      "bytes": 10563,
+      "disposition": "The storage projection owns metered argument profiles and body template projection for both selected calls and specialization. Invocation binds parameters and result provenance. Callable specialization owns the scheme-to-declaration mapping."
+    },
+    "checkpointQuality": {
+      "receipt": "specialized-function-promotion-receiver-679ef8df/quality/checkpoint.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 1452,
+        "pass": 1452,
+        "fail": 0,
+        "skip": 0
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 53.46s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 53.06s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 37.56s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 08s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.31s",
+            "Summary [  69.707s] 1452 tests run: 1452 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-promotion-specialized-result.raw.zip",
+      "sha256": "5af3b602f669d1a7b16576cf0b2228e16c7a27635736319b1dc5e46be1b9d7af",
+      "bytes": 1037582,
+      "entries": [
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/source.publication.json",
+          "bytes": 4190,
+          "sha256": "139bf9710d052d35939339cc7a4d52e79d2aced94d7bccdbbdc392255e24d87d"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/source.reviewed.patch",
+          "bytes": 68003,
+          "sha256": "83cd089a74152c69a40283cc7081e0028373aa5204ca71eae33255469bdd8173"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/changed.receipt.json",
+          "bytes": 12812,
+          "sha256": "7e00afcabb0c574c6667a3756fa71fbd5f95f486f393beb42904fb6581faf63e"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/focused-initial.log",
+          "bytes": 81018,
+          "sha256": "9435269450fd204d545ae18a74ad352fc52e06fe5284f5a7756184376e2446a4"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/focused-explicit.log",
+          "bytes": 84082,
+          "sha256": "0bb7e17fbc787b56eb9230961877b62b389ac5df5b9e453a6a09a3caa485b796"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/focused-extended.log",
+          "bytes": 85101,
+          "sha256": "0f1d3b00324a725f6b0abdd24d6dd27bc1e07db25a525629cf65c90378290de8"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/focused-inferred.log",
+          "bytes": 84082,
+          "sha256": "d021db5f9ba48de7a503a81c396ccd5e055c98b64e906347f82659329e350b27"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/focused-final.log",
+          "bytes": 84901,
+          "sha256": "0ac079f2c31852ed94beeaf9d6ceb6003abd571e473e92f13c27b23d594d1449"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/compare-cli.ps1",
+          "bytes": 5165,
+          "sha256": "4d50136fc5bd856e472052a58962bb30df1ec21c8d68884d8f8d52ee85e05910"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/run-quality.ps1",
+          "bytes": 5424,
+          "sha256": "c1a1731402acb3ba32ca36f5883078f3a87824ff89da7b9f2a4bb6e86f6ba1ad"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/history/previous-promotion-status.txt",
+          "bytes": 4290,
+          "sha256": "72dbf5637ac4b6d73ef7ac91b8d46410397c22b8a1dda65fc2f7da781b7c3381"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/rdeps.log",
+          "bytes": 4907,
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/workspace-metadata.json",
+          "bytes": 356023,
+          "sha256": "ee92f9e2f6bfa1738d6767ea4e3ac725a6dd43d2ef606a87339afe866ef5abf6"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/baseline/dynamic-specialized-named.check.json",
+          "bytes": 1219,
+          "sha256": "9443079bfa59bc4b5406999f676a1193241e042de11c37656c632c92cd8d43d5"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/baseline/dynamic-specialized-named.check.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/baseline.receipt.json",
+          "bytes": 4331,
+          "sha256": "3172d5f8b23419958dc08d8f12c2dd5653ab3a5cb916e6b2c0354a368a0577a7"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-discards.arcw",
+          "bytes": 348,
+          "sha256": "de379ed35b919f0753206d521180b73e5ed112bcccab769322d24bb6c9f5b299"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-discards.json",
+          "bytes": 1215,
+          "sha256": "8d0d995ef8a0cb03425ea032f9395f79b0322a10d9f2453d065c627983ed7d9f"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-discards.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-retains.arcw",
+          "bytes": 345,
+          "sha256": "ee716478620f62754cdefae48fffeef44f6b90c5e444f315bc227def56f8f335"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-retains.json",
+          "bytes": 1211,
+          "sha256": "a15fa9110c9216e060913a787d012eafe8ab1bdc4dbffe7cc09cc472f2047fa7"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-retains.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-storage.arcw",
+          "bytes": 341,
+          "sha256": "7c82eb1a764c3e790963bb45e788406a6a10a3c2b5ad61f47324236655ba9537"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-storage.json",
+          "bytes": 1205,
+          "sha256": "94c622624672443f8d55e434ba0a1e4bfb106b751ec11d272dc64dedc6fe303f"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/next-returned-prefix/returned-prefix-storage.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/dynamic-specialized-named.arcw",
+          "bytes": 272,
+          "sha256": "c88fe0b24d0daa467762ab4a88a95c34aedba42344e5e9bfcbe63c9f23573adc"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/dynamic-specialized-named.json",
+          "bytes": 1219,
+          "sha256": "9443079bfa59bc4b5406999f676a1193241e042de11c37656c632c92cd8d43d5"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/dynamic-specialized-named.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-alias.arcw",
+          "bytes": 569,
+          "sha256": "dcb72037ba94b1ad68fb7f12bd3520d57f7de5ae9e946fc795742b7b82e3a380"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-alias.json",
+          "bytes": 1187,
+          "sha256": "a1a938a3669340b51b669d94155f19ba981b080829c6bc247f81a5ff0b784430"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-alias.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-empty-array.arcw",
+          "bytes": 556,
+          "sha256": "d8ed7bc4b454712191a0f531d34953480439f7c1ab79af41b29ad6ea8e2eec38"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-empty-array.json",
+          "bytes": 1211,
+          "sha256": "4191da1012549ad4938a73cc38f7b9663ec1e0a492d991a55d7aa758db986832"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-empty-array.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-borrow.arcw",
+          "bytes": 476,
+          "sha256": "f2243761be494dd535f5e62211db4d76fbb657937a64ec5f06e98b952cb7e1b3"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-enclosing-borrow.json",
+          "bytes": 1231,
+          "sha256": "f697e36ea2c4f04698b495eb837062d31aab21e8be170103f38dbc38c86326d6"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-enclosing-borrow.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-owned.arcw",
+          "bytes": 476,
+          "sha256": "88ed129397f3ab3d02a5e1fc8aea68f71af4a23daff41d1d58b4480e1faebe96"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-enclosing-owned.json",
+          "bytes": 1227,
+          "sha256": "21f6597bd27df31ebcf380ecb7a1f780facfdd2bcb16e98938aec477a0a351c4"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-enclosing-owned.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred.arcw",
+          "bytes": 496,
+          "sha256": "7bc4e7acb33393c6b20014343d24c9aa9da83e69ce992bdb9005c9d2d8c57a2b"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-inferred.json",
+          "bytes": 1199,
+          "sha256": "28836db95474feb09b53f76d0f00187a2103d0c55cfd47099e57b12582cf266c"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-inferred.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred-owned.arcw",
+          "bytes": 496,
+          "sha256": "358a8085f5e7a1dc705f203432aeb877c012495db2c3e78e1f1a7edcd783edf3"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-inferred-owned.json",
+          "bytes": 1223,
+          "sha256": "9b65d55d46a888458be064f390c644d7aa61e2aec62fb2741e7b1c415dc83089"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-inferred-owned.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-joined.arcw",
+          "bytes": 525,
+          "sha256": "b455837122d3d193233671a801bc208995ad8731e6725d26f86584cff24b886c"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-joined.json",
+          "bytes": 1191,
+          "sha256": "ca83f879067477fed86450670e64c48ffcf7c7180977d00a1484f2dfbec6a5bf"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-joined.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-joined-contextual.arcw",
+          "bytes": 574,
+          "sha256": "505f9e3b2bfb81c496aa382cf543893a778208fa7e62ee16b92bd7bc74169342"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-joined-contextual.json",
+          "bytes": 1235,
+          "sha256": "7f64f39fb216dc6b6bf95e9e1e314da8649afecd1e62833917aefe9bd53867dd"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-joined-contextual.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-nonempty-array.arcw",
+          "bytes": 557,
+          "sha256": "da3ce487ca857eb31580f176388e17877252f17fb399e978b37ac402f8c1c168"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-nonempty-array.json",
+          "bytes": 1223,
+          "sha256": "ae05a78164bb4df58d9aca92d36165808ae84c203631cc806d99a558ebd9d576"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-nonempty-array.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-owned.arcw",
+          "bytes": 544,
+          "sha256": "725f6328b30245941ab9ee817edb7f9d5a3bfed2c9eaded2d4f4efbef28fc3c7"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-owned.json",
+          "bytes": 1187,
+          "sha256": "0a36d663d00cc8ad1c59e7531bdbc7dc953a731b6aa9d395e5552a2d285f497f"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/specialized-owned.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/dynamic-specialized-named.check.after.json",
+          "bytes": 1213,
+          "sha256": "36493fe24411f2aa5be0c9307d34c2a0c40149ffb6fb415f5c3edec5460ef941"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/dynamic-specialized-named.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/dynamic-specialized-named.verify.after.json",
+          "bytes": 1213,
+          "sha256": "36493fe24411f2aa5be0c9307d34c2a0c40149ffb6fb415f5c3edec5460ef941"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/dynamic-specialized-named.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-alias.check.after.json",
+          "bytes": 1181,
+          "sha256": "0a309945b561a4794429a86fb1370cf596648f6b5df036ecab20394452ef7a63"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-alias.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-owned.check.after.json",
+          "bytes": 1187,
+          "sha256": "0a36d663d00cc8ad1c59e7531bdbc7dc953a731b6aa9d395e5552a2d285f497f"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-borrow.check.after.json",
+          "bytes": 1225,
+          "sha256": "62297a319c103ebcce9783ddca04988049345a6a35ca61fb32926a98d1ef3562"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-borrow.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-borrow.verify.after.json",
+          "bytes": 1225,
+          "sha256": "62297a319c103ebcce9783ddca04988049345a6a35ca61fb32926a98d1ef3562"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-borrow.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-owned.check.after.json",
+          "bytes": 1227,
+          "sha256": "21f6597bd27df31ebcf380ecb7a1f780facfdd2bcb16e98938aec477a0a351c4"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-enclosing-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred.check.after.json",
+          "bytes": 1193,
+          "sha256": "ea7637e50c28c6895c2f78c56b02cd765df698a20b778f9f17acb2e8b19fbb28"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred.verify.after.json",
+          "bytes": 1193,
+          "sha256": "ea7637e50c28c6895c2f78c56b02cd765df698a20b778f9f17acb2e8b19fbb28"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred-owned.check.after.json",
+          "bytes": 1223,
+          "sha256": "9b65d55d46a888458be064f390c644d7aa61e2aec62fb2741e7b1c415dc83089"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-inferred-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-joined.check.after.json",
+          "bytes": 1185,
+          "sha256": "a8b5c3a69ff9fdda04056a1ecd8030917e8d44fb7d14989c9cdfa0e57c2458f6"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-joined.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-joined-contextual.check.after.json",
+          "bytes": 1229,
+          "sha256": "45dac70b5e8a0b1e7ea52bb4c127d03fd7c869017087e321185a79f30a29aa25"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-joined-contextual.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-empty-array.check.after.json",
+          "bytes": 1211,
+          "sha256": "4191da1012549ad4938a73cc38f7b9663ec1e0a492d991a55d7aa758db986832"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-empty-array.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-empty-array.verify.after.json",
+          "bytes": 1211,
+          "sha256": "4191da1012549ad4938a73cc38f7b9663ec1e0a492d991a55d7aa758db986832"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-empty-array.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-nonempty-array.check.after.json",
+          "bytes": 1217,
+          "sha256": "23cec96bcd53f34382e3dcbc4a14c335c5240d09c7d21c0943cf926554b6c90a"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/cli/specialized-nonempty-array.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/execution/specialized-execution.arcw",
+          "bytes": 383,
+          "sha256": "6e1480a305df7105174a41a5872ca07954be8e92593f9a11b85cb5573777b8fa"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/execution/bytecode-vm.run.after.json",
+          "bytes": 16877,
+          "sha256": "46108b32cc8d4ea635b381fb8d7f299a7b0ba8f4426b3299e2b74d5909162d2e"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/execution/bytecode-vm.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/bytecode-vm.run.json",
+          "bytes": 16877,
+          "sha256": "e91cef9c08c45c9ead0574832d34b6b7f34abec0a138930bde91102d29587ee1"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/bytecode-vm.run.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/execution/aot.run.after.json",
+          "bytes": 16869,
+          "sha256": "cf22e4efdbd78f47c30bd0e1214a2696b7788b572c2f503d3cba57d37a7ef234"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/execution/aot.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/aot.run.json",
+          "bytes": 16869,
+          "sha256": "4375c4b10330e6b3b42595ea408466111c800b12ae659736dfd1997b6a44277d"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/aot.run.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/execution/awbc-product.run.after.json",
+          "bytes": 77829,
+          "sha256": "f10c2488f69f9ef5f59a80f2b584dfe5d0a54d80c5aebab8492ae852e3a94508"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/execution/awbc-product.run.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/awbc-product.run.json",
+          "bytes": 77826,
+          "sha256": "7640dd1a8b9184bd4b52fc3c6f3f081ae51617e6b1b207103dc994a9448a4e78"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/observed-before-build/awbc-product.run.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/quality-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/quality-workspace-check.log",
+          "bytes": 111880,
+          "sha256": "492eb8f82f8073121e720a728cadc133865489d3a441fe60003c7d8bdae4e211"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/quality-workspace-clippy.log",
+          "bytes": 9273367,
+          "sha256": "e464ad99ec7a8b03d03d52df1c4717fc968628307b7c06d903055ab626b39231"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/quality-structure.log",
+          "bytes": 66637,
+          "sha256": "a02e8e28f2c376b00d1dfc474ff79f4dacb864b5062d0b26f32489e229f68fa7"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/quality-owner-doctests.log",
+          "bytes": 88122,
+          "sha256": "9762f67f3bad64407458f30349488c13a3af6589842e2f01507244fab7ad61f3"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/quality-cli-build.log",
+          "bytes": 92751,
+          "sha256": "f0c6506ccc87c9748d5f7d6ead6de35c756d1029e40a363d42de4c51725955dc"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/quality-owners.log",
+          "bytes": 316214,
+          "sha256": "12151f23474cec338ac1909717eabfcd17a66165b77d8db8c052d64cbe742d8f"
+        },
+        {
+          "entry": "specialized-function-promotion-receiver-679ef8df/quality/checkpoint.receipt.json",
+          "bytes": 7597,
+          "sha256": "a568e47cd1f40a37fa7dacef8439910c7a0477cd0d25f63121ec0fe86ae210f7"
+        }
+      ]
+    }
   }
 }
