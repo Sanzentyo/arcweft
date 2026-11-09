@@ -5187,6 +5187,144 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
     decoded_awbc_nested_line_handle_transfer(NESTED_LINE_HANDLE_SOURCE, 2);
 }
 
+const UNVOICED_LINE_SOURCE: &str = include_str!(
+    "../../../tests/fixtures/arcw/spec_should_pass/check/011_dialogue_line_value_and_handle_discard.arcw"
+);
+
+fn execute_unvoiced_line(
+    mut step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+) {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let mut input = RuntimeStepInput::default();
+    let mut revealed = false;
+    let mut effects = Vec::new();
+    for tick in 0..256 {
+        input.tick = TickId(tick);
+        let result = step(
+            std::mem::take(&mut input),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::OneOp,
+                budget: RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            },
+        );
+        assert!(result.stats.executed_ops <= 1);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        assert!(result.output.requests.line_commands.is_empty());
+        assert!(result.output.requests.audio.is_empty());
+        effects.extend(result.output.effects.line);
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                assert!(!revealed);
+                revealed = true;
+                input.dialogue_advances.push(activation);
+            }
+        }
+        match result.fiber_status {
+            FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
+            FlowFiberStatus::Done(exit) => {
+                assert_eq!(exit, FlowExit::Return("done".into()));
+                assert!(revealed);
+                assert_eq!(log_messages(&effects), ["cue kept"]);
+                return;
+            }
+            status => panic!("unvoiced line stopped at tick {tick}: {status:?}"),
+        }
+    }
+    panic!("unvoiced line did not complete");
+}
+
+#[test]
+fn native_unvoiced_line_can_discard_its_voice_lease_after_out() {
+    with_native_line_handle_steps(UNVOICED_LINE_SOURCE, |step| execute_unvoiced_line(step));
+}
+
+#[test]
+fn decoded_awbc_unvoiced_line_restores_its_voice_lease_without_playback() {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        executor::ArcweftRuntimeExecutorSnapshot, pure::VmRuntimePureCallBackend,
+    };
+
+    let (compiled, executor) = nested_awbc_from_compiled(
+        with_attached_dialogue_project_and_visual(
+            UNVOICED_LINE_SOURCE,
+            Some(LINE_HANDLE_CHARACTER_MANIFEST),
+            compile_project,
+        )
+        .unwrap(),
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, executor.program_owner());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut executor = Some(executor);
+    let mut checked_unvoiced = false;
+    execute_unvoiced_line(|input, options| {
+        let mut current = executor.take().unwrap();
+        let result = current.step_with_pure_backend(input, options, &mut backend);
+        let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, save| {
+            if checked_unvoiced {
+                return executor;
+            }
+            let mut forged = save.clone();
+            let lease = forged["dialogues"]["entries"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .filter_map(|entry| {
+                    entry
+                        .pointer_mut("/Active/line/ledger/leases")?
+                        .as_object_mut()
+                })
+                .flat_map(serde_json::Map::values_mut)
+                .find_map(|lease| {
+                    let voice = lease.pointer_mut("/resource/Voice")?;
+                    (*voice == "Unvoiced").then_some(voice)
+                });
+            let Some(lease) = lease else {
+                return executor;
+            };
+            *lease = serde_json::json!({"Playback": {
+                "session": "forged-playback", "lease_ordinal": 0, "stop_on_last_release": true
+            }});
+            let forged = serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(forged).unwrap();
+            let forged = executor.bind_product_save_snapshot(forged).unwrap();
+            let Err(rejected) =
+                executor.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(forged))
+            else {
+                panic!("an unvoiced line must reject a playback lease");
+            };
+            let (executor, error) = rejected.into_parts();
+            assert!(
+                error.to_string().contains("restored voice lease differs"),
+                "{error}"
+            );
+            checked_unvoiced = true;
+            executor
+        });
+        executor = Some(restored);
+        result
+    });
+    assert!(
+        checked_unvoiced,
+        "a save must retain the issued unvoiced lease"
+    );
+}
+
 #[test]
 fn decoded_awbc_nested_line_handle_reexports_through_save() {
     decoded_awbc_nested_line_handle_transfer(NESTED_LINE_HANDLE_REEXPORT_SOURCE, 3);

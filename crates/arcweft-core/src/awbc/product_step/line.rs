@@ -18,8 +18,8 @@ use crate::line_task::{
     RuntimeHandleResource, RuntimeLineHandleLedger, RuntimePreparedLineCommands,
     RuntimePreparedScheduledPacketTake, RuntimeScheduledChildAdmissionProof,
     RuntimeScheduledCompletionStage, RuntimeScheduledState, RuntimeScopedDeferDecision,
-    RuntimeStageActorLease, RuntimeVoiceLease, complete_live_line_task_work,
-    progress_live_line_task_group,
+    RuntimeStageActorLease, RuntimeVoiceLease, RuntimeVoiceLeaseAdmission,
+    complete_live_line_task_work, progress_live_line_task_group,
 };
 use crate::pattern::{
     RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
@@ -3047,46 +3047,38 @@ impl super::AwbcProductStepExecutor {
                     token,
                 }))
             }
-            AwbcLineOperation::VoiceHandle { .. } => match frame.voice.clone() {
-                RuntimeDialogueVoiceState::Ready(session)
-                | RuntimeDialogueVoiceState::Completed(session) => {
-                    let destination_write =
-                        fiber.validate_yielded_register_write(cursor, destination)?;
-                    let mut ledger = line.ledger().clone();
-                    let ordinal = ledger.next_voice_lease_ordinal()?;
-                    let value = RuntimeValue::Opaque(ledger.issue_exact(
-                        activation,
-                        evidence.runtime_site,
-                        RuntimeHandleKind::Voice,
-                        &evidence.opaque_owner,
-                        RuntimeHandleResource::Voice(RuntimeVoiceLease::new(
-                            session, ordinal, true,
-                        )),
-                        RuntimeHandleOwnerSlot::ActivationLocal(destination_owner),
-                    )?);
-                    fiber.commit_yielded_register_write_prepared(destination_write, value);
-                    line.commit_ledger(ledger);
-                    Ok(None)
+            AwbcLineOperation::VoiceHandle { .. } => {
+                match line.ledger().prepare_voice_lease(&frame.voice)? {
+                    RuntimeVoiceLeaseAdmission::Issue(lease) => {
+                        let destination_write =
+                            fiber.validate_yielded_register_write(cursor, destination)?;
+                        let mut ledger = line.ledger().clone();
+                        let value = RuntimeValue::Opaque(ledger.issue_exact(
+                            activation,
+                            evidence.runtime_site,
+                            RuntimeHandleKind::Voice,
+                            &evidence.opaque_owner,
+                            RuntimeHandleResource::Voice(lease),
+                            RuntimeHandleOwnerSlot::ActivationLocal(destination_owner),
+                        )?);
+                        fiber.commit_yielded_register_write_prepared(destination_write, value);
+                        line.commit_ledger(ledger);
+                        Ok(None)
+                    }
+                    RuntimeVoiceLeaseAdmission::Start(ticket) => {
+                        let mut commands =
+                            RuntimeCommandQueue::new(activation.clone(), line.command_sequence());
+                        let command = commands.push_start_voice(ticket)?;
+                        line.record_commands(activation, commands)?;
+                        Ok(Some(ProductPendingLineOperation::StartVoice {
+                            cursor,
+                            destination,
+                            command,
+                            site: operation_id_to_site(&self.program, operation_id)?,
+                        }))
+                    }
                 }
-                RuntimeDialogueVoiceState::Lazy(ticket) => {
-                    let mut commands =
-                        RuntimeCommandQueue::new(activation.clone(), line.command_sequence());
-                    let command = commands.push_start_voice(ticket)?;
-                    line.record_commands(activation, commands)?;
-                    Ok(Some(ProductPendingLineOperation::StartVoice {
-                        cursor,
-                        destination,
-                        command,
-                        site: operation_id_to_site(&self.program, operation_id)?,
-                    }))
-                }
-                RuntimeDialogueVoiceState::Absent => {
-                    Err(LineRuntimeError::MissingActiveVoice.into())
-                }
-                RuntimeDialogueVoiceState::Failed(failure) => {
-                    Err(LineRuntimeError::VoiceStartRejected { failure }.into())
-                }
-            },
+            }
         }
     }
 

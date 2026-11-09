@@ -335,6 +335,11 @@ Default policies:
 | `SignalSubscription` | unsubscribe |
 | `HookHandle` | unregister hook |
 
+`line.voice_handle()` acquires the line's affine voice lease. If voice resolution
+finds no playback, the lease still participates in `out`, ownership transfer,
+and discard. Dropping that lease completes locally without a playback command.
+A rejected playback start remains a line failure.
+
 A returned handle lives in the receiving scope. When that scope ends, the handle is dropped. Binding it to `_` drops it immediately.
 
 ```arcw

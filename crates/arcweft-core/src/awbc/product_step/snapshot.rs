@@ -1105,6 +1105,7 @@ impl super::ActiveDialogue {
         if let super::ProductDialoguePhase::Closing(closing) = &self.phase {
             admission.validate_metadata(&closing.failure)?;
         }
+        line.ledger().admit_voice_leases(&self.voice)?;
         admission.validate_metadata(
             &self
                 .pending_activation_host_call
@@ -1239,6 +1240,7 @@ impl AwbcProductActiveDialogueSaveSnapshot {
         if let AwbcProductDialoguePhaseSaveSnapshot::Closing(closing) = &self.phase {
             admission.validate_metadata(&closing.failure)?;
         }
+        line.ledger().admit_voice_leases(&self.voice)?;
         admission.validate_metadata(&self.pending_activation_host_call)?;
         self.admit_retained_values(
             program,

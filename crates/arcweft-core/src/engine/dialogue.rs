@@ -29,7 +29,7 @@ use crate::line_task::{
     RuntimeCueLease, RuntimeCueOrigin, RuntimeDeferUnwindStep, RuntimeDialogueActivationState,
     RuntimeDialogueResultState, RuntimeHandleLeaseState, RuntimeHandleOwnerSlot,
     RuntimeHandleResource, RuntimeLineHandleSiteKind, RuntimeStageActorLease, RuntimeVoiceLease,
-    ScopeExit, progress_live_line_task_group,
+    RuntimeVoiceLeaseAdmission, ScopeExit, progress_live_line_task_group,
 };
 use crate::pattern::RuntimePattern;
 use crate::plan::{FlowEvent, FlowOp, RuntimeDeferOwner, RuntimeLineOperation};
@@ -2256,17 +2256,13 @@ impl Engine {
                 if site.site_kind() != RuntimeLineHandleSiteKind::Voice {
                     return Err(LineRuntimeError::InvalidHandleSite.into());
                 }
-                match state.voice.clone() {
-                    RuntimeDialogueVoiceState::Ready(session)
-                    | RuntimeDialogueVoiceState::Completed(session) => {
+                match activation.ledger().prepare_voice_lease(&state.voice)? {
+                    RuntimeVoiceLeaseAdmission::Issue(lease) => {
                         let mut ledger = activation.ledger().clone();
-                        let ordinal = ledger.next_voice_lease_ordinal()?;
                         let value = RuntimeValue::Opaque(ledger.issue(
                             activation_id,
                             &site,
-                            RuntimeHandleResource::Voice(RuntimeVoiceLease::new(
-                                session, ordinal, true,
-                            )),
+                            RuntimeHandleResource::Voice(lease),
                             RuntimeHandleOwnerSlot::LineScope,
                         )?);
                         let mut commands = RuntimeCommandQueue::new(
@@ -2290,7 +2286,7 @@ impl Engine {
                         activation.record_commands_prepared(prepared);
                         state.execution.env.bind_all(bindings);
                     }
-                    RuntimeDialogueVoiceState::Lazy(ticket) => {
+                    RuntimeVoiceLeaseAdmission::Start(ticket) => {
                         let mut commands = RuntimeCommandQueue::new(
                             activation_id.clone(),
                             activation.command_sequence(),
@@ -2306,12 +2302,6 @@ impl Engine {
                             binding,
                             site: site.id(),
                         });
-                    }
-                    RuntimeDialogueVoiceState::Absent => {
-                        return Err(LineRuntimeError::MissingActiveVoice.into());
-                    }
-                    RuntimeDialogueVoiceState::Failed(failure) => {
-                        return Err(LineRuntimeError::VoiceStartRejected { failure }.into());
                     }
                 }
             }

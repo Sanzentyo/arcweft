@@ -40,6 +40,7 @@ pub(crate) use handle::{
     RuntimePreparedLineCommands, RuntimePreparedScheduledPacketTake,
     RuntimePreparedScopedDeferUnwind, RuntimePublishedDialogueHandles,
     RuntimeScheduledChildAdmissionProof, RuntimeScheduledCompletionStage,
+    RuntimeVoiceLeaseAdmission,
 };
 
 pub use handle::{

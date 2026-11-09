@@ -447,6 +447,7 @@ impl DialogueActivationStoreRollbackImage {
         )?;
         self.registry.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
+            line.ledger().admit_voice_leases(&active.frame.voice)?;
             active.inbox.validate_input_actions(
                 activation,
                 active.frame.phase,
@@ -1243,6 +1244,7 @@ impl DialogueActivationStore {
         contour.admit_retained(admission)?;
         contour.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
+            line.ledger().admit_voice_leases(&active.frame.voice)?;
             active.inbox.validate_input_actions(
                 activation,
                 active.frame.phase,

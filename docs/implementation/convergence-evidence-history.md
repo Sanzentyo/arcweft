@@ -16021,3 +16021,11 @@ Compilerのfixture初回は公開AWFBが必須LocaleCatalogを欠いたため失
 Windows・locked・全feature・既定filterのnextestで `Summary [ 608.658s] 2467 tests run: 2463 passed (31 slow), 4 failed, 23 skipped`。比較元 `e4d736ac55693fb2fae402e079fd465391cb62c7` の共通IDの結果差分0。追加は実AWFBの命令と保存復元テスト1件。CLI 709 PASS／4 FAIL／23 SKIPで、4件は診断まで一致。元Sourceと元EXE 92件の前後差分0。arcw.exeは 305948672 bytes、SHA256 `d807358f0f9430fa53c622a2658e00ce459c0cf8e4c4ac9718df2595ab985fe9`。
 
 原本は 14 entries、187413 bytes、SHA256 `d189c5fbad843ff1537762653ce26bcf3c25b33d2e0b3fa00989ced7f736d4f3`。初回構築失敗、再試行の選択、実行ログ、元EXEの前後hashを保管した。[全逆依存の実測](acceptance-evidence/task-bundle-session-line-commands-reverse.raw.zip)。
+
+### 無音の台詞が返すVoiceHandle — 2026-11-09
+
+基点 `395e276f20b7d982941e2ae72138f0d4fa293b51`、対象patch SHA256 `89683113074421de0c4341c20697b47ee4ec65f54c124a549be00678ffb2a776`。仕様のvoice=autoの無音フォールバックと、VoiceHandleを含むoutの型に従う。発行台帳がUnvoicedとPlaybackを区別し、NativeとAWBCは共通の取得判定を使用する。無音リースは有効なaffine ownerを持ち、破棄は行の台帳内で終端する。Playbackのreleaseは元のhost応答を要する。保存version 1の台帳は無音状態と再生リースの食い違いを拒否する。音声の検索・実再生はこの検証範囲外。
+
+Compiler fixture初回はテスト関数を渡すlifetime境界で構築終了101。テストのclosureを修復し、次の対象20件は全PASS。実ソースは以前CLIで失敗した同じfixtureを使い、Native／decoded AWBCとも1 opで進め、ホストとaudioの命令0、台詞1回、ログcue keptと戻り値doneを確認した。AWBCでは各step公開JSON保存復元、再生リースへの改変拒否、拒否後の元session再開を確認。
+
+CLI regressionを含む固定Sourceは `Summary [   3.453s] 21 tests run: 21 passed, 3151 skipped`。テスト前後の元実行ファイルとSourceの差分0。品質確認は nextest 0（5.78秒）、fmt 0（0.42秒）、check 0（81.93秒）、clippy 0（91.72秒）、wasm 0（46.05秒）、structure 0（7.94秒）。原本は23 entries、1183651 bytes、SHA256 `96183131dd44a07971e7911786dabf23bccbfd1de8f907db7b7f56a3af1c65dd`。[対象実測・原本](acceptance-evidence/task-unvoiced-line-lease.raw.zip)。

@@ -9,7 +9,10 @@ use super::{
 };
 use crate::effect::RuntimeDropPolicy;
 use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId};
-use crate::presentation::{RuntimeCommandQueue, RuntimeStageRejectCode, RuntimeVoiceSessionId};
+use crate::presentation::{
+    RuntimeCommandQueue, RuntimeDialogueVoiceState, RuntimeStageRejectCode, RuntimeVoiceSessionId,
+    RuntimeVoiceStartTicket,
+};
 use crate::runtime_id::{
     DialogueActivationId, RuntimeDeferRegistrationId, RuntimeDeferSiteId, RuntimeLineHandleSiteId,
     RuntimeLineHandleToken, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId,
@@ -411,10 +414,14 @@ impl RuntimeCueLease {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RuntimeVoiceLease {
-    session: RuntimeVoiceSessionId,
-    lease_ordinal: u32,
-    stop_on_last_release: bool,
+pub enum RuntimeVoiceLease {
+    /// The line owns a voice slot even when resolution yields no playback.
+    Unvoiced,
+    Playback {
+        session: RuntimeVoiceSessionId,
+        lease_ordinal: u32,
+        stop_on_last_release: bool,
+    },
 }
 
 impl RuntimeVoiceLease {
@@ -424,27 +431,17 @@ impl RuntimeVoiceLease {
         lease_ordinal: u32,
         stop_on_last_release: bool,
     ) -> Self {
-        Self {
+        Self::Playback {
             session,
             lease_ordinal,
             stop_on_last_release,
         }
     }
+}
 
-    #[must_use]
-    pub const fn session(&self) -> &RuntimeVoiceSessionId {
-        &self.session
-    }
-
-    #[must_use]
-    pub const fn lease_ordinal(&self) -> u32 {
-        self.lease_ordinal
-    }
-
-    #[must_use]
-    pub const fn stop_on_last_release(&self) -> bool {
-        self.stop_on_last_release
-    }
+pub(crate) enum RuntimeVoiceLeaseAdmission {
+    Issue(RuntimeVoiceLease),
+    Start(RuntimeVoiceStartTicket),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3938,7 +3935,11 @@ fn validate_restored_ledger(
                     | RuntimeHandleLeaseState::Failed
                     | RuntimeHandleLeaseState::Released
             ),
-            RuntimeHandleResource::Voice(_) => matches!(
+            RuntimeHandleResource::Voice(RuntimeVoiceLease::Unvoiced) => matches!(
+                lease.state(),
+                RuntimeHandleLeaseState::Active | RuntimeHandleLeaseState::Released
+            ),
+            RuntimeHandleResource::Voice(RuntimeVoiceLease::Playback { .. }) => matches!(
                 lease.state(),
                 RuntimeHandleLeaseState::Active
                     | RuntimeHandleLeaseState::Completed
@@ -4043,7 +4044,13 @@ fn restored_issued_command_state_is_valid(
         crate::presentation::RuntimeLineHostCommand::Voice(command) => match command {
             crate::presentation::RuntimeVoiceCommand::StartDialogueVoice { .. } => true,
             crate::presentation::RuntimeVoiceCommand::ReleaseDialogueVoice { handle, .. } => {
-                state(handle) == Some(RuntimeHandleLeaseState::Cancelling)
+                ledger.lease(handle).is_some_and(|lease| {
+                    lease.state() == RuntimeHandleLeaseState::Cancelling
+                        && matches!(
+                            lease.resource(),
+                            RuntimeHandleResource::Voice(RuntimeVoiceLease::Playback { .. })
+                        )
+                })
             }
         },
     }
@@ -4333,7 +4340,10 @@ impl RuntimeLineHandleLedger {
                 }
                 _ => return Err(LineRuntimeError::InvalidDropTransition),
             },
-            RuntimeHandleResource::Voice(_) => {
+            RuntimeHandleResource::Voice(RuntimeVoiceLease::Unvoiced) => {
+                lease.state = RuntimeHandleLeaseState::Released;
+            }
+            RuntimeHandleResource::Voice(RuntimeVoiceLease::Playback { .. }) => {
                 commands.push_release_voice(token.clone(), policy)?;
                 lease.state = RuntimeHandleLeaseState::Cancelling;
             }
@@ -4421,6 +4431,56 @@ impl RuntimeLineHandleLedger {
             .filter(|lease| matches!(lease.resource(), RuntimeHandleResource::Voice(_)))
             .count();
         u32::try_from(count).map_err(|_| LineRuntimeError::HandleIssuanceOverflow)
+    }
+
+    pub(crate) fn prepare_voice_lease(
+        &self,
+        voice: &RuntimeDialogueVoiceState,
+    ) -> Result<RuntimeVoiceLeaseAdmission, LineRuntimeError> {
+        Ok(match voice {
+            RuntimeDialogueVoiceState::Absent => {
+                RuntimeVoiceLeaseAdmission::Issue(RuntimeVoiceLease::Unvoiced)
+            }
+            RuntimeDialogueVoiceState::Ready(session)
+            | RuntimeDialogueVoiceState::Completed(session) => RuntimeVoiceLeaseAdmission::Issue(
+                RuntimeVoiceLease::new(session.clone(), self.next_voice_lease_ordinal()?, true),
+            ),
+            RuntimeDialogueVoiceState::Lazy(ticket) => {
+                RuntimeVoiceLeaseAdmission::Start(ticket.clone())
+            }
+            RuntimeDialogueVoiceState::Failed(failure) => {
+                return Err(LineRuntimeError::VoiceStartRejected {
+                    failure: failure.clone(),
+                });
+            }
+        })
+    }
+
+    pub(crate) fn admit_voice_leases(
+        &self,
+        voice: &RuntimeDialogueVoiceState,
+    ) -> Result<(), LineRuntimeError> {
+        for lease in self.leases.values() {
+            let RuntimeHandleResource::Voice(lease) = lease.resource() else {
+                continue;
+            };
+            let admitted = match (lease, voice) {
+                (RuntimeVoiceLease::Unvoiced, RuntimeDialogueVoiceState::Absent)
+                | (RuntimeVoiceLease::Playback { .. }, RuntimeDialogueVoiceState::Failed(_)) => {
+                    true
+                }
+                (
+                    RuntimeVoiceLease::Playback { session, .. },
+                    RuntimeDialogueVoiceState::Ready(active)
+                    | RuntimeDialogueVoiceState::Completed(active),
+                ) => session == active,
+                _ => false,
+            };
+            if !admitted {
+                return Err(LineRuntimeError::InvalidRestoredVoiceLease);
+            }
+        }
+        Ok(())
     }
 
     #[must_use = "decode the runtime line-handle token from the opaque value"]
@@ -5134,8 +5194,8 @@ pub enum LineRuntimeError {
     WrongActorCharacter,
     #[error("look belongs to a different Character")]
     WrongLookOwner,
-    #[error("active dialogue has no voice")]
-    MissingActiveVoice,
+    #[error("restored voice lease differs from its dialogue voice state")]
+    InvalidRestoredVoiceLease,
     #[error("dialogue voice start was rejected: {failure:?}")]
     VoiceStartRejected {
         failure: crate::presentation::RuntimeVoiceFailure,
