@@ -1694,13 +1694,242 @@
         },
         "firstRunCorrection": "The first terminal-tail launch omitted --entry. Its exit 2 reflects CLI invocation. The recorded AWBC product replay supplies the real entry and runs one operation per step.",
         "pureNeverProbe": "A public function declared Never with an option tail containing only a Never parameter failed at sema.final_analysis. The source and diagnostic are in controls/pure-carrier-never."
+      },
+      "repair": {
+        "sourceCommit": "30b1fd3a06d20b9f15580bf602297a76617fbdc1",
+        "publication": {
+          "version": 1,
+          "base": "d2431c70c826d8ab75ce253360d3cb7d42698de6",
+          "commit": "30b1fd3a06d20b9f15580bf602297a76617fbdc1",
+          "tree": "a4ee248dc14d3303c76992e05c7316090029ad02",
+          "remoteHead": "30b1fd3a06d20b9f15580bf602297a76617fbdc1",
+          "blobs": [
+            {
+              "path": "crates/arcweft-compiler/src/lower/scopes.rs",
+              "oid": "4e6474e4d04376dc9cde1fb9d730e69d3745d4af"
+            },
+            {
+              "path": "crates/arcweft-compiler/tests/try_pipe.rs",
+              "oid": "fc6b40648ca2e8373463064e637abf15acf15949"
+            },
+            {
+              "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+              "oid": "a69a799937a14cf6fb3b090f071ed4fc73e3abc2"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis.rs",
+              "oid": "79e475f1a55ec0edd5a8e3daa3313845a8dfaf24"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+              "oid": "f46abfa62f827a35da9a022d143137cc465bf996"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+              "oid": "92689c306e9b6e42d9f5fdd30e64922b2878312b"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+              "oid": "3d543e4ef9025678ad7e9f544a666b2591ac47c3"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis/owner_bound_resolution.rs",
+              "oid": "1a43718cd8ea0b03aef0f6e2d770ce39f983cef2"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis/prepared.rs",
+              "oid": "965deb81948539a63da243e1d7bc5e1b267e93f8"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs",
+              "oid": "0973ed31f09c8477646a9f53e6ab1ab24ce84c84"
+            },
+            {
+              "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+              "oid": "2a15910fe09c2df01bce76c15186595962e4942a"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/awbc_lower/expr/value_control.rs",
+              "oid": "a80914946c2b0476bb48488c94aacd6764426775"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+              "oid": "bc3eb22282bbf3f11a6c27e8cf1b1b416cb7ac21"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/final_expr/scopes.rs",
+              "oid": "2a965ff1cac88bc9cdf427a36733ca9b0e851866"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+              "oid": "8d04797274971b9c2784e19a26e66dc246ff9650"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/final_variant.rs",
+              "oid": "5227e8bfed094721ac3e21965d431eb3b85c0430"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+              "oid": "c124a3d5ad70489a1f941452c89de03a4ad4e1bb"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/semantic_facts/lexical_scope.rs",
+              "oid": "d15abe1c62d63d6ecc7e6f4be7a95af419dee6a5"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/semantic_facts/scope_continuation.rs",
+              "oid": "87366ebdf54b7206a9edbbcb43d1cf7d8c5d61a1"
+            },
+            {
+              "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests/scope_continuations.rs",
+              "oid": "8b3549d29aa2e790aedd04b2bc1f94ffa4654316"
+            },
+            {
+              "path": "docs/01-language/block-scopes.md",
+              "oid": "bbfd60f037ce06f59c08f13573ce0b6434679b89"
+            }
+          ]
+        },
+        "correction": "The previous current-status row reproduced failures on the prior source. Local Try reachability and carrier scope identity are now checked separately from the outward result type. Native and canonical AWBC can deliver a local residual when the success path exits the enclosing owner. Dead Try expressions remain type checked. Pure lowering stops at a Never prefix. The AWBC lowerer and verifier use the existing typed Move for bottom coercion without creating an unreachable join.",
+        "verification": {
+          "targeted": {
+            "passed": 106,
+            "failed": 0,
+            "skipped": 4335,
+            "receipt": "carrier/terminal-transfer/repair/validation/targeted.receipt.json"
+          },
+          "drafts": [
+            {
+              "passed": 104,
+              "failed": 0,
+              "receipt": "carrier/terminal-transfer/repair/draft/first-targeted.receipt.json"
+            },
+            {
+              "passed": 104,
+              "failed": 0,
+              "receipt": "carrier/terminal-transfer/repair/draft/pre-pure-targeted.receipt.json"
+            },
+            {
+              "passed": 104,
+              "failed": 1,
+              "cause": "The canonical AWBC verifier rejected an unreachable join from a nested Never path.",
+              "receipt": "carrier/terminal-transfer/repair/draft/pre-awbc-never-targeted.receipt.json"
+            }
+          ],
+          "format": {
+            "command": [
+              "cargo",
+              "fmt",
+              "--all",
+              "--",
+              "--check"
+            ],
+            "exitCode": 0
+          },
+          "structure": {
+            "command": [
+              "just",
+              "structure-audit-gate"
+            ],
+            "exitCode": 0,
+            "log": "carrier/terminal-transfer/repair/validation/structure.log"
+          },
+          "cli": {
+            "passed": 26,
+            "executed": 24,
+            "expectedRejections": 2,
+            "cliSha256": "73f2f9994136c9e6b7862e5a7eb441117605bc77bc08e4c2fd0e426626d2d992",
+            "receipt": "carrier/terminal-transfer/repair/cli/replay.receipt.json",
+            "build": "carrier/terminal-transfer/repair/cli/build.receipt.json"
+          },
+          "artifactIdentity": {
+            "exact": 3,
+            "priorRenderSource": {
+              "plain": "959707f736e0a3af22771a94fe0a5600362044e7",
+              "option": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+              "result": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09"
+            },
+            "bundles": [
+              {
+                "kind": "plain",
+                "sha256": "06ca1144d3d5d9f4d9f080fb772a254cc9dca63bc86e9f69d57f3803be953c0c"
+              },
+              {
+                "kind": "option",
+                "sha256": "aa35e3d3ddd05266c1fb5c259bb4803a5cbff6f9df098ccaa936fe336c838432"
+              },
+              {
+                "kind": "result",
+                "sha256": "a035db912c7ce85f374c8eab358d7b657a4bbe0c7e5c1bda0f95a961001bc2fd"
+              }
+            ],
+            "scope": "Rebuilt artifact bytes were compared with the prior actual Native and Web render runs.",
+            "receipt": "carrier/terminal-transfer/repair/samples/identity.receipt.json"
+          },
+          "reverseSelection": {
+            "packages": [
+              "arcweft-adapter-desktop",
+              "arcweft-adapter-sema",
+              "arcweft-agent-mcp",
+              "arcweft-agent-mcp-client",
+              "arcweft-agent-policy",
+              "arcweft-agent-protocol",
+              "arcweft-agent-repl",
+              "arcweft-agent-runner",
+              "arcweft-browser-bench",
+              "arcweft-bundle",
+              "arcweft-bundle-assets",
+              "arcweft-character-view",
+              "arcweft-cli",
+              "arcweft-compiler",
+              "arcweft-core",
+              "arcweft-debug-model",
+              "arcweft-debug-sqlite",
+              "arcweft-dialogue",
+              "arcweft-glyphon",
+              "arcweft-host-adapter",
+              "arcweft-lang-jit-cranelift",
+              "arcweft-lang-sema",
+              "arcweft-launch",
+              "arcweft-lsp",
+              "arcweft-player-native",
+              "arcweft-player-scene",
+              "arcweft-player-text-input",
+              "arcweft-player-web",
+              "arcweft-project",
+              "arcweft-project-loader",
+              "arcweft-rag",
+              "arcweft-render-text",
+              "arcweft-render-wgpu",
+              "arcweft-resource-manifest",
+              "arcweft-resource-model",
+              "arcweft-runtime-accelerator",
+              "arcweft-runtime-codegen",
+              "arcweft-runtime-driver",
+              "arcweft-runtime-host",
+              "arcweft-runtime-plan",
+              "arcweft-runtime-scheduler",
+              "arcweft-save",
+              "arcweft-test",
+              "arcweft-text-layout",
+              "arcweft-text-model",
+              "arcweft-tooling",
+              "arcweft-verify",
+              "arcweft-verify-lsp",
+              "arcweft-verify-oxiz",
+              "arcweft-verify-z3",
+              "arcweft-view"
+            ],
+            "tree": "carrier/terminal-transfer/repair/quality/rdeps-tree.log"
+          }
+        }
       }
     }
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 3335126,
-    "sha256": "fb5a341ae9b9abb812f927be8b5d87f4e11290252d317bdbe81d36e9017673d6",
+    "bytes": 3497046,
+    "sha256": "70d226988a73fdab63b62b61deefca1035cd02bec65e0434a55b8751885264dc",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -1906,7 +2135,112 @@
       "carrier/repair/quality/agent-transport.log": "f02748aacb1a41581a010cfa535a30cbc30e72b2a5c12a2def44ed3d8a31b6b0",
       "carrier/repair/quality/verify.log": "c64b06f105147c282dbfe6ff9b85fc3de58f5627f6027220962647a1c2bdf6d7",
       "carrier/repair/quality/cli-library-binaries.log": "f437ab2f6fc5d480568bc3450ee4e3929588b3f5cae700c5c148ec0ad71bd4ab",
-      "carrier/repair/quality/cli-integration.log": "94ed0760849f2d099ef7fda3da580f214c9828f4cb51351088a2c2f1c3171f64"
+      "carrier/repair/quality/cli-integration.log": "94ed0760849f2d099ef7fda3da580f214c9828f4cb51351088a2c2f1c3171f64",
+      "carrier/terminal-transfer/repair/publication.json": "785fe51bbf2863e69a961a3393376b0528b01477d55035df1628afe49b248b58",
+      "carrier/terminal-transfer/repair/validation/structure.log": "a3ff89ca6c8ef44a6eb2e2049c60aa25847ee6ef6bda980318972dd1881140f8",
+      "carrier/terminal-transfer/repair/validation/targeted.log": "5c6e4e0846dc54ab0342afd4e6cd37ea399d67bd0a8bbcd9332d261a3897a67d",
+      "carrier/terminal-transfer/repair/validation/targeted.receipt.json": "8ef160a93aeed78086c0f0c2f3d26b1630c4f5b38309fd04ff34b23e47522469",
+      "carrier/terminal-transfer/repair/draft/first-targeted.log": "c556a04d0858ec8829b92a70bfe02fbe005694ef648ab0ffebacfca0977fdd2e",
+      "carrier/terminal-transfer/repair/draft/first-targeted.receipt.json": "e3cc7beb8aaa7b3a92188f84448beb9998e33f68eb4c3973dbdc577f50902df1",
+      "carrier/terminal-transfer/repair/draft/pre-pure-targeted.log": "da8fc47214a46ac3d5cb1bf259936810006e71914a93d68c04c0f2a5daa12fa9",
+      "carrier/terminal-transfer/repair/draft/pre-pure-targeted.receipt.json": "e1c10c552ea3c425a34d64674d369107623fe9df01d3e8fa19d95e71318c4e77",
+      "carrier/terminal-transfer/repair/draft/pre-awbc-never-targeted.log": "d986c1cdbd7623924517568e65bd90e98604ccd600a91dd4d15795caae1d6c8f",
+      "carrier/terminal-transfer/repair/draft/pre-awbc-never-targeted.receipt.json": "f3b7ef772c9aec48f750504322d54377fabd316b73ae2130e51086ab669b19d9",
+      "carrier/terminal-transfer/repair/draft/pre-pure-cli-build.log": "c5499e3ab547e6171dd870a7ff9637fff574823cf6683d4b5de2b772dc245d54",
+      "carrier/terminal-transfer/repair/draft/pre-pure-cli-build.receipt.json": "0228e5b7c003db0c342746d655311b55aa9ef2d8527af3c4820ae829c3eeda38",
+      "carrier/terminal-transfer/repair/cli/build.log": "38021316e1326c9d1da2e3acc0adcee0a3d39f61eb37838c419e4672c7294704",
+      "carrier/terminal-transfer/repair/cli/build.receipt.json": "79ddef5b91bf11a32364e025afa5746dd8d8911f108e275397018c1fcc7c057d",
+      "carrier/terminal-transfer/repair/cli/replay.receipt.json": "42ac3589834e290f27e1df42972fc246fbbe5ee9256c7ae1f3be54cc1651299f",
+      "carrier/terminal-transfer/repair/cli/replay.ps1": "e1da6288bed9944a3f05c484521aee96e1f9c6189e5d82fe0151b0722943922a",
+      "carrier/terminal-transfer/repair/samples/identity.receipt.json": "c961bb50bd2749f2550b5f8a4608eb5a6dcc08ffd5b206ecec2b7042eb972624",
+      "carrier/terminal-transfer/repair/samples/rebundle.ps1": "c70739c2aa685034a762f2ca67740f0b9b1e62942f2ad86a1cbf19bca9e0698b",
+      "carrier/terminal-transfer/repair/quality/rdeps-tree.log": "9a9e882f6269eb90fe61c847a6fd787fd8821f29ea2affb9ee26a2532eb0b198",
+      "carrier/terminal-transfer/repair/quality/rdeps.json": "daaf0d1364075d254acd7f429ae1a0a4a01814b3322f9125fe551f3c9744f0a5",
+      "carrier/terminal-transfer/repair/cli/option-none.arcw": "e8840ce90aba0ce0663242b46c0533087020c6f3c5ccfab0deeabbd10931300d",
+      "carrier/terminal-transfer/repair/cli/option-none.check.log": "c01a933bd9eeaf7eaf97b1a119c5224dc6587e05dc78d756811091a752677592",
+      "carrier/terminal-transfer/repair/cli/option-none.awbc-product.run.log": "927417355be9261f50b3a4ac9e3e8e7a638b3df5e77350881ac6bfb67645ac4e",
+      "carrier/terminal-transfer/repair/cli/option-some.arcw": "6c1ea87424b8d43b61b8da2dc2fadf43dd9eddd5c465eb2a671c899d6389a418",
+      "carrier/terminal-transfer/repair/cli/option-some.check.log": "00579b3e61ee9e8c5f7e31e42592ae853b0d02f8ad2ee0e41c2df991178ac685",
+      "carrier/terminal-transfer/repair/cli/option-some.awbc-product.run.log": "d035f1a16cf09c009f51066023a55a05722707b976fcd202f9ee52eff2bfacd9",
+      "carrier/terminal-transfer/repair/cli/result-err.arcw": "585cfa5599f3113f56b3320ceee0c38f8c0c217fe692821709f070e10c70df22",
+      "carrier/terminal-transfer/repair/cli/result-err.check.log": "67a5a2f0caed3931d2377d8ff9c96f9360df7577f96c13b0928e33807f4033b8",
+      "carrier/terminal-transfer/repair/cli/result-err.awbc-product.run.log": "ac47d88cef2b44caf0166212294b327ce2825d923f8404c551d6501d323d00d6",
+      "carrier/terminal-transfer/repair/cli/result-ok.arcw": "f1674821380f9df3130bde1dfd6db4204fdb70f6280f6458bab472292f8c135f",
+      "carrier/terminal-transfer/repair/cli/result-ok.check.log": "bbd8210ad148645d8ea71555ab8d11d83ebabb443b476e85850bc30134dd940a",
+      "carrier/terminal-transfer/repair/cli/result-ok.awbc-product.run.log": "e28b7fe9670c49e082587c1f09b1d6bb0a4538ea722b3d1efecdbe45b5b8a284",
+      "carrier/terminal-transfer/repair/cli/direct-return.arcw": "19e49745a7a48a61f88713bf7326bbab2df6be57708a6aaacd47a73e6518cc4b",
+      "carrier/terminal-transfer/repair/cli/direct-return.check.log": "fc95da77dd72d25905e96e0a65b68da9ef7f9f1958507f9ca676c9b794f2f9c9",
+      "carrier/terminal-transfer/repair/cli/direct-return.awbc-product.run.log": "9e800ee65edd6ee3a219242ed622526aea8b758a1df48dba6ec0d4520da94b53",
+      "carrier/terminal-transfer/repair/cli/option-dead-try.arcw": "d2629d05c4e757231d808025db8e78a20f3311b0989de873932d67691a9dff32",
+      "carrier/terminal-transfer/repair/cli/option-dead-try.check.log": "b851c1f8bcc242c7c515e6451e898f055a5fdef2be6c7da520dd115f3e621d50",
+      "carrier/terminal-transfer/repair/cli/option-dead-try.awbc-product.run.log": "c0a67b4aaef3ab9fa8c45bd1aa41e51be55479279c85a3680de2cac961e176d4",
+      "carrier/terminal-transfer/repair/cli/result-dead-try.arcw": "f44c4479db23c712001965143876aa6b9a40a8766841899164d49db16ca04c77",
+      "carrier/terminal-transfer/repair/cli/result-dead-try.check.log": "33d4a0df8950cf41de87c136adbcc68a2c8970d26f159a1357bc7d2264b353f2",
+      "carrier/terminal-transfer/repair/cli/result-dead-try.awbc-product.run.log": "786ced176fc2ac9add83226384b1d69bc368c3e82f339ce11ded003a1553785d",
+      "carrier/terminal-transfer/repair/cli/option-terminal-tail-none.arcw": "71bdff72295ac2d74a4f13ba79419801daeb0e92f101d72f681d0f9b57454f24",
+      "carrier/terminal-transfer/repair/cli/option-terminal-tail-none.check.log": "03420d8542ee102065d15781bb6e42b768b51d3cd4ea0a54dd3dca81d753844b",
+      "carrier/terminal-transfer/repair/cli/option-terminal-tail-none.awbc-product.run.log": "ec5d802acbc868bda8e5422c52ae395b6036c8b8186f9dd22f90a3b62fd5a4bf",
+      "carrier/terminal-transfer/repair/cli/option-terminal-tail-some.arcw": "a491c9b0bb2b91b7318ca64386c385d5c30100cbaad55f0b5107552029c7c116",
+      "carrier/terminal-transfer/repair/cli/option-terminal-tail-some.check.log": "2c280494cf86088db194356d6b5a7eb4989fac51a328691318222586505805d0",
+      "carrier/terminal-transfer/repair/cli/option-terminal-tail-some.awbc-product.run.log": "f43fc4ede0f3f225cb20b4c914e5190043a1c82c1716212ad30d5673022f7835",
+      "carrier/terminal-transfer/repair/cli/result-terminal-tail-err.arcw": "40783fe28ccbebe462659cc18bc8cb76ff34ee2dba794a81778b99794f21ac8e",
+      "carrier/terminal-transfer/repair/cli/result-terminal-tail-err.check.log": "fbdfc4ce4ac5f98044d90c378533e4fa6bbf503cf2941220a881d1ad5eed59e5",
+      "carrier/terminal-transfer/repair/cli/result-terminal-tail-err.awbc-product.run.log": "b74c150cadedc31f2886341db25e409ce7a915d493206cdc134d77d94cceb39a",
+      "carrier/terminal-transfer/repair/cli/result-terminal-tail-ok.arcw": "2c67ab78ec1b7c1e268c2e3f0fdb09187271ea998ae3c9f61c79c7b932e78d7a",
+      "carrier/terminal-transfer/repair/cli/result-terminal-tail-ok.check.log": "8b03b14a6a236db00fe81b92e4799a2c973bc5fb435ba3f5b20afcbb01a6555a",
+      "carrier/terminal-transfer/repair/cli/result-terminal-tail-ok.awbc-product.run.log": "f31eb404746326a27d5574aafe5c6b4bdee787c09b579fee44f5f553615a3124",
+      "carrier/terminal-transfer/repair/cli/option-typed-terminal-tail.arcw": "2a4067e77598fef5d3c9fa044055fee719b2cd22def0a9a1b876a0aa2f1f33d1",
+      "carrier/terminal-transfer/repair/cli/option-typed-terminal-tail.check.log": "9f354f1a43bcfab118f335b408875328a2fa2e5e4dd12c07b8ff646ec332aec1",
+      "carrier/terminal-transfer/repair/cli/option-typed-terminal-tail.awbc-product.run.log": "f1a107eab0438c064df94b923f42a9103bb8ee5adc72781e43e53caf6f807fa0",
+      "carrier/terminal-transfer/repair/cli/result-typed-terminal-tail.arcw": "328820695df49c656cfebf271b3663bba037ebbbcf308b0f38e225673b7541df",
+      "carrier/terminal-transfer/repair/cli/result-typed-terminal-tail.check.log": "6e4ec0680656fc387e4daa574136a10d82dd927d41c2f2561f0f82efdc373f4e",
+      "carrier/terminal-transfer/repair/cli/result-typed-terminal-tail.awbc-product.run.log": "ec865b8c18ea2347ffc2da6d913e85ff42ec7c2a5a44a6219120b29f558debc7",
+      "carrier/terminal-transfer/repair/cli/option-goto.arcw": "5880e7439338a9b43a99513ec6ba943fed9b6336ba7d5c784611261e3517967d",
+      "carrier/terminal-transfer/repair/cli/option-goto.check.log": "11ebf4c717191734ec5ea436ba4c391f2ee63c89be6a1e70827251468d31acb7",
+      "carrier/terminal-transfer/repair/cli/option-goto.awbc-product.run.log": "c3e7bdade6af2142b274a7ee334b59ebc6e985ce2e60a672c0571eac6b3d1fa0",
+      "carrier/terminal-transfer/repair/cli/result-break.arcw": "d6ec89dbc32153cbcaa26616d329f0efba04c27e3481d4773555a725d06594dd",
+      "carrier/terminal-transfer/repair/cli/result-break.check.log": "a47132074278d70a47a7749e89b5bafa085838a683cff9c4fff3672ffd0ad7f2",
+      "carrier/terminal-transfer/repair/cli/result-break.awbc-product.run.log": "659e589a86786514ccc2c500e18a471c208fcb138331e3b7bc4c067d747fc5e5",
+      "carrier/terminal-transfer/repair/cli/option-dead-strict-operand.arcw": "afdcc17b9b945737a9acc3411419da15e10da8a3e4b2c084ace891b9a97d7f8d",
+      "carrier/terminal-transfer/repair/cli/option-dead-strict-operand.check.log": "4e14cf427ba8b574bd1b6ae3a5616f09c13941564435c2a205d3cdc7a61d7e23",
+      "carrier/terminal-transfer/repair/cli/option-dead-strict-operand.awbc-product.run.log": "4a5328d761eb2d4f1558a69c821eb87581eef0df93a06a64d3998ebe885a2b87",
+      "carrier/terminal-transfer/repair/cli/option-inner-caught.arcw": "0436b27026a1fe9a217b67633f38ed18d9e5bc68a5eba59d5890f54539f2fe28",
+      "carrier/terminal-transfer/repair/cli/option-inner-caught.check.log": "dc18907c959fe29d5e59328b76b68e5914580ba3f502be1cd9347613d79e1e5b",
+      "carrier/terminal-transfer/repair/cli/option-inner-caught.awbc-product.run.log": "b8167be428e3a3e6d6049ad796e4634592a3c1fc100609897a15d2f6c2aaa415",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-never.arcw": "23b6b331f27bf41eee772eb957d35dc5e2d16725523fd7098293310b97a71169",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-never.check.log": "10172b2d18d8fe3a2536fc4568337be76a95d90ddcde997f5230465123414f16",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-never.awbc-product.run.log": "aec7402693d3c6e8559912e4f2b1905b57bce5c8155a4fdd8c96633a85495045",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try.arcw": "159121058b486f1ed0f0aa62a313eb207107af15843a7b2c173e744acd995905",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try.check.log": "d32a6146aed5da912af02965c664ec255d0a5c007a43dd0f8e38a2c7127b6142",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-closed-row.arcw": "d3bac936424b0031b671f2b220293e723477d1c86121065e8afc9aff0b8ecd09",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-closed-row.check.log": "868643cb950121d129a3d1806ac5ca42b722bf625a3b4a71eea568a600798421",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-closed-row.awbc-product.run.log": "f8d06443b30a2e63b34ee6fefbd1e2c247d6b7d084e81dd8c1ebc2f4a3afd02b",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-inferred-alias.arcw": "b9439e7ec0177127c65156a4a783eab821e2265f05b26e30f9ffed5db7b8f9e8",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-inferred-alias.check.log": "7b2864c4094bbc5bdf655957fbf0241280d75b5d0d7d1a35d106860afd360f34",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-inferred-alias.awbc-product.run.log": "db899e8b43f4e6c75cdc3a8ec8e7f3b5c82aef3036d51c9eae1ff667444e6379",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-nested.arcw": "35b6f5b2161dc31a45d4db26f0953fdba37a53dbe2c8cdc65414fea780140f0a",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-nested.check.log": "4386852bd5daed1135736008e2b68de20459efebec5ba8ceddda64d0934c7f60",
+      "carrier/terminal-transfer/repair/cli/pure-carrier-dead-try-nested.awbc-product.run.log": "4aab9c89848764429dc7286287c26e023dff61573053c789434d313fe1b0a50e",
+      "carrier/terminal-transfer/repair/cli/pure-residual-only.arcw": "663c44b1ef4a3cfcebb4a90dba43c98776ea7735e73e86544cb62320d6043bcd",
+      "carrier/terminal-transfer/repair/cli/pure-residual-only.check.log": "b12f296e37a6697d51e3ed5dff87549cd462456fd1b0271f01200e66a10881cc",
+      "carrier/terminal-transfer/repair/cli/pure-residual-only.awbc-product.run.log": "33acdd56f1ccc9dd43ba23891b99cfeb375289cf6b93cc262050ea873814b0af",
+      "carrier/terminal-transfer/repair/cli/pure-residual-only-nested.arcw": "41f0d0a6b51792e45c3e2ff73c072bf1002feae2aa1af3ca03aaa68836b14594",
+      "carrier/terminal-transfer/repair/cli/pure-residual-only-nested.check.log": "a380ead7e6c3735ff18d6e6c4ae03f5e548556179e87e3af9d48c5e1064e874c",
+      "carrier/terminal-transfer/repair/cli/pure-residual-only-nested.awbc-product.run.log": "bf245963e249f3bfe7a0803699e0a5e5449776cf5527794dd802f0ada72fb053",
+      "carrier/terminal-transfer/repair/cli/option-goto-success.arcw": "d961d8f44c59fb0ad893670c458e49ed97efb0bb5eff6e1ee8785035b5279e01",
+      "carrier/terminal-transfer/repair/cli/option-goto-success.check.log": "62393ebd0850ebfa239455fb311ff4305293864cb1471dbb0375a046e498ce63",
+      "carrier/terminal-transfer/repair/cli/option-goto-success.awbc-product.run.log": "5a8fdf7ee8a18ea3412363a9b91fad190098161131ba8093dd44084939a254d7",
+      "carrier/terminal-transfer/repair/cli/let-else-resumable.arcw": "8124a1cb5335fc138bb18f7f8b0c38a76300d3709137e300c853a501824cab1d",
+      "carrier/terminal-transfer/repair/cli/let-else-resumable.check.log": "6ca1839a4719cd7ac9cfb96b638e3240c7fa1101c56cb72dc534a01a54a62c95",
+      "carrier/terminal-transfer/repair/samples/plain.bundle.log": "2a10098544402521fea5e931380b3a1f0d6bd9a5901906120310898c5fdb0c1e",
+      "carrier/terminal-transfer/repair/samples/option.bundle.log": "9a58ce4504b3d7e264f02bb840d70c31a5754390838e3ff280fbba4dfa7d67b0",
+      "carrier/terminal-transfer/repair/samples/result.bundle.log": "5f3d61870139d2f0751c7bee41eddc90b48b66e193908b38fc947818cd8ae8c8",
+      "carrier/terminal-transfer/repair/draft/pure-carrier-dead-try-closed-row.after.log": "9be2cec3560dcdc174926529bd5026bb1a2c73b5e77f1263e78b38f498465142",
+      "carrier/terminal-transfer/repair/draft/pure-carrier-dead-try-inferred-alias.after.log": "025dea48bc0c90397c1e58c722bc9f4195eb8a5cbf3499aa399d21e6156afbdd",
+      "carrier/terminal-transfer/repair/draft/pure-carrier-dead-try-nested.before-prefix.log": "2610528fe1e95cf6b01be364f0cc60ccaf51be85f6db4b4a31ae1062cfdb055a",
+      "carrier/terminal-transfer/repair/draft/pure-carrier-dead-try.before.log": "5b7ff26316e75fa6ec0cae4a97c40974c727dee03619d602bc1c4371f91ac6cc",
+      "carrier/terminal-transfer/repair/draft/pure-residual-only-nested.before-prefix.log": "da6378e5c6dec694c02d7bbc48981c065525ba2e70a0efa80dd8cc8c799376bd",
+      "carrier/terminal-transfer/repair/draft/pure-residual-only.before-prefix.log": "47149ff833958a9750bf0dcf86f9d3aca1ec1e26e4863439bca3dd05a24a2960"
     }
   }
 }
