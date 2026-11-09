@@ -7,6 +7,7 @@ edition = "2024"
 arcweft-layout = { path = "../crates/arcweft-layout" }
 arcweft-player-scene = { path = "../crates/arcweft-player-scene" }
 arcweft-player-web = { path = "../crates/arcweft-player-web" }
+arcweft-presentation = { path = "../crates/arcweft-presentation" }
 arcweft-render-wgpu = { path = "../crates/arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../crates/arcweft-runtime-driver" }
 arcweft-text-model = { path = "../crates/arcweft-text-model" }
@@ -23,11 +24,12 @@ glyphon = { path = "../vendor/glyphon" }
 
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::{
-    frame::{PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest},
+    frame::{PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest, PlayerFrameTime},
     images::BundleImageCatalog,
-    input::InputController,
+    input::{DialogueProgress, InputController},
 };
 use arcweft_player_web::report::WebFrameObservationReport;
+use arcweft_presentation::input::KeyPhase;
 use arcweft_render_wgpu::geometry::{PreparedFrame, RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::offscreen::{
     CaptureAttachment, CaptureCropPolicy, CaptureRegion, CaptureRequest, CaptureScope,
@@ -41,6 +43,8 @@ use std::env;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+const LOGICAL_STEP_MILLIS: u32 = 16;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse(env::args().skip(1).collect())?;
@@ -116,81 +120,122 @@ fn prepare_text_parity_frame(
     let (mut session, artifact) =
         BundleSession::from_awfb_bytes_with_bundle(bundle_bytes, BundleSessionOptions::default())?;
     let images = BundleImageCatalog::from_bundle(artifact.bundle())?;
-    let mut presentation = None;
-    let mut next_tick = 1_u64;
-    for _ in 0..max_ticks {
-        let tick = next_tick;
-        next_tick = next_tick.saturating_add(1);
-        let clock = RuntimeClockStep::from_millis(tick, 16)?;
-        let step = session.step_with_clock(clock, BundleStepInput::default());
-        let advance_target = step
-            .presentation
-            .dialogue
-            .latest_active()
-            .and_then(|(dialogue_view, _)| dialogue_view.advance_target());
-        presentation = Some(step.presentation);
-        if advance_count > 0
-            && let Some(target) = advance_target
-        {
-            session.queue_dialogue_advance(target);
-            advance_count -= 1;
-            continue;
-        }
-        if advance_count == 0 && advance_target.is_some() {
-            break;
-        }
-    }
-    let presentation = presentation.ok_or("text parity sample produced no presentation frame")?;
-    if advance_count != 0 || presentation.dialogue.latest_active().is_none() {
-        return Err(format!(
-            "text parity sample did not reach the requested dialogue page within {max_ticks} ticks (remaining advances: {advance_count})"
-        )
-        .into());
-    }
-    let activation_tick = next_tick.saturating_sub(1);
-    let elapsed_steps = visual_time_millis.div_ceil(16);
-    let mut presentation = presentation;
-    for _ in 0..elapsed_steps {
-        let clock = RuntimeClockStep::from_millis(next_tick, 16)?;
-        next_tick = next_tick.saturating_add(1);
-        presentation = session
-            .step_with_clock(clock, BundleStepInput::default())
-            .presentation;
-    }
-    let logical_clock = LogicalCaptureClock {
-        activation_tick,
-        capture_tick: next_tick.saturating_sub(1),
-        elapsed_steps,
-        elapsed_millis: elapsed_steps.saturating_mul(16),
-    };
     let mut planner = PlayerFramePlannerState::new();
     for font_bytes in font_resources {
         planner.register_font_bytes(font_bytes.clone())?;
     }
     let mut input = InputController::default();
+    let mut previous_page = None;
+    let mut activation_tick = None;
+    let quantum = u64::from(LOGICAL_STEP_MILLIS);
+    for tick in 1..=max_ticks {
+        let clock = RuntimeClockStep::from_millis(tick, LOGICAL_STEP_MILLIS)?;
+        let step = session.step_with_clock(clock, BundleStepInput::default());
+        let Some((dialogue, entry)) = step.presentation.dialogue.latest_active() else {
+            continue;
+        };
+        let page = (
+            dialogue.id(),
+            entry.id(),
+            entry.stage_index(),
+            entry.page_index(),
+        );
+        if previous_page == Some(page) || dialogue.advance_target().is_none() {
+            continue;
+        }
+        if advance_count == 0 {
+            activation_tick = Some(tick);
+            break;
+        }
+        let frame = prepare_frame(
+            &session,
+            &images,
+            &mut planner,
+            &mut input,
+            viewport,
+            tick.checked_mul(quantum).ok_or("clock time overflow")?,
+        )?;
+        match input
+            .keyboard(&frame, "Enter", KeyPhase::Down)
+            .dialogue_progress
+        {
+            DialogueProgress::Reveal { target } => session.queue_dialogue_reveal_completion(target),
+            DialogueProgress::Advance { target } => {
+                session.queue_dialogue_advance(target);
+                previous_page = Some(page);
+                advance_count -= 1;
+            }
+            DialogueProgress::None => {
+                return Err(format!("dialogue page at tick {tick} did not handle Enter").into());
+            }
+        }
+    }
+    let Some(activation_tick) = activation_tick else {
+        return Err(format!(
+            "text parity sample did not reach the requested dialogue page within {max_ticks} ticks (remaining advances: {advance_count})"
+        )
+        .into());
+    };
+    let elapsed_steps = visual_time_millis.div_ceil(quantum);
+    let capture_tick = activation_tick
+        .checked_add(elapsed_steps)
+        .ok_or("capture tick overflow")?;
+    let capture_millis = capture_tick
+        .checked_mul(quantum)
+        .ok_or("capture time overflow")?;
+    for offset in 1..=elapsed_steps {
+        let tick = activation_tick + offset;
+        let clock = RuntimeClockStep::from_millis(tick, LOGICAL_STEP_MILLIS)?;
+        session.step_with_clock(clock, BundleStepInput::default());
+    }
+    let logical_clock = LogicalCaptureClock {
+        activation_tick,
+        capture_tick,
+        elapsed_steps,
+        elapsed_millis: elapsed_steps * quantum,
+    };
+    let frame = prepare_frame(
+        &session,
+        &images,
+        &mut planner,
+        &mut input,
+        viewport,
+        capture_millis,
+    )?;
+    Ok(PreparedTextParityFrame {
+        frame,
+        logical_clock,
+    })
+}
+
+fn prepare_frame(
+    session: &BundleSession,
+    images: &BundleImageCatalog,
+    planner: &mut PlayerFramePlannerState,
+    input: &mut InputController,
+    viewport: RenderViewport,
+    clock_millis: u64,
+) -> Result<PreparedFrame, Box<dyn Error>> {
     let style_environment = session.presentation_environment();
     let candidate = planner.prepare_candidate(
-        &input,
+        input,
         PlayerFrameRequest {
-            presentation: &presentation,
+            presentation: session.presentation(),
             style_program: session.view_style_program(),
             style_environment: &style_environment,
             style_palettes: session.view_style_palettes(),
             fx_definitions: session.fx_definitions(),
-            images: &images,
+            images,
             viewport,
             fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
-            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(visual_time_millis),
+            time: PlayerFrameTime::runtime(clock_millis),
             preferences: RenderPreferences::default(),
         },
     )?;
     let (prepared, ()) = planner
         .publication_guard()
-        .publish_with(candidate, &mut input, |_| ())?;
-    Ok(PreparedTextParityFrame {
-        frame: prepared.frame,
-        logical_clock,
-    })
+        .publish_with(candidate, input, |_| ())?;
+    Ok(prepared.frame)
 }
 
 struct PreparedTextParityFrame {
@@ -470,7 +515,7 @@ fn write_frame_report(
     object.insert(
         "logical_clock".to_owned(),
         json!({
-            "quantum_millis": 16,
+            "quantum_millis": LOGICAL_STEP_MILLIS,
             "activation_tick": logical_clock.activation_tick,
             "capture_tick": logical_clock.capture_tick,
             "elapsed_steps": logical_clock.elapsed_steps,

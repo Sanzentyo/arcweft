@@ -278,26 +278,41 @@ async function openReady(browser, baseUrl, checkpoint) {
 }
 
 async function advanceDialoguePages(page, count) {
+  if (count > 0) {
+    await page.locator("#arcweft-canvas").focus();
+  }
   for (let index = 0; index < count; index += 1) {
     const before = await page.evaluate(() => {
       const item = window.__arcweftLastFrameObservation?.text?.find((candidate) =>
         (candidate.owner?.kind?.kind === "dialogue_view" && candidate.owner.kind.role === "content")
       );
       return item
-        ? { identity: { owner: item.owner.kind, stage: item.text_context?.context?.frame?.stage_index, page: item.text_context?.context?.frame?.page_index }, text: item.text, visibleText: item.visible_text }
+        ? {
+          identity: {
+            owner: item.owner.kind,
+            stage: item.text_context?.context?.frame?.stage_index,
+            page: item.text_context?.context?.frame?.page_index,
+          },
+          allGlyphsVisible: item.visible_glyph_count === item.glyph_count,
+        }
         : null;
     });
     expect(before, `missing dialogue body before advance ${index + 1}`);
-    if (before.visibleText !== before.text) {
+    if (!before.allGlyphsVisible) {
       await page.keyboard.press("Enter");
+      await advanceLogicalClockSteps(page, 1);
       await page.waitForFunction(
-        (text) => Boolean(window.__arcweftFatal) ||
+        (identity) => Boolean(window.__arcweftFatal) ||
           window.__arcweftLastFrameObservation?.text?.some((item) =>
-            (item.owner?.kind?.kind === "dialogue_view" && item.owner.kind.role === "content") &&
-            item.text === text &&
-            item.visible_text === item.text
+            item.owner?.kind?.kind === "dialogue_view" && item.owner.kind.role === "content" &&
+            item.owner.kind.dialogue === identity.owner.dialogue &&
+            item.owner.kind.entry === identity.owner.entry &&
+            item.owner.kind.mount === identity.owner.mount &&
+            item.text_context?.context?.frame?.stage_index === identity.stage &&
+            item.text_context?.context?.frame?.page_index === identity.page &&
+            item.visible_glyph_count === item.glyph_count
           ),
-        before.text,
+        before.identity,
         { timeout: 2_000 },
       );
     }
