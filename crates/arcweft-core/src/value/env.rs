@@ -153,71 +153,83 @@ impl<V: PartialEq> PartialEq for RuntimeEnv<V> {
     }
 }
 
+/// The original local slots and their admitted values, before any Move.
+pub(crate) struct PreparedRuntimeFlowInputs<'env, 'plan> {
+    pub(crate) values: crate::plan::RuntimeFlowTransfer<&'env RuntimeValue>,
+    pub(crate) declaration: crate::plan::RuntimeFunctionInputAdmission<'plan>,
+    pub(crate) order: super::RuntimeInputOrder,
+    moves: RuntimeFlowInputMoves,
+}
+
+impl PreparedRuntimeFlowInputs<'_, '_> {
+    pub(crate) fn into_moves(self) -> RuntimeFlowInputMoves {
+        self.moves
+    }
+}
+
+pub(crate) struct RuntimeFlowInputMoves(
+    crate::plan::RuntimeFlowTransfer<RuntimeLocalDeclarationId>,
+);
+
+impl RuntimeFlowInputMoves {
+    /// Commits the previously admitted distinct slots in the same environment.
+    pub(crate) fn commit(
+        self,
+        env: &mut RuntimeEnv,
+    ) -> crate::plan::RuntimeFlowTransfer<RuntimeValue> {
+        self.0
+            .try_map(|local| {
+                Ok::<_, std::convert::Infallible>(
+                    env.take(local)
+                        .expect("the admitted input remains in its original slot until commit"),
+                )
+            })
+            .unwrap()
+    }
+}
+
 impl RuntimeEnv {
-    /// All value, pattern, permutation and source checks precede every Move.
-    /// Exclusive access makes the following slot removals infallible; argument
-    /// expressions have already run into caller-owned storage in source order.
-    pub(crate) fn transfer_flow_inputs(
-        &mut self,
-        plan: &crate::plan::RuntimePlan,
+    /// Borrows the original inputs while the receiving root and its scope
+    /// transition are admitted. Every value and pattern check precedes Moves.
+    pub(crate) fn prepare_flow_inputs<'env, 'plan>(
+        &'env self,
+        plan: &'plan crate::plan::RuntimePlan,
         flow: &crate::plan::FlowRuntimeId,
         transfer: &crate::plan::RuntimeFlowTransfer<super::RuntimeExpr>,
-    ) -> Result<
-        (
-            crate::plan::RuntimeFlowTransfer<RuntimeValue>,
-            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
-        ),
-        RuntimeEvalError,
-    > {
+    ) -> Result<PreparedRuntimeFlowInputs<'env, 'plan>, RuntimeEvalError> {
         let invalid = |error| RuntimeEvalError::FlowInvocation(Box::new(error));
         plan.validate_flow_transfer_shape(flow, transfer)
             .map_err(invalid)?;
         transfer.validate_input_sources().map_err(invalid)?;
-        let references = transfer
+        let arguments = transfer
             .arguments
             .iter()
             .map(|argument| {
                 let local =
                     crate::plan::RuntimeFlowTransfer::input_local(argument).map_err(invalid)?;
-                let value = self
-                    .get(local)
-                    .ok_or(RuntimeEvalError::UninitializedLocal(local))?;
                 Ok(super::RuntimeFlowParameterBinding {
                     parameter: argument.parameter,
-                    value,
+                    value: local,
                 })
             })
             .collect::<Result<Box<[_]>, RuntimeEvalError>>()?;
-        let borrowed = crate::plan::RuntimeFlowTransfer {
+        let moves = crate::plan::RuntimeFlowTransfer {
             target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
-            arguments: references,
+            arguments,
         };
-        let (declaration, _) = plan
-            .validate_flow_transfer_inputs(flow, &borrowed)
+        let values = moves.borrowed().try_map(|local| {
+            self.get(*local)
+                .ok_or(RuntimeEvalError::UninitializedLocal(*local))
+        })?;
+        let (declaration, order) = plan
+            .validate_flow_transfer_inputs(flow, &values)
             .map_err(invalid)?;
-        let instantiation = declaration.type_instantiation.clone();
-        drop(borrowed);
-        let arguments = transfer
-            .arguments
-            .iter()
-            .map(|argument| {
-                let local = crate::plan::RuntimeFlowTransfer::input_local(argument)
-                    .expect("the complete input grammar was checked before any Move");
-                super::RuntimeFlowParameterBinding {
-                    parameter: argument.parameter,
-                    value: self
-                        .take(local)
-                        .expect("exclusive input admission retains every distinct source slot"),
-                }
-            })
-            .collect();
-        Ok((
-            crate::plan::RuntimeFlowTransfer {
-                target: crate::plan::RuntimeFlowTransferTarget::Static(flow.clone()),
-                arguments,
-            },
-            instantiation,
-        ))
+        Ok(PreparedRuntimeFlowInputs {
+            values,
+            declaration,
+            order,
+            moves: RuntimeFlowInputMoves(moves),
+        })
     }
 
     #[cfg(test)]

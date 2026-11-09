@@ -297,39 +297,36 @@ fn native_flow_transfer_keeps_presentation_inputs_until_the_receiving_flow_ends(
 }
 
 #[test]
-fn rejected_flow_transfer_receiver_keeps_the_packet_and_source_scopes_across_restore() {
+fn rejected_immediate_flow_transfer_receiver_keeps_original_inputs_and_scopes_across_restore() {
     let Fixture {
         mut engine,
+        destination,
         escaping,
         sibling,
         ..
     } = fixture(true);
     let owner = engine.fiber.frame.program.clone();
-    let step = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
-    assert!(
-        step.output.diagnostics.is_empty(),
-        "{:?}",
-        step.output.diagnostics
-    );
-    assert!(
-        !step
-            .output
-            .flow_events
-            .iter()
-            .any(|event| matches!(event, FlowEvent::Goto { .. }))
-    );
-    assert!(engine.fiber.frame.lexical_exit.is_some());
     for _ in 0..2 {
         let before = engine.inert_rollback_image().unwrap();
-        let mut output = RuntimeStepOutput::default();
-        let error = engine
-            .complete_deferred_scope_step(
-                false,
-                None,
-                &mut output,
-                &mut crate::pure::VmRuntimePureCallBackend::default(),
+        let source = engine.plan.flows()[0].function_site();
+        let Some(crate::plan::code::RuntimeCodeBodyRef::Operations([FlowOp::Goto(transfer)])) =
+            engine.plan.inventory.code_body_at(
+                crate::plan::code::RuntimeCodeOwner::Function(source),
+                &RuntimeFlowBodyLocation::default(),
             )
-            .unwrap_err();
+        else {
+            panic!("the original source owns the transfer")
+        };
+        let inputs = engine
+            .fiber
+            .frame
+            .env
+            .prepare_flow_inputs(&engine.plan, &destination, transfer)
+            .unwrap();
+        let error = engine
+            .prepare_admitted_flow_root(&inputs.values, &inputs.declaration, inputs.order)
+            .err()
+            .expect("the receiver cannot publish into a full retirement queue");
         assert!(
             matches!(
                 error,
@@ -338,7 +335,7 @@ fn rejected_flow_transfer_receiver_keeps_the_packet_and_source_scopes_across_res
             "{error:?}"
         );
         assert_eq!(engine.inert_rollback_image().unwrap(), before);
-        assert!(output.flow_events.is_empty());
+        assert!(engine.fiber.frame.lexical_exit.is_none());
         let banks = engine.presentation.as_ref().unwrap();
         assert_eq!(banks.retirements().len(), 2);
         for token in [&escaping, &sibling] {

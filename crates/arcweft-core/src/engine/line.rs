@@ -7,9 +7,10 @@ use super::{
 };
 use crate::plan::{FlowOp, FlowRuntimeId};
 use crate::pure::RuntimeCallBackend;
+use std::borrow::Borrow;
 
 /// Exclusive preparation for the actual receiving root; no value is copied and
-/// no presentation grant is issued until the existing continuation commits.
+/// no presentation grant is issued until the transfer commits.
 pub(super) struct NativePreparedFlowRoot {
     plan: std::sync::Arc<crate::plan::RuntimePlan>,
     target: FlowRuntimeId,
@@ -102,28 +103,11 @@ impl Engine {
             }
         };
         let plan = std::sync::Arc::clone(&self.plan);
-        let (site, _) = match plan.validate_flow_transfer_shape(&target, transfer) {
-            Ok(admission) => admission,
-            Err(error) => {
-                self.fail_eval(
-                    crate::value::RuntimeEvalError::FlowInvocation(Box::new(error)),
-                    output,
-                );
-                return;
-            }
-        };
-        // Original body construction is admitted while every source owner is
-        // still in its caller slot.
-        if let Err(error) = self.prepare_function_root_work(site) {
-            self.fail_eval(error, output);
-            return;
-        }
-        let source_instantiation = self.fiber.frame.env.function_instantiation_lease().cloned();
-        let (transfer, type_instantiation) = match self
+        let inputs = match self
             .fiber
             .frame
             .env
-            .transfer_flow_inputs(&plan, &target, transfer)
+            .prepare_flow_inputs(&plan, &target, transfer)
         {
             Ok(inputs) => inputs,
             Err(error) => {
@@ -131,48 +115,46 @@ impl Engine {
                 return;
             }
         };
-        if source.is_some()
+        if let Some(source) = source.as_ref()
             && self.fiber.owner.owns_flow_defers()
             && let Some(scope) = self.fiber.frame.defer_target(NativeDeferBoundary::Flow)
         {
+            // Check the original body before moving any value into the
+            // continuation. The final root is prepared after cleanup.
+            if let Err(error) = self.prepare_function_root_work(inputs.declaration.site()) {
+                self.fail_eval(error, output);
+                return;
+            }
+            let source_instantiation = self.fiber.frame.env.function_instantiation_lease().cloned();
+            let type_instantiation = inputs.declaration.type_instantiation.clone();
+            let transfer = inputs.into_moves().commit(&mut self.fiber.frame.env);
             self.fiber.frame.lexical_exit = Some(NativeLexicalExit {
                 target: scope,
                 action: NativeLexicalExitAction::Goto {
-                    source: source.expect("the authored transfer retains its original operation"),
+                    source: source.clone(),
                     transfer,
                     source_instantiation,
                     type_instantiation,
                 },
             });
         } else {
-            self.activate_flow_transfer(
-                transfer,
-                source.as_ref(),
-                type_instantiation,
-                output,
-                backend,
-            );
+            // Without executable cleanup, admit the whole receiving root
+            // while the original slots still own the values, then transfer
+            // them and retire the source contour in the producing operation.
+            let prepared = match self.prepare_admitted_flow_root(
+                &inputs.values,
+                &inputs.declaration,
+                inputs.order.clone(),
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            };
+            let transfer = inputs.into_moves().commit(&mut self.fiber.frame.env);
+            self.commit_flow_transfer_root(transfer, source.as_ref(), prepared, output, backend);
         }
-    }
-
-    pub(super) fn activate_flow_transfer(
-        &mut self,
-        transfer: crate::plan::RuntimeFlowTransfer<crate::value::RuntimeValue>,
-        source: Option<&NativeGotoOrigin>,
-        type_instantiation: Option<
-            std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
-        >,
-        output: &mut RuntimeStepOutput,
-        backend: &mut impl RuntimeCallBackend,
-    ) {
-        let prepared = match self.prepare_flow_transfer_root(&transfer, type_instantiation) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                self.fail_eval(error, output);
-                return;
-            }
-        };
-        self.commit_flow_transfer_root(transfer, source, prepared, output, backend);
     }
 
     pub(super) fn prepare_flow_transfer_root(
@@ -185,10 +167,9 @@ impl Engine {
         let crate::plan::RuntimeFlowTransferTarget::Static(target) = &transfer.target else {
             unreachable!("a prepared transition retains its resolved original Flow");
         };
-        let target = target.clone();
-        let plan = std::sync::Arc::clone(&self.plan);
-        let (declaration, input_order) = plan
-            .validate_flow_transfer_inputs(&target, transfer)
+        let (declaration, input_order) = self
+            .plan
+            .validate_flow_transfer_inputs(target, transfer)
             .map_err(|error| crate::value::RuntimeEvalError::FlowInvocation(Box::new(error)))?;
         if declaration.type_instantiation != type_instantiation {
             return Err(
@@ -198,24 +179,39 @@ impl Engine {
                 .into(),
             );
         }
+        self.prepare_admitted_flow_root(transfer, &declaration, input_order)
+    }
+
+    pub(super) fn prepare_admitted_flow_root<V: Borrow<crate::value::RuntimeValue>>(
+        &self,
+        transfer: &crate::plan::RuntimeFlowTransfer<V>,
+        declaration: &crate::plan::RuntimeFunctionInputAdmission<'_>,
+        input_order: crate::value::RuntimeInputOrder,
+    ) -> Result<NativePreparedFlowRoot, crate::value::RuntimeEvalError> {
+        let crate::plan::RuntimeFlowTransferTarget::Static(target) = &transfer.target else {
+            unreachable!("an admitted transition retains its resolved original Flow");
+        };
         if self.fiber.frame.has_scope_defer_work() {
             return Err(crate::scope::RuntimeScopeExitError::DeferredWorkPending.into());
         }
         let site = declaration.site();
         let pending_ops = self.prepare_function_root_work(site)?;
         let escaping = Self::presentation_return_tokens(
-            transfer.arguments.iter().map(|argument| &argument.value),
+            transfer
+                .arguments
+                .iter()
+                .map(|argument| argument.value.borrow()),
         )?;
         let mut receiving = crate::value::RuntimeEnv::default();
         self.preflight_flow_presentation_root(&mut receiving, &escaping)?;
         Ok(NativePreparedFlowRoot {
-            plan,
-            target,
+            plan: std::sync::Arc::clone(&self.plan),
+            target: target.clone(),
             site,
             receiving,
             pending_ops,
             input_order,
-            type_instantiation,
+            type_instantiation: declaration.type_instantiation.clone(),
             escaping,
         })
     }

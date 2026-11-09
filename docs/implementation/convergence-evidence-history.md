@@ -15940,3 +15940,12 @@ Windows・locked・全feature・既定filterで `rdeps(=arcweft-core) or rdeps(=
 Generic Matchの受入時151 IDのうち150は完全一致。残りはStyleの型移行 `c4824f38ebce38305adb7f8ac757e13edb4b8e4e` と `300162fe9b638be752b4661e1daf5bae85151081` で改名・移行されたlength test。元の5値・スケール・副作用なし・普通の整数literalの検査を維持し、現行の `ViewSpecifiedValue::Length` 型を検査する後継に一対一で照合した。150同一ID＋後継1件がPASS。元のIDや公開SHAは改変せず、受入状態は維持する。registry153 propertyは変更していない。
 
 原本 `docs/implementation/acceptance-evidence/task-flow-transfer-convergence-6061.raw.zip`：51 entries／1918008 bytes／SHA256 `e4fb1e84c12e930f8865646bc8ec31d151bf28ecb2006b7774c35e3ffe9c0e0c`。Cargo graph、実行条件・診断、list原本、実行前後のhash、対象ID照合、CLI再現を保存し、生成物は含めない。
+
+
+### Native: deferなしのFlow転送と操作数回帰の修復 — 2026-11-09
+
+基点 `aa836b2fd455042ed963c29e176334e84f65ef57`（親 `6061bedb3c68279d287de35904a631bb583a0329`、tree `6f1a6d997f744c4106deb5f07a063efb15a6ac93`）。対象Rust 5 pathの検証patch SHA256 `9259dabea19670fd46abe9aeb620fc3e8109207547d78b715ed4469dd13fd78c`。NativeのFlow境界が実deferのないscopeも保留していたため、Match armからのgotoを含むJIT fixtureの操作数が9から11になった。実deferを持つ元scopeだけ保留する。deferがない場合は元localをborrowしたまま、元の入力順序・型・pattern、受け取りbodyとpresentation移管を検査する。全検査後に元のdistinct slotから値を移し、既存のroot移管を同じopで確定する。cleanupを要する場合は元の保留packet・復元を維持する。
+
+Core／Compiler／CLIのlocked・all-feature対象28件は28 PASS／3231 SKIP／3.672秒（Core20、Compiler7、CLI1）。CLI JITの元テストの9操作、8-op制限下で `[8, 1]`、ログ `12`、戻り値、JIT成功数とarg pack／allocation条件は変更なしで通った。Coreは実発行handleの移管・退役、queue満杯時に元slot・scope・ledgerを保つ2回の拒否とprivate rollback復元、正負の入力、defer付き転送を確認。Compilerの7 Source case／backendとgoto cleanupを維持し、AWBCは元の公開保存復元を含む。r1 listは構築成功3m58sだがfilterがCompilerの2件を選ばず、事前点検で停止して実行0。r2 listで明示した同じ3 ownerを選択し、実行前後でSource・元pathの実行ファイル差分0。CLI実EXE SHA256 `c21cd35291f743d0cae98dce624ffc78ba2f917ef26ae0b532a24401bf3a2659`。
+
+Core全targets／全features check終了0／1m08s、Clippy終了0（Finished `dev` profile [unoptimized + debuginfo] target(s) in 54.53s）、変更5 Rust path fmt終了0。先行の全9,124件、実行時の5失敗と4件の既知CLI問題は元Sourceの証拠として維持した。この修復patchの全逆依存・workspace gateは未実行。Generic Matchの受入・公開状態、registry153 propertyは不変。原本 `docs/implementation/acceptance-evidence/task-flow-transfer-native-immediate-wip9.raw.zip`：18 entries／618775 bytes／SHA256 `32e948e48ad24fbb9b0b6c9c2237bcab8999fc5eb824c18a2787787c1a20d875`。生成物は含めない。

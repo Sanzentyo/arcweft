@@ -465,7 +465,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             .filter_map(|(index, entry)| {
                 entry
                     .defer_scope()
-                    .filter(|scope| boundary == NativeDeferBoundary::Flow || scope.has_work())
+                    .filter(|scope| scope.has_work())
                     .map(|_| index)
             })
             .last()
