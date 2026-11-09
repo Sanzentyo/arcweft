@@ -16213,3 +16213,18 @@ Cargo treeとmetadataの逆依存は6パッケージ。`rdeps(=arcweft-render-wg
 
 [列挙・結果・公開照合の原本](acceptance-evidence/task-web-demo-frame-reverse.raw.zip)は6件、676,642 bytes、SHA-256
 `27d6b8d41c7676bd94d4f96bb6d04d25034d127a8c7d1c4cd7815a631b1b81dc`。
+
+### AWFBの非圧縮セクション検証 — 2026-11-09
+
+公開Source `3777e60e8bb489df5861089b487a197b8898b05f`、親 `1a76d7b5b633a384354596373a447bda90930fc1`、
+tree `dc8aafb46314bfdc01b84295280c9871bcc9952c`。公開先の1 blobを照合した。作業ツリーには既存の未追跡 `%SystemDrive%/` があった。
+
+非圧縮セクションはdescriptorのサイズと実際の格納範囲を検証済みなので、1回計算したダイジェストを格納値と内容値にそれぞれ照合する。
+検証時に同じバイト列をコピーする処理を省いた。圧縮セクションは従来の有界デコードと両方の照合を使う。
+格納ダイジェストが正しく、内容ダイジェストだけが異なる非圧縮セクションの拒否を追加した。
+
+`cargo clean` 後の全featureバンドルunit nextestは151件成功、0件スキップ。全target・全feature Clippyは終了0で警告を出力した。
+Wasm buildとbindgenは終了0。同じデモを使う既定Web smokeは、別のビルドと重なった実行で初回の起動待ち10秒を超え、終了1だった。
+
+[検証原本](acceptance-evidence/task-awfb-uncompressed-digest.raw.zip)は6件、351,590 bytes、SHA-256
+`72672d56de623d442a47a019a6d7ba9c0baf65293de6fa9d74d920d512a03ca6`。
