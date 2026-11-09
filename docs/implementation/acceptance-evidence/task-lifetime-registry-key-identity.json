@@ -7717,5 +7717,937 @@
       "unresolvedStages": [],
       "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
     }
+  },
+  "returnedFunctionPromotionReceiver": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-09T19:35:10.7509913Z",
+    "source": "19258f09fd30f2810799cc5a28d9cfa053aba821",
+    "base": "d219e031e19fb6de39f2d073df1f12faa91d7a2b",
+    "publication": {
+      "version": 1,
+      "commit": "19258f09fd30f2810799cc5a28d9cfa053aba821",
+      "parent": "d219e031e19fb6de39f2d073df1f12faa91d7a2b",
+      "remote": "19258f09fd30f2810799cc5a28d9cfa053aba821",
+      "tree": "79ac43347aca675e429e276f410f67285f8762a0",
+      "patchSha256": "a24c658913dca3392e33594462aca3c9f8fc1da2ae4a7b8ff412b3376c24659f",
+      "cliSha256": "bdbf6af91a8e7ae4acaf555849ce49619f6fc44885ceb649ff213567f8f3147b",
+      "remoteBlobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/application.rs",
+          "blob": "3a4b15f2a5d12e969addca9f4f4168c0fcad9d2b",
+          "validatedSha256": "f964e5e973e297d523bcaefe01a929d5b010e7defc8aacf0c87e33dc0cbcc75b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "blob": "5a536c850e549aa4a6d84024f6b83680908b35e9",
+          "validatedSha256": "53b26a685251203da71a740b2c8485bd92393c7e2d6da5ee5fd500ba0b61677a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+          "blob": "ab85be6a6ed2349b2b22156b53b7d9dee45dc6d3",
+          "validatedSha256": "ec12470f21585045d35d5c32e82c6e593f3c8e7362cfc4e77f0fd433f36d980b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/function_body.rs",
+          "blob": "8fc549354e9e85a8e5602d2448f3a27c9adec1d6",
+          "validatedSha256": "2866c7bbc5d60ea3c320c2e0b11a599da82d0b23ba990254e34c6147d5a06e29"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion.rs",
+          "blob": "873424f17870732ddef2fc2e9586130806fdfc3f",
+          "validatedSha256": "a163683fdfd8a12c7893ab595a424c8ae9321bf5c3681ba587167b455582dca9"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "blob": "4b449ac65b7af3d05b62b8495899ec851f573fc3",
+          "validatedSha256": "1809ee3a4b75a0d4515dd9e28d5de0950982ce2041f6e9daee46acbb53192e55"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/receiver.rs",
+          "blob": "52e8d9eff0a9194aa5fd91a65587673bc4f106b3",
+          "validatedSha256": "fc20579f0400f7934afc225226dfbda493ad011c2e6836740fef3c4b7b231991"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/preparation.rs",
+          "blob": "360a3c212bc6510af957eca8af456dd25ed20451",
+          "validatedSha256": "71e3a08aef9672c5ee6319f730814c621bc79b1b53422975430c9f1164552382"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "4684b4db435b907b6533c86157d0481583cdb594",
+          "validatedSha256": "03349e163a72b394741705bafcc68e6eec4d216db9672ad2ddcf080881dace9f"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "5239519b3419714849acc1a0d091e2fdb56b8b7e",
+          "validatedSha256": "124e54e86d6ac8b674af6d1ee465bd13edcf2cd31897b21e5e5a700acd5af3c0"
+        }
+      ]
+    },
+    "worktree": "Validated the changed source bytes on existing main. Staging included only the validated paths. An unrelated untracked directory existed.",
+    "correction": "The prior capture walk treated selected terminal calls and loop results as independent expressions with no reachable value sources. The repair reuses checked control completion for value delivery and applies the exact selected call substitutions to captured types. Return statements, normal tails and loop breaks contribute when they can deliver the value.",
+    "scope": "Static rejection of borrowed captures carried by reachable results of selected source function calls and loop breaks. Callable-valued argument forwarding, dynamic callee results, aggregate storage, general recursive capture composition, resource ownership, lifetime relations, proof discharge and runtime transfer remain open.",
+    "cli": {
+      "before": {
+        "version": 1,
+        "source": "2c19d260d22fa9b85d140b63a7f12887b9288025",
+        "head": "9e922c4bff723067e4c4a271eb95c8997ad8e37d",
+        "cliSha256": "0d8c0a84b0c4460b4100c956c50c042041959c4dbd69e3aceda6268707a9550a",
+        "cases": [
+          {
+            "name": "factory-borrowed",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "ffb2e9f8b49fbe7d7bc2860b1022907d5ec2bc62fe1a181f1c589364647c0e84",
+            "reportSha256": "0221c3f9f40c8bb73245c44a0ae825c52fd26f64a2c7db2402523f4dfa908d7e",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-forward",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "b674bf8ff3901962f2d9bceb87204b4da4f3bb832d36e6627ac59d6fa9e43d68",
+            "reportSha256": "c340de0dc5dea43df40c4a8b61163bd43a83e2ce55b651885a66ec5046cf6a17",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-conditional-return",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "9a242aacbea31c4faa90f10353f5efb918e5a598a15cfee371567254bfc3e371",
+            "reportSha256": "9c4fcfe51a58ce075ee03fdd19895ef8cc793a4e610c1aa14fbb0ff64e3dfa5a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-dead-tail",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "9b11436135082e310c8b07f7666e76557bef3739a6efb0d4d8e41f1511e8a702",
+            "reportSha256": "c64ef304f168ff62707df1b0a4b9520f80de3458365c63b9709c9686ab4399ab",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-generic",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "e8b35cc40439fffe4ded019171d65b8380f6ebc14e3335ec1fada6a9581627a7",
+            "reportSha256": "b7c5f979b0942fbac11355553aba3d262d63dfbf5ddcd86a1a8d9f27738b448a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-owned",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "808c8cbff2c56bc6d65c299088871589dd267c24a223ec198c01ea561db5e3e8",
+            "reportSha256": "61774e68df37cbdac924def498aacf6bbb92cd321d7a76be815c630123c3ae6b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "loop-borrowed",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "87b3ed4115990392daecf9670849f22a6f7ef188ae0a8a6ed829bb64018c7ff1",
+            "reportSha256": "4a308a782f6d3d121d3418576fedbe9b8b9ccdc0525e6a49fc475bd8e01a2a1f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "loop-dead-break",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "49bd69c965fb381d765e4dec513983402092e4aa8311f211b7c4e2d4a2180449",
+            "reportSha256": "ba9dbf80d1daa7dd28b122ec9c0e4a439966c928a4be61e2399296485d33707d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "additionalBefore": {
+        "version": 1,
+        "source": "2c19d260d22fa9b85d140b63a7f12887b9288025",
+        "cliSha256": "0d8c0a84b0c4460b4100c956c50c042041959c4dbd69e3aceda6268707a9550a",
+        "cases": [
+          {
+            "name": "factory-generic-chain",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "d980dcc5df820c6b37d5ed2e4b96966707f03014d253dbb359657687e39b2010",
+            "reportSha256": "03dac80900c15f0a67e0d67a22ba6614b3ef63ac675789169c017dc47323408a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-completed-groups",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "b40234723d817f6c05683913d97f5b6fc16d5ecdcf4eb027653b9cf17c053410",
+            "reportSha256": "d76df7097a2462e5604434cf6221d2a09dbbde7b0016fa096c7e5f5274a484fa",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "after": {
+        "version": 1,
+        "base": "d219e031e19fb6de39f2d073df1f12faa91d7a2b",
+        "cliSha256": "bdbf6af91a8e7ae4acaf555849ce49619f6fc44885ceb649ff213567f8f3147b",
+        "cases": [
+          {
+            "name": "factory-borrowed",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 175,
+            "end": 183,
+            "inputSha256": "ffb2e9f8b49fbe7d7bc2860b1022907d5ec2bc62fe1a181f1c589364647c0e84",
+            "reportSha256": "deba5713d807609fd0183f1e42e63fd21f99266320f0cc30c77724c7e7236e9b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-forward",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 69,
+            "end": 77,
+            "inputSha256": "b674bf8ff3901962f2d9bceb87204b4da4f3bb832d36e6627ac59d6fa9e43d68",
+            "reportSha256": "8fe4e68b0b8448fb9e478fa65122d52483935c5a9b92b5ce4b56878ad1e711f4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-forward",
+            "command": "verify",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 69,
+            "end": 77,
+            "inputSha256": "b674bf8ff3901962f2d9bceb87204b4da4f3bb832d36e6627ac59d6fa9e43d68",
+            "reportSha256": "8fe4e68b0b8448fb9e478fa65122d52483935c5a9b92b5ce4b56878ad1e711f4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-conditional-return",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 258,
+            "end": 266,
+            "inputSha256": "9a242aacbea31c4faa90f10353f5efb918e5a598a15cfee371567254bfc3e371",
+            "reportSha256": "c97a8c8bdac364bbc564cfecd9c70bc4339cd43ec4039be81eea072c9291ab26",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-dead-tail",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "start": 216,
+            "end": 239,
+            "inputSha256": "9b11436135082e310c8b07f7666e76557bef3739a6efb0d4d8e41f1511e8a702",
+            "reportSha256": "c64ef304f168ff62707df1b0a4b9520f80de3458365c63b9709c9686ab4399ab",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-generic",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 177,
+            "end": 185,
+            "inputSha256": "e8b35cc40439fffe4ded019171d65b8380f6ebc14e3335ec1fada6a9581627a7",
+            "reportSha256": "1d74c1807bc06e9f525c2834c5a2bfb317293eb10453ea22646361bb216937d7",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-owned",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "start": 177,
+            "end": 200,
+            "inputSha256": "808c8cbff2c56bc6d65c299088871589dd267c24a223ec198c01ea561db5e3e8",
+            "reportSha256": "61774e68df37cbdac924def498aacf6bbb92cd321d7a76be815c630123c3ae6b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "loop-borrowed",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 104,
+            "end": 112,
+            "inputSha256": "87b3ed4115990392daecf9670849f22a6f7ef188ae0a8a6ed829bb64018c7ff1",
+            "reportSha256": "83f02d4916f561806daa9ac5d2ddae4a8de6cb35bfc706d7475acc632129dd92",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "loop-dead-break",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "start": 149,
+            "end": 172,
+            "inputSha256": "49bd69c965fb381d765e4dec513983402092e4aa8311f211b7c4e2d4a2180449",
+            "reportSha256": "ba9dbf80d1daa7dd28b122ec9c0e4a439966c928a4be61e2399296485d33707d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "loop-dead-break",
+            "command": "verify",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "start": 149,
+            "end": 172,
+            "inputSha256": "49bd69c965fb381d765e4dec513983402092e4aa8311f211b7c4e2d4a2180449",
+            "reportSha256": "ba9dbf80d1daa7dd28b122ec9c0e4a439966c928a4be61e2399296485d33707d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-generic-chain",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 250,
+            "end": 258,
+            "inputSha256": "d980dcc5df820c6b37d5ed2e4b96966707f03014d253dbb359657687e39b2010",
+            "reportSha256": "9298a4e03fa55c9d471bb59f79e33f4532bbe45644ab394717bd16f127fc0a46",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "factory-completed-groups",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "start": 220,
+            "end": 228,
+            "inputSha256": "b40234723d817f6c05683913d97f5b6fc16d5ecdcf4eb027653b9cf17c053410",
+            "reportSha256": "03fd60af81d11eadf66316a8ea3e59e98b428409be8159f0c4839ca8d56589ff",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "remaining": {
+        "version": 1,
+        "base": "d219e031e19fb6de39f2d073df1f12faa91d7a2b",
+        "cliSha256": "bdbf6af91a8e7ae4acaf555849ce49619f6fc44885ceb649ff213567f8f3147b",
+        "cases": [
+          {
+            "name": "remaining-higher-order-return",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "f80be1266e88bc0b4aa781b0aa812fa479e1c43d15fd3107f2023ec1d572d163",
+            "reportSha256": "482fafdc2e5802f2bcd0121ea7208b380704713262712a5462a9a445ea046446",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "remaining-recursive-generic-rotation",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "cd85209e6b0cd4daf5b86e6cf83c08bceb85ab0680a48f73c2f1ae79a939bcef",
+            "reportSha256": "fc5f7263d65531cc58487e04c4f1316264cbdeace5ced4389a7ae8cb482cf1ef",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    },
+    "tests": {
+      "focused": 11,
+      "focusedInput": "Focused run includes the nested-loop control. The full owner run uses the recorded source inputs.",
+      "log": "returned-function-promotion-receiver-19258f09/sema-result-focused.log",
+      "initial": "The first focused run passed before adding the nested-loop control.",
+      "initialLog": "returned-function-promotion-receiver-19258f09/sema-result-initial.log"
+    },
+    "ownership": {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+      "crate": "arcweft-lang-sema",
+      "classification": "production",
+      "lines": 424,
+      "bytes": 17783,
+      "disposition": "The receiver query uses checked source result edges, the same selected callable applications as call checking, and the receiver projection budget. A source function body authored after its caller is checked in the active fact transaction."
+    },
+    "checkpointQuality": {
+      "receipt": "returned-function-promotion-receiver-19258f09/quality/checkpoint.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 1448,
+        "pass": 1448,
+        "fail": 0,
+        "skip": 0
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 45.05s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 54.18s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 36.79s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 07s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.31s",
+            "Summary [  68.738s] 1448 tests run: 1448 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-promotion-result-receiver.raw.zip",
+      "sha256": "10d83f571a9161afff8e5237ec0ce7f1e1a04ceb57aac110290ffb1e43d65cc6",
+      "bytes": 954102,
+      "entries": [
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/source.publication.json",
+          "bytes": 2966,
+          "sha256": "800e7af7f5ff4fb351311c0ab8e793669e18a8e2208e6e895d04fa716f1ec879"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/source.reviewed.patch",
+          "bytes": 41164,
+          "sha256": "a24c658913dca3392e33594462aca3c9f8fc1da2ae4a7b8ff412b3376c24659f"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/baseline.receipt.json",
+          "bytes": 4559,
+          "sha256": "93244f2be79c093890e3f4e35271c1338bdff1dc4fa073378ca60c83ef864aab"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/chain-baseline.receipt.json",
+          "bytes": 1275,
+          "sha256": "fbd301e3738583dc825bd30c0f022bceb7c58fc557cd42339af0b610b6848ae2"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/changed.receipt.json",
+          "bytes": 6423,
+          "sha256": "a66c23862dd1d724d3db5252199e459e92c4f90429d094abe088bdc459828f9d"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/sema-result-initial.log",
+          "bytes": 84355,
+          "sha256": "cdb92d6aa9821e7d8e68d34a9360f5fcc071472faba9da36f694b3e637c481ef"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/sema-result-focused.log",
+          "bytes": 84355,
+          "sha256": "a89d99f65b9eddce909619bac2d9197c1440c47d183b74bb17bd06ce5094edf3"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/compare-cli.ps1",
+          "bytes": 3310,
+          "sha256": "18ddbe9e4b670dc36f718eb3c3ba961813bff8bd22750d830adbf4dff4d10ed3"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/run-quality.ps1",
+          "bytes": 4286,
+          "sha256": "ad73b1505b767324d83ccc8f9945e54f940b048d8b332d0d5bf32c5a054aabe2"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/rdeps.log",
+          "bytes": 4907,
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-borrowed.arcw",
+          "bytes": 202,
+          "sha256": "ffb2e9f8b49fbe7d7bc2860b1022907d5ec2bc62fe1a181f1c589364647c0e84"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-borrowed.before.json",
+          "bytes": 1183,
+          "sha256": "0221c3f9f40c8bb73245c44a0ae825c52fd26f64a2c7db2402523f4dfa908d7e"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-borrowed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-forward.arcw",
+          "bytes": 209,
+          "sha256": "b674bf8ff3901962f2d9bceb87204b4da4f3bb832d36e6627ac59d6fa9e43d68"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-forward.before.json",
+          "bytes": 1175,
+          "sha256": "c340de0dc5dea43df40c4a8b61163bd43a83e2ce55b651885a66ec5046cf6a17"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-forward.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-conditional-return.arcw",
+          "bytes": 285,
+          "sha256": "9a242aacbea31c4faa90f10353f5efb918e5a598a15cfee371567254bfc3e371"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-conditional-return.before.json",
+          "bytes": 1223,
+          "sha256": "9c4fcfe51a58ce075ee03fdd19895ef8cc793a4e610c1aa14fbb0ff64e3dfa5a"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-conditional-return.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-dead-tail.arcw",
+          "bytes": 243,
+          "sha256": "9b11436135082e310c8b07f7666e76557bef3739a6efb0d4d8e41f1511e8a702"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-dead-tail.before.json",
+          "bytes": 1187,
+          "sha256": "c64ef304f168ff62707df1b0a4b9520f80de3458365c63b9709c9686ab4399ab"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-dead-tail.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic.arcw",
+          "bytes": 204,
+          "sha256": "e8b35cc40439fffe4ded019171d65b8380f6ebc14e3335ec1fada6a9581627a7"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic.before.json",
+          "bytes": 1179,
+          "sha256": "b7c5f979b0942fbac11355553aba3d262d63dfbf5ddcd86a1a8d9f27738b448a"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-owned.arcw",
+          "bytes": 204,
+          "sha256": "808c8cbff2c56bc6d65c299088871589dd267c24a223ec198c01ea561db5e3e8"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-owned.before.json",
+          "bytes": 1171,
+          "sha256": "61774e68df37cbdac924def498aacf6bbb92cd321d7a76be815c630123c3ae6b"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-owned.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-borrowed.arcw",
+          "bytes": 131,
+          "sha256": "87b3ed4115990392daecf9670849f22a6f7ef188ae0a8a6ed829bb64018c7ff1"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-borrowed.before.json",
+          "bytes": 1171,
+          "sha256": "4a308a782f6d3d121d3418576fedbe9b8b9ccdc0525e6a49fc475bd8e01a2a1f"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-borrowed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-dead-break.arcw",
+          "bytes": 176,
+          "sha256": "49bd69c965fb381d765e4dec513983402092e4aa8311f211b7c4e2d4a2180449"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-dead-break.before.json",
+          "bytes": 1179,
+          "sha256": "ba9dbf80d1daa7dd28b122ec9c0e4a439966c928a4be61e2399296485d33707d"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-dead-break.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic-chain.arcw",
+          "bytes": 276,
+          "sha256": "d980dcc5df820c6b37d5ed2e4b96966707f03014d253dbb359657687e39b2010"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic-chain.before.json",
+          "bytes": 1203,
+          "sha256": "03dac80900c15f0a67e0d67a22ba6614b3ef63ac675789169c017dc47323408a"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic-chain.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-completed-groups.arcw",
+          "bytes": 246,
+          "sha256": "b40234723d817f6c05683913d97f5b6fc16d5ecdcf4eb027653b9cf17c053410"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-completed-groups.before.json",
+          "bytes": 1215,
+          "sha256": "d76df7097a2462e5604434cf6221d2a09dbbde7b0016fa096c7e5f5274a484fa"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-completed-groups.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/remaining.receipt.json",
+          "bytes": 1293,
+          "sha256": "16dff754b8855dddfb7477ec469367f57dd6c92af56a78b5a94e9d8b78ba0853"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/observe-remaining.ps1",
+          "bytes": 1604,
+          "sha256": "c1683df2710d004d462a64e2c8b247997eae25bd3591a07b94e8c1d23025cda8"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli-waiter-status.txt",
+          "bytes": 135,
+          "sha256": "7ca4b91ea5a99f5bfb25052c3f7f6956b1d8dfba7bead51b835bcddbd727abdd"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/remaining/remaining-higher-order-return.arcw",
+          "bytes": 257,
+          "sha256": "f80be1266e88bc0b4aa781b0aa812fa479e1c43d15fd3107f2023ec1d572d163"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/remaining/remaining-higher-order-return.observed.json",
+          "bytes": 1235,
+          "sha256": "482fafdc2e5802f2bcd0121ea7208b380704713262712a5462a9a445ea046446"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/remaining/remaining-higher-order-return.observed.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/remaining/remaining-recursive-generic-rotation.arcw",
+          "bytes": 357,
+          "sha256": "cd85209e6b0cd4daf5b86e6cf83c08bceb85ab0680a48f73c2f1ae79a939bcef"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/remaining/remaining-recursive-generic-rotation.observed.json",
+          "bytes": 1263,
+          "sha256": "fc5f7263d65531cc58487e04c4f1316264cbdeace5ced4389a7ae8cb482cf1ef"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/remaining/remaining-recursive-generic-rotation.observed.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-borrowed.check.after.json",
+          "bytes": 1177,
+          "sha256": "deba5713d807609fd0183f1e42e63fd21f99266320f0cc30c77724c7e7236e9b"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-borrowed.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-forward.check.after.json",
+          "bytes": 1169,
+          "sha256": "8fe4e68b0b8448fb9e478fa65122d52483935c5a9b92b5ce4b56878ad1e711f4"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-forward.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-forward.verify.after.json",
+          "bytes": 1169,
+          "sha256": "8fe4e68b0b8448fb9e478fa65122d52483935c5a9b92b5ce4b56878ad1e711f4"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-forward.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-conditional-return.check.after.json",
+          "bytes": 1217,
+          "sha256": "c97a8c8bdac364bbc564cfecd9c70bc4339cd43ec4039be81eea072c9291ab26"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-conditional-return.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-dead-tail.check.after.json",
+          "bytes": 1187,
+          "sha256": "c64ef304f168ff62707df1b0a4b9520f80de3458365c63b9709c9686ab4399ab"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-dead-tail.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic.check.after.json",
+          "bytes": 1173,
+          "sha256": "1d74c1807bc06e9f525c2834c5a2bfb317293eb10453ea22646361bb216937d7"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-owned.check.after.json",
+          "bytes": 1171,
+          "sha256": "61774e68df37cbdac924def498aacf6bbb92cd321d7a76be815c630123c3ae6b"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-borrowed.check.after.json",
+          "bytes": 1165,
+          "sha256": "83f02d4916f561806daa9ac5d2ddae4a8de6cb35bfc706d7475acc632129dd92"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-borrowed.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-dead-break.check.after.json",
+          "bytes": 1179,
+          "sha256": "ba9dbf80d1daa7dd28b122ec9c0e4a439966c928a4be61e2399296485d33707d"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-dead-break.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-dead-break.verify.after.json",
+          "bytes": 1179,
+          "sha256": "ba9dbf80d1daa7dd28b122ec9c0e4a439966c928a4be61e2399296485d33707d"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/loop-dead-break.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic-chain.check.after.json",
+          "bytes": 1197,
+          "sha256": "9298a4e03fa55c9d471bb59f79e33f4532bbe45644ab394717bd16f127fc0a46"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-generic-chain.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-completed-groups.check.after.json",
+          "bytes": 1209,
+          "sha256": "03fd60af81d11eadf66316a8ea3e59e98b428409be8159f0c4839ca8d56589ff"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/cli/factory-completed-groups.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/quality-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/quality-workspace-check.log",
+          "bytes": 111880,
+          "sha256": "5ba6c9d2189b0a55f7a51ecc676de6f66215d146cb0896dbfc5956816ce13046"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/quality-workspace-clippy.log",
+          "bytes": 9273452,
+          "sha256": "28dd89048eba310bf7e5698eedf2a752c730cad7daed935ac7e3ec0a79271cd5"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/quality-structure.log",
+          "bytes": 66637,
+          "sha256": "c6fd5c56aabcf8dd7c3ae0e27e65b895e5f57df624861c626a9cdb32581354ce"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/quality-owner-doctests.log",
+          "bytes": 88122,
+          "sha256": "0220c7bd06334b09d7499cde171b97f7ac7f8cc1081152041e4833c7f7b5226b"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/quality-cli-build.log",
+          "bytes": 92751,
+          "sha256": "98ef408b9a6db59e1bb5c1204ec670d31c406dcc51053fb964c7ef75d368b3f5"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/quality-owners.log",
+          "bytes": 315652,
+          "sha256": "497469c2160f32df48094c67bf3902a9e6463a1b8b5106b73a6bc7422cfbe1f2"
+        },
+        {
+          "entry": "returned-function-promotion-receiver-19258f09/quality/checkpoint.receipt.json",
+          "bytes": 5802,
+          "sha256": "aa160189ff06144ceb4300c37b97339aef91f06bee53ce1a1e837ce66d3999bc"
+        }
+      ]
+    }
   }
 }
