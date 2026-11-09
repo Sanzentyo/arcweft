@@ -167,6 +167,9 @@ from a whole parameter binding, the check follows the expression supplied to
 that parameter in the selected argument group. For recursive calls, the check
 propagates capture dependencies until they stop growing, using the storage
 properties of the selected type arguments and the supplied value parameters.
+A call through a known function value follows the returned callable's
+storage. The closure's creation scope supplies captured values, and the
+selected invocation supplies its parameters.
 A function value produced by a loop can carry captures from a reachable break
 that targets that loop. A partial application retains the runtime inputs of its
 completed parameter groups.

@@ -21,6 +21,7 @@ pub(super) enum TypeStorage {
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ApplicationStorage {
     pub(super) site: CheckedCallSite,
+    pub(super) item: ItemId,
     pub(super) types: Box<[TypeStorage]>,
     pub(super) zero_lengths: Box<[bool]>,
 }
@@ -28,22 +29,59 @@ pub(super) struct ApplicationStorage {
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct StorageFrameId(usize);
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum FrameOwner {
+    Root,
+    Function(ItemId),
+    Closure {
+        producer: ExprId,
+        creator: StorageFrameId,
+    },
+}
+
 #[derive(Clone)]
 pub(super) struct StorageFrame {
-    pub(super) item: Option<ItemId>,
+    pub(super) owner: FrameOwner,
     pub(super) applications: Rc<[CheckedCallSite]>,
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct InvocationId(usize);
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum Observation {
+    Stored,
+    Invoke(InvocationId),
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct Invocation {
+    pub(super) site: CheckedCallSite,
+    pub(super) caller: StorageFrameId,
+    pub(super) result: Observation,
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ValueOrigin {
     pub(super) expression: ExprId,
     pub(super) frame: StorageFrameId,
+    pub(super) observation: Observation,
+}
+
+/// An invocation caller may share the same recursive state as a producer.
+/// Preserve the formal's role until that invocation returns to its caller.
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct ParameterDemand {
+    pub(super) frame: StorageFrameId,
+    pub(super) coordinate: CallableParameterCoordinate,
+    pub(super) observation: Observation,
+    pub(super) invocation_caller: Option<InvocationId>,
 }
 
 #[derive(Clone)]
 pub(super) enum BorrowDependencies {
     Borrowed,
-    Parameters(BTreeSet<CallableParameterCoordinate>),
+    Parameters(BTreeSet<ParameterDemand>),
 }
 
 impl Default for BorrowDependencies {
@@ -55,6 +93,15 @@ impl Default for BorrowDependencies {
 impl BorrowDependencies {
     pub(super) const fn is_borrowed(&self) -> bool {
         matches!(self, Self::Borrowed)
+    }
+
+    pub(super) fn map_parameters(self, map: impl Fn(ParameterDemand) -> ParameterDemand) -> Self {
+        match self {
+            Self::Borrowed => Self::Borrowed,
+            Self::Parameters(parameters) => {
+                Self::Parameters(parameters.into_iter().map(map).collect())
+            }
+        }
     }
 
     pub(super) fn include(&mut self, other: Self) -> bool {
@@ -87,6 +134,9 @@ pub(super) struct CaptureWorklist {
     witnesses: BTreeMap<ValueOrigin, Witness>,
     frames: Vec<StorageFrame>,
     applications: BTreeMap<ApplicationStorage, StorageFrameId>,
+    closures: BTreeMap<(ExprId, StorageFrameId), StorageFrameId>,
+    invocation_ids: BTreeMap<Invocation, InvocationId>,
+    invocations: Vec<Invocation>,
     queue: VecDeque<ValueOrigin>,
 }
 
@@ -95,6 +145,7 @@ impl CaptureWorklist {
         let root = ValueOrigin {
             expression: root,
             frame: StorageFrameId(0),
+            observation: Observation::Stored,
         };
         Self {
             root,
@@ -106,10 +157,13 @@ impl CaptureWorklist {
                 },
             )]),
             frames: vec![StorageFrame {
-                item: None,
+                owner: FrameOwner::Root,
                 applications: Rc::from([]),
             }],
             applications: BTreeMap::new(),
+            closures: BTreeMap::new(),
+            invocation_ids: BTreeMap::new(),
+            invocations: Vec::new(),
             queue: VecDeque::from([root]),
         }
     }
@@ -120,10 +174,10 @@ impl CaptureWorklist {
 
     pub(super) fn frame(
         &self,
-        origin: ValueOrigin,
+        id: StorageFrameId,
     ) -> Result<StorageFrame, FinalSemanticAnalysisError> {
         self.frames
-            .get(origin.frame.0)
+            .get(id.0)
             .cloned()
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)
     }
@@ -131,7 +185,6 @@ impl CaptureWorklist {
     pub(super) fn intern(
         &mut self,
         key: ApplicationStorage,
-        item: ItemId,
         caller: &StorageFrame,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<StorageFrameId, FinalSemanticAnalysisError> {
@@ -149,11 +202,64 @@ impl CaptureWorklist {
         let frame = StorageFrameId(self.frames.len());
         // The first path supplies the exact projection for this storage shape.
         self.frames.push(StorageFrame {
-            item: Some(item),
+            owner: FrameOwner::Function(entry.key().item),
             applications: Rc::from(applications),
         });
         entry.insert(frame);
         Ok(frame)
+    }
+
+    pub(super) fn intern_closure(
+        &mut self,
+        producer: ExprId,
+        creator: StorageFrameId,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<StorageFrameId, FinalSemanticAnalysisError> {
+        let entry = match self.closures.entry((producer, creator)) {
+            Entry::Occupied(entry) => return Ok(*entry.get()),
+            Entry::Vacant(entry) => entry,
+        };
+        receiver.charge(1)?;
+        let applications = Rc::clone(
+            &self
+                .frames
+                .get(creator.0)
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+                .applications,
+        );
+        let frame = StorageFrameId(self.frames.len());
+        self.frames.push(StorageFrame {
+            owner: FrameOwner::Closure { producer, creator },
+            applications,
+        });
+        entry.insert(frame);
+        Ok(frame)
+    }
+
+    pub(super) fn intern_invocation(
+        &mut self,
+        invocation: Invocation,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<InvocationId, FinalSemanticAnalysisError> {
+        let entry = match self.invocation_ids.entry(invocation) {
+            Entry::Occupied(entry) => return Ok(*entry.get()),
+            Entry::Vacant(entry) => entry,
+        };
+        receiver.charge(1)?;
+        let id = InvocationId(self.invocations.len());
+        self.invocations.push(invocation);
+        entry.insert(id);
+        Ok(id)
+    }
+
+    pub(super) fn invocation(
+        &self,
+        id: InvocationId,
+    ) -> Result<Invocation, FinalSemanticAnalysisError> {
+        self.invocations
+            .get(id.0)
+            .copied()
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)
     }
 
     pub(super) fn next(&mut self) -> Result<Option<ValueOrigin>, FinalSemanticAnalysisError> {

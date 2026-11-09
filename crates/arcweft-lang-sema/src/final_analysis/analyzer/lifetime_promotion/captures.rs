@@ -8,13 +8,12 @@ use std::{
 
 use arcweft_lang_hir::{
     expr::HirExprKind,
-    identity::{ExprId, ItemId, LocalId},
-    item::{HirFunctionBody, HirItemKind, HirParameterKind},
+    identity::{ExprId, ItemId},
+    item::{HirFunctionBody, HirItemKind},
     module::HirModule,
-    pattern::{HirPatternBinding, HirPatternKind},
     project::{
-        HirBindingSite, HirControlTransferTarget, HirLocalValueOrigin, HirLoopTargetFamily,
-        HirReturnContext, HirSemanticBodyOwner,
+        HirControlTransferTarget, HirLocalValueOrigin, HirLoopTargetFamily, HirReturnContext,
+        HirSemanticBodyOwner,
     },
     source_index::HirCallableSourceOwner,
     symbol::{CallableDeclarationKey, CallableDeclarationOwner},
@@ -23,10 +22,10 @@ use arcweft_lang_hir::{
 use super::{Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery};
 use crate::{
     callable::{
-        CallableCandidateId, CallableParameterCoordinate, CheckedCallSite,
-        PreparedCallGraphIngress, PreparedCallSiteDelivery, PreparedCaptureIdentityRow,
-        PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
-        PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError,
+        CallableCandidateId, CheckedCallSite, PreparedCallGraphIngress, PreparedCallSiteDelivery,
+        PreparedCaptureIdentityRow, PreparedFunctionValueOriginEvidence,
+        PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
+        PreparedFunctionValueOriginQueryError,
         prepare_function_value_origin_query_with_pending_captures,
     },
     final_analysis::{
@@ -37,14 +36,18 @@ use crate::{
             expression_error::AnalyzerExpressionError,
         },
     },
-    types::{ArrayLength, ScopedType, TypeKind, TypeProjectionError},
+    types::{ScopedType, TypeKind, TypeProjectionError},
 };
+
+#[path = "captures/invocation.rs"]
+mod invocation;
 
 #[path = "captures/worklist.rs"]
 mod worklist;
 
 use self::worklist::{
-    ApplicationStorage, BorrowDependencies, CaptureWorklist, StorageFrame, TypeStorage, ValueOrigin,
+    BorrowDependencies, CaptureWorklist, Invocation, Observation, StorageFrame, TypeStorage,
+    ValueOrigin,
 };
 
 type PendingCaptures = Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>;
@@ -53,12 +56,14 @@ struct CaptureEvaluation {
     root: ExprId,
     captures: PendingCaptures,
     results: BTreeMap<CallableDeclarationKey, (ItemId, Rc<[ExprId]>)>,
+    closure_results: BTreeMap<ExprId, Rc<[ExprId]>>,
     work: CaptureWorklist,
 }
 
 enum CallStorage {
     Borrowed,
     SourceResult(CallableDeclarationKey),
+    ValueResult(ExprId),
     NoWitness,
 }
 
@@ -77,6 +82,7 @@ impl Analyzer<'_, '_, '_> {
                 .pending_capture_identity_rows()
                 .map_err(|error| error.into_public(root))?,
             results: BTreeMap::new(),
+            closure_results: BTreeMap::new(),
             work: CaptureWorklist::new(root),
         };
         while let Some(origin) = query.work.next()? {
@@ -98,7 +104,7 @@ impl Analyzer<'_, '_, '_> {
         query: &mut CaptureEvaluation,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
-        let frame = query.work.frame(origin)?;
+        let frame = query.work.frame(origin.frame)?;
         let module = self.module(origin.expression.module())?;
         let Some(evidence) = self.checked_function_origin(
             module,
@@ -110,27 +116,129 @@ impl Analyzer<'_, '_, '_> {
         else {
             return Ok(BorrowDependencies::default());
         };
+        let producer = match evidence.producer() {
+            PreparedFunctionValueOriginProducer::Lexical { local } => {
+                let mut parameters = BTreeSet::new();
+                if let Some(parameter) =
+                    self.parameter_demand(module, *local, origin, &query.work, receiver)?
+                {
+                    receiver.charge(1)?;
+                    parameters.insert(parameter);
+                }
+                return Ok(BorrowDependencies::Parameters(parameters));
+            }
+            PreparedFunctionValueOriginProducer::Call(site)
+            | PreparedFunctionValueOriginProducer::PreparedContinuation(site) => site.expression(),
+            PreparedFunctionValueOriginProducer::Declaration { producer, .. }
+            | PreparedFunctionValueOriginProducer::IndependentExpression { producer } => *producer,
+        };
+        let producer_scope = module
+            .resolve_expr(producer)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            .scope();
+        let producer_frame =
+            self.lexical_frame(module, producer_scope, origin.frame, &query.work, receiver)?;
+        if producer_frame != origin.frame {
+            return query.work.demand(
+                ValueOrigin {
+                    expression: producer,
+                    frame: producer_frame,
+                    ..origin
+                },
+                origin,
+                receiver,
+            );
+        }
+        self.producer_dependencies(
+            context,
+            origin,
+            (&frame, module),
+            &evidence,
+            query,
+            receiver,
+        )
+    }
+
+    fn producer_dependencies(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        origin: ValueOrigin,
+        (frame, module): (&StorageFrame, &HirModule),
+        evidence: &PreparedFunctionValueOriginEvidence,
+        query: &mut CaptureEvaluation,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
         let mut next = Vec::new();
         if let PreparedFunctionValueOriginProducer::Call(site) = evidence.producer() {
-            match self.call_storage(*site, &frame.applications, receiver, &mut next)? {
+            let call = Invocation {
+                site: *site,
+                caller: origin.frame,
+                result: origin.observation,
+            };
+            match self.call_storage(call, &frame.applications, receiver, &mut next)? {
                 CallStorage::Borrowed => return Ok(BorrowDependencies::Borrowed),
                 CallStorage::SourceResult(declaration) => {
                     return self.source_result_dependencies(
                         context,
                         origin,
-                        &frame,
-                        (*site, declaration),
+                        (call, None, declaration),
                         query,
                         receiver,
                     );
                 }
+                CallStorage::ValueResult(callee) => {
+                    let id = query.work.intern_invocation(call, receiver)?;
+                    return Ok(query
+                        .work
+                        .demand(
+                            ValueOrigin {
+                                expression: callee,
+                                observation: Observation::Invoke(id),
+                                ..origin
+                            },
+                            origin,
+                            receiver,
+                        )?
+                        .map_parameters(|mut parameter| {
+                            if parameter.invocation_caller == Some(id) {
+                                parameter.invocation_caller = None;
+                            }
+                            parameter
+                        }));
+                }
                 CallStorage::NoWitness => {}
             }
         }
-        let mut dependencies =
-            self.capture_dependencies(module, &frame, &evidence, receiver, &mut next)?;
-        if dependencies.is_borrowed() {
-            return Ok(dependencies);
+        let mut dependencies = BorrowDependencies::default();
+        match origin.observation {
+            Observation::Stored => {
+                dependencies = self.stored_captures(
+                    module,
+                    origin,
+                    frame,
+                    evidence,
+                    &mut query.work,
+                    receiver,
+                )?;
+                if dependencies.is_borrowed() {
+                    return Ok(dependencies);
+                }
+            }
+            Observation::Invoke(id) => {
+                if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
+                    evidence.producer()
+                    && let Some(dependencies) = self.invoke_producer(
+                        context,
+                        module,
+                        origin,
+                        (*producer, id),
+                        query,
+                        receiver,
+                    )?
+                {
+                    return Ok(dependencies);
+                }
+            }
         }
         if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
             evidence.producer()
@@ -141,7 +249,7 @@ impl Analyzer<'_, '_, '_> {
             dependencies.include(query.work.demand(
                 ValueOrigin {
                     expression,
-                    frame: origin.frame,
+                    ..origin
                 },
                 origin,
                 receiver,
@@ -153,77 +261,22 @@ impl Analyzer<'_, '_, '_> {
         Ok(dependencies)
     }
 
-    fn source_result_dependencies(
-        &mut self,
-        context: &AnalyzerExpressionContext<'_>,
-        origin: ValueOrigin,
-        caller: &StorageFrame,
-        (site, declaration): (CheckedCallSite, CallableDeclarationKey),
-        query: &mut CaptureEvaluation,
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
-        if !query.results.contains_key(&declaration) {
-            let (item, values) = self.source_function_values(context, &declaration)?;
-            receiver.charge(
-                u64::try_from(values.len())
-                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
-            )?;
-            query
-                .results
-                .insert(declaration.clone(), (item, Rc::from(values)));
-            query.captures = self
-                .pending_capture_identity_rows()
-                .map_err(|error| error.into_public(query.root))?;
-        }
-        let storage = self.application_storage(site, caller, receiver)?;
-        let (item, values) = query
-            .results
-            .get(&declaration)
-            .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
-        let frame = query.work.intern(storage, *item, caller, receiver)?;
-        let mut dependencies = BorrowDependencies::default();
-        for &expression in values.iter() {
-            dependencies.include(query.work.demand(
-                ValueOrigin { expression, frame },
-                origin,
-                receiver,
-            )?);
-            if dependencies.is_borrowed() {
-                return Ok(dependencies);
-            }
-        }
-        match dependencies {
-            BorrowDependencies::Borrowed => Ok(BorrowDependencies::Borrowed),
-            BorrowDependencies::Parameters(parameters) => self.substitute_call_parameters(
-                site,
-                origin,
-                &parameters,
-                &mut query.work,
-                receiver,
-            ),
-        }
-    }
-
-    fn capture_dependencies(
+    fn stored_captures(
         &self,
         module: &HirModule,
+        origin: ValueOrigin,
         frame: &StorageFrame,
         evidence: &PreparedFunctionValueOriginEvidence,
+        work: &mut CaptureWorklist,
         receiver: &mut ReceiverBorrowQuery<'_>,
-        pending: &mut Vec<ExprId>,
     ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
-        let mut parameters = BTreeSet::new();
-        if let PreparedFunctionValueOriginProducer::Lexical { local } = evidence.producer()
-            && let Some(coordinate) = self.frame_parameter(module, *local, frame)?
-        {
-            receiver.charge(1)?;
-            parameters.insert(coordinate);
-        }
         let local_origins = self
             .topology
             .module(module.module_id())
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
             .local_origins();
+        let mut parameters = BTreeSet::new();
+        let mut dependencies = BorrowDependencies::default();
         for capture in evidence.captures() {
             receiver.charge(1)?;
             let local = capture.local();
@@ -235,18 +288,31 @@ impl Analyzer<'_, '_, '_> {
             match self.inspect_value_storage(ty, &frame.applications, receiver)? {
                 TypeStorage::Borrowed => return Ok(BorrowDependencies::Borrowed),
                 TypeStorage::Callable => {
-                    if let Some(HirLocalValueOrigin::DirectInitializer(initializer)) =
+                    if let Some(HirLocalValueOrigin::DirectInitializer(expression)) =
                         local_origins.origin(local)
                     {
-                        pending.push(initializer);
-                    } else if let Some(coordinate) = self.frame_parameter(module, local, frame)? {
-                        parameters.insert(coordinate);
+                        dependencies.include(work.demand(
+                            ValueOrigin {
+                                expression,
+                                ..origin
+                            },
+                            origin,
+                            receiver,
+                        )?);
+                        if dependencies.is_borrowed() {
+                            return Ok(dependencies);
+                        }
+                    } else if let Some(parameter) =
+                        self.parameter_demand(module, local, origin, work, receiver)?
+                    {
+                        parameters.insert(parameter);
                     }
                 }
                 TypeStorage::Ordinary => {}
             }
         }
-        Ok(BorrowDependencies::Parameters(parameters))
+        dependencies.include(BorrowDependencies::Parameters(parameters));
+        Ok(dependencies)
     }
 
     fn checked_function_origin(
@@ -371,226 +437,14 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
-    /// Equal storage shapes agree on the type observations made by this
-    /// query. Value provenance stays symbolic in each result dependency.
-    fn application_storage(
-        &self,
-        site: CheckedCallSite,
-        caller: &StorageFrame,
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<ApplicationStorage, FinalSemanticAnalysisError> {
-        let graph = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?;
-        graph
-            .project_site_payload(
-                site,
-                |prefix| {
-                    let application = prefix.application();
-                    let type_arguments = application.body_type_arguments();
-                    let const_arguments = application.body_const_arguments();
-                    let argument_count = type_arguments
-                        .len()
-                        .checked_add(const_arguments.len())
-                        .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
-                    receiver.charge(
-                        u64::try_from(argument_count)
-                            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
-                    )?;
-                    let types = type_arguments
-                        .map(|ty| {
-                            self.inspect_value_storage(ty.value(), &caller.applications, receiver)
-                        })
-                        .collect::<Result<Box<[_]>, _>>()?;
-                    let zero_lengths = const_arguments
-                        .map(|length| {
-                            self.project_zero_length(length.value(), &caller.applications, receiver)
-                        })
-                        .collect::<Result<Box<[_]>, _>>()?;
-                    Ok(ApplicationStorage {
-                        site,
-                        types,
-                        zero_lengths,
-                    })
-                },
-                |_| Err(FinalSemanticAnalysisError::InvalidOwner),
-            )
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-    }
-
-    fn substitute_call_parameters(
-        &self,
-        site: CheckedCallSite,
-        origin: ValueOrigin,
-        parameters: &BTreeSet<CallableParameterCoordinate>,
-        work: &mut CaptureWorklist,
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
-        if parameters.is_empty() {
-            return Ok(BorrowDependencies::default());
-        }
-        let graph = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?;
-        graph
-            .project_site_payload(
-                site,
-                |prefix| {
-                    let enclosing = prefix.record().enclosing_callable();
-                    let mut input = prefix;
-                    let mut dependencies = BorrowDependencies::default();
-                    loop {
-                        receiver.charge(1)?;
-                        if input.record().enclosing_callable() == enclosing {
-                            let group = input.application().completed_group();
-                            for &coordinate in parameters {
-                                receiver.charge(1)?;
-                                if coordinate.group() == group
-                                    && let Some(expression) =
-                                        input.parameter_value_source(coordinate)
-                                {
-                                    dependencies.include(work.demand(
-                                        ValueOrigin {
-                                            expression,
-                                            frame: origin.frame,
-                                        },
-                                        origin,
-                                        receiver,
-                                    )?);
-                                    if dependencies.is_borrowed() {
-                                        return Ok(dependencies);
-                                    }
-                                }
-                            }
-                        }
-                        let Some(previous) = input.application().selected().prepared_continuation()
-                        else {
-                            break;
-                        };
-                        input = graph
-                            .continuation_prefix(previous)
-                            .map_err(|error| call_storage_error(site, error))?;
-                    }
-                    Ok(dependencies)
-                },
-                |_| Err(FinalSemanticAnalysisError::InvalidOwner),
-            )
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-    }
-
-    fn project_zero_length(
-        &self,
-        length: &ArrayLength,
-        applications: &[CheckedCallSite],
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<bool, FinalSemanticAnalysisError> {
-        receiver.charge(1)?;
-        if let ArrayLength::Const(length) = length {
-            return Ok(*length == 0);
-        }
-        let graph = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?;
-        let mut projected = length.clone();
-        for site in applications.iter().rev().copied() {
-            projected = graph
-                .project_site_payload(
-                    site,
-                    |prefix| {
-                        prefix
-                            .application()
-                            .project_body_length(&projected, receiver)
-                            .map_err(storage_projection_error)
-                    },
-                    |_| Err(FinalSemanticAnalysisError::InvalidOwner),
-                )
-                .ok_or(FinalSemanticAnalysisError::InvalidOwner)??;
-        }
-        Ok(matches!(projected, ArrayLength::Const(0)))
-    }
-
-    fn frame_parameter(
-        &self,
-        module: &HirModule,
-        local: LocalId,
-        frame: &StorageFrame,
-    ) -> Result<Option<CallableParameterCoordinate>, FinalSemanticAnalysisError> {
-        let Some(owner) = frame.item else {
-            return Ok(None);
-        };
-        Ok(self
-            .whole_parameter_binding(module, local)?
-            .and_then(|(item, coordinate)| (item == owner).then_some(coordinate)))
-    }
-
-    fn whole_parameter_binding(
-        &self,
-        module: &HirModule,
-        local: LocalId,
-    ) -> Result<Option<(ItemId, CallableParameterCoordinate)>, FinalSemanticAnalysisError> {
-        let local_origins = self
-            .topology
-            .module(module.module_id())
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-            .local_origins();
-        let Some(binding) = local_origins.binding(local) else {
-            return Err(FinalSemanticAnalysisError::InvalidOwner);
-        };
-        let HirBindingSite::DeclarationParameter {
-            item,
-            owner: HirCallableSourceOwner::Item,
-            group,
-            parameter,
-        } = binding.site()
-        else {
-            return Ok(None);
-        };
-        if binding.is_mutable_binding() {
-            return Ok(None);
-        }
-        let item_source = module
-            .resolve_item(item)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let HirItemKind::Function(function) = item_source.kind() else {
-            return Ok(None);
-        };
-        let group = crate::callable::CallableGroupIndex::try_from_usize(group as usize)
-            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        let parameter = crate::callable::CallableParameterIndex::try_from_usize(parameter as usize)
-            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        let parameter_source = function
-            .parameter_groups()
-            .get(group.get())
-            .and_then(|group| group.parameters().get(parameter.get()))
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-        let pattern = module
-            .resolve_pattern(parameter_source.pattern())
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        if parameter_source.kind() == HirParameterKind::RestPositional
-            || !matches!(pattern.kind(),
-                HirPatternKind::Binding(HirPatternBinding::Bound { local: bound, .. })
-                | HirPatternKind::TypedBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
-                | HirPatternKind::WholeBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
-                if *bound == local)
-        {
-            return Ok(None);
-        }
-        Ok(Some((
-            item,
-            CallableParameterCoordinate::new(group, parameter),
-        )))
-    }
-
     fn call_storage(
         &self,
-        site: CheckedCallSite,
+        call: Invocation,
         applications: &[CheckedCallSite],
         receiver: &mut ReceiverBorrowQuery<'_>,
         pending: &mut Vec<ExprId>,
     ) -> Result<CallStorage, FinalSemanticAnalysisError> {
+        let site = call.site;
         let owner = site.expression();
         let ty = self
             .facts
@@ -616,8 +470,16 @@ impl Analyzer<'_, '_, '_> {
                             {
                                 CallStorage::SourceResult(declaration.clone())
                             }
-                            _ => CallStorage::NoWitness,
+                            _ => prefix
+                                .record()
+                                .function_value_origin()
+                                .map_or(CallStorage::NoWitness, |callee| {
+                                    CallStorage::ValueResult(callee.callee())
+                                }),
                         });
+                    }
+                    if call.result != Observation::Stored {
+                        return Ok(CallStorage::NoWitness);
                     }
                     for (source, ty) in prefix.record().value_inputs() {
                         receiver.charge(1)?;

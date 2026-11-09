@@ -218,6 +218,45 @@ impl Analyzer<'_, '_, '_> {
                 current_expression: None,
             },
         )?;
+        self.completion_value_sources(module, tail, completion, receives, include_normal)
+    }
+
+    pub(in crate::final_analysis::analyzer) fn checked_closure_value_sources(
+        &self,
+        module: &HirModule,
+        closure: ExprId,
+        body: ExprId,
+    ) -> Result<Vec<ExprId>, AnalyzerExpressionError> {
+        let completion = self.expression_body_completion_in(
+            module,
+            body,
+            CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
+                callable: Some(closure),
+                current_expression: None,
+            },
+        )?;
+        self.completion_value_sources(
+            module,
+            body,
+            completion,
+            |target| {
+                matches!(target, HirControlTransferTarget::Return {
+                context: HirReturnContext::FunctionSite(site)
+            } if *site == closure)
+            },
+            true,
+        )
+    }
+
+    fn completion_value_sources(
+        &self,
+        module: &HirModule,
+        tail: ExprId,
+        completion: BodyCompletion,
+        receives: impl Fn(&HirControlTransferTarget) -> bool,
+        include_normal: bool,
+    ) -> Result<Vec<ExprId>, AnalyzerExpressionError> {
         let mut values = Vec::new();
         if include_normal && completion.continues() {
             values.push(tail);

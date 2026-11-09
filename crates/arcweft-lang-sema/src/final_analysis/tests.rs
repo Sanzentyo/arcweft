@@ -1967,6 +1967,168 @@ fn safe_lifetime_promotion_converges_recursive_capture_dependencies() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture matrix checks both lexical frames and exact diagnostic spans"
+)]
+fn safe_lifetime_promotion_follows_dynamic_callable_results() {
+    let result = "(Unit) -> i64 effects {}";
+    let factory_type = format!("(Unit) -> ({result}) effects {{}}");
+    let transform_type = format!("({result}) -> ({result}) effects {{}}");
+    let borrowed = "|_unit: Unit| -> i64 { let _ = loan; 42i64 }";
+    let owned = "|_unit: Unit| -> i64 { 7i64 }";
+    let factory = |body: &str| format!("|_input: Unit| -> ({result}) {{ {body} }}");
+    let unit_call = |setup: String| format!("{setup}\nlet callback = factory(())");
+    let borrowed_factory = factory(borrowed);
+    let owned_factory = factory(owned);
+    let caller_result = format!(
+        "fn make(old: {result}) -> ({transform_type}) {{
+            |value: {result}| -> ({result}) {{ let _ = old; value }}
+        }}"
+    );
+    let creator_result = format!(
+        "fn make(old: {result}) -> ({transform_type}) {{
+            |value: {result}| -> ({result}) {{ let _ = value; old }}
+        }}"
+    );
+    for (case, declaration, body, retains_borrow) in [
+        (
+            "capture",
+            String::new(),
+            unit_call(format!("let factory = {borrowed_factory}")),
+            true,
+        ),
+        (
+            "explicit return",
+            String::new(),
+            unit_call(format!(
+                "let factory = {}",
+                factory(&format!("return {borrowed}"))
+            )),
+            true,
+        ),
+        (
+            "callee capture discarded",
+            String::new(),
+            unit_call(format!(
+                "let factory = {}",
+                factory(&format!("let _ = loan; {owned}"))
+            )),
+            false,
+        ),
+        (
+            "branch",
+            String::new(),
+            unit_call(format!(
+                "let factory = if flag {{ {borrowed_factory} }} else {{ {owned_factory} }}"
+            )),
+            true,
+        ),
+        (
+            "invocation parameter",
+            String::new(),
+            format!(
+                "let factory = |input: {result}| -> ({result}) {{ input }}
+                let callback = factory({borrowed})"
+            ),
+            true,
+        ),
+        (
+            "source result supplies a closure",
+            format!("fn make(loan: &i64) -> ({factory_type}) {{ {borrowed_factory} }}"),
+            unit_call("let factory = make(loan)".into()),
+            true,
+        ),
+        (
+            "captured callable parameter of the creator",
+            format!(
+                "fn make(value: {result}) -> ({factory_type}) {{ {} }}",
+                factory("value")
+            ),
+            unit_call(format!("let factory = make({borrowed})")),
+            true,
+        ),
+        (
+            "nested dynamic result",
+            String::new(),
+            unit_call(format!(
+                "let make = |_unit: Unit| -> ({factory_type}) {{ {borrowed_factory} }}
+                let factory = make(())"
+            )),
+            true,
+        ),
+        (
+            "named function value",
+            format!("fn make(loan: &i64) -> ({result}) {{ {borrowed} }}"),
+            format!(
+                "let factory: (&i64) -> ({result}) effects {{}} = make
+                let callback = factory(loan)"
+            ),
+            true,
+        ),
+        (
+            "parameter supplies a callee",
+            format!("fn apply(factory: {factory_type}) -> ({result}) {{ factory(()) }}"),
+            format!("let callback = apply({borrowed_factory})"),
+            true,
+        ),
+        (
+            "returned creator argument",
+            creator_result,
+            format!(
+                "let factory = make({borrowed})
+                let callback = factory({owned})"
+            ),
+            true,
+        ),
+        (
+            "returned invocation argument",
+            caller_result.clone(),
+            format!(
+                "let factory = make({owned})
+                let callback = factory({borrowed})"
+            ),
+            true,
+        ),
+        (
+            "discarded creator argument",
+            caller_result,
+            format!(
+                "let factory = make({borrowed})
+                let callback = factory({owned})"
+            ),
+            false,
+        ),
+    ] {
+        let promote = "callback.promote('flow)";
+        let source = format!(
+            "{declaration}
+            flow main(loan: &i64, flag: bool) {{
+                {body}
+                let _ = {promote}
+            }}"
+        );
+        let fixture = fixture(&source, None);
+        fixture
+            .project
+            .analysis_view()
+            .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{case}: {error:?}"));
+        let (code, offending) = if retains_borrow {
+            ("sema.lifetime.promotion_receiver", "callback")
+        } else {
+            ("sema.lifetime.promotion_execution", promote)
+        };
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
     for (parameter, code) in [
         ("&i64", "sema.lifetime.promotion_receiver"),
