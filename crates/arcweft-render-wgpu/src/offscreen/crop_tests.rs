@@ -120,6 +120,7 @@ fn coverage_fixture(scale: f32, view: bool, group: bool) -> (PreparedFrame, Prep
             &PreparedTextDocumentRequest {
                 origin: LayoutPoint::new(20.25, 30.5),
                 size: LayoutSize::new(180.0, 65.0),
+                metric_scale: arcweft_render_text::TextMetricScale::IDENTITY,
                 container_bounds: LayoutRect::new(20.25, 30.5, 180.0, 65.0),
                 clip: Some(LayoutRect::new(28.25, 32.5, 180.0, 65.0)),
                 target: None,

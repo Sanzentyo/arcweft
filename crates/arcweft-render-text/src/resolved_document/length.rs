@@ -1,6 +1,106 @@
 //! Absolute typography lengths resolved in the shared logical-pixel space.
 
 use arcweft_text_model::{CheckedLength, LengthUnit, Milli};
+use serde::{Deserialize, Serialize};
+
+/// Uniform conversion from resolved typography to output logical pixels.
+/// Device-pixel density is applied separately by the raster adapter.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(try_from = "f32", into = "f32")]
+pub struct TextMetricScale(f32);
+
+/// A typography scale or its projected metric is outside the layout domain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TextMetricScaleError {
+    #[error("text metric scale must be finite and positive")]
+    InvalidScale,
+    #[error("scaled text metric {field} exceeds its logical milli-pixel domain")]
+    MetricOutOfRange { field: &'static str },
+}
+
+impl TextMetricScale {
+    pub const IDENTITY: Self = Self(1.0);
+
+    #[must_use]
+    pub fn is_identity(&self) -> bool {
+        self.0.to_bits() == 1.0_f32.to_bits()
+    }
+
+    /// Projects a nonnegative resolved length to output logical pixels.
+    pub fn length_pixels(
+        self,
+        field: &'static str,
+        length: ResolvedTextLength,
+    ) -> Result<f32, TextMetricScaleError> {
+        if self.is_identity() {
+            return Ok(length.pixels());
+        }
+        let milli = self.unsigned_milli(field, length.milli_pixels())?;
+        #[allow(clippy::cast_precision_loss, reason = "layout uses logical f32 pixels")]
+        Ok(milli as f32 / 1_000.0)
+    }
+
+    pub(super) fn unsigned_milli(
+        self,
+        field: &'static str,
+        value: u32,
+    ) -> Result<u32, TextMetricScaleError> {
+        let scaled = (f64::from(value) * f64::from(self.0)).round();
+        if scaled > f64::from(u32::MAX) {
+            return Err(TextMetricScaleError::MetricOutOfRange { field });
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        Ok(scaled as u32)
+    }
+
+    pub(super) fn positive_milli(
+        self,
+        field: &'static str,
+        value: u32,
+    ) -> Result<u32, TextMetricScaleError> {
+        let scaled = self.unsigned_milli(field, value)?;
+        if scaled == 0 {
+            return Err(TextMetricScaleError::MetricOutOfRange { field });
+        }
+        Ok(scaled)
+    }
+
+    pub(super) fn signed_milli(
+        self,
+        field: &'static str,
+        value: i32,
+    ) -> Result<i32, TextMetricScaleError> {
+        let scaled = (f64::from(value) * f64::from(self.0)).round();
+        if !(f64::from(i32::MIN)..=f64::from(i32::MAX)).contains(&scaled) {
+            return Err(TextMetricScaleError::MetricOutOfRange { field });
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        Ok(scaled as i32)
+    }
+}
+
+impl Default for TextMetricScale {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+impl TryFrom<f32> for TextMetricScale {
+    type Error = TextMetricScaleError;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(TextMetricScaleError::InvalidScale);
+        }
+        Ok(Self(value))
+    }
+}
+
+impl From<TextMetricScale> for f32 {
+    fn from(scale: TextMetricScale) -> Self {
+        scale.0
+    }
+}
 
 /// A nonnegative length admitted for text geometry in logical milli-pixels.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,6 +155,19 @@ impl ResolvedTextLength {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scaled_gap_can_round_to_zero_but_a_font_size_cannot() {
+        let scale = TextMetricScale::try_from(0.25).unwrap();
+        let gap = ResolvedTextLength::try_from(CheckedLength::px(1)).unwrap();
+        assert_eq!(scale.length_pixels("ruby_gap", gap), Ok(0.0));
+        assert_eq!(
+            crate::ResolvedTextStyle::new(vec![crate::TextFontFamily::SansSerif], 1, 2)
+                .unwrap()
+                .scaled(scale),
+            Err(TextMetricScaleError::MetricOutOfRange { field: "font_size" }),
+        );
+    }
 
     #[test]
     fn point_ratio_rounding_and_domain_are_explicit() {

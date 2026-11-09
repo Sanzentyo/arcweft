@@ -163,6 +163,7 @@ fn prepared_display_fixture_parts(
             display.stage(0).unwrap(),
             &PreparedRichTextStageRequest {
                 bounds,
+                metric_scale: arcweft_render_text::TextMetricScale::IDENTITY,
                 default_style: ResolvedTextStyle::new(
                     vec![TextFontFamily::SansSerif],
                     24_000,

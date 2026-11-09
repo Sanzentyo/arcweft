@@ -695,6 +695,7 @@ fn prepare_owned_stage(
         GlyphonTextEngine::from_project_fonts("ja", vec![TEST_FONT.to_vec()]).expect("font engine");
     let request = PreparedRichTextStageRequest {
         bounds: HitRect::new(20.0, 30.0, 360.0, 180.0),
+        metric_scale: arcweft_render_text::TextMetricScale::IDENTITY,
         default_style: ResolvedTextStyle::new(vec![TextFontFamily::SansSerif], 24_000, 32_000)
             .expect("paragraph style resolves")
             .with_color(TextColor::rgba(245, 245, 245, 255)),

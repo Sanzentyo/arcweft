@@ -173,6 +173,7 @@ fn push_action_button_text(
         request: PreparedTextDocumentRequest {
             origin: LayoutPoint::new(text_bounds.x, text_bounds.y),
             size: LayoutSize::new(text_bounds.width, line_height),
+            metric_scale: arcweft_render_text::TextMetricScale::IDENTITY,
             container_bounds: LayoutRect::new(
                 text_bounds.x,
                 text_bounds.y,

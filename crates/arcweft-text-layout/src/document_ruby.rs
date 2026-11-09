@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextLength, ResolvedTextRuby, TextLengthResolutionError,
+    ResolvedTextDocument, ResolvedTextLength, ResolvedTextRuby, TextMetricScale,
 };
 use arcweft_text_model::{
     CheckedLength, RichTextInlineDirection, RichTextRange, RichTextRubyPosition,
@@ -83,14 +83,14 @@ impl<'a> RubyMeasurements<'a> {
                 let writing_mode = document.runs()[annotation.base_runs().as_usize_range().start]
                     .style()
                     .writing_mode();
-                let metrics = ruby_metrics(annotation)?;
+                let style = annotation.style().scaled(request.metric_scale)?;
+                let metrics =
+                    ruby_metrics(annotation, style.font_size_milli(), request.metric_scale)?;
                 let authored_position = ruby_position(annotation);
                 let position = effective_ruby_position(writing_mode, authored_position);
                 let font_size_milli = pixels_to_milli(metrics.font_size)
                     .ok_or(TextLayoutError::InvalidRubyStyle { ruby_index: index })?;
-                let style = annotation
-                    .style()
-                    .clone()
+                let style = style
                     .with_font_metrics(font_size_milli, font_size_milli)
                     .map_err(|_| TextLayoutError::InvalidRubyStyle { ruby_index: index })?;
                 let shaped = shaper
@@ -282,6 +282,7 @@ impl<'a> RubyMeasurements<'a> {
         runs: &[crate::TextLayoutRun],
         body_allocations: &[TextLayoutBodyAllocation],
     ) -> Vec<TextLayoutRuby> {
+        let mut placed = Vec::new();
         self.annotations
             .into_iter()
             .filter_map(|annotation| {
@@ -370,7 +371,7 @@ impl<'a> RubyMeasurements<'a> {
                         .map(|glyph| glyph.layout_bounds.union(glyph.ink_bounds)),
                 )
                 .unwrap_or(base_bounds);
-                Some(TextLayoutRuby {
+                let mut layout = TextLayoutRuby {
                     ruby_index: saturating_u32(annotation.index),
                     owner_node: annotation.annotation.owner_node(),
                     body_nodes: annotation.annotation.body_nodes(),
@@ -384,7 +385,15 @@ impl<'a> RubyMeasurements<'a> {
                     writing_mode: annotation.writing_mode,
                     style: annotation.style,
                     presentation: annotation.annotation.presentation().clone(),
-                })
+                };
+                resolve_collision(
+                    &mut layout,
+                    &placed,
+                    annotation.authored_position,
+                    annotation.metrics.collision_gap,
+                );
+                placed.push(layout.ruby_bounds);
+                Some(layout)
             })
             .collect()
     }
@@ -631,29 +640,30 @@ fn place_vertical_cells(
     out
 }
 
-pub(crate) fn resolve_collisions(
-    ruby: &mut [TextLayoutRuby],
-) -> Result<(), TextLengthResolutionError> {
-    let mut placed = Vec::<LayoutRect>::new();
-    for annotation in ruby {
-        let gap = collision_gap(annotation)?;
-        while let Some(collision) = placed
-            .iter()
-            .copied()
-            .find(|bounds| bounds.intersects(annotation.ruby_bounds))
-        {
-            let (dx, dy) = collision_shift(annotation, collision, gap);
-            shift_annotation(annotation, dx, dy);
-        }
-        placed.push(annotation.ruby_bounds);
+fn resolve_collision(
+    annotation: &mut TextLayoutRuby,
+    placed: &[LayoutRect],
+    position: RichTextRubyPosition,
+    gap: f32,
+) {
+    while let Some(collision) = placed
+        .iter()
+        .copied()
+        .find(|bounds| bounds.intersects(annotation.ruby_bounds))
+    {
+        let (dx, dy) = collision_shift(annotation, collision, position, gap);
+        shift_annotation(annotation, dx, dy);
     }
-    Ok(())
 }
 
-fn collision_shift(annotation: &TextLayoutRuby, collision: LayoutRect, gap: f32) -> (f32, f32) {
+fn collision_shift(
+    annotation: &TextLayoutRuby,
+    collision: LayoutRect,
+    position: RichTextRubyPosition,
+    gap: f32,
+) -> (f32, f32) {
     match annotation.writing_mode {
         RichTextWritingMode::HorizontalTb => {
-            let position = ruby_position_from_presentation(annotation);
             if matches!(position, RichTextRubyPosition::InterCharacter) {
                 (collision.right() + gap - annotation.ruby_bounds.x, 0.0)
             } else if matches!(position, RichTextRubyPosition::Under) {
@@ -663,10 +673,7 @@ fn collision_shift(annotation: &TextLayoutRuby, collision: LayoutRect, gap: f32)
             }
         }
         RichTextWritingMode::VerticalRl | RichTextWritingMode::VerticalLr => {
-            if ruby_track_is_right(
-                annotation.writing_mode,
-                ruby_position_from_presentation(annotation),
-            ) {
+            if ruby_track_is_right(annotation.writing_mode, position) {
                 (collision.right() + gap - annotation.ruby_bounds.x, 0.0)
             } else {
                 (collision.x - gap - annotation.ruby_bounds.right(), 0.0)
@@ -768,44 +775,49 @@ fn validate_ruby_shape<E: std::error::Error + 'static>(
     Ok(())
 }
 
-fn ruby_metrics(annotation: &ResolvedTextRuby) -> Result<RubyMetrics, TextLengthResolutionError> {
-    let default_size = milli_to_pixels(annotation.style().font_size_milli()) * 0.5;
+fn ruby_metrics<E: std::error::Error + 'static>(
+    annotation: &ResolvedTextRuby,
+    base_font_size_milli: u32,
+    scale: TextMetricScale,
+) -> Result<RubyMetrics, TextLayoutError<E>> {
+    let default_size = milli_to_pixels(base_font_size_milli) * 0.5;
     let layout = annotation.presentation().layout.as_ref();
-    let font_size = resolve_optional_length(layout.and_then(|layout| layout.ruby_font_size))?
-        .unwrap_or(default_size);
+    let resolve = |field, length| resolve_optional_length(scale, field, length);
+    let font_size = resolve(
+        "ruby_font_size",
+        layout.and_then(|layout| layout.ruby_font_size),
+    )?
+    .unwrap_or(default_size);
     Ok(RubyMetrics {
         font_size,
-        gap: resolve_optional_length(layout.and_then(|layout| layout.ruby_gap))?
+        gap: resolve("ruby_gap", layout.and_then(|layout| layout.ruby_gap))?
             .unwrap_or(DEFAULT_RUBY_GAP),
-        overhang: resolve_optional_length(layout.and_then(|layout| layout.ruby_overhang))?
-            .unwrap_or(font_size * 0.5),
-        collision_gap: resolve_optional_length(
+        overhang: resolve(
+            "ruby_overhang",
+            layout.and_then(|layout| layout.ruby_overhang),
+        )?
+        .unwrap_or(font_size * 0.5),
+        collision_gap: resolve(
+            "ruby_collision_gap",
             layout.and_then(|layout| layout.ruby_collision_gap),
         )?
         .unwrap_or(DEFAULT_COLLISION_GAP),
     })
 }
 
-fn resolve_optional_length(
+fn resolve_optional_length<E: std::error::Error + 'static>(
+    scale: TextMetricScale,
+    field: &'static str,
     value: Option<CheckedLength>,
-) -> Result<Option<f32>, TextLengthResolutionError> {
+) -> Result<Option<f32>, TextLayoutError<E>> {
     value
-        .map(ResolvedTextLength::try_from)
+        .map(|value| Ok(scale.length_pixels(field, ResolvedTextLength::try_from(value)?)?))
         .transpose()
-        .map(|value| value.map(ResolvedTextLength::pixels))
 }
 
 fn ruby_position(annotation: &ResolvedTextRuby) -> RichTextRubyPosition {
     annotation
         .presentation()
-        .layout
-        .as_ref()
-        .map_or(RichTextRubyPosition::Auto, |layout| layout.ruby_position)
-}
-
-fn ruby_position_from_presentation(annotation: &TextLayoutRuby) -> RichTextRubyPosition {
-    annotation
-        .presentation
         .layout
         .as_ref()
         .map_or(RichTextRubyPosition::Auto, |layout| layout.ruby_position)
@@ -832,17 +844,6 @@ fn ruby_track_is_right(writing_mode: RichTextWritingMode, position: RichTextRuby
         RichTextWritingMode::VerticalLr => matches!(position, RichTextRubyPosition::Under),
         RichTextWritingMode::HorizontalTb => false,
     }
-}
-
-fn collision_gap(annotation: &TextLayoutRuby) -> Result<f32, TextLengthResolutionError> {
-    Ok(resolve_optional_length(
-        annotation
-            .presentation
-            .layout
-            .as_ref()
-            .and_then(|layout| layout.ruby_collision_gap),
-    )?
-    .unwrap_or(DEFAULT_COLLISION_GAP))
 }
 
 fn pixels_to_milli(value: f32) -> Option<u32> {

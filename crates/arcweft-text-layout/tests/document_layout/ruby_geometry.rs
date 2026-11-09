@@ -1,5 +1,5 @@
 use super::*;
-use arcweft_text_model::{CheckedLength, Milli, PreparedTextDocumentContext};
+use arcweft_text_model::{Milli, PreparedTextDocumentContext};
 
 fn ruby_document(
     text: &'static str,
@@ -70,6 +70,17 @@ fn point_and_pixel_ruby_sizes_shape_identical_geometry_without_losing_the_author
                 layout_document(&document, request(), &mut MockShaper::new(b"font")).unwrap();
             let annotation = &layout.ruby[0];
             assert_eq!(annotation.style.font_size_milli(), 12_000);
+            let half = layout_document(
+                &document,
+                TextLayoutRequest {
+                    metric_scale: TextMetricScale::try_from(0.5).unwrap(),
+                    ..request()
+                },
+                &mut MockShaper::new(b"font"),
+            )
+            .unwrap();
+            assert_eq!(half.runs[0].style.font_size_milli(), 10_000);
+            assert_eq!(half.ruby[0].style.font_size_milli(), 6_000);
             assert_eq!(
                 annotation
                     .presentation

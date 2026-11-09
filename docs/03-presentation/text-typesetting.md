@@ -75,6 +75,13 @@ Conversion rounds once to the nearest milli-pixel. Output/device scaling applies
 after this resolution and does not change the point-to-pixel ratio. A relative
 unit requires its own admitted layout context; it is never treated as `px`.
 
+For retained View text, the design-to-output fit and the host text-scale
+preference compose into one uniform typography scale. A stretch fit uses the
+mean of its two axis scales for typography. Layout applies the resulting scale
+to resolved font sizes, line heights, spacing, ruby metrics and column gaps
+before shaping and placement in the mapped View bounds. The device-pixel ratio
+applies to rasterization in those output coordinates.
+
 ```arcw
 rich_text {
     text {

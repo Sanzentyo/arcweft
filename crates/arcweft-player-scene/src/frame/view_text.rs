@@ -20,7 +20,7 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle, TextColor,
-    TextDocumentRevision, TextFontFamily, TextSlant, TextStyleCascade, TextWeight,
+    TextDocumentRevision, TextFontFamily, TextMetricScale, TextSlant, TextStyleCascade, TextWeight,
     resolve_document, resolve_document_with_source, resolve_stage_document,
 };
 use arcweft_render_wgpu::geometry::{
@@ -326,14 +326,18 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
                 )
             });
         let visual = resolved.map_or(&target.style, |style| style.visual());
-        let content_scale = self.request.content.map_or(1.0, |content| {
-            ((content.scale_x.abs() + content.scale_y.abs()) * 0.5).max(f32::EPSILON)
-        });
+        let content_scale = self
+            .request
+            .content
+            .map_or(1.0, ContentRect::mean_axis_scale);
         let text_scale = f32::from(self.request.scene.preferences.text_scale_milli) / 1_000.0;
-        let style = resolved_style(visual, content_scale * text_scale)?;
+        let metric_scale =
+            TextMetricScale::try_from(content_scale * text_scale).map_err(FramePlanError::from)?;
+        let style = resolved_style(visual)?;
         let text_request = PreparedTextDocumentRequest {
             origin: LayoutPoint::new(bounds.x, bounds.y),
             size: LayoutSize::new(bounds.width, bounds.height),
+            metric_scale,
             container_bounds: LayoutRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
             clip: clip.map(layout_rect),
             target: interaction_target,
@@ -593,6 +597,7 @@ fn push_display_frame(
                 request.size.height,
             ),
             default_style: style,
+            metric_scale: request.metric_scale,
             reveal_elapsed: elapsed,
             reveal_policy,
         },
@@ -698,16 +703,11 @@ pub(super) fn plain_document(
 
 fn resolved_style(
     visual: &arcweft_bundle::resource_codec::view::ViewRuntimeControlVisualStyle,
-    scale: f32,
 ) -> Result<ResolvedTextStyle, FramePlanError> {
-    let font_size = scaled_milli("font_size", visual.font_size_milli.unwrap_or(20_000), scale)?;
-    let line_height = scaled_milli(
-        "line_height",
-        visual
-            .line_height_milli
-            .unwrap_or_else(|| visual.font_size_milli.unwrap_or(20_000).saturating_mul(6) / 5),
-        scale,
-    )?;
+    let font_size = visual.font_size_milli.unwrap_or(20_000);
+    let line_height = visual
+        .line_height_milli
+        .unwrap_or_else(|| font_size.saturating_mul(6) / 5);
     let color = visual
         .text
         .unwrap_or(PresentationColor::rgba(245, 245, 245, 255));
@@ -764,15 +764,6 @@ const fn text_weight(value: u16) -> TextWeight {
         750..=849 => TextWeight::ExtraBold,
         _ => TextWeight::Black,
     }
-}
-
-fn scaled_milli(field: &'static str, value: u32, scale: f32) -> Result<u32, FramePlanError> {
-    let value = f64::from(value) * f64::from(scale);
-    if !value.is_finite() || value <= 0.0 || value > f64::from(u32::MAX) {
-        return Err(FramePlanError::InvalidTextMetric { field });
-    }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    Ok(value.round() as u32)
 }
 
 pub(super) fn map_rect(rect: HitRect, content: Option<ContentRect>) -> HitRect {

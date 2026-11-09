@@ -484,6 +484,7 @@ pub(super) fn prepare_stage(
         TextLayoutRequest {
             origin: LayoutPoint::new(bounds.x, bounds.y),
             size: LayoutSize::new(bounds.width, bounds.height),
+            metric_scale: request.metric_scale,
             ..TextLayoutRequest::default()
         },
         engine,

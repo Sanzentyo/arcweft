@@ -21,7 +21,7 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRunSource, ResolvedTextStyle, TextFontFamily,
-    TextResolveError, TextSlant, TextWeight,
+    TextMetricScale, TextMetricScaleError, TextResolveError, TextSlant, TextWeight,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize, TextLayoutError};
 use arcweft_text_model::{
@@ -406,6 +406,8 @@ fn corner_scale_limit(current: f32, basis_px: f32, sum_px: f32) -> f32 {
 pub struct PreparedTextDocumentRequest {
     pub origin: LayoutPoint,
     pub size: LayoutSize,
+    /// Output projection for all resolved typography in the document.
+    pub metric_scale: TextMetricScale,
     pub container_bounds: LayoutRect,
     pub clip: Option<LayoutRect>,
     pub target: Option<InteractionTarget>,
@@ -419,6 +421,8 @@ pub struct PreparedTextDocumentRequest {
 pub struct PreparedRichTextStageRequest {
     pub bounds: HitRect,
     pub default_style: ResolvedTextStyle,
+    /// Output projection for all resolved typography in the stage.
+    pub metric_scale: TextMetricScale,
     pub reveal_elapsed: arcweft_text_model::DialogueRevealElapsed,
     pub reveal_policy: arcweft_text_model::DialogueRevealPolicy,
 }
@@ -437,6 +441,7 @@ impl PreparedTextDocumentRequest {
         Self {
             origin,
             size,
+            metric_scale: TextMetricScale::IDENTITY,
             container_bounds: LayoutRect::new(origin.x, origin.y, size.width, size.height),
             clip: None,
             target: None,
@@ -726,6 +731,8 @@ pub enum FramePlanError {
     PreparedText(#[from] PreparedTextError),
     #[error(transparent)]
     ResolveText(#[from] TextResolveError),
+    #[error(transparent)]
+    TextMetricScale(#[from] TextMetricScaleError),
     #[error(transparent)]
     TextContext(#[from] PreparedTextContextError),
     #[error(transparent)]
@@ -1077,7 +1084,7 @@ impl PreparedFrameViewportMapping {
             translate_y,
             scale_x,
             scale_y,
-            text_scale: ((scale_x.abs() + scale_y.abs()) * 0.5).max(f32::EPSILON),
+            text_scale: content.mean_axis_scale(),
             viewport_transform: TextGeometryTransform::scale(scale_x, scale_y)
                 .then(TextGeometryTransform::translation(translate_x, translate_y)),
             screen_transform: TextGeometryTransform::scale(
@@ -1978,6 +1985,7 @@ fn build_choices(
                 request: PreparedTextDocumentRequest {
                     origin: LayoutPoint::new(text_bounds.x, text_bounds.y),
                     size: LayoutSize::new(text_bounds.width, text_bounds.height),
+                    metric_scale: TextMetricScale::IDENTITY,
                     container_bounds: LayoutRect::new(
                         text_bounds.x,
                         text_bounds.y,

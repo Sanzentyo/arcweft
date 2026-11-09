@@ -4,6 +4,7 @@ use crate::{
     LayoutPoint, LayoutSize,
     vertical_break::{VerticalBreakError, VerticalBreakPolicy},
 };
+use arcweft_render_text::TextMetricScale;
 use arcweft_text_model::{RichTextJlreqStrictness, RichTextRange, RichTextWritingMode};
 use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
@@ -18,6 +19,9 @@ where
     /// An authored typography length has no valid logical-pixel resolution.
     #[error(transparent)]
     Length(#[from] arcweft_render_text::TextLengthResolutionError),
+    /// A resolved typography metric cannot be projected to the requested size.
+    #[error(transparent)]
+    MetricScale(#[from] arcweft_render_text::TextMetricScaleError),
     /// Host constraints contain non-finite or negative geometry.
     #[error("text layout request contains invalid geometry")]
     InvalidRequestGeometry,
@@ -84,11 +88,14 @@ where
     InsufficientRubyLayoutSpace,
 }
 
-/// Final document layout request. Font metrics come from each resolved run.
+/// Final document layout request in output logical pixels.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TextLayoutRequest {
     pub origin: LayoutPoint,
     pub size: LayoutSize,
+    /// Applied once to resolved typography before shaping and placement.
+    #[serde(default, skip_serializing_if = "TextMetricScale::is_identity")]
+    pub metric_scale: TextMetricScale,
     /// Horizontal line-wrapping policy. Vertical writing always follows its
     /// column constraints.
     pub horizontal_wrap: HorizontalWrap,
@@ -103,6 +110,7 @@ impl Default for TextLayoutRequest {
         Self {
             origin: LayoutPoint::new(24.0, 24.0),
             size: LayoutSize::new(720.0, 360.0),
+            metric_scale: TextMetricScale::IDENTITY,
             horizontal_wrap: HorizontalWrap::Wrap,
             default_writing_mode: RichTextWritingMode::HorizontalTb,
             jlreq_strictness: JlreqStrictness::Normal,

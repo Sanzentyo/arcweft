@@ -2,7 +2,7 @@ use std::{error::Error, fmt};
 
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
-    ResolvedTextStyle, TextColor, TextDocumentRevision, TextFontFamily,
+    ResolvedTextStyle, TextColor, TextDocumentRevision, TextFontFamily, TextMetricScale,
 };
 use arcweft_text_layout::{
     FontFaceId, FontInventoryHash, LayoutPoint, LayoutRect, LayoutSize, ShapedGlyphKey,
@@ -10,9 +10,9 @@ use arcweft_text_layout::{
     TextShapeRequest, TextShaper, layout_document,
 };
 use arcweft_text_model::{
-    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextNodeIndex,
-    RichTextNodeRange, RichTextPresentation, RichTextRange, RichTextRubyPosition,
-    RichTextTextRunRange, RichTextWritingMode,
+    CheckedLength, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
+    RichTextNodeIndex, RichTextNodeRange, RichTextPresentation, RichTextRange,
+    RichTextRubyPosition, RichTextStyle, RichTextTextRunRange, RichTextWritingMode,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +63,8 @@ impl TextShaper for MockShaper {
     }
 
     fn shape_run(&mut self, request: TextShapeRequest<'_>) -> Result<ShapedTextRun, Self::Error> {
+        #[allow(clippy::cast_precision_loss)]
+        let font_size = request.style.font_size_milli() as f32 / 1_000.0;
         let mut glyphs = request
             .text
             .char_indices()
@@ -78,7 +80,7 @@ impl TextShaper for MockShaper {
                     key: ShapedGlyphKey {
                         face: self.face,
                         glyph_id: u32::from(character),
-                        font_size_bits: 20.0_f32.to_bits(),
+                        font_size_bits: font_size.to_bits(),
                         font_weight: 400,
                         flags: 0,
                     },
@@ -168,6 +170,54 @@ fn request() -> TextLayoutRequest {
         size: LayoutSize::new(100.0, 100.0),
         ..TextLayoutRequest::default()
     }
+}
+
+#[test]
+fn scaled_document_uses_resolved_inline_metrics_for_shaping_and_vertical_columns() {
+    let base_style = style()
+        .with_flow(
+            RichTextWritingMode::VerticalRl,
+            RichTextInlineDirection::Auto,
+        )
+        .with_spacing(2_000, -1_000);
+    let inline_style = arcweft_render_text::TextStyleCascade::new(base_style)
+        .resolve_style([&RichTextStyle::Size {
+            length: CheckedLength::pt(24_000),
+        }])
+        .unwrap();
+    let document = document_with_presentation(
+        "天\n地",
+        inline_style,
+        RichTextPresentation {
+            layout: Some(RichTextLayout {
+                column_gap: CheckedLength::pt(6_000),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        Vec::new(),
+        1,
+    );
+    let original = layout_document(&document, request(), &mut MockShaper::new(b"font")).unwrap();
+    let half = layout_document(
+        &document,
+        TextLayoutRequest {
+            metric_scale: TextMetricScale::try_from(0.5).unwrap(),
+            ..request()
+        },
+        &mut MockShaper::new(b"font"),
+    )
+    .unwrap();
+    let style = &half.runs[0].style;
+    assert_eq!(style.font_size_milli(), 16_000);
+    assert_eq!(style.line_height_milli(), 21_600);
+    assert_eq!(style.letter_spacing_milli(), 1_000);
+    assert_eq!(style.word_spacing_milli(), -500);
+    assert_eq!(half.glyphs[0].shape_key.font_size_bits, 16.0_f32.to_bits());
+    let column_step = |layout: &TextLayout| layout.glyphs[0].origin.x - layout.glyphs[1].origin.x;
+    assert!((column_step(&original) - 51.2).abs() < 0.001);
+    assert!((column_step(&half) - 25.6).abs() < 0.001);
+    assert_ne!(half.hash, original.hash);
 }
 
 #[test]

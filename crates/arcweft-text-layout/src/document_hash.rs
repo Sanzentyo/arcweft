@@ -8,13 +8,14 @@ use arcweft_text_model::{RichTextInlineDirection, RichTextRange, RichTextWriting
 use crate::{
     FontInventoryHash, GlyphOrientation, GlyphVerticalForm, HorizontalWrap, JlreqStrictness,
     LayoutPoint, LayoutRect, LayoutSize, TextLayoutGlyph, TextLayoutHash, TextLayoutRequest,
-    TextLayoutRuby,
+    TextLayoutRuby, TextLayoutRun,
 };
 
 pub(crate) fn layout_hash(
     document: &ResolvedTextDocument<'_>,
     request: TextLayoutRequest,
     inventory: FontInventoryHash,
+    runs: &[TextLayoutRun],
     glyphs: &[TextLayoutGlyph],
     ruby: &[TextLayoutRuby],
 ) -> TextLayoutHash {
@@ -32,9 +33,9 @@ pub(crate) fn layout_hash(
         &mut hasher,
         request.vertical_break_policy.stable_id().as_bytes(),
     );
-    for run in document.runs() {
-        hash_range(&mut hasher, run.source_range());
-        hash_layout_style(&mut hasher, run.style());
+    for run in runs {
+        hash_range(&mut hasher, run.source_range);
+        hash_layout_style(&mut hasher, &run.style);
     }
     for glyph in glyphs {
         hash_glyph(&mut hasher, glyph);

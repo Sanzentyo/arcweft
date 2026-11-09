@@ -46,6 +46,7 @@ pub(super) fn prepare_text_document(
         TextLayoutRequest {
             origin: request.origin,
             size: request.size,
+            metric_scale: request.metric_scale,
             ..TextLayoutRequest::default()
         },
         engine,

@@ -13,7 +13,9 @@ use std::fmt::{self, Write};
 use thiserror::Error;
 
 mod length;
-pub use length::{ResolvedTextLength, TextLengthResolutionError};
+pub use length::{
+    ResolvedTextLength, TextLengthResolutionError, TextMetricScale, TextMetricScaleError,
+};
 
 /// Deterministic revision of an owning resolved-text source record.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -296,6 +298,21 @@ impl ResolvedTextStyle {
         self.line_height_milli = line_height_milli;
         self.validate()?;
         Ok(self)
+    }
+
+    /// Projects every resolved typography metric before shaping.
+    pub fn scaled(&self, scale: TextMetricScale) -> Result<Self, TextMetricScaleError> {
+        if scale.is_identity() {
+            return Ok(self.clone());
+        }
+        Ok(Self {
+            font_size_milli: scale.positive_milli("font_size", self.font_size_milli)?,
+            line_height_milli: scale.positive_milli("line_height", self.line_height_milli)?,
+            letter_spacing_milli: scale
+                .signed_milli("letter_spacing", self.letter_spacing_milli)?,
+            word_spacing_milli: scale.signed_milli("word_spacing", self.word_spacing_milli)?,
+            ..self.clone()
+        })
     }
 
     #[must_use]

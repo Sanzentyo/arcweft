@@ -72,6 +72,7 @@ fn request(bounds: HitRect) -> PreparedTextDocumentRequest {
     PreparedTextDocumentRequest {
         origin: LayoutPoint::new(bounds.x, bounds.y),
         size: LayoutSize::new(bounds.width, bounds.height),
+        metric_scale: arcweft_render_text::TextMetricScale::IDENTITY,
         container_bounds: LayoutRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
         clip: Some(LayoutRect::new(
             bounds.x,

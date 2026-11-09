@@ -456,6 +456,12 @@ impl ScalePolicy {
 }
 
 impl ContentRect {
+    /// Uniform metric scale for content that keeps its aspect ratio under stretch.
+    #[must_use]
+    pub fn mean_axis_scale(self) -> f32 {
+        ((self.scale_x.abs() + self.scale_y.abs()) * 0.5).max(f32::EPSILON)
+    }
+
     pub fn calculate(
         design_size: LayoutSize,
         output_size: LayoutSize,
