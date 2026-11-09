@@ -16029,3 +16029,11 @@ Windows・locked・全feature・既定filterのnextestで `Summary [ 608.658s] 2
 Compiler fixture初回はテスト関数を渡すlifetime境界で構築終了101。テストのclosureを修復し、次の対象20件は全PASS。実ソースは以前CLIで失敗した同じfixtureを使い、Native／decoded AWBCとも1 opで進め、ホストとaudioの命令0、台詞1回、ログcue keptと戻り値doneを確認した。AWBCでは各step公開JSON保存復元、再生リースへの改変拒否、拒否後の元session再開を確認。
 
 CLI regressionを含む固定Sourceは `Summary [   3.453s] 21 tests run: 21 passed, 3151 skipped`。テスト前後の元実行ファイルとSourceの差分0。品質確認は nextest 0（5.78秒）、fmt 0（0.42秒）、check 0（81.93秒）、clippy 0（91.72秒）、wasm 0（46.05秒）、structure 0（7.94秒）。原本は23 entries、1183651 bytes、SHA256 `96183131dd44a07971e7911786dabf23bccbfd1de8f907db7b7f56a3af1c65dd`。[対象実測・原本](acceptance-evidence/task-unvoiced-line-lease.raw.zip)。
+
+### 無音の台詞が返すVoiceHandleの53逆依存検証 — 2026-11-09
+
+公開Source `b7fba62b6f2de22bdb40ad08f754fecbc5a2e985`、親 `395e276f20b7d982941e2ae72138f0d4fa293b51`、tree `fc434c99bf5111f9a668b209a1725a3456c9b9ba`、公開patch SHA256 `369b4bbe8af7491e9ac8ef5ee99ed5085479a2bf7efd6b5df1c4a98493772b91`。Coreの逆依存53はRuntimePlanの16を含む。Cargo入力の一致を確認して依存graphを再利用した。初回のNative Player構築はrustc内部エラーで終了101。初回の発生原因は未確定。同じSource・選択・featureで再試行し、全53 packageの構築・列挙に成功した。
+
+Windows・locked・全feature・既定filterのnextestで `Summary [1187.926s] 8151 tests run: 8148 passed (71 slow), 3 failed, 41 skipped`。非CLI 7,438 PASS／18 SKIP。CLI 710 PASS／3 FAIL／23 SKIP。共通IDの差分は従来の無音台詞CLIのFAILからPASSのみ。残るScroll・promotionの診断差分0。追加は前回のBundleSession保存復元1件と今回のNative／AWBC無音リース2件。Generic Matchの照合151件とFlow・台詞・CLIの照合13件がPASS。元Sourceと元EXE 216件の前後差分0。元arcw.exeは 305957376 bytes、SHA256 `7ff25979174c02307b0abfb090b1b2bfc0db9620bf9dfe5d8e2f887f602ccfed`。
+
+原本は 16 entries、512886 bytes、SHA256 `451a73d226cceca5b6299325e602c756de3f7b57ad7a4758b5e55ad995019ede`。初回構築失敗、再試行の選択、実行ログ、元EXEの前後hashを保管した。[全逆依存の実測](acceptance-evidence/task-unvoiced-line-lease-reverse.raw.zip)。
