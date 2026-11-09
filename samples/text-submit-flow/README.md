@@ -19,8 +19,13 @@ cargo run -p arcweft-cli -- bundle \
   --output target/arcweft/text-submit-flow.awfb --json
 ```
 
-Interactive verification covers Enter / IME send and the Send button, the
-unchanged input and Action IDs, and all response branches. Native and Web use
-player-rendered controls through the shared scene path. Validation results and
-remaining acceptance belong to the single
-[current status](../../docs/implementation/current-status.md).
+Launch the bundle at `entry.text_submit_flow`. Native and Web render the text
+field and Send button through the shared scene path. Use Enter in the focused
+field or click Send to submit the committed text.
+
+To display the sample's Japanese and emoji inputs, register `arcweft-demo.ttf`
+first, followed by `noto-sans-jp-vf.ttf` and `noto-emoji-regular.ttf`. The Web
+player accepts the ordered paths in its `fonts` query parameter.
+[Bundled fonts](../../web/assets)
+
+[Current validation status](../../docs/implementation/current-status.md)
