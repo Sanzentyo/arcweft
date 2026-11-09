@@ -16013,3 +16013,11 @@ Wasm型検査（31.78秒）と構造監査（16.57秒）はともに終了0。�
 Compilerのfixture初回は公開AWFBが必須LocaleCatalogを欠いたため失敗（run ID 7e9321a9-abce-4c5c-baff-5540bfd62f5a、28 PASS／1 FAIL／93未実行）。CompiledSourceから元の受入済みCharacter presentation catalogを借用し、AWFBに接続した。修正後は実ソースのActor取得・解放を1 op予算で進め、各命令の応答待ちで公開saveを作成して新規sessionへ復元。再exportのバイト一致、同一activationと元token、各命令が一度だけ発行されることと戻り値42を確認した。
 
 対象122件全PASS、元EXE 3件と検証Sourceの差分0。品質確認は nextest 0（4.25秒）、fmt 0（0.1秒）、check 0（28.48秒）、clippy 0（28.42秒）、wasm 0（3.76秒）、structure 0（3.33秒）。Cargoのlocked・全feature・全target逆依存和集合は12 package。[対象実測・原本](acceptance-evidence/task-bundle-session-line-commands.raw.zip)。 原本は19 entries、884875 bytes、SHA256 `7138a4ef5d295cf8411804fb059708c769640264da04b4226dcee7766b6ddf13`。
+
+### 台詞ホスト命令の12逆依存検証 — 2026-11-09
+
+公開Source `47535b1c545ff753efa460a14a1a192c8e4256c2`、親 `02f19979c220d702789c0340f0fc9f86b51cd5f6`、tree `1c5c7dd43623f970a74702732379ca28cf7a52c5`、公開patch SHA256 `58a64a55b751e760d6fda363948057de0d9497d2b1dc8e87f3bb0b4e516a19d3`。Runtime DriverとCompilerのlocked・全feature・全target逆依存和集合は12 package。Windowsの初回はSemaのrlibをAgent MCP Clientのlib testから参照できずCargo終了101。同じSource・選択・featureで再試行し、12 packageの構築・列挙が通過した。初回の発生原因は未確定。
+
+Windows・locked・全feature・既定filterのnextestで `Summary [ 608.658s] 2467 tests run: 2463 passed (31 slow), 4 failed, 23 skipped`。比較元 `e4d736ac55693fb2fae402e079fd465391cb62c7` の共通IDの結果差分0。追加は実AWFBの命令と保存復元テスト1件。CLI 709 PASS／4 FAIL／23 SKIPで、4件は診断まで一致。元Sourceと元EXE 92件の前後差分0。arcw.exeは 305948672 bytes、SHA256 `d807358f0f9430fa53c622a2658e00ce459c0cf8e4c4ac9718df2595ab985fe9`。
+
+原本は 14 entries、187413 bytes、SHA256 `d189c5fbad843ff1537762653ce26bcf3c25b33d2e0b3fa00989ced7f736d4f3`。初回構築失敗、再試行の選択、実行ログ、元EXEの前後hashを保管した。[全逆依存の実測](acceptance-evidence/task-bundle-session-line-commands-reverse.raw.zip)。
