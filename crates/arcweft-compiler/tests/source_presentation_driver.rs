@@ -3,6 +3,10 @@ use arcweft_compiler::source::compile_source;
 use arcweft_core::{
     effect::RuntimeArtifactFingerprint,
     engine::{FlowExit, FlowFiberStatus},
+    presentation::{
+        RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
+        RuntimeStageCommandOutcome,
+    },
     step::RuntimeStepMode,
     value::RuntimeScalarView,
 };
@@ -16,6 +20,10 @@ use arcweft_runtime_driver::{
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
 fn session(source: &str) -> BundleSession {
+    session_from_bytes(&source_bundle(source))
+}
+
+fn source_bundle(source: &str) -> Vec<u8> {
     let compiled = compile_source(source).expect("Source presentation compiles");
     let generation = compiled
         .character_dialogue_generation
@@ -48,7 +56,7 @@ fn session(source: &str) -> BundleSession {
                 entry_flow: Some("flow.main".to_owned()),
                 flows: compiled.plan.flows().len(),
                 bytecode_instructions: program.instructions.len(),
-                line_task_groups: 0,
+                line_task_groups: program.line_task_groups.len(),
                 stream_plans: 0,
             },
         },
@@ -60,13 +68,20 @@ fn session(source: &str) -> BundleSession {
     .try_with_validated_view_product(product.as_ref())
     .unwrap()
     .with_character_dialogue_generation(generation);
+    let bundle = match compiled.character_presentation_catalog() {
+        Some(catalog) => bundle.with_character_presentation_catalog(catalog.clone()),
+        None => bundle,
+    };
     let bundle = match views.text() {
         Some(text) => bundle.with_view_text(text.clone()),
         None => bundle,
     };
-    let bytes = bundle.to_format_bytes(BundleFormat::Awfb).unwrap();
+    bundle.to_format_bytes(BundleFormat::Awfb).unwrap()
+}
+
+fn session_from_bytes(bytes: &[u8]) -> BundleSession {
     BundleSession::from_awfb_bytes(
-        &bytes,
+        bytes,
         BundleSessionOptions {
             mode: RuntimeStepMode::OneOp,
             max_ops: 1,
@@ -74,6 +89,89 @@ fn session(source: &str) -> BundleSession {
         },
     )
     .unwrap()
+}
+
+#[test]
+fn source_dialogue_line_commands_resume_through_the_bundle_session_after_restore() {
+    let bytes = source_bundle(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> i64 {
+    alice()[Heard[p]] with {
+        init {
+            let actor = alice.stage.acquire(scope=line)
+            let _ = actor
+        }
+    }
+    return 42i64
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let mut session = session_from_bytes(&bytes);
+    let mut outcomes = Vec::new();
+    let mut acquired_actor = None;
+    let mut released = false;
+    for tick in 1..=256 {
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(tick, 1).unwrap(),
+            BundleStepInput {
+                line_outcomes: std::mem::take(&mut outcomes),
+                ..BundleStepInput::default()
+            },
+        );
+        assert!(step.stats.executed_ops <= 1);
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        if !step.line_commands.is_empty() {
+            let save = session.export_session_save_bytes().unwrap();
+            let mut restored = session_from_bytes(&bytes);
+            restored
+                .import_session_save_bytes(&save, &Default::default())
+                .unwrap();
+            assert_eq!(restored.export_session_save_bytes().unwrap(), save);
+            session = restored;
+        }
+        for request in step.line_commands {
+            let outcome = match request {
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::AcquireActor {
+                    command,
+                    actor,
+                    character,
+                    ..
+                }) => {
+                    assert_eq!(character.as_str(), "character.alice");
+                    assert_eq!(actor.activation(), command.activation());
+                    assert!(acquired_actor.replace(actor.clone()).is_none());
+                    RuntimeStageCommandOutcome::Acquired { command, actor }
+                }
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::ReleaseActor {
+                    command,
+                    actor,
+                }) => {
+                    assert_eq!(actor.activation(), command.activation());
+                    assert_eq!(acquired_actor.as_ref(), Some(&actor));
+                    assert!(!released);
+                    released = true;
+                    RuntimeStageCommandOutcome::ReleasedActor { command, actor }
+                }
+                other => panic!("unexpected line command {other:?}"),
+            };
+            outcomes.push(RuntimeLineHostOutcome::Stage(outcome));
+        }
+        if let Some((dialogue, _)) = step.presentation.dialogue.waiting_entries().next() {
+            session.queue_dialogue_advance(dialogue.advance_target().unwrap());
+        }
+        match step.fiber_status {
+            FlowFiberStatus::Done(exit) => {
+                assert_eq!(exit, FlowExit::Return("42".into()));
+                assert!(released && outcomes.is_empty());
+                return;
+            }
+            FlowFiberStatus::Failed(failure) => panic!("dialogue failed: {failure}"),
+            _ => {}
+        }
+    }
+    panic!("line command acknowledgements did not finish the flow");
 }
 
 fn run(session: &mut BundleSession, mut observe: impl FnMut(&mut BundleSession)) {

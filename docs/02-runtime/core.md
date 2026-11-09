@@ -234,6 +234,10 @@ host requests in `HostRequestBatch`. Task submissions, audio, host calls,
 line commands, content requests, and next-step root events keep their typed
 owners; they are requests for adapters to execute. File writes, compression,
 encryption, cloud sync, and device I/O stay outside Core.
+`BundleSession` returns the step's dialogue host commands in `line_commands`.
+Adapters submit typed responses in a later step's `line_outcomes` using the
+original command identity. Core admits each response against the activation
+and pending command, including after session restore.
 The complete input/output grammar is owned by
 [step.rs](../../crates/arcweft-core/src/step.rs); materialized line effects are
 owned by [effect.rs](../../crates/arcweft-core/src/effect.rs).

@@ -16005,3 +16005,11 @@ locked・全featureの対象実行は `Summary [   2.165s] 43 tests run: 43 pass
 Windows・locked・全feature・既定filterのnextestは `Summary [1192.161s] 8148 tests run: 8144 passed (66 slow), 4 failed, 41 skipped`。非CLIは7,435 PASS／18 SKIP。CLIは709 PASS／4 FAIL／23 SKIP。失敗IDと診断は前回と一致し、共通のテスト結果差分0。追加は静的gotoの型不一致回帰1件。Generic Matchの照合対象151件とFlow転送関連8件がPASS。Source差分0、元EXE 216件の前後差分0。実arcw.exeは 305948160 bytes、SHA256 `28196811cff24a03ac4b45faeef77766973767fa9e1b76b5c922f20bde179544`。
 
 Wasm型検査（31.78秒）と構造監査（16.57秒）はともに終了0。原本は20 entries、528363 bytes、SHA256 `5e0934e2adc79714d9aa4cd3d036a88bab8daa00f3feb06d1ddca50ec347b271`。[全体実測](acceptance-evidence/task-flow-static-input-type-reverse.raw.zip)。
+
+### BundleSession の台詞ホスト命令／応答 — 2026-11-09
+
+基点 `02f19979c220d702789c0340f0fc9f86b51cd5f6`、対象patch SHA256 `ab6fe44d5a3efc775d5767b611ec1e487ded8c74b8e5285c1ed2f6e1d65e8e89`。Coreは型付きの行命令を発行していたが、BundleSessionは命令を返さず、行応答を常に空にしていた。既存Coreの型とpending commandの照合を使用し、セッションは命令と応答を移動する。CLIの音声なし失敗の調査では、CharacterDialogueがvoice=autoを保持しても両Coreが音声なしでactivationを初期化することも確認した。選択・再生を検証するための後続境界として記録する。
+
+Compilerのfixture初回は公開AWFBが必須LocaleCatalogを欠いたため失敗（run ID 7e9321a9-abce-4c5c-baff-5540bfd62f5a、28 PASS／1 FAIL／93未実行）。CompiledSourceから元の受入済みCharacter presentation catalogを借用し、AWFBに接続した。修正後は実ソースのActor取得・解放を1 op予算で進め、各命令の応答待ちで公開saveを作成して新規sessionへ復元。再exportのバイト一致、同一activationと元token、各命令が一度だけ発行されることと戻り値42を確認した。
+
+対象122件全PASS、元EXE 3件と検証Sourceの差分0。品質確認は nextest 0（4.25秒）、fmt 0（0.1秒）、check 0（28.48秒）、clippy 0（28.42秒）、wasm 0（3.76秒）、structure 0（3.33秒）。Cargoのlocked・全feature・全target逆依存和集合は12 package。[対象実測・原本](acceptance-evidence/task-bundle-session-line-commands.raw.zip)。 原本は19 entries、884875 bytes、SHA256 `7138a4ef5d295cf8411804fb059708c769640264da04b4226dcee7766b6ddf13`。

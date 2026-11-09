@@ -27,6 +27,16 @@ pub struct CompiledSource {
 }
 
 impl CompiledSource {
+    /// Borrows the accepted Character presentation data needed to package executable dialogue.
+    pub fn character_presentation_catalog(
+        &self,
+    ) -> Option<&arcweft_character::presentation_name::CharacterPresentationCatalogData> {
+        self.compilation
+            .runtime_plan()
+            .character_presentation_catalog
+            .as_deref()
+    }
+
     /// Borrows the complete accepted View product, including its text catalog,
     /// from the original compiler transaction retained by this source result.
     pub fn view_product(&self) -> &crate::view::CompiledViewProduct {

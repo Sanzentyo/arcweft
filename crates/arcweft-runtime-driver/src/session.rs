@@ -60,6 +60,7 @@ use arcweft_core::executor::{
 };
 use arcweft_core::observation::RuntimeObservationState;
 use arcweft_core::plan::{EntryRuntimeId, FlowEvent};
+use arcweft_core::presentation::{RuntimeLineHostCommand, RuntimeLineHostOutcome};
 use arcweft_core::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
 use arcweft_core::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
 use arcweft_core::step::{
@@ -171,6 +172,8 @@ pub struct BundleStepInput {
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub host_call_results: Vec<RuntimeHostCallResult>,
+    /// Outcomes for commands issued by an earlier step, with their original identity.
+    pub line_outcomes: Vec<RuntimeLineHostOutcome>,
 }
 
 /// Result of routing an input action from one observed dialogue View occurrence.
@@ -215,6 +218,8 @@ pub struct BundleSessionStep {
     pub presentation: BundlePresentationSnapshot,
     pub text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pub audio_commands: Vec<AudioCommandEnvelope>,
+    /// Dialogue commands for the host to execute and acknowledge through `BundleStepInput`.
+    pub line_commands: Vec<RuntimeLineHostCommand>,
     pub requested_tasks: Vec<HostTaskDispatch>,
     pub program_task_completions: Vec<arcweft_core::task::ProgramTaskCompletion>,
     pub cancel_scopes: Vec<CancelScopeId>,
@@ -949,6 +954,7 @@ impl BundleSession {
             presentation: self.presentation.clone(),
             text_control_write_backs,
             audio_commands,
+            line_commands: output.requests.line_commands,
             requested_tasks,
             program_task_completions: output.requests.program_task_completions,
             cancel_scopes,
@@ -1040,7 +1046,7 @@ impl BundleSession {
                     .drain(..)
                     .chain(ordinary_host_call_results)
                     .collect(),
-                line_outcomes: Vec::new(),
+                line_outcomes: input.line_outcomes,
             },
             routed_input_events,
             presentation_transitions,
