@@ -153,7 +153,102 @@
         "finishedUtc": "2026-11-09T13:02:30.1670894Z"
       }
     ],
-    "qualityIncompleteAtRecord": true
+    "qualityIncompleteAtRecord": true,
+    "qualityFollowUp": {
+      "recordedUtc": "2026-11-09T13:13:25.3356413Z",
+      "sourceCommit": "959707f736e0a3af22771a94fe0a5600362044e7",
+      "acceptedStages": [
+        {
+          "name": "workspace-check",
+          "command": [
+            "cargo",
+            "check",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "headAtFinish": "959707f736e0a3af22771a94fe0a5600362044e7",
+          "exitCode": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 56s"
+          ],
+          "logSha256": "b7e824208a963657a94209f18f9b80b48fcb96c452da47a402bc5e02508bdcc1",
+          "startedUtc": "2026-11-09T12:59:31.9813474Z",
+          "finishedUtc": "2026-11-09T13:02:30.1670894Z"
+        },
+        {
+          "name": "workspace-clippy",
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "headAtFinish": "4a07b1a3825b9f8df2bc0bc6b095d0d5e95cedb6",
+          "exitCode": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 08s"
+          ],
+          "logSha256": "621c3800e2d9df9d2e609a1ed80d361f8d418186737800aef7265638961d0db0",
+          "startedUtc": "2026-11-09T13:02:30.2879817Z",
+          "finishedUtc": "2026-11-09T13:04:41.1420796Z"
+        },
+        {
+          "name": "owners",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--lib",
+            "--tests",
+            "--package",
+            "arcweft-lang-hir",
+            "--package",
+            "arcweft-lang-sema",
+            "--package",
+            "arcweft-runtime-plan",
+            "--package",
+            "arcweft-compiler"
+          ],
+          "headAtFinish": "4a07b1a3825b9f8df2bc0bc6b095d0d5e95cedb6",
+          "exitCode": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 47s",
+            "Summary [ 249.015s] 3579 tests run: 3579 passed (5 slow), 9 skipped"
+          ],
+          "logSha256": "4a60fc036d02181cf8c37b2fb25c68d0ea3d90307157605a91a63c2008c168fe",
+          "startedUtc": "2026-11-09T13:04:41.2328043Z",
+          "finishedUtc": "2026-11-09T13:11:15.7815198Z"
+        }
+      ],
+      "reverseStatus": "Four owner packages completed. Runtime Host overlapped the next carrier-scope edit and built mixed Rust inputs. Its compiler failure is preserved as an invalidated attempt. Runtime Host and the rest of the reverse packages need a fresh run on the carrier-scope cut.",
+      "invalidatedStage": {
+        "name": "runtime-host",
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "--no-fail-fast",
+          "--lib",
+          "--tests",
+          "--package",
+          "arcweft-runtime-host"
+        ],
+        "headAtFinish": "4a07b1a3825b9f8df2bc0bc6b095d0d5e95cedb6",
+        "exitCode": 101,
+        "summary": [],
+        "logSha256": "a1912c3620a822cace04bbf36197ef4811699f8166f131a82347cd8bc3e2ce24",
+        "startedUtc": "2026-11-09T13:11:15.8722213Z",
+        "finishedUtc": "2026-11-09T13:12:08.5186824Z"
+      },
+      "rawReceipt": "quality/receipt.json"
+    }
   },
   "sample": {
     "source": "samples/modern-feedback-view/arcw.toml",
@@ -690,8 +785,8 @@
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 567103,
-    "sha256": "2bc0e7ebdac51aa5506023474fc855a9d1397ccd632cf92e63b66e19f8675268",
+    "bytes": 1497054,
+    "sha256": "2e16b199cff33847869b2265da8ce5d6bd7c7caa350b9c231eaec0fceecdade5",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -747,7 +842,12 @@
       "carrier/result/bundle.log": "9368d2fcd63a69a3698614bda43f2528c6fcee2645196ff5cd7bad6b149012b5",
       "carrier/result/native.log": "76f4c5d83d961c843712d3f25f12543c2e37ae8c2d286af54de313466e3d430b",
       "carrier/result/native-operation-name-action.json": "57ccc45869c9f7d68192537b9e2a846bcb7d8bbcbe3f22f1bb277257eee9054b",
-      "carrier/result/native-operation-name-action.png": "23deb739a2d05a056e3724453da6702aaa5bfc85c2227b60a222489da8aa2b7f"
+      "carrier/result/native-operation-name-action.png": "23deb739a2d05a056e3724453da6702aaa5bfc85c2227b60a222489da8aa2b7f",
+      "quality/receipt.json": "d40fd562c5f11af585958a45e2bb691e01669a6efefd06b5a83f5ca1ecd77389",
+      "quality/workspace-check.log": "b7e824208a963657a94209f18f9b80b48fcb96c452da47a402bc5e02508bdcc1",
+      "quality/workspace-clippy.log": "621c3800e2d9df9d2e609a1ed80d361f8d418186737800aef7265638961d0db0",
+      "quality/owners.log": "4a60fc036d02181cf8c37b2fb25c68d0ea3d90307157605a91a63c2008c168fe",
+      "quality/runtime-host.log": "a1912c3620a822cace04bbf36197ef4811699f8166f131a82347cd8bc3e2ce24"
     }
   }
 }
