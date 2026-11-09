@@ -15980,3 +15980,12 @@ Cargo manifest・lock・config不変のため、前回照合したCore53／Sourc
 locked・全featureの対象42件PASS／2662 SKIP／1.829秒。Core31、RuntimePlan2、Compiler9。AWBCで既存Flowの文字列を拒否し、Nativeでは同じ宛先を静的指定へ変えた保留packetと文字列へ変えたpacketを復元拒否した。同名で異なる宣言のimport参照の拒否、実cleanupと移管、Native／保存AWBCの実ソース転送も通過。実行前後のSource・元EXE差分0。変更Rustのfmt終了0、Core／RuntimePlan／Compilerの全target check終了0、workspace全target check／Clippy終了0。Cargo入力が前回から同じためCore逆依存53にRuntimePlan逆依存16を含む結果を再利用した。今回の全53実行は別途必要。
 
 原本 `docs/implementation/acceptance-evidence/task-flow-reference-custody.raw.zip`：31 entries／1222079 bytes／SHA256 `eb2d9742abebc4db5832ceffad9ee6cbc8ff5353844b845eef1c0b8b3d3f768d`。検証条件、元実行ファイルの前後hash、ログ、Sourceとpatchを保管。直近の9,125件は元Sourceの履歴を保持する。
+
+
+### 動的Flow参照の53逆依存検証 — 2026-11-09
+
+固定Source `77ed2ce5d8cd62aefab55595516ff68dcf0d6331`、親 `6082bddb07295615ef7cda85be7b96a732d53e01`、tree `e10cffeee0e74df08acd76ee7ae0f543d253a610`、公開patch SHA256 `d6c4fd326c430d962cc20150fe036cb8ccbcc55fc3e258f3d7ca6eaf6b6c8836`。追跡差分とindex空、保持cache4。変更ownerのCoreとRuntimePlanの逆依存和集合は53。Cargo入力と前回metadataの対応を確認し再利用した。r1はBundle mmapのWindowsエラー1455で構築失敗。windowed_ingress_runtimeとlibrary targetを同じfeature指定で個別構築した後、r2は全53の構築／列挙に成功した。
+
+Windows・locked・全feature・既定filterのnextestで `Summary [1220.937s] 8147 tests run: 8143 passed (75 slow), 4 failed, 41 skipped`。非CLIは7,434 PASS／18 SKIP。CLIは709 PASS／4 FAIL／23 SKIPで、失敗ID・診断はScroll／対話voice／promotion 2件と一致。JITとAWBC cleanup回帰、同名文字列のAWBC拒否、Native保留参照の復元を含む7照合がPASS。Generic Match 150同一ID＋Style後継1件も151／151 PASS。前回54 packageのうちHIR 979実行は影響範囲外。共通範囲の差分は新しい文字列拒否1件のみ。元pathの216実行ファイルとSourceの差分0。実 `arcw.exe` は305945600 bytes／SHA256 `87a274200879c32318d760897780e3816fc49880501e6b18af43e465c929779a`。
+
+Wasm向けplayer-web／render-webのlib checkと構造gate終了0。workspace check／Clippy終了0の同一Rust patchは先行原本に保持。原本 `docs/implementation/acceptance-evidence/task-flow-reference-reverse.raw.zip` は20 entries／695403 bytes／SHA256 `51ca49899b3a0d6bb05f7e4c34fbb56ffd506b116d85bd2a112bb729da91d1ef`。成功run、構築失敗、個別構築、選択差分と元EXE前後hashを保存した。サンプルの実操作と画像比較はこの検証に含まない。
