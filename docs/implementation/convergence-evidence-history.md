@@ -16228,3 +16228,19 @@ Wasm buildとbindgenは終了0。同じデモを使う既定Web smokeは、別�
 
 [検証原本](acceptance-evidence/task-awfb-uncompressed-digest.raw.zip)は6件、351,590 bytes、SHA-256
 `72672d56de623d442a47a019a6d7ba9c0baf65293de6fa9d74d920d512a03ca6`。
+
+### Web起動・保存復元・置換でのAWFBデコード共有 — 2026-11-09
+
+公開Source `569182dcd47c00a535cd39ba83abb67d6b6c875a`、親 `6b8fa8fb49fcbb669f374caefb7333ababd45436`、
+tree `6160d15b3fc75bce2ed1e98a963129ff71cc9855`。公開先の8 blobを照合した。検証開始時は親に実装差分があり、完了時は同じ差分を公開済みだった。既存の未追跡 `%SystemDrive%/` があった。
+
+バンドルのproduct codecが受理済みAWFBからモデルと成果物IDを作り、Webセッションとホストが同じ結果を使う。リプレイはロケールだけを上書きして同じエンジンレジストリで開始する。
+パッチはmaterialized targetの照合をproduct decodeより前に行う。既存のsection制限、Codec、世代識別を維持し、Cargo依存の変更はない。
+codecの状態と検証は `arcweft-bundle` に、セッション構築と置換は `arcweft-runtime-driver` に置いた。構造監査はブロッキング違反0件。
+
+バンドル、ランタイムドライバー、Webプレイヤーの全feature nextestは終了0で519件成功、0件スキップ。AWFB成果物IDの照合、保存復元、置換、決定的なIME fixture生成を含む。
+Wasm buildとbindgenは終了0。同じ35,157,520 bytesのデモで通常Web smokeは終了1、初回起動が10秒上限を超えた。
+起動待ちを延ばした計測は約14.47秒で、Rust初期化は約11.63秒だった。
+
+[検証原本](acceptance-evidence/task-awfb-shared-decode.raw.zip)は10件、54,559 bytes、SHA-256
+`649ee5677f887d477915ed01420eb696050ffb62070c3b3115351a10eead06b4`。
