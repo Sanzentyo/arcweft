@@ -77,9 +77,8 @@ It also verifies `[p]` as a same-dialogue page transition through the dialogue
 instance, stage, page index, and page count in `arcweft.web_observation.v1`.
 
 `web/arcw.toml` uses the schema-1 project asset root at `web/assets/`.
-The bundler admits only assets referenced by `src/main.arcw`; browser-served fonts
-and other static files in the same root are not implicitly walked into
-`demo.awfb`.
+The bundle includes virtual files from this root, including fonts served
+separately by the browser host.
 
 ## Manual launch
 

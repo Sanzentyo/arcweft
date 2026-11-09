@@ -16154,3 +16154,24 @@ Nativeの低水準GPU smokeは収集ツール内と別のnextestの両方で1／
 
 [検証原本](acceptance-evidence/task-inset-shadow-shared-collector.raw.zip)は20件、46,078 bytes、SHA-256
 `f373ae89214f9a455394a3c878d84f82bee01fc8e99bb229d9baca1dbdf8ba3e`。
+
+### Webデモの現行契約への移行と起動計測 — 2026-11-09
+
+修復前の公開Source `332d9ac4a33a452b210d8cad65c20ba21746eaef` では、旧AWFBの `artifact_fingerprint` 欠落でWeb起動が停止した。
+元ソースのImage宣言を4件の通常factoryへ移し、同じasset、object ID、配置と順序を保持した。
+ソースをHIRの位置と照合し、話者を `dialogue.character.display_name` から取得し、`done` の文字列戻り値を宣言した。
+元デモの `.normal` と `.smile` は型付きキャラクターのlookとして登録されていなかった。デモは従来のstand画像を保持し、この2指定を外した。
+最初の2回の修復試行と式の特定を原本に残した。実行環境の予算やテストの期待は保持した。
+
+元AWFB SHA-256 `e844e7571cf9a5ade5cefba3f26584906bc16a446f72483907f8b6be47325c8c`。
+現在のAWFBは35,156,896 bytes、SHA-256 `8f92afe973ac15cf56e325157cb9e53c1e42c04003b4f9d09ff4587d538db592`。
+同じCLIとmanifestで生成を2回実行し、同一SHA-256を確認した。`inspect` がversion 1のsectionを読み取った。
+CLIの `run-bundle` は4 step／64 opsで台詞に達し、診断は0件。
+実行時のasset catalogは26 virtual filesを含む。sectionは35,068,458 bytesで、旧READMEの参照専用という説明を訂正した。
+
+既定の `npm --prefix web test` は起動完了前に10秒上限で終了1。計測用の独立した実行は約19.7秒で起動した。
+その実行では同じ台詞のoccurrenceで2ページ目へ状態が進んだ後、描画テキストの検査が `second page is not visible` で失敗した。
+残るWeb smokeと既定条件での画像比較は別途判定する。
+
+[検証原本](acceptance-evidence/task-web-demo-regeneration.raw.zip)は13件、6,766 bytes、SHA-256
+`ccc4ed34ca07cb7e4c64de9a46d8cd8ea5bc5935353a5a4e4b4f9c8f8426e461`。

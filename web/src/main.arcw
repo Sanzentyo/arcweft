@@ -30,7 +30,7 @@ pub style web_panel {
 
 pub view WebPanel(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {
-        Text(dialogue.speaker)
+        Text(dialogue.character.display_name)
             .x(85.6px)
             .y(480.8px)
             .width(1108.8px)
@@ -48,38 +48,6 @@ pub view WebPanel(dialogue: DialogueView) {
     }
         .part(web_panel)
         .style(@style.web_panel)
-}
-
-pub image @image.generated.character_stand {
-    asset = @asset:.generated.character_stand
-    x = 72px
-    y = 52px
-    width = 208px
-    height = 332px
-}
-
-pub image @image.generated.background {
-    asset = @asset:.generated.background
-    x = 0px
-    y = 0px
-    width = 1280px
-    height = 720px
-}
-
-pub image @image.generated.gif_pulse {
-    asset = @asset:.generated.gif_pulse
-    x = 486px
-    y = 46px
-    width = 96px
-    height = 96px
-}
-
-pub image @image.generated.webp_pulse {
-    asset = @asset:.generated.webp_pulse
-    x = 492px
-    y = 156px
-    width = 96px
-    height = 96px
 }
 
 struct GameState {
@@ -112,15 +80,31 @@ entry game @entry.main {
 }
 
 flow main(state: GameState) {
-    image(@image.generated.background)
-    image(@image.generated.character_stand)
-    image(@image.generated.gif_pulse)
-    image(@image.generated.webp_pulse)
+    let background = image(
+        asset = @asset:.generated.background,
+        id = "image.generated.background",
+        x = 0px, y = 0px, width = 1280px, height = 720px
+    )
+    let character_stand = image(
+        asset = @asset:.generated.character_stand,
+        id = "image.generated.character_stand",
+        x = 72px, y = 52px, width = 208px, height = 332px
+    )
+    let gif_pulse = image(
+        asset = @asset:.generated.gif_pulse,
+        id = "image.generated.gif_pulse",
+        x = 486px, y = 46px, width = 96px, height = 96px
+    )
+    let webp_pulse = image(
+        asset = @asset:.generated.webp_pulse,
+        id = "image.generated.webp_pulse",
+        x = 492px, y = 156px, width = 96px, height = 96px
+    )
 
     narrator(id=@say.web_demo.narrator, voice=auto):
         語り手は明朝体と薄い桃色で表示される。既定のタイプライター表示で、WASMでもnativeでも同じ速度で文字が現れる。[p]これは同じdialogue lineの2ページ目で、次の入力までは次のlineへ進まない。
 
-    zunda_guide(id=@say.web_demo.guide, voice=auto, look=.normal):
+    zunda_guide(id=@say.web_demo.guide, voice=auto):
         こちらはキャラクターsurfaceの色とフォントを使う行なのだ。#fx(wave(amplitude=4px))[波打つ文字]と、右上のアニメーション画像も同じフレーム計画で動いているのだ。
 
     choice @choice.web_demo {
@@ -129,8 +113,8 @@ flow main(state: GameState) {
     }
 }
 
-flow done {
-    zunda_guide(id=@say.web_demo.done, voice=auto, look=.smile):
+flow done() -> String {
+    zunda_guide(id=@say.web_demo.done, voice=auto):
         choiceの当たり判定と見た目が一致したのだ。スクロールしてもボタンの場所は上下しないのだ。
     return "done"
 }
