@@ -16272,6 +16272,12 @@ Cargo treeとmetadataで逆依存17パッケージが一致し、全feature next
 [Clippy・一括ビルド失敗・最初の分割の原本](acceptance-evidence/task-awfb-accepted-artifact-rust-validation.raw.zip)は5件、849,025 bytes、SHA-256
 `c10e959318be4b3b79fe38c566fca3228b259112e13168304697589ce1b5547a`。
 
+残り35分割はすべて実行を終えた。2,941件を実行し、2,939 PASS／2 FAIL／23 SKIP。失敗はCLIの `verify_json_records_required_solver_checks` と `verify_json_reports_missing_promotion_proof` で、両方とも旧receiverなしのpromotionが型検査で拒否された。分割ビルドの `os error 1455` は0件。先行の90件は別実行として保持する。
+計画の基点は `cea809f6b5acbe75f3edbeef8cc7568626362743`。後段のWeb統合13件は `818e8ef71a7ce00d04633ed4ed21f8f2bd482224` のWebクレート変更後に実行した。Webクレートの全37件の再検証は下のデモキャプチャ記録に置く。
+
+[実行計画・全分割のログと結果の原本](acceptance-evidence/task-awfb-accepted-artifact-reverse-slices.raw.zip)は37件、553,153 bytes、SHA-256
+`fe96021164499a2e2a3721cf8007e768901bc968234a8c00414d2625dc43e2cb`。
+
 ### デモのNative／Webキャプチャ — 2026-11-09
 
 公開Source `818e8ef71a7ce00d04633ed4ed21f8f2bd482224`、親 `433d0a3965814c20125aa9976a2fb54e474e7610`、
