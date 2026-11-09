@@ -97,10 +97,10 @@ flow unified_text_visual_parity(state: GameState) -> String {
         #size(42pt)[#layout(.vertical_lr, jlreq=.strict)[#font("Noto Sans JP")[縦#layout(.ruby_under)[|[夢](ゆめ)]へ#layout(.ruby_inter_character)[|[夢星](ゆめ)]人2026XYZ。山川]]][p]
 
     parity(id=@say.unified_text_visual_parity.jlreq_loose, voice=auto):
-        #size(36pt)[#layout(.vertical_rl, jlreq=.loose)[#font("Noto Sans JP")[天地。「人山川海]]][p]
+        #size(34px)[#layout(.vertical_rl, jlreq=.loose)[#font("Noto Sans JP")[天地。「人山川海]]][p]
 
     parity(id=@say.unified_text_visual_parity.jlreq_strict, voice=auto):
-        #size(36pt)[#layout(.vertical_rl, jlreq=.strict)[#font("Noto Sans JP")[天地。「人山川海]]][p]
+        #size(34px)[#layout(.vertical_rl, jlreq=.strict)[#font("Noto Sans JP")[天地。「人山川海]]][p]
 
     parity(id=@say.unified_text_visual_parity.fx_reveal, voice=auto):
         #color(rgb("#b9dcff"))[FX] #fx(parity_orbit(amplitude=5px, speed=0.8))[#size(42pt)[#color(rgb("#9be7ff"))[波動光]]][r]

@@ -6,8 +6,8 @@ authored dialogue View, Fx, and capture. Five sequential dialogue pages cover:
 - vertical-rl UAX #50 punctuation, text-combine-upright, and sideways Latin;
 - vertical-lr ruby-under, inter-character ruby, text-combine-upright, and
   sideways Latin;
-- loose and strict JLREQ composition of the same closing/opening pair in
-  separate frames at the same constrained large glyph size; and
+- loose and strict JLREQ composition of the same closing/opening pair at 34px
+  in the same 125.6px vertical measure; and
 - a source-defined glyph transform plus a delayed typewriter reveal at fixed
   logical times.
 
