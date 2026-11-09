@@ -15997,3 +15997,11 @@ Wasm向けplayer-web／render-webのlib checkと構造gate終了0。workspace ch
 locked・全featureの対象実行は `Summary [   2.165s] 43 tests run: 43 passed, 2662 skipped`。型が異なる逆順の名前付き入力を実ソースで評価し、Nativeと保存・復元を繰り返すdecoded AWBCで同じ結果に到達した。テスト実行前後のSource差分0、元EXE差分0。品質確認は fmt 0（0.24秒）、check 0（68.18秒）、clippy 0（78.42秒）。
 
 [検証原本](acceptance-evidence/task-flow-static-input-type.raw.zip) は 23 entries、993512 bytes、SHA256 `3c2721642c38b80996b88aa2088d6658141067ab74c88c85db3615333518f677`。動的参照の全53逆依存結果はその実行Sourceに紐づけて保持する。
+
+### 静的gotoの53逆依存検証 — 2026-11-09
+
+公開Source `e4d736ac55693fb2fae402e079fd465391cb62c7`、親 `fa9d431a7ab84f1a63ef3dffbbe0e7bf7d2a668e`、tree `c019772ac226f316408fb23748c3e9d59c6232e7`、公開patch SHA256 `40782100ea1c07cbbeed03200b6ba6f360e604fd872b1c55ec1d972e0a26fc3d`。Coreの逆依存53はRuntimePlanの16を含み、Cargo入力が同一のため既存の依存graphを再利用した。初回の列挙はAgent Runnerのテスト構築でE0614が2件発生し終了101。コミットの変更に該当ファイルは含まれず、再試行時は実ファイルのGit blob `42ec9219a28f4515ef076bd1ae3204ace030bd16` の前後一致を確認して、同じ53 packageの構築と列挙が通過した。初回の発生原因は未確定。
+
+Windows・locked・全feature・既定filterのnextestは `Summary [1192.161s] 8148 tests run: 8144 passed (66 slow), 4 failed, 41 skipped`。非CLIは7,435 PASS／18 SKIP。CLIは709 PASS／4 FAIL／23 SKIP。失敗IDと診断は前回と一致し、共通のテスト結果差分0。追加は静的gotoの型不一致回帰1件。Generic Matchの照合対象151件とFlow転送関連8件がPASS。Source差分0、元EXE 216件の前後差分0。実arcw.exeは 305948160 bytes、SHA256 `28196811cff24a03ac4b45faeef77766973767fa9e1b76b5c922f20bde179544`。
+
+Wasm型検査（31.78秒）と構造監査（16.57秒）はともに終了0。原本は20 entries、528363 bytes、SHA256 `5e0934e2adc79714d9aa4cd3d036a88bab8daa00f3feb06d1ddca50ec347b271`。[全体実測](acceptance-evidence/task-flow-static-input-type-reverse.raw.zip)。
