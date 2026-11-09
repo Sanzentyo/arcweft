@@ -16319,3 +16319,7 @@ Webクレートは全feature nextest 37件成功、ClippyとWasmビルドは終�
 
 [旧入力・修復後の生成・ブラウザー観測・公開照合の原本](acceptance-evidence/task-text-parity-current-fixtures.raw.zip)は17件、11,489 bytes、SHA-256
 `741ea3aeebf1f98723a0b4b41aa38526f635fcb8b222cd82241ff77b6b2e6902`。
+
+### Scrollの現状記述の訂正 — 2026-11-09
+
+`cc9e2deb9c5de1c2f0d699d67ed7d7e576926430` の現状一覧には、Scrollの初回検証で発生した反復子の描画失敗が現在形で残っていた。`77c2024abbde3d455e0bb2699fcae821cf4817fa` はキー付きText／Button／Scrollの正順と逆順をNativeで再検証し、`ae708a9ca954fb2b1cd9e45789c97cc831baef56` は単独Panelと反復Box、名前付き `part` の重複を修復して実描画を確認した。後続結果は各項目の行に集約し、Scrollの行は元のCLI・保存復元の受入範囲に絞った。[初回の失敗原本](acceptance-evidence/task-retained-scroll-occurrence.raw.zip)、[Text／Buttonの再検証](acceptance-evidence/task-retained-text-button-occurrences.raw.zip)、[Panel／Boxの再検証](acceptance-evidence/task-retained-surface-native-web.raw.zip)。
