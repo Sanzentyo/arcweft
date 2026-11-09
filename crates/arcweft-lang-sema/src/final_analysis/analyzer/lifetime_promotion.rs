@@ -12,10 +12,13 @@ use arcweft_lang_hir::{
     symbol::{CallableDeclarationOwner, ResolvedProjectSymbol},
 };
 
+#[path = "lifetime_promotion/receiver.rs"]
+mod receiver;
+
+use self::receiver::ReceiverBorrowQuery;
 use super::{Analyzer, FinalSemanticAnalysisError, statements::expression_span};
 use crate::{
     callable::PreparedCallCalleeConstraintInputs, final_analysis::model::LifetimeLexicalActivation,
-    types::TypeKind,
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -99,13 +102,15 @@ impl Analyzer<'_, '_, '_> {
         if matches!(
             promotion.authorization(),
             HirLifetimePromotionAuthorization::Safe { .. }
-        ) && matches!(actual, TypeKind::BorrowRef { .. })
-        {
-            return Err(
-                FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver {
-                    source_span: expression_span(module, *source)?,
-                },
-            );
+        ) {
+            let source_span = expression_span(module, *source)?;
+            if ReceiverBorrowQuery::new(self.symbols, &self.types, self.control, &source_span)
+                .contains_borrow(actual)?
+            {
+                return Err(
+                    FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver { source_span },
+                );
+            }
         }
         Err(
             FinalSemanticAnalysisError::LifetimePromotionExecutionUnavailable {

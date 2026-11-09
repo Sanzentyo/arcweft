@@ -453,6 +453,8 @@ pub enum FinalSemanticAnalysisError {
     LifetimePromotionReceiverRequired { source_span: SourceSpan },
     #[error("safe lifetime promotion requires an owned receiver")]
     LifetimePromotionBorrowedReceiver { source_span: SourceSpan },
+    #[error("lifetime promotion receiver ownership analysis exceeded its type work limit")]
+    LifetimePromotionReceiverLimit { source_span: SourceSpan },
     #[error("lifetime promotion has no executable ownership transfer")]
     LifetimePromotionExecutionUnavailable { source_span: SourceSpan },
     #[error("call fact is not a clean selected call")]
@@ -809,6 +811,7 @@ impl FinalSemanticAnalysisError {
             Self::LifetimePromotionTargetUnavailable { .. } => "sema.lifetime.promotion_target",
             Self::LifetimePromotionReceiverRequired { .. }
             | Self::LifetimePromotionBorrowedReceiver { .. } => "sema.lifetime.promotion_receiver",
+            Self::LifetimePromotionReceiverLimit { .. } => "sema.lifetime.promotion_receiver_limit",
             Self::LifetimePromotionExecutionUnavailable { .. } => {
                 "sema.lifetime.promotion_execution"
             }
@@ -907,6 +910,7 @@ impl FinalSemanticAnalysisError {
             | Self::LifetimePromotionTargetUnavailable { source_span, .. }
             | Self::LifetimePromotionReceiverRequired { source_span }
             | Self::LifetimePromotionBorrowedReceiver { source_span }
+            | Self::LifetimePromotionReceiverLimit { source_span }
             | Self::LifetimePromotionExecutionUnavailable { source_span } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())

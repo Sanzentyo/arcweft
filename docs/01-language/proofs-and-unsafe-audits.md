@@ -154,8 +154,12 @@ caller's declaration scope and retain the source of each operand for diagnostics
 Select the destination from the activations reached by the operation. In
 particular, a Flow body reaches its Flow activation and an attached dialogue
 body reaches its Line activation. The checked receiver of a safe promotion
-must be owned. An explicit proof supplies evidence about lifetimes and leaves
-the receiver's ownership unchanged.
+must be owned. A borrow or borrowed slice carried in a field, enum payload, or
+collection element also makes the receiver borrowed. A generic argument
+contributes to this check when it is used in the value's storage. Callable
+signatures and deferred result types describe operations. Checking their
+captures requires the owner of the actual value. An explicit proof supplies
+evidence about lifetimes and leaves the receiver's ownership unchanged.
 
 ## Release policy
 

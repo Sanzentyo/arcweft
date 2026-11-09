@@ -1384,6 +1384,116 @@ fn lifetime_promotion_cannot_treat_a_borrow_as_an_owned_receiver() {
 }
 
 #[test]
+fn safe_lifetime_promotion_checks_borrows_in_stored_receiver_types() {
+    for (declarations, ty, proof, code) in [
+        ("", "Option<&i64>", "", "sema.lifetime.promotion_receiver"),
+        (
+            "proof keep() = ()",
+            "Result<i64, Option<&i64>>",
+            ", proof = @proof.keep",
+            "sema.lifetime.promotion_receiver",
+        ),
+        ("", "Slice<i64>", "", "sema.lifetime.promotion_receiver"),
+        (
+            "struct Summary { value: &i64 }",
+            "Summary",
+            "",
+            "sema.lifetime.promotion_receiver",
+        ),
+        (
+            "enum Summary { Tuple(&i64), Empty }",
+            "Summary",
+            "",
+            "sema.lifetime.promotion_receiver",
+        ),
+        (
+            "enum Summary { Record { value: &i64 }, Empty }",
+            "Summary",
+            "",
+            "sema.lifetime.promotion_receiver",
+        ),
+        (
+            "struct Outer<T> { value: Inner<T> }
+             enum Inner<T> { Next(Vec<Outer<T>>), Stored(T) }",
+            "Outer<&i64>",
+            "",
+            "sema.lifetime.promotion_receiver",
+        ),
+        (
+            "enum Growing<T> { Next(Vec<Growing<Option<T>>>), Stored(T) }",
+            "Growing<&i64>",
+            "",
+            "sema.lifetime.promotion_receiver",
+        ),
+        (
+            "enum Growing<T> { Next(Vec<Growing<Option<T>>>), End }",
+            "Growing<&i64>",
+            "",
+            "sema.lifetime.promotion_execution",
+        ),
+        (
+            "struct Phantom<T> { value: i64 }",
+            "Phantom<&i64>",
+            "",
+            "sema.lifetime.promotion_execution",
+        ),
+        (
+            "struct Summary<T> { value: T }",
+            "Summary<i64>",
+            "",
+            "sema.lifetime.promotion_execution",
+        ),
+        ("", "Need<&i64>", "", "sema.lifetime.promotion_execution"),
+    ] {
+        let call = format!("value.promote('flow{proof})");
+        let source = format!("{declarations}\nflow main(value: {ty}) {{ let _ = {call}; }}");
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{source}: {error:?}"));
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{source}");
+        let span = diagnostic.span().expect("original promotion source");
+        let offending = if code == "sema.lifetime.promotion_receiver" {
+            "value"
+        } else {
+            &call
+        };
+        assert_eq!(&source[span.range().as_range()], offending, "{source}");
+    }
+}
+
+#[test]
+fn safe_lifetime_promotion_propagates_only_changed_nominal_storage() {
+    use std::fmt::Write as _;
+
+    let mut declarations = String::new();
+    for index in 0..180 {
+        writeln!(
+            declarations,
+            "struct Cell{index} {{ next: Cell{} }}",
+            index + 1
+        )
+        .unwrap();
+    }
+    for (leaf, code) in [
+        ("i64", "sema.lifetime.promotion_execution"),
+        ("&i64", "sema.lifetime.promotion_receiver"),
+    ] {
+        let source = format!(
+            "{declarations}struct Cell180 {{ value: {leaf} }}\n
+            flow main(value: Cell0) {{ let _ = value.promote('flow); }}"
+        );
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{leaf}: {error:?}"));
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{leaf}");
+    }
+}
+
+#[test]
 fn lifetime_promotion_audit_stops_at_independent_execution() {
     for (body, code, offending) in [
         (

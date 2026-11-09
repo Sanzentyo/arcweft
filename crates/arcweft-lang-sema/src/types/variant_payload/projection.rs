@@ -345,6 +345,13 @@ impl VariantPayloadType {
         }
     }
 
+    /// Field types carried by this payload value, in declaration order.
+    pub(crate) fn stored_fields(&self) -> impl Iterator<Item = &TypeKind> {
+        let mut children = self.children();
+        children.owner = None;
+        children
+    }
+
     pub(in crate::types) fn has_same_header(&self, other: &Self) -> bool {
         self.owner_family == other.owner_family
             && self.case_ordinal == other.case_ordinal
