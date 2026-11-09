@@ -15923,6 +15923,20 @@ r3はSemaのfn／flow formal ABIとAWBCの7 caseがPASSしたが、Nativeでpres
 
 r4は3／3 PASS、1411 filter等SKIP、1.897秒。Sema1 testはfn／flowの2 context、Compiler2 testは各backend7 Source caseを実行するが、それらを別testとして件数へ加算しない。AWBCはOneOp／max_ops=1／256 ticksを保ち、元runtimeをdropした各stepの公開JSON cold restoreを含む。Nativeも各step1 op以下。r1／r3／r4の実EXEを元pathで前後採取してbinary drift0、r4 source drift0。r2のbefore binary pinは未採取でありdrift0を主張しない。各phaseの独立patch／入力hash／終端ログを保持し、異なる入力の件数を単一matrixへ加算しない。
 
-変更11 Rust pathのfmt check終了0。これはユーザーが認めた途中commitであり、現在patchのClippy・workspace品質gateと全53逆依存の実行は未完了。Cargo／lock／featureに変更が無く、先行metadata／target-all treeのCore53 closure（Source23を含む）を再利用して次の影響検証を行う。動的明示適用、generic／default／spreadと型の完全admission、全取消し／失敗matrix、Native公開save、実Native／Web parityは未達または未検証。新しい条件の修復であり、Generic Match等の既受入を戻す判定ではない。goto行の旧13件の説明はWIP6履歴へ保持し、今回の正確な範囲へ整理した。
+変更11 Rust pathのfmt check終了0。これはユーザーが認めた途中commitであり、現在patchのClippy・workspace品質gateと全53逆依存の実行は未完了。Cargo／lock／featureに変更が無く、先行metadata／target-all treeのCore53 closureを再利用する予定だった。Source23を含むという当時の判断は下記の実グラフ照合で訂正した。動的明示適用、generic／default／spreadと型の完全admission、全取消し／失敗matrix、Native公開save、実Native／Web parityは未達または未検証。新しい条件の修復であり、Generic Match等の既受入を戻す判定ではない。goto行の旧13件の説明はWIP6履歴へ保持し、今回の正確な範囲へ整理した。
 
 原本 docs/implementation/acceptance-evidence/task-flow-transfer-affine-call-wip8.raw.zip：35 entries／396323 bytes／SHA256 4c3450344d0d3efa19d6fcf7378ffe2ca43fdcb323f44286ad3e2b5c77a9b0e8。Source、patch、log、catalog、metadataのみを保存し、EXE／AWFBはコピー・移動していない。
+
+### Flow transfer: 54逆依存の実行と操作数回帰 — 2026-11-09
+
+固定Source `6061bedb3c68279d287de35904a631bb583a0329`、親 `b9215161c853d9208b6c97a995600aaf6e65d980`、tree `7180951930680846341e2548a77965f2f7aff9ee`、公開patch SHA256 `c48c0a52a8c6d48e7d768167c693416117f40868a25a990e76c86e94708eb093`。開始・終了とも追跡差分とindexは空、保持cache4。locked・全workspace・全targets・全features checkは終了0／2m23s、Clippyは終了0／2m40s、警告あり。構造gate、Wasm実行、sampleの実操作parityはこの実測に含まない。
+
+WIP8の「Core53がSource23を含む」という選択予定を訂正する。Cargo manifest・lock・configは先行計測から変わっていないため、固定済みmetadataとtarget-all逆依存graphを再照合した。HIRがCoreの逆依存に含まれないので和集合は54。初回の範囲点検はその不足をCargo起動前に拒否し、不完全な集合でのテスト実行はない。54を明示した一括listのr1–r3はWindows `os error 1455`（Core／Bundleのmmap）で構築失敗、実行0。`check` と失敗していた統合target 9件の個別構築が終了0。その後、同じ54／全feature・既定jobsの一括list r4が終了0。コンパイルは5m04s、列挙は大きなWindowsバイナリの起動待ちが続いたが完了した。Bundle・CLIの単独 `--list` も終了0。個別構築・列挙はテスト実行へ加算しない。
+
+Windows・locked・全feature・既定filterで `rdeps(=arcweft-core) or rdeps(=arcweft-lang-hir)`、54 package明示、`--no-fail-fast --no-tests fail`。一括nextestは終了100、9,124実行：9,119 PASS（うちslow 73）、5 FAIL、49 SKIP／1,467.619秒。テスト定義のない `arcweft` と `arcweft-bundle-assets`、Wasm側に依存edgeがある `arcweft-render-web` を除く51 packageで実行した。非CLI 8,411 PASS／0 FAIL／26 SKIP、CLI 708 PASS／5 FAIL／23 SKIP。元pathのテスト・非テスト実行ファイル220本の前後SHA256差分0。`arcw.exe` はtest profileの305936896 bytes、SHA256 `b8e5d4e65c4472c95868b92fc0985155394a1ad4141dececcb98499708ef6546`。Source 978c45c75c4546b4ca6c6bcd98eaa5429eae4ff8の既定CLI 711件と今回の全feature 713件は別の範囲。既知のScroll shared callable Expr15、対話voiceなし、promotion 2件のExpr8は失敗IDと診断が前回一致した。
+
+前回PASSだった `arcweft-cli::check bench_json_measures_runtime_match_to_pure_jit_characteristics` は `executed_ops_median` の期待9に対し11で失敗した。元fixtureのSHA256 `027274440b932d079b00a4c791305c9a852a69a215147e294f5d59299c570144` で実CLIを再実行し、24-step／8-op・JITのまま `[8, 3]`、ログ `12`、`done Return("done")` を確認した。前回のassertionは `[8, 1]`。Nativeのcleanupを持たないscopeを含めて転送を保留する変更があるため、この経路を次の修復対象とする。期待値や予算は変更していない。通常関数で発行したaffine入力を含む7 Source case／backendとformal receiver ABIの3 testはすべてPASS。これらの通過範囲は操作数回帰と区別する。
+
+Generic Matchの受入時151 IDのうち150は完全一致。残りはStyleの型移行 `c4824f38ebce38305adb7f8ac757e13edb4b8e4e` と `300162fe9b638be752b4661e1daf5bae85151081` で改名・移行されたlength test。元の5値・スケール・副作用なし・普通の整数literalの検査を維持し、現行の `ViewSpecifiedValue::Length` 型を検査する後継に一対一で照合した。150同一ID＋後継1件がPASS。元のIDや公開SHAは改変せず、受入状態は維持する。registry153 propertyは変更していない。
+
+原本 `docs/implementation/acceptance-evidence/task-flow-transfer-convergence-6061.raw.zip`：51 entries／1918008 bytes／SHA256 `e4fb1e84c12e930f8865646bc8ec31d151bf28ecb2006b7774c35e3ffe9c0e0c`。Cargo graph、実行条件・診断、list原本、実行前後のhash、対象ID照合、CLI再現を保存し、生成物は含めない。
