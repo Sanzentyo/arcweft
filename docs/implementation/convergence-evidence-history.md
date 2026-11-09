@@ -16073,3 +16073,13 @@ Web IME生成器の standalone nightly script に旧 `ViewProgramResource.scroll
 Native CLIは正順・逆順で420×74のScroll 2件、縦のoffset範囲各12px、クリップ後のButton高36px、キーごとのText／Button／Scroll IDとButtonの有効状態を確認した。同一text sourceを使う別blockの寸法と親子mountの描画順を保持し、公開AWFB saveのcold restore・再export一致と、text index／paint順／button nodeの改変の原子拒否を確認した。別の物理クリック試行はNative Agent Scriptのsemantic dispatcherで入力種別を拒否され、クリックによるpayloadの受信には達しなかった。名前付き `part = item_row` を反復Columnに足した実Native probeは `view_mount_0.item_row` の重複で失敗した。単独PanelのSurface欠落とNative/Webの実画像parityは引き続き対象となる。
 
 [検証原本](acceptance-evidence/task-retained-text-button-occurrences.raw.zip) は34 entries、1169666 bytes、SHA256 `9ad356cdc2a66eb0e785fdf80ba5ac3111b29698f8c07c08804de9b6083081d2`。初回失敗、最終gate、全逆依存、元バイナリhash、追加probeを保持する。
+
+### Panel／Box の保持描画と Native／Web の実画像 — 2026-11-09
+
+公開Source `ae708a9ca954fb2b1cd9e45789c97cc831baef56`、親 `045b68760b9a4589876745ce6e7cfa263091c803`、tree `dd9855c5e65d06ca54b9cc4e054d22aa41d7cc1a`、公開patch SHA256 `c4a20d66ef7c67ae8c3898696658208542052c085b3697a949d026d5893c4469`。公開43 blobを照合した。Viewが面の描画スロットを確定し、shared playerは同じノードのStyleと確定geometryから面と回避範囲を読む。重複していたbundle／sessionのSurface表とpartの描画別名を削除した。名前付きpartはセレクターに保持する。標準台詞の面の1164.8×201.6pxは既定Styleが指定する。version 1のSurface予算は描画要素を数える。Cargo依存edgeの追加はない。
+
+初回checkで旧Surfaceフィールドの削除時に残った重複serde属性を検出し、削除した。最初の対象142件では141件が通過し、新規Native fixtureが `--image raw` をCLIに拒否された。公開CLIの `raw-rgba` に合わせ、同じ4-step／128-opと画素assertionで再実行した。最終treeは142 PASS、Native Tier 2の画像／read-uri 1 PASS。全target・全featureのworkspace check／Clippy、Wasm lib check、fmt、構造gateも通過した。単独Panelの赤、反復Box2個の緑、境界外の背景との画素一致、Scroll範囲22px、名前付きpartの正順・逆順、標準台詞の寸法と入力ルート、旧Surface表の拒否と予算、公開saveのcold restoreと描画順・ノード改変の原子拒否を確認した。今回の逆依存対象はCargo treeとmetadataで一致する41パッケージ。
+
+最終treeのChrome/WebGPUは320×180の実画像を出力し、2回のWeb PNGのSHA256は `a4be12324d4e5501e05d1e180a9634a28d9143bb1879623de896d532b9ce9b35` で一致した。同じStyle・位置のNative CLI PNGは `8c432d034ef02aa0366210b0718275a5f36db2c382e5e2a6c608916d0df940d2`。imqの直接比較はMSE `2.700660261200959e-6`、MAE `0.0008493572167760565`、SSIM `0.9999833787817182`。全RGBA成分ではMSE `5.889962194025e-6`、MAE `0.0011619349128533616`。旧Web基準は配置と寸法が現行指定と異なり、対現行WebのMSE `0.13894921544980685`、MAE `0.2561603698123156` で許容差を超えた。既存のNative単独capture scriptは上流 `glyphon` に対するfork専用APIのimportでE0432となった。ここでの直接比較はNative CLIとブラウザーの実画像に基づく。旧基準画像との合格や基準画像の昇格は行っていない。
+
+[検証原本](acceptance-evidence/task-retained-surface-native-web.raw.zip) は29 entries、996207 bytes、SHA256 `85276d224ed319822a6855f6caaf6354b3bc38bacee008edc4f571dd5d9efb22`。最終検証、初回失敗、公開blob照合、PNG、環境と比較JSONを保管する。
