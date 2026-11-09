@@ -6104,5 +6104,1389 @@
       "unresolvedStages": [],
       "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
     }
+  },
+  "capturePromotionReceiver": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-09T19:04:05.6140450Z",
+    "source": "2c19d260d22fa9b85d140b63a7f12887b9288025",
+    "base": "ceb3f311c1b80ef8f15236d168591c68e71f6287",
+    "publication": {
+      "version": 1,
+      "commit": "2c19d260d22fa9b85d140b63a7f12887b9288025",
+      "parent": "ceb3f311c1b80ef8f15236d168591c68e71f6287",
+      "tree": "22f4e14181beff4d59e3d80788cd78f94d3b7728",
+      "remote": "2c19d260d22fa9b85d140b63a7f12887b9288025",
+      "blobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+          "gitBlob": "2c4fe9e55b999ceb74822b94845551dddbf6c8a0",
+          "sha256": "992a0557a4a80e3a06c8f952b967b773e2bec878132f300e99833ca11b8d1720"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "gitBlob": "379d47a17b985522871df96142673c0cfd4a1c0e",
+          "sha256": "3e47c29d003ab6b606dc9197ef346f5450ef679b230efef8768fabcd11a0e830"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+          "gitBlob": "c7d8f55dcf187d0c4244ed4116f2df7cb2c98864",
+          "sha256": "a2deb1a8f01568d3f2cc232ad9702bd9989849b4175975284debb5b7340e974d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion.rs",
+          "gitBlob": "740a4f3bcc9d1a9afbca95080dfdda20e180fa26",
+          "sha256": "f76a7ee17178f5b9be6955bf41776fc12e95f159dc9e7628f11f6128726176ee"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "gitBlob": "0fca979ba4c7bf7856eac9853bdf4264265af604",
+          "sha256": "94eea30a5b202002f10d2262cc884cee48680d5499659814480414f192d8bcc9"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/receiver.rs",
+          "gitBlob": "a60c3d86aa14cd856a69f6dd0cea3dbc4f2925b5",
+          "sha256": "a530b3a8477d9ec4be9e740076706cba558624ed7716f71a55688e8998d21eef"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "gitBlob": "1fdec8fb16e150489bda6b1d284a9389baf4833d",
+          "sha256": "e07d9c045ed5c0338c48a51c3e61de50620d7da4ce97227654de8b37bd59470d"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "gitBlob": "3822622132cbd1e0d37ce8333505f07303bc1303",
+          "sha256": "b725715281cedd83d9d6a4178d7773b632ef27025f227790cc97ad3c45fa563c"
+        }
+      ]
+    },
+    "worktree": "Staged source changes tested on existing main with an unrelated untracked directory.",
+    "correction": "The prior type storage check could not see the closure environment of a function value or prior parameter groups. Safe promotion now uses the existing checked capture origins and selected continuation application inputs, following immutable aliases and checked function-valued results. A borrowed parameter type in a signature or an input to an independent terminal call does not supply a capture witness.",
+    "scope": "Static rejection of borrowed captures observed through checked closure, block, If/IfLet, Match and prepared continuation origins. The absence of a witness never admits an executable promotion. Interprocedural capture evidence for terminal returned functions, storage of function values in aggregate receivers, resource ownership, lifetime relations, proof discharge and runtime transfer remain open.",
+    "cli": {
+      "before": {
+        "version": 1,
+        "source": "78f80527f1a076022ae660762639daa59eff891e",
+        "head": "91a30e0ac47acc512570f502c653289245b3b96b",
+        "cliSha256": "b9468bc0e40df123292f1c62b80958bb71d70efab7036e032d08875a6c5ed459",
+        "cases": [
+          {
+            "name": "borrowed-capture",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "f19bdd74b69bd095c926e25e92b70b2dc669ea302d38d432378629474a1aef19",
+            "reportSha256": "7344842bfb659cc8a645d7ede68adea08fe71024c984a6579cc9919c69e256e8",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-alias",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "5f2bd944532fa929339ff5fba223e5fd05516a8d63e999a1684bbf552d328c7b",
+            "reportSha256": "d08094f62e88b2c5c70eaae35a76825367e1751b87d2d3e1c8feb2620271cf85",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-direct",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "b1146bf11e504a0e58f167e54c7e8d532dcb8aa28405019d69f76e09db473b8e",
+            "reportSha256": "1dc4d0cf4208e03ebd7db1d383874ca09b42c0735b63fcd082da7f4a30252d3a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "structural-capture",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "c1ecca7e95a3b254eca4edafd4387acfe2647c64214c583d36dbceaa41d0f928",
+            "reportSha256": "418fb3035b612de2f228bf37b3c4d35db748d25ff43df3e3e0611a30b131b7a0",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-transitive",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "e4484442431664676051765f76d4c195c711f39e15c0f7cdbbb5ae4622d5aff1",
+            "reportSha256": "dba18f09acd5b3964439b1dea67adaa80bdf677109c8470d6e708eb7104119f6",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "owned-capture",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "ce124b96b135d70227faa0dddb7ff6cc38e8b29b8d8c891de2d41fdcff031865",
+            "reportSha256": "faee1145ad28b98b8eb28ab45b3ac29e6288e679a00576f1def54c399fd43d7c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "signature-only",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "32e10f61175db0d971556233e47153e4000737e986bd9429edfbba75a9bfd602",
+            "reportSha256": "90f83316f2e000ce592ad0f2f534654abd5270dace6a9f43a3422d079248c84a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-proof",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "ec51e8e060a902e49a16f6a04403ee3e1e0392d491591e6cb19a816c00291bb4",
+            "reportSha256": "67524390744f10326a533e8c7e74664635d141ce76924661dd383704df7344b9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-block",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "6efa8637772f369750c9aaa0375c8f750b191ac78137bf5b01e04bdce0eba97d",
+            "reportSha256": "11cc1e97aaefca3144b03bc9fa1eeccc7923e1af8a86b2ca1883ca48fc8da1ce",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-conditional",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "e0584a9b008f12e73a7920827d0f2f8989b3d3e14d691de9dcfd8c0510c46b5f",
+            "reportSha256": "8ef4a525b0909ffa63f24d1273511fabb2d57141c2728212ca107a5b682e7fa1",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-match",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "66326e72aea7ae1df2259b6c1d90e1d9900abf37fb99216d63b3608e97bf117c",
+            "reportSha256": "f7008690749bf4c0b6c07b73fd64bcf1a17dda48a6ac1040f0f70d84fa284b15",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-if-let",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "a463985e7975880c657056fc82d7839eb2bb2a5a717a8cb0491847f09a7aad4e",
+            "reportSha256": "936f4a76bb4c4540ecebcda5f87ae8b88c0020627d63a886c620fe1633511d8c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-implicit",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "45cadde8a4efd8f509aff1766a72531eaf869c3f671f8bccd80090060ba5e8f6",
+            "reportSha256": "06e945516e5d9101d04cae6ccbcfb0fcde47e3100b081b07dd8245a9cafa11c5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "discarded-capture",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "6e78e915810077330738e1b84091d1d4268391e47cfa6fd3120e5a1294b54efa",
+            "reportSha256": "35fc6b7d1bb2cc7ce36514e402c00404baf798f91af38fcb437121876c5d354f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "reassigned-capture",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "ad4f2a729a06b2c13cb6e834f825b78f5e81879d9276733ff7251cf43ba639d3",
+            "reportSha256": "c37e1d9df3acb6e24e13ebbe4a5ec2521d18d07cd48d8986232b4000e77b9a22",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "continuation-borrowed",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "2a9470c3e890d95edd82f5e620d3bc692927f876c7e237be798daeae365089f1",
+            "reportSha256": "308a78258c8bf616c2f426802243dc4170a9dc836954ccef91f4695a49e81be7",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "continuation-owned",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "9ab2fc234817f95f3cce433737c87f6600f5dc122267b5702f2f80c9edb451de",
+            "reportSha256": "c64d7a450638abc381f83860cf94fd9d6e7a411df0167691ef4583a9b5b56084",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-borrowed",
+            "stage": "readiness",
+            "exit": 1,
+            "codes": [
+              "syntax.type.invalid",
+              "hir.project.analysis"
+            ],
+            "messages": [
+              "expected type",
+              "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis"
+            ],
+            "inputSha256": "8ef03aba006e38c6b8e1af12735b2768865f6770619a201de46cea698dfe7b1d",
+            "reportSha256": "15e1d617bcf4827bbee937847850bdf18565eff2a015350539dd56c0ad5356f6",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "postCliBaseline": {
+        "version": 1,
+        "source": "78f80527f1a076022ae660762639daa59eff891e",
+        "head": "91a30e0ac47acc512570f502c653289245b3b96b",
+        "cliSha256": "0b4a80dd4e550637d359fecea9437c1cce675b525cccf86481aa2cd4898ecaef",
+        "cases": [
+          {
+            "name": "terminal-owned",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "ae6bae136549d9ed742004204248317650b014fdc1529408335c2fca88f7504d",
+            "reportSha256": "e033b2648b65c4ee359706f4eeeaf42cd17bfe8c107579367d660ae43ec3ab53",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "terminal-borrowed",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "a5416f7f2c48c603cb47beff70454cb8a1e135fd04f73c41e9db36d5ee12491e",
+            "reportSha256": "1a14ae6f0dbf3443778d76987e803ae0a7b0339f88318bbea4f74e85da07626f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "continuation-two-prefixes",
+            "stage": "type-check",
+            "exit": 1,
+            "codes": [
+              "sema.lifetime.promotion_execution"
+            ],
+            "messages": [
+              "lifetime promotion has no executable ownership transfer"
+            ],
+            "inputSha256": "0b5b95ffdff209251a0c947ef6cf05ac8bff8b689ba93a9d250087758b72c1a8",
+            "reportSha256": "181e555d3a696a94c96412f006be7b4fb82aa6e65b5b4cba883fc3bf60c464d8",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "after": {
+        "version": 1,
+        "base": "ceb3f311c1b80ef8f15236d168591c68e71f6287",
+        "cliSha256": "0d8c0a84b0c4460b4100c956c50c042041959c4dbd69e3aceda6268707a9550a",
+        "cases": [
+          {
+            "name": "borrowed-capture",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "f19bdd74b69bd095c926e25e92b70b2dc669ea302d38d432378629474a1aef19",
+            "reportSha256": "a1ed8431b2a6706c818d2dfa956eafea4d9dd4464da87eeededaa4c16dec80bc",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-alias",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "alias",
+            "inputSha256": "5f2bd944532fa929339ff5fba223e5fd05516a8d63e999a1684bbf552d328c7b",
+            "reportSha256": "dbc7dd82ca8ed9211751b58deb55714e4b3e3fa16369efcf701370eb77263f02",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-direct",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "|| -> i64 { let _ = loan; 42i64 }",
+            "inputSha256": "b1146bf11e504a0e58f167e54c7e8d532dcb8aa28405019d69f76e09db473b8e",
+            "reportSha256": "94c746a52ac816cb67ccd83a87a84121cd0d44203819cb176fbc93e901fc8099",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "structural-capture",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "c1ecca7e95a3b254eca4edafd4387acfe2647c64214c583d36dbceaa41d0f928",
+            "reportSha256": "c1e7a47d4b91ebac818eaa97d45e5159efb64d9587f6c0a73c9d3e1634eddb07",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-transitive",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "outer",
+            "inputSha256": "e4484442431664676051765f76d4c195c711f39e15c0f7cdbbb5ae4622d5aff1",
+            "reportSha256": "d2acb736bdbb21a44b6b509bf9f4fe20b7295f765dea055bb0f34004613dcc51",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "owned-capture",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "ce124b96b135d70227faa0dddb7ff6cc38e8b29b8d8c891de2d41fdcff031865",
+            "reportSha256": "faee1145ad28b98b8eb28ab45b3ac29e6288e679a00576f1def54c399fd43d7c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "signature-only",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "32e10f61175db0d971556233e47153e4000737e986bd9429edfbba75a9bfd602",
+            "reportSha256": "90f83316f2e000ce592ad0f2f534654abd5270dace6a9f43a3422d079248c84a",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-proof",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "ec51e8e060a902e49a16f6a04403ee3e1e0392d491591e6cb19a816c00291bb4",
+            "reportSha256": "dabfac85e3d60a6c2811feffaf1226289ed5864f64e75489ae15f21c314962b4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-proof",
+            "command": "verify",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "ec51e8e060a902e49a16f6a04403ee3e1e0392d491591e6cb19a816c00291bb4",
+            "reportSha256": "dabfac85e3d60a6c2811feffaf1226289ed5864f64e75489ae15f21c314962b4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-block",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "6efa8637772f369750c9aaa0375c8f750b191ac78137bf5b01e04bdce0eba97d",
+            "reportSha256": "edd8fb623e6a466fc94c332bb83b15b57426350b00d68dfb205883e61167b35b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-conditional",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "e0584a9b008f12e73a7920827d0f2f8989b3d3e14d691de9dcfd8c0510c46b5f",
+            "reportSha256": "59158e56dfeb65deffe7b3a4de2221d9acf967c3934fafd1c186e0a5d8a7b40b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-match",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "66326e72aea7ae1df2259b6c1d90e1d9900abf37fb99216d63b3608e97bf117c",
+            "reportSha256": "85fede09f0d13ca6cd33b4cf8ba17f948a0de518013568f1a8a27f122af6cb57",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-if-let",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "a463985e7975880c657056fc82d7839eb2bb2a5a717a8cb0491847f09a7aad4e",
+            "reportSha256": "b14fc4665252590cfc86ee459a7080ff8e3e2ec4d0d06873220c3e547962f0df",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "borrowed-capture-implicit",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "45cadde8a4efd8f509aff1766a72531eaf869c3f671f8bccd80090060ba5e8f6",
+            "reportSha256": "cf0035a02d278f05fb45bbc569f31f20c0eb531c32ea7cc2f7d0fbaf3ab8a11f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "discarded-capture",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "6e78e915810077330738e1b84091d1d4268391e47cfa6fd3120e5a1294b54efa",
+            "reportSha256": "35fc6b7d1bb2cc7ce36514e402c00404baf798f91af38fcb437121876c5d354f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "reassigned-capture",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "ad4f2a729a06b2c13cb6e834f825b78f5e81879d9276733ff7251cf43ba639d3",
+            "reportSha256": "c37e1d9df3acb6e24e13ebbe4a5ec2521d18d07cd48d8986232b4000e77b9a22",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "continuation-borrowed",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "2a9470c3e890d95edd82f5e620d3bc692927f876c7e237be798daeae365089f1",
+            "reportSha256": "20f38f8781b8aa56bf6b734fdb4d67a742e05710b1ce2e726eae994992a03120",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "continuation-owned",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "9ab2fc234817f95f3cce433737c87f6600f5dc122267b5702f2f80c9edb451de",
+            "reportSha256": "c64d7a450638abc381f83860cf94fd9d6e7a411df0167691ef4583a9b5b56084",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "terminal-owned",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "ae6bae136549d9ed742004204248317650b014fdc1529408335c2fca88f7504d",
+            "reportSha256": "e033b2648b65c4ee359706f4eeeaf42cd17bfe8c107579367d660ae43ec3ab53",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "terminal-owned",
+            "command": "verify",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "ae6bae136549d9ed742004204248317650b014fdc1529408335c2fca88f7504d",
+            "reportSha256": "e033b2648b65c4ee359706f4eeeaf42cd17bfe8c107579367d660ae43ec3ab53",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "terminal-borrowed",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_execution",
+            "span": "callback.promote('flow)",
+            "inputSha256": "a5416f7f2c48c603cb47beff70454cb8a1e135fd04f73c41e9db36d5ee12491e",
+            "reportSha256": "1a14ae6f0dbf3443778d76987e803ae0a7b0339f88318bbea4f74e85da07626f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "continuation-two-prefixes",
+            "command": "check",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "0b5b95ffdff209251a0c947ef6cf05ac8bff8b689ba93a9d250087758b72c1a8",
+            "reportSha256": "3ca3433d6df8cafd3f6d64ccfc0e282fbda55e00ce001b8a02584fd218586f93",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "continuation-two-prefixes",
+            "command": "verify",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.lifetime.promotion_receiver",
+            "span": "callback",
+            "inputSha256": "0b5b95ffdff209251a0c947ef6cf05ac8bff8b689ba93a9d250087758b72c1a8",
+            "reportSha256": "3ca3433d6df8cafd3f6d64ccfc0e282fbda55e00ce001b8a02584fd218586f93",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    },
+    "tests": {
+      "focused": 10,
+      "focusedInput": "Focused run before lint-only method-reference and test annotation changes. The final source is covered by the owner nextest result.",
+      "log": "capture-promotion-receiver-2c19d260/sema-capture-final.log",
+      "initial": "The direct-closure case first expected source grouping parentheses in the receiver span. The HIR receiver span is the closure itself. The continuation tests already passed in that run. A later test fixture retained a line break after the equals sign in the implicit callable; using the exact accepted syntax fixed readiness.",
+      "initialLog": "capture-promotion-receiver-2c19d260/sema-capture-initial.log"
+    },
+    "ownership": {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+      "crate": "arcweft-lang-sema",
+      "classification": "production",
+      "lines": 226,
+      "bytes": 9051,
+      "disposition": "The admission query uses the same prepared callable origin and continuation graph as existing call checking and the existing receiver work budget. No change to the published callable application, runtime schema, or codec."
+    },
+    "checkpointQuality": {
+      "receipt": "capture-promotion-receiver-2c19d260/quality/checkpoint.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 1447,
+        "pass": 1447,
+        "fail": 0,
+        "skip": 0
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 43.76s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 51.34s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 35.04s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 08s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s",
+            "Summary [  66.217s] 1447 tests run: 1447 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-promotion-capture-receiver.raw.zip",
+      "sha256": "d55858a65b1e1830fadf4cd4b23b9cfeccf81905f0aaee4ab65fb2c5fa01eaa8",
+      "bytes": 1758956,
+      "entries": [
+        {
+          "entry": "capture-promotion-receiver-2c19d260/source.publication.json",
+          "bytes": 2226,
+          "sha256": "89bc68c2c8683191e4ab70cc9c0b98f16f6f97e486883ac6f2831276c26074da"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/source.reviewed.patch",
+          "bytes": 21949,
+          "sha256": "27d606a3048b7df1dc778a64266af6069add0065219b54e5735fe06a15d16c1c"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/baseline.receipt.json",
+          "bytes": 10206,
+          "sha256": "ce9e6b406da47dee36c0189321d869536c2f143e385b802c3edff8b1a1fc8aad"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/post-cli-baseline.receipt.json",
+          "bytes": 1865,
+          "sha256": "458c5686ebffc5c7f197d5f395cdec1708c044d9e13106b3d023dbfc81cc12d0"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/changed.receipt.json",
+          "bytes": 11330,
+          "sha256": "ccf078b360131060afd79348f9ed158dd5ac7f5f68897be4dc150b1d5be9b651"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/sema-capture-initial.log",
+          "bytes": 85257,
+          "sha256": "46d2da9885b1852d0772f837543b89409ee6d8f1b5a941eead2e52f0c36476eb"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/sema-capture-focused.log",
+          "bytes": 85256,
+          "sha256": "c3810306da0f09a060a4fdc5d24f219a8631afae9cfb012f677ca6aa56613fe6"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/sema-capture-final.log",
+          "bytes": 84223,
+          "sha256": "762bbb37414b5c6a03a6e3f713913c5f2c36627e7c83cb85358e11c78e14fa80"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/compare-cli.ps1",
+          "bytes": 3804,
+          "sha256": "51e4a52fecef63688657abafb1e66e2c2e5f921be41d935e8a9789db93793915"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/run-quality.ps1",
+          "bytes": 4282,
+          "sha256": "1f348f14211bf8f9e7385dd7ef5c9be08312dd96df70a9423eb29ef0e09a644d"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/initial/quality.receipt.json",
+          "bytes": 3812,
+          "sha256": "df9bfffc99c10bdaadf637cfb44f17075073817c9d6a7cf706bc6eb6cc376d04"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/initial/quality-workspace-clippy.log",
+          "bytes": 9274440,
+          "sha256": "f587522db5683dce32a4d38d7d73f512ec870948aba74c6441341dd23efb7ca6"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/rdeps.log",
+          "bytes": 4982,
+          "sha256": "1b6e596577e5467179d6fb0c9f9b2c1be3f9a40dc284530ed1593f2e15498fba"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture.arcw",
+          "bytes": 116,
+          "sha256": "f19bdd74b69bd095c926e25e92b70b2dc669ea302d38d432378629474a1aef19"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture.before.json",
+          "bytes": 1181,
+          "sha256": "7344842bfb659cc8a645d7ede68adea08fe71024c984a6579cc9919c69e256e8"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-alias.arcw",
+          "bytes": 138,
+          "sha256": "5f2bd944532fa929339ff5fba223e5fd05516a8d63e999a1684bbf552d328c7b"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-alias.before.json",
+          "bytes": 1207,
+          "sha256": "d08094f62e88b2c5c70eaae35a76825367e1751b87d2d3e1c8feb2620271cf85"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-alias.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-direct.arcw",
+          "bytes": 90,
+          "sha256": "b1146bf11e504a0e58f167e54c7e8d532dcb8aa28405019d69f76e09db473b8e"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-direct.before.json",
+          "bytes": 1205,
+          "sha256": "1dc4d0cf4208e03ebd7db1d383874ca09b42c0735b63fcd082da7f4a30252d3a"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-direct.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/structural-capture.arcw",
+          "bytes": 124,
+          "sha256": "c1ecca7e95a3b254eca4edafd4387acfe2647c64214c583d36dbceaa41d0f928"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/structural-capture.before.json",
+          "bytes": 1189,
+          "sha256": "418fb3035b612de2f228bf37b3c4d35db748d25ff43df3e3e0611a30b131b7a0"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/structural-capture.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-transitive.arcw",
+          "bytes": 160,
+          "sha256": "e4484442431664676051765f76d4c195c711f39e15c0f7cdbbb5ae4622d5aff1"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-transitive.before.json",
+          "bytes": 1227,
+          "sha256": "dba18f09acd5b3964439b1dea67adaa80bdf677109c8470d6e708eb7104119f6"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-transitive.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/owned-capture.arcw",
+          "bytes": 102,
+          "sha256": "ce124b96b135d70227faa0dddb7ff6cc38e8b29b8d8c891de2d41fdcff031865"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/owned-capture.before.json",
+          "bytes": 1167,
+          "sha256": "faee1145ad28b98b8eb28ab45b3ac29e6288e679a00576f1def54c399fd43d7c"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/owned-capture.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/signature-only.arcw",
+          "bytes": 87,
+          "sha256": "32e10f61175db0d971556233e47153e4000737e986bd9429edfbba75a9bfd602"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/signature-only.before.json",
+          "bytes": 1169,
+          "sha256": "90f83316f2e000ce592ad0f2f534654abd5270dace6a9f43a3422d079248c84a"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/signature-only.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-proof.arcw",
+          "bytes": 155,
+          "sha256": "ec51e8e060a902e49a16f6a04403ee3e1e0392d491591e6cb19a816c00291bb4"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-proof.before.json",
+          "bytes": 1207,
+          "sha256": "67524390744f10326a533e8c7e74664635d141ce76924661dd383704df7344b9"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-proof.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-block.arcw",
+          "bytes": 120,
+          "sha256": "6efa8637772f369750c9aaa0375c8f750b191ac78137bf5b01e04bdce0eba97d"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-block.before.json",
+          "bytes": 1205,
+          "sha256": "11cc1e97aaefca3144b03bc9fa1eeccc7923e1af8a86b2ca1883ca48fc8da1ce"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-block.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-conditional.arcw",
+          "bytes": 169,
+          "sha256": "e0584a9b008f12e73a7920827d0f2f8989b3d3e14d691de9dcfd8c0510c46b5f"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-conditional.before.json",
+          "bytes": 1231,
+          "sha256": "8ef4a525b0909ffa63f24d1273511fabb2d57141c2728212ca107a5b682e7fa1"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-conditional.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-match.arcw",
+          "bytes": 180,
+          "sha256": "66326e72aea7ae1df2259b6c1d90e1d9900abf37fb99216d63b3608e97bf117c"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-match.before.json",
+          "bytes": 1207,
+          "sha256": "f7008690749bf4c0b6c07b73fd64bcf1a17dda48a6ac1040f0f70d84fa284b15"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-match.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-if-let.arcw",
+          "bytes": 190,
+          "sha256": "a463985e7975880c657056fc82d7839eb2bb2a5a717a8cb0491847f09a7aad4e"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-if-let.before.json",
+          "bytes": 1211,
+          "sha256": "936f4a76bb4c4540ecebcda5f87ae8b88c0020627d63a886c620fe1633511d8c"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-if-let.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-implicit.arcw",
+          "bytes": 183,
+          "sha256": "45cadde8a4efd8f509aff1766a72531eaf869c3f671f8bccd80090060ba5e8f6"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-implicit.before.json",
+          "bytes": 1219,
+          "sha256": "06e945516e5d9101d04cae6ccbcfb0fcde47e3100b081b07dd8245a9cafa11c5"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-implicit.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/discarded-capture.arcw",
+          "bytes": 201,
+          "sha256": "6e78e915810077330738e1b84091d1d4268391e47cfa6fd3120e5a1294b54efa"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/discarded-capture.before.json",
+          "bytes": 1187,
+          "sha256": "35fc6b7d1bb2cc7ce36514e402c00404baf798f91af38fcb437121876c5d354f"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/discarded-capture.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/reassigned-capture.arcw",
+          "bytes": 154,
+          "sha256": "ad4f2a729a06b2c13cb6e834f825b78f5e81879d9276733ff7251cf43ba639d3"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/reassigned-capture.before.json",
+          "bytes": 1191,
+          "sha256": "c37e1d9df3acb6e24e13ebbe4a5ec2521d18d07cd48d8986232b4000e77b9a22"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/reassigned-capture.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-borrowed.arcw",
+          "bytes": 158,
+          "sha256": "2a9470c3e890d95edd82f5e620d3bc692927f876c7e237be798daeae365089f1"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-borrowed.before.json",
+          "bytes": 1203,
+          "sha256": "308a78258c8bf616c2f426802243dc4170a9dc836954ccef91f4695a49e81be7"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-borrowed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-owned.arcw",
+          "bytes": 156,
+          "sha256": "9ab2fc234817f95f3cce433737c87f6600f5dc122267b5702f2f80c9edb451de"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-owned.before.json",
+          "bytes": 1191,
+          "sha256": "c64d7a450638abc381f83860cf94fd9d6e7a411df0167691ef4583a9b5b56084"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-owned.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/returned-borrowed.arcw",
+          "bytes": 181,
+          "sha256": "8ef03aba006e38c6b8e1af12735b2768865f6770619a201de46cea698dfe7b1d"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/returned-borrowed.before.json",
+          "bytes": 1606,
+          "sha256": "15e1d617bcf4827bbee937847850bdf18565eff2a015350539dd56c0ad5356f6"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/returned-borrowed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-owned.arcw",
+          "bytes": 200,
+          "sha256": "ae6bae136549d9ed742004204248317650b014fdc1529408335c2fca88f7504d"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-owned.before.json",
+          "bytes": 1175,
+          "sha256": "e033b2648b65c4ee359706f4eeeaf42cd17bfe8c107579367d660ae43ec3ab53"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-owned.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-borrowed.arcw",
+          "bytes": 198,
+          "sha256": "a5416f7f2c48c603cb47beff70454cb8a1e135fd04f73c41e9db36d5ee12491e"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-borrowed.before.json",
+          "bytes": 1187,
+          "sha256": "1a14ae6f0dbf3443778d76987e803ae0a7b0339f88318bbea4f74e85da07626f"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-borrowed.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-two-prefixes.arcw",
+          "bytes": 208,
+          "sha256": "0b5b95ffdff209251a0c947ef6cf05ac8bff8b689ba93a9d250087758b72c1a8"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-two-prefixes.before.json",
+          "bytes": 1219,
+          "sha256": "181e555d3a696a94c96412f006be7b4fb82aa6e65b5b4cba883fc3bf60c464d8"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-two-prefixes.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture.check.after.json",
+          "bytes": 1173,
+          "sha256": "a1ed8431b2a6706c818d2dfa956eafea4d9dd4464da87eeededaa4c16dec80bc"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-alias.check.after.json",
+          "bytes": 1201,
+          "sha256": "dbc7dd82ca8ed9211751b58deb55714e4b3e3fa16369efcf701370eb77263f02"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-alias.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-direct.check.after.json",
+          "bytes": 1199,
+          "sha256": "94c746a52ac816cb67ccd83a87a84121cd0d44203819cb176fbc93e901fc8099"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-direct.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/structural-capture.check.after.json",
+          "bytes": 1183,
+          "sha256": "c1e7a47d4b91ebac818eaa97d45e5159efb64d9587f6c0a73c9d3e1634eddb07"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/structural-capture.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-transitive.check.after.json",
+          "bytes": 1221,
+          "sha256": "d2acb736bdbb21a44b6b509bf9f4fe20b7295f765dea055bb0f34004613dcc51"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-transitive.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/owned-capture.check.after.json",
+          "bytes": 1167,
+          "sha256": "faee1145ad28b98b8eb28ab45b3ac29e6288e679a00576f1def54c399fd43d7c"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/owned-capture.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/signature-only.check.after.json",
+          "bytes": 1169,
+          "sha256": "90f83316f2e000ce592ad0f2f534654abd5270dace6a9f43a3422d079248c84a"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/signature-only.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-proof.check.after.json",
+          "bytes": 1201,
+          "sha256": "dabfac85e3d60a6c2811feffaf1226289ed5864f64e75489ae15f21c314962b4"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-proof.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-proof.verify.after.json",
+          "bytes": 1201,
+          "sha256": "dabfac85e3d60a6c2811feffaf1226289ed5864f64e75489ae15f21c314962b4"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-proof.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-block.check.after.json",
+          "bytes": 1199,
+          "sha256": "edd8fb623e6a466fc94c332bb83b15b57426350b00d68dfb205883e61167b35b"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-block.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-conditional.check.after.json",
+          "bytes": 1225,
+          "sha256": "59158e56dfeb65deffe7b3a4de2221d9acf967c3934fafd1c186e0a5d8a7b40b"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-conditional.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-match.check.after.json",
+          "bytes": 1201,
+          "sha256": "85fede09f0d13ca6cd33b4cf8ba17f948a0de518013568f1a8a27f122af6cb57"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-match.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-if-let.check.after.json",
+          "bytes": 1205,
+          "sha256": "b14fc4665252590cfc86ee459a7080ff8e3e2ec4d0d06873220c3e547962f0df"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-if-let.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-implicit.check.after.json",
+          "bytes": 1213,
+          "sha256": "cf0035a02d278f05fb45bbc569f31f20c0eb531c32ea7cc2f7d0fbaf3ab8a11f"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/borrowed-capture-implicit.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/discarded-capture.check.after.json",
+          "bytes": 1187,
+          "sha256": "35fc6b7d1bb2cc7ce36514e402c00404baf798f91af38fcb437121876c5d354f"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/discarded-capture.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/reassigned-capture.check.after.json",
+          "bytes": 1191,
+          "sha256": "c37e1d9df3acb6e24e13ebbe4a5ec2521d18d07cd48d8986232b4000e77b9a22"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/reassigned-capture.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-borrowed.check.after.json",
+          "bytes": 1197,
+          "sha256": "20f38f8781b8aa56bf6b734fdb4d67a742e05710b1ce2e726eae994992a03120"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-borrowed.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-owned.check.after.json",
+          "bytes": 1191,
+          "sha256": "c64d7a450638abc381f83860cf94fd9d6e7a411df0167691ef4583a9b5b56084"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-owned.check.after.json",
+          "bytes": 1175,
+          "sha256": "e033b2648b65c4ee359706f4eeeaf42cd17bfe8c107579367d660ae43ec3ab53"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-owned.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-owned.verify.after.json",
+          "bytes": 1175,
+          "sha256": "e033b2648b65c4ee359706f4eeeaf42cd17bfe8c107579367d660ae43ec3ab53"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-owned.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-borrowed.check.after.json",
+          "bytes": 1187,
+          "sha256": "1a14ae6f0dbf3443778d76987e803ae0a7b0339f88318bbea4f74e85da07626f"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/terminal-borrowed.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-two-prefixes.check.after.json",
+          "bytes": 1213,
+          "sha256": "3ca3433d6df8cafd3f6d64ccfc0e282fbda55e00ce001b8a02584fd218586f93"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-two-prefixes.check.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-two-prefixes.verify.after.json",
+          "bytes": 1213,
+          "sha256": "3ca3433d6df8cafd3f6d64ccfc0e282fbda55e00ce001b8a02584fd218586f93"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/cli/continuation-two-prefixes.verify.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/quality-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/quality-workspace-check.log",
+          "bytes": 111880,
+          "sha256": "1d198da61002d9e2d256174d0caa1325fd3da84a1271b5afeba29e29c04dca69"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/quality-workspace-clippy.log",
+          "bytes": 9273467,
+          "sha256": "d697200586b0d265e5a573cf3157eca7ef79cfed1e1634b9ab8d3e448f49f843"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/quality-structure.log",
+          "bytes": 66637,
+          "sha256": "f57fa67e11121c591823c0f94f4f8b59cca035019a74ce65b1de880ff7928150"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/quality-owner-doctests.log",
+          "bytes": 88122,
+          "sha256": "9f10c935120ca10b73a72f587060e72e27e09330d7d8dc8d2df2c117c3aeea15"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/quality-cli-build.log",
+          "bytes": 92751,
+          "sha256": "f0c6506ccc87c9748d5f7d6ead6de35c756d1029e40a363d42de4c51725955dc"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/quality-owners.log",
+          "bytes": 315517,
+          "sha256": "1f27a4ec2d1c90f72e9a1b201b1c89aeec66250a94629802a28179f0a72fa798"
+        },
+        {
+          "entry": "capture-promotion-receiver-2c19d260/quality/checkpoint.receipt.json",
+          "bytes": 5423,
+          "sha256": "34442a8a3d123e6a65bd9ac380a146ff4d4e0e7cba597d88eec1016fc7eef274"
+        }
+      ]
+    }
   }
 }
