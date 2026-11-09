@@ -931,7 +931,160 @@
             "finishedUtc": "2026-11-09T13:22:03.709518Z",
             "headAtFinish": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09"
           }
-        ]
+        ],
+        "reverseCheckpoint": {
+          "completedStages": [
+            {
+              "name": "runtime-host",
+              "command": [
+                "cargo",
+                "nextest",
+                "run",
+                "--locked",
+                "--no-fail-fast",
+                "--lib",
+                "--tests",
+                "-p",
+                "arcweft-runtime-host"
+              ],
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 14s",
+                "Summary [   5.095s] 72 tests run: 72 passed, 0 skipped"
+              ],
+              "logSha256": "1d4adfe5dc798f39a8d25c26858fc3ccc2ed51320abb5d1858321a13ba66a253",
+              "startedUtc": "2026-11-09T13:22:03.8407849Z",
+              "finishedUtc": "2026-11-09T13:23:26.9862054Z",
+              "headAtFinish": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09"
+            },
+            {
+              "name": "owners",
+              "command": [
+                "cargo",
+                "nextest",
+                "run",
+                "--locked",
+                "--no-fail-fast",
+                "--lib",
+                "--tests",
+                "-p",
+                "arcweft-lang-hir",
+                "-p",
+                "arcweft-lang-sema",
+                "-p",
+                "arcweft-runtime-plan",
+                "-p",
+                "arcweft-compiler"
+              ],
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 04s",
+                "Summary [ 257.404s] 3580 tests run: 3580 passed (5 slow), 9 skipped"
+              ],
+              "logSha256": "49e94985145fa32ea4834f8076cd24151f4b45ad2a522236c6b5d1fba7792f60",
+              "startedUtc": "2026-11-09T13:23:27.1214082Z",
+              "finishedUtc": "2026-11-09T13:30:26.609907Z",
+              "headAtFinish": "ff4bd4134db38c6d71ea36beeeefd5b525673a19"
+            },
+            {
+              "name": "driver-scene",
+              "command": [
+                "cargo",
+                "nextest",
+                "run",
+                "--locked",
+                "--no-fail-fast",
+                "--lib",
+                "--tests",
+                "-p",
+                "arcweft-runtime-driver",
+                "-p",
+                "arcweft-player-scene"
+              ],
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 44s",
+                "Summary [   2.950s] 278 tests run: 278 passed, 0 skipped"
+              ],
+              "logSha256": "e8c56e54f3f32dcf21ccef349faf73ac5506a96f48ff03a4bb034cf4acaef4d5",
+              "startedUtc": "2026-11-09T13:30:26.7460448Z",
+              "finishedUtc": "2026-11-09T13:33:25.6313835Z",
+              "headAtFinish": "ff4bd4134db38c6d71ea36beeeefd5b525673a19"
+            },
+            {
+              "name": "player-native",
+              "command": [
+                "cargo",
+                "nextest",
+                "run",
+                "--locked",
+                "--no-fail-fast",
+                "--lib",
+                "--tests",
+                "-p",
+                "arcweft-player-native"
+              ],
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 22s",
+                "Summary [   1.127s] 59 tests run: 59 passed, 0 skipped"
+              ],
+              "logSha256": "31a70a759d2bcbcebf27ca7fdf2c6004e7c80f918bc786c7377b5fba6b2700e3",
+              "startedUtc": "2026-11-09T13:33:25.8035001Z",
+              "finishedUtc": "2026-11-09T13:36:54.9181008Z",
+              "headAtFinish": "ff4bd4134db38c6d71ea36beeeefd5b525673a19"
+            },
+            {
+              "name": "player-web",
+              "command": [
+                "cargo",
+                "nextest",
+                "run",
+                "--locked",
+                "--no-fail-fast",
+                "--lib",
+                "--tests",
+                "-p",
+                "arcweft-player-web"
+              ],
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 09s",
+                "Summary [   0.427s] 37 tests run: 37 passed, 0 skipped"
+              ],
+              "logSha256": "8b087f4f00b7fde557fa5fc3730b32596770d41464fb95434073cbea5f44331b",
+              "startedUtc": "2026-11-09T13:36:55.0833806Z",
+              "finishedUtc": "2026-11-09T13:40:23.7972919Z",
+              "headAtFinish": "ff4bd4134db38c6d71ea36beeeefd5b525673a19"
+            },
+            {
+              "name": "agent-execution",
+              "command": [
+                "cargo",
+                "nextest",
+                "run",
+                "--locked",
+                "--no-fail-fast",
+                "--lib",
+                "--tests",
+                "-p",
+                "arcweft-agent-repl",
+                "-p",
+                "arcweft-agent-runner"
+              ],
+              "exitCode": 0,
+              "summary": [
+                "Finished `test` profile [unoptimized + debuginfo] target(s) in 32.02s",
+                "Summary [  17.923s] 106 tests run: 106 passed, 0 skipped"
+              ],
+              "logSha256": "783688e9eeddb3049d0e2f06e7a1b08993188a0a1b2c4058734e5e66b9f08634",
+              "startedUtc": "2026-11-09T13:40:23.9380845Z",
+              "finishedUtc": "2026-11-09T13:41:21.9789423Z",
+              "headAtFinish": "ff4bd4134db38c6d71ea36beeeefd5b525673a19"
+            }
+          ],
+          "classification": "All six stages passed against the exact published Rust sources. The fresh Runtime Host stage replaces the mixed-input attempt in the earlier value-block follow-up."
+        }
       },
       "replay": {
         "version": 1,
@@ -1192,13 +1345,212 @@
             ]
           }
         ]
+      },
+      "controls": {
+        "results": {
+          "additional-paths": {
+            "version": 1,
+            "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+            "cliSha256": "b0c17b89550fbdc06031b0343e0b2125204201ee97ca230423f4a3c7b4a2f0e5",
+            "results": [
+              {
+                "name": "option-dead-try",
+                "check": 1,
+                "run": null,
+                "diagnostics": [
+                  "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 19, kind: Expr }) propagation boundary does not accept its operand carrier"
+                ],
+                "terminal": null
+              },
+              {
+                "name": "result-dead-try",
+                "check": 1,
+                "run": null,
+                "diagnostics": [
+                  "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 22, kind: Expr }) propagation boundary does not accept its operand carrier"
+                ],
+                "terminal": null
+              },
+              {
+                "name": "option-terminal-tail-none",
+                "check": 0,
+                "run": 2,
+                "diagnostics": [],
+                "terminal": "error: source launch requires --entry entry.*"
+              },
+              {
+                "name": "option-terminal-tail-some",
+                "check": 0,
+                "run": 2,
+                "diagnostics": [],
+                "terminal": "error: source launch requires --entry entry.*"
+              },
+              {
+                "name": "result-terminal-tail-err",
+                "check": 0,
+                "run": 2,
+                "diagnostics": [],
+                "terminal": "error: source launch requires --entry entry.*"
+              },
+              {
+                "name": "result-terminal-tail-ok",
+                "check": 0,
+                "run": 2,
+                "diagnostics": [],
+                "terminal": "error: source launch requires --entry entry.*"
+              }
+            ]
+          },
+          "terminal-tail-execution": {
+            "version": 1,
+            "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+            "cliSha256": "b0c17b89550fbdc06031b0343e0b2125204201ee97ca230423f4a3c7b4a2f0e5",
+            "results": [
+              {
+                "name": "option-terminal-tail-none",
+                "exit": 0,
+                "terminal": [
+                  "step 15: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 16: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 17: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 18: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 19: 1 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "  event return 42",
+                  "ok: C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-terminal-tail-none.arcw (20 step(s), final_status=done Return(\"42\"))"
+                ]
+              },
+              {
+                "name": "option-terminal-tail-some",
+                "exit": 0,
+                "terminal": [
+                  "step 16: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 17: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 18: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 19: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 20: 1 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "  event return 23",
+                  "ok: C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-terminal-tail-some.arcw (21 step(s), final_status=done Return(\"23\"))"
+                ]
+              },
+              {
+                "name": "result-terminal-tail-err",
+                "exit": 0,
+                "terminal": [
+                  "step 21: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 22: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 23: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 24: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 25: 1 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "  event return 42",
+                  "ok: C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\result-terminal-tail-err.arcw (26 step(s), final_status=done Return(\"42\"))"
+                ]
+              },
+              {
+                "name": "result-terminal-tail-ok",
+                "exit": 0,
+                "terminal": [
+                  "step 16: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 17: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 18: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 19: 0 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "step 20: 1 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "  event return 23",
+                  "ok: C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\result-terminal-tail-ok.arcw (21 step(s), final_status=done Return(\"23\"))"
+                ]
+              }
+            ]
+          },
+          "expected-carrier-types": {
+            "version": 1,
+            "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+            "cliSha256": "b0c17b89550fbdc06031b0343e0b2125204201ee97ca230423f4a3c7b4a2f0e5",
+            "results": [
+              {
+                "name": "option-typed-terminal-tail",
+                "check": 1,
+                "run": null,
+                "diagnostics": [
+                  "error[compiler.runtime_plan_lower]: flow let pattern expected plan type 36, found 38"
+                ],
+                "terminal": null
+              },
+              {
+                "name": "result-typed-terminal-tail",
+                "check": 1,
+                "run": null,
+                "diagnostics": [
+                  "error[compiler.runtime_plan_lower]: flow let pattern expected plan type 36, found 39"
+                ],
+                "terminal": null
+              },
+              {
+                "name": "let-else-resumable",
+                "check": 1,
+                "run": null,
+                "diagnostics": [
+                  "error[sema.final_analysis]: let-else statement StmtId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 14, kind: Stmt }) requires a Never-typed failure branch"
+                ],
+                "terminal": null
+              }
+            ]
+          },
+          "other-transfers": {
+            "version": 1,
+            "sourceCommit": "4df9dc4c6829acc00b9db6fb7b928e62e0423f09",
+            "cliSha256": "b0c17b89550fbdc06031b0343e0b2125204201ee97ca230423f4a3c7b4a2f0e5",
+            "results": [
+              {
+                "name": "option-goto",
+                "check": 1,
+                "run": null,
+                "diagnostics": [
+                  "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 26, kind: Expr }) propagation boundary does not accept its operand carrier"
+                ],
+                "terminal": null
+              },
+              {
+                "name": "result-break",
+                "check": 1,
+                "run": null,
+                "diagnostics": [
+                  "error[sema.final_analysis]: checked Try operand authority violation: checked Try ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 24, kind: Expr }) propagation boundary does not accept its operand carrier"
+                ],
+                "terminal": null
+              },
+              {
+                "name": "option-dead-strict-operand",
+                "check": 0,
+                "run": 0,
+                "diagnostics": [],
+                "terminal": [
+                  "step 8: 1 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "  event return 23",
+                  "ok: C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-dead-strict-operand.arcw (9 step(s), final_status=done Return(\"23\"))"
+                ]
+              },
+              {
+                "name": "option-inner-caught",
+                "check": 0,
+                "run": 0,
+                "diagnostics": [],
+                "terminal": [
+                  "step 21: 1 flow event(s), 0 effect(s), 0 task request(s), 0 diagnostic(s)",
+                  "  event return 23",
+                  "ok: C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\carrier-return-probe\\option-inner-caught.arcw (22 step(s), final_status=done Return(\"23\"))"
+                ]
+              }
+            ]
+          }
+        },
+        "firstRunCorrection": "The first terminal-tail launch omitted --entry. Its exit 2 reflects CLI invocation. The recorded AWBC product replay supplies the real entry and runs one operation per step.",
+        "pureNeverProbe": "A public function declared Never with an option tail containing only a Never parameter failed at sema.final_analysis. The source and diagnostic are in controls/pure-carrier-never."
       }
     }
   },
   "rawArchive": {
     "file": "task-expression-value-scope.raw.zip",
-    "bytes": 3021507,
-    "sha256": "1fcb0d8dac0084f61586123f0b5d9a501654ddc8ab532462dff12684e2c3d85e",
+    "bytes": 3240164,
+    "sha256": "c6280ba4939e053bdd1a30e30969144bcd8ca8c36e8c9ff2d94db2367f080ac3",
     "entries": {
       "test/retained-value-scope-final-targeted.log": "3e4bc405e1a34ec350202885a0fc5456d8034bc433fe4c4f39c249ff34c4f033",
       "test/retained-value-scope-final-targeted.receipt.json": "4813040b2cb79273494595443a16ce6cff90ca42714338fd8394abf389c0c939",
@@ -1350,7 +1702,55 @@
       "carrier/terminal-transfer/direct-return.log": "8bb07085a5396393e495818475bd4232f607aaf7e9684a4e2ac32379c5c9f4d4",
       "carrier/repair/quality/workspace-check.log": "30b64467f7fbd94216215448ce86e80b35e285e8f39afd73ae6bb56e184e9350",
       "carrier/repair/quality/workspace-clippy.log": "4cde467c59fbd1f49fe5327605d147fa151958ffb2e52b104ae59c1eba84a0f4",
-      "carrier/repair/quality/owner-doctests.log": "37f929ea6ef2f5d032425bbfdf9b0a52be22698b07b19ee4876fc3ac331df749"
+      "carrier/repair/quality/owner-doctests.log": "37f929ea6ef2f5d032425bbfdf9b0a52be22698b07b19ee4876fc3ac331df749",
+      "carrier/repair/quality/runtime-host.log": "1d4adfe5dc798f39a8d25c26858fc3ccc2ed51320abb5d1858321a13ba66a253",
+      "carrier/repair/quality/owners.log": "49e94985145fa32ea4834f8076cd24151f4b45ad2a522236c6b5d1fba7792f60",
+      "carrier/repair/quality/driver-scene.log": "e8c56e54f3f32dcf21ccef349faf73ac5506a96f48ff03a4bb034cf4acaef4d5",
+      "carrier/repair/quality/player-native.log": "31a70a759d2bcbcebf27ca7fdf2c6004e7c80f918bc786c7377b5fba6b2700e3",
+      "carrier/repair/quality/player-web.log": "8b087f4f00b7fde557fa5fc3730b32596770d41464fb95434073cbea5f44331b",
+      "carrier/repair/quality/agent-execution.log": "783688e9eeddb3049d0e2f06e7a1b08993188a0a1b2c4058734e5e66b9f08634",
+      "carrier/terminal-transfer/controls/additional-paths.receipt.json": "c411f81bf2bef8bcfbe8a44de5d46cf3e13b24e7d6c08bebd8bf39631f025bfb",
+      "carrier/terminal-transfer/controls/terminal-tail-execution.receipt.json": "2e5bb841fc821b901400f1b6bcc46f0adef55661da6147f5fc4f39123a6828fa",
+      "carrier/terminal-transfer/controls/expected-carrier-types.receipt.json": "e5d620b3904015231a20becc38da7b9b12da4e6e03f2f84980b863792e37aeee",
+      "carrier/terminal-transfer/controls/other-transfers.receipt.json": "65c99a09c37880ef3e93c1aa2962e4e3c7bebaeaf42aa58055ee90cba2bc7b0a",
+      "carrier/terminal-transfer/controls/let-else-resumable.arcw": "8124a1cb5335fc138bb18f7f8b0c38a76300d3709137e300c853a501824cab1d",
+      "carrier/terminal-transfer/controls/let-else-resumable.log": "455576b08fae7b94e06a3cd07030de6b424337372eb59861dcf7fd8088f8924d",
+      "carrier/terminal-transfer/controls/option-dead-strict-operand.arcw": "afdcc17b9b945737a9acc3411419da15e10da8a3e4b2c084ace891b9a97d7f8d",
+      "carrier/terminal-transfer/controls/option-dead-strict-operand.log": "c880f6d0eb8d28e1a23274cbb1185599a2eaaf0d0a6119964d67dc6d49d44ec0",
+      "carrier/terminal-transfer/controls/option-dead-strict-operand.run.log": "4a5328d761eb2d4f1558a69c821eb87581eef0df93a06a64d3998ebe885a2b87",
+      "carrier/terminal-transfer/controls/option-dead-try.arcw": "d2629d05c4e757231d808025db8e78a20f3311b0989de873932d67691a9dff32",
+      "carrier/terminal-transfer/controls/option-dead-try.log": "678dcc52e7f8dbe987e33b92e7dd4cb22acbc60169f51fb1f981026905e4c04b",
+      "carrier/terminal-transfer/controls/option-goto.arcw": "5880e7439338a9b43a99513ec6ba943fed9b6336ba7d5c784611261e3517967d",
+      "carrier/terminal-transfer/controls/option-goto.log": "cdfdb8158ef98b2d69604cad6320693a4132d0456dbd2d0c224e7a8bdcc5fe8e",
+      "carrier/terminal-transfer/controls/option-inner-caught.arcw": "0436b27026a1fe9a217b67633f38ed18d9e5bc68a5eba59d5890f54539f2fe28",
+      "carrier/terminal-transfer/controls/option-inner-caught.log": "d84e832b1417bd6c65e9935ed23e2a18e794d6e1694d1f8b38007bf783cef6f0",
+      "carrier/terminal-transfer/controls/option-inner-caught.run.log": "b8167be428e3a3e6d6049ad796e4634592a3c1fc100609897a15d2f6c2aaa415",
+      "carrier/terminal-transfer/controls/option-terminal-tail-none.arcw": "71bdff72295ac2d74a4f13ba79419801daeb0e92f101d72f681d0f9b57454f24",
+      "carrier/terminal-transfer/controls/option-terminal-tail-none.log": "6d1704fa32470d275ae213e3f3478e4a5b022414ae819bf9d801397da02fd92e",
+      "carrier/terminal-transfer/controls/option-terminal-tail-none.run.log": "10e71a898f8606748f1f864813f3d8e50995464f3d98893c63d4fffbebbf37db",
+      "carrier/terminal-transfer/controls/option-terminal-tail-none.awbc-product.run.log": "ec5d802acbc868bda8e5422c52ae395b6036c8b8186f9dd22f90a3b62fd5a4bf",
+      "carrier/terminal-transfer/controls/option-terminal-tail-some.arcw": "a491c9b0bb2b91b7318ca64386c385d5c30100cbaad55f0b5107552029c7c116",
+      "carrier/terminal-transfer/controls/option-terminal-tail-some.log": "1c90460a75b8782be26236e752aaa680148bf2c27e2b607107ba79a86ba03178",
+      "carrier/terminal-transfer/controls/option-terminal-tail-some.run.log": "10e71a898f8606748f1f864813f3d8e50995464f3d98893c63d4fffbebbf37db",
+      "carrier/terminal-transfer/controls/option-terminal-tail-some.awbc-product.run.log": "f43fc4ede0f3f225cb20b4c914e5190043a1c82c1716212ad30d5673022f7835",
+      "carrier/terminal-transfer/controls/option-typed-terminal-tail.arcw": "2a4067e77598fef5d3c9fa044055fee719b2cd22def0a9a1b876a0aa2f1f33d1",
+      "carrier/terminal-transfer/controls/option-typed-terminal-tail.log": "f5799358855f02bb74b273bcc2489d76d5d823da1176ca877a75471b00cc6464",
+      "carrier/terminal-transfer/controls/result-break.arcw": "d6ec89dbc32153cbcaa26616d329f0efba04c27e3481d4773555a725d06594dd",
+      "carrier/terminal-transfer/controls/result-break.log": "cfdec212465a88554bfca94c3ee1c312c771bf6ba13c584ca499cfa328c8eda5",
+      "carrier/terminal-transfer/controls/result-dead-try.arcw": "f44c4479db23c712001965143876aa6b9a40a8766841899164d49db16ca04c77",
+      "carrier/terminal-transfer/controls/result-dead-try.log": "93502662c796eb0891f0b92e004e227f3afb68e567bc6f3720f1d89368c3a710",
+      "carrier/terminal-transfer/controls/result-terminal-tail-err.arcw": "40783fe28ccbebe462659cc18bc8cb76ff34ee2dba794a81778b99794f21ac8e",
+      "carrier/terminal-transfer/controls/result-terminal-tail-err.log": "464d6a4e97870b9b827ed9b3d2363595a4056df6ed32c9e51170be927bbfe21f",
+      "carrier/terminal-transfer/controls/result-terminal-tail-err.run.log": "10e71a898f8606748f1f864813f3d8e50995464f3d98893c63d4fffbebbf37db",
+      "carrier/terminal-transfer/controls/result-terminal-tail-err.awbc-product.run.log": "b74c150cadedc31f2886341db25e409ce7a915d493206cdc134d77d94cceb39a",
+      "carrier/terminal-transfer/controls/result-terminal-tail-ok.arcw": "2c67ab78ec1b7c1e268c2e3f0fdb09187271ea998ae3c9f61c79c7b932e78d7a",
+      "carrier/terminal-transfer/controls/result-terminal-tail-ok.log": "99745012a666b142673e3af81e91f8c9c84dcdc61d2bd318b741b767d4b08a71",
+      "carrier/terminal-transfer/controls/result-terminal-tail-ok.run.log": "10e71a898f8606748f1f864813f3d8e50995464f3d98893c63d4fffbebbf37db",
+      "carrier/terminal-transfer/controls/result-terminal-tail-ok.awbc-product.run.log": "f31eb404746326a27d5574aafe5c6b4bdee787c09b579fee44f5f553615a3124",
+      "carrier/terminal-transfer/controls/result-typed-terminal-tail.arcw": "328820695df49c656cfebf271b3663bba037ebbbcf308b0f38e225673b7541df",
+      "carrier/terminal-transfer/controls/result-typed-terminal-tail.log": "f3d4b99714539322d556361e692c7b9e123f815a52ce9643fe50e5138270156c",
+      "carrier/terminal-transfer/controls/pure-carrier-never.arcw": "23b6b331f27bf41eee772eb957d35dc5e2d16725523fd7098293310b97a71169",
+      "carrier/terminal-transfer/controls/pure-carrier-never.log": "eb1d8eabd94aca5d043b50ccdba4ee1fa599b996432959f5aff91d3f7738cc82"
     }
   }
 }
