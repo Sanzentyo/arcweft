@@ -16049,3 +16049,15 @@ workspaceの全target・全feature check／Clippy、変更Rustのfmt、Wasm向�
 locked・全feature・全targetのCargo treeとmetadataが41逆依存で一致した。全41のnextestは未実施。キー付き保持入力を含むScroll 2件の実Native観測は別IDと各50pxの範囲を返した。キー付きTextはScroll有無の両方で同じtext block targetの重複により描画に失敗した。構造コンテナも繰り返すとgenerated targetが重複した。
 
 [検証原本](acceptance-evidence/task-retained-scroll-occurrence.raw.zip) は33 entries、1037206 bytes、SHA256 `dbb3a8218ff4979a5f338180263471a8aa51a444f7f5cc6dd22d149b7417ee85`。失敗・成功ログ、Native probe、実行ファイルのhash、公開blob照合を保持する。
+
+### 保持 Scroll の41逆依存検証と Web IME 生成器 — 2026-11-09
+
+固定検証Source `751128cbe0ce4311bbe11fda887bf4ee5712bf50`、tree `957d4d215208c00ceb84cc64cae08d8435f88fc9`、実装Source `8d8d26adbc9d8943467b259201c64a21dddcd055`。locked・全feature・全targetのCargo metadataと逆依存treeが41パッケージで一致。Windowsのnextestでは38パッケージに実行対象があり、arcweft、arcweft-bundle-assets、arcweft-render-webには選択されたホストテストがなかった。
+
+全件結果は5,416実行、5,412 PASS（62 slow）／4 FAIL／41 SKIP、1,145.011秒。非CLI 4,702 PASS／1 FAIL／18 SKIP。CLI 710 PASS／3 FAIL／23 SKIP。無音台詞の全件検証Source `b7fba62b6f2de22bdb40ad08f754fecbc5a2e985` との共通5,411 IDでは、Scroll CLIがFAILからPASSへ、Web IME生成器とMCP起動待ちがPASSからFAILへ変化した。今回のみの5件はすべてPASS。promotionの2件は従来と同じExpr8で失敗した。Sourceと元EXE 180件の差分0。arcw.exeは305991168 bytes、SHA256 `1920afc7a7005d62a0799b450384af7a6cc64cb3657ea30f3a48e0dc155318d6`。
+
+Web IME生成器の standalone nightly script に旧 `ViewProgramResource.scroll_regions` が残り、テスト内の構築がE0560で失敗した。空フィールド1行を削除したSource `8c48c1325de387a0451790eb0571c398f4a7c9fc`、親 `751128cbe0ce4311bbe11fda887bf4ee5712bf50`、tree `5e9572f7eb839cc7ea7c7cc150b120c6c9dbc026`、公開patch SHA256 `9c38d94368c4742e48edc8b51e7912d8ece02337ed50ccb463c1506fb55fbfb7`。元のバイナリで1 PASS、46.657秒。AWFBを二度生成してバイト一致を確認し、decode・再encode、3入力欄とAWBC callbackを実行した。rustfmtと差分検査は終了0。MCPは全件時に子からreadinessが届かず `ready=Err(Timeout)`。同じバイナリと既存の待ち時間で単独再試行し1 PASS、0.619秒。どちらの再試行も全件runの記録と分けて保持する。
+
+同じ実arcw.exeで追加の再現を取った。キー付きScrollのText・Column・Buttonを含むfixtureはCLI check成功後、順序の正逆ともText target重複で描画を拒否された。Textを含まないキー付きButtonもButton target重複で失敗した。単独のPanelは生成targetに対する必須Surfaceが欠落して描画を拒否された。これらはScrollの範囲計算とは別の子ノードの所有境界で再現した。
+
+[検証原本](acceptance-evidence/task-retained-scroll-reverse.raw.zip) は25 entries、502332 bytes、SHA256 `0cf1bc564d5be1353c739b09ae6b7851a624bd90283f27140a41408196adb767`。列挙、全件、個別再試行、元EXEのhash、公開照合、追加再現を保持する。
