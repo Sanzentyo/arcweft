@@ -16106,3 +16106,33 @@ Windowsのlocked・全feature・既定nextest filterで41パッケージを選�
 [検証原本](acceptance-evidence/task-retained-surface-reverse.raw.zip)は9件、
 455,155 bytes、SHA-256 `b50a10434b3d3cffa3c13ca1549b22799502c8121be470b3328c50a175d95c48`。
 選択条件、catalog、元バイナリの前後ハッシュ、全出力、基点との比較、検証スクリプトを収録した。
+
+### 影付き Panel の共有AWFBキャプチャー — 2026-11-09
+
+公開Source `b7d71759bb5356587b53e63786e65eab4d36843a`、親
+`148cdecf27c91d1d6aac0063bac585aa7a9c1660`、tree `9af7d4f9d51c139cf9d26455c253781a86a078df`。
+公開patch SHA-256は `0f91083bb30d70bb47128225cde09598c9904e90a7cf1aef097ac7fb90eb60a2`。12 blobを照合した。
+
+以前のNative単独経路は、vendor glyphonを選ぶと旧compositor APIでE0050とE0063を再現した。
+影だけを合成したNativeシーンと、Panelの塗りを持つWebシーンを統一するため、1本の `.arcw` から生成したAWFBを両者で実行する。
+同じ明示的な `entry.main` を選び、16 msの4 tick、各128 opsで保持フレームを準備する。
+最初の試作は明示entryなしで実行を拒否された。修復後は実GPUで2枚のPanel、外影1、内影2を観測した。
+両ターゲットのfixture資料から重複した配置とルートの説明を削除し、現行の `.arcw` と共通policyに集約した。旧基準の昇格履歴と画像を保持した。
+
+共有AWFBは39,360 bytes、SHA-256 `f586969f9b02184c293edddf8629357dde14e137eb686652f88bd9cc7a70223c`。
+両観測のartifact identityは `1f7c7f35c8cc650f6b86abdc072073eabe2ef2c49fe324fe61b85fbeab9c2fe2`。
+NativeはRTX 3080 Ti、Vulkan、driver 610.88。WebはChrome 156.0.8078.80、Playwright 1.61.0、BrowserWebGpu。
+ブラウザーのadapter名とdriverは取得できなかった。各環境で2回のPNG SHA-256は一致した。
+NativeとWebのPNGはファイルハッシュが異なり、復号した320×180全RGBA成分のMSE／MAE／最大誤差は0、輝度SSIMは1。
+既存基準とのMSE／MAEはNative 0.1813696874137324／0.31729756122026787、Web 0.13894921544980685／0.2561603698123156。
+基準画像の許容値0.002／0.003を超過し、固定環境での合格と昇格は未確認。
+
+Web ownerのnextestは36／36 PASS。workspaceのCargo treeで `arcweft-player-web` の逆依存は自身のみ。
+Wasm buildとbindgen、両環境の実キャプチャー、Rust fmt、JS構文、recipe展開、構造gateは成功した。
+構造gateのblockingは0。収集ツールはレビュー閾値を越えたが、同じAWFBの構築と両候補の比較は既存の収集手順が所有する。
+既存のNative低水準GPU smokeは、変更なしのテストバイナリで前後SHA-256が一致し、GPUの3 shadow passを検査して1／1 PASS。
+収集ツールのdry preflightは成功した。非固定環境の `--run` はこの原本の作成時点で別途実行中。
+
+[検証原本](acceptance-evidence/task-inset-shadow-shared-capture.raw.zip)は28件、92,946 bytes、
+SHA-256 `d662703e8a06019b60e122be26cb855670056e08e06790ac5df12df5536e16f1`。
+実画像と比較、観測、環境、初回失敗、元バイナリ照合、公開結果を保持した。
