@@ -11189,8 +11189,8 @@
     },
     "raw": {
       "path": "docs/implementation/acceptance-evidence/task-promotion-recursive-capture.raw.zip",
-      "sha256": "8b7281079e981acc3a92fa6fbefb5d7dbf010faf0e724abddeab8d65c194d8c9",
-      "bytes": 965059,
+      "sha256": "2d74c70f2561e6b6ddf359f4542396b38697e8308f3382616ca8a0ec13314fcd",
+      "bytes": 1237899,
       "entries": [
         {
           "entry": "recursive-function-promotion-receiver-1e2db7da/source.publication.json",
@@ -11691,6 +11691,351 @@
           "entry": "recursive-function-promotion-receiver-1e2db7da/quality/checkpoint.receipt.json",
           "bytes": 5228,
           "sha256": "2ea33a8739d6745fb7686f0e10bee25d0374cdbe6a9f37d17f5858a0b6bd7d90"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality.retry.receipt.json",
+          "bytes": 2267,
+          "sha256": "9cc6802b53ab6a88f9c67a3fe6838836897f236e5e7c1db63183f892f5a13521"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/retry-quality.ps1",
+          "bytes": 2609,
+          "sha256": "dda22f4e91798c4ef388370a0ca99673e4033af99db08ff92456c1db4eb34b86"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/recursive-callable.arcw",
+          "bytes": 477,
+          "sha256": "d08d17d5812c2431e71714038a01a434c624a7d26216bbea8f73ac79f894a9fc"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/bytecode-vm.json",
+          "bytes": 47352,
+          "sha256": "e50b83a9a3664f089a62e2795b89ccf6db387f437894cf2b92c290cb8eccc53d"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/aot.json",
+          "bytes": 47344,
+          "sha256": "7b6da8e49d8d4b1c86738c625d5f12cbc357dc36cfa080126924514fa931d692"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/aot.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/awbc-product.json",
+          "bytes": 178890,
+          "sha256": "e0022b69c4ab6e419c1181dc4eee49f48318e6b388512d61d767533281c99154"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/awbc-product.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/execution.receipt.json",
+          "bytes": 1712,
+          "sha256": "ccab2d363ee844a91c1498fa977fc0a4203eb6d319e263db3f98b35232d74466"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/recursive-callable-execution/execution.checked.receipt.json",
+          "bytes": 1611,
+          "sha256": "e9127da643146b980705417da19675b33a8d95703c2276ef2892030b8b3a9207"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-runtime-plan.log",
+          "bytes": 113707,
+          "sha256": "a8c153d050d4b788871586eb384c6dd3b6ddad5c207fec19f37d377a4983e8a5"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-compiler.log",
+          "bytes": 154611,
+          "sha256": "a4fcc5cb8b8a811512c1d1dd5daee8e5351932cdfcacd16c109bed67bf88c593"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-compiler-retry.log",
+          "bytes": 238572,
+          "sha256": "52af9dedc7b04fb3cec42924f49bbeb2b50bec3809c504d72685cc23bfe4ebf3"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-runtime-host.log",
+          "bytes": 102157,
+          "sha256": "7243787099a8e68294556332347b8c25ae74b60e54a33872df8278635399f78d"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-driver-scene.log",
+          "bytes": 129775,
+          "sha256": "49d3bd925609511762ecd340e681a2e6a60118d4a818d2378afaf9ddaeeaef50"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-player-native.log",
+          "bytes": 99499,
+          "sha256": "b4f7a151f51b4ac845e4d711f6b0431d9e59ded6f794786b24850998cf640d57"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-player-web.log",
+          "bytes": 94293,
+          "sha256": "f370656894bab83924ff80441003e1565982dbeaef50edb8ea08ceb599e77621"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-agent-execution.log",
+          "bytes": 102761,
+          "sha256": "4217247df7f1bb4f95ea113157835b76310ab115ad77baf70db3db0808821ccf"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-agent-transport.log",
+          "bytes": 95243,
+          "sha256": "37732b9d6f3bd9950d396ccdec3d4ca21e65e07d5834095800a8ed8ede4f40de"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-tools-lsp.log",
+          "bytes": 147796,
+          "sha256": "3ea0cdc3fcea13172a0aec09150a406c0b97baf21cefa248a7fe3326280396bb"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-verify.log",
+          "bytes": 93963,
+          "sha256": "3a4a48137d5877c3a9da4bf61f472ecf3188458321406a62235f948a46c042c9"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-cli-library-binaries.log",
+          "bytes": 121034,
+          "sha256": "e96879d26facdeee24b191003d91958b3891a07fec623231be09f0f45d13b94a"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/quality-cli-integration.log",
+          "bytes": 95735,
+          "sha256": "ee697810616255bf8d3ba95147e22b66f6d867a052eb5f1141c768e4033eb439"
+        },
+        {
+          "entry": "recursive-function-promotion-receiver-1e2db7da/quality/terminal.receipt.json",
+          "bytes": 12882,
+          "sha256": "8ca690b5bde5029fca454263c552f12ce703912c1f35be6efda289dcca4f1782"
+        }
+      ]
+    },
+    "terminalQuality": {
+      "receipt": "recursive-function-promotion-receiver-1e2db7da/quality/terminal.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 3889,
+        "pass": 3889,
+        "fail": 0,
+        "skip": 1
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 52.05s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 55.05s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 36.19s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 13s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.53s",
+            "Summary [  68.650s] 1450 tests run: 1450 passed, 0 skipped"
+          ]
+        },
+        "runtime-plan": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 29.93s",
+            "Summary [  45.040s] 165 tests run: 165 passed, 1 skipped"
+          ]
+        },
+        "compiler": {
+          "exit": 101,
+          "summary": [],
+          "retry": {
+            "exit": 0,
+            "summary": [
+              "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s",
+              "Summary [ 105.004s] 1007 tests run: 1007 passed (2 slow), 0 skipped"
+            ],
+            "log": "recursive-function-promotion-receiver-1e2db7da/quality/quality-compiler-retry.log"
+          }
+        },
+        "runtime-host": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 05s",
+            "Summary [   2.675s] 72 tests run: 72 passed, 0 skipped"
+          ]
+        },
+        "driver-scene": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 00s",
+            "Summary [   2.869s] 278 tests run: 278 passed, 0 skipped"
+          ]
+        },
+        "player-native": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 05s",
+            "Summary [   1.132s] 59 tests run: 59 passed, 0 skipped"
+          ]
+        },
+        "player-web": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 01s",
+            "Summary [   0.400s] 37 tests run: 37 passed, 0 skipped"
+          ]
+        },
+        "agent-execution": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 30.96s",
+            "Summary [  46.855s] 106 tests run: 106 passed, 0 skipped"
+          ]
+        },
+        "agent-transport": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 15.68s",
+            "Summary [   0.420s] 46 tests run: 46 passed, 0 skipped"
+          ]
+        },
+        "tools-lsp": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 42.64s",
+            "Summary [  73.468s] 412 tests run: 412 passed, 0 skipped"
+          ]
+        },
+        "verify": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 48.04s",
+            "Summary [   0.332s] 31 tests run: 31 passed, 0 skipped"
+          ]
+        },
+        "cli-library-binaries": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 21s",
+            "Summary [  31.138s] 196 tests run: 196 passed, 0 skipped"
+          ]
+        },
+        "cli-integration": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 25.44s",
+            "Summary [   8.501s] 30 tests run: 30 passed, 0 skipped"
+          ]
+        }
+      },
+      "recoveredAfterBuildFailure": [
+        "compiler"
+      ],
+      "unresolvedStages": [],
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
+    },
+    "recursiveCallableExecution": {
+      "version": 1,
+      "source": "1e2db7da75aa6e3b2517ae71e30636ecbf7003bd",
+      "cliSha256": "bbda9bb31e7f7deda49e3a24797d79567740e733b6626f3e1f4655e1477e2579",
+      "runner": "headless",
+      "flow": "main",
+      "mode": "one-op",
+      "operationLimit": 1,
+      "stepLimit": 256,
+      "inputSha256": "d08d17d5812c2431e71714038a01a434c624a7d26216bbea8f73ac79f894a9fc",
+      "cases": [
+        {
+          "tier": "bytecode-vm",
+          "executor": "bytecode_vm",
+          "exit": 0,
+          "steps": 27,
+          "maxOps": 1,
+          "executedOps": 27,
+          "finalStatus": "done Return(\"42\")",
+          "returnEvents": 1,
+          "reportSha256": "e50b83a9a3664f089a62e2795b89ccf6db387f437894cf2b92c290cb8eccc53d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "tier": "aot",
+          "executor": "aot",
+          "exit": 0,
+          "steps": 27,
+          "maxOps": 1,
+          "executedOps": 27,
+          "finalStatus": "done Return(\"42\")",
+          "returnEvents": 1,
+          "reportSha256": "7b6da8e49d8d4b1c86738c625d5f12cbc357dc36cfa080126924514fa931d692",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "tier": "awbc-product",
+          "executor": "awbc_product",
+          "exit": 0,
+          "steps": 109,
+          "maxOps": 1,
+          "executedOps": 109,
+          "finalStatus": "done Return(\"42\")",
+          "returnEvents": 1,
+          "reportSha256": "e0022b69c4ab6e419c1181dc4eee49f48318e6b388512d61d767533281c99154",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ]
     }
