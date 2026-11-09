@@ -137,7 +137,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(accepted.then_some(projection))
     }
 
-    fn check_function_body_type(
+    pub(super) fn check_function_body_type(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,

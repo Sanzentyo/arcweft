@@ -196,6 +196,49 @@ impl Analyzer<'_, '_, '_> {
         statements.receive_carrier(owner);
         Ok((delivers_success, statements.normal))
     }
+
+    /// Projects the value-producing exits of an already typed body. The
+    /// statement result inventory also contains unreachable returns for type
+    /// checking, so only the live escaping edges are eligible here.
+    pub(in crate::final_analysis::analyzer) fn checked_body_value_sources(
+        &self,
+        module: &HirModule,
+        statements: &[StmtId],
+        tail: ExprId,
+        receives: impl Fn(&HirControlTransferTarget) -> bool,
+        include_normal: bool,
+    ) -> Result<Vec<ExprId>, AnalyzerExpressionError> {
+        let completion = self.block_body_completion(
+            module,
+            statements,
+            tail,
+            CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
+                callable: None,
+                current_expression: None,
+            },
+        )?;
+        let mut values = Vec::new();
+        if include_normal && completion.continues() {
+            values.push(tail);
+        }
+        for owner in completion.escaping {
+            let statement = module.resolve_stmt(owner).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            if let HirStmtEvaluationPlan::Value {
+                kind: HirStmtValuePlanKind::Return | HirStmtValuePlanKind::Break,
+                expression: Some(value),
+                ..
+            } = statement.kind().evaluation_plan()
+                && receives(self.completion_transfer_target(owner)?)
+            {
+                values.push(value);
+            }
+        }
+        Ok(values)
+    }
+
     /// Declaration-result typing keeps a rejected Call's issued diagnostic.
     /// Its possible resumption constrains the tail but grants no execution
     /// evidence; checked expression queries still require an available result.

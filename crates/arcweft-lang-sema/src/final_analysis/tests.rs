@@ -1638,6 +1638,138 @@ fn safe_lifetime_promotion_checks_the_function_value_captures() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "returned-value fixtures share the exact receiver and promotion span assertions"
+)]
+fn safe_lifetime_promotion_checks_returned_function_storage() {
+    let borrowed = "|_unit: Unit| -> i64 { let _ = loan; 42i64 }";
+    let owned = "|_unit: Unit| -> i64 { 7i64 }";
+    let signature = "fn factory(loan: &i64) -> ((Unit) -> i64 effects {})";
+    let promotion = "callback.promote('flow)";
+    let caller = |params: &str, value: &str| {
+        format!("flow main({params}) {{\nlet callback = {value}\nlet _ = {promotion}\n}}")
+    };
+    let ordinary_caller = caller("loan: &i64", "factory(loan)");
+    for (case, source, retains_borrow) in [
+        (
+            "normal result",
+            format!("{signature} {{ {borrowed} }}\n{ordinary_caller}"),
+            true,
+        ),
+        (
+            "forward declaration and explicit return",
+            format!("{ordinary_caller}\n{signature} {{ return {borrowed} }}"),
+            true,
+        ),
+        (
+            "conditional return",
+            format!(
+                "fn factory(loan: &i64, flag: bool) -> ((Unit) -> i64 effects {{}}) {{
+                    if flag {{ return {borrowed} }}
+                    {owned}
+                }}
+                {}",
+                caller("loan: &i64, flag: bool", "factory(loan, flag)")
+            ),
+            true,
+        ),
+        (
+            "unreachable tail",
+            format!("{signature} {{ return {owned}\n{borrowed} }}\n{ordinary_caller}"),
+            false,
+        ),
+        (
+            "instantiated generic capture",
+            format!(
+                "fn factory<T>(loan: T) -> ((Unit) -> i64 effects {{}}) {{ {borrowed} }}
+                {ordinary_caller}"
+            ),
+            true,
+        ),
+        (
+            "nested generic applications",
+            format!(
+                "fn factory<T>(loan: T) -> ((Unit) -> i64 effects {{}}) {{ {borrowed} }}
+                 fn forward<U>(loan: U) -> ((Unit) -> i64 effects {{}}) {{ factory(loan) }}\n{}",
+                caller("loan: &i64", "forward(loan)")
+            ),
+            true,
+        ),
+        (
+            "terminal result after a prior parameter group",
+            format!(
+                "fn factory(loan: &i64)(number: i64) -> ((Unit) -> i64 effects {{}}) {{
+                    |_unit: Unit| -> i64 {{ let _ = loan; number }}
+                }}
+                flow main(loan: &i64) {{
+                    let prefix = factory(loan)
+                    let callback = prefix(42i64)
+                    let _ = {promotion}
+                }}"
+            ),
+            true,
+        ),
+        (
+            "same generic factory with owned input",
+            format!(
+                "fn factory<T>(loan: T) -> ((Unit) -> i64 effects {{}}) {{ {borrowed} }}\n{}",
+                caller("loan: i64", "factory(loan)")
+            ),
+            false,
+        ),
+        (
+            "borrowed input discarded by factory",
+            format!("{signature} {{ let _ = loan; {owned} }}\n{ordinary_caller}"),
+            false,
+        ),
+        (
+            "loop break",
+            caller(
+                "loan: &i64",
+                "loop { break || -> i64 { let _ = loan; 42i64 } }",
+            ),
+            true,
+        ),
+        (
+            "unreachable loop break",
+            caller(
+                "loan: &i64",
+                "loop {
+                    break || -> i64 { 7i64 }
+                    break || -> i64 { let _ = loan; 42i64 }
+                }",
+            ),
+            false,
+        ),
+        (
+            "break targets an inner loop",
+            caller(
+                "loan: &i64",
+                "loop {
+                    let _ = loop { break || -> i64 { let _ = loan; 42i64 } }
+                    break || -> i64 { 7i64 }
+                }",
+            ),
+            false,
+        ),
+    ] {
+        let error = analyze(&fixture(&source, None)).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{case}: {error:?}"));
+        let (code, offending) = if retains_borrow {
+            ("sema.lifetime.promotion_receiver", "callback")
+        } else {
+            ("sema.lifetime.promotion_execution", promotion)
+        };
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
     for (parameter, code) in [
         ("&i64", "sema.lifetime.promotion_receiver"),

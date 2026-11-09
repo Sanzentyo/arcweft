@@ -1115,7 +1115,7 @@ impl Analyzer<'_, '_, '_> {
     /// body checking. HIR type recovery remains diagnostic evidence; it is not
     /// a second result authority after project registration has normalized an
     /// exact accepted nominal or another callable-facing semantic type.
-    fn registered_callable_result(
+    pub(super) fn registered_callable_result(
         &self,
         declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey,
     ) -> Result<TypeKind, FinalSemanticAnalysisError> {

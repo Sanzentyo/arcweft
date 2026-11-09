@@ -1986,6 +1986,7 @@ impl Analyzer<'_, '_, '_> {
             }
             ResolveCallOutcome::Missing(target) => {
                 self.validate_lifetime_promotion_source(
+                    context,
                     source.module,
                     source.owner,
                     source.call,

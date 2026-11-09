@@ -1,89 +1,127 @@
-//! Borrowed storage evidenced by a function value's checked capture origins.
+//! Borrowed storage evidenced by checked function-value origins.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
 use arcweft_lang_hir::{
-    expr::HirExprKind, identity::ExprId, module::HirModule, project::HirLocalValueOrigin,
+    expr::HirExprKind,
+    identity::{ExprId, ItemId},
+    item::{HirFunctionBody, HirItemKind},
+    module::HirModule,
+    project::{
+        HirControlTransferTarget, HirLocalValueOrigin, HirLoopTargetFamily, HirReturnContext,
+        HirSemanticBodyOwner,
+    },
+    source_index::HirCallableSourceOwner,
+    symbol::{CallableDeclarationKey, CallableDeclarationOwner},
 };
 
 use super::{Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery};
 use crate::{
     callable::{
-        CheckedCallSite, PreparedCallGraphIngress, PreparedCallSiteContinuation,
-        PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-        PreparedFunctionValueOriginQueryError,
+        CallableCandidateId, CheckedCallSite, PreparedCallGraphIngress,
+        PreparedCallSiteContinuation, PreparedCaptureIdentityRow,
+        PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
+        PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError,
         prepare_function_value_origin_query_with_pending_captures,
     },
-    final_analysis::{CheckedMatchArmFact, PreparedExpressionFact, PreparedOwnerBoundResolution},
-    types::TypeKind,
+    final_analysis::{
+        CheckedMatchArmFact, FinalCallConstraintFailure, PreparedExpressionFact,
+        PreparedOwnerBoundResolution,
+        analyzer::{
+            AnalyzerExpressionContext, CallAnalysisFailure, calls::CallAnalysisInvariant,
+            expression_error::AnalyzerExpressionError,
+        },
+    },
+    types::{ScopedType, TypeKind, TypeProjectionError},
 };
 
+type PendingCaptures = Arc<std::collections::BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>;
+
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+struct ValueOrigin {
+    expression: ExprId,
+    applications: Rc<[CheckedCallSite]>,
+}
+
+enum CallStorage {
+    Borrowed,
+    SourceResult(CallableDeclarationKey),
+    NoWitness,
+}
+
 impl Analyzer<'_, '_, '_> {
-    /// Looks for borrowed storage using existing function-value evidence. An
-    /// opaque producer or an unsealed origin is not evidence of ownership.
+    /// Follows only the selected value origins and storage evidence. Executable
+    /// promotion still requires a complete ownership and lifetime proof.
     pub(super) fn function_value_has_borrowed_captures(
-        &self,
-        module: &HirModule,
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         root: ExprId,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<bool, FinalSemanticAnalysisError> {
-        let captures = self
+        let mut captures = self
             .pending_capture_identity_rows()
             .map_err(|error| error.into_public(root))?;
-        let local_origins = self
-            .topology
-            .module(module.module_id())
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-            .local_origins();
-        let expressions = self.facts.expressions();
-        let mut pending = vec![root];
+        let mut pending = vec![ValueOrigin {
+            expression: root,
+            applications: Rc::from([]),
+        }];
         let mut visited = BTreeSet::new();
-        while let Some(expression) = pending.pop() {
+        let mut prepared_bodies = BTreeSet::new();
+        while let Some(origin) = pending.pop() {
             receiver.charge(1)?;
-            if !visited.insert(expression)
-                || !expressions
-                    .get(&expression)
-                    .is_some_and(has_function_origin_fact)
-            {
+            if !visited.insert(origin.clone()) {
                 continue;
             }
-            let project_error = |error| {
-                self.map_function_value_origin_query_error(expression, error)
-                    .into_public(expression)
+            let module = self.module(origin.expression.module())?;
+            let Some(evidence) =
+                self.checked_function_origin(module, origin.expression, &captures, receiver)?
+            else {
+                continue;
             };
-            let mut progress = prepare_function_value_origin_query_with_pending_captures(
-                Arc::clone(&self.topology),
-                module,
-                expression,
-                expressions,
-                Arc::clone(&captures),
-            );
-            let evidence = loop {
-                match progress {
-                    Ok(PreparedFunctionValueOriginProgress::Ready(evidence)) => {
-                        break Some(evidence);
+            let mut next = Vec::new();
+            if let PreparedFunctionValueOriginProducer::Call(site) = evidence.producer() {
+                match self.call_storage(*site, &origin.applications, receiver, &mut next)? {
+                    CallStorage::Borrowed => return Ok(true),
+                    CallStorage::SourceResult(declaration)
+                        if !origin.applications.contains(site) =>
+                    {
+                        // Expand a checked site once per path. Other reachable
+                        // exits remain in the worklist when a call is recursive.
+                        receiver.charge(
+                            u64::try_from(origin.applications.len())
+                                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
+                                + 1,
+                        )?;
+                        let mut sites = origin.applications.to_vec();
+                        sites.push(*site);
+                        let sites: Rc<[_]> = Rc::from(sites);
+                        let (values, prepared) = self.source_function_values(
+                            context,
+                            &declaration,
+                            &mut prepared_bodies,
+                        )?;
+                        if prepared {
+                            captures = self
+                                .pending_capture_identity_rows()
+                                .map_err(|error| error.into_public(root))?;
+                        }
+                        receiver.charge(
+                            u64::try_from(values.len())
+                                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+                        )?;
+                        pending.extend(values.into_iter().map(|expression| ValueOrigin {
+                            expression,
+                            applications: Rc::clone(&sites),
+                        }));
                     }
-                    Ok(PreparedFunctionValueOriginProgress::Need(need)) => {
-                        receiver.charge(1)?;
-                        let requested = need.expression();
-                        let Some(fact) = expressions
-                            .get(&requested)
-                            .filter(|fact| has_function_origin_fact(fact))
-                        else {
-                            break None;
-                        };
-                        progress = need.resume(requested, fact, module);
-                    }
-                    Err(PreparedFunctionValueOriginQueryError::Composite) => break None,
-                    Err(error) => return Err(project_error(error)),
+                    CallStorage::SourceResult(_) | CallStorage::NoWitness => {}
                 }
-            };
-            let Some(evidence) = evidence else { continue };
-            if let PreparedFunctionValueOriginProducer::Call(site) = evidence.producer()
-                && self.continuation_has_borrowed_inputs(*site, receiver, &mut pending)?
-            {
-                return Ok(true);
             }
+            let local_origins = self
+                .topology
+                .module(module.module_id())
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+                .local_origins();
             for capture in evidence.captures() {
                 receiver.charge(1)?;
                 let local = capture.local();
@@ -92,34 +130,120 @@ impl Analyzer<'_, '_, '_> {
                     .locals()
                     .get(&local)
                     .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-                if receiver.contains_borrow(ty)? {
+                let (borrowed, callable) =
+                    self.inspect_value_storage(ty, &origin.applications, receiver)?;
+                if borrowed {
                     return Ok(true);
                 }
-                if matches!(ty, TypeKind::Function { .. })
+                if callable
                     && let Some(HirLocalValueOrigin::DirectInitializer(initializer)) =
                         local_origins.origin(local)
                 {
-                    pending.push(initializer);
+                    next.push(initializer);
                 }
             }
             if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
                 evidence.producer()
             {
-                self.append_structural_function_results(module, *producer, receiver, &mut pending)?;
+                self.append_structural_function_results(module, *producer, receiver, &mut next)?;
             }
+            pending.extend(next.into_iter().map(|expression| ValueOrigin {
+                expression,
+                applications: Rc::clone(&origin.applications),
+            }));
         }
         Ok(false)
     }
 
-    fn continuation_has_borrowed_inputs(
+    fn checked_function_origin(
+        &self,
+        module: &HirModule,
+        expression: ExprId,
+        captures: &PendingCaptures,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<PreparedFunctionValueOriginEvidence>, FinalSemanticAnalysisError> {
+        let expressions = self.facts.expressions();
+        if !expressions
+            .get(&expression)
+            .is_some_and(has_function_origin_fact)
+        {
+            return Ok(None);
+        }
+        let mut progress = prepare_function_value_origin_query_with_pending_captures(
+            Arc::clone(&self.topology),
+            module,
+            expression,
+            expressions,
+            Arc::clone(captures),
+        );
+        loop {
+            match progress {
+                Ok(PreparedFunctionValueOriginProgress::Ready(evidence)) => {
+                    return Ok(Some(evidence));
+                }
+                Ok(PreparedFunctionValueOriginProgress::Need(need)) => {
+                    receiver.charge(1)?;
+                    let requested = need.expression();
+                    let Some(fact) = expressions
+                        .get(&requested)
+                        .filter(|fact| has_function_origin_fact(fact))
+                    else {
+                        return Ok(None);
+                    };
+                    progress = need.resume(requested, fact, module);
+                }
+                Err(PreparedFunctionValueOriginQueryError::Composite) => return Ok(None),
+                Err(error) => {
+                    return Err(self
+                        .map_function_value_origin_query_error(expression, error)
+                        .into_public(expression));
+                }
+            }
+        }
+    }
+
+    fn inspect_value_storage(
+        &self,
+        ty: &TypeKind,
+        applications: &[CheckedCallSite],
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<(bool, bool), FinalSemanticAnalysisError> {
+        let mut projected: Option<ScopedType> = None;
+        if !applications.is_empty() {
+            let graph = self
+                .facts
+                .prepared_calls()
+                .map_err(FinalSemanticAnalysisError::from)?;
+            // The innermost declaration owns the captured type template.
+            // Its replacements can name parameters of an enclosing caller.
+            for site in applications.iter().rev().copied() {
+                receiver.charge(1)?;
+                let input = projected.as_ref().map_or(ty, |term| term.view().value());
+                projected = Some(graph.project_site_payload(site, |prefix| {
+                    prefix.application().project_body_storage(input, receiver)
+                        .map_err(|error| match error {
+                            TypeProjectionError::Control(error) => error,
+                            TypeProjectionError::Instantiation(error) =>
+                                crate::final_analysis::NominalSchemaProjectionError::DeclarationProjection(error).into(),
+                        })
+                }, |_| Err(FinalSemanticAnalysisError::InvalidOwner))
+                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)??);
+            }
+        }
+        let ty = projected.as_ref().map_or(ty, |term| term.view().value());
+        Ok((
+            receiver.contains_borrow(ty, &self.types)?,
+            matches!(ty, TypeKind::Function { .. }),
+        ))
+    }
+
+    fn call_storage(
         &self,
         site: CheckedCallSite,
+        applications: &[CheckedCallSite],
         receiver: &mut ReceiverBorrowQuery<'_>,
         pending: &mut Vec<ExprId>,
-    ) -> Result<bool, FinalSemanticAnalysisError> {
-        use crate::final_analysis::FinalCallConstraintFailure;
-        use crate::final_analysis::analyzer::{CallAnalysisFailure, calls::CallAnalysisInvariant};
-
+    ) -> Result<CallStorage, FinalSemanticAnalysisError> {
         let owner = site.expression();
         let ty = self
             .facts
@@ -127,34 +251,41 @@ impl Analyzer<'_, '_, '_> {
             .get(&owner)
             .and_then(PreparedExpressionFact::value_type)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-        let graph = self.facts.prepared_calls().map_err(|error| {
-            crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::fact(error)
-                .into_public(owner)
-        })?;
+        let graph = self
+            .facts
+            .prepared_calls()
+            .map_err(|error| AnalyzerExpressionError::fact(error).into_public(owner))?;
         let classify = |error| {
             FinalSemanticAnalysisError::CallConstraintFailure(FinalCallConstraintFailure::new(
                 owner,
                 CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
             ))
         };
-        if !matches!(
-            PreparedCallGraphIngress::new(graph)
-                .continuation_at(site, ty)
-                .map_err(classify)?,
-            PreparedCallSiteContinuation::Prepared(_)
-        ) {
-            return Ok(false);
-        }
+        let stage = PreparedCallGraphIngress::new(graph)
+            .continuation_at(site, ty)
+            .map_err(classify)?;
         graph
             .project_site_payload(
                 site,
                 |prefix| {
+                    if matches!(stage, PreparedCallSiteContinuation::Independent) {
+                        return Ok(match prefix.application().selected().id() {
+                            CallableCandidateId::Project(declaration)
+                                if declaration.owner() == CallableDeclarationOwner::Function =>
+                            {
+                                CallStorage::SourceResult(declaration.clone())
+                            }
+                            _ => CallStorage::NoWitness,
+                        });
+                    }
                     for (source, ty) in prefix.record().value_inputs() {
                         receiver.charge(1)?;
-                        if receiver.contains_borrow(ty)? {
-                            return Ok(true);
+                        let (borrowed, callable) =
+                            self.inspect_value_storage(ty, applications, receiver)?;
+                        if borrowed {
+                            return Ok(CallStorage::Borrowed);
                         }
-                        if matches!(ty, TypeKind::Function { .. }) {
+                        if callable {
                             pending.push(source);
                         }
                     }
@@ -162,11 +293,57 @@ impl Analyzer<'_, '_, '_> {
                         receiver.charge(1)?;
                         pending.push(callee.callee());
                     }
-                    Ok(false)
+                    Ok(CallStorage::NoWitness)
                 },
                 |_| Err(FinalSemanticAnalysisError::InvalidOwner),
             )
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
+    }
+
+    fn source_function_values(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        declaration: &CallableDeclarationKey,
+        prepared: &mut BTreeSet<ItemId>,
+    ) -> Result<(Vec<ExprId>, bool), FinalSemanticAnalysisError> {
+        let view = self
+            .topology
+            .declaration(declaration)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        let item = view.body().source_item();
+        let module = self.module(view.module().module())?;
+        let item_source = module
+            .resolve_item(item)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let (HirCallableSourceOwner::Item, HirItemKind::Function(function)) =
+            (view.body().source_owner(), item_source.kind())
+        else {
+            return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+        };
+        let body = function.body();
+        let HirFunctionBody::Block {
+            statements, tail, ..
+        } = body
+        else {
+            return Err(FinalSemanticAnalysisError::RecoveredOwner);
+        };
+        let newly_prepared = prepared.insert(item);
+        if newly_prepared {
+            // A selected declaration can occur after its caller. Use the
+            // caller's fact transaction while checking the declaration body.
+            let expected = self.registered_callable_result(declaration)?;
+            let yields = self
+                .check_function_body_type(context, module, body, &expected)
+                .map_err(|error| error.into_public(*tail))?;
+            if yields != 0 {
+                return Err(FinalSemanticAnalysisError::InvalidFunctionExecution { owner: item });
+            }
+        }
+        let values = self.checked_body_value_sources(module, statements, *tail,
+            |target| matches!(target, HirControlTransferTarget::Return { context: HirReturnContext::Item(owner) } if *owner == item),
+            true,
+        ).map_err(|error| error.into_public(*tail))?;
+        Ok((values, newly_prepared))
     }
 
     fn append_structural_function_results(
@@ -182,6 +359,7 @@ impl Analyzer<'_, '_, '_> {
             .kind();
         match kind {
             HirExprKind::Block(block) => pending.push(block.tail()),
+            HirExprKind::NamedBlock(block) => pending.push(block.tail()),
             HirExprKind::If(branches) => {
                 receiver.charge(2)?;
                 pending.push(branches.else_branch());
@@ -205,6 +383,26 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
                 )?;
                 pending.extend(matched.arms().iter().rev().map(CheckedMatchArmFact::value));
+            }
+            HirExprKind::Loop(body) => {
+                let values = self
+                    .checked_body_value_sources(
+                        module,
+                        body.statements(),
+                        body.tail(),
+                        |target| {
+                            matches!(target, HirControlTransferTarget::Loop {
+                        family: HirLoopTargetFamily::LoopExpression, body_owner, ..
+                    } if *body_owner == HirSemanticBodyOwner::direct_expression(producer))
+                        },
+                        false,
+                    )
+                    .map_err(|error| error.into_public(producer))?;
+                receiver.charge(
+                    u64::try_from(values.len())
+                        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+                )?;
+                pending.extend(values);
             }
             _ => {}
         }

@@ -17,7 +17,10 @@ use arcweft_source::SourceSpan;
 use crate::{
     final_analysis::{FinalSemanticAnalysisControl, FinalSemanticAnalysisError},
     nominal::NominalResolutionLimits,
-    types::{ArrayLength, GenericParameterOwnerId, TypeKind},
+    types::{
+        ArrayLength, GenericParameterOwnerId, TypeKind, TypeProjectionControl,
+        TypeProjectionNodeKind,
+    },
 };
 
 /// A declaration either stores a borrow itself or can store the values of
@@ -48,7 +51,6 @@ struct DeclarationBorrow {
 
 pub(super) struct ReceiverBorrowQuery<'a> {
     symbols: &'a ProjectSymbolTable,
-    types: &'a BTreeMap<TypeId, TypeKind>,
     control: FinalSemanticAnalysisControl<'a>,
     source_span: &'a SourceSpan,
     remaining: u64,
@@ -56,16 +58,33 @@ pub(super) struct ReceiverBorrowQuery<'a> {
     pending: BTreeSet<ProjectNominalDeclarationId>,
 }
 
+impl TypeProjectionControl for ReceiverBorrowQuery<'_> {
+    type Error = FinalSemanticAnalysisError;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.control.check()
+    }
+
+    fn visit_node(&mut self, _: TypeProjectionNodeKind, depth: u64) -> Result<(), Self::Error> {
+        if depth > u64::from(NominalResolutionLimits::PRODUCTION.recursive_type_depth()) {
+            return Err(self.limit());
+        }
+        self.charge(1)
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.charge(1)
+    }
+}
+
 impl<'a> ReceiverBorrowQuery<'a> {
     pub(super) fn new(
         symbols: &'a ProjectSymbolTable,
-        types: &'a BTreeMap<TypeId, TypeKind>,
         control: FinalSemanticAnalysisControl<'a>,
         source_span: &'a SourceSpan,
     ) -> Self {
         Self {
             symbols,
-            types,
             control,
             source_span,
             remaining: NominalResolutionLimits::PRODUCTION.work_per_reference(),
@@ -77,6 +96,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
     pub(super) fn contains_borrow(
         &mut self,
         root: &TypeKind,
+        types: &BTreeMap<TypeId, TypeKind>,
     ) -> Result<bool, FinalSemanticAnalysisError> {
         loop {
             if self.inspect(root, None, 1)?.direct {
@@ -89,7 +109,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
             // borrow. Revisit only declarations that consumed a changed summary.
             // Reevaluating the root can discover newly retained arguments.
             while let Some(id) = self.pending.pop_first() {
-                self.update_declaration(&id)?;
+                self.update_declaration(&id, types)?;
             }
         }
     }
@@ -97,13 +117,14 @@ impl<'a> ReceiverBorrowQuery<'a> {
     fn update_declaration(
         &mut self,
         id: &ProjectNominalDeclarationId,
+        types: &BTreeMap<TypeId, TypeKind>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.charge(1)?;
         let declaration = self
             .symbols
             .nominal(id)
             .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-        let computed = self.inspect_declaration(declaration)?;
+        let computed = self.inspect_declaration(declaration, types)?;
         let row = self
             .declarations
             .get_mut(id)
@@ -136,13 +157,14 @@ impl<'a> ReceiverBorrowQuery<'a> {
     fn inspect_declaration(
         &mut self,
         declaration: &ProjectNominalDeclaration,
+        types: &BTreeMap<TypeId, TypeKind>,
     ) -> Result<StoredBorrow, FinalSemanticAnalysisError> {
         let owner = declaration.id();
         let mut stored = StoredBorrow::default();
         match declaration.body() {
             ProjectNominalBody::Struct { fields } => {
                 for field in fields {
-                    self.include_member(&mut stored, owner, field.ty())?;
+                    self.include_member(&mut stored, owner, field.ty(), types)?;
                 }
             }
             ProjectNominalBody::Enum { variants } => {
@@ -151,11 +173,11 @@ impl<'a> ReceiverBorrowQuery<'a> {
                     match variant.payload() {
                         ProjectNominalVariantPayload::Unit => {}
                         ProjectNominalVariantPayload::Tuple(ty) => {
-                            self.include_member(&mut stored, owner, *ty)?;
+                            self.include_member(&mut stored, owner, *ty, types)?;
                         }
                         ProjectNominalVariantPayload::Record(fields) => {
                             for field in fields {
-                                self.include_member(&mut stored, owner, field.ty())?;
+                                self.include_member(&mut stored, owner, field.ty(), types)?;
                             }
                         }
                     }
@@ -173,11 +195,11 @@ impl<'a> ReceiverBorrowQuery<'a> {
         stored: &mut StoredBorrow,
         owner: &ProjectNominalDeclarationId,
         ty: TypeId,
+        types: &BTreeMap<TypeId, TypeKind>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.charge(1)?;
         if !stored.direct {
-            let ty = self
-                .types
+            let ty = types
                 .get(&ty)
                 .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty })?;
             stored.include(self.inspect(ty, Some(owner), 1)?);

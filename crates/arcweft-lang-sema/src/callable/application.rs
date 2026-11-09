@@ -154,6 +154,16 @@ impl PreparedCallableApplication {
         Ok(result)
     }
 
+    /// Applies the selected application's exact substitutions to storage
+    /// originating in its declaration body.
+    pub(crate) fn project_body_storage<C: crate::types::TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<crate::types::ScopedType, crate::types::TypeProjectionError<C::Error>> {
+        self.solution.apply_template_with_control(ty, control)
+    }
+
     /// Applies this exact selected application's effect bindings while
     /// retaining any declaration-owned residual rows. Body-effect inference
     /// uses the formula before the application closes it; a different call of

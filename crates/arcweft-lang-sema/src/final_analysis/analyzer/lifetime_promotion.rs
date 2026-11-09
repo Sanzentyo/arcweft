@@ -18,7 +18,10 @@ mod captures;
 mod receiver;
 
 use self::receiver::ReceiverBorrowQuery;
-use super::{Analyzer, FinalSemanticAnalysisError, statements::expression_span};
+use super::{
+    Analyzer, FinalSemanticAnalysisError, expression_error::AnalyzerExpressionContext,
+    statements::expression_span,
+};
 use crate::{
     callable::PreparedCallCalleeConstraintInputs, final_analysis::model::LifetimeLexicalActivation,
     types::TypeKind,
@@ -26,7 +29,8 @@ use crate::{
 
 impl Analyzer<'_, '_, '_> {
     pub(super) fn validate_lifetime_promotion_source(
-        &self,
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         call: &HirCallInvocation,
@@ -107,11 +111,14 @@ impl Analyzer<'_, '_, '_> {
             HirLifetimePromotionAuthorization::Safe { .. }
         ) {
             let source_span = expression_span(module, *source)?;
-            let mut receiver =
-                ReceiverBorrowQuery::new(self.symbols, &self.types, self.control, &source_span);
-            if receiver.contains_borrow(actual)?
+            let mut receiver = ReceiverBorrowQuery::new(self.symbols, self.control, &source_span);
+            if receiver.contains_borrow(actual, &self.types)?
                 || (matches!(actual, TypeKind::Function { .. })
-                    && self.function_value_has_borrowed_captures(module, *source, &mut receiver)?)
+                    && self.function_value_has_borrowed_captures(
+                        context,
+                        *source,
+                        &mut receiver,
+                    )?)
             {
                 return Err(
                     FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver { source_span },

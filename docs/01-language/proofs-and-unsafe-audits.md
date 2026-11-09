@@ -160,9 +160,13 @@ contributes to this check when it is used in the value's storage. Callable
 signatures and deferred result types describe operations. The ownership
 check follows resolved capture bindings and the function values returned by
 the receiver expression. A borrow retained in a closure's captures makes that
-closure a borrowed receiver. A partial application retains the runtime inputs
-of its completed parameter groups. An explicit proof supplies
-evidence about lifetimes and leaves the receiver's ownership unchanged.
+closure a borrowed receiver. For a direct call to a source function, the
+ownership check follows its reachable return values and normal result under
+the selected call's type arguments. A function value produced by a loop can
+carry captures from a reachable break that targets that loop. A partial
+application retains the runtime inputs of its completed parameter groups.
+An explicit proof supplies evidence about lifetimes and leaves the receiver's
+ownership unchanged.
 
 ## Release policy
 
