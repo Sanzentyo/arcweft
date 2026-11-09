@@ -4106,5 +4106,575 @@
         }
       ]
     }
+  },
+  "awaitPendingRegistry": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-09T17:44:21.8334779Z",
+    "source": "efd5dd369f8071094adaa14c485b8227e061adcf",
+    "base": "b8064a00dda665e59c9cb454055800722297b4d7",
+    "publication": {
+      "version": 1,
+      "commit": "efd5dd369f8071094adaa14c485b8227e061adcf",
+      "parent": "b8064a00dda665e59c9cb454055800722297b4d7",
+      "tree": "c94ddedb79516861c87df3ebd319c26cf9e4539d",
+      "remote": "efd5dd369f8071094adaa14c485b8227e061adcf",
+      "blobs": [
+        {
+          "path": "crates/arcweft-compiler/tests/callable_cases/traversal.rs",
+          "gitBlob": "e0bf2a87ce55b65a8da340506669bbaedd4646da",
+          "sha256": "f252361f7caff3ff4d5722f3e60fec686930b324a683e0f71dde40b93bea85c5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model/registry.rs",
+          "gitBlob": "dd6cef31140c201aa0d785530b76d091355c337a",
+          "sha256": "fd0b4aecef5c4d1fd5740bb56468bc0dffa56168d29b554d5a898b57619daa5a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "gitBlob": "5b5958c0e04058cd66467f781e39e5bde08d3749",
+          "sha256": "7df29d2bfb3f29f9b3189d18ec9c116c2ffaba6b2b2a1e2df6961dd384b54703"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs",
+          "gitBlob": "7ad2aa26832348dd72de5f75d6f35c44a39d0f6a",
+          "sha256": "2c1303c934a985615ba7714c6cddcc1433db45ae6f0faaee73fc517ccd023b43"
+        },
+        {
+          "path": "docs/01-language/await-need-result.md",
+          "gitBlob": "1942b001e39c982ded43b6896ebb9941274bbf94",
+          "sha256": "21ef1b873fb1584aab55614da15aae03bf6340dc4796bb4b27f50728baeaff4f"
+        }
+      ]
+    },
+    "worktree": "Tested the recorded source patch in main. An unrelated untracked directory was present.",
+    "correction": "The lexical registry query treated a ThreadItem in the Await observer body as an independent execution boundary. The observer runs inside the waiting activation. Its typed HIR owner now retains that activation. The shared query still rejects registry access across independent Thread and closure boundaries. A registration whose type changes across observer invocations remains rejected by the existing local-use graph.",
+    "scope": "Flow registry reads and writes inside a source Await pending observer. Reuses Native and AWBC observer execution and keeps codec and task policy unchanged.",
+    "runtime": {
+      "test": "traversal::pending_await_observers_use_the_original_flow_registry_on_each_publication",
+      "compilerPassed": 325,
+      "compilerLog": "await-pending-registry-efd5dd36/compiler-callable-final.log",
+      "semaPassed": 3,
+      "semaLog": "await-pending-registry-efd5dd36/sema-focused.log",
+      "operationBudget": 1,
+      "progressPublications": 2,
+      "observedLogs": [
+        "0",
+        "1"
+      ],
+      "submissions": 1,
+      "returned": "observed",
+      "recovery": "Each AWBC step is restored. Public JSON is used when admitted. A pending non-restartable host task requires quiescence, and the executor uses its exact private rollback image there."
+    },
+    "cli": {
+      "baseline": {
+        "version": 1,
+        "source": "2690a91a30cfdb84858f78cf1251f8a09a308604",
+        "cliSha256": "818a3706f8870ebc1b3eb31db63cb26c592cb23dcf974a154a97f67e6b8f2307",
+        "observedHead": "dc590cf894debe9655022f990e58dbbab0846769",
+        "observedAtUtc": "2026-11-09T17:28:11.3843119Z",
+        "checks": [
+          {
+            "name": "flow-pending-native-fs",
+            "sourceSha256": "18ef2859f97b8c36c30389eaffc5cc3cbd19969b9ef1781df94f048c1f29e36d",
+            "reportSha256": "5a7dd227f102b998ab2c9213be29acb8660b738d7e3cce10a31a2ed0a11aab97",
+            "stage": "type-check",
+            "diagnostics": [
+              "sema.final_analysis"
+            ],
+            "messages": [
+              "lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 41, kind: Expr }) has no reached Flow scope"
+            ]
+          },
+          {
+            "name": "flow-pending-native-fs-control",
+            "sourceSha256": "ae1f634337fb4a5f87ab2b132d474fb4536af9f76c8926f5de851383b6bdbf66",
+            "reportSha256": "57feb929a1197420030efe4175d77d274235a9306ebc8ed9e3b3ee54d94c3881",
+            "stage": null,
+            "diagnostics": [],
+            "messages": []
+          },
+          {
+            "name": "flow-pending-in-thread",
+            "sourceSha256": "7d4f97c04db9a661c3e6487de8eac48fba949549c84a4ad1a16cf133c5755550",
+            "reportSha256": "c389dd715dd50a0192855dd3ec87b127f5d07edf49b221fe9b50520e73d8ed64",
+            "stage": "type-check",
+            "diagnostics": [
+              "sema.final_analysis"
+            ],
+            "messages": [
+              "lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) has no reached Flow scope"
+            ]
+          },
+          {
+            "name": "flow-pending-registration-changes",
+            "sourceSha256": "919ed9d89417683d7973cc952fc3e202dd84d865ce0406db0d835fa9b54496bc",
+            "reportSha256": "c389dd715dd50a0192855dd3ec87b127f5d07edf49b221fe9b50520e73d8ed64",
+            "stage": "type-check",
+            "diagnostics": [
+              "sema.final_analysis"
+            ],
+            "messages": [
+              "lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) has no reached Flow scope"
+            ]
+          }
+        ],
+        "runs": [
+          {
+            "executor": "bytecode-vm",
+            "entry": "entry.main",
+            "steps": 24,
+            "maxOps": 64,
+            "status": "done Return(\"ready payload\")",
+            "reportSha256": "ddee6f4e4c0e618511c75e30a38c75f7d412ab9cc15d77dfbba77ac72196d0d9"
+          },
+          {
+            "executor": "awbc-product",
+            "entry": "entry.main",
+            "steps": 24,
+            "maxOps": 64,
+            "status": "done Return(\"ready payload\")",
+            "reportSha256": "d9a125bc7dcda38ded7ac1b74395ac92286c8a5516672eb57d7e32ec6202d4e0"
+          }
+        ],
+        "inputFileSha256": "744ec400aab663f89eef4585ab9f69e8f53716b2f2a6a68a744eb04a8770ca53"
+      },
+      "changed": {
+        "version": 1,
+        "base": "b8064a00dda665e59c9cb454055800722297b4d7",
+        "cliSha256": "936f07387e87b1e8321e41d9db6d767349804978f8335d15e9738cbe2f005e42",
+        "checks": [
+          {
+            "name": "flow-pending-native-fs",
+            "exit": 0,
+            "stage": null,
+            "diagnostics": [],
+            "messages": [],
+            "sourceSha256": "18ef2859f97b8c36c30389eaffc5cc3cbd19969b9ef1781df94f048c1f29e36d",
+            "reportSha256": "477b415314128645e4dc093b43258197d56a47cdf88e54384ff0f9586711c289",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "flow-pending-native-fs-control",
+            "exit": 0,
+            "stage": null,
+            "diagnostics": [],
+            "messages": [],
+            "sourceSha256": "ae1f634337fb4a5f87ab2b132d474fb4536af9f76c8926f5de851383b6bdbf66",
+            "reportSha256": "57feb929a1197420030efe4175d77d274235a9306ebc8ed9e3b3ee54d94c3881",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "flow-pending-in-thread",
+            "exit": 1,
+            "stage": "type-check",
+            "diagnostics": [
+              "sema.final_analysis"
+            ],
+            "messages": [
+              "lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) has no reached Flow scope"
+            ],
+            "sourceSha256": "7d4f97c04db9a661c3e6487de8eac48fba949549c84a4ad1a16cf133c5755550",
+            "reportSha256": "c389dd715dd50a0192855dd3ec87b127f5d07edf49b221fe9b50520e73d8ed64",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "flow-pending-registration-changes",
+            "exit": 1,
+            "stage": "type-check",
+            "diagnostics": [
+              "sema.final_analysis"
+            ],
+            "messages": [
+              "lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 20, kind: Expr }) requires a registration of the expected type on every reaching path for LifetimeRegistryKey { scope: Flow, segments: [DeclarationName(\"count\")] }"
+            ],
+            "sourceSha256": "919ed9d89417683d7973cc952fc3e202dd84d865ce0406db0d835fa9b54496bc",
+            "reportSha256": "3058d7eeefac195ab65e9a8866ce272730bd2d643387e7bac8e4a2b6f97559de",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "runs": [
+          {
+            "executor": "bytecode-vm",
+            "entry": "entry.main",
+            "steps": 24,
+            "maxOps": 64,
+            "exit": 0,
+            "status": "done Return(\"ready payload\")",
+            "sourceSha256": "18ef2859f97b8c36c30389eaffc5cc3cbd19969b9ef1781df94f048c1f29e36d",
+            "reportSha256": "09f992906c2671d6666d52e294946beebe622665fa1564bdc26ed3b378690068",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "executor": "awbc-product",
+            "entry": "entry.main",
+            "steps": 24,
+            "maxOps": 64,
+            "exit": 0,
+            "status": "done Return(\"ready payload\")",
+            "sourceSha256": "18ef2859f97b8c36c30389eaffc5cc3cbd19969b9ef1781df94f048c1f29e36d",
+            "reportSha256": "baed0248df71489e31934cadb41a86db3c133d9f88f88f67387893b3f93b06fb",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "inputFileSha256": "744ec400aab663f89eef4585ab9f69e8f53716b2f2a6a68a744eb04a8770ca53"
+      },
+      "scope": "The direct file adapter supplies a real Ready payload in both CLI executors. Explicit progress publications are exercised by the Compiler integration."
+    },
+    "initial": "The generic fixture adapter signature needed the Compiler fixture registration. The real CLI replay uses the standard VirtualPath/FsError signature. The first CLI run also established the source launch requires an explicit entry; the paired controls use the same entry.",
+    "checkpointQuality": {
+      "receipt": "await-pending-registry-efd5dd36/quality/checkpoint.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 1443,
+        "pass": 1443,
+        "fail": 0,
+        "skip": 0
+      },
+      "stages": {
+        "fmt": {
+          "exit": 0,
+          "summary": []
+        },
+        "workspace-check": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.01s"
+          ]
+        },
+        "workspace-clippy": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.64s"
+          ]
+        },
+        "structure": {
+          "exit": 0,
+          "summary": [
+            "blocking violations: 0"
+          ]
+        },
+        "owner-doctests": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 0.54s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s"
+          ]
+        },
+        "cli-build": {
+          "exit": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.99s"
+          ]
+        },
+        "owners": {
+          "exit": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 5.26s",
+            "Summary [  68.090s] 1443 tests run: 1443 passed, 0 skipped"
+          ]
+        }
+      },
+      "cliScope": "CLI libraries, binaries and six prescribed integration targets."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-await-pending-registry.raw.zip",
+      "bytes": 1752594,
+      "sha256": "82c42767b5a53c6a2c002a3ec081831c183cf1d3e4d40d523cb65d9722546008",
+      "entries": [
+        {
+          "entry": "await-pending-registry-efd5dd36/source.publication.json",
+          "bytes": 1446,
+          "sha256": "d6298629783e16bf83604ead0da17eac3851f7817c7e8e9221c8cfff7ac179ec"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/source.reviewed.patch",
+          "bytes": 15426,
+          "sha256": "628fa8f4edb81d29419058a9fc39a78d628e69ba7b22970e39b2d5e79bb4ce16"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/baseline.receipt.json",
+          "bytes": 2834,
+          "sha256": "64267948f9d724bbacbd49b392aef0003c0509c063f3c319bb2ab225fc2001aa"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/changed.receipt.json",
+          "bytes": 3457,
+          "sha256": "7aa9f2dcf1d535d0d6f74126214aaf9e92cf698a862cf6dc5b94810a62c5d4b6"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/integration.log",
+          "bytes": 89871,
+          "sha256": "dcc0ef9f40d7b0157d46f316f9e1922c8d9d4c0ed7903d008bda079c3b2da557"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/compiler-callable.log",
+          "bytes": 135220,
+          "sha256": "0b3a0fde0fb4c620f8a8c5786835750ed5b4b890f06e3dd66a933f0dbf393918"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/compiler-callable-final.log",
+          "bytes": 135275,
+          "sha256": "c0c825e332425beac783a23498fe553f1c86a805ee2375673c5e3df53b530551"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/sema-focused.log",
+          "bytes": 83358,
+          "sha256": "12d55d56129b72f8f75c73b0ba52018c30ee9b04ac340baf28fcec770b6cca48"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/compare-cli.ps1",
+          "bytes": 3226,
+          "sha256": "330d7fe1b5808b3c9891d4e308ce8f41477bbc7853c51de6557ca8356e6e068a"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/run-quality.ps1",
+          "bytes": 4247,
+          "sha256": "fba1c77d58408d422f9db774f02b7b65e73e417f898296f79b914a38fb294ad8"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/quality-workspace-clippy.log",
+          "bytes": 9275447,
+          "sha256": "eab9a407a7345fd563edc59c8b0913d00b472ad3e6f8c39d3da8eedde3d83266"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/quality.receipt.json",
+          "bytes": 3735,
+          "sha256": "ef206ca2b56d28eaeae77c13f5c330e8d7f07282c101908ee94caf14b7f75a29"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/rdeps.log",
+          "bytes": 6397,
+          "sha256": "720611db3c0b10c5757be4f8c8e707966fd40936792531d83dc1954b909374bb"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/observed.txt",
+          "bytes": 13,
+          "sha256": "744ec400aab663f89eef4585ab9f69e8f53716b2f2a6a68a744eb04a8770ca53"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs.arcw",
+          "bytes": 669,
+          "sha256": "18ef2859f97b8c36c30389eaffc5cc3cbd19969b9ef1781df94f048c1f29e36d"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs.before.json",
+          "bytes": 540,
+          "sha256": "5a7dd227f102b998ab2c9213be29acb8660b738d7e3cce10a31a2ed0a11aab97"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs-control.arcw",
+          "bytes": 653,
+          "sha256": "ae1f634337fb4a5f87ab2b132d474fb4536af9f76c8926f5de851383b6bdbf66"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs-control.before.json",
+          "bytes": 699,
+          "sha256": "57feb929a1197420030efe4175d77d274235a9306ebc8ed9e3b3ee54d94c3881"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-in-thread.arcw",
+          "bytes": 162,
+          "sha256": "7d4f97c04db9a661c3e6487de8eac48fba949549c84a4ad1a16cf133c5755550"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-in-thread.before.json",
+          "bytes": 540,
+          "sha256": "c389dd715dd50a0192855dd3ec87b127f5d07edf49b221fe9b50520e73d8ed64"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-registration-changes.arcw",
+          "bytes": 197,
+          "sha256": "919ed9d89417683d7973cc952fc3e202dd84d865ce0406db0d835fa9b54496bc"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-registration-changes.before.json",
+          "bytes": 540,
+          "sha256": "c389dd715dd50a0192855dd3ec87b127f5d07edf49b221fe9b50520e73d8ed64"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/bytecode-vm-control-with-entry.before.json",
+          "bytes": 9552,
+          "sha256": "ddee6f4e4c0e618511c75e30a38c75f7d412ab9cc15d77dfbba77ac72196d0d9"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/bytecode-vm-control-with-entry.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/awbc-product-control-with-entry.before.json",
+          "bytes": 9548,
+          "sha256": "d9a125bc7dcda38ded7ac1b74395ac92286c8a5516672eb57d7e32ec6202d4e0"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/awbc-product-control-with-entry.before.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs.after.json",
+          "bytes": 691,
+          "sha256": "477b415314128645e4dc093b43258197d56a47cdf88e54384ff0f9586711c289"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs-control.after.json",
+          "bytes": 699,
+          "sha256": "57feb929a1197420030efe4175d77d274235a9306ebc8ed9e3b3ee54d94c3881"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-native-fs-control.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-in-thread.after.json",
+          "bytes": 540,
+          "sha256": "c389dd715dd50a0192855dd3ec87b127f5d07edf49b221fe9b50520e73d8ed64"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-in-thread.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-registration-changes.after.json",
+          "bytes": 662,
+          "sha256": "3058d7eeefac195ab65e9a8866ce272730bd2d643387e7bac8e4a2b6f97559de"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/flow-pending-registration-changes.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/bytecode-vm.after.json",
+          "bytes": 9552,
+          "sha256": "09f992906c2671d6666d52e294946beebe622665fa1564bdc26ed3b378690068"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/bytecode-vm.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/awbc-product.after.json",
+          "bytes": 9548,
+          "sha256": "baed0248df71489e31934cadb41a86db3c133d9f88f88f67387893b3f93b06fb"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/cli/awbc-product.after.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/flow-pending-host.arcw",
+          "bytes": 651,
+          "sha256": "e7eadecf9c47800bac4eccaf6dde5b952b4f7c119b102020dc8251942b637468"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/flow-pending-host.json",
+          "bytes": 1179,
+          "sha256": "de6387a6a5fc3732dc7fa3baa04b358f75985fc274b9dc70d168257a80776336"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/flow-pending-host-control.arcw",
+          "bytes": 619,
+          "sha256": "de229d61edf8ae2ba211b36a3fa112bc7cd0f200bb7a114209a88d131a1cdc1a"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/flow-pending-host-control.json",
+          "bytes": 1211,
+          "sha256": "27fb8f0366963d339d37cfdd5afb85a66d9d7b15a6174ed88a6f2f76cbe73841"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/bytecode-vm-control.before.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/bytecode-vm-control.before.stderr.log",
+          "bytes": 47,
+          "sha256": "10e71a898f8606748f1f864813f3d8e50995464f3d98893c63d4fffbebbf37db"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/awbc-product-control.before.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/initial/awbc-product-control.before.stderr.log",
+          "bytes": 47,
+          "sha256": "10e71a898f8606748f1f864813f3d8e50995464f3d98893c63d4fffbebbf37db"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/workspace-check.log",
+          "bytes": 110298,
+          "sha256": "afe92e8a93eda7950855d238024b693c5a060acb4096bfceeefa1dac33c5482e"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/workspace-clippy.log",
+          "bytes": 9270956,
+          "sha256": "93411da437798dc156260947f7e20cef66a6b078b51f7f054936682ce66aa72a"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/structure.log",
+          "bytes": 66637,
+          "sha256": "05935770c736762e597999bf3bca47e38a384bd3bbf3ec18af34146f1848726d"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/owner-doctests.log",
+          "bytes": 88040,
+          "sha256": "ce3c9fcf787e014cc886fee6a16d0ac1c5fe5088aeb1fdafac3d92e840367b38"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/cli-build.log",
+          "bytes": 91679,
+          "sha256": "9621d2b17afc1de2f264dbed05ca968aaa8dbaff426e325ec530af59dead1b3c"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/owners.log",
+          "bytes": 314953,
+          "sha256": "485bf9a45e2f7c90017be4b5b6bb0f276f5c3629a7a0a6d007377a90a5b69152"
+        },
+        {
+          "entry": "await-pending-registry-efd5dd36/quality/checkpoint.receipt.json",
+          "bytes": 4825,
+          "sha256": "a87cc9436d54a39a73af9ad4d400196610076bed0a71ae8990bb3bf45e13110e"
+        }
+      ]
+    }
   }
 }
