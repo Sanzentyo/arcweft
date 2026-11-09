@@ -16354,3 +16354,13 @@ Native採取ツールは受理済みAWFBの一つのデコード結果をセッ�
 
 [比較条件・Native画像・Web停止・公開照合の原本](acceptance-evidence/task-unified-jlreq-34px.raw.zip)は13件、55,623 bytes、SHA-256
 `db30883f7c00eecac227cce09386182a5c6ffcbe9b2923e738cfa6b5fccafb46`。
+
+### 台詞ページ入力とJLREQのNative／Web一致 — 2026-11-09
+
+公開Source `08b5b7d0b58ff854e92157698d28dc6b17af3b31`、親 `aaaca8b35a31f3eca3ed19db5f9176a8b3485c34`、tree `f16ed2f2f50254443d64ecb87395e722a67ec6e8`。公開先の2 blobを照合した。indexは空で、既存の未追跡 `%SystemDrive%/` があった。
+Webの最初のEnter後に論理ステップを1回進める。途中の診断ではtick 2で同一ページの全17グリフが可視になった一方、グリフから作る `visible_text` に描画されない先頭の改行が含まれず、原文との比較が2秒上限に達した。同じページの全グリフが可視になったことを確認する形へ修正した。Nativeも実際の `InputController` を経由し、全文表示とページ送りを各1ステップで実行する。
+既存のJLREQ 2場面でブラウザー採取と比較ゲートが終了0。looseはtick 5から568、strictはtick 7から570で両環境の時計が一致。文字単位は各19件、全画像比較とimqも各2件成功した。各画像組のRGBA全チャンネルでMSE・MAE・最大差が0。looseとstrictの間には両環境で同じ非ゼロMSE `0.00116663618078808` があった。
+Nativeは `--max-ticks 1` で指定ページに届かない入力を終了1で拒否し、PNGとframe reportを出力しなかった。ページ送りなしの標準Native画像は修正前と同じSHA-256 `4c06ac41c32479231c323c35fc1d277d6d6dd8d6997239686043ad4b71070d14`。Rustのformat、Nodeの構文、差分検査は終了0。
+
+[入力・時計・比較画像・失敗・公開照合の原本](acceptance-evidence/task-unified-jlreq-input-parity.raw.zip)は31件、129,157 bytes、SHA-256
+`c4a162270434ea84884b1614732d5d74a7622ef155b374287a52fd13bf652246`。
