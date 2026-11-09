@@ -992,8 +992,8 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
         Self { graph }
     }
 
-    /// Return the graph-issued continuation at `site`.  A missing site is a
-    /// stale producer fact, never an independent function value.
+    /// Authenticates the selected result at this site and distinguishes a
+    /// retained application prefix from a terminal value.
     pub(crate) fn value_delivery_at(
         &self,
         site: CheckedCallSite,

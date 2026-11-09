@@ -164,9 +164,12 @@ closure a borrowed receiver. For a direct call to a source function, the
 ownership check follows its reachable return values and normal result under
 the selected call's type arguments. When the result uses a function value
 from a whole parameter binding, the check follows the expression supplied to
-that parameter in the selected argument group. A function value produced by a
-loop can carry captures from a reachable break that targets that loop. A partial
-application retains the runtime inputs of its completed parameter groups.
+that parameter in the selected argument group. For recursive calls, the check
+propagates capture dependencies until they stop growing, using the storage
+properties of the selected type arguments and the supplied value parameters.
+A function value produced by a loop can carry captures from a reachable break
+that targets that loop. A partial application retains the runtime inputs of its
+completed parameter groups.
 An explicit proof supplies evidence about lifetimes and leaves the receiver's
 ownership unchanged.
 

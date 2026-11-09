@@ -71,30 +71,8 @@ impl TypeConstraintSolution {
                 keep_type(reference, source).map_err(Into::into)
             },
             &|length, source, target, _, _| {
-                let ArrayLength::Generic(reference) = length else {
-                    return match length {
-                        ArrayLength::Const(_) => Ok(length.clone()),
-                        _ => Err(TypeInstantiationError::UnresolvedType.into()),
-                    };
-                };
-                if let Some(parameter) = reference.template_key(template, source)? {
-                    if let Ok(index) = self
-                        .const_bindings
-                        .binary_search_by(|row| row.parameter.cmp(&parameter))
-                    {
-                        return lift_length(&self.const_bindings[index].value, residual, target)
-                            .map_err(Into::into);
-                    }
-                    if let Some(slot) = self.residual.const_slot(&parameter) {
-                        return Ok(ArrayLength::Generic(
-                            target.bound_const(depth_difference(target, residual)?, slot)?,
-                        ));
-                    }
-                    if matches!(parameter, GenericConstReference::Bound(_)) {
-                        return Err(TypeInstantiationError::UnboundConst { parameter }.into());
-                    }
-                }
-                keep_const(reference, source).map_err(Into::into)
+                self.apply_length_at(length, source, target)
+                    .map_err(Into::into)
             },
             &|row, source, target, depth, control| {
                 map_effects_with_control(row, depth, control, &|reference, control| {
@@ -129,6 +107,55 @@ impl TypeConstraintSolution {
             },
         )?;
         Ok(ScopedType::new(value, residual.clone()))
+    }
+
+    pub(crate) fn apply_length_template<C: TypeProjectionControl>(
+        &self,
+        length: &ArrayLength,
+        control: &mut C,
+    ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
+        control
+            .visit_node(TypeProjectionNodeKind::Const, 1)
+            .map_err(TypeProjectionError::Control)?;
+        self.apply_length_at(
+            length,
+            self.authority.parameter_scope.template_scope(),
+            self.residual.scope(),
+        )
+        .map_err(Into::into)
+    }
+
+    fn apply_length_at(
+        &self,
+        length: &ArrayLength,
+        source: &GenericScope,
+        target: &GenericScope,
+    ) -> Result<ArrayLength, TypeInstantiationError> {
+        let ArrayLength::Generic(reference) = length else {
+            return match length {
+                ArrayLength::Const(_) => Ok(length.clone()),
+                _ => Err(TypeInstantiationError::UnresolvedType),
+            };
+        };
+        let template = self.authority.parameter_scope.template_scope();
+        let residual = self.residual.scope();
+        if let Some(parameter) = reference.template_key(template, source)? {
+            if let Ok(index) = self
+                .const_bindings
+                .binary_search_by(|row| row.parameter.cmp(&parameter))
+            {
+                return lift_length(&self.const_bindings[index].value, residual, target);
+            }
+            if let Some(slot) = self.residual.const_slot(&parameter) {
+                return Ok(ArrayLength::Generic(
+                    target.bound_const(depth_difference(target, residual)?, slot)?,
+                ));
+            }
+            if matches!(parameter, GenericConstReference::Bound(_)) {
+                return Err(TypeInstantiationError::UnboundConst { parameter });
+            }
+        }
+        keep_const(reference, source)
     }
 }
 

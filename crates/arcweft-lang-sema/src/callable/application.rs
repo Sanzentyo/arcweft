@@ -164,6 +164,26 @@ impl PreparedCallableApplication {
         self.solution.apply_template_with_control(ty, control)
     }
 
+    pub(crate) fn body_type_arguments(
+        &self,
+    ) -> impl ExactSizeIterator<Item = crate::types::ScopedTypeView<'_>> {
+        self.solution.bindings().map(|(_, value)| value)
+    }
+
+    pub(crate) fn body_const_arguments(
+        &self,
+    ) -> impl ExactSizeIterator<Item = crate::types::ScopedArrayLengthView<'_>> {
+        self.solution.const_bindings().map(|(_, value)| value)
+    }
+
+    pub(crate) fn project_body_length<C: crate::types::TypeProjectionControl>(
+        &self,
+        length: &crate::types::ArrayLength,
+        control: &mut C,
+    ) -> Result<crate::types::ArrayLength, crate::types::TypeProjectionError<C::Error>> {
+        self.solution.apply_length_template(length, control)
+    }
+
     /// Applies this exact selected application's effect bindings while
     /// retaining any declaration-owned residual rows. Body-effect inference
     /// uses the formula before the application closes it; a different call of

@@ -1894,6 +1894,79 @@ fn safe_lifetime_promotion_follows_selected_function_arguments() {
 }
 
 #[test]
+fn safe_lifetime_promotion_converges_recursive_capture_dependencies() {
+    let callable = "(Unit) -> i64 effects {}";
+    let borrowed = "|_unit: Unit| -> i64 { let _ = loan; 42i64 }";
+    let owned = "|_unit: Unit| -> i64 { 7i64 }";
+    let call = "callback.promote('flow)";
+    let generic = format!(
+        "fn choose<A, B, C>(first: A, second: B, third: C, depth: i64) -> ({callable}) {{
+             if depth > 0i64 {{
+                 choose(second, third, first, depth - 1i64)
+             }} else {{
+                 |_unit: Unit| -> i64 {{ let _ = first; 42i64 }}
+             }}
+         }}"
+    );
+    let values = format!(
+        "fn choose(first: {callable}, second: {callable}, third: {callable}, depth: i64) -> ({callable}) {{
+             if depth > 0i64 {{
+                 choose(second, third, first, depth - 1i64)
+             }} else {{
+                 first
+             }}
+         }}"
+    );
+    let growing = format!(
+        "fn grow<T>(value: T, depth: i64) -> ({callable}) {{
+             if depth > 0i64 {{
+                 let wrapped: Option<T> = option {{ value }}
+                 grow(wrapped, depth - 1i64)
+             }} else {{ |_unit: Unit| -> i64 {{ let _ = value; 42i64 }} }}
+         }}"
+    );
+    for (definition, application, retains_borrow) in [
+        (&generic, "choose(loan, 1i64, 2i64, 2i64)", true),
+        (&generic, "choose(1i64, loan, 2i64, 2i64)", true),
+        (&generic, "choose(1i64, 2i64, loan, 2i64)", true),
+        (&generic, "choose(1i64, 2i64, 3i64, 2i64)", false),
+        (&values, "choose(borrowed, owned, owned, 2i64)", true),
+        (&values, "choose(owned, borrowed, owned, 2i64)", true),
+        (&values, "choose(owned, owned, borrowed, 2i64)", true),
+        (&values, "choose(owned, owned, owned, 2i64)", false),
+        (&growing, "grow(loan, 2i64)", true),
+        (&growing, "grow(7i64, 2i64)", false),
+    ] {
+        let source = format!(
+            "{definition}
+             flow main(loan: &i64) {{
+                 let borrowed = {borrowed}
+                 let owned = {owned}
+                 let callback = {application}
+                 let _ = {call}
+             }}"
+        );
+        let fixture = fixture(&source, None);
+        fixture
+            .project
+            .analysis_view()
+            .unwrap_or_else(|error| panic!("{application}: {error:?}"));
+        let error = analyze(&fixture).expect_err("promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{application}: {error:?}"));
+        let (code, offending) = if retains_borrow {
+            ("sema.lifetime.promotion_receiver", "callback")
+        } else {
+            ("sema.lifetime.promotion_execution", call)
+        };
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{application}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], offending, "{application}");
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
     for (parameter, code) in [
         ("&i64", "sema.lifetime.promotion_receiver"),
