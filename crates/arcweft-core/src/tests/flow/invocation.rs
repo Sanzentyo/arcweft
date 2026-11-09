@@ -12,7 +12,8 @@ use crate::entry::{
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     FlowEvent, FlowRuntimeId, RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFlowInvocationError, RuntimeFlowSchema, RuntimeFlowSeed,
+    RuntimeExprSeedKind, RuntimeFlowInvocationError, RuntimeFlowOpSeed, RuntimeFlowSchema,
+    RuntimeFlowSeed, RuntimeFlowTransfer, RuntimeFlowTransferTarget,
     RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin,
     RuntimeFunctionInputSource, RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
     RuntimeFunctionParameterPassing, RuntimeFunctionSiteDeclarationSeed,
@@ -35,14 +36,15 @@ fn string_inputs_plan_with_last_literal(
     count: usize,
     last_literal: Option<&str>,
 ) -> (RuntimePlan, FlowRuntimeId) {
-    string_inputs_candidate(count, last_literal, false).unwrap()
+    let (builder, flow) = string_inputs_builder(count, last_literal, false);
+    (builder.finish().unwrap(), flow)
 }
 
-fn string_inputs_candidate(
+fn string_inputs_builder(
     count: usize,
     last_literal: Option<&str>,
     empty_self_transfer: bool,
-) -> Result<(RuntimePlan, FlowRuntimeId), crate::plan::RuntimePlanBuildError> {
+) -> (RuntimePlanBuilder, FlowRuntimeId) {
     let mut builder = RuntimePlanBuilder::new();
     let function = RuntimeSemanticTypeId::from_bytes([0xb1; 32]);
     let admitted = builder
@@ -148,15 +150,102 @@ fn string_inputs_candidate(
             },
         ))
         .unwrap();
-    Ok((builder.finish()?, flow))
+    (builder, flow)
 }
 
 #[test]
 fn static_flow_transfer_cannot_omit_unused_and_nonbinding_formals_at_plan_publication() {
-    let error = string_inputs_candidate(2, Some("unused"), true).unwrap_err();
+    let (builder, _) = string_inputs_builder(2, Some("unused"), true);
+    let error = builder.finish().unwrap_err();
     assert!(matches!(error,
         crate::plan::RuntimePlanBuildError::Plan(crate::plan::RuntimePlanError::FlowTransfer(error))
             if matches!(*error, RuntimeFlowInvocationError::BindingCount { expected: 2, actual: 0, .. })));
+}
+
+#[test]
+fn static_flow_transfer_rejects_incompatible_local_at_its_formal_coordinate() {
+    let (mut builder, target) = string_inputs_builder(2, None, false);
+    let caller = flow_id("flow.borrowed_inputs_caller");
+    let bool_type = RuntimeSemanticTypeId::from_bytes([2; 32]);
+    let operands = [
+        (1, bool_type, RuntimeValue::Bool(false)),
+        (
+            0,
+            string_type(),
+            RuntimeValue::String("first formal".into()),
+        ),
+    ];
+    let admitted = builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                bool_type,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            operands.iter().map(|(position, ty, _)| {
+                RuntimeLocalDeclarationSeed::new(
+                    manual_local_source(
+                        &format!("arcweft-core.fixture.borrowed-invocation.caller{position}"),
+                        false,
+                    ),
+                    *ty,
+                )
+            }),
+        )
+        .unwrap();
+    let mut ops = Vec::new();
+    let mut arguments = Vec::new();
+    for ((position, ty, value), local) in operands.into_iter().zip(admitted.local_ids()) {
+        ops.push(RuntimeFlowOpSeed::Let {
+            pattern: RuntimePatternSeed::new(
+                ty,
+                RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: local.clone(),
+                },
+            ),
+            expr: RuntimeExprSeed::new(ty, RuntimeExprSeedKind::Value(value)),
+        });
+        arguments.push(RuntimeFlowParameterBinding {
+            parameter: FlowParameterCoordinate::from_position(position),
+            value: RuntimeExprSeed::new(
+                ty,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local.clone(),
+                    RuntimeLocalReadMode::Move,
+                )),
+            ),
+        });
+    }
+    ops.push(RuntimeFlowOpSeed::Goto(RuntimeFlowTransfer {
+        target: RuntimeFlowTransferTarget::Static(target),
+        arguments: arguments.into_boxed_slice(),
+    }));
+    builder
+        .push_flow_schema(super::flow_schema(&caller))
+        .unwrap();
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            caller,
+            RuntimeFunctionSiteDeclarationSeed::flow(
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xb3; 32]),
+                None,
+                Box::new([]),
+                string_type(),
+                RuntimeEffectSet::empty(),
+            ),
+            RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: ops.into_boxed_slice(),
+            },
+        ))
+        .unwrap();
+    let Err(error) = builder.finish() else {
+        panic!("a Bool local cannot supply a String formal");
+    };
+    assert!(matches!(error,
+        crate::plan::RuntimePlanBuildError::Plan(crate::plan::RuntimePlanError::FlowTransfer(error))
+            if matches!(*error, RuntimeFlowInvocationError::TransferInputType { parameter, .. }
+                if parameter == FlowParameterCoordinate::from_position(1))));
 }
 
 fn borrowed_bindings(

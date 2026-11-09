@@ -373,6 +373,37 @@ pub enum RuntimeAgentTypeProjection<R> {
 }
 
 impl<R> RuntimePlanTypeProjection<R> {
+    /// Permits a pre-evaluated expression to retain its original type and value
+    /// when stored under a distinct destination type.
+    pub(crate) fn accepts_distinct_expression_type(&self, actual_ty: &R, actual: &Self) -> bool
+    where
+        R: PartialEq,
+    {
+        matches!(self, Self::Choice(alternatives) if alternatives.contains(actual_ty))
+            || matches!(
+                (self, actual),
+                (
+                    Self::Opaque {
+                        producer: expected_producer,
+                        admission: RuntimeOpaqueTypeAdmission::ProducerWide,
+                        value_class: expected_class,
+                        persistence: expected_persistence,
+                        arguments: expected_arguments,
+                    },
+                    Self::Opaque {
+                        producer: actual_producer,
+                        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                        value_class: actual_class,
+                        persistence: actual_persistence,
+                        arguments: actual_arguments,
+                    },
+                ) if expected_producer == actual_producer
+                    && expected_class == actual_class
+                    && expected_persistence == actual_persistence
+                    && expected_arguments == actual_arguments
+            )
+    }
+
     /// The positional value representation used by tuples and owned Traversal.
     /// This inspects type edges without allocating or duplicating captured values.
     pub(crate) fn tuple_arity(&self) -> Option<usize> {

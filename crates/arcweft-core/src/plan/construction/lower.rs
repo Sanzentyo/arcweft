@@ -1384,33 +1384,10 @@ impl RuntimePlanBodyConstruction<'_> {
         if expected == actual {
             return Ok(());
         }
-        if matches!(self.projection(expected)?, RuntimePlanTypeProjection::Choice(alternatives) if alternatives.contains(&actual))
+        if self
+            .projection(expected)?
+            .accepts_distinct_expression_type(&actual, self.projection(actual)?)
         {
-            return Ok(());
-        }
-        let accepts = matches!(
-            (self.projection(expected)?, self.projection(actual)?),
-            (
-                RuntimePlanTypeProjection::Opaque {
-                    producer: expected_producer,
-                    admission: RuntimeOpaqueTypeAdmission::ProducerWide,
-                    value_class: expected_class,
-                    persistence: expected_persistence,
-                    arguments: expected_arguments,
-                },
-                RuntimePlanTypeProjection::Opaque {
-                    producer: actual_producer,
-                    admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-                    value_class: actual_class,
-                    persistence: actual_persistence,
-                    arguments: actual_arguments,
-                },
-            ) if expected_producer == actual_producer
-                && expected_class == actual_class
-                && expected_persistence == actual_persistence
-                && expected_arguments == actual_arguments
-        );
-        if accepts {
             Ok(())
         } else {
             require_same(context, expected, actual)

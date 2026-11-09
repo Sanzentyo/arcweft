@@ -22,11 +22,11 @@ use crate::entry::{
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{
     RuntimeDeferSiteId, RuntimeFunctionSiteId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
-    RuntimeProjectCallSiteId, RuntimePublicLabel,
+    RuntimePlanTypeId, RuntimeProjectCallSiteId, RuntimePublicLabel,
 };
-use crate::value::RuntimeFlowParameterBinding;
+use crate::value::{RuntimeExpr, RuntimeFlowParameterBinding};
 
-use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+use super::{FlowOp, FlowRuntimeId, RuntimeFlowTransfer, RuntimePlan, RuntimePureHelperId};
 
 /// Runtime identifier for a source-declared entry.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -351,6 +351,14 @@ pub enum RuntimeFlowInvocationError {
     TransferReference(#[from] super::RuntimeFlowTargetError),
     #[error("Flow transfer parameter {parameter:?} must consume a pre-evaluated whole local input")]
     TransferInputSource { parameter: FlowParameterCoordinate },
+    #[error(
+        "Flow transfer parameter {parameter:?} expects Plan type {expected}, received {actual}"
+    )]
+    TransferInputType {
+        parameter: FlowParameterCoordinate,
+        expected: RuntimePlanTypeId,
+        actual: RuntimePlanTypeId,
+    },
     #[error("Flow transfer repeats owning input local {local}")]
     DuplicateTransferInput {
         local: crate::runtime_id::RuntimeLocalDeclarationId,
@@ -396,6 +404,40 @@ impl super::RuntimePlanInventory {
             }
         }
         Ok((runtime_flow.function_site(), order))
+    }
+
+    fn verify_static_flow_transfer(
+        &self,
+        flow: &FlowRuntimeId,
+        transfer: &RuntimeFlowTransfer<RuntimeExpr>,
+    ) -> Result<(), RuntimeFlowInvocationError> {
+        let (site, order) = self.validate_flow_transfer_shape(flow, transfer)?;
+        let function = self
+            .function_sites()
+            .get(site)
+            .expect("verified original Flow function owner");
+        let types = self.type_table();
+        for (&position, argument) in order.slots().iter().zip(&transfer.arguments) {
+            let expected = function.inputs()[position as usize].pattern().ty();
+            let actual = argument.value.ty();
+            if expected != actual
+                && !types
+                    .get(expected)
+                    .zip(types.get(actual))
+                    .is_some_and(|(formal, source)| {
+                        formal
+                            .projection()
+                            .accepts_distinct_expression_type(&actual, source.projection())
+                    })
+            {
+                return Err(RuntimeFlowInvocationError::TransferInputType {
+                    parameter: argument.parameter,
+                    expected,
+                    actual,
+                });
+            }
+        }
+        Ok(())
     }
 
     fn flow_invocation_contract(
@@ -1145,7 +1187,7 @@ impl super::RuntimePlanInventory {
                 let invalid = |error| RuntimePlanError::FlowTransfer(Box::new(error));
                 match &transfer.target {
                     super::RuntimeFlowTransferTarget::Static(target) => {
-                        self.validate_flow_transfer_shape(target, transfer)
+                        self.verify_static_flow_transfer(target, transfer)
                             .map_err(invalid)?;
                     }
                     super::RuntimeFlowTransferTarget::Dynamic(selector) => {

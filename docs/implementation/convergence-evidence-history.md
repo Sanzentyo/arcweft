@@ -15989,3 +15989,11 @@ locked・全featureの対象42件PASS／2662 SKIP／1.829秒。Core31、RuntimeP
 Windows・locked・全feature・既定filterのnextestで `Summary [1220.937s] 8147 tests run: 8143 passed (75 slow), 4 failed, 41 skipped`。非CLIは7,434 PASS／18 SKIP。CLIは709 PASS／4 FAIL／23 SKIPで、失敗ID・診断はScroll／対話voice／promotion 2件と一致。JITとAWBC cleanup回帰、同名文字列のAWBC拒否、Native保留参照の復元を含む7照合がPASS。Generic Match 150同一ID＋Style後継1件も151／151 PASS。前回54 packageのうちHIR 979実行は影響範囲外。共通範囲の差分は新しい文字列拒否1件のみ。元pathの216実行ファイルとSourceの差分0。実 `arcw.exe` は305945600 bytes／SHA256 `87a274200879c32318d760897780e3816fc49880501e6b18af43e465c929779a`。
 
 Wasm向けplayer-web／render-webのlib checkと構造gate終了0。workspace check／Clippy終了0の同一Rust patchは先行原本に保持。原本 `docs/implementation/acceptance-evidence/task-flow-reference-reverse.raw.zip` は20 entries／695403 bytes／SHA256 `51ca49899b3a0d6bb05f7e4c34fbb56ffd506b116d85bd2a112bb729da91d1ef`。成功run、構築失敗、個別構築、選択差分と元EXE前後hashを保存した。サンプルの実操作と画像比較はこの検証に含まない。
+
+### 静的gotoの入力型をPlan公開前に検査 — 2026-11-09
+
+基点 `fa9d431a7ab84f1a63ef3dffbbe0e7bf7d2a668e`、対象patch SHA256 `725d0445c8983916f71e98f194372734c55e1753d24dd2a92af394ee6a2546b7`。従来は引数の個数、座標、ローカルの所有形状が一致すると、Stringの仮引数にBoolのローカルを渡すPlanも公開できた。修正前の回帰テストはこのPlanが公開されたため1件失敗（終了100、run ID 7cf69549-6749-47f8-b9bc-1b59e2c6b79b）。Planの公開sealで宛先の元function入力型と比較し、既存の式代入規則を共有する。引数の型エラーには座標、期待型、実際の型を保持する。
+
+locked・全featureの対象実行は `Summary [   2.165s] 43 tests run: 43 passed, 2662 skipped`。型が異なる逆順の名前付き入力を実ソースで評価し、Nativeと保存・復元を繰り返すdecoded AWBCで同じ結果に到達した。テスト実行前後のSource差分0、元EXE差分0。品質確認は fmt 0（0.24秒）、check 0（68.18秒）、clippy 0（78.42秒）。
+
+[検証原本](acceptance-evidence/task-flow-static-input-type.raw.zip) は 23 entries、993512 bytes、SHA256 `3c2721642c38b80996b88aa2088d6658141067ab74c88c85db3615333518f677`。動的参照の全53逆依存結果はその実行Sourceに紐づけて保持する。

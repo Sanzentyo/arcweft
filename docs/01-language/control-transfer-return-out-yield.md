@@ -210,7 +210,9 @@ before runtime-plan or AWBC generation.
 An explicit static transfer, such as `goto @flow.target(value, label = expression)`,
 binds inputs with the shared positional and named argument rules. Arguments are
 evaluated once in authored order in the current scope, then transferred to the
-target's formal coordinates. The application does not return a value to the
+target's formal coordinates. Before publication, the RuntimePlan checks each
+staged input's type against the original formal at that coordinate. The
+application does not return a value to the
 transferring Flow. A Flow reference does not grant ordinary returning-call rights;
 the same application outside a Goto target is rejected.
 

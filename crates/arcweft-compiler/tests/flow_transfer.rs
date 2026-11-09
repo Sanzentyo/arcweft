@@ -37,6 +37,11 @@ fn sources() -> Vec<String> {
          flow main() -> i64 { goto @flow.next(3i64) }\n\
          flow next(remaining: i64) -> i64 { if remaining > 0i64 { goto @flow.next(remaining - 1i64) }; return 42i64 }\n".to_owned()
     );
+    cases.push(
+        "entry cli @entry.main { goto @flow.main }\n\
+         flow main() -> i64 { goto @flow.next(label = \"route\", value = 42i64) }\n\
+         flow next(value: i64, label: String) -> i64 { if label == \"route\" { return value }; return 99i64 }\n".to_owned()
+    );
     for selected in [true, false] {
         let next = if selected { 42 } else { 99 };
         let other = if selected { 99 } else { 42 };
