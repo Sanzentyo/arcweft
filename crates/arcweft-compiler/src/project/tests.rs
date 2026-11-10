@@ -3071,6 +3071,7 @@ fn generic_implicit_callable_instances_share_the_accepted_definition_and_capture
             second.formal().clone(),
             first.parameter().clone(),
             first.result().clone(),
+            first.call_result().cloned(),
             first.placeholders().into(),
             first.formal().authority(),
         )
@@ -3154,6 +3155,7 @@ fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression()
                 second.formal().clone(),
                 first.parameter().clone(),
                 first.result().clone(),
+                first.call_result().cloned(),
                 first.placeholders().into(),
                 semantics.local_uses(),
             )
@@ -3226,6 +3228,7 @@ fn implicit_capture_transfer_is_selected_per_closed_instance() {
         second.formal().clone(),
         second.parameter().clone(),
         second.result().clone(),
+        second.call_result().cloned(),
         second.placeholders().into(),
         second_semantics.local_uses(),
     )

@@ -1423,6 +1423,7 @@ fn project_runtime_semantic_fact_inventories(
             }
             CheckedExpressionResolution::ImplicitCallable(_) => {
                 let callable_view = execution_projection.implicit_callable(owner)?;
+                let body = callable_view.body();
                 let placeholders = callable_view.placeholders().collect::<Box<[_]>>();
                 let mut formals = RuntimeExecutableInstantiation::Global
                     .formal_parameters(project, symbols, analysis, owner)?
@@ -1440,6 +1441,9 @@ fn project_runtime_semantic_fact_inventories(
                         formals.remove(0),
                         runtime_type(callable_view.parameter(), symbols, world, analysis)?,
                         runtime_type(callable_view.result(), symbols, world, analysis)?,
+                        body.call_result()
+                            .map(|ty| runtime_type(ty, symbols, world, analysis))
+                            .transpose()?,
                         placeholders,
                         &CheckedLocalUseAuthority::Global(Arc::clone(
                             analysis.checked_local_uses(),
@@ -1450,8 +1454,9 @@ fn project_runtime_semantic_fact_inventories(
                         reason: error.to_string(),
                     })?,
                 );
-                match callable_view.body() {
-                    FinalAnalysisImplicitCallableBody::Plain(_) => {}
+                match body {
+                    FinalAnalysisImplicitCallableBody::Plain(_)
+                    | FinalAnalysisImplicitCallableBody::Call { .. } => {}
                     FinalAnalysisImplicitCallableBody::Try(tried) => {
                         push_runtime_try_fact(&mut input, owner, tried, symbols, world, analysis)?;
                     }
@@ -8594,6 +8599,7 @@ fn runtime_executable_semantic_facts<'abi>(
             }
             CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable => {
                 let view = execution.implicit_callable(owner)?;
+                let body = view.body();
                 let mut formals = lexical
                     .formal_parameters(project, symbols, analysis, owner)?
                     .into_vec();
@@ -8611,19 +8617,21 @@ fn runtime_executable_semantic_facts<'abi>(
                         analysis,
                     )?,
                     runtime_type_under(view.result(), lexical.types(), symbols, world, analysis)?,
+                    body.call_result()
+                        .map(|ty| runtime_type_under(ty, lexical.types(), symbols, world, analysis))
+                        .transpose()?,
                     view.placeholders().collect(),
                     &local_uses,
                 )
                 .map_err(|source| error(owner, &source.to_string()))?;
-                let body = match view.body() {
+                let body = match body {
                     FinalAnalysisImplicitCallableBody::Plain(_) => {
-                        if let Some(facts) = analysis.call(owner) {
-                            RuntimeImplicitCallableBodyFact::Call(Box::new(runtime_call(
-                                owner, facts, project, symbols, world, analysis, lexical, instances,
-                            )?))
-                        } else {
-                            RuntimeImplicitCallableBodyFact::Plain
-                        }
+                        RuntimeImplicitCallableBodyFact::Plain
+                    }
+                    FinalAnalysisImplicitCallableBody::Call { facts, .. } => {
+                        RuntimeImplicitCallableBodyFact::Call(Box::new(runtime_call(
+                            owner, facts, project, symbols, world, analysis, lexical, instances,
+                        )?))
                     }
                     FinalAnalysisImplicitCallableBody::Try(tried) => {
                         RuntimeImplicitCallableBodyFact::Try(runtime_try_fact(

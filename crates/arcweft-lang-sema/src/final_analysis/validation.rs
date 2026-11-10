@@ -3201,7 +3201,10 @@ fn validate_call_result(
             else {
                 return Err(FinalSemanticAnalysisError::CallFactMismatch);
             };
-            application.result().value_type() == Some(callable.result())
+            application
+                .result()
+                .value_type()
+                .is_some_and(|result| result == callable.result() || *result == TypeKind::Never)
                 && effects.is_subset(
                     &latent
                         .constant_effects()

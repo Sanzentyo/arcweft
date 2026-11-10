@@ -665,7 +665,7 @@ impl CheckedImplicitCallable {
             return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
         };
         if self.lookup_owner != owner
-            || &self.result != source
+            || (&self.result != source && *source != TypeKind::Never)
             || body.checked_call_site(owner).is_none()
             || body.checked_call_site(owner) != resolution.checked_call_site(owner)
         {
@@ -732,6 +732,14 @@ impl CheckedImplicitCallable {
             &self.topology,
             self.lookup_owner,
             &admitted,
+            |expression| {
+                matches!(
+                    expressions
+                        .get(&expression)
+                        .map(CheckedExpression::resolution),
+                    Some(CheckedExpressionResolution::ImplicitCallable(_))
+                )
+            },
             |expression, access| {
                 let fact = expressions.get(&expression).ok_or(
                     crate::final_analysis::FinalSemanticAnalysisError::CaptureAuthority {
@@ -900,7 +908,7 @@ fn validate_implicit_callable_evidence(
         let row = module
             .expression_uses()
             .row(expression)
-            .filter(|_| region.contains_expression(expression))
+            .filter(|_| region.contains_executed_expression(expression, &|_| false))
             .ok_or(CheckedCaptureAuthorityViolation::MissingExpressionUse { expression })?;
         let binding = module
             .local_origins()
@@ -922,7 +930,7 @@ fn validate_implicit_callable_evidence(
             | super::super::CheckedLocalUseSite::Place(_) => false,
         };
         if !sites.insert(occurrence.lookup_site)
-            || region.contains_binding(binding)
+            || region.contains_executed_binding(binding, &|_| false)
             || !valid_access
         {
             return Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch);

@@ -3970,7 +3970,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         if self.implicit_body_root == Some(id) {
             return self
                 .implicit_callable(id)
-                .map(|callable| callable.result().identity())
+                .map(|callable| callable.body_result().identity())
                 .ok_or_else(|| format!("admitted implicit body result is missing for {id:?}"));
         }
         self.semantic_facts
@@ -3986,7 +3986,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         if self.implicit_body_root == Some(id) {
             return self
                 .implicit_callable(id)
-                .map(|callable| callable.result().identity())
+                .map(|callable| callable.body_result().identity())
                 .ok_or_else(|| format!("admitted implicit body result is missing for {id:?}"));
         }
         self.semantic_facts

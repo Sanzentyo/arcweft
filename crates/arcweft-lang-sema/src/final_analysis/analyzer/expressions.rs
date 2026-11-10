@@ -1274,14 +1274,22 @@ impl Analyzer<'_, '_, '_> {
             .rev()
             .map(|context| context.owner)
             .collect::<Vec<_>>();
-        for callable in callable_owners {
+        for &callable in &callable_owners {
             let region = expression_uses
                 .implicit_callable_region(callable)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            if !region.contains_expression(expression) {
+            let is_implicit_callable = |owner| {
+                callable_owners.contains(&owner)
+                    || self
+                        .facts
+                        .expressions()
+                        .get(&owner)
+                        .is_some_and(PreparedExpressionFact::creates_implicit_callable)
+            };
+            if !region.contains_executed_expression(expression, &is_implicit_callable) {
                 continue;
             }
-            if region.contains_binding(binding) {
+            if region.contains_executed_binding(binding, &is_implicit_callable) {
                 continue;
             }
             self.facts

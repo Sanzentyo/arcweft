@@ -156,6 +156,10 @@ fn with_identity(offset: i64) -> (i64 -> i64 effects {}) {
     let f: (i64 -> i64 effects {}) = { let bonus = apply(_, offset); add(_, bonus) }
     f
 }
+fn with_nested_identity(offset: i64) -> (i64 -> i64 effects {}) {
+    let f: (i64 -> i64 effects {}) = { let bonus = keep(apply(_, offset)); add(_, bonus) }
+    f
+}
 "#;
     for flow in [
         "flow main() -> i64 { let f: (i64 -> i64 effects {}) = keep(_); return f(42i64) }",
@@ -163,6 +167,7 @@ fn with_identity(offset: i64) -> (i64 -> i64 effects {}) {
         "flow main() -> i64 { let f: (i64 -> i64 effects {}) = add(_, _); return f(21i64) }",
         "flow main() -> i64 { let f = add_to(2i64); return f(39i64) }",
         "flow main() -> i64 { let f = with_identity(2i64); return f(40i64) }",
+        "flow main() -> i64 { let f = with_nested_identity(2i64); return f(40i64) }",
         "flow main() -> i64 { return apply(_, 42i64) }",
         "flow main() -> i64 { let f: (i64 -> i64 effects {}) = retain(_, 0i64); return f(42i64) }",
         "flow main() -> i64 { return apply(keep(_), 42i64) }",
@@ -170,6 +175,22 @@ fn with_identity(offset: i64) -> (i64 -> i64 effects {}) {
     ] {
         assert_case(definitions, flow, RuntimeValue::i64(42), "42");
     }
+}
+
+#[test]
+fn an_implicit_call_body_can_diverge_under_a_contextual_return_type() {
+    compile_source(
+        r#"
+entry cli @entry.main { goto @flow.main }
+fn diverge(value: i64) -> Never { loop {} }
+fn relay(input: i64) -> i64 {
+    let f: (i64 -> i64 effects {}) = diverge(_)
+    f(input)
+}
+flow main() -> i64 { return relay(42i64) }
+"#,
+    )
+    .expect("a diverging implicit call body retains its contextual function result");
 }
 
 #[test]

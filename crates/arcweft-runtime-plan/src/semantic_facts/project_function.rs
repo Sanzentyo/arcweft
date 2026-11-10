@@ -2226,7 +2226,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
 
     pub(super) fn call_source_type(&self, owner: ExprId) -> Option<&RuntimeNormalizedType> {
         self.implicit_callable(owner)
-            .map(RuntimeImplicitCallableFact::result)
+            .and_then(RuntimeImplicitCallableFact::call_result)
             .or_else(|| self.expression_source_type(owner))
     }
 

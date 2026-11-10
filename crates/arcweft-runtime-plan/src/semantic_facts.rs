@@ -1847,6 +1847,7 @@ pub struct RuntimeImplicitCallableFact {
     captures: Box<[RuntimeImplicitCallableCaptureFact]>,
     parameter: RuntimeNormalizedType,
     result: RuntimeNormalizedType,
+    call_result: Option<RuntimeNormalizedType>,
     placeholders: Box<[ExprId]>,
 }
 
@@ -1856,6 +1857,7 @@ impl RuntimeImplicitCallableFact {
         formal: arcweft_lang_sema::final_analysis::CheckedExecutionParameter,
         parameter: RuntimeNormalizedType,
         result: RuntimeNormalizedType,
+        call_result: Option<RuntimeNormalizedType>,
         placeholders: Box<[ExprId]>,
         authority: &CheckedLocalUseAuthority,
     ) -> Result<Self, RuntimeImplicitCallableAuthorityError> {
@@ -1864,6 +1866,9 @@ impl RuntimeImplicitCallableFact {
             || formal.definition_identity() != definition.definition_identity()
             || formal.pattern().is_some()
             || !formal.bindings().is_empty()
+            || call_result.as_ref().is_some_and(|body| {
+                body != &result && !matches!(body.shape(), RuntimeTypeShape::Never)
+            })
         {
             return Err(RuntimeImplicitCallableAuthorityError);
         }
@@ -1898,6 +1903,7 @@ impl RuntimeImplicitCallableFact {
             captures,
             parameter,
             result,
+            call_result,
             placeholders,
         })
     }
@@ -1922,6 +1928,16 @@ impl RuntimeImplicitCallableFact {
 
     pub const fn result(&self) -> &RuntimeNormalizedType {
         &self.result
+    }
+
+    /// The selected call's own result, which may be `Never` even when the
+    /// enclosing function value has a contextual return type.
+    pub const fn call_result(&self) -> Option<&RuntimeNormalizedType> {
+        self.call_result.as_ref()
+    }
+
+    pub(crate) fn body_result(&self) -> &RuntimeNormalizedType {
+        self.call_result().unwrap_or(self.result())
     }
 
     pub const fn placeholders(&self) -> &[ExprId] {
@@ -8973,7 +8989,7 @@ impl RuntimePlanSemanticFacts {
             };
             let call_source_type = implicit_callables
                 .get(expression)
-                .map(RuntimeImplicitCallableFact::result)
+                .and_then(RuntimeImplicitCallableFact::call_result)
                 .or_else(|| {
                     expression_specializations
                         .get(expression)
@@ -9058,7 +9074,7 @@ impl RuntimePlanSemanticFacts {
                     call,
                     facts
                         .implicit_callable(owner)
-                        .map(RuntimeImplicitCallableFact::result)
+                        .and_then(RuntimeImplicitCallableFact::call_result)
                         .or_else(|| facts.expression_source_type(owner)),
                     &project_function_instances,
                     &callable_sources,
@@ -9216,6 +9232,7 @@ impl RuntimePlanSemanticFacts {
                 || fact.placeholders().is_empty()
                 || !all_unique(fact.placeholders())
                 || fact.definition().owner() != *expression
+                || fact.call_result().is_some() != calls.contains_key(expression)
                 || !matches!(fact.formal().authority(), CheckedLocalUseAuthority::Global(catalog)
                     if input.checked_local_uses.as_ref() == Some(catalog))
             {
@@ -10841,6 +10858,7 @@ impl RuntimePlanSemanticFacts {
         }
         for callable in self.implicit_callables.values() {
             roots.extend([callable.parameter(), callable.result()]);
+            roots.extend(callable.call_result());
         }
         roots.extend(
             self.trait_methods
@@ -14843,6 +14861,8 @@ fn validate_project_function_semantic_catalog(
                     || parameters.first() != Some(fact.parameter())
                     || result.as_ref() != fact.result()
                     || fact.placeholders().is_empty()
+                    || fact.call_result().is_some()
+                        != matches!(body, RuntimeImplicitCallableBodyFact::Call(_))
                     || fact
                         .captures()
                         .iter()
@@ -14856,7 +14876,7 @@ fn validate_project_function_semantic_catalog(
                             modules,
                             &expression_types,
                             owner,
-                            Some(fact.result()),
+                            fact.call_result(),
                             hir_call,
                             None,
                             call,

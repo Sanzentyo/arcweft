@@ -760,6 +760,11 @@ fn prepare_callable_seed(
         topology,
         owner,
         |expression| structural_edges.contains_expression(expression),
+        |expression| {
+            expressions
+                .get(&expression)
+                .is_some_and(PreparedExpressionFact::creates_implicit_callable)
+        },
         |expression, access| {
             let fact = expressions.get(&expression).ok_or(
                 FinalSemanticAnalysisError::CaptureAuthority {

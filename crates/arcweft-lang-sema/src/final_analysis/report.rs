@@ -1227,8 +1227,33 @@ impl FinalAnalysisExecutionProjection<'_> {
                 })
             })
             .collect::<Result<Box<[_]>, FinalAnalysisExecutionProjectionError>>()?;
+        let body = match callable.body() {
+            CheckedImplicitCallableBody::Plain(resolution)
+                if resolution.checked_call_site(owner).is_some() =>
+            {
+                let facts = self
+                    .analysis
+                    .call(owner)
+                    .ok_or(FinalAnalysisExecutionProjectionError::MissingCallFacts { owner })?;
+                let result = facts
+                    .selected_application()
+                    .and_then(|application| application.result().value_type())
+                    .ok_or(FinalAnalysisExecutionProjectionError::UnselectedCall { owner })?;
+                FinalAnalysisImplicitCallableBody::Call { facts, result }
+            }
+            CheckedImplicitCallableBody::Plain(resolution) => {
+                FinalAnalysisImplicitCallableBody::Plain(resolution)
+            }
+            CheckedImplicitCallableBody::Try(tried) => {
+                FinalAnalysisImplicitCallableBody::Try(FinalAnalysisTryView { tried })
+            }
+            CheckedImplicitCallableBody::Pipe(pipe) => {
+                FinalAnalysisImplicitCallableBody::Pipe(FinalAnalysisPipeView { pipe })
+            }
+        };
         Ok(FinalAnalysisImplicitCallableView {
             callable,
+            body,
             definition: FinalAnalysisImplicitCallableDefinition {
                 owner,
                 identity: callable.identity(),
@@ -1273,6 +1298,7 @@ impl FinalAnalysisExecutionProjection<'_> {
 /// Typed execution view of one checked implicit callable.
 pub struct FinalAnalysisImplicitCallableView<'analysis> {
     callable: &'analysis CheckedImplicitCallable,
+    body: FinalAnalysisImplicitCallableBody<'analysis>,
     definition: FinalAnalysisImplicitCallableDefinition,
 }
 
@@ -1306,18 +1332,8 @@ impl FinalAnalysisImplicitCallableView<'_> {
             .map(CheckedImplicitCapture::lookup_local)
     }
 
-    pub fn body(&self) -> FinalAnalysisImplicitCallableBody<'_> {
-        match self.callable.body() {
-            CheckedImplicitCallableBody::Plain(resolution) => {
-                FinalAnalysisImplicitCallableBody::Plain(resolution)
-            }
-            CheckedImplicitCallableBody::Try(tried) => {
-                FinalAnalysisImplicitCallableBody::Try(FinalAnalysisTryView { tried })
-            }
-            CheckedImplicitCallableBody::Pipe(pipe) => {
-                FinalAnalysisImplicitCallableBody::Pipe(FinalAnalysisPipeView { pipe })
-            }
-        }
+    pub const fn body(&self) -> FinalAnalysisImplicitCallableBody<'_> {
+        self.body
     }
 }
 
@@ -1325,8 +1341,21 @@ impl FinalAnalysisImplicitCallableView<'_> {
 #[derive(Clone, Copy)]
 pub enum FinalAnalysisImplicitCallableBody<'analysis> {
     Plain(&'analysis CheckedExpressionResolution),
+    Call {
+        facts: &'analysis CallTargetFacts,
+        result: &'analysis TypeKind,
+    },
     Try(FinalAnalysisTryView<'analysis>),
     Pipe(FinalAnalysisPipeView<'analysis>),
+}
+
+impl<'analysis> FinalAnalysisImplicitCallableBody<'analysis> {
+    pub const fn call_result(self) -> Option<&'analysis TypeKind> {
+        match self {
+            Self::Call { result, .. } => Some(result),
+            Self::Plain(_) | Self::Try(_) | Self::Pipe(_) => None,
+        }
+    }
 }
 
 /// Typed execution view of one checked Try expression.

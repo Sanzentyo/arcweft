@@ -480,7 +480,7 @@ impl<'a> ControlLocalInventory<'a> {
                 .ok_or_else(|| {
                     RuntimePlanLowerError::new("implicit body has no admitted callable definition")
                 })?
-                .result();
+                .body_result();
             (result, result, ValueRole::ImplicitBodyResult)
         } else {
             (

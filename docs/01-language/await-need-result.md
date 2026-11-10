@@ -291,7 +291,8 @@ implicit abstraction. A bare argument `_` can read the surrounding implicit
 callable's parameter, as in a contextually typed `try keep(_)`. An argument
 whose formal expects a unary function can also use a bare `_` as the identity
 callable. If the surrounding parameter already satisfies the formal, the
-argument reads that parameter.
+argument reads that parameter. An argument evaluated as an ordinary value
+remains part of the surrounding body, even when it passes its own callback.
 
 ```arcw
 await _

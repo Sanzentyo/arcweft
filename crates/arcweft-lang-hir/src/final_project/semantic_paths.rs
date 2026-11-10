@@ -2027,19 +2027,39 @@ impl HirImplicitCallableRegion<'_> {
     }
 
     pub fn contains_expression(&self, expression: ExprId) -> bool {
+        self.contains_executed_expression(expression, &|_| true)
+    }
+
+    /// A composed argument cuts execution only if checking selected a
+    /// callable value there. An ordinary evaluated argument remains in the
+    /// enclosing body even when it contains a placeholder callback.
+    pub fn contains_executed_expression(
+        &self,
+        expression: ExprId,
+        is_implicit_callable: &impl Fn(ExprId) -> bool,
+    ) -> bool {
         let Some(row) = self.index.row(expression) else {
             return false;
         };
         if row.source_ordinal() < self.start_ordinal || row.source_ordinal() >= self.end_ordinal {
             return false;
         }
-        self.index.region_contains(self.root, expression)
+        self.index
+            .region_contains(self.root, expression, is_implicit_callable)
     }
 
     pub fn contains_binding(&self, binding: &HirLocalBindingOrigin) -> bool {
-        binding
-            .binding_expression()
-            .is_some_and(|expression| self.contains_expression(expression))
+        self.contains_executed_binding(binding, &|_| true)
+    }
+
+    pub fn contains_executed_binding(
+        &self,
+        binding: &HirLocalBindingOrigin,
+        is_implicit_callable: &impl Fn(ExprId) -> bool,
+    ) -> bool {
+        binding.binding_expression().is_some_and(|expression| {
+            self.contains_executed_expression(expression, is_implicit_callable)
+        })
     }
 
     pub fn placeholders(&self) -> impl Iterator<Item = ExprId> + '_ {
@@ -2181,7 +2201,7 @@ impl HirExpressionUseIndex {
             let row = self
                 .row(owner)
                 .ok_or(HirSemanticPathError::UnresolvedOwner)?;
-            if is_selected(owner) && self.region_contains(owner, expression) {
+            if is_selected(owner) && self.region_contains(owner, expression, &|_| true) {
                 return Ok(Some(owner));
             }
             if row.callable_boundary().is_some() {
@@ -2208,7 +2228,12 @@ impl HirExpressionUseIndex {
         &self.rows
     }
 
-    fn region_contains(&self, root: ExprId, candidate: ExprId) -> bool {
+    fn region_contains(
+        &self,
+        root: ExprId,
+        candidate: ExprId,
+        is_implicit_callable: &impl Fn(ExprId) -> bool,
+    ) -> bool {
         let candidate_root = candidate;
         let mut current = candidate;
         for _ in 0..=self.rows.len() {
@@ -2220,8 +2245,16 @@ impl HirExpressionUseIndex {
                     || row.callable_boundary()
                         != Some(HirExpressionCallableBoundary::ExplicitClosure);
             }
-            if current != candidate_root && row.callable_boundary().is_some() {
-                return false;
+            if current != candidate_root {
+                match row.callable_boundary() {
+                    Some(HirExpressionCallableBoundary::ExplicitClosure) => return false,
+                    Some(HirExpressionCallableBoundary::ImplicitArgument)
+                        if is_implicit_callable(current) =>
+                    {
+                        return false;
+                    }
+                    _ => {}
+                }
             }
             let Some(parent) = row.parent_expression() else {
                 return false;

@@ -153,6 +153,7 @@ pub(super) fn implicit_region_inputs(
     topology: &arcweft_lang_hir::project::HirProjectEvaluationTopology,
     owner: ExprId,
     admitted: impl Fn(ExprId) -> bool,
+    is_implicit_callable: impl Fn(ExprId) -> bool,
     expression: impl Fn(
         ExprId,
         CaptureAccess,
@@ -167,11 +168,10 @@ pub(super) fn implicit_region_inputs(
         .implicit_callable_region(owner)
         .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
     let mut ordered = Vec::new();
-    for row in
-        module.expression_uses().rows().iter().filter(|row| {
-            admitted(row.expression()) && region.contains_expression(row.expression())
-        })
-    {
+    for row in module.expression_uses().rows().iter().filter(|row| {
+        admitted(row.expression())
+            && region.contains_executed_expression(row.expression(), &is_implicit_callable)
+    }) {
         let inputs = expression(row.expression(), row.capture_access())?;
         for input in inputs.sources {
             // A finalized root's creation packet belongs to its enclosing
@@ -187,7 +187,7 @@ pub(super) fn implicit_region_inputs(
                     },
                 },
             )?;
-            if !region.contains_binding(binding) {
+            if !region.contains_executed_binding(binding, &is_implicit_callable) {
                 ordered.push((input.source_order(topology, &record)?, input));
             }
         }

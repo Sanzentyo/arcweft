@@ -6375,7 +6375,7 @@ impl<'a> FinalFlowLowerer<'a> {
         if self.implicit_body_root() == Some(expression) {
             return self
                 .implicit_callable(expression)
-                .map(|callable| callable.result())
+                .map(|callable| callable.body_result())
                 .ok_or_else(|| {
                     RuntimePlanLowerError::new(format!(
                         "accepted implicit body result is missing for {expression:?}"

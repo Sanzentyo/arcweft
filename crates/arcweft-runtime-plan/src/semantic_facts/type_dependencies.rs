@@ -365,6 +365,7 @@ impl RuntimeProjectFunctionExpressionPayload {
             Self::Try(tried) => tried.append_normalized_types(roots),
             Self::ImplicitCallable { callable, body } => {
                 roots.extend([callable.parameter(), callable.result()]);
+                roots.extend(callable.call_result());
                 match body {
                     RuntimeImplicitCallableBodyFact::Call(call) => {
                         call.append_normalized_types(roots)
