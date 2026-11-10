@@ -16314,5 +16314,637 @@
       "unresolvedStages": [],
       "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
     }
+  },
+  "returnedCallableCopy": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-10T00:32:38.5449433Z",
+    "source": "cd4e201c9096c9145e54b036cbd378cc4a8c6b53",
+    "base": "c689cb3c151f21c0464a4a4b3a981b970936b487",
+    "publication": {
+      "version": 1,
+      "commit": "cd4e201c9096c9145e54b036cbd378cc4a8c6b53",
+      "parent": "c689cb3c151f21c0464a4a4b3a981b970936b487",
+      "remote": "cd4e201c9096c9145e54b036cbd378cc4a8c6b53",
+      "tree": "0e2d1787051f45156fb9243402ff46dcf10bbdad",
+      "patchSha256": "f7628b8e22445c9d19a4302b78f4957b25a3b8ecfb71c6aecaf7fb65a29c8607",
+      "cliSha256": "0e92bfcba8de0ac62a9e71bf44eeaf4ad45a01b2699ae36b940c3539b2e5f40c",
+      "remoteBlobs": [
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+          "blob": "b2d436cedd973af0c4686bf89e29df794f386702",
+          "validatedSha256": "ea75dbcf6c93efcd6f11ddbd8073868f29066fd3e9e0b5071cceea896a12e43d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "1d00d14c27edc6c588591c6bab922d57460e2070",
+          "validatedSha256": "d31e126cecacf653a461f5709ca6b92da4edf963e36c45e0acf816e44417a0c3"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+          "blob": "f6463c84ca32cc1a1231c0ecadaa7419cf8de0e1",
+          "validatedSha256": "006c421045372a9f51279956cec44322a66774d7df758b6da9a9047ac5d11fcf"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "blob": "2efe209331642ef490d253afdb09c03d38660b76",
+          "validatedSha256": "7eaed0e1fed5c6a360dcc3fdfcc6531812e95434cecab6adf80b26fca5620bb4"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "blob": "b2a94487119d767bc14af20507fd155ec896fd33",
+          "validatedSha256": "4cf1e0829f1a2b86f071488735f85ec13e448ecdb33c3e6f24b85b73c0a2ac4f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+          "blob": "b6a9da3bd6499ce9bf885e0b4868ea474b7b5ca2",
+          "validatedSha256": "10ba477ed6804a02c984ef156871789bdeacb535e61f6c60de8eadd707ea10bc"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/authority.rs",
+          "blob": "268260366b7273b295d54469e8edc25fb968613e",
+          "validatedSha256": "9a11ed3c0a7e92cb8d4a0eb677de30deda71ec748708cdf153d757cb62b70c93"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/copy.rs",
+          "blob": "439071d51b48601d96b3d23c23aac59a16d7d5b0",
+          "validatedSha256": "eaac6dd75295a5ff6fe856e0cb6d1793a1f67dee5f3c43ace091140f68e1d2cb"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges/tests.rs",
+          "blob": "aca9b900543747a6a91dc7d7278b2653001a9fe6",
+          "validatedSha256": "3eb53fd7b7ca4b8b03978b40c2b921d18c4db1a85e1357d1680a67bb10ee8ba9"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model/capture.rs",
+          "blob": "77e5d2fb71a7e35954a00ee464574a6b68da9e98",
+          "validatedSha256": "28a14dba9eb97f36087add4bd45b654e1c88a0db59be1a4ab2f0b0b3681cfe61"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs",
+          "blob": "b8f77aeedaab98d4a4dbfcb8d464c4819e4fd63f",
+          "validatedSha256": "91253eeb3277e957a06824967289718789773e7d79cc2287489478a18297105c"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+          "blob": "a117e4611248987943ceff0cba10c65aecaf4991",
+          "validatedSha256": "94f468ae8bf3f52c99d1e5da845cf3cc4c7f7046ba3f70e0732db82d7bbf732c"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "blob": "5e09d89c34036feb4e8fcf3e2dc3a79f33d9efd7",
+          "validatedSha256": "217f34bb9d92239e6762232f955b4254b9315d7b6aed8fa83e9ea9a0b4a51723"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "1fc10329154dede6df47355b7232708f861166ff",
+          "validatedSha256": "b8f271bf9cb06f40bc71255547f4a4e428f556634ec12226c04e5c9e9ba50dcb"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "blob": "22127b2d5997e6d0cd35e365fb4f3cf6b086361b",
+          "validatedSha256": "df5d33e897a3ca2720c94c3276a3bb2b2842120988291de6e50ff2b5d292ba5a"
+        },
+        {
+          "path": "docs/01-language/functions-and-pipeline.md",
+          "blob": "1306d75a9cc6556f83e88e62a0a17109703f5e9f",
+          "validatedSha256": "aa21959670d1869db13c491b7acecb93dcc71304b5c0a4669b9a794891e6b656"
+        }
+      ]
+    },
+    "worktree": "Validated on existing main. The source commit contains only the listed reviewed paths. One unrelated untracked directory was present.",
+    "supersedes": "The previous local-use rejection for repeating a single inferred later group is now corrected. Its original CLI report remains in the raw evidence.",
+    "design": "Seal the closure body result sites once, share them with lifetime analysis, follow the exact selected actuals, and require deep Copy on every reachable result. A proved invocation initializer carries a bounded ownership check into the existing runtime intrinsic before the value is bound. AWBC verification still requires producer proof at CopyValue.",
+    "cli": {
+      "version": 1,
+      "cliSha256": "0e92bfcba8de0ac62a9e71bf44eeaf4ad45a01b2699ae36b940c3539b2e5f40c",
+      "checks": [
+        {
+          "name": "returned-prefix-shared-one-execution",
+          "exit": 0,
+          "stage": null,
+          "code": null,
+          "span": null,
+          "message": null,
+          "inputSha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266",
+          "reportSha256": "ca86cb6f9260b5f750c994c2d41247787f9d32bc7d6af5a7dc34958f2faa3f3d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-shared-contextual-execution",
+          "exit": 0,
+          "stage": null,
+          "code": null,
+          "span": null,
+          "message": null,
+          "inputSha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af",
+          "reportSha256": "3f4e2f256f16607370a0a58bfeb9289e47952f1f7ced00619e6e35f2a2b7ae5e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-shared-execution",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "span": null,
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 68, kind: Expr }) has no admissible final type",
+          "inputSha256": "66be1cd34f6721d603acb800f7d5306ecb185f485cf67fbb87cbf7f3b0a51579",
+          "reportSha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-borrow",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "span": null,
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 68, kind: Expr }) has no admissible final type",
+          "inputSha256": "75f9e5554a9a185cbedcac2b55d7558272ad697b5816fe991f2809d7e84f30bb",
+          "reportSha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-owned",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "span": null,
+          "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 68, kind: Expr }) has no admissible final type",
+          "inputSha256": "c3cba1c9fcc77a5e8d534018df1e4ace0ba4f21f8551315fabff663775866c97",
+          "reportSha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-contextual",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "span": "callback",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "inputSha256": "5a3e0d355cfdf34f1f2489aa7f6a8597777c4965fc23700449f56ecf3296c951",
+          "reportSha256": "ad3f1d80f6a9ad06b7ba5a9129844a74b0c01cdf2258868f128a9516017994e5",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "returned-prefix-poly-contextual-owned",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "span": "callback.promote('flow)",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "04ace18d16d52feb4aacc34c9f3932ea5a262c6a48ebea296b1f8d7cd58ef46d",
+          "reportSha256": "cf3fdf455b27dfbb7d3f73a319925da67ea72145909c6717f025cd547b094c5e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "execution": {
+        "runner": "headless",
+        "mode": "one-op",
+        "operationLimit": 1,
+        "stepLimit": 256,
+        "cases": [
+          {
+            "name": "returned-prefix-shared-one-execution",
+            "tier": "bytecode-vm",
+            "exit": 0,
+            "executor": "bytecode_vm",
+            "steps": 14,
+            "maxOps": 1.0,
+            "executedOps": 14.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266",
+            "reportSha256": "0e29607638a7a2770ba6f39533e7ed2ae6bdf64aa70a94ae592535819f79eab5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-shared-one-execution",
+            "tier": "aot",
+            "exit": 0,
+            "executor": "aot",
+            "steps": 14,
+            "maxOps": 1.0,
+            "executedOps": 14.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266",
+            "reportSha256": "1c418d24a54a61431b2731aac6e77ed0578fae6323d2d67fe65da42fdbc04935",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-shared-one-execution",
+            "tier": "awbc-product",
+            "exit": 0,
+            "executor": "awbc_product",
+            "steps": 112,
+            "maxOps": 1.0,
+            "executedOps": 112.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266",
+            "reportSha256": "3e5a2ff357fd6dcb6eaa0eb93a3cbf7b75cec2e767c3fd6928a2893db255e17c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-shared-contextual-execution",
+            "tier": "bytecode-vm",
+            "exit": 0,
+            "executor": "bytecode_vm",
+            "steps": 18,
+            "maxOps": 1.0,
+            "executedOps": 18.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af",
+            "reportSha256": "c75c8540ec6713fd39aa6ca258ec8aa1aa1567133a6c8b2b68735cc0dc28b31d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-shared-contextual-execution",
+            "tier": "aot",
+            "exit": 0,
+            "executor": "aot",
+            "steps": 18,
+            "maxOps": 1.0,
+            "executedOps": 18.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af",
+            "reportSha256": "1172537a081e9c3b66bf08bf3bb4b934c7dba3948267f8175742b50e6a0cdc64",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "returned-prefix-shared-contextual-execution",
+            "tier": "awbc-product",
+            "exit": 0,
+            "executor": "awbc_product",
+            "steps": 146,
+            "maxOps": 1.0,
+            "executedOps": 146.0,
+            "finalStatus": "done Return(\"42\")",
+            "accepted": true,
+            "inputSha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af",
+            "reportSha256": "68705d7274d62cb83a97bfe6e70798fd08ec85f669d018842a0ff0d313af3411",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      }
+    },
+    "tests": {
+      "sema": {
+        "pass": 1455,
+        "fail": 0
+      },
+      "callableExecution": {
+        "pass": 328,
+        "fail": 0,
+        "publicAwbcRestore": "restored each stopped step from JSON and returned 42 once under max_ops 1"
+      },
+      "structure": {
+        "blocking": 0
+      }
+    },
+    "residualExperiment": {
+      "status": "historical experiment, reverted before the published source",
+      "patchSha256": "2d200c7420fef65a32725ea7349bd04060d84d2cacd19a0fd932a0701ef1dda2",
+      "observation": "The inferred intermediate group reached the intended receiver/execution diagnostics in Sema. A positive independently created value still failed runtime-plan lowering because CallableValue application specialization required all residual quantifiers to close. VM, AOT and AWBC Product did not start."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-promotion-returned-copy.raw.zip",
+      "sha256": "2e4f8a2eec5a82cf3999efee0f3405954eb49343cd3cb03c98efc698056eecc7",
+      "entries": [
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/source.inputs.json",
+          "sha256": "e6b790cd77388dfaf2076bcc6059b57b7b243168314751567e10f539cd106a57"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/source.before-guard.inputs.json",
+          "sha256": "a1732722bb333e13c7ee6d228e1ec545ece620a9a8c9e3c2381b47df1ab60e51"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/source.before-pipe-scope.inputs.json",
+          "sha256": "392c72e2432adcc3a69c7b1e613047045d762b2ab7a3770e249397aad422e3bd"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/source.publication.json",
+          "sha256": "b083397dda4471b3fda33f6258fd12a0a53667e9fe638c77c44882cf5442b71d"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/source.reviewed.patch",
+          "sha256": "f7628b8e22445c9d19a4302b78f4957b25a3b8ecfb71c6aecaf7fb65a29c8607"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/focused-copy.log",
+          "sha256": "b099e987cf6c251faecaeb5cbb78171c20efd551c40b3788075ea2db4d506b10"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/owner-copy.log",
+          "sha256": "6f0831885af3f7447c7b1a56fda71ab2cc447370d108539fb58f796f177f461d"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/owner-copy-final.log",
+          "sha256": "4c9da0b50b1ad94afc3cb41f1bfdca2674ff58980a18e30bdd065079b0c7b1b6"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/compiler-copy.log",
+          "sha256": "6052216c25cc020ddd2fe50196bdb6a108b42174a5c0b0aacb372dca2eb47612"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/compiler-copy-guard.log",
+          "sha256": "0d2e23365453f274fce0e3d18cf3280e7a075446a575e9850f0e60f12057d783"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/compiler-copy-guard-retry.log",
+          "sha256": "6078edebfc8b5532088b50d0dbb275b1a6075ab701c6ee9edc5134d208016c69"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/compiler-copy-final.log",
+          "sha256": "5ef8fe022552386160406df234092ee94495510be59976680d0281a140909e0e"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/compiler-copy-restore-build-failure.log",
+          "sha256": "8bed7b6c854fdde9dbf34ed02637515d45e398e3e309f86b3c21f643e5ead448"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/cli-build.log",
+          "sha256": "428d97a03754e21aaef20947b7d6e06ce7c9bc9f81484d3eb7473f33ccd16569"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/fmt-copy-final.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/structure-copy-final.log",
+          "sha256": "9b16aa8ae51ec19b9a8d71b2563270220c4dbfb9f3087fa2827152d3e3bd359b"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/rdeps.log",
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/rdeps-all-features.log",
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/rdeps-runtime-plan.log",
+          "sha256": "7a064e8001b4f607b8215f241c9365fb950648693381d85f200454e6bb944a10"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/changed.receipt.json",
+          "sha256": "9604a8efb5dc02635e6eed8d9143569ff9be1ad8773fc2729dabfcffaef7dfdf"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/compare-cli.ps1",
+          "sha256": "f93a38c2645026e58fd5f99802b279255c274fb218be6352eddc5cd3d5ce1cc2"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/validation/prior-status-row.md",
+          "sha256": "d42da520383dd6be159e8cdd46130fa6294a3e4372b8e9cd0db38a600da1c7b5"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/fixtures/returned-prefix-shared-one-execution.arcw",
+          "sha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.check.json",
+          "sha256": "ca86cb6f9260b5f750c994c2d41247787f9d32bc7d6af5a7dc34958f2faa3f3d"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/fixtures/returned-prefix-shared-contextual-execution.arcw",
+          "sha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.check.json",
+          "sha256": "3f4e2f256f16607370a0a58bfeb9289e47952f1f7ced00619e6e35f2a2b7ae5e"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/fixtures/returned-prefix-shared-execution.arcw",
+          "sha256": "66be1cd34f6721d603acb800f7d5306ecb185f485cf67fbb87cbf7f3b0a51579"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-execution.check.json",
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-execution.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/fixtures/returned-prefix-poly-borrow.arcw",
+          "sha256": "75f9e5554a9a185cbedcac2b55d7558272ad697b5816fe991f2809d7e84f30bb"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-borrow.check.json",
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-borrow.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/fixtures/returned-prefix-poly-owned.arcw",
+          "sha256": "c3cba1c9fcc77a5e8d534018df1e4ace0ba4f21f8551315fabff663775866c97"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-owned.check.json",
+          "sha256": "32139f42e510187c2b3c8247743be314134d6a7a222d51a4bd780854981d9a41"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-owned.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/fixtures/returned-prefix-poly-contextual.arcw",
+          "sha256": "5a3e0d355cfdf34f1f2489aa7f6a8597777c4965fc23700449f56ecf3296c951"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-contextual.check.json",
+          "sha256": "ad3f1d80f6a9ad06b7ba5a9129844a74b0c01cdf2258868f128a9516017994e5"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-contextual.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/fixtures/returned-prefix-poly-contextual-owned.arcw",
+          "sha256": "04ace18d16d52feb4aacc34c9f3932ea5a262c6a48ebea296b1f8d7cd58ef46d"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-contextual-owned.check.json",
+          "sha256": "cf3fdf455b27dfbb7d3f73a319925da67ea72145909c6717f025cd547b094c5e"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-poly-contextual-owned.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.bytecode-vm.run.json",
+          "sha256": "0e29607638a7a2770ba6f39533e7ed2ae6bdf64aa70a94ae592535819f79eab5"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.bytecode-vm.run.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.aot.run.json",
+          "sha256": "1c418d24a54a61431b2731aac6e77ed0578fae6323d2d67fe65da42fdbc04935"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.aot.run.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.awbc-product.run.json",
+          "sha256": "3e5a2ff357fd6dcb6eaa0eb93a3cbf7b75cec2e767c3fd6928a2893db255e17c"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-one-execution.awbc-product.run.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.bytecode-vm.run.json",
+          "sha256": "c75c8540ec6713fd39aa6ca258ec8aa1aa1567133a6c8b2b68735cc0dc28b31d"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.bytecode-vm.run.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.aot.run.json",
+          "sha256": "1172537a081e9c3b66bf08bf3bb4b934c7dba3948267f8175742b50e6a0cdc64"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.aot.run.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.awbc-product.run.json",
+          "sha256": "68705d7274d62cb83a97bfe6e70798fd08ec85f669d018842a0ff0d313af3411"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/cli/returned-prefix-shared-contextual-execution.awbc-product.run.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/baseline/returned-prefix-shared-one-execution.limitation.json",
+          "sha256": "8db09460415b662029c1638244dc0eb7f36083c50b25b01b60164fc4f0d9f55b"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/cli-initial-build.log",
+          "sha256": "9f0c3419e61f199594cc272f3fd405a63c357a09e61825ec971afec374840665"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/focused-initial.log",
+          "sha256": "ae0849672bfae644d4ab273c9eec2d84699198415e36dff0c548e08a4fe328c2"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.aot.initial.json",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.aot.initial.stderr.log",
+          "sha256": "5610516701602302464f4464276a7c9fddda95ed3ac8ad58f2f4965b30ef26ff"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.awbc-product.initial.json",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.awbc-product.initial.stderr.log",
+          "sha256": "5610516701602302464f4464276a7c9fddda95ed3ac8ad58f2f4965b30ef26ff"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.bytecode-vm.initial.json",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.bytecode-vm.initial.stderr.log",
+          "sha256": "5610516701602302464f4464276a7c9fddda95ed3ac8ad58f2f4965b30ef26ff"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.initial.check.json",
+          "sha256": "1fc07ad9e2bbf61f56ef3aaa550d1dfa3e7671f58c8a07c21531f7d01d761cdc"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/residual-result-independent.initial.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-poly-borrow.initial.check.json",
+          "sha256": "eaffd262234f5ec88921e6e81adeacaa2622c849050bcdb48b83df0f584fc40f"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-poly-borrow.initial.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-poly-owned.initial.check.json",
+          "sha256": "71d8026f41d9d769213784179a67634342b2cb7e9e6c4bb081647b13b57f13ac"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-poly-owned.initial.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-shared-contextual-execution.initial.check.json",
+          "sha256": "d2cf637a268a71de5ce02f12a439369c305b08fba1faac2d5b22b4793713731e"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-shared-contextual-execution.initial.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-shared-execution.initial.check.json",
+          "sha256": "b03faaa255031fee6a377cb71fe2719cc811e10d7b58f02444176c19e807bca2"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-shared-execution.initial.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-shared-one-execution.initial.check.json",
+          "sha256": "8db09460415b662029c1638244dc0eb7f36083c50b25b01b60164fc4f0d9f55b"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/returned-prefix-shared-one-execution.initial.check.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/semantic-projection-experiment.patch",
+          "sha256": "2d200c7420fef65a32725ea7349bd04060d84d2cacd19a0fd932a0701ef1dda2"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/fixtures/residual-result-independent.arcw",
+          "sha256": "4e6fd64f003015f6265be2e6a7fe78c860ae680666b3b756aaee77fead24b885"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/fixtures/returned-prefix-poly-borrow.arcw",
+          "sha256": "75f9e5554a9a185cbedcac2b55d7558272ad697b5816fe991f2809d7e84f30bb"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/fixtures/returned-prefix-poly-owned.arcw",
+          "sha256": "c3cba1c9fcc77a5e8d534018df1e4ace0ba4f21f8551315fabff663775866c97"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/fixtures/returned-prefix-shared-contextual-execution.arcw",
+          "sha256": "ed8aef5864682ae554410fef60a87d9f58ac644994130a1d89cd681b45eb45af"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/fixtures/returned-prefix-shared-execution.arcw",
+          "sha256": "66be1cd34f6721d603acb800f7d5306ecb185f485cf67fbb87cbf7f3b0a51579"
+        },
+        {
+          "path": "returned-callable-copy-cd4e201c/residual-experiment/fixtures/returned-prefix-shared-one-execution.arcw",
+          "sha256": "2bad71d6807667f8f6af670c501805b07df82fdbb68e51fd7fbd8263a823f266"
+        }
+      ]
+    }
   }
 }
