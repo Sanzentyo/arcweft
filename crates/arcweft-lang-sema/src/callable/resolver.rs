@@ -1334,10 +1334,12 @@ impl PreparedFunctionValueOriginQuery {
         fact: &PreparedExpressionFact,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
         if self.purpose == PreparedFunctionValueOriginPurpose::Storage
-            && matches!(
+            && (matches!(
                 fact,
-                PreparedExpressionFact::ProjectRecord(_) | PreparedExpressionFact::Variant(_)
-            )
+                PreparedExpressionFact::ProjectRecord(_)
+                    | PreparedExpressionFact::ProjectField(_)
+                    | PreparedExpressionFact::Variant(_)
+            ) || fact.try_carrier().is_some())
         {
             return Ok(self.ready(
                 PreparedFunctionValueOriginProducer::IndependentExpression {

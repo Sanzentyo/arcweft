@@ -5,10 +5,14 @@ use std::{
     rc::Rc,
 };
 
-use arcweft_lang_hir::identity::{ExprId, ItemId};
+use arcweft_lang_hir::{
+    identity::{ExprId, ItemId},
+    symbol::nominal::ProjectNominalDeclarationId,
+};
 
-use crate::callable::{
-    CallableParameterCoordinate, CheckedCallSite, SpecializedDeclarationProjection,
+use crate::{
+    callable::{CallableParameterCoordinate, CheckedCallSite, SpecializedDeclarationProjection},
+    types::{TypeProjectionControl, TypeProjectionNodeKind},
 };
 
 use super::{
@@ -58,6 +62,32 @@ pub(super) struct InvocationId(usize);
 pub(super) enum Observation {
     Stored,
     Invoke(InvokedValue),
+    Project(StorageProjectionId),
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct StorageProjectionId(usize);
+
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum StorageProjection {
+    Field {
+        nominal: ProjectNominalDeclarationId,
+        ordinal: u32,
+    },
+    Carrier(CarrierStorage),
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum CarrierStorage {
+    OptionItem,
+    ResultOk,
+    ResultErr,
+}
+
+struct ProjectedObservation {
+    selection: StorageProjection,
+    remaining: Observation,
+    depth: u64,
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -155,6 +185,8 @@ pub(super) struct CaptureWorklist {
     closures: BTreeMap<(ExprId, StorageFrameId), StorageFrameId>,
     invocation_ids: BTreeMap<Invocation, InvocationId>,
     invocations: Vec<Invocation>,
+    projection_ids: BTreeMap<(StorageProjection, Observation), StorageProjectionId>,
+    projections: Vec<ProjectedObservation>,
     queue: VecDeque<ValueOrigin>,
 }
 
@@ -182,6 +214,8 @@ impl CaptureWorklist {
             closures: BTreeMap::new(),
             invocation_ids: BTreeMap::new(),
             invocations: Vec::new(),
+            projection_ids: BTreeMap::new(),
+            projections: Vec::new(),
             queue: VecDeque::from([root]),
         }
     }
@@ -279,6 +313,51 @@ impl CaptureWorklist {
             .get(id.0)
             .copied()
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)
+    }
+
+    pub(super) fn project(
+        &mut self,
+        selection: StorageProjection,
+        remaining: Observation,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Observation, FinalSemanticAnalysisError> {
+        let depth = self.projection(remaining)?.map_or(1, |row| row.depth + 1);
+        receiver.visit_node(TypeProjectionNodeKind::Type, depth)?;
+        let key = (selection, remaining);
+        if let Some(&id) = self.projection_ids.get(&key) {
+            return Ok(Observation::Project(id));
+        }
+        let id = StorageProjectionId(self.projections.len());
+        self.projections.push(ProjectedObservation {
+            selection: key.0.clone(),
+            remaining,
+            depth,
+        });
+        self.projection_ids.insert(key, id);
+        Ok(Observation::Project(id))
+    }
+
+    fn projection(
+        &self,
+        observation: Observation,
+    ) -> Result<Option<&ProjectedObservation>, FinalSemanticAnalysisError> {
+        match observation {
+            Observation::Project(id) => self
+                .projections
+                .get(id.0)
+                .map(Some)
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner),
+            Observation::Stored | Observation::Invoke(_) => Ok(None),
+        }
+    }
+
+    pub(super) fn selected_storage(
+        &self,
+        observation: Observation,
+    ) -> Result<Option<(&StorageProjection, Observation)>, FinalSemanticAnalysisError> {
+        Ok(self
+            .projection(observation)?
+            .map(|row| (&row.selection, row.remaining)))
     }
 
     pub(super) fn next(&mut self) -> Result<Option<ValueOrigin>, FinalSemanticAnalysisError> {

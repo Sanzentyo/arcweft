@@ -21,7 +21,7 @@ use arcweft_lang_hir::stmt::{
     HirConditionalElseBranch, HirContextualStmtBody, HirStatementBodyRole, HirStmtEvaluationPlan,
     HirStmtMatchArmBody, HirStmtSelectEvaluationPlan, HirStmtValuePlanKind,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(in crate::final_analysis::analyzer) struct BodyCompletion {
     normal: NormalContinuation,
@@ -29,15 +29,23 @@ pub(in crate::final_analysis::analyzer) struct BodyCompletion {
     // Exact source rows, not copied targets. Only a matching receiving boundary
     // may consume a reachable transfer. Dead operands are still type checked.
     escaping: BTreeSet<StmtId>,
-    local_try_destinations: BTreeSet<ExprId>,
+    // An Option failure has no payload. Keep its destination with an empty
+    // source set so that it still participates in control completion.
+    local_tries: BTreeMap<ExprId, BTreeSet<ExprId>>,
 }
+
+pub(in crate::final_analysis::analyzer) struct CarrierValueSources {
+    pub(in crate::final_analysis::analyzer) success: Option<ExprId>,
+    pub(in crate::final_analysis::analyzer) residuals: BTreeSet<ExprId>,
+}
+
 impl BodyCompletion {
     fn unit() -> Self {
         Self {
             normal: NormalContinuation::Unit,
             returns: BTreeSet::new(),
             escaping: BTreeSet::new(),
-            local_try_destinations: BTreeSet::new(),
+            local_tries: BTreeMap::new(),
         }
     }
     fn never() -> Self {
@@ -45,7 +53,7 @@ impl BodyCompletion {
             normal: NormalContinuation::Never,
             returns: BTreeSet::new(),
             escaping: BTreeSet::new(),
-            local_try_destinations: BTreeSet::new(),
+            local_tries: BTreeMap::new(),
         }
     }
     pub(in crate::final_analysis::analyzer) const fn continues(&self) -> bool {
@@ -57,8 +65,7 @@ impl BodyCompletion {
     fn sequence(&mut self, child: Self) {
         if self.continues() {
             self.escaping.extend(child.escaping);
-            self.local_try_destinations
-                .extend(child.local_try_destinations);
+            self.extend_local_tries(child.local_tries);
         }
         self.normal = self.normal.then(child.normal);
         self.returns.extend(child.returns);
@@ -67,21 +74,28 @@ impl BodyCompletion {
         self.normal = self.normal.join(child.normal);
         self.returns.extend(child.returns);
         self.escaping.extend(child.escaping);
-        self.local_try_destinations
-            .extend(child.local_try_destinations);
+        self.extend_local_tries(child.local_tries);
     }
     fn evidence(&mut self, child: Self) {
         self.returns.extend(child.returns);
         if self.continues() {
             self.escaping.extend(child.escaping);
-            self.local_try_destinations
-                .extend(child.local_try_destinations);
+            self.extend_local_tries(child.local_tries);
         }
     }
 
-    fn receive_carrier(&mut self, owner: ExprId) {
-        if self.local_try_destinations.remove(&owner) {
+    fn extend_local_tries(&mut self, tries: BTreeMap<ExprId, BTreeSet<ExprId>>) {
+        for (target, operands) in tries {
+            self.local_tries.entry(target).or_default().extend(operands);
+        }
+    }
+
+    fn receive_carrier(&mut self, owner: ExprId) -> BTreeSet<ExprId> {
+        if let Some(operands) = self.local_tries.remove(&owner) {
             self.normal = self.normal.join(NormalContinuation::Unit);
+            operands
+        } else {
+            BTreeSet::new()
         }
     }
 
@@ -195,6 +209,30 @@ impl Analyzer<'_, '_, '_> {
         let delivers_success = statements.continues();
         statements.receive_carrier(owner);
         Ok((delivers_success, statements.normal))
+    }
+
+    /// The normal value and residual operands delivered to this exact carrier.
+    /// A nested carrier consumes its own failures while computing completion.
+    pub(in crate::final_analysis::analyzer) fn checked_carrier_value_sources(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        block: &arcweft_lang_hir::expr::HirComputationBlockExpr,
+    ) -> Result<CarrierValueSources, AnalyzerExpressionError> {
+        let mut completion = self.block_body_completion(
+            module,
+            block.statements(),
+            block.tail(),
+            CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
+                callable: None,
+                current_expression: None,
+            },
+        )?;
+        Ok(CarrierValueSources {
+            success: completion.continues().then_some(block.tail()),
+            residuals: completion.receive_carrier(owner),
+        })
     }
 
     /// Projects the value-producing exits of an already typed body. The
@@ -619,10 +657,16 @@ impl Analyzer<'_, '_, '_> {
                 let mut operand =
                     self.expression_body_completion_in(module, tried.operand(), query)?;
                 if operand.continues()
-                    && let Some((target, _)) =
+                    && let Some((target, carrier)) =
                         self.completion_expression_fact(owner, query)?.local_try()
                 {
-                    operand.local_try_destinations.insert(target);
+                    let sources = operand.local_tries.entry(target).or_default();
+                    if matches!(
+                        carrier,
+                        crate::final_analysis::CheckedTryCarrier::Result { .. }
+                    ) {
+                        sources.insert(tried.operand());
+                    }
                 }
                 operand
             }

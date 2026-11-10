@@ -1578,6 +1578,126 @@ fn safe_lifetime_promotion_ignores_callable_arguments_absent_from_storage() {
 }
 
 #[test]
+fn safe_lifetime_promotion_checks_only_the_selected_record_field() {
+    let pair = "struct Pair<T, U> { borrowed: T, owned: U }";
+    for (declarations, build, selected, borrowed) in [
+        (
+            pair,
+            "let pair = Pair { borrowed, owned }",
+            "pair.borrowed",
+            true,
+        ),
+        (
+            pair,
+            "let pair = Pair { borrowed, owned }",
+            "pair.owned",
+            false,
+        ),
+        (
+            pair,
+            "let pair = Pair { borrowed: loan, owned }",
+            "pair.owned",
+            false,
+        ),
+        (
+            "struct Pair<T, U> { borrowed: T, owned: U }\nstruct Outer<T> { nested: T }",
+            "let pair = Pair { borrowed, owned }; let outer = Outer { nested: pair }; let alias = outer",
+            "alias.nested.borrowed",
+            true,
+        ),
+        (
+            "struct Pair<T, U> { borrowed: T, owned: U }\nfn identity<T>(value: T) -> T { value }",
+            "let pair = Pair { borrowed, owned }",
+            "identity(pair).borrowed",
+            true,
+        ),
+        (
+            "struct Pair<T, U> { borrowed: T, owned: U }\nfn choose_field<T, U>(pair: Pair<T, U>) -> U { pair.owned }",
+            "let pair = Pair { borrowed, owned }",
+            "choose_field(pair)",
+            false,
+        ),
+        (
+            "struct Pair<T, U> { borrowed: T, owned: U }\nfn choose_field<T, U>(pair: Pair<T, U>) -> T { pair.borrowed }",
+            "let pair = Pair { borrowed, owned }",
+            "choose_field(pair)",
+            true,
+        ),
+    ] {
+        let source = format!(
+            "{declarations}\nflow main(loan: &i64) {{
+                let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                let owned = |n: i64| -> i64 {{ n }};
+                {build};
+                let _ = {selected}.promote('flow);
+            }}"
+        );
+        assert_promotion_capture_diagnostic(&source, selected, borrowed);
+    }
+}
+
+#[test]
+fn safe_lifetime_promotion_follows_reached_carrier_payloads() {
+    for (declarations, value, borrowed) in [
+        ("", "option { borrowed }", true),
+        ("", "option { owned }", false),
+        ("", "result { borrowed }", true),
+        ("", "option { try Some(borrowed) }", true),
+        (
+            "fn failure<T>(value: T) -> Result<i64, T> { Err(value) }",
+            "result { let _ = try failure(borrowed); 7i64 }",
+            true,
+        ),
+        (
+            "fn success<T>(value: T) -> Result<T, i64> { Ok(value) }",
+            "result { let _ = try success(borrowed); 7i64 }",
+            false,
+        ),
+        (
+            "fn failure<T>(value: T) -> Result<i64, T> { Err(value) }",
+            "result { let inner = result { let _ = try failure(borrowed); 3i64 }; let _ = inner; let _ = try failure(owned); 7i64 }",
+            false,
+        ),
+    ] {
+        let source = format!(
+            "{declarations}\nflow main(loan: &i64) {{
+                let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                let owned = |n: i64| -> i64 {{ n }};
+                let packed = {value};
+                let _ = packed.promote('flow);
+            }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "packed", borrowed);
+    }
+}
+
+fn assert_promotion_capture_diagnostic(source: &str, receiver: &str, borrowed: bool) {
+    let fixture = fixture(source, None);
+    let error = analyze(&fixture).expect_err("promotion has no executable transfer");
+    let diagnostic = error
+        .source_diagnostic()
+        .unwrap_or_else(|| panic!("{source}: {error:?}"));
+    let (code, span) = if borrowed {
+        ("sema.lifetime.promotion_receiver", receiver.to_owned())
+    } else {
+        (
+            "sema.lifetime.promotion_execution",
+            format!("{receiver}.promote('flow)"),
+        )
+    };
+    assert_eq!(
+        diagnostic.code().unwrap().as_str(),
+        code,
+        "{source}: {error:?}"
+    );
+    assert_eq!(
+        &source[diagnostic.span().unwrap().range().as_range()],
+        span,
+        "{source}"
+    );
+}
+
+#[test]
 fn safe_lifetime_promotion_propagates_only_changed_nominal_storage() {
     use std::fmt::Write as _;
 

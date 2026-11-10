@@ -691,6 +691,18 @@ impl PreparedProjectFieldExpression {
     pub(crate) const fn receiver(&self) -> super::CheckedFieldReceiver {
         self.receiver
     }
+    pub(crate) fn declaration_fields(
+        &self,
+    ) -> impl DoubleEndedIterator<
+        Item = (
+            &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId,
+            u32,
+        ),
+    > {
+        self.fields
+            .iter()
+            .map(|field| (field.nominal.declaration(), field.declaration_ordinal))
+    }
     pub(crate) fn field_type(&self) -> &TypeKind {
         &self
             .fields
@@ -1030,6 +1042,20 @@ impl PreparedExpressionFact {
                 };
                 Some((*lookup_owner, tried.carrier()))
             }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn try_carrier(&self) -> Option<&CheckedTryCarrier> {
+        match self {
+            Self::Complete(value) => match value.resolution() {
+                CheckedExpressionResolution::Try(tried) => Some(tried.carrier()),
+                _ => None,
+            },
+            Self::OwnerBound(value) => match value.resolution() {
+                PreparedOwnerBoundResolution::Try(tried) => Some(tried.carrier()),
+                _ => None,
+            },
             _ => None,
         }
     }

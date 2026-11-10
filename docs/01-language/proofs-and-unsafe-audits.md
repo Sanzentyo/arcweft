@@ -165,8 +165,12 @@ tuple and sequence elements, initialized record fields, and selected
 variant, `Option`, and `Result` constructor payloads. Record shorthand uses
 the checked local binding as its field source. A zero-length array or a
 discarded argument contributes no stored capture.
-For a direct call to a source function, the
-ownership check follows its reachable return values and normal result under
+Field access follows only the selected declaration fields through aliases and
+returned values. A carrier block follows its reachable normal result and
+the payload of each `Result` residual delivered to that block. A `try`
+expression used as a value follows the operand's success payload.
+For a direct call to a source function, the ownership check follows its
+reachable return values and normal result under
 the selected call's type arguments. When the result uses a function value
 from a whole parameter binding, the check follows the expression supplied to
 that parameter in the selected argument group. For recursive calls, the check
