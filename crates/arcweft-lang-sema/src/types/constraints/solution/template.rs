@@ -129,6 +129,19 @@ impl TypeConstraintSolution {
         self.template_projection(None)
             .project_effects(row, under, control)
     }
+
+    /// Invocation rows must already be known. A caller-owned symbolic row
+    /// may survive projection until the enclosing instance is selected.
+    pub(crate) fn apply_call_effects(
+        &self,
+        row: &EffectRow,
+    ) -> Result<EffectRow, TypeInstantiationError> {
+        if !row.is_known() {
+            return Err(crate::effect_row::EffectRowError::UnknownRow.into());
+        }
+        self.apply_effects_under(row, &GenericScope::default(), &mut UnmeteredTypeProjection)
+            .map_err(TypeProjectionError::into_instantiation)
+    }
 }
 
 impl localized::TemplateProjection<'_> {

@@ -1,6 +1,7 @@
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_lang_hir::item::HirItemKind;
 use arcweft_lang_hir::source_index::HirCallableSourceOwner;
+use arcweft_lang_sema::callable::CallableGroupIndex;
 use arcweft_lang_sema::types::{ArrayLength, TypeKind, TypeProjectionError};
 
 use super::*;
@@ -58,7 +59,6 @@ fn instance() -> (RuntimeProjectFunctionInstanceKey, ProjectInstanceNode) {
         ProjectInstanceNode {
             origin: ProjectInstantiationOrigin::Call(owner),
             callable,
-            selection: ProjectInstanceSelection::from_call(&selection),
             solution,
         },
     )
@@ -369,8 +369,8 @@ fn admitted_target_does_not_authorize_an_undiscovered_dependency() {
 #[test]
 fn same_key_requires_equal_closed_evidence_in_both_phases() {
     let (key, node) = instance();
-    let mut conflicting = node.clone();
-    conflicting.selection.effects = EffectSet::from_labels(["fs.read"]).expect("effect identity");
+    let (foreign_key, conflicting) = instance();
+    assert_eq!(foreign_key, key);
     let mut session = ProjectInstantiationSession::new(ProjectInstantiationControl::default());
     session
         .request(key.clone(), node.clone())

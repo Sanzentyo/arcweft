@@ -17,7 +17,7 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use crate::{
     checked_rich_text::CheckedDisplayWitness,
-    effect_row::{EffectRow, EffectRowError, EffectSubstitution},
+    effect_row::EffectRow,
     semantic_coordinate::{
         CheckedBindingCoordinateEvidence, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
         StableCheckedBindingCoordinate, StableCheckedValueCoordinate,
@@ -1238,12 +1238,7 @@ impl FrozenCallTypeSolution {
         &self,
         row: &EffectRow,
     ) -> Result<EffectRow, CallConstraintInvariant> {
-        let substitutions = EffectSubstitution::from_rows(
-            self.solution
-                .effect_bindings()
-                .map(|(parameter, value)| (parameter.value().clone(), value.value().clone())),
-        );
-        row.resolve_partial(&substitutions).map_err(Into::into)
+        self.solution.apply_call_effects(row).map_err(Into::into)
     }
     pub fn deferred(&self) -> &[CheckedDeferredContinuationParameter] {
         &self.deferred
@@ -1310,23 +1305,6 @@ impl FrozenCallTypeSolution {
         ),
     > {
         self.solution.const_bindings()
-    }
-
-    /// Closes one checked callable effect row through the same frozen
-    /// application substitution that owns generic type/const instantiation.
-    /// Runtime consumers must use this boundary instead of copying the
-    /// application execution-fold row or inferring effects from an operation
-    /// variant.
-    pub fn instantiate_effect_row(
-        &self,
-        row: &EffectRow,
-    ) -> Result<crate::effects::EffectSet, EffectRowError> {
-        let substitutions = EffectSubstitution::from_rows(
-            self.solution
-                .effect_bindings()
-                .map(|(parameter, value)| (parameter.value().clone(), value.value().clone())),
-        );
-        row.resolve(&substitutions)
     }
 
     /// Returns whether every type/const parameter required by later callable

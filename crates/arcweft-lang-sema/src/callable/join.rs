@@ -218,7 +218,6 @@ pub struct CheckedProjectFunctionRuntimeSelection {
     function_type: TypeKind,
     callable_type: TypeKind,
     current_group_materialization: Box<[CheckedProjectFunctionParameterMaterialization]>,
-    effects: crate::effects::EffectSet,
     input: CheckedProjectFunctionRuntimeInput,
     outcome: CheckedProjectFunctionRuntimeOutcome,
 }
@@ -233,11 +232,7 @@ pub struct CheckedProjectFunctionRuntimeSelection {
 /// fabricating a call solution or adopting types from the runtime ingress.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectFunctionRootRuntimeSelection {
-    declaration: CallableDeclarationKey,
-    group: CallableGroupIndex,
     solution: CheckedProjectFunctionInstanceSolution,
-    function_type: TypeKind,
-    effects: crate::effects::EffectSet,
 }
 
 /// Flat, sealed declaration environment for one closed project-function
@@ -247,13 +242,50 @@ pub struct CheckedProjectFunctionRootRuntimeSelection {
 pub struct CheckedProjectFunctionInstanceSolution {
     authority: CheckedCallableAuthorityLease,
     declaration: CallableDeclarationKey,
+    group: CallableGroupIndex,
     solution: Arc<ClosedTypeInstantiation>,
     instantiation: CallableInstantiationDigest,
     function_type: TypeKind,
     callable_type: TypeKind,
+    effects: crate::effects::EffectSet,
 }
 
 impl CheckedProjectFunctionInstanceSolution {
+    fn seal(
+        authority: CheckedCallableAuthorityLease,
+        declaration: CallableDeclarationKey,
+        group: CallableGroupIndex,
+        solution: ClosedTypeInstantiation,
+        instantiation: CallableInstantiationDigest,
+        callable_type: TypeKind,
+    ) -> Result<Self, CheckedProjectFunctionRuntimeSelectionError> {
+        let function_type = specialization::group_type(&callable_type, group)?.clone();
+        let TypeKind::Function { effects, .. } = &function_type else {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
+        };
+        let effects = effects
+            .resolve(&EffectSubstitution::new())
+            .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
+        Ok(Self {
+            authority,
+            declaration,
+            group,
+            solution: Arc::new(solution),
+            instantiation,
+            function_type,
+            callable_type,
+            effects,
+        })
+    }
+
+    pub const fn group(&self) -> CallableGroupIndex {
+        self.group
+    }
+
+    pub const fn effects(&self) -> &crate::effects::EffectSet {
+        &self.effects
+    }
+
     pub(crate) fn validate_authority(
         &self,
         catalog: &CheckedCallableCatalog,
@@ -473,19 +505,8 @@ impl CheckedProjectFunctionRuntimeSelection {
             .last()
             .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?
             .index();
-        let solution = self.close_environment_with_control(terminal, enclosing, control)?;
-        let TypeKind::Function { effects, .. } = solution.function_type() else {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
-        };
-        let effects = effects
-            .resolve(&EffectSubstitution::new())
-            .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
         Ok(Some(CheckedProjectFunctionRootRuntimeSelection {
-            declaration: self.declaration.clone(),
-            group: terminal,
-            function_type: solution.function_type().clone(),
-            solution,
-            effects,
+            solution: self.close_environment_with_control(terminal, enclosing, control)?,
         }))
     }
 
@@ -509,7 +530,6 @@ impl CheckedProjectFunctionRuntimeSelection {
         // Body instances use the arrow in their complete closed declaration
         // chain. The selected input arrow may still be a residual scheme even
         // after the same solution has closed the body.
-        let function_type = specialization::group_type(&callable_type, group)?.clone();
         let instantiation = callable_instantiation_digest_from_bindings(
             &self.base_instantiation,
             solution.type_bindings(),
@@ -526,14 +546,14 @@ impl CheckedProjectFunctionRuntimeSelection {
                 CheckedProjectFunctionRuntimeSelectionError::InstantiationTranscript.into()
             }
         })?;
-        Ok(CheckedProjectFunctionInstanceSolution {
-            authority: self.authority.clone(),
-            declaration: self.declaration.clone(),
-            solution: Arc::new(solution),
+        Ok(CheckedProjectFunctionInstanceSolution::seal(
+            self.authority.clone(),
+            self.declaration.clone(),
+            group,
+            solution,
             instantiation,
-            function_type,
             callable_type,
-        })
+        )?)
     }
 
     pub const fn solution(&self) -> &Arc<FrozenCallTypeSolution> {
@@ -551,10 +571,6 @@ impl CheckedProjectFunctionRuntimeSelection {
         &self,
     ) -> &[CheckedProjectFunctionParameterMaterialization] {
         &self.current_group_materialization
-    }
-
-    pub const fn effects(&self) -> &crate::effects::EffectSet {
-        &self.effects
     }
 
     pub const fn input(&self) -> &CheckedProjectFunctionRuntimeInput {
@@ -578,11 +594,11 @@ pub enum CheckedProjectFunctionInstanceProjectionError<E: std::error::Error + 's
 
 impl CheckedProjectFunctionRootRuntimeSelection {
     pub const fn declaration(&self) -> &CallableDeclarationKey {
-        &self.declaration
+        self.solution.declaration()
     }
 
     pub const fn group(&self) -> CallableGroupIndex {
-        self.group
+        self.solution.group()
     }
 
     pub const fn solution(&self) -> &CheckedProjectFunctionInstanceSolution {
@@ -590,11 +606,11 @@ impl CheckedProjectFunctionRootRuntimeSelection {
     }
 
     pub const fn function_type(&self) -> &TypeKind {
-        &self.function_type
+        self.solution.function_type()
     }
 
     pub const fn effects(&self) -> &crate::effects::EffectSet {
-        &self.effects
+        self.solution.effects()
     }
 }
 
@@ -692,10 +708,6 @@ pub(crate) fn select_project_function_root_runtime(
     if checked.attached_content().is_some() {
         return Err(CheckedProjectFunctionRuntimeSelectionError::RootAttachedContent);
     }
-    let effects = checked
-        .exposed_row()
-        .resolve(&EffectSubstitution::new())
-        .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
     let parameters = group
         .parameters()
         .iter()
@@ -711,19 +723,17 @@ pub(crate) fn select_project_function_root_runtime(
         TypeKind::function_with_effects(parameters, result, checked.exposed_row().clone());
     let instantiation = empty_callable_instantiation_digest()
         .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InstantiationTranscript)?;
+    let solution = ClosedTypeInstantiation::default();
+    let callable_type = solution.instantiate_type(&function_type)?;
     Ok(CheckedProjectFunctionRootRuntimeSelection {
-        declaration: declaration.clone(),
-        group: group.index(),
-        solution: CheckedProjectFunctionInstanceSolution {
-            authority: catalog.authority_lease(),
-            declaration: declaration.clone(),
-            solution: Arc::new(ClosedTypeInstantiation::default()),
+        solution: CheckedProjectFunctionInstanceSolution::seal(
+            catalog.authority_lease(),
+            declaration.clone(),
+            group.index(),
+            solution,
             instantiation,
-            function_type: ClosedTypeInstantiation::default().instantiate_type(&function_type)?,
-            callable_type: ClosedTypeInstantiation::default().instantiate_type(&function_type)?,
-        },
-        function_type,
-        effects,
+            callable_type,
+        )?,
     })
 }
 
@@ -838,9 +848,6 @@ pub(crate) fn select_project_function_runtime(
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
         }
     };
-    let effects = solution
-        .instantiate_effect_row(join.schema_effects())
-        .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
     let current_group_materialization = checked_project_function_parameter_materialization(
         application,
         checked,
@@ -862,7 +869,6 @@ pub(crate) fn select_project_function_runtime(
         function_type,
         callable_type,
         current_group_materialization,
-        effects,
         input,
         outcome,
     }))

@@ -1619,11 +1619,10 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(|error| {
                             FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error))
                         })?;
-                let effects = application
-                    .core()
-                    .solution()
-                    .instantiate_effect_row(join.schema_effects())
-                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let effects = join
+                    .effects()
+                    .closed_value()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 (
                     CheckedDialogueEffectOperation::EvaluatedEffect(Box::new(effect)),
                     effects,
@@ -1660,11 +1659,10 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(|error| {
                             FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error))
                         })?;
-                let effects = application
-                    .core()
-                    .solution()
-                    .instantiate_effect_row(join.schema_effects())
-                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let effects = join
+                    .effects()
+                    .closed_value()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 (
                     CheckedDialogueEffectOperation::Call {
                         application: application.core().application_site().clone(),

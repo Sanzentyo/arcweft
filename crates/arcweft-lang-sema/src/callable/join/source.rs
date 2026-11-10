@@ -10,9 +10,8 @@ use super::{
     CheckedCallableFacts, CheckedFunctionExecution, CheckedProjectFunctionInstanceProjectionError,
     CheckedProjectFunctionInstanceSolution, CheckedProjectFunctionRootRuntimeSelection,
     CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
-    CheckedProjectFunctionRuntimeSelectionError, ClosedTypeInstantiation, EffectSubstitution,
-    FrozenCallTypeSolution, ResolvedCallableBaseInstantiation,
-    callable_instantiation_digest_from_bindings,
+    CheckedProjectFunctionRuntimeSelectionError, ClosedTypeInstantiation, FrozenCallTypeSolution,
+    ResolvedCallableBaseInstantiation, callable_instantiation_digest_from_bindings,
 };
 use crate::{
     callable::{CheckedCallableAttachedContentParameter, CheckedFunctionSpecialization},
@@ -497,13 +496,6 @@ impl CheckedProjectFunctionCallableSource {
             &declared_function_type(&self.checked, CallableGroupIndex::ZERO)?,
             control,
         )?;
-        let function_type = super::specialization::group_type(&callable_type, terminal)?.clone();
-        let TypeKind::Function { effects, .. } = &function_type else {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
-        };
-        let effects = effects
-            .resolve(&EffectSubstitution::new())
-            .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
         let empty = ClosedTypeInstantiation::default();
         let caller = self.caller().unwrap_or(&empty);
         let instantiation = callable_instantiation_digest_from_bindings(
@@ -523,18 +515,14 @@ impl CheckedProjectFunctionCallableSource {
             }
         })?;
         Ok(CheckedProjectFunctionRootRuntimeSelection {
-            declaration: self.declaration.clone(),
-            group: terminal,
-            function_type: function_type.clone(),
-            effects,
-            solution: CheckedProjectFunctionInstanceSolution {
-                authority: self.authority.clone(),
-                declaration: self.declaration.clone(),
-                solution: Arc::new(body),
+            solution: CheckedProjectFunctionInstanceSolution::seal(
+                self.authority.clone(),
+                self.declaration.clone(),
+                terminal,
+                body,
                 instantiation,
-                function_type,
                 callable_type,
-            },
+            )?,
         })
     }
 }

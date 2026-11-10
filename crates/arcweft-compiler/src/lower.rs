@@ -41,7 +41,7 @@ mod variants;
 use evaluated_effects::{runtime_evaluated_effect, runtime_evaluated_effect_under};
 use project_instances::{
     DiscoveredProjectInstances, ProjectInstanceNode, ProjectInstanceProjection,
-    ProjectInstanceSelection, ProjectInstanceTypes, ProjectInstantiationSession,
+    ProjectInstanceTypes, ProjectInstantiationSession,
 };
 pub use project_instances::{
     ProjectInstantiationControl, ProjectInstantiationError, ProjectInstantiationLimitKind,
@@ -6780,7 +6780,6 @@ fn runtime_project_function_roots(
                 origin,
                 key.clone(),
                 callable,
-                ProjectInstanceSelection::from_root(&selection),
                 selection.solution().clone(),
                 instances,
             )?;
@@ -7521,7 +7520,6 @@ fn runtime_project_function_projection(
                 ProjectInstantiationOrigin::Call(owner),
                 key.clone(),
                 callable.clone(),
-                ProjectInstanceSelection::from_call(selection),
                 instance_solution,
                 project_function_instances,
             )?;
@@ -7685,14 +7683,12 @@ fn ensure_runtime_project_function_instance(
     origin: ProjectInstantiationOrigin,
     key: RuntimeProjectFunctionInstanceKey,
     callable: RuntimeProjectCallable,
-    selection: ProjectInstanceSelection,
     instance_solution: CheckedProjectFunctionInstanceSolution,
     instances: &mut ProjectInstanceProjection<'_>,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     let node = ProjectInstanceNode {
         origin,
         callable,
-        selection,
         solution: instance_solution,
     };
     instances.request(key, node)?;
@@ -7840,7 +7836,6 @@ fn discover_runtime_project_executable_dependencies(
                         ProjectInstantiationOrigin::Call(owner),
                         key,
                         callable,
-                        ProjectInstanceSelection::from_call(&selection),
                         solution,
                         instances,
                     )?;
@@ -7916,7 +7911,6 @@ fn materialize_runtime_project_function_instances(
             node.origin,
             key.clone(),
             node.callable.clone(),
-            &node.selection,
             instances.types(node),
             project,
             symbols,
@@ -7943,7 +7937,6 @@ fn build_runtime_project_function_instance(
     origin: ProjectInstantiationOrigin,
     key: RuntimeProjectFunctionInstanceKey,
     callable: RuntimeProjectCallable,
-    selection: &ProjectInstanceSelection,
     instance_solution: ProjectInstanceTypes<'_>,
     project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
@@ -7967,9 +7960,13 @@ fn build_runtime_project_function_instance(
             "project-function instance owner is not an ordinary Function",
         ));
     };
+    let closed_instance = instance_solution
+        .function_solution()
+        .ok_or_else(|| error("ordinary function has no frozen solution"))?;
+    let completed_group = closed_instance.group();
     function
         .parameter_groups()
-        .get(selection.group.get())
+        .get(completed_group.get())
         .ok_or_else(|| error("project-function instance group is absent"))?;
     let definition_source = arcweft_lang_sema::final_analysis::CheckedExecutionSource::InvokeBody(
         arcweft_lang_sema::final_analysis::CheckedExecutionBodyOwner::Declaration {
@@ -7983,9 +7980,7 @@ fn build_runtime_project_function_instance(
             symbols,
             definition_source.clone(),
             Some(CheckedLocalUseInstantiation::ProjectFunction(
-                instance_solution
-                    .function_solution()
-                    .ok_or_else(|| error("ordinary function has no frozen solution"))?,
+                closed_instance,
             )),
         )
         .map_err(|reason| error(&reason.to_string()))?;
@@ -8000,7 +7995,7 @@ fn build_runtime_project_function_instance(
         .parameter_groups()
         .iter()
         .enumerate()
-        .take(selection.group.get() + 1)
+        .take(completed_group.get() + 1)
     {
         let group_coordinate =
             arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(group_index)
@@ -8008,7 +8003,7 @@ fn build_runtime_project_function_instance(
         for (position, parameter) in group.parameters().iter().enumerate() {
             let parameter_coordinate = u32::try_from(position)
                 .map_err(|_| error("project-function parameter ABI exceeds u32"))?;
-            let source = if group_coordinate == selection.group {
+            let source = if group_coordinate == completed_group {
                 RuntimeProjectFunctionParameterSource::CurrentGroup {
                     position: parameter_coordinate,
                 }
@@ -8082,10 +8077,10 @@ fn build_runtime_project_function_instance(
     };
     let checked_callable = analysis
         .checked_callables()
-        .project_callable(&selection.declaration)
+        .project_callable(closed_instance.declaration())
         .map_err(|_| error("project-function owner has no checked callable role"))?;
     let execution = match checked_callable
-        .ordinary_function_emission_with_effects(&selection.effects)
+        .ordinary_function_emission_with_effects(closed_instance.effects())
         .ok_or_else(|| error("project-function owner has no ordinary emission role"))?
     {
         CheckedOrdinaryFunctionEmission::ExpressionFunctionSite => {
@@ -8104,7 +8099,6 @@ fn build_runtime_project_function_instance(
     let attached_default = runtime_project_attached_default(
         origin,
         &callable,
-        selection,
         instance_solution,
         &parameters,
         project,
@@ -8137,7 +8131,7 @@ fn build_runtime_project_function_instance(
         execution,
         function_type,
         parameters.into_boxed_slice(),
-        selection.effects.iter().cloned().collect(),
+        closed_instance.effects().iter().cloned().collect(),
         attached_default,
         body,
         semantics,
@@ -9248,7 +9242,6 @@ fn runtime_closure_instance_fact(
 fn runtime_project_attached_default(
     origin: ProjectInstantiationOrigin,
     callable: &RuntimeProjectCallable,
-    selection: &ProjectInstanceSelection,
     instance_solution: ProjectInstanceTypes<'_>,
     parameters: &[RuntimeProjectFunctionParameterAbi],
     project: HirAnalysisProjectView<'_>,
@@ -9258,7 +9251,7 @@ fn runtime_project_attached_default(
 ) -> Result<Option<RuntimeProjectAttachedDefaultFunctionFact>, RuntimeSemanticProjectionError> {
     let checked = analysis
         .checked_callables()
-        .project_callable(&selection.declaration)
+        .project_callable(callable.declaration())
         .map_err(|error| {
             origin.error(format!(
                 "project attached default has no checked callable: {error:?}"

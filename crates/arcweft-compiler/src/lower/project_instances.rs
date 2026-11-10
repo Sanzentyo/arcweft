@@ -7,12 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, atomic::AtomicBool};
 
 use arcweft_lang_hir::identity::{ExprId, ItemId};
-use arcweft_lang_hir::symbol::CallableDeclarationKey;
 use arcweft_lang_sema::callable::{
-    CallableGroupIndex, CheckedProjectFunctionInstanceSolution,
-    CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeSelection,
+    CheckedProjectFunctionInstanceSolution, CheckedProjectFunctionRuntimeSelection,
 };
-use arcweft_lang_sema::effects::EffectSet;
 use arcweft_runtime_plan::semantic_facts::{
     RuntimeProjectCallable, RuntimeProjectFunctionInstanceKey,
 };
@@ -197,34 +194,7 @@ pub enum ProjectInstantiationError {
 pub(super) struct ProjectInstanceNode {
     pub(super) origin: ProjectInstantiationOrigin,
     pub(super) callable: RuntimeProjectCallable,
-    pub(super) selection: ProjectInstanceSelection,
     pub(super) solution: CheckedProjectFunctionInstanceSolution,
-}
-
-#[derive(Eq, PartialEq)]
-#[cfg_attr(test, derive(Clone))]
-pub(super) struct ProjectInstanceSelection {
-    pub(super) declaration: CallableDeclarationKey,
-    pub(super) group: CallableGroupIndex,
-    pub(super) effects: EffectSet,
-}
-
-impl ProjectInstanceSelection {
-    pub(super) fn from_call(selection: &CheckedProjectFunctionRuntimeSelection) -> Self {
-        Self {
-            declaration: selection.declaration().clone(),
-            group: selection.group(),
-            effects: selection.effects().clone(),
-        }
-    }
-
-    pub(super) fn from_root(selection: &CheckedProjectFunctionRootRuntimeSelection) -> Self {
-        Self {
-            declaration: selection.declaration().clone(),
-            group: selection.group(),
-            effects: selection.effects().clone(),
-        }
-    }
 }
 
 pub(super) struct ProjectInstantiationSession {
@@ -456,9 +426,9 @@ impl ProjectInstanceNode {
         key: &RuntimeProjectFunctionInstanceKey,
     ) -> Result<(), ProjectInstantiationError> {
         if key.callable() != self.callable.runtime()
-            || key.group() != self.selection.group
+            || key.group() != self.solution.group()
             || key.instantiation() != self.solution.instantiation()
-            || &self.selection.declaration != self.callable.declaration()
+            || self.solution.declaration() != self.callable.declaration()
         {
             return Err(ProjectInstantiationError::InvalidInstanceKey {
                 origin: self.origin,
@@ -473,10 +443,7 @@ impl ProjectInstanceNode {
         key: &RuntimeProjectFunctionInstanceKey,
         other: &Self,
     ) -> Result<(), ProjectInstantiationError> {
-        if self.callable != other.callable
-            || self.selection != other.selection
-            || self.solution != other.solution
-        {
+        if self.callable != other.callable || self.solution != other.solution {
             return Err(ProjectInstantiationError::ConflictingInstance {
                 origin: other.origin,
                 key: key.clone(),

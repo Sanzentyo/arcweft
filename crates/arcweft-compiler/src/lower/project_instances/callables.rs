@@ -20,7 +20,7 @@ use super::super::*;
 use super::ProjectInstantiationOrigin;
 use super::{
     DiscoveredProjectInstances, ProjectInstanceNode, ProjectInstanceProjection,
-    ProjectInstanceSelection, ProjectInstantiationError, ProjectInstantiationSession,
+    ProjectInstantiationError, ProjectInstantiationSession,
 };
 
 /// The owner is scoped before use; the same HIR expression in two closed
@@ -298,7 +298,6 @@ impl ProjectInstanceProjection<'_> {
                 ProjectInstanceNode {
                     origin,
                     callable,
-                    selection: ProjectInstanceSelection::from_root(closed),
                     solution,
                 },
             )?;
@@ -557,7 +556,6 @@ impl ProjectInstantiationSession {
                         ProjectInstanceNode {
                             origin: demand.origin,
                             callable: source.fact.callable().clone(),
-                            selection: ProjectInstanceSelection::from_root(closed),
                             solution,
                         },
                     )?;

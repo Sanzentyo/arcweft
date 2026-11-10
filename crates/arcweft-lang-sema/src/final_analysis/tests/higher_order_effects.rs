@@ -121,6 +121,58 @@ fn rejects() { pure(left); }
 }
 
 #[test]
+fn recursive_callback_rows_close_in_the_callers_instance() {
+    let fixture = fixture(
+        r#"
+fn report(value: i64) -> i64 { log.info("report"); value }
+fn increment(value: i64) -> i64 effects { fs.read } { value + 1i64 }
+fn swap(first: i64 -> i64, second: i64 -> i64, remaining: i64) -> i64 {
+    if remaining == 0i64 { first(41i64) } else { swap(second, first, remaining - 1i64) }
+}
+flow main() -> i64 { return swap(report, increment, 1i64) }
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("recursive callback application retains caller rows");
+    let calls = project_applications(&analysis, "swap");
+    assert_eq!(calls.len(), 2);
+    let (entry, _) = calls
+        .iter()
+        .find(|(_, call)| call.core().effects().is_closed())
+        .copied()
+        .expect("the external application has a closed source row");
+    let (recursive, call) = calls
+        .into_iter()
+        .find(|(owner, _)| *owner != entry)
+        .unwrap();
+    assert_eq!(call.core().effects().variables().unwrap().count(), 2);
+    let entry = analysis.project_function_runtime(entry).unwrap().unwrap();
+    let caller = entry.close_instance(None).unwrap();
+    let recursive = analysis
+        .project_function_runtime(recursive)
+        .unwrap()
+        .unwrap();
+    let callee = recursive.close_instance(Some(&caller)).unwrap();
+    assert_eq!(caller.effects().to_labels(), ["fs.read", "log.write"]);
+    assert_eq!(callee.effects(), caller.effects());
+    let TypeKind::Function { params, .. } = callee.function_type() else {
+        panic!("closed callee arrow");
+    };
+    let [
+        TypeKind::Function { effects: first, .. },
+        TypeKind::Function {
+            effects: second, ..
+        },
+        TypeKind::I64,
+    ] = params.as_slice()
+    else {
+        panic!("two independently substituted callback parameters");
+    };
+    assert_eq!(first.closed_value().unwrap().to_labels(), ["fs.read"]);
+    assert_eq!(second.closed_value().unwrap().to_labels(), ["log.write"]);
+}
+
+#[test]
 fn inferred_prefix_preserves_body_effects_and_aliases_in_either_source_order() {
     let declarations = concat!(
         "fn staged(first: i64)(second: i64) -> i64 { read(first + second) }\n",
@@ -333,7 +385,7 @@ flow main() -> i64 { return ignore(|value: i64| writer(value), 42i64) }
         .project_function_runtime(*owner)
         .expect("parameter ABI projection")
         .expect("project function");
-    assert!(selection.effects().is_empty());
+    assert!(selection.close_instance(None).unwrap().effects().is_empty());
     let callback = &selection.current_group_materialization()[0];
     let TypeKind::Function { effects, .. } = callback.abi_type() else {
         panic!("callback ABI")
@@ -373,12 +425,12 @@ flow main() -> i64 {
     assert_eq!(calls.len(), 2);
     let mut produced = None;
     let mut consumed = None;
-    for (owner, _) in calls {
+    for (owner, application) in calls {
         let selection = analysis
             .project_function_runtime(owner)
             .expect("prefix ABI projection")
             .expect("project function");
-        assert!(selection.effects().is_empty());
+        assert!(application.core().effects().is_empty());
         if let CheckedProjectFunctionRuntimeInput::Continuation { abi } = selection.input() {
             consumed = Some(abi.clone());
         }

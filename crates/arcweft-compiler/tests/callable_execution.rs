@@ -1205,6 +1205,20 @@ flow main() -> i64 { return repeat(42i64, 3i64) }
 );
 
 callable_case!(
+    recursive_callbacks_keep_independent_effects,
+    r#"
+fn report(value: i64) -> i64 { log.info("report"); value }
+fn increment(value: i64) -> i64 effects { fs.read } { value + 1i64 }
+fn swap(first: i64 -> i64, second: i64 -> i64, remaining: i64) -> i64 {
+    if remaining == 0i64 { first(41i64) } else { swap(second, first, remaining - 1i64) }
+}
+flow main() -> i64 { return swap(report, increment, 3i64) }
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     mutually_recursive_generics_execute_for_distinct_types,
     r#"
 fn forward<Left>(value: Left, remaining: i64) -> Left {

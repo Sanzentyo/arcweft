@@ -12,7 +12,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::{
-    effect_row::{EffectRow, EffectSubstitution},
+    effect_row::EffectRow,
     types::{TypeKind, constraints::TypeConstraintSolution},
 };
 
@@ -44,12 +44,7 @@ pub(crate) struct PreparedCallableEffectProjection {
 
 impl PreparedCallableEffectProjection {
     pub(crate) fn specialize(&self, row: &EffectRow) -> Result<EffectRow, CallConstraintInvariant> {
-        let substitutions = EffectSubstitution::from_rows(
-            self.solution
-                .effect_bindings()
-                .map(|(parameter, value)| (parameter.value().clone(), value.value().clone())),
-        );
-        row.resolve_partial(&substitutions).map_err(Into::into)
+        self.solution.apply_call_effects(row).map_err(Into::into)
     }
 }
 
