@@ -1318,7 +1318,7 @@ impl PreparedExpressionFact {
     pub(crate) const fn effects(&self) -> &EffectSet {
         match self {
             Self::Complete(value) => value.effects(),
-            Self::OwnerBound(value) => value.shell().effects(),
+            Self::OwnerBound(value) => value.effects(),
             Self::CompileTimeScalar(value) => value.shell().effects(),
             Self::DialogueApplication(value) => value.shell().effects(),
             Self::ContentApplication(value) => value.shell().effects(),
