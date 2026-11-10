@@ -16470,3 +16470,5 @@ Compiler の回帰テストでは、共有 prefix を一度評価し、100 msの
 Sema と Compiler の推移的逆依存は、Cargo tree の既定・全 feature・全ターゲットと Windows の Cargo metadata で22パッケージに一致した。nextest は 3,925 件成功、0 件失敗、1 件スキップ。対象実行の Compiler 待機22件を集計に再利用した。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest、Web Player の Wasm check が通過した。Clippy には警告がある。
 
 [ソース照合、実入力、途中の失敗、全コマンドの原本](acceptance-evidence/task-shared-prefix-callback-effects.raw.zip)は161件、1591241 bytes、SHA-256 67048773f2eaf731a7ac96241575e0cb44569dc6f55193bb6031ac5d02c8da89。
+
+2026-11-11、公開済みの `main`（b3eaab4cea7bd725ffcbd0937de22e74f0f04b9f、追跡対象の差分0件）で、ユーザーの指定によりワークスペース全体に `cargo clean` を実行した。終了0で35,912ファイル（Cargo 報告96.6 GiB）を削除し、直後に `target` が消えた。D: の空きは326.36 GiBから419.58 GiBに増えた。空の出力先から `cargo nextest list --locked -p arcweft-compiler --test flow_wait -E 'test(=shared_prefix_restores_independent_callback_effects_in_an_attached_default)'` で選択を確認し、同じ指定の `cargo nextest run` を `--no-tests fail` 付きで実行した。1件成功、0件失敗、フィルター対象外21件。実行 ID は `cde0cbec-906e-4a3d-b764-3a134c874ca6`。再ビルドではコンパイル警告が出た。
