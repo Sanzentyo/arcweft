@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::entry::schema::value_budget::ValidationWork;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableInputSource,
@@ -60,6 +61,14 @@ pub type RuntimeCallableStateSeed = RuntimeCallableStateDefinition<
     RuntimeCallableStateSeedId,
 >;
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct PartialApplication {
+    owner: Option<RuntimePlanTypeId>,
+    source: RuntimePlanTypeId,
+    result: RuntimePlanTypeId,
+    arguments: usize,
+}
+
 /// Construction owns interning and the finite set of checked partial-arrow
 /// demands. The final program contains only the admitted state table.
 #[derive(Debug, Default)]
@@ -68,7 +77,7 @@ pub(super) struct RuntimeCallableStateBuilder {
     // definition. Snapshots share that actual payload, not a cloned graph.
     pub(super) states: Vec<Option<Arc<RuntimeCallableState>>>,
     initial: BTreeMap<(RuntimeFunctionSiteId, RuntimePlanTypeId), RuntimeCallableStateId>,
-    partials: BTreeSet<(RuntimePlanTypeId, RuntimePlanTypeId, usize)>,
+    partials: BTreeSet<PartialApplication>,
     source_complete: bool,
 }
 
@@ -115,6 +124,7 @@ impl RuntimeCallableStateBuilder {
 
     pub(super) fn request_partial(
         &mut self,
+        owner: Option<RuntimePlanTypeId>,
         source: RuntimePlanTypeId,
         result: RuntimePlanTypeId,
         arguments: usize,
@@ -130,20 +140,12 @@ impl RuntimeCallableStateBuilder {
                 {
                     continue;
                 }
-                let declared = row.partials.iter().any(|partial| {
-                    partial.parameters.len() == arguments
-                        && partial
-                            .parameters
-                            .iter()
-                            .copied()
-                            .eq(row.parameters[..arguments]
-                                .iter()
-                                .map(|input| input.coordinate))
-                        && self.states[partial.state.index()]
-                            .as_ref()
-                            .is_some_and(|target| target.function_type == result)
-                });
-                if !declared {
+                if row
+                    .positional_partial(arguments)
+                    .and_then(|partial| self.states.get(partial.state.index()))
+                    .and_then(Option::as_ref)
+                    .is_none_or(|target| target.function_type != result)
+                {
                     return Err(RuntimePlanBuildError::MissingSourceCallablePartial {
                         state: RuntimeCallableStateId::for_index(index)
                             .expect("reserved source state"),
@@ -152,9 +154,13 @@ impl RuntimeCallableStateBuilder {
                     });
                 }
             }
-            return Ok(());
         }
-        self.partials.insert((source, result, arguments));
+        self.partials.insert(PartialApplication {
+            owner,
+            source,
+            result,
+            arguments,
+        });
         Ok(())
     }
 
@@ -181,11 +187,17 @@ impl RuntimeCallableStateBuilder {
 
     /// Makes all checked partial requests concrete before publication. No body
     /// target is discovered here: every state refers to a pre-reserved site.
-    pub(super) fn seal(&mut self) -> Result<(), RuntimePlanBuildError> {
-        if self.source_complete || self.partials.is_empty() {
+    pub(super) fn seal(
+        &mut self,
+        builder: &mut RuntimePlanBuilder,
+        executable_rows: &mut u32,
+        maximum_rows: u32,
+    ) -> Result<(), RuntimePlanBuildError> {
+        if self.partials.is_empty() {
             return Ok(());
         }
         let demands = self.partials.iter().copied().collect::<Vec<_>>();
+        let mut work = ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default());
         let mut index = 0;
         while index < self.states.len() {
             let Some(source) = self.states[index].clone() else {
@@ -193,18 +205,83 @@ impl RuntimeCallableStateBuilder {
                 continue;
             };
             let mut partials = Vec::new();
-            for &(_, function_type, count) in demands
-                .iter()
-                .filter(|(ty, _, _)| *ty == source.function_type)
-            {
+            let mut sealed = BTreeMap::new();
+            for &demand in &demands {
+                let count = demand.arguments;
+                work.charge(0)
+                    .map_err(RuntimePlanBuildError::CallableOperandType)?;
                 let arrow_arity = source.parameters.len()
                     + usize::from(!matches!(
                         source.attached,
                         RuntimeCallableAttachedContract::None
                     ));
-                if count == 0 || count >= arrow_arity || count > source.parameters.len() {
+                if count == 0
+                    || count >= arrow_arity
+                    || count > source.parameters.len()
+                    || !builder.partial_arrow_accepts(
+                        demand.owner,
+                        demand.source,
+                        source.function_type,
+                        &work,
+                    )?
+                {
                     continue;
                 }
+                let declared = source
+                    .positional_partial(count)
+                    .map(|partial| {
+                        self.states
+                            .get(partial.state.index())
+                            .and_then(Option::as_ref)
+                            .map(|target| target.function_type)
+                            .ok_or(RuntimePlanBuildError::UnknownCallableState {
+                                state: partial.state,
+                            })
+                    })
+                    .transpose()?;
+                if let Some(target_type) = declared.or_else(|| sealed.get(&count).copied()) {
+                    if !builder.partial_arrow_accepts(
+                        demand.owner,
+                        demand.result,
+                        target_type,
+                        &work,
+                    )? {
+                        return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "partial application target arrow",
+                        });
+                    }
+                    continue;
+                }
+                if self.source_complete {
+                    return Err(RuntimePlanBuildError::MissingSourceCallablePartial {
+                        state: RuntimeCallableStateId::for_index(index)
+                            .expect("reserved callable state"),
+                        result: demand.result,
+                        arguments: count,
+                    });
+                }
+                let function_type = if source.function_type == demand.source {
+                    demand.result
+                } else {
+                    builder.intern_partial_arrow(
+                        source.function_type,
+                        count,
+                        executable_rows,
+                        maximum_rows,
+                        &mut work,
+                    )?
+                };
+                if !builder.partial_arrow_accepts(
+                    demand.owner,
+                    demand.result,
+                    function_type,
+                    &work,
+                )? {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "partial application target arrow",
+                    });
+                }
+                sealed.insert(count, function_type);
                 let retained_count = source.retained.len();
                 let remap = |input| match input {
                     RuntimeCallableInputSource::Argument { position }
@@ -354,6 +431,104 @@ impl RuntimeCallableStateBuilder {
 }
 
 impl RuntimePlanBuilder {
+    fn partial_arrow_accepts(
+        &self,
+        owner: Option<RuntimePlanTypeId>,
+        expected: RuntimePlanTypeId,
+        actual: RuntimePlanTypeId,
+        work: &ValidationWork,
+    ) -> Result<bool, RuntimePlanBuildError> {
+        if expected == actual {
+            return Ok(true);
+        }
+        let authority = crate::plan::PlanValueAuthority::Building {
+            types: &self.types,
+            records: &self.nominal_record_domains,
+            variants: &self.variant_domains,
+        };
+        crate::program_types::callable_operand_accepts(&authority, owner, expected, actual, work)
+            .map_err(RuntimePlanBuildError::CallableOperandType)
+    }
+
+    fn intern_partial_arrow(
+        &mut self,
+        source: RuntimePlanTypeId,
+        arguments: usize,
+        executable_rows: &mut u32,
+        maximum_rows: u32,
+        work: &mut ValidationWork,
+    ) -> Result<RuntimePlanTypeId, RuntimePlanBuildError> {
+        use crate::plan::{RuntimePlanTypeProjection::Function, RuntimePlanTypeSeed};
+        let invalid = || RuntimePlanBuildError::InvalidProjectCallAbi {
+            context: "partial application source arrow",
+        };
+        let source = self.types.get(source).ok_or_else(invalid)?;
+        let Function {
+            contract,
+            parameters,
+            result,
+        } = source.projection()
+        else {
+            return Err(invalid());
+        };
+        let remaining = parameters.get(arguments..).ok_or_else(invalid)?;
+        let types = u64::try_from(self.types.len())
+            .map_err(|_| RuntimePlanBuildError::ExecutableInventoryArithmeticOverflow)?;
+        work.charge_atoms(types, 0)
+            .map_err(RuntimePlanBuildError::CallableOperandType)?;
+        if let Some(existing) =
+            self.types
+                .find_function_projection(source.scope(), contract, remaining, *result)
+        {
+            return Ok(existing);
+        }
+        let actual = executable_rows
+            .checked_add(1)
+            .ok_or(RuntimePlanBuildError::ExecutableInventoryArithmeticOverflow)?;
+        if actual > maximum_rows {
+            return Err(RuntimePlanBuildError::ExecutableInventoryRowsLimit {
+                actual,
+                maximum: maximum_rows,
+            });
+        }
+        let semantic = |id| {
+            self.types
+                .get(id)
+                .map(crate::plan::RuntimePlanTypeDeclaration::semantic_identity)
+                .ok_or_else(invalid)
+        };
+        let remaining = remaining
+            .iter()
+            .copied()
+            .map(semantic)
+            .collect::<Result<Box<[_]>, _>>()?;
+        let result = semantic(*result)?;
+        let mut identity = blake3::Hasher::new();
+        identity.update(b"arcweft.runtime-partial-arrow.v1\0");
+        identity.update(source.semantic_identity().as_bytes());
+        identity.update(
+            &u32::try_from(arguments)
+                .map_err(|_| invalid())?
+                .to_le_bytes(),
+        );
+        let seed = RuntimePlanTypeSeed::new(
+            RuntimeSemanticTypeId::from_bytes(*identity.finalize().as_bytes()),
+            Function {
+                contract: contract.clone(),
+                parameters: remaining,
+                result,
+            },
+        )
+        .with_scope(source.scope().clone());
+        let batch = self.types.prepare_batch([seed])?;
+        let admitted = self.types.commit_batch(batch);
+        let [admitted] = admitted.as_ref() else {
+            return Err(invalid());
+        };
+        *executable_rows = actual;
+        Ok(*admitted)
+    }
+
     /// Builds an authoring state from this builder's actual function ABI.
     /// Source replay instead supplies its pre-reserved original state handle.
     pub fn function_callable_state_seed(

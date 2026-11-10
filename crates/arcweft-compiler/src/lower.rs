@@ -7152,6 +7152,11 @@ fn runtime_call(
         }
     }
     let result = match application.result() {
+        arcweft_lang_sema::callable::CheckedCallResult::Value(_)
+            if application.core().retains_inputs() =>
+        {
+            RuntimeCallResultShape::PartialFunction
+        }
         arcweft_lang_sema::callable::CheckedCallResult::Value(_) => RuntimeCallResultShape::Value,
         arcweft_lang_sema::callable::CheckedCallResult::Continuation(_) => {
             RuntimeCallResultShape::PartialFunction

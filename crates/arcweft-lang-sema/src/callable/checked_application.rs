@@ -764,7 +764,7 @@ impl ResolvedCallableBase {
         terminal_effects: &EffectRow,
         inferred_result_schema: Option<&CallableResultSchema>,
     ) -> Result<CallableResultSchema, CallConstraintInvariant> {
-        match transition.next() {
+        match transition.remaining_group() {
             None => match inferred_result_schema.unwrap_or_else(|| self.schema().result_schema()) {
                 CallableResultSchema::Value(result) => solution
                     .instantiate_result(result)
@@ -773,7 +773,13 @@ impl ResolvedCallableBase {
                     Ok(CallableResultSchema::ContentEmission(*operation))
                 }
             },
-            Some(next) => remaining_function_type(self.schema(), next, terminal_effects)
+            Some(next) => self
+                .schema()
+                .declared_function_type_from_position(
+                    next,
+                    transition.first_unbound(),
+                    terminal_effects,
+                )
                 .and_then(|result| solution.instantiate_result(&result))
                 .map(CallableResultSchema::Value),
         }
@@ -1056,7 +1062,15 @@ impl FrozenCallTypeSolution {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch);
         }
         let transition = seed.transition;
-        if base.complete_group(transition.current()) != Some(transition) {
+        let admitted = match transition.first_unbound() {
+            Some(first) => base.schema().partial_value_group(
+                base.authority().issuer().id(),
+                transition.current(),
+                first,
+            ),
+            None => base.complete_group(transition.current()),
+        };
+        if admitted != Some(transition) {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         let solution = seed.solution;
@@ -1135,6 +1149,10 @@ impl FrozenCallTypeSolution {
         encoder.digest(base.digest().as_bytes());
         encoder.digest(seed.schema.as_bytes());
         encoder.index(transition.current().get())?;
+        if let Some(first) = transition.first_unbound() {
+            encoder.tag(4);
+            encoder.index(first.get())?;
+        }
         encoder.count(bindings.len())?;
         for (parameter, value) in &bindings {
             encoder.tag(0);
@@ -2491,7 +2509,27 @@ impl CheckedCallApplicationCore {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
         validate_callee(&input.callee, selected)?;
-        let effects = if selected.id().is_flow_transfer() || transition.next().is_some() {
+        if let Some(first_unbound) = transition.first_unbound()
+            && (!matches!(input.callee, CheckedCallCalleeExecution::Value { .. })
+                || !input.execution.semantic_operands.is_empty()
+                || input.execution.attached_content.is_some()
+                || !input
+                    .execution
+                    .arguments
+                    .iter()
+                    .flat_map(|argument| &argument.slots)
+                    .map(|slot| match (&slot.destination, &slot.source_projection) {
+                        (
+                            CheckedCallOperandDestination::Parameter(coordinate),
+                            CheckedConstraintSourceProjection::Scalar,
+                        ) if coordinate.group() == current => Some(coordinate.parameter().get()),
+                        _ => None,
+                    })
+                    .eq((0..first_unbound.get()).map(Some)))
+        {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        let effects = if selected.id().is_flow_transfer() || transition.retains_inputs() {
             EffectRow::closed(crate::effects::EffectSet::new())
         } else {
             input
@@ -2499,7 +2537,7 @@ impl CheckedCallApplicationCore {
                 .specialize_effect_row(input.terminal_effects)?
         };
         if let Some(fixed) = selected.schema().effects().fixed_row() {
-            let expected = if transition.next().is_some() {
+            let expected = if transition.retains_inputs() {
                 EffectRow::closed(crate::effects::EffectSet::new())
             } else {
                 input.solution.specialize_effect_row(fixed)?
@@ -2586,6 +2624,11 @@ impl CheckedCallApplicationCore {
     }
     pub(crate) fn next_group(&self) -> Option<CallableGroupIndex> {
         self.solution.transition.next()
+    }
+
+    /// A retained application constructs a function value without entering its body.
+    pub fn retains_inputs(&self) -> bool {
+        self.solution.transition.retains_inputs()
     }
     pub const fn candidates(&self) -> &CheckedCandidateInventory {
         &self.candidates
@@ -3922,14 +3965,6 @@ fn expected_for_alternative(
     let value_expected =
         solution.instantiate_template(&alternative.expected().apply_to(declared))?;
     Ok(source_projection.compose_expected(&value_expected))
-}
-
-fn remaining_function_type(
-    schema: &CallableSignatureSchema,
-    first_group: CallableGroupIndex,
-    invocation: &EffectRow,
-) -> Result<TypeKind, CallConstraintInvariant> {
-    projected_function_type_with_terminal_effects(schema, first_group, invocation)
 }
 
 fn projected_function_type_with_terminal_effects(

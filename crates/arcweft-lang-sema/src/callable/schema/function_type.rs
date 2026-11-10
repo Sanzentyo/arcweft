@@ -29,13 +29,19 @@ pub(crate) enum CallableFunctionTypeProjectionError<E> {
     Projection(E),
 }
 
-/// Position accepted by the callable schema when an application supplies its
-/// whole current group. The next group, when present, retains the application
-/// instead of entering the callable body.
+/// The admitted boundary of one application. An abstract function value can
+/// retain a positional prefix within its arrow, without a declared next group.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CallableGroupTransition {
     current: CallableGroupIndex,
-    next: Option<CallableGroupIndex>,
+    outcome: CallableGroupOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CallableGroupOutcome {
+    Invoke,
+    NextGroup(CallableGroupIndex),
+    ValuePartial(CallableParameterIndex),
 }
 
 impl CallableGroupTransition {
@@ -44,7 +50,29 @@ impl CallableGroupTransition {
     }
 
     pub(crate) const fn next(self) -> Option<CallableGroupIndex> {
-        self.next
+        match self.outcome {
+            CallableGroupOutcome::NextGroup(group) => Some(group),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn first_unbound(self) -> Option<CallableParameterIndex> {
+        match self.outcome {
+            CallableGroupOutcome::ValuePartial(parameter) => Some(parameter),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn retains_inputs(self) -> bool {
+        !matches!(self.outcome, CallableGroupOutcome::Invoke)
+    }
+
+    pub(crate) const fn remaining_group(self) -> Option<CallableGroupIndex> {
+        match self.outcome {
+            CallableGroupOutcome::Invoke => None,
+            CallableGroupOutcome::NextGroup(group) => Some(group),
+            CallableGroupOutcome::ValuePartial(_) => Some(self.current),
+        }
     }
 
     pub(crate) fn remaining_parameter_use(
@@ -55,8 +83,12 @@ impl CallableGroupTransition {
         let CallableGenericFirstUse::Parameter(coordinate) = first_use else {
             return None;
         };
-        let first_remaining_group = self.next()?;
+        let first_remaining_group = self.remaining_group()?;
         (coordinate.group() >= first_remaining_group
+            && (coordinate.group() > first_remaining_group
+                || self
+                    .first_unbound()
+                    .is_none_or(|first| coordinate.parameter() >= first))
             && Some(coordinate.group()) != implicit_receiver)
             .then_some(coordinate)
     }
@@ -86,7 +118,39 @@ impl CallableSignatureSchema {
             .checked_add(1)
             .and_then(|index| CallableGroupIndex::try_from_usize(index).ok())
             .filter(|next| Some(*next) != implicit_receiver && self.group(*next).is_some());
-        Some(CallableGroupTransition { current, next })
+        Some(CallableGroupTransition {
+            current,
+            outcome: next.map_or(
+                CallableGroupOutcome::Invoke,
+                CallableGroupOutcome::NextGroup,
+            ),
+        })
+    }
+
+    pub(crate) fn partial_value_group(
+        &self,
+        candidate: &crate::callable::CallableCandidateId,
+        group: CallableGroupIndex,
+        first_unbound: CallableParameterIndex,
+    ) -> Option<CallableGroupTransition> {
+        let parameters = self.group(group)?.parameters();
+        (matches!(
+            candidate,
+            crate::callable::CallableCandidateId::Local(_)
+                | crate::callable::CallableCandidateId::FunctionValue(_)
+        ) && self.groups().len() == 1
+            && self.attached_content_for_group(group).is_none()
+            && self.generic_inventory().template_binder().is_empty()
+            && first_unbound.get() > 0
+            && first_unbound.get() < parameters.len()
+            && parameters.iter().all(|parameter| {
+                parameter.passing() == CallableParameterPassing::PositionalOnly
+                    && parameter.presence() == CallableParameterPresence::Required
+            }))
+        .then_some(CallableGroupTransition {
+            current: group,
+            outcome: CallableGroupOutcome::ValuePartial(first_unbound),
+        })
     }
 
     /// A declaration's value owns its used generic slots as lexical binders.
@@ -144,8 +208,18 @@ impl CallableSignatureSchema {
         first_group: CallableGroupIndex,
         terminal_effects: &EffectRow,
     ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
-        self.project_function_type_from_group(
+        self.declared_function_type_from_position(first_group, None, terminal_effects)
+    }
+
+    pub(crate) fn declared_function_type_from_position(
+        &self,
+        first_group: CallableGroupIndex,
+        first_unbound: Option<CallableParameterIndex>,
+        terminal_effects: &EffectRow,
+    ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
+        self.project_function_type_from_position(
             first_group,
+            first_unbound,
             terminal_effects,
             || {
                 self.value_type()
@@ -170,6 +244,23 @@ impl CallableSignatureSchema {
         first_group: CallableGroupIndex,
         terminal_effects: &EffectRow,
         result: impl FnOnce() -> Result<TypeKind, E>,
+        parameter: impl FnMut(CallableParameterCoordinate, &CallableParameter) -> Result<TypeKind, E>,
+    ) -> Result<TypeKind, CallableFunctionTypeProjectionError<E>> {
+        self.project_function_type_from_position(
+            first_group,
+            None,
+            terminal_effects,
+            result,
+            parameter,
+        )
+    }
+
+    fn project_function_type_from_position<E>(
+        &self,
+        first_group: CallableGroupIndex,
+        first_unbound: Option<CallableParameterIndex>,
+        terminal_effects: &EffectRow,
+        result: impl FnOnce() -> Result<TypeKind, E>,
         mut parameter: impl FnMut(
             CallableParameterCoordinate,
             &CallableParameter,
@@ -185,6 +276,11 @@ impl CallableSignatureSchema {
             let parameters = group
                 .parameters()
                 .iter()
+                .skip(if group.index() == first_group {
+                    first_unbound.map_or(0, CallableParameterIndex::get)
+                } else {
+                    0
+                })
                 .map(|value| {
                     parameter(
                         CallableParameterCoordinate::new(group.index(), value.index()),

@@ -191,6 +191,20 @@ impl<F> RuntimeCallableZeroArgProjection<'_, F> {
 }
 
 impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
+    pub(crate) fn positional_partial(
+        &self,
+        arguments: usize,
+    ) -> Option<&RuntimeCallablePartialTransition<S>> {
+        let parameters = self.parameters.get(..arguments)?;
+        self.partials.iter().find(|partial| {
+            partial
+                .parameters
+                .iter()
+                .copied()
+                .eq(parameters.iter().map(|input| input.coordinate))
+        })
+    }
+
     pub(crate) const fn active_group(&self) -> Option<u32> {
         match self.position {
             RuntimeCallablePosition::Unapplied => Some(0),

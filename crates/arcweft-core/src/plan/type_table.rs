@@ -458,6 +458,23 @@ impl RuntimePlanTypeTableBuilder {
         declaration_index(id).and_then(|index| self.rows.get(index))
     }
 
+    pub(crate) fn find_function_projection(
+        &self,
+        scope: &super::RuntimeTypeScope,
+        contract: &super::RuntimeFunctionTypeContract,
+        parameters: &[RuntimePlanTypeId],
+        result: RuntimePlanTypeId,
+    ) -> Option<RuntimePlanTypeId> {
+        self.rows.iter().enumerate().find_map(|(index, row)| {
+            (row.scope() == scope
+                && matches!(row.projection(), RuntimePlanTypeProjection::Function {
+                    contract: actual_contract, parameters: actual_parameters, result: actual_result,
+                } if actual_contract == contract && actual_parameters.as_ref() == parameters && *actual_result == result))
+                .then(|| plan_type_id_for_index(index).ok())
+                .flatten()
+        })
+    }
+
     #[must_use]
     pub(crate) fn id_for_semantic(
         &self,

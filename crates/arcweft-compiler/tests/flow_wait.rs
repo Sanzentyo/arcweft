@@ -663,6 +663,24 @@ flow main() -> i64 {
     );
 }
 
+#[test]
+fn same_group_partial_closure_resumes_with_its_capture_and_prefix() {
+    let body = r#"
+flow main() -> i64 {
+    let offset = 1i64
+    let add = |a: i64, b: i64| { log.info("body"); a + b + offset }
+    let tail = add({ log.info("prefix"); 40i64 })
+    wait(0.1s)
+    return tail({ log.info("suffix"); 1i64 })
+}
+"#;
+    assert_shared_prefix_wait_in_both_executors(
+        native(body),
+        product(body, true),
+        &["suffix", "body"],
+    );
+}
+
 fn assert_shared_prefix_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,

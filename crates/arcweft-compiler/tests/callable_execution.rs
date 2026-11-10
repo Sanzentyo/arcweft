@@ -1579,6 +1579,37 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    closure_partial_retains_a_fixed_spread_and_copyable_capture,
+    r#"
+flow main() -> i64 {
+    let offset = 1i64
+    let add = |a: i64, b: i64| a + b + offset
+    let tail = add([40i64]...)
+    let first = tail(0i64)
+    return tail([1i64]...) + first - 41i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    function_value_partial_keeps_the_actual_contract_through_a_wider_parameter,
+    r#"
+fn bind(handler: (i64, i64) -> i64 effects { log.write }, first: i64) -> i64 {
+    let tail = handler(first)
+    tail(2i64)
+}
+flow main() -> i64 {
+    let add = |a: i64, b: i64| a + b
+    return bind(add, 40i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     root_closure_capture_and_project_call_share_one_frame,
     r#"
 fn increment(value: i64) -> i64 { value + 1i64 }

@@ -4894,11 +4894,9 @@ fn verify_apply_group(
     {
         return type_mismatch(at, destination_type, *arrow_result);
     }
+    let mut admitted_partial = false;
     for definition in &program.callable_states {
         callable_copy::charge_work(steps, 1, budget)?;
-        if !complete && definition.function_type != callee_type {
-            continue;
-        }
         if !callable_type_admitted(
             program,
             owner,
@@ -4915,16 +4913,7 @@ fn verify_apply_group(
             Some(definition.function_type)
         } else {
             definition
-                .partials
-                .iter()
-                .find(|partial| {
-                    partial.parameters.len() == arguments.len()
-                        && partial.parameters.iter().copied().eq(definition
-                            .parameters
-                            .iter()
-                            .take(arguments.len())
-                            .map(|input| input.coordinate))
-                })
+                .positional_partial(arguments.len())
                 .and_then(|partial| program.callable_states.get(partial.state.index()))
                 .map(|target| target.function_type)
         };
@@ -4932,9 +4921,22 @@ fn verify_apply_group(
             if project_call_types_compatible(program, destination_type, actual)
                 || callable_type_admitted(program, owner, destination_type, actual, steps, budget)?
             {
-                return Ok((callee_type, destination_type));
+                if complete {
+                    return Ok((callee_type, destination_type));
+                }
+                admitted_partial = true;
+                continue;
             }
         }
+        if !complete {
+            return invalid_type(
+                at,
+                "admitted callee has no sealed positional partial for this result type",
+            );
+        }
+    }
+    if admitted_partial {
+        return Ok((callee_type, destination_type));
     }
     invalid_type(
         at,

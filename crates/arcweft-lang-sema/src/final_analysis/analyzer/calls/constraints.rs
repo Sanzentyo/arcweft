@@ -3352,6 +3352,7 @@ impl RanCandidateTransaction {
             .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
         let application = PreparedCallableApplication::seal_from_selected_transaction(
             Arc::clone(&candidate),
+            inputs.mapping(),
             Arc::clone(solution),
             terminal_effects,
         )?;
@@ -3405,6 +3406,7 @@ impl PreparedCallApplicationTransaction {
             .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
         let application = PreparedCallableApplication::seal_from_selected_transaction(
             Arc::clone(&recipe.candidate),
+            recipe.inputs.mapping(),
             Arc::clone(solution),
             terminal_effects,
         )?;
@@ -5254,17 +5256,15 @@ pub(crate) fn validate_and_prepare_call_constraints(
         }
     }
 
-    let mut next_application_constraints = Vec::new();
-    let result_constraint = if expected_result.is_some() || expected_application_callee.is_some() {
-        let (transition, result) = candidate
-            .project_group_result(group, terminal_effects)
-            .map_err(|error| {
-                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-            })?;
-        let result = result.into_ready().map_err(|error| {
+    let (transition, result_schema) = candidate
+        .project_application_result(inputs.mapping(), terminal_effects)
+        .and_then(|(transition, result)| Ok((transition, result.into_ready()?)))
+        .map_err(|error| {
             CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
         })?;
-        let CallableResultSchema::Value(mut pattern) = result else {
+    let mut next_application_constraints = Vec::new();
+    let result_constraint = if expected_result.is_some() || expected_application_callee.is_some() {
+        let CallableResultSchema::Value(mut pattern) = result_schema.clone() else {
             return Err(CallAnalysisFailure::Invariant(
                 CallAnalysisInvariant::Constraint(
                     CallConstraintInvariant::PreparedFunctionTypeMismatch,
@@ -5272,7 +5272,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
             ));
         };
         let expected = if let Some(next) = expected_application_callee
-            && transition.next().is_some()
+            && transition.retains_inputs()
         {
             let TypeKind::Function {
                 params,
@@ -5350,13 +5350,6 @@ pub(crate) fn validate_and_prepare_call_constraints(
             closure: result_closure,
         })
         .collect::<Vec<_>>();
-    let result_schema = candidate
-        .result_schema_for_group(group, terminal_effects)
-        .map_err(|error| CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)))?
-        .into_ready()
-        .map_err(|error| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-        })?;
     if let CallableResultSchema::Value(result_projection) = &result_schema {
         projection_requests.push(PreparedCallProjectionRequest {
             key: AnalyzerCallProjection::Result,

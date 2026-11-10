@@ -217,16 +217,7 @@ pub(super) fn applied_group(
                         continue;
                     }
                     definition
-                        .partials
-                        .iter()
-                        .find(|partial| {
-                            definition
-                                .parameters
-                                .iter()
-                                .take(arguments.len())
-                                .map(|parameter| parameter.coordinate)
-                                .eq(partial.parameters.iter().copied())
-                        })
+                        .positional_partial(arguments.len())
                         .map(|partial| partial.values.as_ref())
                 } else {
                     match &definition.transition {

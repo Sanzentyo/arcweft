@@ -120,7 +120,7 @@ impl PreparedResolvedCallableDefinition {
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
     {
-        let Some(next) = transition.next() else {
+        let Some(next) = transition.remaining_group() else {
             return Ok(CallableProjection::Ready(
                 terminal_effects
                     .inferred_result_schema()
@@ -130,7 +130,8 @@ impl PreparedResolvedCallableDefinition {
         };
         match terminal_effects {
             CallableTerminalEffectProjection::Known { effects, .. } => self
-                .projected_function_type_from_group(next, effects)
+                .schema()
+                .declared_function_type_from_position(next, transition.first_unbound(), effects)
                 .map(CallableResultSchema::Value)
                 .map(CallableProjection::Ready),
             CallableTerminalEffectProjection::Pending(checked) => {
@@ -1069,13 +1070,17 @@ impl PreparedResolvedCallable {
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
     {
-        self.project_group_result(current_group, terminal_effects)
-            .map(|(_, result)| result)
+        let transition = self
+            .definition
+            .complete_group(current_group)
+            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
+        self.definition
+            .projected_result_after_group(transition, terminal_effects)
     }
 
-    pub(crate) fn project_group_result(
+    pub(crate) fn project_application_result(
         &self,
-        current_group: CallableGroupIndex,
+        mapping: &super::super::PreparedCallArgumentMapping,
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<
         (
@@ -1084,10 +1089,18 @@ impl PreparedResolvedCallable {
         ),
         super::super::CallConstraintInvariant,
     > {
-        let transition = self
-            .definition
-            .complete_group(current_group)
-            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
+        let group = self.call_group();
+        if mapping.group() != group
+            || mapping.candidate() != Some(self.id())
+            || mapping.schema() != self.schema().semantic_digest()
+        {
+            return Err(super::super::CallConstraintInvariant::MalformedMapperSeal);
+        }
+        let transition = match mapping.first_unbound() {
+            Some(first) => self.schema().partial_value_group(self.id(), group, first),
+            None => self.definition.complete_group(group),
+        }
+        .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
         let result = self
             .definition
             .projected_result_after_group(transition, terminal_effects)?;

@@ -96,15 +96,12 @@ impl PreparedCallableApplication {
     /// available to tests or analyzer code.
     pub(crate) fn seal_from_selected_transaction(
         selected: Arc<PreparedResolvedCallable>,
+        mapping: &super::PreparedCallArgumentMapping,
         solution: Arc<TypeConstraintSolution>,
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<Self, CallConstraintInvariant> {
-        let completed_group = selected.call_group();
-        if selected.schema().group(completed_group).is_none() {
-            return Err(CallConstraintInvariant::PreparedGroupMismatch);
-        }
         let (transition, declared) =
-            selected.project_group_result(completed_group, terminal_effects)?;
+            selected.project_application_result(mapping, terminal_effects)?;
         let declared = declared.into_ready()?;
         let result = match declared {
             CallableResultSchema::Value(value) => {
@@ -136,6 +133,10 @@ impl PreparedCallableApplication {
 
     pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
         self.transition.next()
+    }
+
+    pub(crate) const fn retains_inputs(&self) -> bool {
+        self.transition.retains_inputs()
     }
 
     pub(super) fn schema(&self) -> CallableSignatureSchemaDigest {

@@ -2953,12 +2953,14 @@ impl RuntimePlanBuilder {
     /// Materializes the sole table authority before public-plan construction.
     /// Semantic sealing borrows this same storage after structural admission.
     pub(super) fn prepare_inventory(
-        self,
+        mut self,
         limits: super::RuntimeTaskPlanSealLimits,
         task_rows: u32,
     ) -> Result<super::RuntimePlanInventory, RuntimePlanBuildError> {
-        self.preflight_executable_inventory(limits, task_rows)?;
-        self.callable_states.borrow_mut().seal()?;
+        let mut executable_rows = self.preflight_executable_inventory(limits, task_rows)?;
+        let mut states = std::mem::take(self.callable_states.get_mut());
+        states.seal(&mut self, &mut executable_rows, limits.max_executable_rows)?;
+        *self.callable_states.get_mut() = states;
         for row in self.project_call_sites.borrow().rows.iter().flatten() {
             if row.plan().binding() == super::RuntimeCallableGroupBinding::Declared {
                 self.callable_states
@@ -3102,7 +3104,7 @@ impl RuntimePlanBuilder {
         &self,
         limits: super::RuntimeTaskPlanSealLimits,
         task_rows: u32,
-    ) -> Result<(), RuntimePlanBuildError> {
+    ) -> Result<u32, RuntimePlanBuildError> {
         // The accepted table inventory 0..13 plus the actual inline task rows.
         // Auxiliary implementation tables are not extra semantic image rows.
         let counts = [
@@ -3136,7 +3138,7 @@ impl RuntimePlanBuilder {
                 maximum: limits.max_executable_rows,
             });
         }
-        Ok(())
+        Ok(actual)
     }
 
     fn validate_finish_preconditions(&self) -> Result<(), RuntimePlanBuildError> {

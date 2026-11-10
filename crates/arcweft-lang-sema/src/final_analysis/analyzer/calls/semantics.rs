@@ -130,7 +130,7 @@ impl Analyzer<'_, '_, '_> {
         application: &crate::callable::PreparedCallableApplication,
     ) -> Result<EffectSet, FinalSemanticAnalysisError> {
         let candidate = application.selected();
-        if candidate.id().is_flow_transfer() || application.next_group().is_some() {
+        if candidate.id().is_flow_transfer() || application.retains_inputs() {
             return Ok(EffectSet::new());
         }
         let terminal_effects = self.source_callable_terminal_effects(candidate)?;

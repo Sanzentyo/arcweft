@@ -1047,21 +1047,12 @@ impl RuntimeCallableValue {
         values: &[&RuntimeValue],
     ) -> Result<(), RuntimeCallableValueError> {
         if values.len() < state.parameters.len() {
-            let partial = state
-                .partials
-                .iter()
-                .find(|row| {
-                    row.parameters.iter().copied().eq(state
-                        .parameters
-                        .iter()
-                        .take(values.len())
-                        .map(|input| input.coordinate))
-                        && row.parameters.len() == values.len()
-                })
-                .ok_or(RuntimeCallableValueError::MissingPartial {
+            let partial = state.positional_partial(values.len()).ok_or(
+                RuntimeCallableValueError::MissingPartial {
                     state: self.state,
                     arguments: values.len(),
-                })?;
+                },
+            )?;
             return self.check_arrow_sources(values, &partial.values, &[]);
         }
         let current = match &state.attached {
@@ -1385,16 +1376,7 @@ impl RuntimeCallableValue {
             RuntimeProgramOwner::Plan(plan) => {
                 plan.callable_states().get(pending.state).map(|state| {
                     state
-                        .partials
-                        .iter()
-                        .find(|row| {
-                            row.parameters.iter().copied().eq(state
-                                .parameters
-                                .iter()
-                                .take(pending.arguments.len())
-                                .map(|input| input.coordinate))
-                                && row.parameters.len() == pending.arguments.len()
-                        })
+                        .positional_partial(pending.arguments.len())
                         .map(|row| (row.state, row.values.to_vec()))
                 })
             }
@@ -1403,16 +1385,7 @@ impl RuntimeCallableValue {
                 .get(pending.state.index())
                 .map(|state| {
                     state
-                        .partials
-                        .iter()
-                        .find(|row| {
-                            row.parameters.iter().copied().eq(state
-                                .parameters
-                                .iter()
-                                .take(pending.arguments.len())
-                                .map(|input| input.coordinate))
-                                && row.parameters.len() == pending.arguments.len()
-                        })
+                        .positional_partial(pending.arguments.len())
                         .map(|row| (row.state, row.values.to_vec()))
                 }),
         };

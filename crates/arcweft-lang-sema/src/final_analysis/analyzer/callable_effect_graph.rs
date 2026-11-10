@@ -32,7 +32,7 @@ impl CallableEffectCall {
     ) -> Option<Self> {
         let selected = application.selected();
         if selected.id().is_flow_transfer()
-            || application.next_group().is_some()
+            || application.retains_inputs()
             || !matches!(
                 selected.schema().effects(),
                 CallableEffectSchema::Project { .. }
@@ -152,7 +152,7 @@ pub(super) fn prepared_call_execution_rows(
         control.check()?;
         let application = node.prefix().application();
         let selected = application.selected();
-        let terminal = application.next_group().is_none();
+        let terminal = !application.retains_inputs();
         let owner = node.site().expression();
         let effects = if selected.id().is_flow_transfer() {
             Some(EffectRow::closed(crate::effects::EffectSet::new()))
@@ -224,7 +224,7 @@ impl CallableEffectGraph {
                 }
                 continue;
             }
-            let immediate_map = application.next_group().is_none()
+            let immediate_map = !application.retains_inputs()
                 && matches!(selected.schema().validator(),
                     crate::callable::CallableValidator::StandardMap(family) if family.callback_is_immediate());
             let producer = if immediate_map {
@@ -276,7 +276,7 @@ impl CallableEffectGraph {
             } else {
                 selected.checked().cloned()
             };
-            let suspension = if application.next_group().is_some() {
+            let suspension = if application.retains_inputs() {
                 // Partial application creates a continuation value. It does
                 // not enter the callee frame at this application boundary.
                 IndexedCallableSuspension::NonSuspending

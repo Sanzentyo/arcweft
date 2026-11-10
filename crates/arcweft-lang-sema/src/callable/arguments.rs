@@ -88,6 +88,7 @@ pub(crate) struct PreparedCallArgumentMapping {
     candidate: Option<CallableCandidateId>,
     schema: super::CallableSignatureSchemaDigest,
     group: CallableGroupIndex,
+    first_unbound: Option<CallableParameterIndex>,
     arguments: Vec<MappedCallArgument>,
     dialogue_application: Option<ExprId>,
     dialogue_application_metadata: Box<[PreparedDialogueApplicationMetadataArgument]>,
@@ -204,6 +205,7 @@ impl PreparedCallArgumentMapping {
             candidate: Some(candidate),
             schema,
             group,
+            first_unbound: None,
             arguments: Vec::new(),
             dialogue_application: None,
             dialogue_application_metadata: Box::new([]),
@@ -222,6 +224,10 @@ impl PreparedCallArgumentMapping {
 
     pub(crate) const fn group(&self) -> CallableGroupIndex {
         self.group
+    }
+
+    pub(crate) const fn first_unbound(&self) -> Option<CallableParameterIndex> {
+        self.first_unbound
     }
 
     pub(crate) fn arguments(&self) -> &[MappedCallArgument] {
@@ -686,9 +692,17 @@ pub(crate) fn map_call_arguments(
         return None;
     }
 
-    if required_fixed_parameter_is_missing(parameters, &provided) {
-        return None;
-    }
+    let first_unbound = if required_fixed_parameter_is_missing(parameters, &provided) {
+        let first = provided.iter().position(|supplied| !supplied)?;
+        if provided[first..].iter().any(|supplied| *supplied) || implicit.is_some() {
+            return None;
+        }
+        let first = CallableParameterIndex::try_from_usize(first).ok()?;
+        schema.partial_value_group(candidate, group.index(), first)?;
+        Some(first)
+    } else {
+        None
+    };
     let omitted_parameters = parameters
         .iter()
         .filter(|parameter| {
@@ -703,6 +717,7 @@ pub(crate) fn map_call_arguments(
         candidate: Some(candidate.clone()),
         schema: schema_digest,
         group: group.index(),
+        first_unbound,
         arguments: mapped_arguments,
         dialogue_application: None,
         dialogue_application_metadata: Box::new([]),

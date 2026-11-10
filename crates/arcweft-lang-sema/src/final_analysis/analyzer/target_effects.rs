@@ -2,7 +2,6 @@
 
 use super::statements::expression_span;
 use super::{Analyzer, CheckedCallableCatalog, EffectSet, FinalSemanticAnalysisError};
-use crate::callable::CheckedCallResult;
 
 impl Analyzer<'_, '_, '_> {
     pub(super) fn validate_target_capabilities(
@@ -45,7 +44,7 @@ impl Analyzer<'_, '_, '_> {
                 }
             }
             if let Some(available) = available_calls
-                && !matches!(application.result(), CheckedCallResult::Continuation(_))
+                && !application.core().retains_inputs()
                 && let Some(checked) = application.core().candidates().selected().checked()
                 && let Some(contract) = callables
                     .callable(checked)

@@ -239,9 +239,7 @@ impl<'a, 'program> ValueCopy<'a, 'program> {
             }
             CheckedExpressionResolution::CharacterDialogueFactory(_)
             | CheckedExpressionResolution::CharacterDialogueReconfigure(_) => {}
-            _ if application.is_some_and(|call| {
-                matches!(call.result(), CheckedCallResult::Continuation(_))
-            }) => {}
+            _ if application.is_some_and(|call| call.core().retains_inputs()) => {}
             _ => {
                 if let Some(application) = application
                     && matches!(
@@ -260,7 +258,7 @@ impl<'a, 'program> ValueCopy<'a, 'program> {
         // A direct continuation retains evaluated inputs. Only a value
         // callee also contributes a runtime capture to its Copy footprint.
         let static_continuation = application.is_some_and(|call| {
-            matches!(call.result(), CheckedCallResult::Continuation(_))
+            call.core().retains_inputs()
                 && matches!(call.core().callee(), CheckedCallCalleeExecution::Direct)
         });
         let checker = self.checker;

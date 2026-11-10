@@ -2092,6 +2092,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 _ => return invalid_projection("partial function application result", result_type),
             }
             self.callable_states.borrow_mut().request_partial(
+                self.type_owner,
                 callee.ty(),
                 result_type,
                 actual.len(),

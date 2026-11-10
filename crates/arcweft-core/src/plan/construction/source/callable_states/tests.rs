@@ -896,7 +896,7 @@ fn callable_source_data_cannot_publish_an_invalid_projection_or_invent_missing_p
             .builder
             .callable_states
             .borrow_mut()
-            .request_partial(pair, unary, 1)
+            .request_partial(None, pair, unary, 1)
             .is_ok()
     );
     assert!(matches!(
@@ -904,7 +904,7 @@ fn callable_source_data_cannot_publish_an_invalid_projection_or_invent_missing_p
             .builder
             .callable_states
             .borrow_mut()
-            .request_partial(pair, other, 1),
+            .request_partial(None, pair, other, 1),
         Err(RuntimePlanBuildError::MissingSourceCallablePartial { .. })
     ));
     // Whole-graph source validation still belongs to the actual common seal.
