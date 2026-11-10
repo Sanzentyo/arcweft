@@ -310,6 +310,42 @@ impl Analyzer<'_, '_, '_> {
         wraps_try_success: bool,
         completion: &BodyCompletion,
     ) -> Result<Vec<CallableResultSource>, AnalyzerExpressionError> {
+        self.checked_function_site_value_sources(
+            module,
+            closure,
+            body,
+            wraps_try_success,
+            completion,
+            TryDestination::ExplicitFunctionSite(closure),
+        )
+    }
+
+    pub(super) fn checked_implicit_value_sources(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        wraps_try_success: bool,
+        completion: &BodyCompletion,
+    ) -> Result<Vec<CallableResultSource>, AnalyzerExpressionError> {
+        self.checked_function_site_value_sources(
+            module,
+            owner,
+            owner,
+            wraps_try_success,
+            completion,
+            TryDestination::ImplicitFunctionSite(owner),
+        )
+    }
+
+    fn checked_function_site_value_sources(
+        &self,
+        module: &HirModule,
+        site: ExprId,
+        body: ExprId,
+        wraps_try_success: bool,
+        completion: &BodyCompletion,
+        try_destination: TryDestination<'_>,
+    ) -> Result<Vec<CallableResultSource>, AnalyzerExpressionError> {
         let normal = if wraps_try_success {
             CallableResultSource::TrySuccess(body)
         } else {
@@ -319,8 +355,8 @@ impl Analyzer<'_, '_, '_> {
             module,
             normal,
             completion,
-            HirReturnContext::FunctionSite(closure),
-            TryDestination::ExplicitFunctionSite(closure),
+            HirReturnContext::FunctionSite(site),
+            try_destination,
         )
     }
 

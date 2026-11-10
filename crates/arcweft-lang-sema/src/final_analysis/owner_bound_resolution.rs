@@ -132,7 +132,7 @@ pub(super) fn seal(
         let PreparedOwnerBoundResolution::ImplicitCallable(callable) = prepared.resolution() else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        if let PreparedImplicitCallableBody::OwnerBound(body) = callable.body()
+        if let PreparedExpressionFact::OwnerBound(body) = callable.body().expression()
             && let PreparedOwnerBoundResolution::Pipe(pipe) = body.resolution()
         {
             if pipe_rows.insert(*owner, pipe.clone()).is_some() {
@@ -216,7 +216,7 @@ pub(super) fn seal(
             effects,
             CheckedExpressionResolution::ImplicitCallable(Box::new(checked)),
         );
-        if let PreparedImplicitCallableBody::Complete(body) = &seed.body
+        if let Some(body) = seed.body.expression().complete()
             && let Some(carrier) = body.carrier_block()
         {
             published = published.with_carrier_block(carrier.clone());
@@ -889,11 +889,11 @@ fn seal_callable_seed(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
 ) -> Result<CheckedImplicitCallable, FinalSemanticAnalysisError> {
-    let body = match &seed.body {
-        PreparedImplicitCallableBody::Complete(body) => {
+    let body = match seed.body.expression() {
+        PreparedExpressionFact::Complete(body) => {
             CheckedImplicitCallableBody::Plain(Box::new(body.resolution().clone()))
         }
-        PreparedImplicitCallableBody::OwnerBound(owner_bound) => {
+        PreparedExpressionFact::OwnerBound(owner_bound) => {
             let resolution = seal_owner_bound_body(
                 topology,
                 seed.owner,
@@ -911,6 +911,7 @@ fn seal_callable_seed(
                 resolution => CheckedImplicitCallableBody::Plain(Box::new(resolution)),
             }
         }
+        _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
     };
     evidence.finalize(body).map_err(Into::into)
 }
@@ -921,9 +922,6 @@ fn prepared_function_type(prepared: &PreparedImplicitCallable) -> TypeKind {
     TypeKind::function_with_effects(
         [prepared.parameter().clone()],
         prepared.result().clone(),
-        crate::effect_row::EffectRow::closed(match prepared.body() {
-            PreparedImplicitCallableBody::Complete(body) => body.effects().clone(),
-            PreparedImplicitCallableBody::OwnerBound(body) => body.effects().clone(),
-        }),
+        crate::effect_row::EffectRow::closed(prepared.body().expression().effects().clone()),
     )
 }

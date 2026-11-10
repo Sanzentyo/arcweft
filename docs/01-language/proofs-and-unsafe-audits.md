@@ -178,7 +178,9 @@ propagates capture dependencies until they stop growing, using the storage
 properties of the selected type arguments and the supplied value parameters.
 A call through a known function value follows the returned callable's
 storage. The closure's creation scope supplies captured values, and the
-selected invocation supplies its parameters. For a generic source function
+selected invocation supplies its parameters, including an implicit callable's
+`_`. When `try` forms the callable body, the receiver check follows the
+success and residual payloads delivered to its caller. For a generic source function
 used as a value, the checked specialization maps the function scheme's type
 arguments back to the declaration's parameters. Resolve those arguments in
 the scope where the function value was specialized. If the selected invocation

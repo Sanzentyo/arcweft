@@ -383,7 +383,7 @@ pub(crate) fn prepare_function_value_origin_query(
         topology,
         module,
         expression,
-        expressions,
+        expressions.get(&expression),
         std::sync::Arc::new(BTreeMap::new()),
         PreparedFunctionValueOriginPurpose::Selection,
     )
@@ -393,7 +393,7 @@ pub(crate) fn prepare_function_value_origin_query_with_pending_captures(
     topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
     module: &HirModule,
     expression: ExprId,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
+    initial: Option<&PreparedExpressionFact>,
     pending_capture_rows: std::sync::Arc<
         BTreeMap<ExprId, Box<[super::PreparedCaptureIdentityRow]>>,
     >,
@@ -406,7 +406,7 @@ pub(crate) fn prepare_function_value_origin_query_with_pending_captures(
         pending_capture_rows,
         purpose,
     )
-    .advance(module, expressions)
+    .advance(module, initial)
 }
 
 pub(crate) fn prepare_presentation_callee_id(

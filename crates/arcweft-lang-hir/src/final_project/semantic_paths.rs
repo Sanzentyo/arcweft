@@ -2038,14 +2038,29 @@ impl HirImplicitCallableRegion<'_> {
         expression: ExprId,
         is_implicit_callable: &impl Fn(ExprId) -> bool,
     ) -> bool {
+        self.try_contains_executed_expression(expression, is_implicit_callable, || {
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .unwrap_or_else(|never| match never {})
+    }
+
+    /// Checks the same membership while letting the caller charge or cancel
+    /// each parent step before visiting it.
+    pub fn try_contains_executed_expression<E>(
+        &self,
+        expression: ExprId,
+        is_implicit_callable: &impl Fn(ExprId) -> bool,
+        mut visit_parent: impl FnMut() -> Result<(), E>,
+    ) -> Result<bool, E> {
+        visit_parent()?;
         let Some(row) = self.index.row(expression) else {
-            return false;
+            return Ok(false);
         };
         if row.source_ordinal() < self.start_ordinal || row.source_ordinal() >= self.end_ordinal {
-            return false;
+            return Ok(false);
         }
         self.index
-            .region_contains(self.root, expression, is_implicit_callable)
+            .region_contains(self.root, expression, is_implicit_callable, visit_parent)
     }
 
     pub fn contains_binding(&self, binding: &HirLocalBindingOrigin) -> bool {
@@ -2201,7 +2216,11 @@ impl HirExpressionUseIndex {
             let row = self
                 .row(owner)
                 .ok_or(HirSemanticPathError::UnresolvedOwner)?;
-            if is_selected(owner) && self.region_contains(owner, expression, &|_| true) {
+            if is_selected(owner)
+                && self
+                    .implicit_callable_region(owner)?
+                    .contains_expression(expression)
+            {
                 return Ok(Some(owner));
             }
             if row.callable_boundary().is_some() {
@@ -2228,40 +2247,42 @@ impl HirExpressionUseIndex {
         &self.rows
     }
 
-    fn region_contains(
+    fn region_contains<E>(
         &self,
         root: ExprId,
         candidate: ExprId,
         is_implicit_callable: &impl Fn(ExprId) -> bool,
-    ) -> bool {
+        mut visit_parent: impl FnMut() -> Result<(), E>,
+    ) -> Result<bool, E> {
         let candidate_root = candidate;
         let mut current = candidate;
         for _ in 0..=self.rows.len() {
+            visit_parent()?;
             let Some(row) = self.row(current) else {
-                return false;
+                return Ok(false);
             };
             if current == root {
-                return current == candidate_root
+                return Ok(current == candidate_root
                     || row.callable_boundary()
-                        != Some(HirExpressionCallableBoundary::ExplicitClosure);
+                        != Some(HirExpressionCallableBoundary::ExplicitClosure));
             }
             if current != candidate_root {
                 match row.callable_boundary() {
-                    Some(HirExpressionCallableBoundary::ExplicitClosure) => return false,
+                    Some(HirExpressionCallableBoundary::ExplicitClosure) => return Ok(false),
                     Some(HirExpressionCallableBoundary::ImplicitArgument)
                         if is_implicit_callable(current) =>
                     {
-                        return false;
+                        return Ok(false);
                     }
                     _ => {}
                 }
             }
             let Some(parent) = row.parent_expression() else {
-                return false;
+                return Ok(false);
             };
             current = parent;
         }
-        false
+        Ok(false)
     }
 
     fn pipe_left_region_contains(&self, root: ExprId, candidate: ExprId) -> bool {

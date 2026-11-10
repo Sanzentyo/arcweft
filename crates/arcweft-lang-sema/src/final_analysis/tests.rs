@@ -1758,6 +1758,67 @@ fn safe_lifetime_promotion_follows_reached_callable_residuals() {
 }
 
 #[test]
+fn safe_lifetime_promotion_follows_implicit_callable_results() {
+    let callback = "(i64 -> i64 effects {})";
+    let result = format!("Result<i64, {callback}>");
+    let option = format!("Option<{callback}>");
+    for (input, output, body, arg, borrowed) in [
+        (
+            result.as_str(),
+            result.as_str(),
+            "try keep(_)",
+            "Err(borrowed)",
+            true,
+        ),
+        (
+            result.as_str(),
+            result.as_str(),
+            "try keep(_)",
+            "Err(owned)",
+            false,
+        ),
+        (
+            option.as_str(),
+            option.as_str(),
+            "try keep(_)",
+            "Some(borrowed)",
+            true,
+        ),
+        (callback, callback, "_", "borrowed", true),
+        (callback, callback, "keep(_)", "borrowed", true),
+        (callback, callback, "keep(_)", "owned", false),
+        ("i64", callback, "{ let _ = _; borrowed }", "0i64", true),
+        (
+            "i64",
+            callback,
+            "{ let _ = _; let _ = borrowed; owned }",
+            "0i64",
+            false,
+        ),
+        (
+            callback,
+            callback,
+            "{ let forwarded = _; |n: i64| -> i64 { forwarded(n) } }",
+            "borrowed",
+            true,
+        ),
+    ] {
+        let source = format!(
+            "fn keep<T>(input: T) -> T {{ input }}
+            flow main(loan: &i64) {{
+                let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                let owned = |n: i64| -> i64 {{ n }};
+                let relay: ({input} -> {output} effects {{}}) = {body};
+                let argument: {input} = {arg};
+                let packed = relay(argument);
+                let _ = packed.promote('flow);
+            }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "packed", borrowed);
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload() {
     let callback = "(i64 -> i64 effects {})";
     let carrier = format!("Result<{callback}, {callback}>");

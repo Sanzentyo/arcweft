@@ -1693,7 +1693,7 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
                 Arc::clone(&analyzer.topology),
                 module,
                 alias_use,
-                analyzer.facts.expressions(),
+                analyzer.facts.expressions().get(&alias_use),
                 analyzer
                     .pending_capture_identity_rows()
                     .expect("pending capture identity rows"),

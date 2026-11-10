@@ -4475,7 +4475,7 @@ impl Analyzer<'_, '_, '_> {
             Arc::clone(&self.topology),
             module,
             expression,
-            self.facts.expressions(),
+            self.facts.expressions().get(&expression),
             pending_capture_rows,
             PreparedFunctionValueOriginPurpose::Selection,
         )

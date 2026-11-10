@@ -1314,10 +1314,10 @@ impl PreparedFunctionValueOriginQuery {
     fn advance(
         self,
         module: &HirModule,
-        checked: &BTreeMap<ExprId, PreparedExpressionFact>,
+        checked: Option<&PreparedExpressionFact>,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
         self.local_origins(module)?;
-        let Some(fact) = checked.get(&self.current) else {
+        let Some(fact) = checked else {
             return Ok(PreparedFunctionValueOriginProgress::Need(
                 PreparedFunctionValueOriginNeed {
                     expression: self.current,
@@ -1349,6 +1349,17 @@ impl PreparedFunctionValueOriginQuery {
             ));
         }
         if let PreparedExpressionFact::OwnerBound(owner_bound) = fact {
+            if matches!(
+                owner_bound.resolution(),
+                PreparedOwnerBoundResolution::ImplicitParameter(_)
+            ) {
+                return Ok(self.ready(
+                    PreparedFunctionValueOriginProducer::IndependentExpression {
+                        producer: self.current,
+                    },
+                    Vec::new(),
+                ));
+            }
             if matches!(
                 owner_bound.resolution(),
                 PreparedOwnerBoundResolution::ImplicitCallable(_)

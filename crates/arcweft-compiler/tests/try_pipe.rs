@@ -178,6 +178,24 @@ fn with_nested_identity(offset: i64) -> (i64 -> i64 effects {}) {
 }
 
 #[test]
+fn an_implicit_parameter_can_supply_a_returned_closure_callee() {
+    assert_case(
+        r#"
+fn handoff(callback: (i64 -> i64 effects {})) -> (i64 -> i64 effects {}) {
+    let relay: ((i64 -> i64 effects {}) -> (i64 -> i64 effects {}) effects {}) = {
+        let forwarded = _;
+        |n: i64| -> i64 { forwarded(n) }
+    };
+    relay(callback)
+}
+"#,
+        "flow main() -> i64 { let callback = handoff(|n: i64| n + 1i64); return callback(41i64) }",
+        RuntimeValue::i64(42),
+        "42",
+    );
+}
+
+#[test]
 fn an_implicit_call_body_can_diverge_under_a_contextual_return_type() {
     compile_source(
         r#"

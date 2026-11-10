@@ -59,7 +59,9 @@ use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
 use arcweft_lang_hir::project::HirSemanticPathLocation;
 use arcweft_lang_hir::stmt::{HirStmtEvaluationPlan, HirStmtValuePlanKind, HirTrigger};
 
-use crate::final_analysis::model::{LifetimeLexicalActivation, RegistryWritePosition};
+use crate::final_analysis::model::{
+    CallableResultSource, LifetimeLexicalActivation, RegistryWritePosition,
+};
 
 use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
@@ -1048,7 +1050,7 @@ impl Analyzer<'_, '_, '_> {
             )?;
         let expected_result = contextual.as_ref().map(|(_, result)| result);
         let body_expectation = expectation.project_checked(owner, expected_result)?;
-        let (body, result, body_effects) = if matches!(
+        let (body, result, body_effects, value_results) = if matches!(
             expression.kind(),
             HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication)
         ) {
@@ -1059,7 +1061,7 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner).into());
             }
             (
-                PreparedImplicitCallableBody::from(PreparedOwnerBoundExpression::new(
+                PreparedExpressionFact::from(PreparedOwnerBoundExpression::new(
                     PreparedExpressionShell::value(
                         parameter.clone(),
                         CheckedTypeSelection::Expected,
@@ -1069,6 +1071,7 @@ impl Analyzer<'_, '_, '_> {
                 )),
                 parameter.clone(),
                 crate::effect_row::EffectRow::closed(EffectSet::new()),
+                vec![CallableResultSource::Returned(owner)],
             )
         } else {
             self.implicit_callable_stack
@@ -1123,44 +1126,38 @@ impl Analyzer<'_, '_, '_> {
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
                 )
             })?;
-            let result = if let Some((TryDestination::ImplicitFunctionSite(site), carrier)) =
-                body.try_propagation()
-                && site == owner
-            {
+            let wrapped_try = match body.try_propagation() {
+                Some((TryDestination::ImplicitFunctionSite(site), carrier)) if site == owner => {
+                    Some(carrier)
+                }
+                _ => None,
+            };
+            let completion = self.expression_body_completion(module, owner, owner, &body)?;
+            let value_results = self.checked_implicit_value_sources(
+                module,
+                owner,
+                wrapped_try.is_some(),
+                &completion,
+            )?;
+            let result = if let Some(carrier) = wrapped_try {
                 scope
                     .result
                     .clone()
                     .filter(|result| carrier.accepts_wrapped_success(result))
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
+            } else if let Some(expected) = scope.result {
+                if body_type == TypeKind::Never {
+                    expected
+                } else {
+                    body_type
+                }
             } else {
-                self.callable_body_result(
-                    module,
-                    owner,
-                    owner,
-                    body_type,
-                    &body,
-                    scope.result.as_ref(),
-                )?
+                self.completed_body_result(module, owner, body_type, completion)?
             };
             let effects = self
                 .prepared_expression_body_effects(owner, &body)
                 .map_err(AnalyzerExpressionError::fatal)?;
-            let body = match body {
-                PreparedExpressionFact::Complete(body) => {
-                    PreparedImplicitCallableBody::Complete(body)
-                }
-                PreparedExpressionFact::OwnerBound(body) => {
-                    PreparedImplicitCallableBody::OwnerBound(body)
-                }
-                other => {
-                    PreparedImplicitCallableBody::Complete(other.into_complete().map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?)
-                }
-            };
-            (body, result, effects)
+            (body, result, effects, value_results)
         };
         let parameter_occurrences = placeholders
             .into_vec()
@@ -1185,6 +1182,8 @@ impl Analyzer<'_, '_, '_> {
         {
             return Err(AnalyzerExpressionError::rejected(owner).into());
         }
+        let body = PreparedImplicitCallableBody::new(body, value_results)
+            .map_err(AnalyzerExpressionError::fatal)?;
         Ok(PreparedExpressionFact::from(
             PreparedOwnerBoundExpression::new(
                 PreparedExpressionShell::value(
@@ -2426,26 +2425,6 @@ impl Analyzer<'_, '_, '_> {
 
     /// The body continuation and exact receiving callable are derived from the
     /// typed HIR evaluation/transfer rows. Named scopes never intercept Return.
-    fn callable_body_result(
-        &self,
-        module: &HirModule,
-        callable: ExprId,
-        body: ExprId,
-        body_type: TypeKind,
-        body_fact: &PreparedExpressionFact,
-        expected: Option<&TypeKind>,
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
-        if let Some(expected) = expected {
-            return Ok(if body_type == TypeKind::Never {
-                expected.clone()
-            } else {
-                body_type
-            });
-        }
-        let continuation = self.expression_body_completion(module, body, callable, body_fact)?;
-        self.completed_body_result(module, body, body_type, continuation)
-    }
-
     fn completed_body_result(
         &self,
         module: &HirModule,

@@ -40,7 +40,20 @@ pub(super) enum FrameOwner {
     Closure {
         producer: ExprId,
         creator: StorageFrameId,
+        kind: ClosureKind,
     },
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum ClosureKind {
+    Explicit,
+    Implicit,
+}
+
+impl FrameOwner {
+    pub(super) fn executes_implicit_body(self, expression: ExprId) -> bool {
+        matches!(self, Self::Closure { producer, kind: ClosureKind::Implicit, .. } if producer == expression)
+    }
 }
 
 #[derive(Clone)]
@@ -276,6 +289,7 @@ impl CaptureWorklist {
         &mut self,
         producer: ExprId,
         creator: StorageFrameId,
+        kind: ClosureKind,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<StorageFrameId, FinalSemanticAnalysisError> {
         let entry = match self.closures.entry((producer, creator)) {
@@ -292,7 +306,11 @@ impl CaptureWorklist {
         );
         let frame = StorageFrameId(self.frames.len());
         self.frames.push(StorageFrame {
-            owner: FrameOwner::Closure { producer, creator },
+            owner: FrameOwner::Closure {
+                producer,
+                creator,
+                kind,
+            },
             projections,
         });
         entry.insert(frame);

@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, rc::Rc};
 
 use arcweft_lang_hir::{
     expr::HirExprKind,
-    identity::{ExprId, LocalId, ScopeId},
+    identity::{ExprId, LocalId},
     item::{HirItemKind, HirParameterKind},
     module::HirModule,
     pattern::{HirPatternBinding, HirPatternKind},
@@ -15,7 +15,7 @@ use arcweft_lang_hir::{
 };
 
 use crate::{
-    callable::CallableParameterCoordinate,
+    callable::{CallableGroupIndex, CallableParameterCoordinate, CallableParameterIndex},
     final_analysis::{
         CheckedExpressionResolution, CheckedValueResolution, PreparedExpressionFact,
         model::CallableResultSource,
@@ -28,8 +28,9 @@ use super::{
     inputs::{InvocationInputs, SuffixInput},
     localization::RetainedBodyProjection,
     worklist::{
-        BodyProjection, BorrowDependencies, CaptureWorklist, CarrierStorage, FrameOwner,
-        Invocation, InvokedValue, ParameterDemand, StorageFrameId, StorageProjection, ValueOrigin,
+        BodyProjection, BorrowDependencies, CaptureWorklist, CarrierStorage, ClosureKind,
+        FrameOwner, Invocation, InvokedValue, ParameterDemand, StorageFrameId, StorageProjection,
+        ValueOrigin,
     },
 };
 
@@ -37,6 +38,12 @@ struct BoundInvocation {
     call: Invocation,
     frame: StorageFrameId,
     inputs: InvocationInputs,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum StorageLexicalSite {
+    Expression(ExprId),
+    Binding(LocalId),
 }
 
 pub(super) struct SourceInvocation {
@@ -89,18 +96,40 @@ impl Analyzer<'_, '_, '_> {
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<Option<BorrowDependencies>, FinalSemanticAnalysisError> {
         let call = query.work.invocation(invoked.id)?;
-        let Some(fact) = self
-            .facts
-            .expressions()
-            .get(&producer)
-            .and_then(PreparedExpressionFact::complete)
-        else {
+        let Some(fact) = self.facts.expressions().get(&producer) else {
+            return Ok(None);
+        };
+        if let Some(callable) = fact.implicit_callable() {
+            let frame = query.work.intern_closure(
+                producer,
+                origin.frame,
+                ClosureKind::Implicit,
+                receiver,
+            )?;
+            return self
+                .result_dependencies(
+                    origin,
+                    BoundInvocation {
+                        call,
+                        frame,
+                        inputs: InvocationInputs::selected(call, Some(invoked.id)),
+                    },
+                    callable.body().value_results(),
+                    &mut query.work,
+                    receiver,
+                )
+                .map(Some);
+        }
+        let Some(fact) = fact.complete() else {
             return Ok(None);
         };
         if let CheckedExpressionResolution::Closure(closure) = fact.resolution() {
-            let frame = query
-                .work
-                .intern_closure(producer, origin.frame, receiver)?;
+            let frame = query.work.intern_closure(
+                producer,
+                origin.frame,
+                ClosureKind::Explicit,
+                receiver,
+            )?;
             return self
                 .result_dependencies(
                     origin,
@@ -218,10 +247,9 @@ impl Analyzer<'_, '_, '_> {
             let (expression, observation) = match source {
                 CallableResultSource::Returned(expression) => (expression, binding.call.result),
                 CallableResultSource::TrySuccess(expression) => {
+                    let frame = work.frame(binding.frame)?;
                     let carrier = self
-                        .facts
-                        .expressions()
-                        .get(&expression)
+                        .storage_expression_fact(expression, &frame)
                         .and_then(PreparedExpressionFact::try_carrier)
                         .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                     let Some(payload) = work
@@ -267,8 +295,9 @@ impl Analyzer<'_, '_, '_> {
     }
 
     pub(super) fn lexical_frame(
+        &self,
         module: &HirModule,
-        scope: ScopeId,
+        site: StorageLexicalSite,
         mut frame: StorageFrameId,
         work: &CaptureWorklist,
         receiver: &mut ReceiverBorrowQuery<'_>,
@@ -276,28 +305,119 @@ impl Analyzer<'_, '_, '_> {
         if !matches!(work.frame(frame)?.owner, FrameOwner::Closure { .. }) {
             return Ok(frame);
         }
+        let topology = self
+            .topology
+            .module(module.module_id())
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let (mut scope, expression) = match site {
+            StorageLexicalSite::Expression(owner) => (
+                Some(
+                    module
+                        .resolve_expr(owner)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .scope(),
+                ),
+                Some(owner),
+            ),
+            StorageLexicalSite::Binding(local) => (
+                Some(
+                    module
+                        .resolve_local(local)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .scope(),
+                ),
+                topology
+                    .local_origins()
+                    .binding(local)
+                    .and_then(|binding| binding.binding_expression()),
+            ),
+        };
         let mut closures = BTreeSet::new();
-        let mut scope = Some(scope);
-        while let Some(id) = scope {
+        while let FrameOwner::Closure {
+            producer,
+            creator,
+            kind,
+        } = work.frame(frame)?.owner
+        {
             receiver.charge(1)?;
-            let lexical = module
-                .resolve_scope(id)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            if lexical.kind() == HirScopeKind::Closure
-                && let HirScopeOwner::Expr(owner) = lexical.owner()
-            {
-                closures.insert(*owner);
-            }
-            scope = lexical.parent();
-        }
-        while let FrameOwner::Closure { producer, creator } = work.frame(frame)?.owner {
-            receiver.charge(1)?;
-            if closures.contains(&producer) {
+            let belongs = match kind {
+                ClosureKind::Explicit => {
+                    while let Some(id) = scope {
+                        receiver.charge(1)?;
+                        let lexical = module
+                            .resolve_scope(id)
+                            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                        if lexical.kind() == HirScopeKind::Closure
+                            && let HirScopeOwner::Expr(owner) = lexical.owner()
+                        {
+                            closures.insert(*owner);
+                        }
+                        scope = lexical.parent();
+                    }
+                    closures.contains(&producer)
+                }
+                ClosureKind::Implicit if producer.module() == module.module_id() => {
+                    let Some(expression) = expression else {
+                        frame = creator;
+                        continue;
+                    };
+                    let region = topology
+                        .expression_uses()
+                        .implicit_callable_region(producer)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                    region.try_contains_executed_expression(
+                        expression,
+                        &|boundary| {
+                            self.facts
+                                .expressions()
+                                .get(&boundary)
+                                .is_some_and(PreparedExpressionFact::creates_implicit_callable)
+                        },
+                        || receiver.charge(1),
+                    )?
+                }
+                ClosureKind::Implicit => false,
+            };
+            if belongs {
                 break;
             }
             frame = creator;
         }
         Ok(frame)
+    }
+
+    pub(super) fn implicit_parameter_demand(
+        callable: ExprId,
+        origin: ValueOrigin,
+        work: &CaptureWorklist,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
+        let mut frame = origin.frame;
+        while let FrameOwner::Closure {
+            producer,
+            creator,
+            kind,
+        } = work.frame(frame)?.owner
+        {
+            receiver.charge(1)?;
+            if producer == callable && kind == ClosureKind::Implicit {
+                let parameter = CallableParameterIndex::try_from_usize(0)
+                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                return Ok(BorrowDependencies::Parameters(BTreeSet::from([
+                    ParameterDemand {
+                        frame,
+                        coordinate: CallableParameterCoordinate::new(
+                            CallableGroupIndex::ZERO,
+                            parameter,
+                        ),
+                        observation: origin.observation,
+                        invocation_caller: None,
+                    },
+                ])));
+            }
+            frame = creator;
+        }
+        Ok(BorrowDependencies::default())
     }
 
     pub(super) fn parameter_demand(
@@ -308,11 +428,13 @@ impl Analyzer<'_, '_, '_> {
         work: &CaptureWorklist,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<Option<ParameterDemand>, FinalSemanticAnalysisError> {
-        let local_scope = module
-            .resolve_local(local)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-            .scope();
-        let frame = Self::lexical_frame(module, local_scope, origin.frame, work, receiver)?;
+        let frame = self.lexical_frame(
+            module,
+            StorageLexicalSite::Binding(local),
+            origin.frame,
+            work,
+            receiver,
+        )?;
         let Some(coordinate) =
             self.whole_parameter_coordinate(module, local, work.frame(frame)?.owner)?
         else {
@@ -373,7 +495,11 @@ impl Analyzer<'_, '_, '_> {
                 (group, parameter, source.pattern())
             }
             (
-                FrameOwner::Closure { producer, .. },
+                FrameOwner::Closure {
+                    producer,
+                    kind: ClosureKind::Explicit,
+                    ..
+                },
                 HirBindingSite::Expression {
                     expression,
                     role: HirExpressionBindingRole::ClosureParameter { parameter },

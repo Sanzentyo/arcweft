@@ -27,9 +27,7 @@ impl Analyzer<'_, '_, '_> {
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
         let fact = self
-            .facts
-            .expressions()
-            .get(&producer)
+            .storage_expression_fact(producer, frame)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: producer })?;
         if fact.creates_implicit_callable() {
             return Ok(BorrowDependencies::default());

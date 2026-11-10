@@ -213,14 +213,34 @@ pub(crate) enum PreparedOwnerBoundResolution {
 /// may itself be an owner-bound expression; both forms are closed by the same
 /// atomic owner-bound seal after callable and pipe identities are issued.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PreparedImplicitCallableBody {
-    Complete(CheckedExpression),
-    OwnerBound(Box<PreparedOwnerBoundExpression>),
+pub(crate) struct PreparedImplicitCallableBody {
+    expression: Arc<PreparedExpressionFact>,
+    value_results: Box<[super::model::CallableResultSource]>,
 }
 
-impl From<PreparedOwnerBoundExpression> for PreparedImplicitCallableBody {
-    fn from(body: PreparedOwnerBoundExpression) -> Self {
-        Self::OwnerBound(Box::new(body))
+impl PreparedImplicitCallableBody {
+    pub(super) fn new(
+        expression: PreparedExpressionFact,
+        value_results: Vec<super::model::CallableResultSource>,
+    ) -> Result<Self, super::FinalSemanticAnalysisError> {
+        if !matches!(
+            expression,
+            PreparedExpressionFact::Complete(_) | PreparedExpressionFact::OwnerBound(_)
+        ) {
+            return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(Self {
+            expression: Arc::new(expression),
+            value_results: value_results.into_boxed_slice(),
+        })
+    }
+
+    pub(super) fn expression(&self) -> &PreparedExpressionFact {
+        &self.expression
+    }
+
+    pub(super) const fn value_results(&self) -> &[super::model::CallableResultSource] {
+        &self.value_results
     }
 }
 
@@ -498,17 +518,16 @@ impl PreparedOwnerBoundExpression {
         self.shell.effects()
     }
 
-    pub(crate) const fn checked_call_site(
+    pub(crate) fn checked_call_site(
         &self,
         owner: ExprId,
     ) -> Option<crate::callable::CheckedCallSite> {
         match self.resolution() {
-            PreparedOwnerBoundResolution::ImplicitCallable(callable) => match callable.body() {
-                PreparedImplicitCallableBody::Complete(body) => {
-                    body.resolution().checked_call_site(owner)
-                }
-                PreparedImplicitCallableBody::OwnerBound(_) => None,
-            },
+            PreparedOwnerBoundResolution::ImplicitCallable(callable) => callable
+                .body()
+                .expression()
+                .complete()
+                .and_then(|body| body.resolution().checked_call_site(owner)),
             PreparedOwnerBoundResolution::ImplicitParameter(_)
             | PreparedOwnerBoundResolution::Pipe(_)
             | PreparedOwnerBoundResolution::PipeLeft(_)
@@ -525,10 +544,7 @@ impl PreparedOwnerBoundExpression {
             PreparedOwnerBoundResolution::ImplicitCallable(callable) => {
                 visitor(callable.parameter())?;
                 visitor(callable.result())?;
-                match callable.body() {
-                    PreparedImplicitCallableBody::Complete(body) => body.visit_types(visitor),
-                    PreparedImplicitCallableBody::OwnerBound(body) => body.visit_types(visitor),
-                }
+                callable.body().expression().visit_types(visitor)
             }
             PreparedOwnerBoundResolution::ImplicitParameter(parameter) => {
                 visitor(parameter.parameter())
@@ -1039,6 +1055,16 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(super) fn implicit_callable(&self) -> Option<&PreparedImplicitCallable> {
+        let Self::OwnerBound(value) = self else {
+            return None;
+        };
+        let PreparedOwnerBoundResolution::ImplicitCallable(callable) = value.resolution() else {
+            return None;
+        };
+        Some(callable)
+    }
+
     pub(crate) const fn implicit_parameter_owner(&self) -> Option<ExprId> {
         if let Self::OwnerBound(value) = self
             && let PreparedOwnerBoundResolution::ImplicitParameter(parameter) = value.resolution()
@@ -1052,10 +1078,9 @@ impl PreparedExpressionFact {
         match self {
             Self::Complete(value) => value.carrier_block(),
             Self::OwnerBound(value) => match value.resolution() {
-                PreparedOwnerBoundResolution::ImplicitCallable(callable) => match callable.body() {
-                    PreparedImplicitCallableBody::Complete(body) => body.carrier_block(),
-                    PreparedImplicitCallableBody::OwnerBound(_) => None,
-                },
+                PreparedOwnerBoundResolution::ImplicitCallable(callable) => {
+                    callable.body().expression().carrier_block()
+                }
                 _ => None,
             },
             _ => None,
@@ -1486,7 +1511,7 @@ impl PreparedExpressionFact {
             || value_type.semantic_identity_digest() == expected.semantic_identity_digest()
     }
 
-    pub(crate) const fn checked_call_site(
+    pub(crate) fn checked_call_site(
         &self,
         owner: ExprId,
     ) -> Option<crate::callable::CheckedCallSite> {

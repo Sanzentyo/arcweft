@@ -1491,6 +1491,10 @@ fn assert_capture_and_region_indexes(
         .implicit_callable_region(region_root)
         .expect("implicit callable region");
     assert!(region.contains_binding(internal));
+    assert_eq!(
+        region.try_contains_executed_expression(region_root, &|_| true, || Err("cancelled")),
+        Err("cancelled")
+    );
     assert!(
         !region.contains_binding(
             module_topology

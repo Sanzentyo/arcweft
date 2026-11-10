@@ -25,7 +25,7 @@ use crate::{
         prepare_function_value_origin_query_with_pending_captures,
     },
     final_analysis::{
-        FinalCallConstraintFailure, PreparedExpressionFact, PreparedOwnerBoundResolution,
+        FinalCallConstraintFailure, PreparedExpressionFact,
         analyzer::{
             AnalyzerExpressionContext, CallAnalysisFailure, calls::CallAnalysisInvariant,
             expression_error::AnalyzerExpressionError,
@@ -56,9 +56,11 @@ mod worklist;
 #[path = "captures/structural.rs"]
 mod structural;
 
+use self::invocation::StorageLexicalSite;
 use self::worklist::{
-    BodyProjection, BorrowDependencies, CaptureWorklist, CarrierStorage, Invocation, InvokedValue,
-    Observation, StorageFrame, StorageProjection, ValueOrigin, ValueSpecialization,
+    BodyProjection, BorrowDependencies, CaptureWorklist, CarrierStorage, ClosureKind, FrameOwner,
+    Invocation, InvokedValue, Observation, StorageFrame, StorageProjection, ValueOrigin,
+    ValueSpecialization,
 };
 
 type PendingCaptures = Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>;
@@ -120,8 +122,34 @@ impl Analyzer<'_, '_, '_> {
         query: &mut CaptureEvaluation,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
-        let frame = query.work.frame(origin.frame)?;
         let module = self.module(origin.expression.module())?;
+        let frame = query.work.frame(origin.frame)?;
+        let implicit_frame = matches!(
+            frame.owner,
+            FrameOwner::Closure {
+                kind: ClosureKind::Implicit,
+                ..
+            }
+        );
+        if implicit_frame {
+            let lexical = self.lexical_frame(
+                module,
+                StorageLexicalSite::Expression(origin.expression),
+                origin.frame,
+                &query.work,
+                receiver,
+            )?;
+            if lexical != origin.frame {
+                return query.work.demand(
+                    ValueOrigin {
+                        frame: lexical,
+                        ..origin
+                    },
+                    origin,
+                    receiver,
+                );
+            }
+        }
         let evidence =
             match self.checked_storage_origin(module, origin, &frame, &query.captures, receiver)? {
                 StorageOrigin::Borrowed => return Ok(BorrowDependencies::Borrowed),
@@ -132,13 +160,15 @@ impl Analyzer<'_, '_, '_> {
         if let Observation::Invoke(invoked) = &mut observation
             && let Some(owner) = evidence.storage_specialization()
         {
-            let scope = module
-                .resolve_expr(owner)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                .scope();
             let specialization = ValueSpecialization {
                 owner,
-                frame: Self::lexical_frame(module, scope, origin.frame, &query.work, receiver)?,
+                frame: self.lexical_frame(
+                    module,
+                    StorageLexicalSite::Expression(owner),
+                    origin.frame,
+                    &query.work,
+                    receiver,
+                )?,
             };
             if let Some(existing) = invoked.specialization
                 && existing != specialization
@@ -170,12 +200,17 @@ impl Analyzer<'_, '_, '_> {
             PreparedFunctionValueOriginProducer::Declaration { producer, .. }
             | PreparedFunctionValueOriginProducer::IndependentExpression { producer } => *producer,
         };
-        let producer_scope = module
-            .resolve_expr(producer)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-            .scope();
-        let producer_frame =
-            Self::lexical_frame(module, producer_scope, origin.frame, &query.work, receiver)?;
+        let producer_frame = if implicit_frame && producer == origin.expression {
+            origin.frame
+        } else {
+            self.lexical_frame(
+                module,
+                StorageLexicalSite::Expression(producer),
+                origin.frame,
+                &query.work,
+                receiver,
+            )?
+        };
         if producer_frame != origin.frame || observation != origin.observation {
             return query.work.demand(
                 ValueOrigin {
@@ -213,7 +248,7 @@ impl Analyzer<'_, '_, '_> {
                 caller: origin.frame,
                 result: origin.observation,
             };
-            match self.call_storage(call, &frame.projections, &query.work, receiver, &mut next)? {
+            match self.call_storage(call, frame, &query.work, receiver, &mut next)? {
                 CallStorage::Borrowed => return Ok(BorrowDependencies::Borrowed),
                 CallStorage::SourceResult(declaration) => {
                     return self.source_result_dependencies(
@@ -254,6 +289,14 @@ impl Analyzer<'_, '_, '_> {
                 CallStorage::NoWitness => {}
             }
         }
+        if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
+            evidence.producer()
+            && let Some(callable) = self
+                .storage_expression_fact(*producer, frame)
+                .and_then(PreparedExpressionFact::implicit_parameter_owner)
+        {
+            return Self::implicit_parameter_demand(callable, origin, &query.work, receiver);
+        }
         let mut dependencies = BorrowDependencies::default();
         match origin.observation {
             Observation::Stored => {
@@ -272,6 +315,7 @@ impl Analyzer<'_, '_, '_> {
             Observation::Invoke(invoked) => {
                 if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
                     evidence.producer()
+                    && !frame.owner.executes_implicit_body(*producer)
                     && let Some(dependencies) = self.invoke_producer(
                         context,
                         origin,
@@ -408,7 +452,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<StorageOrigin, FinalSemanticAnalysisError> {
         let expression = origin.expression;
         let expressions = self.facts.expressions();
-        let Some(fact) = expressions.get(&expression) else {
+        let Some(fact) = self.storage_expression_fact(expression, frame) else {
             return Ok(StorageOrigin::Unavailable);
         };
         match self.origin_fact_storage(fact, origin.observation, &frame.projections, receiver)? {
@@ -420,7 +464,7 @@ impl Analyzer<'_, '_, '_> {
             Arc::clone(&self.topology),
             module,
             expression,
-            expressions,
+            Some(fact),
             Arc::clone(captures),
             PreparedFunctionValueOriginPurpose::Storage,
         );
@@ -459,6 +503,18 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
+    fn storage_expression_fact(
+        &self,
+        expression: ExprId,
+        frame: &StorageFrame,
+    ) -> Option<&PreparedExpressionFact> {
+        let fact = self.facts.expressions().get(&expression)?;
+        if frame.owner.executes_implicit_body(expression) {
+            return Some(fact.implicit_callable()?.body().expression());
+        }
+        Some(fact)
+    }
+
     fn origin_fact_storage(
         &self,
         fact: &PreparedExpressionFact,
@@ -466,9 +522,7 @@ impl Analyzer<'_, '_, '_> {
         projections: &[BodyProjection],
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<TypeStorage, FinalSemanticAnalysisError> {
-        if matches!(fact, PreparedExpressionFact::OwnerBound(prepared)
-            if matches!(prepared.resolution(), PreparedOwnerBoundResolution::ImplicitCallable(_)))
-        {
+        if fact.implicit_callable().is_some() {
             return Ok(TypeStorage::Callable);
         }
         let storage = fact.value_type().map_or(Ok(TypeStorage::Ordinary), |ty| {
@@ -486,6 +540,7 @@ impl Analyzer<'_, '_, '_> {
                     | PreparedExpressionFact::Variant(_)
             )
             && fact.try_carrier().is_none()
+            && fact.implicit_parameter_owner().is_none()
         {
             return Ok(TypeStorage::Ordinary);
         }
@@ -495,7 +550,7 @@ impl Analyzer<'_, '_, '_> {
     fn call_storage(
         &self,
         call: Invocation,
-        projections: &[BodyProjection],
+        frame: &StorageFrame,
         work: &CaptureWorklist,
         receiver: &mut ReceiverBorrowQuery<'_>,
         pending: &mut Vec<(ExprId, Observation)>,
@@ -503,9 +558,7 @@ impl Analyzer<'_, '_, '_> {
         let site = call.site;
         let owner = site.expression();
         let ty = self
-            .facts
-            .expressions()
-            .get(&owner)
+            .storage_expression_fact(owner, frame)
             .and_then(|fact| {
                 fact.complete()
                     .and_then(crate::final_analysis::CheckedExpression::source_value_type)
@@ -592,7 +645,7 @@ impl Analyzer<'_, '_, '_> {
                     }
                     for (source, ty) in prefix.record().value_inputs() {
                         receiver.charge(1)?;
-                        match self.inspect_value_storage(ty, projections, receiver)? {
+                        match self.inspect_value_storage(ty, &frame.projections, receiver)? {
                             TypeStorage::Borrowed => return Ok(CallStorage::Borrowed),
                             TypeStorage::Callable => pending.push((source, Observation::Stored)),
                             TypeStorage::Ordinary => {}
