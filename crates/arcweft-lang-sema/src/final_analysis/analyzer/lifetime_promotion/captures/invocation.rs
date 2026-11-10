@@ -16,7 +16,10 @@ use arcweft_lang_hir::{
 
 use crate::{
     callable::CallableParameterCoordinate,
-    final_analysis::{CheckedExpressionResolution, CheckedValueResolution, PreparedExpressionFact},
+    final_analysis::{
+        CheckedExpressionResolution, CheckedValueResolution, PreparedExpressionFact,
+        model::CallableResultSource,
+    },
 };
 
 use super::{
@@ -25,8 +28,8 @@ use super::{
     inputs::{InvocationInputs, SuffixInput},
     localization::RetainedBodyProjection,
     worklist::{
-        BodyProjection, BorrowDependencies, CaptureWorklist, FrameOwner, Invocation, InvokedValue,
-        ParameterDemand, StorageFrameId, ValueOrigin,
+        BodyProjection, BorrowDependencies, CaptureWorklist, CarrierStorage, FrameOwner,
+        Invocation, InvokedValue, ParameterDemand, StorageFrameId, StorageProjection, ValueOrigin,
     },
 };
 
@@ -174,7 +177,7 @@ impl Analyzer<'_, '_, '_> {
             )?;
             query
                 .results
-                .insert(declaration.clone(), (item, Rc::from(values)));
+                .insert(declaration.clone(), (item, values.into_boxed_slice()));
             query.captures = self
                 .pending_capture_identity_rows()
                 .map_err(|error| error.into_public(query.root))?;
@@ -206,17 +209,43 @@ impl Analyzer<'_, '_, '_> {
         &self,
         origin: ValueOrigin,
         binding: BoundInvocation,
-        values: &[ExprId],
+        values: &[CallableResultSource],
         work: &mut CaptureWorklist,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
         let mut dependencies = BorrowDependencies::default();
-        for &expression in values {
+        for &source in values {
+            let (expression, observation) = match source {
+                CallableResultSource::Returned(expression) => (expression, binding.call.result),
+                CallableResultSource::TrySuccess(expression) => {
+                    let carrier = self
+                        .facts
+                        .expressions()
+                        .get(&expression)
+                        .and_then(PreparedExpressionFact::try_carrier)
+                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                    let Some(payload) = work
+                        .carrier_payload(binding.call.result, CarrierStorage::success(carrier))?
+                    else {
+                        continue;
+                    };
+                    (expression, payload)
+                }
+                CallableResultSource::ResultResidual(operand) => {
+                    let error = CarrierStorage::ResultErr;
+                    let Some(payload) = work.carrier_payload(binding.call.result, error)? else {
+                        continue;
+                    };
+                    let observation =
+                        work.project(StorageProjection::Carrier(error), payload, receiver)?;
+                    (operand, observation)
+                }
+            };
             dependencies.include(work.demand(
                 ValueOrigin {
                     expression,
                     frame: binding.frame,
-                    observation: binding.call.result,
+                    observation,
                 },
                 origin,
                 receiver,

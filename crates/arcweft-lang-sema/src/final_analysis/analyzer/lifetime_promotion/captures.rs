@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    rc::Rc,
     sync::Arc,
 };
 
@@ -10,7 +9,7 @@ use arcweft_lang_hir::{
     identity::{ExprId, ItemId, LocalId},
     item::{HirFunctionBody, HirItemKind},
     module::HirModule,
-    project::{HirControlTransferTarget, HirLocalValueOrigin, HirReturnContext},
+    project::HirLocalValueOrigin,
     source_index::HirCallableSourceOwner,
     symbol::{CallableDeclarationKey, CallableDeclarationOwner},
 };
@@ -31,6 +30,7 @@ use crate::{
             AnalyzerExpressionContext, CallAnalysisFailure, calls::CallAnalysisInvariant,
             expression_error::AnalyzerExpressionError,
         },
+        model::CallableResultSource,
     },
     types::{TypeKind, TypeProjectionError},
 };
@@ -66,7 +66,7 @@ type PendingCaptures = Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>;
 struct CaptureEvaluation {
     root: ExprId,
     captures: PendingCaptures,
-    results: BTreeMap<CallableDeclarationKey, (ItemId, Rc<[ExprId]>)>,
+    results: BTreeMap<CallableDeclarationKey, (ItemId, Box<[CallableResultSource]>)>,
     work: CaptureWorklist,
 }
 
@@ -613,7 +613,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         declaration: &CallableDeclarationKey,
-    ) -> Result<(ItemId, Vec<ExprId>), FinalSemanticAnalysisError> {
+    ) -> Result<(ItemId, Vec<CallableResultSource>), FinalSemanticAnalysisError> {
         let view = self
             .topology
             .declaration(declaration)
@@ -644,10 +644,9 @@ impl Analyzer<'_, '_, '_> {
         if yields != 0 {
             return Err(FinalSemanticAnalysisError::InvalidFunctionExecution { owner: item });
         }
-        let values = self.checked_body_value_sources(module, statements, *tail,
-            |target| matches!(target, HirControlTransferTarget::Return { context: HirReturnContext::Item(owner) } if *owner == item),
-            true,
-        ).map_err(|error| error.into_public(*tail))?;
+        let values = self
+            .checked_function_value_sources(module, (item, declaration), statements, *tail)
+            .map_err(|error| error.into_public(*tail))?;
         Ok((item, values))
     }
 }

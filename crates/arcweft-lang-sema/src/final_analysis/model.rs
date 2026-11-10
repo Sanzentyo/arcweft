@@ -785,6 +785,7 @@ pub use record::{
 };
 #[path = "model/capture.rs"]
 mod capture;
+pub(super) use capture::CallableResultSource;
 pub(crate) use capture::CheckedImplicitCallableIdentityEvidence;
 pub use capture::{
     CheckedCaptureAuthorityViolation, CheckedClosure, CheckedImplicitCallable,

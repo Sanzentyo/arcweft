@@ -79,6 +79,28 @@ fn invalid(value: Result<i64, String>) -> Result<i64, String> { try value }
 }
 
 #[test]
+fn a_root_try_delivers_success_and_residual_to_the_closure_caller() {
+    let definitions = r#"
+fn relay(input: Result<i64, String>) -> Result<i64, String> {
+    let apply: (Result<i64, String> -> Result<i64, String> effects {}) = |value| try value
+    apply(input)
+}
+"#;
+    assert_case(
+        definitions,
+        "flow main() -> i64 { return if let Ok(value) = relay(Ok(42i64)) { value } else { -1i64 } }",
+        RuntimeValue::i64(42),
+        "42",
+    );
+    assert_case(
+        definitions,
+        "flow main() -> String { return if let Err(reason) = relay(Err(\"stopped\")) { reason } else { \"unexpected\" } }",
+        RuntimeValue::String("stopped".to_owned()),
+        "stopped",
+    );
+}
+
+#[test]
 fn carrier_block_catches_try_before_the_function_boundary() {
     assert_case(
         r#"

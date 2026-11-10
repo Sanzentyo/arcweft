@@ -1671,6 +1671,131 @@ fn safe_lifetime_promotion_follows_reached_carrier_payloads() {
     }
 }
 
+#[test]
+fn safe_lifetime_promotion_follows_reached_callable_residuals() {
+    let callback = "(i64 -> i64 effects {})";
+    let carrier = format!("Result<i64, {callback}>");
+    let relay =
+        "fn relay<T>(input: Result<i64, T>) -> Result<i64, T> { let _ = try input; Ok(7i64) }";
+    for (declarations, build, borrowed) in [
+        (
+            format!("fn failure<T>(value: T) -> Result<i64, T> {{ Err(value) }}\n{relay}"),
+            "let packed = relay(failure(borrowed));".to_owned(),
+            true,
+        ),
+        (
+            format!("fn relay(input: {carrier}) -> {carrier} {{ let _ = try input; Ok(7i64) }}"),
+            format!("let input: {carrier} = Err(borrowed); let packed = relay(input);"),
+            true,
+        ),
+        (
+            relay.to_owned(),
+            format!("let input: {carrier} = Err(owned); let packed = relay(input);"),
+            false,
+        ),
+        (
+            "fn relay<T>(input: Result<T, i64>) -> Result<i64, i64> { let _ = try input; Ok(7i64) }".to_owned(),
+            format!("let input: Result<{callback}, i64> = Ok(borrowed); let packed = relay(input);"),
+            false,
+        ),
+        (
+            format!("fn relay(input: {carrier}, failure: {carrier}) -> {carrier} {{
+                let local = result {{ let _ = try input; 3i64 }};
+                let _ = local;
+                let _ = try failure;
+                Ok(7i64)
+            }}"),
+            format!("let input: {carrier} = Err(borrowed); let failure: {carrier} = Err(owned); let packed = relay(input, failure);"),
+            false,
+        ),
+        (
+            format!("fn relay(input: {carrier}) -> {carrier} {{
+                return Ok(7i64);
+                let _ = try input;
+                ()
+            }}"),
+            format!("let input: {carrier} = Err(borrowed); let packed = relay(input);"),
+            false,
+        ),
+        (
+            String::new(),
+            format!("let relay = |input: {carrier}| -> {carrier} {{ let _ = try input; Ok(7i64) }};
+                     let input: {carrier} = Err(borrowed);
+                     let packed = relay(input);"),
+            true,
+        ),
+        (
+            String::new(),
+            format!("let input: {carrier} = Err(borrowed);
+                     let relay = || -> {carrier} {{ let _ = try input; Ok(7i64) }};
+                     let packed = relay();"),
+            true,
+        ),
+        (
+            String::new(),
+            format!("let relay: ({carrier} -> {carrier} effects {{}}) = |input| try input;
+                     let input: {carrier} = Err(borrowed);
+                     let packed = relay(input);"),
+            true,
+        ),
+        (
+            String::new(),
+            format!("let success: (Option<{callback}> -> Option<{callback}> effects {{}}) = |input| try input;
+                     let packed = success(Some(borrowed));"),
+            true,
+        ),
+    ] {
+        let source = format!(
+            "{declarations}\nflow main(loan: &i64) {{
+                let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                let owned = |n: i64| -> i64 {{ n }};
+                {build}
+                let _ = packed.promote('flow);
+            }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "packed", borrowed);
+    }
+}
+
+#[test]
+fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload() {
+    let callback = "(i64 -> i64 effects {})";
+    let carrier = format!("Result<{callback}, {callback}>");
+    for (relay, input, borrowed) in [
+        (
+            format!(
+                "let relay = |input: {carrier}, fallback: {callback}| -> {carrier} {{ let _ = try input; Ok(fallback) }};"
+            ),
+            "relay(Err(borrowed), owned)",
+            false,
+        ),
+        (
+            format!("let relay: ({carrier} -> {carrier} effects {{}}) = |input| try input;"),
+            "relay(Err(borrowed))",
+            false,
+        ),
+        (
+            format!("let relay: ({carrier} -> {carrier} effects {{}}) = |input| try input;"),
+            "relay(Ok(borrowed))",
+            true,
+        ),
+    ] {
+        let source = format!(
+            "flow main(loan: &i64) {{
+                let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                let owned = |n: i64| -> i64 {{ n }};
+                {relay}
+                let _ = result {{
+                    let success = try {input};
+                    let _ = success.promote('flow);
+                    7i64
+                }};
+            }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "success", borrowed);
+    }
+}
+
 fn assert_promotion_capture_diagnostic(source: &str, receiver: &str, borrowed: bool) {
     let fixture = fixture(source, None);
     let error = analyze(&fixture).expect_err("promotion has no executable transfer");

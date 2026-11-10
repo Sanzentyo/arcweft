@@ -426,6 +426,26 @@ const fn capture_access_tag(access: CaptureAccess) -> u8 {
     }
 }
 
+/// The checked source of a callable result, before applying its result observation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::final_analysis) enum CallableResultSource {
+    Returned(ExprId),
+    /// The root Try's success value is wrapped in its own carrier at this site.
+    TrySuccess(ExprId),
+    /// The enclosing callable returns the Result operand's error payload.
+    ResultResidual(ExprId),
+}
+
+impl CallableResultSource {
+    const fn expression(self) -> ExprId {
+        match self {
+            Self::Returned(expression)
+            | Self::TrySuccess(expression)
+            | Self::ResultResidual(expression) => expression,
+        }
+    }
+}
+
 /// Exact capture authority for one explicit closure producer.
 #[derive(Clone)]
 pub struct CheckedClosure {
@@ -433,14 +453,14 @@ pub struct CheckedClosure {
     owner: ExprId,
     choices: BTreeMap<ExprId, ExprId>,
     captures: Box<[HirSelectedCapture]>,
-    value_results: Box<[ExprId]>,
+    value_results: Box<[CallableResultSource]>,
 }
 
 impl CheckedClosure {
-    pub(crate) fn seal(
+    pub(in crate::final_analysis) fn seal(
         topology: Arc<HirProjectEvaluationTopology>,
         owner: ExprId,
-        value_results: Box<[ExprId]>,
+        value_results: Box<[CallableResultSource]>,
         mut selected: impl FnMut(ExprId) -> Option<ExprId>,
     ) -> Result<Self, CheckedCaptureAuthorityViolation> {
         let mut choices = BTreeMap::new();
@@ -473,7 +493,7 @@ impl CheckedClosure {
         &self.captures
     }
 
-    pub(in crate::final_analysis) const fn value_results(&self) -> &[ExprId] {
+    pub(in crate::final_analysis) const fn value_results(&self) -> &[CallableResultSource] {
         &self.value_results
     }
 
@@ -517,7 +537,7 @@ impl CheckedClosure {
             || self
                 .value_results
                 .iter()
-                .any(|result| !selected.contains_owner(SyntheticOwner::Expr(*result)))
+                .any(|result| !selected.contains_owner(SyntheticOwner::Expr(result.expression())))
             || self.choices.iter().any(|(selector, candidate)| {
                 !selected
                     .expression_edges(*selector)

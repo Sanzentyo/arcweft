@@ -14,6 +14,7 @@ use crate::{
         CheckedCallApplication, CheckedCallArgumentSlotSource, CheckedCallCalleeExecution,
         CheckedCallOperandDestination, CheckedCallResult, CheckedConstraintSourceProjection,
     },
+    final_analysis::model::CallableResultSource,
     ownership::CheckedOwnershipLimits,
     types::TypeKind,
 };
@@ -331,7 +332,10 @@ impl<'a, 'program> ValueCopy<'a, 'program> {
                     lexical,
                     caller,
                 };
-                for &result in closure.value_results() {
+                for &source in closure.value_results() {
+                    let CallableResultSource::Returned(result) = source else {
+                        return Ok(false);
+                    };
                     if !self.expression(result, Some(&frame))? {
                         return Ok(false);
                     }

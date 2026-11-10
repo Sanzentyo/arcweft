@@ -12,6 +12,7 @@ use arcweft_lang_hir::{
 
 use crate::{
     callable::{CallableParameterCoordinate, CheckedCallSite, SpecializedDeclarationProjection},
+    final_analysis::CheckedTryCarrier,
     types::{TypeProjectionControl, TypeProjectionNodeKind},
 };
 
@@ -82,6 +83,15 @@ pub(super) enum CarrierStorage {
     OptionItem,
     ResultOk,
     ResultErr,
+}
+
+impl CarrierStorage {
+    pub(super) const fn success(carrier: &CheckedTryCarrier) -> Self {
+        match carrier {
+            CheckedTryCarrier::Option { .. } => Self::OptionItem,
+            CheckedTryCarrier::Result { .. } => Self::ResultOk,
+        }
+    }
 }
 
 struct ProjectedObservation {
@@ -358,6 +368,20 @@ impl CaptureWorklist {
         Ok(self
             .projection(observation)?
             .map(|row| (&row.selection, row.remaining)))
+    }
+
+    pub(super) fn carrier_payload(
+        &self,
+        observation: Observation,
+        payload: CarrierStorage,
+    ) -> Result<Option<Observation>, FinalSemanticAnalysisError> {
+        Ok(match self.selected_storage(observation)? {
+            Some((StorageProjection::Carrier(selected), remaining)) if *selected == payload => {
+                Some(remaining)
+            }
+            None if observation == Observation::Stored => Some(Observation::Stored),
+            _ => None,
+        })
     }
 
     pub(super) fn next(&mut self) -> Result<Option<ValueOrigin>, FinalSemanticAnalysisError> {

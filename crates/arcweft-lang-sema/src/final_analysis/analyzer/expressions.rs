@@ -16,26 +16,24 @@ mod style;
 use std::{rc::Rc, sync::Arc};
 
 use super::{
-    Analyzer, ArrayLength, BTreeSet, BorrowKind, CallableDeclarationKey,
-    CandidateSemanticProjection, CheckedAwait, CheckedAwaitPendingObserver, CheckedChoice,
-    CheckedChoiceGoto, CheckedChoicePlan, CheckedChoicePlanItem, CheckedChoicePlanKey,
-    CheckedClosure, CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
-    CheckedExpression, CheckedExpressionResolution, CheckedFunctionSiteBoundary,
-    CheckedProjectItem, CheckedStageLook, CheckedTrigger, CheckedTryBoundaryOwner,
-    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedViewCall, EffectId,
-    EffectSet, EntityKind, ExprId, FinalSemanticAnalysisError, GenericParameterOwnerId,
-    GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
-    HirChoiceCompactAction, HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef,
-    HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
-    HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField, HirScopeKind, HirScopeOwner,
-    HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind,
-    HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
-    PreparedDialogueApplication, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
-    PreparedExpressionFact, PreparedExpressionShell, PreparedImplicitCallableBody,
-    PreparedOwnerBoundExpression, PreparedOwnerBoundResolution, PreparedTryBoundary,
-    ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType, ProjectTypeTarget,
-    ProjectValueLookup, RegisteredSemanticValueId, ScopeId, SourceSpan, TypeKind,
-    TypeParameterSubstitutions,
+    Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection, CheckedAwait,
+    CheckedAwaitPendingObserver, CheckedChoice, CheckedChoiceGoto, CheckedChoicePlan,
+    CheckedChoicePlanItem, CheckedChoicePlanKey, CheckedClosure, CheckedDialogueEffectSiteOrdinal,
+    CheckedDialogueEffectTrigger, CheckedExpression, CheckedExpressionResolution,
+    CheckedProjectItem, CheckedStageLook, CheckedTrigger, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedViewCall, EffectId, EffectSet, EntityKind, ExprId,
+    FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
+    HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
+    HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral,
+    HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
+    HirPostfixBracketCandidates, HirRecordField, HirScopeKind, HirScopeOwner, HirSelectedMember,
+    HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeSourceRole, HirUnaryOp,
+    LocalLookup, PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectPlan,
+    PreparedDialogueEffectSite, PreparedExpressionFact, PreparedExpressionShell,
+    PreparedImplicitCallableBody, PreparedOwnerBoundExpression, PreparedOwnerBoundResolution,
+    PreparedTryBoundary, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
+    ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId, ScopeId, SourceSpan,
+    TypeKind, TypeParameterSubstitutions,
     calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -49,6 +47,7 @@ use crate::callable::{
     ResolverWork, resolve_call_target,
 };
 use crate::final_analysis::CheckedCompileTimeCallee;
+use crate::final_analysis::prepared::TryDestination;
 use crate::final_analysis::type_rules::{integer_suffix_type, nonnegative_integer_magnitude_fits};
 use crate::registration::RegisteredExternalOwner;
 use arcweft_lang_hir::body_edges::{HirBodyChild, HirBodyKind};
@@ -1038,27 +1037,10 @@ impl Analyzer<'_, '_, '_> {
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
                 )
             })?;
-            let propagates_to_function_site = match &body {
-                PreparedExpressionFact::Complete(body) => matches!(
-                    body.resolution(),
-                    CheckedExpressionResolution::Try(tried)
-                        if matches!(
-                            tried.boundary().owner(),
-                            CheckedTryBoundaryOwner::Callable(super::super::CheckedCallableBoundary::FunctionSite(
-                                CheckedFunctionSiteBoundary::Implicit { .. }
-                            ))
-                        )
-                ),
-                PreparedExpressionFact::OwnerBound(body) => matches!(
-                    body.resolution(),
-                    PreparedOwnerBoundResolution::Try(try_expression)
-                        if matches!(
-                            try_expression.boundary(),
-                            PreparedTryBoundary::ImplicitFunctionSite { .. }
-                        )
-                ),
-                _ => false,
-            };
+            let propagates_to_function_site = matches!(
+                body.try_propagation(),
+                Some((TryDestination::ImplicitFunctionSite(site), _)) if site == owner
+            );
             let result = if propagates_to_function_site {
                 context
                     .result
@@ -2968,9 +2950,12 @@ impl Analyzer<'_, '_, '_> {
         self.facts
             .expressions()
             .values()
-            .filter_map(PreparedExpressionFact::local_try)
-            .filter(|(target, _)| *target == owner)
-            .filter_map(|(_, carrier)| carrier.residual())
+            .filter_map(|fact| match fact.try_propagation() {
+                Some((TryDestination::CarrierBlock(target), carrier)) if target == owner => {
+                    carrier.residual()
+                }
+                _ => None,
+            })
             .collect()
     }
 
@@ -3262,28 +3247,10 @@ impl Analyzer<'_, '_, '_> {
                         .expect("function-site context was just pushed");
                 }
                 let body = body?;
-                let propagates_to_function_site = match &body {
-                    PreparedExpressionFact::Complete(body) => matches!(
-                        body.resolution(),
-                        CheckedExpressionResolution::Try(tried)
-                            if matches!(
-                                tried.boundary().owner(),
-                                CheckedTryBoundaryOwner::Callable(super::super::CheckedCallableBoundary::FunctionSite(
-                                    CheckedFunctionSiteBoundary::Explicit(site)
-                                )) if site.lookup_owner() == owner
-                            )
-                    ),
-                    PreparedExpressionFact::OwnerBound(body) => matches!(
-                        body.resolution(),
-                        PreparedOwnerBoundResolution::Try(tried)
-                            if matches!(
-                                tried.boundary(),
-                                PreparedTryBoundary::ExplicitFunctionSite { lookup_owner, .. }
-                                    if *lookup_owner == owner
-                            )
-                    ),
-                    _ => false,
-                };
+                let propagates_to_function_site = matches!(
+                    body.try_propagation(),
+                    Some((TryDestination::ExplicitFunctionSite(site), _)) if site == owner
+                );
                 let result = if propagates_to_function_site {
                     body_expected
                         .cloned()
@@ -3307,10 +3274,21 @@ impl Analyzer<'_, '_, '_> {
                         )
                     })?
                 };
-                let completion = self.expression_body_completion(module, closure.body(), owner, &body)?;
-                let value_results = self.checked_closure_value_sources(module, owner, closure.body(), &completion)?;
+                let completion =
+                    self.expression_body_completion(module, closure.body(), owner, &body)?;
+                let value_results = self.checked_closure_value_sources(
+                    module,
+                    owner,
+                    closure.body(),
+                    propagates_to_function_site,
+                    &completion,
+                )?;
                 let result = if let Some(expected) = body_expected {
-                    if result == TypeKind::Never { expected.clone() } else { result }
+                    if result == TypeKind::Never {
+                        expected.clone()
+                    } else {
+                        result
+                    }
                 } else {
                     self.completed_body_result(module, closure.body(), result, completion)?
                 };
@@ -3326,18 +3304,20 @@ impl Analyzer<'_, '_, '_> {
                 {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
-                let checked_closure =
-                    CheckedClosure::seal(Arc::clone(&self.topology), owner, value_results.into_boxed_slice(), |selector| {
+                let checked_closure = CheckedClosure::seal(
+                    Arc::clone(&self.topology),
+                    owner,
+                    value_results.into_boxed_slice(),
+                    |selector| {
                         self.facts
                             .expressions()
                             .get(&selector)?
                             .selected_postfix_candidate()
-                    })
-                    .map_err(|violation| {
-                        AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::from(
-                            violation,
-                        ))
-                    })?;
+                    },
+                )
+                .map_err(|violation| {
+                    AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::from(violation))
+                })?;
                 Ok(CheckedExpression::value(
                     ty,
                     if expected.is_some() {

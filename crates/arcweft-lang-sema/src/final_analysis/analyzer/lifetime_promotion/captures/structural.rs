@@ -8,8 +8,7 @@ use arcweft_lang_hir::{
 };
 
 use crate::final_analysis::{
-    CheckedExpression, CheckedFieldReceiver, CheckedMatchArmFact, CheckedTryCarrier,
-    PreparedExpressionFact,
+    CheckedExpression, CheckedFieldReceiver, CheckedMatchArmFact, PreparedExpressionFact,
     prepared::{PreparedProjectRecordExpression, PreparedRecordValueSource},
 };
 
@@ -74,13 +73,11 @@ impl Analyzer<'_, '_, '_> {
         let mut dependencies = BorrowDependencies::default();
         let values = match expression.kind() {
             HirExprKind::Try(tried) => {
-                let success = match fact.try_carrier() {
-                    Some(CheckedTryCarrier::Option { .. }) => CarrierStorage::OptionItem,
-                    Some(CheckedTryCarrier::Result { .. }) => CarrierStorage::ResultOk,
-                    None => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
-                };
+                let carrier = fact
+                    .try_carrier()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 let observation = work.project(
-                    StorageProjection::Carrier(success),
+                    StorageProjection::Carrier(CarrierStorage::success(carrier)),
                     origin.observation,
                     receiver,
                 )?;
@@ -178,17 +175,11 @@ impl Analyzer<'_, '_, '_> {
             HirComputationBlockKind::Result => CarrierStorage::ResultOk,
             _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
         };
-        let (normal, residual) = match work.selected_storage(origin.observation)? {
-            Some((StorageProjection::Carrier(payload), remaining)) => (
-                (*payload == success).then_some(remaining),
-                (success == CarrierStorage::ResultOk && *payload == CarrierStorage::ResultErr)
-                    .then_some(remaining),
-            ),
-            None if origin.observation == Observation::Stored => (
-                Some(Observation::Stored),
-                (success == CarrierStorage::ResultOk).then_some(Observation::Stored),
-            ),
-            _ => (None, None),
+        let normal = work.carrier_payload(origin.observation, success)?;
+        let residual = if success == CarrierStorage::ResultOk {
+            work.carrier_payload(origin.observation, CarrierStorage::ResultErr)?
+        } else {
+            None
         };
         let mut dependencies = BorrowDependencies::default();
         if normal.is_none() && residual.is_none() {

@@ -6,7 +6,7 @@ use arcweft_lang_hir::{
     leaf::HirName,
     symbol::CallableDeclarationKey,
 };
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     callable::ContentCallableIdentity,
@@ -18,7 +18,8 @@ use crate::{
 
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
 use super::{
-    CheckedExpression, CheckedExpressionResolution, CheckedPattern, CheckedProjectNominal,
+    CheckedCallableBoundary, CheckedExpression, CheckedExpressionResolution,
+    CheckedFunctionSiteBoundary, CheckedPattern, CheckedProjectNominal, CheckedTryBoundaryOwner,
     CheckedTryCarrier, CheckedTypeSelection, CheckedTypedExpressionResult,
 };
 
@@ -316,6 +317,30 @@ pub(crate) enum PreparedTryBoundary {
         declaration: CallableDeclarationKey,
         boundary_type: TypeKind,
     },
+}
+
+/// The generation-local lookup identity shared by prepared and sealed Try facts.
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum TryDestination<'a> {
+    CarrierBlock(ExprId),
+    ExplicitFunctionSite(ExprId),
+    ImplicitFunctionSite(ExprId),
+    Thread(ExprId),
+    Declaration(Cow<'a, CallableDeclarationKey>),
+}
+
+impl TryDestination<'_> {
+    pub(super) fn into_owned(self) -> TryDestination<'static> {
+        match self {
+            Self::CarrierBlock(owner) => TryDestination::CarrierBlock(owner),
+            Self::ExplicitFunctionSite(owner) => TryDestination::ExplicitFunctionSite(owner),
+            Self::ImplicitFunctionSite(owner) => TryDestination::ImplicitFunctionSite(owner),
+            Self::Thread(owner) => TryDestination::Thread(owner),
+            Self::Declaration(declaration) => {
+                TryDestination::Declaration(Cow::Owned(declaration.into_owned()))
+            }
+        }
+    }
 }
 
 impl PreparedTryBoundary {
@@ -1021,26 +1046,59 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(crate) fn local_try(&self) -> Option<(ExprId, &CheckedTryCarrier)> {
+    pub(super) fn try_propagation(&self) -> Option<(TryDestination<'_>, &CheckedTryCarrier)> {
         match self {
             Self::Complete(value) => {
                 let CheckedExpressionResolution::Try(tried) = value.resolution() else {
                     return None;
                 };
-                let super::CheckedTryBoundaryOwner::CarrierBlock(target) = tried.boundary().owner()
-                else {
-                    return None;
+                let destination = match tried.boundary().owner() {
+                    CheckedTryBoundaryOwner::Infallible => return None,
+                    CheckedTryBoundaryOwner::CarrierBlock(site) => {
+                        TryDestination::CarrierBlock(site.lookup_owner())
+                    }
+                    CheckedTryBoundaryOwner::Callable(callable) => match callable {
+                        CheckedCallableBoundary::FunctionSite(site) => match site {
+                            CheckedFunctionSiteBoundary::Explicit(site) => {
+                                TryDestination::ExplicitFunctionSite(site.lookup_owner())
+                            }
+                            CheckedFunctionSiteBoundary::Implicit { site, .. } => {
+                                TryDestination::ImplicitFunctionSite(site.lookup_owner())
+                            }
+                        },
+                        CheckedCallableBoundary::Thread(site) => {
+                            TryDestination::Thread(site.lookup_owner())
+                        }
+                        CheckedCallableBoundary::Declaration(site) => {
+                            TryDestination::Declaration(Cow::Borrowed(site.declaration()))
+                        }
+                    },
                 };
-                Some((target.lookup_owner(), tried.carrier()))
+                Some((destination, tried.carrier()))
             }
             Self::OwnerBound(value) => {
                 let PreparedOwnerBoundResolution::Try(tried) = value.resolution() else {
                     return None;
                 };
-                let PreparedTryBoundary::CarrierBlock { lookup_owner } = tried.boundary() else {
-                    return None;
+                let destination = match tried.boundary() {
+                    PreparedTryBoundary::Infallible => return None,
+                    PreparedTryBoundary::CarrierBlock { lookup_owner } => {
+                        TryDestination::CarrierBlock(*lookup_owner)
+                    }
+                    PreparedTryBoundary::ExplicitFunctionSite { lookup_owner, .. } => {
+                        TryDestination::ExplicitFunctionSite(*lookup_owner)
+                    }
+                    PreparedTryBoundary::ImplicitFunctionSite { lookup_owner, .. } => {
+                        TryDestination::ImplicitFunctionSite(*lookup_owner)
+                    }
+                    PreparedTryBoundary::Thread { lookup_owner, .. } => {
+                        TryDestination::Thread(*lookup_owner)
+                    }
+                    PreparedTryBoundary::Callable { declaration, .. } => {
+                        TryDestination::Declaration(Cow::Borrowed(declaration))
+                    }
                 };
-                Some((*lookup_owner, tried.carrier()))
+                Some((destination, tried.carrier()))
             }
             _ => None,
         }

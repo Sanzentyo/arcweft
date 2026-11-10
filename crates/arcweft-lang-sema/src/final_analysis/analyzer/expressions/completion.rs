@@ -5,13 +5,15 @@ use super::{
     Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, ExprId,
     FinalSemanticAnalysisError, HirExprKind, HirModule, PreparedExpressionFact,
 };
-use crate::final_analysis::completion::NormalContinuation;
+use crate::final_analysis::{
+    completion::NormalContinuation, model::CallableResultSource, prepared::TryDestination,
+};
 use arcweft_lang_hir::body_edges::HirBodyChild;
 use arcweft_lang_hir::expr::{
     HirComputationBlockKind, HirExpressionChildOwnership, HirExpressionChildRole,
     HirExpressionOwnedBodyRole, HirExpressionOwnedChild,
 };
-use arcweft_lang_hir::identity::StmtId;
+use arcweft_lang_hir::identity::{ItemId, StmtId};
 use arcweft_lang_hir::project::{
     HirControlTransferTarget, HirExpressionEvaluationEdge, HirLoopTargetFamily, HirReturnContext,
     HirSelectedCallExpressionDisposition, HirSelectedExpressionInventoryError,
@@ -21,7 +23,11 @@ use arcweft_lang_hir::stmt::{
     HirConditionalElseBranch, HirContextualStmtBody, HirStatementBodyRole, HirStmtEvaluationPlan,
     HirStmtMatchArmBody, HirStmtSelectEvaluationPlan, HirStmtValuePlanKind,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use arcweft_lang_hir::symbol::CallableDeclarationKey;
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 pub(in crate::final_analysis::analyzer) struct BodyCompletion {
     normal: NormalContinuation,
@@ -31,7 +37,7 @@ pub(in crate::final_analysis::analyzer) struct BodyCompletion {
     escaping: BTreeSet<StmtId>,
     // An Option failure has no payload. Keep its destination with an empty
     // source set so that it still participates in control completion.
-    local_tries: BTreeMap<ExprId, BTreeSet<ExprId>>,
+    try_residuals: BTreeMap<TryDestination<'static>, BTreeSet<ExprId>>,
 }
 
 pub(in crate::final_analysis::analyzer) struct CarrierValueSources {
@@ -45,7 +51,7 @@ impl BodyCompletion {
             normal: NormalContinuation::Unit,
             returns: BTreeSet::new(),
             escaping: BTreeSet::new(),
-            local_tries: BTreeMap::new(),
+            try_residuals: BTreeMap::new(),
         }
     }
     fn never() -> Self {
@@ -53,7 +59,7 @@ impl BodyCompletion {
             normal: NormalContinuation::Never,
             returns: BTreeSet::new(),
             escaping: BTreeSet::new(),
-            local_tries: BTreeMap::new(),
+            try_residuals: BTreeMap::new(),
         }
     }
     pub(in crate::final_analysis::analyzer) const fn continues(&self) -> bool {
@@ -65,7 +71,7 @@ impl BodyCompletion {
     fn sequence(&mut self, child: Self) {
         if self.continues() {
             self.escaping.extend(child.escaping);
-            self.extend_local_tries(child.local_tries);
+            self.extend_try_residuals(child.try_residuals);
         }
         self.normal = self.normal.then(child.normal);
         self.returns.extend(child.returns);
@@ -74,24 +80,30 @@ impl BodyCompletion {
         self.normal = self.normal.join(child.normal);
         self.returns.extend(child.returns);
         self.escaping.extend(child.escaping);
-        self.extend_local_tries(child.local_tries);
+        self.extend_try_residuals(child.try_residuals);
     }
     fn evidence(&mut self, child: Self) {
         self.returns.extend(child.returns);
         if self.continues() {
             self.escaping.extend(child.escaping);
-            self.extend_local_tries(child.local_tries);
+            self.extend_try_residuals(child.try_residuals);
         }
     }
 
-    fn extend_local_tries(&mut self, tries: BTreeMap<ExprId, BTreeSet<ExprId>>) {
+    fn extend_try_residuals(&mut self, tries: BTreeMap<TryDestination<'static>, BTreeSet<ExprId>>) {
         for (target, operands) in tries {
-            self.local_tries.entry(target).or_default().extend(operands);
+            self.try_residuals
+                .entry(target)
+                .or_default()
+                .extend(operands);
         }
     }
 
     fn receive_carrier(&mut self, owner: ExprId) -> BTreeSet<ExprId> {
-        if let Some(operands) = self.local_tries.remove(&owner) {
+        if let Some(operands) = self
+            .try_residuals
+            .remove(&TryDestination::CarrierBlock(owner))
+        {
             self.normal = self.normal.join(NormalContinuation::Unit);
             operands
         } else {
@@ -256,7 +268,38 @@ impl Analyzer<'_, '_, '_> {
                 current_expression: None,
             },
         )?;
-        self.completion_value_sources(module, tail, &completion, receives, include_normal)
+        self.completion_value_sources(
+            module,
+            (include_normal && completion.continues()).then_some(tail),
+            &completion,
+            receives,
+        )
+    }
+
+    pub(in crate::final_analysis::analyzer) fn checked_function_value_sources(
+        &self,
+        module: &HirModule,
+        (item, declaration): (ItemId, &CallableDeclarationKey),
+        statements: &[StmtId],
+        tail: ExprId,
+    ) -> Result<Vec<CallableResultSource>, AnalyzerExpressionError> {
+        let completion = self.block_body_completion(
+            module,
+            statements,
+            tail,
+            CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
+                callable: None,
+                current_expression: None,
+            },
+        )?;
+        self.callable_result_sources(
+            module,
+            CallableResultSource::Returned(tail),
+            &completion,
+            HirReturnContext::Item(item),
+            TryDestination::Declaration(Cow::Borrowed(declaration)),
+        )
     }
 
     pub(super) fn checked_closure_value_sources(
@@ -264,33 +307,62 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         closure: ExprId,
         body: ExprId,
+        wraps_try_success: bool,
         completion: &BodyCompletion,
-    ) -> Result<Vec<ExprId>, AnalyzerExpressionError> {
-        self.completion_value_sources(
+    ) -> Result<Vec<CallableResultSource>, AnalyzerExpressionError> {
+        let normal = if wraps_try_success {
+            CallableResultSource::TrySuccess(body)
+        } else {
+            CallableResultSource::Returned(body)
+        };
+        self.callable_result_sources(
             module,
-            body,
+            normal,
             completion,
-            |target| {
-                matches!(target, HirControlTransferTarget::Return {
-                context: HirReturnContext::FunctionSite(site)
-            } if *site == closure)
-            },
-            true,
+            HirReturnContext::FunctionSite(closure),
+            TryDestination::ExplicitFunctionSite(closure),
         )
+    }
+
+    fn callable_result_sources(
+        &self,
+        module: &HirModule,
+        normal: CallableResultSource,
+        completion: &BodyCompletion,
+        return_context: HirReturnContext,
+        try_destination: TryDestination<'_>,
+    ) -> Result<Vec<CallableResultSource>, AnalyzerExpressionError> {
+        let returns = self.completion_value_sources(
+            module,
+            None,
+            completion,
+            |target| matches!(target, HirControlTransferTarget::Return { context } if *context == return_context),
+        )?;
+        let mut values = Vec::new();
+        if completion.continues() {
+            values.push(normal);
+        }
+        values.extend(returns.into_iter().map(CallableResultSource::Returned));
+        if let Some(residuals) = completion.try_residuals.get(&try_destination) {
+            values.extend(
+                residuals
+                    .iter()
+                    .copied()
+                    .map(CallableResultSource::ResultResidual),
+            );
+        }
+        Ok(values)
     }
 
     fn completion_value_sources(
         &self,
         module: &HirModule,
-        tail: ExprId,
+        normal: Option<ExprId>,
         completion: &BodyCompletion,
         receives: impl Fn(&HirControlTransferTarget) -> bool,
-        include_normal: bool,
     ) -> Result<Vec<ExprId>, AnalyzerExpressionError> {
         let mut values = Vec::new();
-        if include_normal && completion.continues() {
-            values.push(tail);
-        }
+        values.extend(normal);
         for &owner in &completion.escaping {
             let statement = module.resolve_stmt(owner).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
@@ -657,14 +729,15 @@ impl Analyzer<'_, '_, '_> {
                 let mut operand =
                     self.expression_body_completion_in(module, tried.operand(), query)?;
                 if operand.continues()
-                    && let Some((target, carrier)) =
-                        self.completion_expression_fact(owner, query)?.local_try()
+                    && let Some((target, carrier)) = self
+                        .completion_expression_fact(owner, query)?
+                        .try_propagation()
                 {
-                    let sources = operand.local_tries.entry(target).or_default();
-                    if matches!(
-                        carrier,
-                        crate::final_analysis::CheckedTryCarrier::Result { .. }
-                    ) {
+                    let sources = operand
+                        .try_residuals
+                        .entry(target.into_owned())
+                        .or_default();
+                    if carrier.residual().is_some() {
                         sources.insert(tried.operand());
                     }
                 }
