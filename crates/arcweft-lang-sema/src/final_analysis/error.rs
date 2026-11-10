@@ -299,6 +299,8 @@ pub enum FinalSemanticAnalysisError {
     Cancelled,
     #[error("semantic analysis work accounting overflowed")]
     AccountingOverflow,
+    #[error("callable effect closure exceeded its work limit of {limit}")]
+    CallableEffectClosureWorkLimit { limit: u64 },
     #[error("project symbol authority does not match the executable HIR generation")]
     SymbolGenerationMismatch,
     #[error("semantic analysis contains duplicate {family:?} fact")]

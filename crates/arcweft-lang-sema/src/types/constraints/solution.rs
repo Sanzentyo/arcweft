@@ -7,7 +7,7 @@
 
 use std::{slice, sync::Arc};
 
-use crate::effect_row::{EffectConstraintEligibility, EffectRow};
+use crate::effect_row::{EffectConstraintCompletion, EffectConstraintEligibility, EffectRow};
 
 use super::super::{
     ArrayLength, GenericConstReference, GenericEffectReference, GenericScope, GenericTypeReference,
@@ -310,12 +310,26 @@ impl TypeConstraintSolution {
         Ok(())
     }
 
-    /// Complete and seal one active lower path. No caller may publish or
-    /// inherit its rows until this owner has projected the whole path and
-    /// checked its scope and completeness.
+    #[cfg(test)]
     pub(super) fn complete_application<A, D>(
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError>
+    where
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+    {
+        let effects = path.effects.complete(context)?;
+        Self::complete_application_with_effects(path, application, &effects, context)
+    }
+
+    /// Seal one application from the immutable effect completion shared by
+    /// its source rows, selected equations, and sibling applications.
+    pub(super) fn complete_application_with_effects<A, D>(
+        path: &ConstraintPath<D>,
+        application: super::application::ConstraintApplicationId,
+        effects: &EffectConstraintCompletion,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
@@ -333,6 +347,7 @@ impl TypeConstraintSolution {
         Self::seal_application(
             path,
             application,
+            effects,
             CompletedSolutionInput::ActivePath,
             context,
         )
@@ -416,9 +431,11 @@ impl TypeConstraintSolution {
         }
         path.bindings = bindings.into_iter().collect();
         path.const_bindings = const_bindings.into_iter().collect();
+        let effects = path.effects.complete(context)?;
         Self::seal_application(
             path,
             application,
+            &effects,
             CompletedSolutionInput::ClaimedCompleted,
             context,
         )
@@ -427,6 +444,7 @@ impl TypeConstraintSolution {
     fn seal_application<A, D>(
         path: &ConstraintPath<D>,
         application: &super::application::ConstraintApplicationScope<D>,
+        completed_effects: &EffectConstraintCompletion,
         input: CompletedSolutionInput,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
@@ -595,8 +613,6 @@ impl TypeConstraintSolution {
         }
         context.validate_type_and_const_completion(path)?;
 
-        let completed_effects = path.effects.complete(context)?;
-        let opened_effect_bindings = completed_effects.bindings;
         let effect_predicate = residual.reify_effect_predicate(
             &completed_effects.predicate,
             path,
@@ -612,10 +628,9 @@ impl TypeConstraintSolution {
                 .parameters()
                 .effect_reference(row.variable())
                 .expect("sealed effect parameter opening");
-            let value = opened_effect_bindings
-                .iter()
-                .find(|(key, _)| key == &reference)
-                .map(|(_, value)| value)
+            let value = completed_effects
+                .substitution
+                .get(&reference)
                 .ok_or_else(|| {
                     super::effect_invariant(
                         super::TypeConstraintEffectInvariantKind::MissingInherited,

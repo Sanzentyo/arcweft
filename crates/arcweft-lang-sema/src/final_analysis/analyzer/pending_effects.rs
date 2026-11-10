@@ -212,7 +212,12 @@ impl Analyzer<'_, '_, '_> {
             equations.insert_body(owner.clone(), applications)?;
             rows.insert(owner, row);
         }
-        equations.close(&mut rows, &boundary, self.control)?;
+        equations.close(
+            &mut rows,
+            &boundary,
+            self.catalogs.callable_limits.max_catalog_build_work(),
+            self.control,
+        )?;
         rows.remove(root)
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
     }

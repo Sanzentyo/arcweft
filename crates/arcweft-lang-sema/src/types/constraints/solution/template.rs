@@ -136,11 +136,19 @@ impl TypeConstraintSolution {
         &self,
         row: &EffectRow,
     ) -> Result<EffectRow, TypeInstantiationError> {
+        self.apply_call_effects_with_control(row, &mut UnmeteredTypeProjection)
+            .map_err(TypeProjectionError::into_instantiation)
+    }
+
+    pub(crate) fn apply_call_effects_with_control<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
         if !row.is_known() {
             return Err(crate::effect_row::EffectRowError::UnknownRow.into());
         }
-        self.apply_effects_under(row, &GenericScope::default(), &mut UnmeteredTypeProjection)
-            .map_err(TypeProjectionError::into_instantiation)
+        self.apply_effects_under(row, &GenericScope::default(), control)
     }
 }
 

@@ -46,6 +46,14 @@ impl PreparedCallableEffectProjection {
     pub(crate) fn specialize(&self, row: &EffectRow) -> Result<EffectRow, CallConstraintInvariant> {
         self.solution.apply_call_effects(row).map_err(Into::into)
     }
+
+    pub(crate) fn specialize_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        control: &mut C,
+    ) -> Result<EffectRow, crate::types::TypeProjectionError<C::Error>> {
+        self.solution.apply_call_effects_with_control(row, control)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]

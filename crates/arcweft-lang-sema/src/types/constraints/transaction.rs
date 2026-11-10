@@ -8,6 +8,8 @@ use std::{
     sync::Arc,
 };
 
+use crate::effect_row::EffectSubstitution;
+
 use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
 use super::application::{
     ConstraintApplicationId, ConstraintApplicationScope, ConstraintApplicationScopes,
@@ -1970,8 +1972,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     {
         context.check_cancelled()?;
         ensure_unique_sources(path)?;
-        close_source_rows(path, context)?;
-        Self::validate_completed_equations(path, context)?;
+        let effects = path.effects.complete(context)?;
+        close_source_rows(path, &effects.substitution, context)?;
+        Self::validate_completed_equations(path, &effects.substitution, context)?;
         context.validate_type_and_const_completion(path)?;
         let selected_domain = path
             .applications
@@ -1987,12 +1990,19 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .collect::<BTreeMap<_, _>>();
         let mut completed = BTreeMap::new();
         for (domain, application) in ordered {
-            let solution = Arc::new(TypeConstraintSolution::complete_application(
+            let solution = Arc::new(TypeConstraintSolution::complete_application_with_effects(
                 path,
                 application,
+                &effects,
                 context,
             )?);
-            let projections = Self::finish_projections(path, application, &solution, context)?;
+            let projections = Self::finish_projections(
+                path,
+                application,
+                &solution,
+                &effects.substitution,
+                context,
+            )?;
             completed.insert(
                 domain,
                 super::CompletedConstraintApplication::new(solution, projections),
@@ -2016,9 +2026,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     fn validate_completed_equations<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
+        effect_substitution: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        let effect_substitution = path.effects.substitution(context)?;
         for equation in &path.equations {
             let pattern = equation
                 .final_expected
@@ -2026,7 +2036,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .unwrap_or(&equation.pattern);
             let mut project = |value| {
                 seal_type(value, path.projection_view(), &mut BTreeSet::new(), context)?
-                    .substitute_effect_rows(&effect_substitution)
+                    .substitute_effect_rows(effect_substitution)
                     .map_err(|_error| {
                         super::effect_invariant(
                             super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
@@ -2058,6 +2068,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         path: &ConstraintPath<D>,
         application: ConstraintApplicationId,
         solution: &TypeConstraintSolution,
+        effect_substitution: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         Box<[super::KeyedConstraintProjection<D::Application, D::Projection>]>,
@@ -2066,7 +2077,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        let effect_substitution = path.effects.substitution(context)?;
         let mut projections = Vec::new();
         for request in path
             .projections
@@ -2087,7 +2097,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let value = project_type(&opened, path.projection_view(), policy, context)
                 .map_err(projection_error)?
                 .value
-                .substitute_effect_rows(&effect_substitution)
+                .substitute_effect_rows(effect_substitution)
                 .map_err(|_error| {
                     super::effect_invariant(
                         super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
@@ -2363,17 +2373,17 @@ fn unique_request_ordinal<D: ConstraintDomain>(
 }
 fn close_source_rows<A, D>(
     path: &mut ConstraintPath<D>,
+    effect_substitution: &EffectSubstitution,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    let effect_substitution = path.effects.substitution(context)?;
     let probes = core::mem::take(&mut path.probe_trace);
     let mut closed = Vec::with_capacity(probes.len());
     for probe in probes {
-        let probe = probe.close(path.projection_view(), &effect_substitution, context)?;
+        let probe = probe.close(path.projection_view(), effect_substitution, context)?;
         for equation in &mut path.equations {
             if equation.source_ordinal == Some(probe.ordinal()) {
                 equation.actual = probe.actual().clone();

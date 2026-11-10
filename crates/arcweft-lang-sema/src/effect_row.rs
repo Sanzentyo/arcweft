@@ -79,7 +79,7 @@ struct EffectConstraintParameter {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct EffectConstraintCompletion {
-    pub(crate) bindings: Vec<(GenericEffectReference, EffectRow)>,
+    pub(crate) substitution: EffectSubstitution,
     pub(crate) predicate: EffectPredicate,
 }
 
@@ -717,18 +717,13 @@ impl EffectConstraintEnvironment {
         Ok(variables)
     }
 
-    fn formula<C: DecisionControl>(
+    fn formula<'row>(
         &self,
-        row: &EffectRow,
-        control: &mut C,
-    ) -> Result<EffectFormula<GenericEffectReference>, C::Error>
-    where
-        C::Error: From<EffectConstraintEnvironmentError>,
-    {
-        self.validate_row(row).map_err(C::Error::from)?;
-        row.known()
-            .expect("validated row")
-            .map_references(control, &mut |variable, _| Ok(variable.clone()))
+        row: &'row EffectRow,
+    ) -> Result<&'row EffectFormula<GenericEffectReference>, EffectConstraintEnvironmentError> {
+        self.validate_row(row)?;
+        row.formula()
+            .ok_or(EffectConstraintEnvironmentError::UnknownRow)
     }
 
     fn admit_predicate<C: DecisionControl>(
@@ -771,9 +766,9 @@ impl EffectConstraintEnvironment {
             "completed rows are uniquely sealed before restoration"
         );
         let actual = EffectFormula::variable(variable.clone(), control)?;
-        let expected = self.formula(row, control)?;
+        let expected = self.formula(row)?;
         let equality = actual
-            .subset(&expected, control)?
+            .subset(expected, control)?
             .and(&expected.subset(&actual, control)?, control)?;
         let predicate = self.admit_predicate(&equality, control)?;
         control.charge(DecisionWork::Visit)?;
@@ -797,11 +792,9 @@ impl EffectConstraintEnvironment {
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
-        self.validate_row(actual).map_err(C::Error::from)?;
-        self.validate_row(permitted).map_err(C::Error::from)?;
-        let actual_formula = self.formula(actual, control)?;
-        let permitted_formula = self.formula(permitted, control)?;
-        let added = actual_formula.subset(&permitted_formula, control)?;
+        let actual_formula = self.formula(actual)?;
+        let permitted_formula = self.formula(permitted)?;
+        let added = actual_formula.subset(permitted_formula, control)?;
         let predicate = self.admit_predicate(&added, control)?;
         control.charge(DecisionWork::Visit)?;
         self.predicate = predicate;
@@ -823,25 +816,26 @@ impl EffectConstraintEnvironment {
             }
             .into());
         }
-        let least = completed
+        let mut least = completed
             .least
             .ok_or_else(|| C::Error::from(EffectConstraintEnvironmentError::AmbiguousCompletion))?;
-        let mut bindings = Vec::new();
+        let mut bindings = BTreeMap::new();
         for (variable, parameter) in &self.parameters {
             control.charge(DecisionWork::Visit)?;
             if parameter.eligibility == EffectConstraintEligibility::Bindable {
-                let formula = least[variable]
-                    .map_references(control, &mut |reference, _| Ok(reference.clone()))?;
-                bindings.push((
+                let formula = least
+                    .remove(variable)
+                    .expect("least completion owns each quantified variable");
+                bindings.insert(
                     variable.clone(),
                     EffectRow {
                         formula: Some(formula),
                     },
-                ));
+                );
             }
         }
         Ok(EffectConstraintCompletion {
-            bindings,
+            substitution: EffectSubstitution(bindings),
             predicate: completed.admissibility,
         })
     }
@@ -871,6 +865,7 @@ impl EffectConstraintEnvironment {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn bindings<C: DecisionControl>(
         &self,
         control: &mut C,
@@ -878,7 +873,7 @@ impl EffectConstraintEnvironment {
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
-        Ok(self.complete(control)?.bindings)
+        Ok(self.complete(control)?.substitution.0.into_iter().collect())
     }
 
     pub(crate) fn substitution<C: DecisionControl>(
@@ -888,12 +883,7 @@ impl EffectConstraintEnvironment {
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
-        let mut rows = BTreeMap::new();
-        for (variable, row) in self.bindings(control)? {
-            control.charge(DecisionWork::Visit)?;
-            rows.insert(variable, row);
-        }
-        Ok(EffectSubstitution(rows))
+        Ok(self.complete(control)?.substitution)
     }
 }
 impl EffectRowSummary {

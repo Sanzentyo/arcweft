@@ -173,6 +173,48 @@ flow main() -> i64 { return swap(report, increment, 1i64) }
 }
 
 #[test]
+fn one_recursive_declaration_propagates_three_rotating_callback_rows() {
+    let fixture = fixture(
+        r"
+fn rotate(first: i64 -> i64, second: i64 -> i64, third: i64 -> i64, remaining: i64) -> i64 {
+    if remaining == 0i64 { first(42i64) } else { rotate(second, third, first, remaining - 1i64) }
+}
+",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("three rows converge in the sole declaration");
+    let calls = project_applications(&analysis, "rotate");
+    let [(_, recursive)] = calls.as_slice() else {
+        panic!("one recursive call edge");
+    };
+    let catalog = analysis.checked_callables();
+    let target = catalog
+        .checked_for_candidate(recursive.core().candidates().selected().id())
+        .unwrap();
+    let declaration_row = catalog.callable(target).unwrap().exposed_row();
+    let recursive_row = recursive.core().effects();
+    let parameters = declaration_row.variables().unwrap().collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 3);
+    assert_eq!(recursive_row, declaration_row);
+    let effects = ["fs.read", "fs.write", "log.write"];
+    for selected in 0..parameters.len() {
+        let mut substitution = crate::effect_row::EffectSubstitution::new();
+        for (index, parameter) in parameters.iter().enumerate() {
+            let row = if index == selected {
+                crate::effects::EffectSet::from_labels([effects[index]]).unwrap()
+            } else {
+                crate::effects::EffectSet::new()
+            };
+            substitution.bind_exact((*parameter).clone(), row).unwrap();
+        }
+        assert_eq!(
+            recursive_row.resolve(&substitution).unwrap().to_labels(),
+            [effects[selected]]
+        );
+    }
+}
+
+#[test]
 fn inferred_prefix_preserves_body_effects_and_aliases_in_either_source_order() {
     let declarations = concat!(
         "fn staged(first: i64)(second: i64) -> i64 { read(first + second) }\n",

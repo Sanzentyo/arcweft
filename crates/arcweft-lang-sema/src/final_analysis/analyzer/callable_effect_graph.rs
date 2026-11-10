@@ -1,6 +1,6 @@
 //! Callable-body call inventory, recursion rejection, and effect closure.
 
-use std::sync::Arc;
+use std::{borrow::Cow, collections::VecDeque, sync::Arc};
 
 use super::{
     BTreeMap, BTreeSet, CallableDeclarationOwner, CallableEffectSchema, CheckedCallableId, ExprId,
@@ -12,8 +12,9 @@ use crate::{
         CheckedCallSite, CheckedCallableDeclaration, PreparedCallableApplication,
         PreparedCallableEffectProjection, PreparedResolvedCallable,
     },
-    effect_row::EffectRow,
+    effect_row::{DecisionControl, DecisionWork, EffectRow},
     final_analysis::statement_effects::PreparedExecutionEffectCatalog,
+    types::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind},
 };
 
 type CallableEdges = BTreeMap<CheckedCallableId, BTreeMap<CheckedCallableId, BTreeSet<ExprId>>>;
@@ -641,9 +642,11 @@ impl CallableEffectGraph {
         &self,
         rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
         bounded_call_rows: &BTreeMap<CheckedCallableId, EffectRow>,
+        work_limit: u64,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        self.equations.close(rows, bounded_call_rows, control)
+        self.equations
+            .close(rows, bounded_call_rows, work_limit, control)
     }
 
     pub(super) fn close_selected_expression_effects(
@@ -675,50 +678,117 @@ impl CallableEffectEquations {
         &self,
         rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
         boundary: &BTreeMap<CheckedCallableId, EffectRow>,
+        work_limit: u64,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        for iteration in 0..=self.edges.len() {
-            control.check()?;
-            let previous = rows.clone();
-            let mut changed = false;
-            for (caller, targets) in &self.edges {
-                let mut row = previous
-                    .get(caller)
-                    .cloned()
+        control.check()?;
+        let mut work = CallableEffectClosureWork {
+            control,
+            limit: work_limit,
+            remaining: work_limit,
+        };
+        let mut dependents = BTreeMap::<_, Vec<_>>::new();
+        let mut pending = VecDeque::new();
+        let mut queued = BTreeSet::new();
+        for (caller, targets) in &self.edges {
+            if targets.is_empty() {
+                continue;
+            }
+            work.charge(DecisionWork::Visit)?;
+            pending.push_back(caller);
+            queued.insert(caller);
+            for target in targets.keys() {
+                work.charge(DecisionWork::Visit)?;
+                if !boundary.contains_key(target) {
+                    dependents.entry(target).or_default().push(caller);
+                }
+            }
+        }
+
+        // A recursive application can permute callback rows, so one body may
+        // grow more than once. Every change is a union of exact projected rows;
+        // only callers of a changed non-boundary row need another visit.
+        while let Some(caller) = pending.pop_front() {
+            work.charge(DecisionWork::Visit)?;
+            queued.remove(caller);
+            let previous = rows
+                .get(caller)
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            let mut row = Cow::Borrowed(previous);
+            for (target, expressions) in &self.edges[caller] {
+                let target_row = boundary
+                    .get(target)
+                    .or_else(|| rows.get(target))
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                for (target, expressions) in targets {
-                    let target_row = boundary
-                        .get(target)
-                        .or_else(|| previous.get(target))
+                for expression in expressions {
+                    work.charge(DecisionWork::Visit)?;
+                    let call = self
+                        .calls
+                        .get(expression)
                         .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                    for expression in expressions {
-                        control.check()?;
-                        let call = self
-                            .calls
-                            .get(expression)
-                            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                        if call.target() != target {
-                            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-                        }
-                        let projected = call.specialize(target_row)?;
-                        row = crate::final_analysis::statement_effects::union_effect_rows(
-                            &row, &projected, control,
-                        )?;
+                    if call.target() != target {
+                        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                    }
+                    let projected = call
+                        .projection
+                        .specialize_with_control(target_row, &mut work)
+                        .map_err(|error| match error {
+                            TypeProjectionError::Control(error) => error,
+                            TypeProjectionError::Instantiation(_) => {
+                                FinalSemanticAnalysisError::CallResolutionFailed {
+                                    owner: *expression,
+                                }
+                            }
+                        })?;
+                    row = Cow::Owned(row.union(&projected, &mut work)?);
+                }
+            }
+            if row.as_ref() != previous {
+                let row = row.into_owned();
+                rows.insert(caller.clone(), row);
+                for dependent in dependents.get(caller).into_iter().flatten().copied() {
+                    work.charge(DecisionWork::Visit)?;
+                    if queued.insert(dependent) {
+                        pending.push_back(dependent);
                     }
                 }
-                if rows.get(caller) != Some(&row) {
-                    changed = true;
-                    rows.insert(caller.clone(), row);
-                }
-            }
-            if !changed {
-                return Ok(());
-            }
-            if iteration == self.edges.len() {
-                return Err(FinalSemanticAnalysisError::AccountingOverflow);
             }
         }
         Ok(())
+    }
+}
+
+struct CallableEffectClosureWork<'a> {
+    control: FinalSemanticAnalysisControl<'a>,
+    limit: u64,
+    remaining: u64,
+}
+
+impl DecisionControl for CallableEffectClosureWork<'_> {
+    type Error = FinalSemanticAnalysisError;
+
+    fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+        self.control.check()?;
+        self.remaining = self.remaining.checked_sub(1).ok_or(
+            FinalSemanticAnalysisError::CallableEffectClosureWorkLimit { limit: self.limit },
+        )?;
+        Ok(())
+    }
+}
+
+impl TypeProjectionControl for CallableEffectClosureWork<'_> {
+    type Error = FinalSemanticAnalysisError;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.control.check()
+    }
+
+    fn visit_node(&mut self, _: TypeProjectionNodeKind, _: u64) -> Result<(), Self::Error> {
+        self.charge(DecisionWork::Visit)
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.charge(DecisionWork::Visit)
     }
 }
 

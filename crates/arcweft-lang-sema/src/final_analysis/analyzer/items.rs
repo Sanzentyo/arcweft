@@ -756,7 +756,12 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
-        graph.close_effect_rows(&mut rows, &bounded_call_effect_rows, self.control)?;
+        graph.close_effect_rows(
+            &mut rows,
+            &bounded_call_effect_rows,
+            self.catalogs.callable_limits.max_catalog_build_work(),
+            self.control,
+        )?;
         // Preparation rows were derived within candidate transactions. The
         // complete selected execution graph must independently confirm every
         // surviving prerequisite before any checked catalog is published.
