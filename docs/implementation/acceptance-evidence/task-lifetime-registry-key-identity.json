@@ -17712,5 +17712,160 @@
       "history": "The first workspace check receipt was interrupted by a fixture compile repair. The terminal matrix used the final input hashes. The aborted receipt and first workspace check log are retained separately.",
       "cliScope": "CLI libraries, binaries, and the six prescribed integration targets."
     }
+  },
+  "retainedResultBinderCore": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-10T01:35:59.8699016Z",
+    "source": "0e1213fca5578018e6c7501d24fbee417b37ef0b",
+    "base": "16ca8cf134cc7fa40ae95618410960ccda80ee47",
+    "publication": {
+      "version": 1,
+      "source": "0e1213fca5578018e6c7501d24fbee417b37ef0b",
+      "base": "16ca8cf134cc7fa40ae95618410960ccda80ee47",
+      "tree": "e3bfc51fea4b3fae1b69d7f90ad1829047a52257",
+      "blobs": [
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/callable_specialization.rs",
+          "sha256": "3bdd656e808ab12bf2fba1517ed638a35cfb60037cb68e714ef245fa9f3141ec",
+          "blob": "9a891d658c11ad8190b2a353540aaaafd92c24cb"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/callable_specialization.rs",
+          "sha256": "84d0b4889c9319af90e219fcc96bb9818f79e430b8c740a267cfc00551e3b5d1",
+          "blob": "13264f141d73895adab97a788b2c2c6872bedab3"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/callable_specialization/retained.rs",
+          "sha256": "eb221afe164ace3fd7161c0cc7777abf33a1c55ba6198628c749ed9eb5f6fc4d",
+          "blob": "cae5cc8a1125e44510ac231d7ca3661c685eb2e5"
+        },
+        {
+          "path": "docs/02-runtime/executable-runtime-core.md",
+          "sha256": "e2e842a4a5394113a413e64d06610f73d69a75ed9525cb1e686a0bddc412e690",
+          "blob": "e2bedf10cfba2e84be8d599175dc19f5d80c6c58"
+        }
+      ],
+      "patchSha256": "b37816c42ced049a018a7444f711dfedf73388add517f8ec3991270707b64f34"
+    },
+    "worktree": "Validated the four scoped paths on the existing main. One unrelated untracked directory was present.",
+    "design": "The retained-group state relation independently checks current parameters and invocation effects, transfers the residual type, const and effect binder with its predicate to the next function, and requires the same origin with an exact retaining target. It uses the existing version 1 relation and shares the validation work allowance between RuntimePlan and AWBC.",
+    "statusReconciliation": "The failed source-level experiment remains in returnedCallableCopy history. The current row records the implemented Core boundary and the open source-to-plan connection.",
+    "tests": {
+      "ownerNextest": {
+        "pass": 2401,
+        "fail": 0,
+        "skip": 0
+      },
+      "focusedNextest": {
+        "pass": 15,
+        "fail": 0,
+        "scope": "Existing specialization tests plus exact retained-state, predicate, argument, budget and canonical decoded AWBC one-instruction application evidence."
+      },
+      "doctests": {
+        "pass": 80,
+        "fail": 0
+      },
+      "structure": {
+        "blocking": 0
+      }
+    },
+    "reverseGraph": {
+      "packages": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "sha256": "274d879585f2c8cfb5b787233c2821c761fdf5cb2ef73137a854c7c4684e2d16"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-retained-result-binder.raw.zip",
+      "sha256": "8c8b101ea48dfe6453e70bc2745551208c0fb40601d60aaee76b19f8d68f6ad1",
+      "entries": [
+        {
+          "path": "retained-result-binder-0e1213fc/source.publication.json",
+          "sha256": "7aa1b0e7c1012ae2cf0d0e3bd50763b466daf488f8822b535f00a3bab6a80a41"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/source.reviewed.patch",
+          "sha256": "b37816c42ced049a018a7444f711dfedf73388add517f8ec3991270707b64f34"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/core-focused.log",
+          "sha256": "8e93a2605dcf83d9b29d4a4ce3ed3ff8543bf3379c161c70f8729225397b34c1"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/core-focused-final.log",
+          "sha256": "9e577c368e27efb944427076773f06dfe2d210f568245c5d8322d2784f143eed"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/core-owner.log",
+          "sha256": "f208351c6f1780182a071c655e820971ebfac05065df5f5c717d30eabc0a05be"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/core-doctests.log",
+          "sha256": "28a9807fb48c3d3ebcf3c93b61b570cd2498dd98a0fa1adde1480e3be7db0c4f"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/structure.log",
+          "sha256": "78797440e4c8fa19f3300d9714516f73b4ceb21d23006d5e2a197cb310378196"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/rdeps.log",
+          "sha256": "274d879585f2c8cfb5b787233c2821c761fdf5cb2ef73137a854c7c4684e2d16"
+        },
+        {
+          "path": "retained-result-binder-0e1213fc/prior-status-row.md",
+          "sha256": "8a045d85ab14be20924e01ede746786f2d6aa44dd3b9779eea2567c09f347621"
+        }
+      ]
+    }
   }
 }
