@@ -187,7 +187,7 @@ impl Analyzer<'_, '_, '_> {
                         observation,
                         ..origin
                     },
-                    &query.work,
+                    &mut query.work,
                     receiver,
                 )? {
                     receiver.charge(1)?;

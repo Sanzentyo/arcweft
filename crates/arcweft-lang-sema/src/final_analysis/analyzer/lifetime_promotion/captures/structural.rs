@@ -15,6 +15,7 @@ use crate::final_analysis::{
 use super::{
     Analyzer, BorrowDependencies, CaptureWorklist, CarrierStorage, FinalSemanticAnalysisError,
     Observation, ReceiverBorrowQuery, StorageFrame, StorageProjection, ValueOrigin,
+    worklist::PositionalStorage,
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -98,16 +99,45 @@ impl Analyzer<'_, '_, '_> {
                     receiver,
                 );
             }
-            HirExprKind::Tuple(tuple) if origin.observation == Observation::Stored => {
-                receiver.charge(tuple.elements().len() as u64)?;
-                tuple.elements().to_vec()
+            HirExprKind::Tuple(tuple) => {
+                return positional_storage_dependencies(
+                    tuple.elements(),
+                    PositionalStorage::Tuple,
+                    origin,
+                    work,
+                    receiver,
+                );
             }
-            HirExprKind::BracketSequence(sequence) if origin.observation == Observation::Stored => {
-                receiver.charge(sequence.elements().len() as u64)?;
-                sequence.elements().to_vec()
+            HirExprKind::BracketSequence(sequence) => {
+                return positional_storage_dependencies(
+                    sequence.elements(),
+                    PositionalStorage::Sequence,
+                    origin,
+                    work,
+                    receiver,
+                );
             }
-            HirExprKind::ArrayRepeat(repeat) if origin.observation == Observation::Stored => {
-                vec![repeat.value()]
+            HirExprKind::ArrayRepeat(repeat) => {
+                let observation = match work.selected_storage(origin.observation)? {
+                    Some((
+                        StorageProjection::Element {
+                            family: PositionalStorage::Sequence,
+                            ..
+                        },
+                        remaining,
+                    )) => remaining,
+                    None if origin.observation == Observation::Stored => Observation::Stored,
+                    _ => return Ok(BorrowDependencies::default()),
+                };
+                return work.demand(
+                    ValueOrigin {
+                        expression: repeat.value(),
+                        observation,
+                        ..origin
+                    },
+                    origin,
+                    receiver,
+                );
             }
             HirExprKind::Block(block) => vec![block.tail()],
             HirExprKind::NamedBlock(block) => vec![block.tail()],
@@ -295,4 +325,45 @@ impl Analyzer<'_, '_, '_> {
             ),
         }
     }
+}
+
+fn positional_storage_dependencies(
+    elements: &[ExprId],
+    family: PositionalStorage,
+    origin: ValueOrigin,
+    work: &mut CaptureWorklist,
+    receiver: &mut ReceiverBorrowQuery<'_>,
+) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
+    let (elements, observation) = match work.selected_storage(origin.observation)? {
+        Some((
+            StorageProjection::Element {
+                family: selected,
+                ordinal,
+            },
+            remaining,
+        )) if *selected == family => (
+            elements
+                .get(*ordinal as usize)
+                .map_or(&[][..], std::slice::from_ref),
+            remaining,
+        ),
+        None if origin.observation == Observation::Stored => (elements, Observation::Stored),
+        _ => return Ok(BorrowDependencies::default()),
+    };
+    let mut dependencies = BorrowDependencies::default();
+    for &expression in elements {
+        dependencies.include(work.demand(
+            ValueOrigin {
+                expression,
+                observation,
+                ..origin
+            },
+            origin,
+            receiver,
+        )?);
+        if dependencies.is_borrowed() {
+            break;
+        }
+    }
+    Ok(dependencies)
 }

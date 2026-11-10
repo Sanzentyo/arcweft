@@ -1858,6 +1858,53 @@ fn safe_lifetime_promotion_checks_nominal_implicit_callable_storage() {
 }
 
 #[test]
+fn safe_lifetime_promotion_follows_selected_positional_formal_bindings() {
+    let callback = "(i64 -> i64 effects {})";
+    let tuple = format!("({callback}, {callback})");
+    let array = format!("Array<{callback}, 2>");
+    for (declaration, local, selected, discarded) in [
+        (
+            "fn take<T>((first, _): (T, T)) -> T { first }".to_owned(),
+            String::new(),
+            "(borrowed, owned)",
+            "(owned, borrowed)",
+        ),
+        (
+            String::new(),
+            format!("let take = |(first, _): {tuple}| first;"),
+            "(borrowed, owned)",
+            "(owned, borrowed)",
+        ),
+        (
+            format!("fn take([first, _]: {array}) -> {callback} {{ first }}"),
+            String::new(),
+            "[borrowed, owned]",
+            "[owned, borrowed]",
+        ),
+        (
+            format!("fn take((_, [first, _]): ({callback}, {array})) -> {callback} {{ first }}"),
+            String::new(),
+            "(owned, [borrowed, owned])",
+            "(borrowed, [owned, borrowed])",
+        ),
+    ] {
+        for (argument, borrowed) in [(selected, true), (discarded, false)] {
+            let source = format!(
+                "{declaration}
+                flow main(loan: &i64) {{
+                    let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                    let owned = |n: i64| -> i64 {{ n }};
+                    {local}
+                    let packed = take({argument});
+                    let _ = packed.promote('flow);
+                }}"
+            );
+            assert_promotion_capture_diagnostic(&source, "packed", borrowed);
+        }
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload() {
     let callback = "(i64 -> i64 effects {})";
     let carrier = format!("Result<{callback}, {callback}>");

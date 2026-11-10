@@ -173,7 +173,9 @@ For a direct call to a source function, the ownership check follows its
 reachable return values and normal result under
 the selected call's type arguments. When the result uses a function value
 from a whole parameter binding, the check follows the expression supplied to
-that parameter in the selected argument group. For recursive calls, the check
+that parameter in the selected argument group. A binding inside a tuple or
+sequence parameter pattern follows its selected element through that same
+argument group. Discarded siblings contribute no capture. For recursive calls, the check
 propagates capture dependencies until they stop growing, using the storage
 properties of the selected type arguments and the supplied value parameters.
 A call through a known function value follows the returned callable's

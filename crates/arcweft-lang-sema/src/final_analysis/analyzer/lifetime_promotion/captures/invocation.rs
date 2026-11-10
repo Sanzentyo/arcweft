@@ -4,11 +4,11 @@ use std::{collections::BTreeSet, rc::Rc};
 
 use arcweft_lang_hir::{
     expr::HirExprKind,
-    identity::{ExprId, LocalId},
+    identity::{ExprId, LocalId, PatternId},
     item::{HirItemKind, HirParameterKind},
     module::HirModule,
-    pattern::{HirPatternBinding, HirPatternKind},
-    project::{HirBindingSite, HirExpressionBindingRole},
+    pattern::{HirPatternBinding, HirPatternChildRole, HirPatternKind},
+    project::{HirBindingSite, HirExpressionBindingRole, HirSemanticPathStep},
     scope::{HirScopeKind, HirScopeOwner},
     source_index::HirCallableSourceOwner,
     symbol::{CallableDeclarationKey, CallableDeclarationOwner},
@@ -29,8 +29,8 @@ use super::{
     localization::RetainedBodyProjection,
     worklist::{
         BodyProjection, BorrowDependencies, CaptureWorklist, CarrierStorage, ClosureKind,
-        FrameOwner, Invocation, InvokedValue, ParameterDemand, StorageFrameId, StorageProjection,
-        ValueOrigin,
+        FrameOwner, Invocation, InvokedValue, Observation, ParameterDemand, PositionalStorage,
+        StorageFrameId, StorageProjection, ValueOrigin,
     },
 };
 
@@ -425,7 +425,7 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         local: LocalId,
         origin: ValueOrigin,
-        work: &CaptureWorklist,
+        work: &mut CaptureWorklist,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<Option<ParameterDemand>, FinalSemanticAnalysisError> {
         let frame = self.lexical_frame(
@@ -435,25 +435,35 @@ impl Analyzer<'_, '_, '_> {
             work,
             receiver,
         )?;
-        let Some(coordinate) =
-            self.whole_parameter_coordinate(module, local, work.frame(frame)?.owner)?
+        let Some((coordinate, pattern)) =
+            self.parameter_pattern(module, local, work.frame(frame)?.owner)?
+        else {
+            return Ok(None);
+        };
+        let Some(observation) = self.parameter_storage_observation(
+            module,
+            (pattern, local),
+            origin.observation,
+            work,
+            receiver,
+        )?
         else {
             return Ok(None);
         };
         Ok(Some(ParameterDemand {
             frame,
             coordinate,
-            observation: origin.observation,
+            observation,
             invocation_caller: None,
         }))
     }
 
-    fn whole_parameter_coordinate(
+    fn parameter_pattern(
         &self,
         module: &HirModule,
         local: LocalId,
         owner: FrameOwner,
-    ) -> Result<Option<CallableParameterCoordinate>, FinalSemanticAnalysisError> {
+    ) -> Result<Option<(CallableParameterCoordinate, PatternId)>, FinalSemanticAnalysisError> {
         if owner == FrameOwner::Root {
             return Ok(None);
         }
@@ -519,21 +529,111 @@ impl Analyzer<'_, '_, '_> {
             }
             _ => return Ok(None),
         };
-        let pattern = module
-            .resolve_pattern(pattern)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        if !matches!(pattern.kind(),
-            HirPatternKind::Binding(HirPatternBinding::Bound { local: bound, .. })
-            | HirPatternKind::TypedBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
-            | HirPatternKind::WholeBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
-            if *bound == local)
-        {
-            return Ok(None);
-        }
         let group = crate::callable::CallableGroupIndex::try_from_usize(group as usize)
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
         let parameter = crate::callable::CallableParameterIndex::try_from_usize(parameter as usize)
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        Ok(Some(CallableParameterCoordinate::new(group, parameter)))
+        Ok(Some((
+            CallableParameterCoordinate::new(group, parameter),
+            pattern,
+        )))
     }
+
+    fn parameter_storage_observation(
+        &self,
+        module: &HirModule,
+        (root, local): (PatternId, LocalId),
+        mut observation: Observation,
+        work: &mut CaptureWorklist,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<Observation>, FinalSemanticAnalysisError> {
+        let resolve = |pattern| {
+            module
+                .resolve_pattern(pattern)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)
+        };
+        if pattern_binds_whole_value(resolve(root)?.kind(), local) {
+            return Ok(Some(observation));
+        }
+        let root_path = self
+            .topology
+            .semantic_path(root.into())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let binding_path = self
+            .topology
+            .semantic_path(local.into())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let Some((last, path)) = binding_path
+            .path()
+            .steps()
+            .strip_prefix(root_path.path().steps())
+            .filter(|_| binding_path.root() == root_path.root())
+            .and_then(<[_]>::split_last)
+        else {
+            return Err(FinalSemanticAnalysisError::InvalidOwner);
+        };
+        receiver.charge(path.len() as u64 + 1)?;
+        let mut selected = Vec::new();
+        let mut pattern = root;
+        for step in path {
+            match (resolve(pattern)?.kind(), step) {
+                (
+                    HirPatternKind::Tuple { elements },
+                    HirSemanticPathStep::Pattern(HirPatternChildRole::Element { ordinal }),
+                )
+                | (
+                    HirPatternKind::BracketSequence { elements, .. },
+                    HirSemanticPathStep::Pattern(HirPatternChildRole::Element { ordinal }),
+                ) => {
+                    let family = if matches!(resolve(pattern)?.kind(), HirPatternKind::Tuple { .. })
+                    {
+                        PositionalStorage::Tuple
+                    } else {
+                        PositionalStorage::Sequence
+                    };
+                    selected.push(StorageProjection::Element {
+                        family,
+                        ordinal: *ordinal,
+                    });
+                    pattern = *elements
+                        .get(*ordinal as usize)
+                        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                }
+                (
+                    HirPatternKind::WholeBinding {
+                        pattern: nested, ..
+                    },
+                    HirSemanticPathStep::Pattern(HirPatternChildRole::NestedPattern),
+                ) => {
+                    pattern = *nested;
+                }
+                _ => return Ok(None),
+            }
+        }
+        if !matches!(
+            last,
+            HirSemanticPathStep::Pattern(
+                HirPatternChildRole::BindingLocal
+                    | HirPatternChildRole::TypedBindingLocal
+                    | HirPatternChildRole::WholeBindingLocal
+            )
+        ) || !pattern_binds_whole_value(resolve(pattern)?.kind(), local)
+        {
+            return Ok(None);
+        }
+        for projection in selected.into_iter().rev() {
+            observation = work.project(projection, observation, receiver)?;
+        }
+        Ok(Some(observation))
+    }
+}
+
+fn pattern_binds_whole_value(kind: &HirPatternKind, local: LocalId) -> bool {
+    matches!(kind,
+        HirPatternKind::Binding(HirPatternBinding::Bound { local: bound, .. })
+        | HirPatternKind::TypedBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
+        | HirPatternKind::WholeBinding { binding: HirPatternBinding::Bound { local: bound, .. }, .. }
+        if *bound == local)
 }

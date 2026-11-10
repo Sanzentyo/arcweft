@@ -84,11 +84,21 @@ pub(super) struct StorageProjectionId(usize);
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum StorageProjection {
+    Element {
+        family: PositionalStorage,
+        ordinal: u32,
+    },
     Field {
         nominal: ProjectNominalDeclarationId,
         ordinal: u32,
     },
     Carrier(CarrierStorage),
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum PositionalStorage {
+    Tuple,
+    Sequence,
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
