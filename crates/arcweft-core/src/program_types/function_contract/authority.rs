@@ -5,8 +5,9 @@ use crate::{
     entry::schema::value_budget::ValidationWork,
     pattern::RuntimeSemanticTypeId,
     plan::{
-        RuntimeArrayLength, RuntimeBoundTypeReference, RuntimeFunctionTypeContract, RuntimePlan,
-        RuntimePlanTypeProjection, RuntimeTypeScope,
+        PlanValueAuthority, RuntimeArrayLength, RuntimeBoundTypeReference,
+        RuntimeFunctionTypeContract, RuntimePlan, RuntimePlanInventory, RuntimePlanTypeProjection,
+        RuntimeTypeScope,
     },
     runtime_id::RuntimePlanTypeId,
     value::RuntimeValueView,
@@ -81,28 +82,11 @@ impl<T: Copy + Eq, C: RuntimeValueTypeContext<T>> RuntimeValueTypeContext<T> for
     }
 }
 
-pub(crate) trait FunctionTypeAuthority {
+pub(crate) trait FunctionTypeRows {
     type Type: Copy + Eq;
     fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope>;
-    fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId>;
-    fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type>;
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference>;
     fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)>;
-    fn builtin_case_payload(
-        &self,
-        ty: Self::Type,
-        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
-    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError>;
-    fn invalid_builtin_payload(expected: Self::Type) -> super::super::RuntimeProgramTypeError {
-        Self::value_error(
-            expected,
-            crate::entry::RuntimeSchemaError::Type {
-                path: "$".to_owned(),
-                expected: "original builtin case payload",
-                actual: "invalid source row or binding",
-            },
-        )
-    }
     fn nominal_arguments(
         &self,
         expected: Self::Type,
@@ -118,6 +102,27 @@ pub(crate) trait FunctionTypeAuthority {
         actual: Self::Type,
         visit: &mut impl FnMut(Self::Type, Self::Type) -> Result<(), ()>,
     ) -> Option<Result<(), ()>>;
+    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool;
+}
+
+pub(crate) trait FunctionTypeAuthority: FunctionTypeRows {
+    fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId>;
+    fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type>;
+    fn builtin_case_payload(
+        &self,
+        ty: Self::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError>;
+    fn invalid_builtin_payload(expected: Self::Type) -> super::super::RuntimeProgramTypeError {
+        Self::value_error(
+            expected,
+            crate::entry::RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "original builtin case payload",
+                actual: "invalid source row or binding",
+            },
+        )
+    }
     fn record_field(
         &self,
         ty: Self::Type,
@@ -126,7 +131,6 @@ pub(crate) trait FunctionTypeAuthority {
         ordinal: usize,
     ) -> Option<Self::Type>;
     fn is_unit(&self, ty: Self::Type) -> bool;
-    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool;
     fn value_error(
         expected: Self::Type,
         source: crate::entry::RuntimeSchemaError,
@@ -139,32 +143,8 @@ pub(crate) trait FunctionTypeAuthority {
     ) -> Result<(), super::super::RuntimeProgramTypeError>;
 }
 
-impl FunctionTypeAuthority for AwbcProgram {
+impl FunctionTypeRows for AwbcProgram {
     type Type = AwbcTypeId;
-    fn builtin_case_payload(
-        &self,
-        ty: Self::Type,
-        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
-    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
-        let payload = self.builtin_variant_case_payload(ty, case)?;
-        match payload {
-            Some(tuple) => {
-                let AwbcRuntimeTypeShape::Tuple(fields) = self
-                    .runtime_types
-                    .get(tuple.index())
-                    .ok_or_else(|| Self::invalid_builtin_payload(ty))?
-                    .shape()
-                else {
-                    return Err(Self::invalid_builtin_payload(ty));
-                };
-                let [field] = fields.as_slice() else {
-                    return Err(Self::invalid_builtin_payload(ty));
-                };
-                Ok(Some((tuple, *field)))
-            }
-            None => Ok(None),
-        }
-    }
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
         match self.runtime_types.get(ty.index())?.shape() {
             AwbcRuntimeTypeShape::BoundType(reference) => Some(*reference),
@@ -210,14 +190,6 @@ impl FunctionTypeAuthority for AwbcProgram {
     }
     fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
         self.runtime_types.get(ty.index()).map(|row| row.scope())
-    }
-    fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId> {
-        self.runtime_types
-            .get(ty.index())
-            .map(|row| row.semantic_identity())
-    }
-    fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type> {
-        self.semantic_type_id(ty)
     }
     fn function(
         &self,
@@ -319,6 +291,44 @@ impl FunctionTypeAuthority for AwbcProgram {
             _ => return None,
         })
     }
+    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
+        self.types_compatible(expected, actual)
+    }
+}
+
+impl FunctionTypeAuthority for AwbcProgram {
+    fn builtin_case_payload(
+        &self,
+        ty: Self::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
+        let payload = self.builtin_variant_case_payload(ty, case)?;
+        match payload {
+            Some(tuple) => {
+                let AwbcRuntimeTypeShape::Tuple(fields) = self
+                    .runtime_types
+                    .get(tuple.index())
+                    .ok_or_else(|| Self::invalid_builtin_payload(ty))?
+                    .shape()
+                else {
+                    return Err(Self::invalid_builtin_payload(ty));
+                };
+                let [field] = fields.as_slice() else {
+                    return Err(Self::invalid_builtin_payload(ty));
+                };
+                Ok(Some((tuple, *field)))
+            }
+            None => Ok(None),
+        }
+    }
+    fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId> {
+        self.runtime_types
+            .get(ty.index())
+            .map(|row| row.semantic_identity())
+    }
+    fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type> {
+        self.semantic_type_id(ty)
+    }
     fn is_unit(&self, ty: Self::Type) -> bool {
         self.runtime_types
             .get(ty.index())
@@ -377,9 +387,6 @@ impl FunctionTypeAuthority for AwbcProgram {
         let field = fields.get(ordinal)?;
         (fields.len() == count && field.field.zero_based() as usize == ordinal).then_some(field.ty)
     }
-    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
-        self.types_compatible(expected, actual)
-    }
     fn value_error(
         ty: Self::Type,
         source: crate::entry::RuntimeSchemaError,
@@ -398,7 +405,6 @@ impl FunctionTypeAuthority for AwbcProgram {
 }
 
 impl FunctionTypeAuthority for RuntimePlan {
-    type Type = RuntimePlanTypeId;
     fn builtin_case_payload(
         &self,
         ty: Self::Type,
@@ -406,41 +412,11 @@ impl FunctionTypeAuthority for RuntimePlan {
     ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
         self.inventory.builtin_case_payload(ty, case)
     }
-    fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
-        self.inventory.bound_type(ty)
-    }
-    fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)> {
-        self.inventory.array(ty)
-    }
-    fn nominal_arguments(
-        &self,
-        expected: Self::Type,
-        actual: Self::Type,
-    ) -> Option<Result<(&[Self::Type], &[Self::Type]), ()>> {
-        self.inventory.nominal_arguments(expected, actual)
-    }
-    fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
-        self.inventory.scope(ty)
-    }
     fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId> {
         self.inventory.semantic(ty)
     }
     fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type> {
         self.inventory.by_semantic(ty)
-    }
-    fn function(
-        &self,
-        ty: Self::Type,
-    ) -> Option<(&RuntimeFunctionTypeContract, &[Self::Type], Self::Type)> {
-        self.inventory.function(ty)
-    }
-    fn relate_children(
-        &self,
-        expected: Self::Type,
-        actual: Self::Type,
-        visit: &mut impl FnMut(Self::Type, Self::Type) -> Result<(), ()>,
-    ) -> Option<Result<(), ()>> {
-        self.inventory.relate_children(expected, actual, visit)
     }
     fn is_unit(&self, ty: Self::Type) -> bool {
         self.inventory.is_unit(ty)
@@ -453,9 +429,6 @@ impl FunctionTypeAuthority for RuntimePlan {
         ordinal: usize,
     ) -> Option<Self::Type> {
         self.inventory.record_field(ty, header, count, ordinal)
-    }
-    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
-        self.inventory.compatible(expected, actual)
     }
     fn value_error(
         expected: Self::Type,
@@ -473,55 +446,38 @@ impl FunctionTypeAuthority for RuntimePlan {
     }
 }
 
-impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
-    type Type = RuntimePlanTypeId;
-    fn builtin_case_payload(
-        &self,
-        ty: Self::Type,
-        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
-    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
-        let invalid = || Self::invalid_builtin_payload(ty);
-        if !matches!(
-            self.type_table().get(ty).ok_or_else(invalid)?.projection(),
-            RuntimePlanTypeProjection::Option { .. }
-                | RuntimePlanTypeProjection::Result { .. }
-                | RuntimePlanTypeProjection::BuiltinVariant { .. }
-        ) {
-            return Err(invalid());
-        }
-        let (ordinal, schema) = case.owner().resolve_case(case).ok_or_else(invalid)?;
-        let selected = self.variant_case(ty, ordinal).map_err(|_| invalid())?;
-        if selected.owner() != &crate::pattern::RuntimeVariantIdentity::Builtin(case.owner())
-            || selected.payload().is_some() != schema.has_payload()
-        {
-            return Err(invalid());
-        }
-        match selected.payload() {
-            Some(tuple) => {
-                let RuntimePlanTypeProjection::Tuple(fields) = self
-                    .type_table()
-                    .get(tuple)
-                    .ok_or_else(invalid)?
-                    .projection()
-                else {
-                    return Err(invalid());
-                };
-                let [field] = fields.as_ref() else {
-                    return Err(invalid());
-                };
-                Ok(Some((tuple, *field)))
-            }
-            None => Ok(None),
-        }
+trait PlanValueAuthoritySource {
+    fn plan_value_authority(&self) -> PlanValueAuthority<'_>;
+}
+
+impl PlanValueAuthoritySource for RuntimePlan {
+    fn plan_value_authority(&self) -> PlanValueAuthority<'_> {
+        PlanValueAuthority::Inventory(&self.inventory)
     }
+}
+
+impl PlanValueAuthoritySource for RuntimePlanInventory {
+    fn plan_value_authority(&self) -> PlanValueAuthority<'_> {
+        PlanValueAuthority::Inventory(self)
+    }
+}
+
+impl PlanValueAuthoritySource for PlanValueAuthority<'_> {
+    fn plan_value_authority(&self) -> PlanValueAuthority<'_> {
+        *self
+    }
+}
+
+impl<T: PlanValueAuthoritySource> FunctionTypeRows for T {
+    type Type = RuntimePlanTypeId;
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
-        match self.type_table().get(ty)?.projection() {
+        match self.plan_value_authority().get(ty)?.projection() {
             RuntimePlanTypeProjection::BoundType(reference) => Some(*reference),
             _ => None,
         }
     }
     fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)> {
-        match self.type_table().get(ty)?.projection() {
+        match self.plan_value_authority().get(ty)?.projection() {
             RuntimePlanTypeProjection::Array { length, item } => Some((*length, *item)),
             _ => None,
         }
@@ -531,8 +487,8 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
         expected: Self::Type,
         actual: Self::Type,
     ) -> Option<Result<(&[Self::Type], &[Self::Type]), ()>> {
-        let x = self.type_table().get(expected)?;
-        let y = self.type_table().get(actual)?;
+        let x = self.plan_value_authority().get(expected)?;
+        let y = self.plan_value_authority().get(actual)?;
         let (Some(a), Some(b)) = (x.nominal_declaration(), y.nominal_declaration()) else {
             return None;
         };
@@ -544,13 +500,13 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
             return Some(Err(()));
         };
         let same_kind = match (
-            self.nominal_record_domains().get(expected),
-            self.nominal_record_domains().get(actual),
+            self.plan_value_authority().record(expected),
+            self.plan_value_authority().record(actual),
         ) {
             (Some(p), Some(q)) => p.shape() == q.shape(),
             (None, None) => {
-                self.variant_domains().get(expected).is_some()
-                    && self.variant_domains().get(actual).is_some()
+                self.plan_value_authority().variant(expected).is_some()
+                    && self.plan_value_authority().variant(actual).is_some()
             }
             _ => false,
         };
@@ -561,13 +517,7 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
         })
     }
     fn scope(&self, ty: Self::Type) -> Option<&RuntimeTypeScope> {
-        self.type_table().get(ty).map(|row| row.scope())
-    }
-    fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId> {
-        self.type_table().get(ty).map(|row| row.semantic_identity())
-    }
-    fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type> {
-        self.type_table().id_for_semantic(ty)
+        self.plan_value_authority().get(ty).map(|row| row.scope())
     }
     fn function(
         &self,
@@ -577,7 +527,7 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
             contract,
             parameters,
             result,
-        } = self.type_table().get(ty)?.projection()
+        } = self.plan_value_authority().get(ty)?.projection()
         else {
             return None;
         };
@@ -590,8 +540,8 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
         visit: &mut impl FnMut(Self::Type, Self::Type) -> Result<(), ()>,
     ) -> Option<Result<(), ()>> {
         use RuntimePlanTypeProjection as T;
-        let expected = self.type_table().get(expected)?.projection();
-        let actual = self.type_table().get(actual)?.projection();
+        let expected = self.plan_value_authority().get(expected)?.projection();
+        let actual = self.plan_value_authority().get(actual)?.projection();
         Some(match (expected, actual) {
             (T::Tuple(a), T::Tuple(b)) => relate_slices(a, b, visit),
             (
@@ -676,6 +626,57 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
             _ => return None,
         })
     }
+    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
+        expected == actual
+    }
+}
+
+impl FunctionTypeAuthority for RuntimePlanInventory {
+    fn builtin_case_payload(
+        &self,
+        ty: Self::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
+        let invalid = || Self::invalid_builtin_payload(ty);
+        if !matches!(
+            self.type_table().get(ty).ok_or_else(invalid)?.projection(),
+            RuntimePlanTypeProjection::Option { .. }
+                | RuntimePlanTypeProjection::Result { .. }
+                | RuntimePlanTypeProjection::BuiltinVariant { .. }
+        ) {
+            return Err(invalid());
+        }
+        let (ordinal, schema) = case.owner().resolve_case(case).ok_or_else(invalid)?;
+        let selected = self.variant_case(ty, ordinal).map_err(|_| invalid())?;
+        if selected.owner() != &crate::pattern::RuntimeVariantIdentity::Builtin(case.owner())
+            || selected.payload().is_some() != schema.has_payload()
+        {
+            return Err(invalid());
+        }
+        match selected.payload() {
+            Some(tuple) => {
+                let RuntimePlanTypeProjection::Tuple(fields) = self
+                    .type_table()
+                    .get(tuple)
+                    .ok_or_else(invalid)?
+                    .projection()
+                else {
+                    return Err(invalid());
+                };
+                let [field] = fields.as_ref() else {
+                    return Err(invalid());
+                };
+                Ok(Some((tuple, *field)))
+            }
+            None => Ok(None),
+        }
+    }
+    fn semantic(&self, ty: Self::Type) -> Option<RuntimeSemanticTypeId> {
+        self.type_table().get(ty).map(|row| row.semantic_identity())
+    }
+    fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type> {
+        self.type_table().id_for_semantic(ty)
+    }
     fn is_unit(&self, ty: Self::Type) -> bool {
         self.type_table()
             .get(ty)
@@ -731,9 +732,6 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
             }
             _ => None,
         }
-    }
-    fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
-        expected == actual
     }
     fn value_error(
         ty: Self::Type,

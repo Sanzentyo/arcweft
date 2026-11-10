@@ -24,11 +24,11 @@ mod action;
 mod construction;
 pub(crate) use construction::ProgramVariantCase;
 mod function_contract;
-pub(crate) use function_contract::RuntimeValueTypeContext;
 pub use function_contract::{
     RuntimeFunctionEffectInstantiation, RuntimeFunctionEffectInstantiationError,
     RuntimeParameterValueAdmissionError,
 };
+pub(crate) use function_contract::{RuntimeValueTypeContext, callable_operand_accepts};
 mod data_shapes;
 mod entry;
 mod fanout;

@@ -1,9 +1,12 @@
 //! Producer ownership of a retained group result, over the sealed state table.
 
-use super::{CopyProof, base_copy_proof, runtime_shape, runtime_type_permits_copy};
+use super::{
+    CopyProof, Verifier, base_copy_proof, callable_type_admitted, runtime_shape,
+    runtime_type_permits_copy,
+};
 use crate::{
     awbc::{
-        schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId},
+        schema::{AwbcRuntimeTypeShape, AwbcTypeId},
         verify::AwbcVerifyError,
     },
     plan::{
@@ -149,17 +152,18 @@ pub(super) fn charge_work(
 }
 
 /// An arrow alone does not prove a function result Copy. Meet the ownership
-/// produced by every state that can inhabit this exact source arrow. Actual
+/// produced by every state that can inhabit the source arrow. Actual
 /// body invocation has no interprocedural ownership summary and stays opaque.
 pub(super) fn applied_group(
-    program: &AwbcProgram,
-    source: AwbcTypeId,
-    result: AwbcTypeId,
+    verifier: &Verifier<'_, '_>,
+    owner: Option<AwbcTypeId>,
+    (source, result): (AwbcTypeId, AwbcTypeId),
     callee: &CopyProof,
     arguments: &[CopyProof],
     work: &mut usize,
-    budget: usize,
 ) -> Result<CopyProof, AwbcVerifyError> {
+    let program = verifier.program;
+    let budget = verifier.budget.dataflow_steps;
     if runtime_type_permits_copy(program, result, 0) {
         return Ok(CopyProof::Copyable);
     }
@@ -170,7 +174,14 @@ pub(super) fn applied_group(
     let mut joined: Option<CopyProof> = None;
     for definition in &program.callable_states {
         charge_work(work, 1, budget)?;
-        if definition.function_type != source {
+        if !callable_type_admitted(
+            program,
+            owner,
+            source,
+            definition.function_type,
+            work,
+            budget,
+        )? {
             continue;
         }
         let count = definition

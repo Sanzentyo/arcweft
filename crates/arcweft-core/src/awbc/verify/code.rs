@@ -2270,20 +2270,20 @@ fn apply_instruction(
             for arg in args {
                 read_register(verifier, function, block, *arg, state)?;
             }
-            verify_apply_group(verifier, function, block, *dst, *callee, args, &at)?;
+            let (source, result) =
+                verify_apply_group(verifier, function, block, (*dst, *callee), args, &at, steps)?;
             callable_copy::charge_work(steps, args.len(), verifier.budget.dataflow_steps)?;
             let arguments = args
                 .iter()
                 .map(|arg| state.copy_proofs[arg.index()].clone())
                 .collect::<Vec<_>>();
             let proof = callable_copy::applied_group(
-                program,
-                register_type(verifier, function, block, *callee)?,
-                register_type(verifier, function, block, *dst)?,
+                verifier,
+                function_type_owner(program, function),
+                (source, result),
                 &state.copy_proofs[callee.index()],
                 &arguments,
                 steps,
-                verifier.budget.dataflow_steps,
             )?;
             write_register(verifier, function, block, *dst, state)?;
             state.copy_proofs[dst.index()] = proof;
@@ -4604,8 +4604,9 @@ fn verify_project_call(
                     return invalid_type(at, "fixed project-call source must be a value operand");
                 }
                 let actual = read_register(verifier, function, block, operand.value, state)?;
-                require_project_call_compatible(
-                    program,
+                require_project_call_operand_type(
+                    verifier,
+                    function,
                     if declared {
                         input.abi_ty
                     } else {
@@ -4613,6 +4614,7 @@ fn verify_project_call(
                     },
                     actual,
                     at,
+                    steps,
                 )?;
                 insert_project_call_source(&mut sources, *source_index, call.operands.len(), at)?;
             }
@@ -4638,15 +4640,24 @@ fn verify_project_call(
                     let actual = read_register(verifier, function, block, operand.value, state)?;
                     match operand.mode {
                         AwbcProjectCallOperandMode::Value => {
-                            require_project_call_compatible(program, input.abi_ty, actual, at)?;
+                            require_project_call_operand_type(
+                                verifier,
+                                function,
+                                input.abi_ty,
+                                actual,
+                                at,
+                                steps,
+                            )?;
                         }
                         AwbcProjectCallOperandMode::Spread => {
-                            if !is_sequence_or_tuple_of(program, actual, input.abi_ty) {
-                                return invalid_type(
-                                    at,
-                                    "rest spread source has the wrong item type",
-                                );
-                            }
+                            verify_project_call_spread(
+                                verifier,
+                                function,
+                                input.abi_ty,
+                                actual,
+                                at,
+                                steps,
+                            )?;
                         }
                     }
                     insert_project_call_source(
@@ -4670,6 +4681,7 @@ fn verify_project_call(
             &mut sources,
             state,
             at,
+            steps,
         )?;
     } else if !matches!(definition.attached, RuntimeCallableAttachedContract::None) {
         return invalid_type(
@@ -4840,15 +4852,18 @@ fn verify_apply_group(
     verifier: &Verifier<'_, '_>,
     function: usize,
     block: usize,
-    destination: AwbcRegisterId,
-    callee: AwbcRegisterId,
+    (destination, callee): (AwbcRegisterId, AwbcRegisterId),
     arguments: &[AwbcRegisterId],
     at: &str,
-) -> Result<(), AwbcVerifyError> {
+    steps: &mut usize,
+) -> Result<(AwbcTypeId, AwbcTypeId), AwbcVerifyError> {
     let program = verifier.program;
     let callee_type = register_type(verifier, function, block, callee)?;
-    let Some(AwbcRuntimeTypeShape::Function { parameters, .. }) =
-        runtime_shape(program, callee_type)
+    let Some(AwbcRuntimeTypeShape::Function {
+        parameters,
+        result: arrow_result,
+        ..
+    }) = runtime_shape(program, callee_type)
     else {
         return invalid_type(at, "group application callee must have a function type");
     };
@@ -4860,56 +4875,71 @@ fn verify_apply_group(
     }
     for (argument, expected) in arguments.iter().zip(parameters) {
         let actual = register_type(verifier, function, block, *argument)?;
-        require_project_call_compatible(program, *expected, actual, at)?;
+        require_project_call_operand_type(verifier, function, *expected, actual, at, steps)?;
     }
     let destination_type = register_type(verifier, function, block, destination)?;
-    let mut accepted = false;
-    for definition in program
-        .callable_states
-        .iter()
-        .filter(|definition| definition.function_type == callee_type)
+    let owner = function_type_owner(program, function);
+    let budget = verifier.budget.dataflow_steps;
+    let complete = arguments.len() == parameters.len();
+    if complete
+        && !project_call_types_compatible(program, destination_type, *arrow_result)
+        && !callable_type_admitted(
+            program,
+            owner,
+            destination_type,
+            *arrow_result,
+            steps,
+            budget,
+        )?
     {
-        let arrow_arity = parameters.len();
-        let result_type = if arguments.len() < arrow_arity {
-            if arguments.is_empty() {
-                Some(definition.function_type)
-            } else {
-                let coordinates = definition
-                    .parameters
-                    .iter()
-                    .take(arguments.len())
-                    .map(|input| input.coordinate)
-                    .collect::<Vec<_>>();
-                definition
-                    .partials
-                    .iter()
-                    .find(|partial| partial.parameters.as_ref() == coordinates.as_slice())
-                    .and_then(|partial| {
-                        program
-                            .callable_states
-                            .get(partial.state.index())
-                            .map(|target| target.function_type)
-                    })
-            }
-        } else if arguments.len() == arrow_arity {
+        return type_mismatch(at, destination_type, *arrow_result);
+    }
+    for definition in &program.callable_states {
+        callable_copy::charge_work(steps, 1, budget)?;
+        if !complete && definition.function_type != callee_type {
+            continue;
+        }
+        if !callable_type_admitted(
+            program,
+            owner,
+            callee_type,
+            definition.function_type,
+            steps,
+            budget,
+        )? {
+            continue;
+        }
+        let result_type = if complete {
             Some(definition.result)
+        } else if arguments.is_empty() {
+            Some(definition.function_type)
         } else {
-            None
+            definition
+                .partials
+                .iter()
+                .find(|partial| {
+                    partial.parameters.len() == arguments.len()
+                        && partial.parameters.iter().copied().eq(definition
+                            .parameters
+                            .iter()
+                            .take(arguments.len())
+                            .map(|input| input.coordinate))
+                })
+                .and_then(|partial| program.callable_states.get(partial.state.index()))
+                .map(|target| target.function_type)
         };
-        if result_type.is_some_and(|expected| {
-            project_call_types_compatible(program, expected, destination_type)
-        }) {
-            accepted = true;
-            break;
+        if let Some(actual) = result_type {
+            if project_call_types_compatible(program, destination_type, actual)
+                || callable_type_admitted(program, owner, destination_type, actual, steps, budget)?
+            {
+                return Ok((callee_type, destination_type));
+            }
         }
     }
-    if !accepted {
-        return invalid_type(
-            at,
-            "group application has no sealed callable state with this result type",
-        );
-    }
-    Ok(())
+    invalid_type(
+        at,
+        "group application has no sealed callable state with this result type",
+    )
 }
 
 fn project_call_operand<'a>(
@@ -4948,18 +4978,22 @@ fn insert_project_call_source(
     Ok(())
 }
 
-fn is_sequence_or_tuple_of(program: &AwbcProgram, ty: AwbcTypeId, item: AwbcTypeId) -> bool {
-    match runtime_shape(program, ty) {
-        Some(AwbcRuntimeTypeShape::Sequence { item: actual, .. }) => {
-            project_call_types_compatible(program, *actual, item)
-        }
-        Some(AwbcRuntimeTypeShape::Array { item: actual, .. }) => {
-            project_call_types_compatible(program, *actual, item)
-        }
-        Some(AwbcRuntimeTypeShape::Tuple(items)) => items
-            .iter()
-            .all(|actual| project_call_types_compatible(program, *actual, item)),
-        _ => false,
+fn verify_project_call_spread(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    expected: AwbcTypeId,
+    source: AwbcTypeId,
+    at: &str,
+    steps: &mut usize,
+) -> Result<(), AwbcVerifyError> {
+    match runtime_shape(verifier.program, source) {
+        Some(
+            AwbcRuntimeTypeShape::Sequence { item, .. } | AwbcRuntimeTypeShape::Array { item, .. },
+        ) => require_project_call_operand_type(verifier, function, expected, *item, at, steps),
+        Some(AwbcRuntimeTypeShape::Tuple(items)) => items.iter().try_for_each(|&item| {
+            require_project_call_operand_type(verifier, function, expected, item, at, steps)
+        }),
+        _ => invalid_type(at, "rest spread source must be a sequence, array, or tuple"),
     }
 }
 
@@ -4973,8 +5007,8 @@ fn verify_project_call_attached(
     sources: &mut BTreeSet<u32>,
     state: &FlowState,
     at: &str,
+    steps: &mut usize,
 ) -> Result<(), AwbcVerifyError> {
-    let program = verifier.program;
     let present = matches!(
         &attached.presence,
         AwbcProjectCallAttachedPresence::RequiredPresent
@@ -5024,7 +5058,7 @@ fn verify_project_call_attached(
             return invalid_type(at, "attached source must be a value operand");
         }
         let actual = read_register(verifier, function, block, operand.value, state)?;
-        require_project_call_compatible(program, expected, actual, at)?;
+        require_project_call_operand_type(verifier, function, expected, actual, at, steps)?;
         insert_project_call_source(sources, index, call.operands.len(), at)?;
     }
     Ok(())
@@ -6249,6 +6283,86 @@ fn require_project_call_compatible(
     } else {
         type_mismatch(at, expected, actual)
     }
+}
+
+fn require_project_call_operand_type(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    expected: AwbcTypeId,
+    actual: AwbcTypeId,
+    at: &str,
+    steps: &mut usize,
+) -> Result<(), AwbcVerifyError> {
+    let program = verifier.program;
+    if !matches!(
+        runtime_shape(program, expected),
+        Some(AwbcRuntimeTypeShape::Function { .. })
+    ) || !matches!(
+        runtime_shape(program, actual),
+        Some(AwbcRuntimeTypeShape::Function { .. })
+    ) || expected == actual
+    {
+        return require_project_call_compatible(program, expected, actual, at);
+    }
+    if callable_type_admitted(
+        program,
+        function_type_owner(program, function),
+        expected,
+        actual,
+        steps,
+        verifier.budget.dataflow_steps,
+    )? {
+        Ok(())
+    } else {
+        type_mismatch(at, expected, actual)
+    }
+}
+
+fn function_type_owner(program: &AwbcProgram, function: usize) -> Option<AwbcTypeId> {
+    program.functions[function]
+        .type_context
+        .map(|context| context.owner_type())
+}
+
+fn callable_type_admitted(
+    program: &AwbcProgram,
+    owner: Option<AwbcTypeId>,
+    expected: AwbcTypeId,
+    actual: AwbcTypeId,
+    steps: &mut usize,
+    budget: usize,
+) -> Result<bool, AwbcVerifyError> {
+    let Some(AwbcRuntimeTypeShape::Function {
+        parameters: expected_parameters,
+        ..
+    }) = runtime_shape(program, expected)
+    else {
+        return Ok(false);
+    };
+    let Some(AwbcRuntimeTypeShape::Function {
+        parameters: actual_parameters,
+        ..
+    }) = runtime_shape(program, actual)
+    else {
+        return Ok(false);
+    };
+    if expected_parameters.len() != actual_parameters.len() {
+        return Ok(false);
+    }
+    if expected == actual {
+        return Ok(true);
+    }
+    let remaining = budget.saturating_sub(*steps);
+    let mut limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    limits.max_validation_work = limits.max_validation_work.min(remaining as u64);
+    let work = crate::entry::schema::value_budget::ValidationWork::new(limits);
+    let accepted =
+        crate::program_types::callable_operand_accepts(program, owner, expected, actual, &work)
+            .map_err(|_| AwbcVerifyError::BudgetExceeded {
+                budget: "callable operand type",
+            })?;
+    callable_copy::charge_work(steps, work.consumed() as usize, budget)?;
+    Ok(accepted)
 }
 
 fn project_call_types_compatible(

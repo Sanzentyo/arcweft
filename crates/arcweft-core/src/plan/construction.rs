@@ -245,6 +245,8 @@ pub enum RuntimePlanBuildError {
     NeedProducerStartTarget(#[from] super::RuntimeNeedProducerStartTargetError),
     #[error("project-call {context} has an invalid typed ABI")]
     InvalidProjectCallAbi { context: &'static str },
+    #[error("callable operand type validation failed: {0}")]
+    CallableOperandType(#[source] crate::entry::RuntimeSchemaError),
     #[error("semantic type {semantic_identity:?} is absent from the transaction type graph")]
     UnknownSemanticType {
         semantic_identity: RuntimeSemanticTypeId,

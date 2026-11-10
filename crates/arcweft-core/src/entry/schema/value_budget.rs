@@ -92,7 +92,6 @@ impl ValidationWork {
         self.0.borrow().limits
     }
 
-    #[cfg(test)]
     pub(crate) fn consumed(&self) -> u64 {
         self.0.borrow().consumed
     }

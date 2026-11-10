@@ -136,6 +136,8 @@ enum FlowLocalValidationWork<'a> {
 pub(super) struct RuntimePlanBodyConstruction<'plan> {
     plan: &'plan RuntimePlanBuilder,
     scope: super::super::RuntimeTypeScope,
+    type_owner: Option<RuntimePlanTypeId>,
+    operand_work: std::cell::OnceCell<crate::entry::schema::value_budget::ValidationWork>,
 }
 
 impl std::ops::Deref for RuntimePlanBodyConstruction<'_> {
@@ -150,6 +152,8 @@ impl RuntimePlanBuilder {
         RuntimePlanBodyConstruction {
             plan: self,
             scope: super::super::RuntimeTypeScope::root(),
+            type_owner: None,
+            operand_work: std::cell::OnceCell::new(),
         }
     }
 
@@ -179,7 +183,12 @@ impl RuntimePlanBuilder {
                 ty: function,
             }
         })?;
-        Ok(RuntimePlanBodyConstruction { plan: self, scope })
+        Ok(RuntimePlanBodyConstruction {
+            plan: self,
+            scope,
+            type_owner: Some(function),
+            operand_work: std::cell::OnceCell::new(),
+        })
     }
 
     #[cfg(test)]
@@ -2064,8 +2073,11 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         };
         let args = self.lower_call_arguments(args)?;
         let actual = self.expanded_argument_types(&args)?;
-        if !parameters.starts_with(&actual) {
+        if actual.len() > parameters.len() {
             return invalid_projection("function application arguments", callee.ty());
+        }
+        for (&expected, &actual) in parameters.iter().zip(&actual) {
+            self.require_callable_operand_type("function application argument", expected, actual)?;
         }
         if parameters.len() == actual.len() {
             require_same("function application result", result, result_type)?;
@@ -4475,7 +4487,7 @@ impl RuntimePlanBodyConstruction<'_> {
                             context: "fixed operand mode",
                         });
                     }
-                    require_same(
+                    self.require_callable_operand_type(
                         "project-call fixed source type",
                         if declared {
                             row.abi_ty()
@@ -4506,7 +4518,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         let operand = self.project_call_operand(operands, source_index)?;
                         match operand.mode() {
                             RuntimeCallArgumentMode::Value => {
-                                require_same(
+                                self.require_callable_operand_type(
                                     "project-call rest scalar source type",
                                     item,
                                     operand.value().ty(),
@@ -4547,25 +4559,52 @@ impl RuntimePlanBodyConstruction<'_> {
         source_ty: RuntimePlanTypeId,
         item: RuntimePlanTypeId,
     ) -> Result<(), RuntimePlanBuildError> {
-        let homogeneous = match self.projection(source_ty)? {
+        match self.projection(source_ty)? {
             RuntimePlanTypeProjection::Sequence {
                 item: source_item, ..
             }
             | RuntimePlanTypeProjection::Array {
                 item: source_item, ..
-            } => *source_item == item,
-            RuntimePlanTypeProjection::Tuple(items) => {
-                items.iter().all(|source_item| *source_item == item)
-            }
-            _ => false,
-        };
-        if homogeneous {
-            Ok(())
-        } else {
-            Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+            } => self.require_callable_operand_type("rest spread item type", item, *source_item),
+            RuntimePlanTypeProjection::Tuple(items) => items.iter().try_for_each(|&source_item| {
+                self.require_callable_operand_type("rest spread item type", item, source_item)
+            }),
+            _ => Err(RuntimePlanBuildError::InvalidProjectCallAbi {
                 context: "rest spread source",
-            })
+            }),
         }
+    }
+
+    fn require_callable_operand_type(
+        &self,
+        context: &'static str,
+        expected: RuntimePlanTypeId,
+        actual: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        if expected != actual {
+            let authority = super::super::PlanValueAuthority::Building {
+                types: &self.types,
+                records: &self.nominal_record_domains,
+                variants: &self.variant_domains,
+            };
+            let work = self.operand_work.get_or_init(|| {
+                crate::entry::schema::value_budget::ValidationWork::new(
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+            });
+            if crate::program_types::callable_operand_accepts(
+                &authority,
+                self.type_owner,
+                expected,
+                actual,
+                work,
+            )
+            .map_err(RuntimePlanBuildError::CallableOperandType)?
+            {
+                return Ok(());
+            }
+        }
+        require_same(context, expected, actual)
     }
 
     fn validate_project_call_attached(
@@ -4611,7 +4650,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         context: "required attached operand mode",
                     });
                 }
-                require_same(
+                self.require_callable_operand_type(
                     "required attached source type",
                     attached.binding_ty(),
                     operand.value().ty(),
@@ -4637,7 +4676,11 @@ impl RuntimePlanBodyConstruction<'_> {
                         context: "optional attached operand mode",
                     });
                 }
-                require_same("optional attached source type", item, operand.value().ty())?;
+                self.require_callable_operand_type(
+                    "optional attached source type",
+                    item,
+                    operand.value().ty(),
+                )?;
             }
             super::super::RuntimeProjectCallAttachedPresence::OptionalOmitted => {
                 require_same(
@@ -4667,7 +4710,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         context: "defaulted attached operand mode",
                     });
                 }
-                require_same(
+                self.require_callable_operand_type(
                     "defaulted attached source type",
                     attached.binding_ty(),
                     operand.value().ty(),

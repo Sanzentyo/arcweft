@@ -207,6 +207,102 @@ fn function_type_depth_refusal_keeps_its_existing_bound_and_resource_cause() {
 }
 
 #[test]
+fn callable_operand_proof_respects_direction_and_the_owning_frame_predicate() {
+    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+    let binder = RuntimeTypeBinder::new(0, 0, 1);
+    let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+    let variable =
+        EffectFormula::literal(Default::default(), Some(scope.bound_effect(0, 0).unwrap()));
+    let log = EffectFormula::literal(
+        crate::effect_row::EffectSet::from_labels(["log.write"]).unwrap(),
+        None,
+    );
+    let limits = RuntimeSchemaLimits::engine_default();
+    let hypothesis = variable
+        .subset(&log, &mut ValidationWork::new(limits))
+        .unwrap();
+    let function = |marker, contract, parameters| {
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([marker; 32]),
+            AwbcRuntimeTypeShape::Function {
+                contract,
+                parameters,
+                result: AwbcTypeId(0),
+            },
+        )
+    };
+    let closed = |effects| {
+        RuntimeFunctionTypeContract::new(
+            RuntimeTypeBinder::EMPTY,
+            EffectPredicate::unconstrained(),
+            effects,
+        )
+    };
+    let pure = AwbcTypeId(1);
+    let logging = AwbcTypeId(2);
+    let scoped = AwbcTypeId(3);
+    let restricted = AwbcTypeId(4);
+    let unrestricted = AwbcTypeId(5);
+    let takes_pure = AwbcTypeId(6);
+    let takes_logging = AwbcTypeId(7);
+    let program = AwbcProgram {
+        runtime_types: vec![
+            AwbcRuntimeType::unit(),
+            function(1, closed(EffectFormula::empty()), vec![]),
+            function(2, closed(log), vec![]),
+            function(3, closed(variable), vec![]).with_scope(scope),
+            function(
+                4,
+                RuntimeFunctionTypeContract::new(binder, hypothesis, EffectFormula::empty()),
+                vec![scoped],
+            ),
+            function(
+                5,
+                RuntimeFunctionTypeContract::new(
+                    binder,
+                    EffectPredicate::unconstrained(),
+                    EffectFormula::empty(),
+                ),
+                vec![scoped],
+            ),
+            function(6, closed(EffectFormula::empty()), vec![pure]),
+            function(7, closed(EffectFormula::empty()), vec![logging]),
+        ],
+        ..AwbcProgram::default()
+    };
+    let accepts = |owner, expected, actual| {
+        callable_operand_accepts(
+            &program,
+            owner,
+            expected,
+            actual,
+            &ValidationWork::new(limits),
+        )
+        .unwrap()
+    };
+    assert!(accepts(None, logging, pure));
+    assert!(!accepts(None, pure, logging));
+    assert!(accepts(None, takes_pure, takes_logging));
+    assert!(!accepts(None, takes_logging, takes_pure));
+    assert!(accepts(Some(restricted), logging, scoped));
+    assert!(!accepts(Some(unrestricted), logging, scoped));
+    assert!(!accepts(None, logging, scoped));
+
+    let work = ValidationWork::new(RuntimeSchemaLimits {
+        max_validation_work: 0,
+        ..limits
+    });
+    assert_eq!(
+        callable_operand_accepts(&program, None, logging, pure, &work),
+        Err(RuntimeSchemaError::ValidationWork {
+            path: "$".to_owned(),
+            limit: 0,
+            consumed: 1,
+        })
+    );
+}
+
+#[test]
 fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
     use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
     let (program, binding) = retained_effect_binding_fixture();

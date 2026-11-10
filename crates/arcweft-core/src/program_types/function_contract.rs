@@ -14,8 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 mod authority;
 mod parameter_values;
 use crate::pattern::RuntimeSemanticTypeId;
-use authority::FunctionTypeAuthority;
 pub(crate) use authority::RuntimeValueTypeContext;
+use authority::{FunctionTypeAuthority, FunctionTypeRows};
 pub use parameter_values::RuntimeParameterValueAdmissionError;
 
 /// A failure to instantiate one original function's joint input/effect contract.
@@ -807,7 +807,7 @@ impl DecisionControl for ValidationWork {
         self.charge(0).map_err(|_| ())
     }
 }
-struct ParameterMatcher<'a, A: FunctionTypeAuthority> {
+struct ParameterMatcher<'a, A: FunctionTypeRows> {
     program: &'a A,
     predicate: EffectPredicate<ContractVariable>,
     source_predicate: EffectPredicate<ContractVariable>,
@@ -818,6 +818,56 @@ struct ParameterMatcher<'a, A: FunctionTypeAuthority> {
     next_binder: u32,
     work: ValidationWork,
     replacements: BTreeMap<ContractVariable, crate::effect_row::EffectFormula<ContractVariable>>,
+    exact_leaves: bool,
+}
+
+/// Proves assignment of a callable operand under the owning frame contract.
+/// Frame binders are fixed for the comparison. Only the nested function's own
+/// binder is introduced on both sides of the relation.
+pub(crate) fn callable_operand_accepts<A: FunctionTypeRows>(
+    program: &A,
+    owner: Option<A::Type>,
+    expected: A::Type,
+    actual: A::Type,
+    work: &ValidationWork,
+) -> Result<bool, crate::entry::RuntimeSchemaError> {
+    fn prove<A: FunctionTypeRows>(
+        program: &A,
+        owner: Option<A::Type>,
+        expected: A::Type,
+        actual: A::Type,
+        work: &ValidationWork,
+    ) -> Option<bool> {
+        program.function(expected)?;
+        program.function(actual)?;
+        let mut matcher = ParameterMatcher::root(program, work.clone());
+        matcher.exact_leaves = true;
+        let mut environment = ContractEnvironment::root();
+        if let Some(owner) = owner {
+            if !program.scope(owner)?.is_root() {
+                return None;
+            }
+            let (contract, _, _) = program.function(owner)?;
+            environment = environment
+                .enter(contract.binder(), BinderOwner::Sources)
+                .ok()?;
+            let hypothesis = contract
+                .predicate()
+                .map_references(&mut matcher.work, &mut |reference, _| {
+                    environment.variable(reference, None)
+                })
+                .ok()?;
+            matcher.observe(&hypothesis);
+            matcher.source_predicate = hypothesis;
+        }
+        matcher
+            .types(expected, actual, 0, &environment, &environment)
+            .ok()?;
+        Some(matcher.accepted())
+    }
+
+    let accepted = prove(program, owner, expected, actual, work).unwrap_or(false);
+    work.failure().map_or(Ok(accepted), Err)
 }
 
 struct ValueChoiceRelation {
@@ -1174,7 +1224,7 @@ impl AwbcProgram {
             && matcher.accepted()
     }
 }
-impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
+impl<'a, A: FunctionTypeRows> ParameterMatcher<'a, A> {
     fn root(program: &'a A, work: ValidationWork) -> Self {
         Self {
             program,
@@ -1187,12 +1237,16 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
             next_binder: 0,
             work,
             replacements: BTreeMap::new(),
+            exact_leaves: false,
         }
     }
     fn origin_environment(
         &mut self,
         origin: &RuntimeFunctionEffectInstantiation,
-    ) -> Option<ContractEnvironment> {
+    ) -> Option<ContractEnvironment>
+    where
+        A: FunctionTypeAuthority,
+    {
         let source = origin.matcher_with_work(self.program, self.work.clone())?;
         let binder = self.next_binder;
         self.next_binder = binder.checked_add(1)?;
@@ -1220,7 +1274,10 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         program: &'a A,
         contract: A::Type,
         bindable: Option<BTreeSet<u32>>,
-    ) -> Option<(&'a [A::Type], Self)> {
+    ) -> Option<(&'a [A::Type], Self)>
+    where
+        A: FunctionTypeAuthority,
+    {
         Self::new_with_work(
             program,
             contract,
@@ -1233,7 +1290,10 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         contract: A::Type,
         bindable: Option<BTreeSet<u32>>,
         work: ValidationWork,
-    ) -> Option<(&'a [A::Type], Self)> {
+    ) -> Option<(&'a [A::Type], Self)>
+    where
+        A: FunctionTypeAuthority,
+    {
         let (header, _, result) = program.function(contract)?;
         if header.binder().effects() == 0
             || header.invocation() != &crate::effect_row::EffectFormula::empty()
@@ -1278,6 +1338,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
             next_binder: 0,
             work,
             replacements: BTreeMap::new(),
+            exact_leaves: false,
         };
         matcher.observe(&matcher.predicate.clone());
         Some((parameters, matcher))
@@ -1492,8 +1553,9 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
                 {
                     return result;
                 }
-                if (expected_scope.is_root() && actual_scope.is_root()
-                    || expected_environment == actual_environment)
+                if !self.exact_leaves
+                    && (expected_scope.is_root() && actual_scope.is_root()
+                        || expected_environment == actual_environment)
                     && self.program.compatible(expected, actual)
                 {
                     Ok(())
@@ -1509,7 +1571,10 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         value: &RuntimeValue,
         depth: usize,
         environment: &ContractEnvironment,
-    ) -> Result<(), ()> {
+    ) -> Result<(), ()>
+    where
+        A: FunctionTypeAuthority,
+    {
         self.value_view(expected, value.view(), depth, environment)
     }
     fn value_view(
@@ -1518,7 +1583,10 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         value: crate::value::RuntimeValueView<'_>,
         depth: usize,
         environment: &ContractEnvironment,
-    ) -> Result<(), ()> {
+    ) -> Result<(), ()>
+    where
+        A: FunctionTypeAuthority,
+    {
         self.enter(depth)?;
         let scope = self.program.scope(expected).ok_or(())?;
         let environment = environment.at_scope(scope)?;

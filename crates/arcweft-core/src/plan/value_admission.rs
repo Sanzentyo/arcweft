@@ -336,14 +336,14 @@ impl<'a> PlanValueAuthority<'a> {
         }
     }
 
-    fn record(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimeNominalRecordDomain> {
+    pub(crate) fn record(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimeNominalRecordDomain> {
         match self {
             Self::Inventory(plan) => plan.nominal_record_domains().get(ty),
             Self::Building { records, .. } => records.get(ty),
         }
     }
 
-    fn variant(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimeVariantDomain> {
+    pub(crate) fn variant(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimeVariantDomain> {
         match self {
             Self::Inventory(plan) => plan.variant_domains().get(ty),
             Self::Building { variants, .. } => variants.get(ty),

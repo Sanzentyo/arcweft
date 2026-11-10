@@ -628,6 +628,41 @@ flow main() -> i64 {
     );
 }
 
+#[test]
+fn project_calls_accept_callbacks_with_fewer_effects_than_the_parameter() {
+    let body = r#"
+fn direct(handler: i64 -> i64 effects { log.write }) -> i64 { handler(41i64) }
+fn repeat<T>(callback: T -> i64, value: T, remaining: i64) -> i64 {
+    if remaining == 0i64 { callback(value) } else { repeat(callback, value, remaining - 1i64) }
+}
+fn staged<A, B>(prefix: A)(later: B, callback: B -> i64 effects { log.write })[body: DialogueContent = {
+    let _ = prefix
+    let value = repeat(callback, later, 1i64)
+    if value == 42i64 { log.info("default") }
+    fmt("default")
+}] -> DialogueContent { body }
+flow main() -> i64 {
+    let shared = staged({ log.info("prefix"); 7i64 })
+    let message = "captured"
+    let increment = 1i64
+    wait(0.1s)
+    let _ = shared("text", |value: String| {
+        log.info(message)
+        if value == "text" { 42i64 } else { 0i64 }
+    })
+    let _ = shared(41i64, |value: i64| value + increment)
+    let invoke = direct
+    return invoke(|value: i64| value + increment)
+}
+"#;
+    let (engine, executor) = artifact_bound_entry(body, "explicit-callback-effects.arcw");
+    assert_shared_prefix_wait_in_both_executors(
+        engine,
+        executor,
+        &["captured", "default", "default"],
+    );
+}
+
 fn assert_shared_prefix_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,
@@ -661,6 +696,7 @@ fn assert_prefix_resume(after_wait: &[&str], mut step: impl FnMut(u64) -> Runtim
     let mut next_boundary = |elapsed| {
         let mut logs = Vec::new();
         let mut waits = Vec::new();
+        let mut executed = 0;
         for tick in 0..256 {
             let result = step(if tick == 0 { elapsed } else { 0 });
             assert!(
@@ -669,6 +705,12 @@ fn assert_prefix_resume(after_wait: &[&str], mut step: impl FnMut(u64) -> Runtim
                 result.output.diagnostics
             );
             assert!(result.stats.executed_ops <= 1);
+            assert!(
+                !matches!(result.fiber_status, FlowFiberStatus::Failed(_)),
+                "{:?}",
+                result.fiber_status
+            );
+            executed += result.stats.executed_ops;
             for effect in result.output.effects.line {
                 use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
                 match effect {
@@ -686,7 +728,9 @@ fn assert_prefix_resume(after_wait: &[&str], mut step: impl FnMut(u64) -> Runtim
                 return (result.fiber_status, result.stats.executed_ops, logs, waits);
             }
         }
-        panic!("recursive call did not reach a wait or return: {logs:?}");
+        panic!(
+            "recursive call executed {executed} operations without reaching a wait or return: {logs:?}"
+        );
     };
     let (status, _, logs, waits) = next_boundary(0);
     assert!(matches!(status, FlowFiberStatus::DurationWaiting(_)));
