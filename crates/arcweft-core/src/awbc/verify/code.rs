@@ -4986,14 +4986,23 @@ fn verify_project_call_spread(
     at: &str,
     steps: &mut usize,
 ) -> Result<(), AwbcVerifyError> {
+    let invalid_item = || invalid_type(at, "rest spread source has the wrong item type");
+    let check_item = |item, steps| match require_project_call_operand_type(
+        verifier, function, expected, item, at, steps,
+    ) {
+        Err(AwbcVerifyError::TypeMismatch { .. } | AwbcVerifyError::InvalidInvariant { .. }) => {
+            invalid_item()
+        }
+        result => result,
+    };
     match runtime_shape(verifier.program, source) {
         Some(
             AwbcRuntimeTypeShape::Sequence { item, .. } | AwbcRuntimeTypeShape::Array { item, .. },
-        ) => require_project_call_operand_type(verifier, function, expected, *item, at, steps),
-        Some(AwbcRuntimeTypeShape::Tuple(items)) => items.iter().try_for_each(|&item| {
-            require_project_call_operand_type(verifier, function, expected, item, at, steps)
-        }),
-        _ => invalid_type(at, "rest spread source must be a sequence, array, or tuple"),
+        ) => check_item(*item, steps),
+        Some(AwbcRuntimeTypeShape::Tuple(items)) => {
+            items.iter().try_for_each(|&item| check_item(item, steps))
+        }
+        _ => invalid_item(),
     }
 }
 
