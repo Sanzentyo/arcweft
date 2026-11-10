@@ -3141,8 +3141,7 @@ fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression()
         .iter_mut()
         .find(|row| row.owner() == first.definition().owner())
         .unwrap();
-    let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { tried, pipe, .. } =
-        row.payload()
+    let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { body, .. } = row.payload()
     else {
         panic!("implicit payload")
     };
@@ -3160,8 +3159,7 @@ fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression()
                 semantics.local_uses(),
             )
             .unwrap(),
-            tried: tried.clone(),
-            pipe: pipe.clone(),
+            body: body.clone(),
         },
     );
     assert!(matches!(
@@ -3239,8 +3237,7 @@ fn implicit_capture_transfer_is_selected_per_closed_instance() {
         .iter_mut()
         .find(|row| row.owner() == first.definition().owner())
         .unwrap();
-    let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { tried, pipe, .. } =
-        row.payload()
+    let RuntimeProjectFunctionExpressionPayload::ImplicitCallable { body, .. } = row.payload()
     else {
         panic!("implicit payload")
     };
@@ -3249,8 +3246,7 @@ fn implicit_capture_transfer_is_selected_per_closed_instance() {
         row.children().into(),
         RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
             callable: foreign,
-            tried: tried.clone(),
-            pipe: pipe.clone(),
+            body: body.clone(),
         },
     );
     assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionInstanceSemanticFacts::try_new(first_semantics.partition().clone(), first_semantics.local_uses().clone(), first_semantics.type_projection().into(), rows.into_boxed_slice(), first_semantics.patterns().into(), first_semantics.statements().into()), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)));
