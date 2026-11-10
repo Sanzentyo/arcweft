@@ -4493,7 +4493,12 @@ impl Analyzer<'_, '_, '_> {
                 }
                 PreparedFunctionValueOriginProgress::Need(need) => {
                     let owner = need.expression();
-                    self.evaluate_expression(context, owner, None)?;
+                    // The origin query follows the callee's lexical binding to its
+                    // exact initializer. An existing initializer fact carries the
+                    // binding's context even inside a nested call candidate.
+                    if !self.facts.expressions().contains_key(&owner) {
+                        self.evaluate_expression(context, owner, None)?;
+                    }
                     let checked = self.facts.expressions().get(&owner).ok_or_else(|| {
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },

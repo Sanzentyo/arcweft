@@ -210,6 +210,7 @@ fn read<T>(record: Boxed<T>) -> T {
 "#;
     for flow in [
         "flow main() -> i64 { let make: (i64 -> Boxed<i64> effects {}) = Boxed { value = _, offset = 2i64 }; let get: (Boxed<i64> -> i64 effects {}) = _.value; let record = make(42i64); return get(record) }",
+        "flow main() -> i64 { let make: (i64 -> Boxed<i64> effects {}) = Boxed { value = _, offset = 2i64 }; let get: (Boxed<i64> -> i64 effects {}) = _.value; return get(make(42i64)) }",
         "flow main() -> i64 { let result = wrap(|n: i64| n + 1i64, 1i64); let callback = read(result); return callback(41i64) }",
         "flow main() -> i64 { let result = wrap(40i64, 2i64); let get: (Boxed<i64> -> i64 effects {}) = _.offset; return read(result) + get(result) }",
     ] {
