@@ -821,6 +821,17 @@ struct ParameterMatcher<'a, A: FunctionTypeRows> {
     exact_leaves: bool,
 }
 
+/// Retaining operands changes the visible parameter list but preserves the
+/// original invocation contract and the scope in which its rows are resolved.
+pub(crate) fn callable_partial_preserves_contract<A: FunctionTypeRows>(
+    types: &A,
+    source: A::Type,
+    target: A::Type,
+) -> bool {
+    let contract = |ty| Some((types.scope(ty)?, types.function(ty)?.0));
+    contract(source).is_some_and(|source| contract(target) == Some(source))
+}
+
 /// Proves assignment of a callable operand under the owning frame contract.
 /// Frame binders are fixed for the comparison. Only the nested function's own
 /// binder is introduced on both sides of the relation.

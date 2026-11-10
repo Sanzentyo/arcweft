@@ -2543,6 +2543,15 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
             let Some(target) = program.callable_states.get(partial.state.index()) else {
                 return Err(invalid("callable partial target state is absent"));
             };
+            if !crate::program_types::callable_partial_preserves_contract(
+                program,
+                state.function_type,
+                target.function_type,
+            ) {
+                return Err(invalid(
+                    "callable partial target changes the invocation contract",
+                ));
+            }
             let mut bound = match &state.position {
                 RuntimeCallablePosition::WithinGroup { bound, .. } => bound.to_vec(),
                 RuntimeCallablePosition::Unapplied | RuntimeCallablePosition::AfterGroup { .. } => {

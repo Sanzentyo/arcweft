@@ -750,6 +750,16 @@ impl RuntimeCallableState {
                     role: "partial",
                 },
             )?;
+            if !crate::program_types::callable_partial_preserves_contract(
+                plan,
+                self.function_type,
+                next.function_type,
+            ) {
+                return Err(RuntimeCallableStateError::InvalidType {
+                    state,
+                    role: "partial target invocation contract",
+                });
+            }
             let mut bound = match &self.position {
                 RuntimeCallablePosition::WithinGroup { bound, .. } => bound.to_vec(),
                 _ => Vec::new(),

@@ -28,7 +28,9 @@ pub use function_contract::{
     RuntimeFunctionEffectInstantiation, RuntimeFunctionEffectInstantiationError,
     RuntimeParameterValueAdmissionError,
 };
-pub(crate) use function_contract::{RuntimeValueTypeContext, callable_operand_accepts};
+pub(crate) use function_contract::{
+    RuntimeValueTypeContext, callable_operand_accepts, callable_partial_preserves_contract,
+};
 mod data_shapes;
 mod entry;
 mod fanout;

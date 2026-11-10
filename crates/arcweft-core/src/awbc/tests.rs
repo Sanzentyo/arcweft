@@ -8498,6 +8498,26 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
     assert_eq!(callable.state(), callable_state_id(1));
     assert_eq!(callable.retained(), [RuntimeValue::Unit]);
     assert_eq!(fiber.frames.len(), 1);
+
+    let mut mismatched = (*program).clone();
+    mismatched.runtime_types[2] = runtime_type(
+        3,
+        AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::monomorphic(
+                crate::effect_row::EffectSet::from_labels(["log.write"]).unwrap(),
+            ),
+            parameters: vec![AwbcTypeId(0), AwbcTypeId(0)],
+            result: AwbcTypeId(0),
+        },
+    );
+    let error = mismatched
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .err();
+    assert!(
+        matches!(error.as_ref(), Some(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message == "callable partial target changes the invocation contract"),
+        "unexpected AWBC rejection: {error:?}"
+    );
 }
 
 #[test]

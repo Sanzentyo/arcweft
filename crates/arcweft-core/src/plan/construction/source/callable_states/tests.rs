@@ -301,6 +301,16 @@ pub(in crate::plan::construction::source) fn fixture_builder() -> (
     [RuntimeFunctionSiteSeedId; 8],
     Vec<RuntimeCallableStateSeedId>,
 ) {
+    fixture_builder_with_pair(function_type(PAIR, Box::new([BOOL, BOOL]), BOOL))
+}
+
+fn fixture_builder_with_pair(
+    pair: RuntimePlanTypeSeed,
+) -> (
+    RuntimePlanBuilder,
+    [RuntimeFunctionSiteSeedId; 8],
+    Vec<RuntimeCallableStateSeedId>,
+) {
     let mut builder = RuntimePlanBuilder::new();
     let binder = RuntimeTypeBinder::new(1, 0, 0);
     let scope = RuntimeTypeScope::root().enter(binder).unwrap();
@@ -309,7 +319,7 @@ pub(in crate::plan::construction::source) fn fixture_builder() -> (
             [
                 RuntimePlanTypeSeed::new(BOOL, P::Bool),
                 function_type(UNARY, Box::new([BOOL]), BOOL),
-                function_type(PAIR, Box::new([BOOL, BOOL]), BOOL),
+                pair,
                 function_type(FIRST, Box::new([BOOL]), UNARY),
                 function_type(ZERO, Box::new([]), BOOL),
                 RuntimePlanTypeSeed::new(PAYLOAD, P::Tuple(Box::new([BOOL]))),
@@ -908,6 +918,35 @@ fn callable_source_data_cannot_publish_an_invalid_projection_or_invent_missing_p
         source
             .prepare_image(RuntimeTaskPlanSealLimits::default())
             .is_err()
+    );
+}
+
+#[test]
+fn callable_partial_state_cannot_drop_the_source_invocation_effect() {
+    let pair = RuntimePlanTypeSeed::new(
+        PAIR,
+        P::Function {
+            contract: RuntimeFunctionTypeContract::monomorphic(
+                crate::effect_row::EffectSet::from_labels(["log.write"]).unwrap(),
+            ),
+            parameters: Box::new([BOOL, BOOL]),
+            result: BOOL,
+        },
+    );
+    let (mut builder, functions, states) = fixture_builder_with_pair(pair);
+    define_bodies(&mut builder, &functions, &states);
+    let error = builder.finish().err();
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(RuntimePlanBuildError::Plan(crate::plan::RuntimePlanError::CallableState(
+                crate::plan::RuntimeCallableStateError::InvalidType {
+                    state,
+                    role: "partial target invocation contract",
+                }
+            ))) if state.index() == 0
+        ),
+        "unexpected RuntimePlan rejection: {error:?}"
     );
 }
 
