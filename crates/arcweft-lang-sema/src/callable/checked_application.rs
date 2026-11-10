@@ -906,19 +906,19 @@ impl ResolvedCallableState {
 
 pub(crate) struct FrozenCallTypeSolutionSeed {
     schema: CallableSignatureSchemaDigest,
-    completed_group: CallableGroupIndex,
+    transition: CallableGroupTransition,
     solution: Arc<TypeConstraintSolution>,
 }
 
 impl FrozenCallTypeSolutionSeed {
     pub(super) fn from_prepared(
         schema: CallableSignatureSchemaDigest,
-        completed_group: CallableGroupIndex,
+        transition: CallableGroupTransition,
         solution: Arc<TypeConstraintSolution>,
     ) -> Self {
         Self {
             schema,
-            completed_group,
+            transition,
             solution,
         }
     }
@@ -927,21 +927,21 @@ impl FrozenCallTypeSolutionSeed {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedDeferredContinuationParameter {
     parameter: crate::types::GenericTypeReference,
-    first_remaining_group: CallableGroupIndex,
+    first_remaining_parameter: CallableParameterCoordinate,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedDeferredContinuationConstParameter {
     parameter: GenericConstReference,
-    first_remaining_group: CallableGroupIndex,
+    first_remaining_parameter: CallableParameterCoordinate,
 }
 
 impl CheckedDeferredContinuationParameter {
     pub const fn parameter(&self) -> &crate::types::GenericTypeReference {
         &self.parameter
     }
-    pub const fn first_remaining_group(&self) -> CallableGroupIndex {
-        self.first_remaining_group
+    pub const fn first_remaining_parameter(&self) -> CallableParameterCoordinate {
+        self.first_remaining_parameter
     }
 }
 
@@ -949,8 +949,8 @@ impl CheckedDeferredContinuationConstParameter {
     pub const fn parameter(&self) -> &GenericConstReference {
         &self.parameter
     }
-    pub const fn first_remaining_group(&self) -> CallableGroupIndex {
-        self.first_remaining_group
+    pub const fn first_remaining_parameter(&self) -> CallableParameterCoordinate {
+        self.first_remaining_parameter
     }
 }
 
@@ -958,7 +958,7 @@ impl CheckedDeferredContinuationConstParameter {
 pub struct FrozenCallTypeSolution {
     base: ResolvedCallableDigest,
     schema: CallableSignatureSchemaDigest,
-    completed_group: CallableGroupIndex,
+    transition: CallableGroupTransition,
     solution: Arc<TypeConstraintSolution>,
     deferred: Box<[CheckedDeferredContinuationParameter]>,
     deferred_consts: Box<[CheckedDeferredContinuationConstParameter]>,
@@ -970,7 +970,7 @@ impl std::fmt::Debug for FrozenCallTypeSolution {
         f.debug_struct("FrozenCallTypeSolution")
             .field("base", &self.base)
             .field("schema", &self.schema)
-            .field("completed_group", &self.completed_group)
+            .field("transition", &self.transition)
             .field(
                 "effect_binding_count",
                 &self.solution.effect_bindings().len(),
@@ -1052,10 +1052,12 @@ impl FrozenCallTypeSolution {
         seed: FrozenCallTypeSolutionSeed,
         base: &Arc<ResolvedCallableBase>,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
-        if seed.schema != base.schema().semantic_digest()
-            || base.schema().group(seed.completed_group).is_none()
-        {
+        if seed.schema != base.schema().semantic_digest() {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch);
+        }
+        let transition = seed.transition;
+        if base.complete_group(transition.current()) != Some(transition) {
+            return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         let solution = seed.solution;
         let implicit_extension_group = match base.instantiation() {
@@ -1067,20 +1069,16 @@ impl FrozenCallTypeSolution {
             .generic_inventory()
             .types()
             .iter()
-            .filter_map(|entry| match (entry.role(), entry.first_use()) {
-                (
-                    super::CallableSchemaGenericRole::Candidate,
-                    super::CallableGenericFirstUse::Group(group),
-                ) if group > seed.completed_group
-                    && Some(group) != implicit_extension_group
-                    && solution.has_residual_type(entry.parameter()) =>
-                {
-                    Some(CheckedDeferredContinuationParameter {
-                        parameter: entry.parameter().clone(),
-                        first_remaining_group: group,
-                    })
-                }
-                _ => None,
+            .filter(|entry| {
+                entry.role() == super::CallableSchemaGenericRole::Candidate
+                    && solution.has_residual_type(entry.parameter())
+            })
+            .filter_map(|entry| {
+                Some(CheckedDeferredContinuationParameter {
+                    parameter: entry.parameter().clone(),
+                    first_remaining_parameter: transition
+                        .remaining_parameter_use(entry.first_use(), implicit_extension_group)?,
+                })
             })
             .collect::<Vec<_>>();
         deferred.sort();
@@ -1092,20 +1090,16 @@ impl FrozenCallTypeSolution {
             .generic_inventory()
             .consts()
             .iter()
-            .filter_map(|entry| match (entry.role(), entry.first_use()) {
-                (
-                    super::CallableSchemaGenericRole::Candidate,
-                    super::CallableGenericFirstUse::Group(group),
-                ) if group > seed.completed_group
-                    && Some(group) != implicit_extension_group
-                    && solution.has_residual_const(entry.parameter()) =>
-                {
-                    Some(CheckedDeferredContinuationConstParameter {
-                        parameter: entry.parameter().clone(),
-                        first_remaining_group: group,
-                    })
-                }
-                _ => None,
+            .filter(|entry| {
+                entry.role() == super::CallableSchemaGenericRole::Candidate
+                    && solution.has_residual_const(entry.parameter())
+            })
+            .filter_map(|entry| {
+                Some(CheckedDeferredContinuationConstParameter {
+                    parameter: entry.parameter().clone(),
+                    first_remaining_parameter: transition
+                        .remaining_parameter_use(entry.first_use(), implicit_extension_group)?,
+                })
             })
             .collect::<Vec<_>>();
         deferred_consts.sort();
@@ -1140,7 +1134,7 @@ impl FrozenCallTypeSolution {
         let mut encoder = CheckedCallCanonicalEncoder::new(FROZEN_SOLUTION_DOMAIN);
         encoder.digest(base.digest().as_bytes());
         encoder.digest(seed.schema.as_bytes());
-        encoder.index(seed.completed_group.get())?;
+        encoder.index(transition.current().get())?;
         encoder.count(bindings.len())?;
         for (parameter, value) in &bindings {
             encoder.tag(0);
@@ -1173,7 +1167,7 @@ impl FrozenCallTypeSolution {
                     .semantic_identity_digest()?
                     .as_bytes(),
             );
-            encoder.index(row.first_remaining_group().get())?;
+            encoder.index(row.first_remaining_parameter().group().get())?;
         }
         encoder.count(deferred_consts.len())?;
         for row in &deferred_consts {
@@ -1183,13 +1177,13 @@ impl FrozenCallTypeSolution {
                     .const_parameter_view(row.parameter())
                     .canonical_checked_bytes()?,
             )?;
-            encoder.index(row.first_remaining_group().get())?;
+            encoder.index(row.first_remaining_parameter().group().get())?;
         }
         let digest = FrozenCallTypeSolutionDigest(encoder.finish());
         Ok(Arc::new(Self {
             base: base.digest(),
             schema: seed.schema,
-            completed_group: seed.completed_group,
+            transition,
             solution,
             deferred: deferred.into_boxed_slice(),
             deferred_consts: deferred_consts.into_boxed_slice(),
@@ -1204,7 +1198,7 @@ impl FrozenCallTypeSolution {
         self.schema
     }
     pub const fn completed_group(&self) -> CallableGroupIndex {
-        self.completed_group
+        self.transition.current()
     }
     pub fn effect_bindings(
         &self,
@@ -2312,7 +2306,6 @@ impl CheckedCallExecutionProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCallApplicationCore {
     site: CheckedCallApplicationSite,
-    transition: CallableGroupTransition,
     candidates: CheckedCandidateInventory,
     consumer: CheckedCallConsumerAdmission,
     solution: Arc<FrozenCallTypeSolution>,
@@ -2324,7 +2317,6 @@ pub struct CheckedCallApplicationCore {
 
 pub(crate) struct CheckedCallApplicationCoreSeal<'a> {
     pub(crate) site: CheckedCallApplicationSite,
-    pub(crate) transition: CallableGroupTransition,
     pub(crate) candidates: CheckedCandidateInventory,
     pub(crate) consumer: CheckedCallConsumerAdmissionSeal,
     pub(crate) solution: Arc<FrozenCallTypeSolution>,
@@ -2490,19 +2482,15 @@ impl CheckedCallApplicationCore {
         input: CheckedCallApplicationCoreSeal<'_>,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
         let selected = input.candidates.selected();
-        let transition = input.transition;
+        let transition = input.solution.transition;
         let current = transition.current();
         if input.solution.base() != selected.base().digest()
             || input.solution.schema() != selected.schema().semantic_digest()
-            || input.solution.completed_group() != current
             || selected.call_group() != current
         {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
         validate_callee(&input.callee, selected)?;
-        if selected.base().complete_group(current) != Some(transition) {
-            return Err(CallConstraintInvariant::PreparedGroupMismatch);
-        }
         let effects = if selected.id().is_flow_transfer() || transition.next().is_some() {
             EffectRow::closed(crate::effects::EffectSet::new())
         } else {
@@ -2569,7 +2557,6 @@ impl CheckedCallApplicationCore {
         let digest = CheckedCallApplicationCoreDigest(encoder.finish());
         Ok(Arc::new(Self {
             site: input.site,
-            transition,
             candidates: input.candidates,
             consumer,
             solution: input.solution,
@@ -2594,11 +2581,11 @@ impl CheckedCallApplicationCore {
     pub const fn stable_site(&self) -> &StableCheckedValueCoordinate {
         self.site.coordinate()
     }
-    pub const fn current_group(&self) -> CallableGroupIndex {
-        self.transition.current()
+    pub fn current_group(&self) -> CallableGroupIndex {
+        self.solution.transition.current()
     }
-    pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
-        self.transition.next()
+    pub(crate) fn next_group(&self) -> Option<CallableGroupIndex> {
+        self.solution.transition.next()
     }
     pub const fn candidates(&self) -> &CheckedCandidateInventory {
         &self.candidates
@@ -3013,7 +3000,7 @@ impl CheckedCallApplication {
     ) -> Result<Self, CallConstraintInvariant> {
         let base = core.candidates().selected().base();
         let projected = base.result_schema_after_group(
-            core.transition,
+            core.solution.transition,
             core.solution(),
             terminal_effects,
             inferred_result_schema,

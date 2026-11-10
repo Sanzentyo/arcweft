@@ -27,7 +27,7 @@ use crate::types::{
     },
 };
 
-use super::{CallableGenericFirstUse, CallableGroupIndex, CallableResultSchema};
+use super::{CallableGroupIndex, CallableResultSchema};
 
 mod application_owner;
 pub(crate) use application_owner::CallableConstraintApplication;
@@ -458,29 +458,6 @@ impl PreparedContinuationCandidateSeed {
             function_type,
         } = self;
         (base, reference, current_group, function_type)
-    }
-}
-
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct DeferredContinuationParameter {
-    parameter: GenericTypeReference,
-    first_remaining_group: CallableGroupIndex,
-}
-
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct DeferredContinuationConstParameter {
-    parameter: GenericConstReference,
-    first_remaining_group: CallableGroupIndex,
-}
-
-struct DeferredContinuationInventory {
-    types: Box<[DeferredContinuationParameter]>,
-    consts: Box<[DeferredContinuationConstParameter]>,
-}
-
-impl DeferredContinuationInventory {
-    fn is_canonical(&self) -> bool {
-        strictly_ordered(&self.types) && strictly_ordered(&self.consts)
     }
 }
 
@@ -1718,7 +1695,6 @@ impl<P, U> PreparedCallGraph<P, U> {
         self.validate_prefix(&prefix)?;
 
         let application = prefix.application();
-        let completed_group = application.completed_group();
         let selected = application.selected();
         self.validate_prepared_candidate_ancestry(selected)?;
         let result = application.result_schema()?;
@@ -1728,15 +1704,6 @@ impl<P, U> PreparedCallGraph<P, U> {
         } else {
             None
         };
-        if let Some(function_type) = function_type.as_ref() {
-            let deferred = deferred_for_candidate(selected, completed_group);
-            if !matches!(&result, CallableResultSchema::Value(value) if value == function_type)
-                || !deferred.is_canonical()
-                || !matches!(function_type, TypeKind::Function { .. })
-            {
-                return Err(CallConstraintInvariant::PreparedDeferredMismatch);
-            }
-        }
         if let Some(sealed) = self.reconcile_selected_site(
             site,
             &dependencies,
@@ -2046,7 +2013,6 @@ impl<P, U> PreparedCallGraph<P, U> {
         };
         debug_assert!(Arc::ptr_eq(&continuation.coordinate.issuer, &self.issuer));
         let application = continuation.prefix.application();
-        let selected = application.selected();
         self.validate_prefix(&continuation.prefix)?;
         if !candidate
             .prepared_continuation()
@@ -2064,10 +2030,6 @@ impl<P, U> PreparedCallGraph<P, U> {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         let function_type = application.function_type()?;
-        let deferred = deferred_for_candidate(selected, application.completed_group());
-        if !deferred.is_canonical() || !matches!(function_type, TypeKind::Function { .. }) {
-            return Err(CallConstraintInvariant::PreparedDeferredMismatch);
-        }
         if candidate.prepared_function_type() != Some(&function_type) {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
@@ -2104,10 +2066,6 @@ impl<P, U> PreparedCallGraph<P, U> {
             .next_group()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
         let function_type = application.function_type()?;
-        let deferred = deferred_for_candidate(selected, application.completed_group());
-        if !deferred.is_canonical() || !matches!(function_type, TypeKind::Function { .. }) {
-            return Err(CallConstraintInvariant::PreparedDeferredMismatch);
-        }
         Ok(PreparedContinuationCandidateSeed {
             base: selected.definition(),
             reference: PreparedCallContinuationRef(continuation.coordinate.clone()),
@@ -2290,7 +2248,7 @@ fn issue_scope_initialization(
         .unwrap_or_default();
     let mut required = Vec::new();
     for entry in inventory.types() {
-        let eligibility = match (entry.role(), entry.first_use()) {
+        let eligibility = match (entry.role(), entry.first_use().group()) {
             (super::CallableSchemaGenericRole::RigidReference, _) => {
                 TypeConstraintParameterEligibility::Rigid
             }
@@ -2300,30 +2258,22 @@ fn issue_scope_initialization(
                 required.push(entry.parameter().clone());
                 TypeConstraintParameterEligibility::Bindable
             }
-            (
-                super::CallableSchemaGenericRole::Candidate,
-                CallableGenericFirstUse::Group(group),
-            ) if group < current_group => {
+            (super::CallableSchemaGenericRole::Candidate, Some(group)) if group < current_group => {
                 required.push(entry.parameter().clone());
                 TypeConstraintParameterEligibility::Bindable
             }
-            (
-                super::CallableSchemaGenericRole::Candidate,
-                CallableGenericFirstUse::Group(group),
-            ) if group == current_group || Some(group) == implicit_extension_group => {
+            (super::CallableSchemaGenericRole::Candidate, Some(group))
+                if group == current_group || Some(group) == implicit_extension_group =>
+            {
                 TypeConstraintParameterEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Group(_))
-                if !terminal =>
-            {
+            (super::CallableSchemaGenericRole::Candidate, Some(_)) if !terminal => {
                 TypeConstraintParameterEligibility::FutureEligible
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
-                if retain_result_binder =>
-            {
+            (super::CallableSchemaGenericRole::Candidate, None) if retain_result_binder => {
                 TypeConstraintParameterEligibility::FutureEligible
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result) => {
+            (super::CallableSchemaGenericRole::Candidate, None) => {
                 TypeConstraintParameterEligibility::Bindable
             }
             (super::CallableSchemaGenericRole::Candidate, _) => {
@@ -2341,7 +2291,7 @@ fn issue_scope_initialization(
     }
     let mut required_consts = Vec::new();
     for entry in inventory.consts() {
-        let eligibility = match (entry.role(), entry.first_use()) {
+        let eligibility = match (entry.role(), entry.first_use().group()) {
             (super::CallableSchemaGenericRole::RigidReference, _) => {
                 TypeConstraintConstEligibility::Rigid
             }
@@ -2351,30 +2301,22 @@ fn issue_scope_initialization(
                 required_consts.push(entry.parameter().clone());
                 TypeConstraintConstEligibility::Bindable
             }
-            (
-                super::CallableSchemaGenericRole::Candidate,
-                CallableGenericFirstUse::Group(group),
-            ) if group < current_group => {
+            (super::CallableSchemaGenericRole::Candidate, Some(group)) if group < current_group => {
                 required_consts.push(entry.parameter().clone());
                 TypeConstraintConstEligibility::Bindable
             }
-            (
-                super::CallableSchemaGenericRole::Candidate,
-                CallableGenericFirstUse::Group(group),
-            ) if group == current_group || Some(group) == implicit_extension_group => {
+            (super::CallableSchemaGenericRole::Candidate, Some(group))
+                if group == current_group || Some(group) == implicit_extension_group =>
+            {
                 TypeConstraintConstEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Group(_))
-                if !terminal =>
-            {
+            (super::CallableSchemaGenericRole::Candidate, Some(_)) if !terminal => {
                 TypeConstraintConstEligibility::FutureEligible
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
-                if retain_result_binder =>
-            {
+            (super::CallableSchemaGenericRole::Candidate, None) if retain_result_binder => {
                 TypeConstraintConstEligibility::FutureEligible
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result) => {
+            (super::CallableSchemaGenericRole::Candidate, None) => {
                 TypeConstraintConstEligibility::Bindable
             }
             (super::CallableSchemaGenericRole::Candidate, _) => {
@@ -2447,24 +2389,20 @@ fn issue_scope_initialization(
                 required_effects.push(variable.clone());
                 EffectConstraintEligibility::Bindable
             } else {
-                match row.first_use() {
-                    CallableGenericFirstUse::Group(group) if group < current_group => {
+                match row.first_use().group() {
+                    Some(group) if group < current_group => {
                         required_effects.push(variable.clone());
                         EffectConstraintEligibility::Bindable
                     }
-                    CallableGenericFirstUse::Group(group)
+                    Some(group)
                         if group == current_group || Some(group) == implicit_extension_group =>
                     {
                         EffectConstraintEligibility::Bindable
                     }
-                    CallableGenericFirstUse::Group(_) if !terminal => {
-                        EffectConstraintEligibility::FutureEligible
-                    }
-                    CallableGenericFirstUse::Result if retain_result_binder => {
-                        EffectConstraintEligibility::FutureEligible
-                    }
-                    CallableGenericFirstUse::Result => EffectConstraintEligibility::Bindable,
-                    CallableGenericFirstUse::Group(_) => {
+                    Some(_) if !terminal => EffectConstraintEligibility::FutureEligible,
+                    None if retain_result_binder => EffectConstraintEligibility::FutureEligible,
+                    None => EffectConstraintEligibility::Bindable,
+                    Some(_) => {
                         return Err(CallConstraintInvariant::TerminalFutureEligibleParameter);
                     }
                 }
@@ -2672,51 +2610,4 @@ mod initialization_tests {
 
 fn strictly_ordered<T: Ord>(values: &[T]) -> bool {
     values.windows(2).all(|window| window[0] < window[1])
-}
-
-fn deferred_for_candidate(
-    candidate: &super::PreparedResolvedCallable,
-    completed_group: CallableGroupIndex,
-) -> DeferredContinuationInventory {
-    let implicit_extension_group = match candidate.instantiation() {
-        super::CallableInstantiation::Extension { group, .. } => Some(*group),
-        _ => None,
-    };
-    let types = candidate
-        .schema()
-        .generic_inventory()
-        .types()
-        .iter()
-        .filter_map(|entry| match (entry.role(), entry.first_use()) {
-            (
-                super::CallableSchemaGenericRole::Candidate,
-                CallableGenericFirstUse::Group(group),
-            ) if group > completed_group && Some(group) != implicit_extension_group => {
-                Some(DeferredContinuationParameter {
-                    parameter: entry.parameter().clone(),
-                    first_remaining_group: group,
-                })
-            }
-            _ => None,
-        })
-        .collect();
-    let consts = candidate
-        .schema()
-        .generic_inventory()
-        .consts()
-        .iter()
-        .filter_map(|entry| match (entry.role(), entry.first_use()) {
-            (
-                super::CallableSchemaGenericRole::Candidate,
-                CallableGenericFirstUse::Group(group),
-            ) if group > completed_group && Some(group) != implicit_extension_group => {
-                Some(DeferredContinuationConstParameter {
-                    parameter: entry.parameter().clone(),
-                    first_remaining_group: group,
-                })
-            }
-            _ => None,
-        })
-        .collect();
-    DeferredContinuationInventory { types, consts }
 }

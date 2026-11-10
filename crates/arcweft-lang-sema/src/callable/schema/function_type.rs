@@ -5,10 +5,11 @@
 //! remain owned by their original types.
 
 use super::{
-    CallableArgumentPolicy, CallableEffectSchema, CallableGenericParameterIssuer,
-    CallableGroupKind, CallableParameter, CallableParameterAdmission, CallableParameterGroup,
-    CallableParameterPassing, CallableParameterPresence, CallableSignatureSchema,
-    CallableValidator, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+    CallableArgumentPolicy, CallableEffectSchema, CallableGenericFirstUse,
+    CallableGenericParameterIssuer, CallableGroupKind, CallableParameter,
+    CallableParameterAdmission, CallableParameterGroup, CallableParameterPassing,
+    CallableParameterPresence, CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy,
+    UnknownNamedArgumentPolicy,
 };
 use crate::{
     callable::{
@@ -44,6 +45,20 @@ impl CallableGroupTransition {
 
     pub(crate) const fn next(self) -> Option<CallableGroupIndex> {
         self.next
+    }
+
+    pub(crate) fn remaining_parameter_use(
+        self,
+        first_use: CallableGenericFirstUse,
+        implicit_receiver: Option<CallableGroupIndex>,
+    ) -> Option<CallableParameterCoordinate> {
+        let CallableGenericFirstUse::Parameter(coordinate) = first_use else {
+            return None;
+        };
+        let first_remaining_group = self.next()?;
+        (coordinate.group() >= first_remaining_group
+            && Some(coordinate.group()) != implicit_receiver)
+            .then_some(coordinate)
     }
 }
 

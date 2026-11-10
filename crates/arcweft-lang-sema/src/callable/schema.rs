@@ -836,8 +836,20 @@ pub(crate) enum CallableSchemaGenericRole {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CallableGenericFirstUse {
-    Group(CallableGroupIndex),
+    /// An exposed invocation row belongs to the callable from its entry.
+    Entry,
+    Parameter(CallableParameterCoordinate),
     Result,
+}
+
+impl CallableGenericFirstUse {
+    pub(crate) const fn group(self) -> Option<CallableGroupIndex> {
+        match self {
+            Self::Entry => Some(CallableGroupIndex::ZERO),
+            Self::Parameter(coordinate) => Some(coordinate.group()),
+            Self::Result => None,
+        }
+    }
 }
 
 impl CallableGenericParameterInventory {
@@ -3070,33 +3082,23 @@ fn seal_generic_inventory(
     effects: &CallableEffectSchema,
     issuer: &CallableGenericParameterIssuer,
 ) -> Result<CallableGenericParameterInventory, CallableSchemaError> {
-    let mut occurrences = Vec::new();
+    let template_scope = issuer.template_scope();
+    let mut collector = crate::types::StableGenericReferenceUseCollector::in_scope(&template_scope);
     for group in groups {
-        let position = u32::try_from(group.index().get())
-            .expect("schema group positions fit the generic-use coordinate");
         for parameter in group.parameters() {
             if let Some(ty) = parameter.declared_type() {
-                occurrences.push((ty, position));
+                let coordinate = CallableParameterCoordinate::new(group.index(), parameter.index());
+                collector.visit_at(ty, CallableGenericFirstUse::Parameter(coordinate))?;
             }
         }
     }
-    let result_position =
-        u32::try_from(groups.len()).map_err(|_| CallableSchemaError::GroupLimit {
-            actual: groups.len(),
-            limit: groups.len(),
-        })?;
     if let CallableResultSchema::Value(result) = result {
-        occurrences.push((result, result_position));
-    }
-    let template_scope = issuer.template_scope();
-    let mut collector = crate::types::StableGenericReferenceUseCollector::in_scope(&template_scope);
-    for (ty, position) in occurrences {
-        collector.visit_at(ty, position)?;
+        collector.visit_at(result, CallableGenericFirstUse::Result)?;
     }
     if let Some(row) = effects.fixed_row() {
-        collector.visit_effect_row_at(row, 0)?;
+        collector.visit_effect_row_at(row, CallableGenericFirstUse::Entry)?;
     }
-    collector.visit_effect_predicate_at(&issuer.predicate, result_position)?;
+    collector.visit_effect_predicate_at(&issuer.predicate, CallableGenericFirstUse::Result)?;
     let collected = collector.finish();
     let candidate_types = issuer.type_parameters()?;
     for parameter in &candidate_types {
@@ -3150,12 +3152,9 @@ fn seal_generic_inventory(
         .types()
         .iter()
         .map(|parameter| {
-            let first_use = first_use_for(
-                collected
-                    .first_type_use(parameter)
-                    .expect("collector stores a first use for every type"),
-                groups.len(),
-            );
+            let first_use = collected
+                .first_type_use(parameter)
+                .expect("collector stores a first use for every type");
             CallableGenericTypeUse {
                 parameter: parameter.clone(),
                 role: if candidate_types.contains(parameter) {
@@ -3179,12 +3178,9 @@ fn seal_generic_inventory(
             } else {
                 CallableSchemaGenericRole::RigidReference
             },
-            first_use: first_use_for(
-                collected
-                    .first_const_use(parameter)
-                    .expect("collector stores a first use for every const"),
-                groups.len(),
-            ),
+            first_use: collected
+                .first_const_use(parameter)
+                .expect("collector stores a first use for every const"),
         })
         .collect::<Vec<_>>()
         .into();
@@ -3201,27 +3197,13 @@ fn seal_generic_inventory(
                 } else {
                     CallableSchemaGenericRole::RigidReference
                 },
-                first_use: first_use_for(
-                    collected
-                        .first_effect_use(parameter)
-                        .expect("effect reference first use"),
-                    groups.len(),
-                ),
+                first_use: collected
+                    .first_effect_use(parameter)
+                    .expect("effect reference first use"),
             })
             .collect(),
         template_scope,
     })
-}
-
-fn first_use_for(position: u32, group_count: usize) -> CallableGenericFirstUse {
-    if usize::try_from(position).ok() == Some(group_count) {
-        CallableGenericFirstUse::Result
-    } else {
-        CallableGenericFirstUse::Group(
-            CallableGroupIndex::try_from_usize(position as usize)
-                .expect("schema group positions are representable"),
-        )
-    }
 }
 
 impl FunctionSignature {
@@ -3757,10 +3739,14 @@ mod generic_inventory_tests {
         let const_key = scope.bound_const(0, 0).expect("scheme length");
         let function = TypeKind::function_with_binder(
             binder,
-            [TypeKind::Array {
-                item: Box::new(TypeKind::GenericParam(type_key.clone())),
-                len: ArrayLength::Generic(const_key.clone()),
-            }],
+            [
+                TypeKind::I32,
+                TypeKind::Array {
+                    item: Box::new(TypeKind::GenericParam(type_key.clone())),
+                    len: ArrayLength::Generic(const_key.clone()),
+                },
+                TypeKind::GenericParam(type_key.clone()),
+            ],
             TypeKind::GenericParam(type_key.clone()),
             EffectRow::closed(crate::effects::EffectSet::new()),
         );
@@ -3781,14 +3767,12 @@ mod generic_inventory_tests {
         assert_eq!(constant.parameter(), &const_key);
         assert_eq!(ty.role(), CallableSchemaGenericRole::Candidate);
         assert_eq!(constant.role(), CallableSchemaGenericRole::Candidate);
-        assert_eq!(
-            ty.first_use(),
-            CallableGenericFirstUse::Group(CallableGroupIndex::ZERO)
-        );
-        assert_eq!(
-            constant.first_use(),
-            CallableGenericFirstUse::Group(CallableGroupIndex::ZERO)
-        );
+        let first_use = CallableGenericFirstUse::Parameter(CallableParameterCoordinate::new(
+            CallableGroupIndex::ZERO,
+            CallableParameterIndex::try_from_usize(1).expect("second parameter"),
+        ));
+        assert_eq!(ty.first_use(), first_use);
+        assert_eq!(constant.first_use(), first_use);
         let again = CallableSignatureSchema::for_function_value(
             &function,
             &super::super::PRODUCTION_CALLABLE_LIMITS,
@@ -4055,7 +4039,10 @@ mod generic_inventory_tests {
             .expect("Option candidate row");
         assert_eq!(
             option_item.first_use(),
-            CallableGenericFirstUse::Group(CallableGroupIndex::ZERO)
+            CallableGenericFirstUse::Parameter(CallableParameterCoordinate::new(
+                CallableGroupIndex::ZERO,
+                CallableParameterIndex::try_from_usize(0).expect("first parameter"),
+            ))
         );
 
         let result = crate::callable::ResultConstructorKind::Ok.signature_schema();
@@ -4191,9 +4178,10 @@ mod generic_inventory_tests {
                 .first()
                 .expect("later candidate row")
                 .first_use(),
-            CallableGenericFirstUse::Group(
-                CallableGroupIndex::try_from_usize(1).expect("group one")
-            )
+            CallableGenericFirstUse::Parameter(CallableParameterCoordinate::new(
+                CallableGroupIndex::try_from_usize(1).expect("group one"),
+                CallableParameterIndex::try_from_usize(0).expect("first parameter"),
+            ))
         );
     }
 

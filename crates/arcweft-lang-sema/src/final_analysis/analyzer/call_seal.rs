@@ -1487,7 +1487,7 @@ fn seal_selected_call(
             CallConstraintInvariant::PreparedCallSiteMismatch,
         ));
     }
-    let (selected, transition, solution_seed) = application.into_parts();
+    let (selected, solution_seed) = application.into_parts();
     let considered = core::mem::take(&mut record.inventory);
     let inventory = seal_selected_inventory(
         location,
@@ -1548,7 +1548,6 @@ fn seal_selected_call(
     let core = crate::callable::CheckedCallApplicationCore::seal(
         crate::callable::CheckedCallApplicationCoreSeal {
             site,
-            transition,
             candidates: inventory,
             consumer,
             solution,

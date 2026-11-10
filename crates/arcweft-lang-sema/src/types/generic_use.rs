@@ -21,7 +21,8 @@ use super::{
 
 pub(crate) type TypeGenericUseCollector = GenericUseCollector<DeclarationUses>;
 pub(crate) type TypeGenericReferenceUseCollector = GenericUseCollector<ReferenceUses>;
-pub(crate) type StableGenericReferenceUseCollector = GenericUseCollector<StableReferenceUses>;
+pub(crate) type StableGenericReferenceUseCollector<P = u32> =
+    GenericUseCollector<StableReferenceUses, P>;
 
 /// The same structural visitor serves stable declaration inventories and
 /// application-local hint inventories. Only the latter admits inference atoms.
@@ -255,16 +256,17 @@ pub(crate) struct TypeGenericUseInventory<
     T = GenericTypeParameterId,
     C = GenericConstParameterId,
     E = GenericEffectParameterId,
+    P = u32,
 > {
     types: Arc<[T]>,
     consts: Arc<[C]>,
     effects: Arc<[E]>,
-    type_first_use: BTreeMap<T, u32>,
-    const_first_use: BTreeMap<C, u32>,
-    effect_first_use: BTreeMap<E, u32>,
+    type_first_use: BTreeMap<T, P>,
+    const_first_use: BTreeMap<C, P>,
+    effect_first_use: BTreeMap<E, P>,
 }
 
-impl<T: Ord, C: Ord, E: Ord> TypeGenericUseInventory<T, C, E> {
+impl<T: Ord, C: Ord, E: Ord, P: Copy> TypeGenericUseInventory<T, C, E, P> {
     pub(crate) fn types(&self) -> &[T] {
         &self.types
     }
@@ -277,27 +279,27 @@ impl<T: Ord, C: Ord, E: Ord> TypeGenericUseInventory<T, C, E> {
         &self.effects
     }
 
-    pub(crate) fn first_type_use(&self, parameter: &T) -> Option<u32> {
+    pub(crate) fn first_type_use(&self, parameter: &T) -> Option<P> {
         self.type_first_use.get(parameter).copied()
     }
 
-    pub(crate) fn first_const_use(&self, parameter: &C) -> Option<u32> {
+    pub(crate) fn first_const_use(&self, parameter: &C) -> Option<P> {
         self.const_first_use.get(parameter).copied()
     }
 
-    pub(crate) fn first_effect_use(&self, parameter: &E) -> Option<u32> {
+    pub(crate) fn first_effect_use(&self, parameter: &E) -> Option<P> {
         self.effect_first_use.get(parameter).copied()
     }
 }
 
 /// Exhaustive, metered-free visitor for generic occurrences in [`TypeKind`].
 #[derive(Clone, Debug)]
-pub(crate) struct GenericUseCollector<M: GenericUseDomain> {
+pub(crate) struct GenericUseCollector<M: GenericUseDomain, P = u32> {
     scope: GenericScope,
     incoming_depth: usize,
-    types: BTreeMap<M::TypeKey, u32>,
-    consts: BTreeMap<M::ConstKey, u32>,
-    effects: BTreeMap<M::EffectKey, u32>,
+    types: BTreeMap<M::TypeKey, P>,
+    consts: BTreeMap<M::ConstKey, P>,
+    effects: BTreeMap<M::EffectKey, P>,
     domain: std::marker::PhantomData<M>,
 }
 
@@ -306,6 +308,30 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
         Self::in_scope(&GenericScope::default())
     }
 
+    /// Visits a type at the default position for identity-only collection.
+    pub(crate) fn visit(&mut self, ty: &TypeKind) -> Result<(), TypeGenericUseError> {
+        self.visit_at(ty, 0)
+    }
+
+    pub(crate) fn collect(
+        ty: &TypeKind,
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
+    {
+        Self::collect_in_scope(ty, &GenericScope::default())
+    }
+
+    pub(crate) fn collect_in_scope(
+        ty: &TypeKind,
+        scope: &GenericScope,
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
+    {
+        let mut collector = Self::in_scope(scope);
+        collector.visit(ty)?;
+        Ok(collector.finish())
+    }
+}
+
+impl<M: GenericUseDomain, P: Copy + Ord> GenericUseCollector<M, P> {
     pub(crate) fn in_scope(scope: &GenericScope) -> Self {
         Self {
             scope: scope.clone(),
@@ -317,18 +343,12 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
         }
     }
 
-    /// Visits a type at the default position.  This is useful to callers that
-    /// only need the deterministic identity inventory.
-    pub(crate) fn visit(&mut self, ty: &TypeKind) -> Result<(), TypeGenericUseError> {
-        self.visit_at(ty, 0)
-    }
-
     /// Visits a type and records `position` as the first-use coordinate for
     /// every identity first encountered below it.
     pub(crate) fn visit_at(
         &mut self,
         ty: &TypeKind,
-        position: u32,
+        position: P,
     ) -> Result<(), TypeGenericUseError> {
         match ty {
             TypeKind::Bool
@@ -506,36 +526,24 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
         }
     }
 
-    pub(crate) fn collect(
-        ty: &TypeKind,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
-    {
-        Self::collect_in_scope(ty, &GenericScope::default())
-    }
-
-    pub(crate) fn collect_in_scope(
-        ty: &TypeKind,
-        scope: &GenericScope,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
-    {
-        let mut collector = Self::in_scope(scope);
-        collector.visit(ty)?;
-        Ok(collector.finish())
-    }
-
     #[cfg(test)]
     pub(crate) fn collect_many<'a>(
-        types: impl IntoIterator<Item = (&'a TypeKind, u32)>,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
-    {
+        types: impl IntoIterator<Item = (&'a TypeKind, P)>,
+    ) -> Result<
+        TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey, P>,
+        TypeGenericUseError,
+    > {
         Self::collect_many_in_scope(types, &GenericScope::default())
     }
 
+    #[cfg(test)]
     pub(crate) fn collect_many_in_scope<'a>(
-        types: impl IntoIterator<Item = (&'a TypeKind, u32)>,
+        types: impl IntoIterator<Item = (&'a TypeKind, P)>,
         scope: &GenericScope,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
-    {
+    ) -> Result<
+        TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey, P>,
+        TypeGenericUseError,
+    > {
         let mut collector = Self::in_scope(scope);
         for (ty, position) in types {
             collector.visit_at(ty, position)?;
@@ -543,7 +551,9 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
         Ok(collector.finish())
     }
 
-    pub(crate) fn finish(self) -> TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey> {
+    pub(crate) fn finish(
+        self,
+    ) -> TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey, P> {
         let types = self.types.keys().cloned().collect::<Vec<_>>().into();
         let consts = self.consts.keys().cloned().collect::<Vec<_>>().into();
         TypeGenericUseInventory {
@@ -559,7 +569,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
     pub(crate) fn visit_effect_row_at(
         &mut self,
         row: &EffectRow,
-        position: u32,
+        position: P,
     ) -> Result<(), TypeGenericUseError> {
         // An annotation awaiting inference supplies no references. This
         // inventory does not certify it as a resolved or empty effect row.
@@ -583,7 +593,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
     pub(crate) fn visit_effect_predicate_at(
         &mut self,
         predicate: &crate::effect_row::EffectPredicate,
-        position: u32,
+        position: P,
     ) -> Result<(), TypeGenericUseError> {
         for reference in predicate.variables() {
             if let Some(key) = M::effect_key(
@@ -603,7 +613,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
     pub(crate) fn visit_array_length(
         &mut self,
         length: &ArrayLength,
-        position: u32,
+        position: P,
     ) -> Result<(), TypeGenericUseError> {
         match length {
             ArrayLength::Const(_) | ArrayLength::Error(_) => Ok(()),

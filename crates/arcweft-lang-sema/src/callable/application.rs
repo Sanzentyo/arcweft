@@ -74,7 +74,6 @@ pub(crate) enum PreparedCallableApplicationReplayMismatch {
 /// can recompute it from the frozen checked-catalog row.
 pub(crate) struct DetachedPreparedCallableApplication {
     selected: DetachedPreparedResolvedCallable,
-    transition: CallableGroupTransition,
     solution: super::checked_application::FrozenCallTypeSolutionSeed,
 }
 
@@ -83,10 +82,9 @@ impl DetachedPreparedCallableApplication {
         self,
     ) -> (
         DetachedPreparedResolvedCallable,
-        CallableGroupTransition,
         super::checked_application::FrozenCallTypeSolutionSeed,
     ) {
-        (self.selected, self.transition, self.solution)
+        (self.selected, self.solution)
     }
 }
 
@@ -312,11 +310,8 @@ impl PreparedCallableApplication {
         let selected = arena.detach(selected)?;
         Ok(DetachedPreparedCallableApplication {
             selected,
-            transition,
             solution: super::checked_application::FrozenCallTypeSolutionSeed::from_prepared(
-                schema,
-                transition.current(),
-                solution,
+                schema, transition, solution,
             ),
         })
     }

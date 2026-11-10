@@ -689,8 +689,8 @@ fn terminal_function_result_enters_independent_origin_without_dependency() {
 fn three_group_function_values_follow_prepared_adjacency() {
     let fixture = crate::final_analysis::tests::fixture(
         concat!(
-            "fn make(first: i64)(second: i64)(third: i64) -> i64 { third }\n",
-            "fn caller() { let first = make(1i64); let second = first(2i64); second(3i64); }\n",
+            "fn make<T>(first: i64)(second: i64)(third: i64, later: T) -> i64 { third }\n",
+            "fn caller() { let first = make(1i64); let second = first(2i64); second(3i64, true); }\n",
         ),
         None,
     );
@@ -717,6 +717,15 @@ fn three_group_function_values_follow_prepared_adjacency() {
     assert_eq!(origin.core().current_group().get(), 0);
     assert_eq!(middle.core().current_group().get(), 1);
     assert_eq!(terminal.core().current_group().get(), 2);
+    for application in [origin, middle] {
+        let [parameter] = application.core().solution().deferred() else {
+            panic!("exactly one deferred parameter");
+        };
+        let first_use = parameter.first_remaining_parameter();
+        assert_eq!(first_use.group().get(), 2);
+        assert_eq!(first_use.parameter().get(), 1);
+    }
+    assert!(terminal.core().solution().deferred().is_empty());
     assert!(matches!(
         origin.core().candidates().selected().state(),
         crate::callable::ResolvedCallableState::Base
