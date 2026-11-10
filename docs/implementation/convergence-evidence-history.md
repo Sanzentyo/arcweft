@@ -16438,3 +16438,19 @@ Compiler の待機テストは、ジェネリック相互再帰の関数値と�
 Cargo tree の既定・全 feature・全ターゲットと Windows の Cargo metadata で、Sema を含む逆依存22パッケージが一致した。nextest は 3,920 件成功、0 件失敗、1 件スキップ。対象実行のうち Compiler の待機21件を再利用し、Sema 17件は全件実行に含めて集計した。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest、Web Player の Wasm check が通過した。Clippy には警告がある。
 
 [ソース照合、実入力、失敗、全コマンドの原本](acceptance-evidence/task-recursive-terminal-effects.raw.zip)は141件、1564330 bytes、SHA-256 c6278c678b33212c68f25016ece854f55d0ee044ef2445a070207cb17d31bc7a。
+
+### Recursive callback effects and closed instances
+
+2026-11-10に親 069c9cfddbe1a1731e51acd141d2fe93f71e6aea、実行インスタンスの Source 73e7f1604c09fdcca8dec462b4a3784250b3d5cb、効果の収束の Source e0680eb045387dca2aeafe33c691aed7f25dcfbb を公開先で確認した。tree は順に e751ead9b3a5412c7e45c8636ee91a7d25c9df00、13ec6c13507741db88b612d107b39ef49ce2d657。2つのコミットの変更 blob と、公開先の最終ツリーを照合した。検証時の追跡対象の差分は0件で、既存の未追跡 %SystemDrive%/ があった。
+
+親の CLI は効果を推論する3つの callback を再帰先へ渡す2入力を拒否し、非再帰の対照を受理した。診断を追加した検証ビルドでは、再帰 call の制約 work が既定上限4,096に達した。効果を型・定数と同じ同時置換に揃えた中間ビルドでは、1〜2個の例は実行選択まで進んだが、呼び出し元の行を先に閉じようとして循環置換を報告した。
+
+呼び出し先の型・効果は同じ scoped application から投影する。再帰呼び出し元の効果行をそのスコープで閉じてから実行インスタンスを封印し、Compiler は同じインスタンスの宣言、グループ、効果を使う。独立した選択行と、同じ宣言の置換表を再帰的にたどる経路を削除した。台詞の終端呼び出しは封印済みの適用結果から効果を得る。別解析世代の同一キーで、インスタンスの証拠を置き換えられないことを検証した。
+
+効果制約の完了を候補内で一度にまとめ、選択済みの式・型・各 application が同じ解を使う。制約グラフの同じ写像を作り直していた処理も除いた。再帰効果行は変化した行の利用側を再計算し、投影と合成の作業量で上限を検査する。宣言が1件だけで3つの callback を巡回させる入力は、中間ビルドの宣言数ベースの反復上限で失敗し、最終版ではすべての効果が収束した。対象22件が成功した。
+
+最終 Source の CLI では1〜3個の4入力を VM／AWBC で計8実行し、各ステップ最大1操作で42を返した。ログ順を照合した。4個の巡回は呼び出し解決で拒否された。後段 callback の効果を推論する共有 prefix の入力は、通常本体と attached default の両方で RuntimePlan 生成時に generic binder depth 0 is outside the lexical scope を返した。再帰を外して callback を直接呼ぶ対照でも再現した。通常型の最小例では、保持した prefix と即時連鎖の両方が拒否され、空の効果行を明示した対照は通過した。再帰本体内の自己関数値と効果推論付きの再帰の段階適用の依存循環も再現した。
+
+Sema と Compiler からの推移的逆依存は、Cargo tree の既定・全 feature・全ターゲットと Windows の Cargo metadata で22パッケージに一致した。nextest は 3,924 件成功、0 件失敗、1 件スキップ。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest、Web Player の Wasm check が通過した。Clippy には警告がある。
+
+[ソース照合、実入力、途中の失敗、全コマンドの原本](acceptance-evidence/task-recursive-callback-effects.raw.zip)は189件、1631854 bytes、SHA-256 e4936f9a8352a16d496f3891c911fb7a89528df0ae93c76d5dc70ca33e812943。
