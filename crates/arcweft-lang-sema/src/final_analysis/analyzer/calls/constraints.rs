@@ -5283,7 +5283,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
     } else {
         None
     };
-    let result_closure = if candidate.next_group_for(group).is_some() {
+    let result_closure = if candidate.permits_residual_result(group) {
         crate::types::constraints::TypeConstraintProjectionClosure::AllowFutureEligible
     } else {
         crate::types::constraints::TypeConstraintProjectionClosure::Closed

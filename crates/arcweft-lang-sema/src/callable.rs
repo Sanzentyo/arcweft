@@ -177,7 +177,7 @@ pub use join::{
     CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeInput,
     CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
     CheckedProjectFunctionRuntimeSelectionError, CheckedProjectFunctionSpecialization,
-    IntrinsicCallableCandidateTag,
+    CheckedProjectFunctionSpecializationTarget, IntrinsicCallableCandidateTag,
 };
 pub(crate) use join::{
     CheckedCallableJoinTranscriptDigest, select_project_function_root_runtime,

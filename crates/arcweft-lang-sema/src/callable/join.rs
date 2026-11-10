@@ -42,7 +42,9 @@ pub use source::{
     CheckedProjectFunctionCallableParameter, CheckedProjectFunctionCallableRetainedParameter,
     CheckedProjectFunctionCallableSource, CheckedProjectFunctionCallableSourceDigest,
 };
-pub use specialization::CheckedProjectFunctionSpecialization;
+pub use specialization::{
+    CheckedProjectFunctionSpecialization, CheckedProjectFunctionSpecializationTarget,
+};
 
 /// Failure while joining one final call fact with the current callable
 /// authority.  Every variant is typed evidence failure; no spelling or

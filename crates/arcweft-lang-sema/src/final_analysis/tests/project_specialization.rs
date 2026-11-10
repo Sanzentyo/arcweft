@@ -5,13 +5,23 @@ use super::{analyze, fixture};
 use crate::{
     callable::{
         CallableCandidateId, CheckedProjectFunctionInstanceProjectionError,
-        CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
-        CheckedProjectFunctionRuntimeSelectionError,
+        CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeOutcome,
+        CheckedProjectFunctionRuntimeSelection, CheckedProjectFunctionRuntimeSelectionError,
+        CheckedProjectFunctionSpecialization, CheckedProjectFunctionSpecializationTarget,
     },
     final_analysis::FinalSemanticAnalysis,
     types::{TypeKind, UnmeteredTypeProjection},
 };
 use arcweft_lang_hir::symbol::CallableDeclarationKey;
+
+pub(super) fn closed(
+    proof: &CheckedProjectFunctionSpecialization,
+) -> &CheckedProjectFunctionRootRuntimeSelection {
+    let CheckedProjectFunctionSpecializationTarget::Closed(selection) = proof.target() else {
+        panic!("expected a closed specialization");
+    };
+    selection
+}
 
 pub(super) fn selections(
     analysis: &FinalSemanticAnalysis,
@@ -161,10 +171,8 @@ flow main() -> i64 {
     assert!(value.effect_arguments().is_empty());
     assert_eq!(value.source_type(), witness.source_type());
     assert_eq!(value.specialized_type(), witness.specialized_type());
-    assert!(
-        matches!(value.closed_selection().solution().callable_type(),
-        TypeKind::Function { params, .. } if params.as_ref() == [TypeKind::String])
-    );
+    assert!(matches!(closed(&value).solution().callable_type(),
+        TypeKind::Function { params, .. } if params.as_ref() == [TypeKind::String]));
     let mut terminal = selected
         .iter()
         .filter(|selection| {
@@ -194,11 +202,11 @@ flow main() -> i64 {
     assert_eq!(value.source(), number.source());
     assert_eq!(value.source(), text.source());
     assert_eq!(value.next_group(), number.next_group());
-    assert_eq!(value.closed_selection(), number.closed_selection());
+    assert_eq!(closed(&value), closed(&number));
     assert_eq!(text.type_arguments(), [TypeKind::String]);
     assert_ne!(
-        value.closed_selection().solution().instantiation(),
-        text.closed_selection().solution().instantiation()
+        closed(&value).solution().instantiation(),
+        closed(&text).solution().instantiation()
     );
     assert!(
         !prefix.solution().is_fully_instantiated(),
@@ -287,10 +295,8 @@ flow main() -> i64 { return outer(42i64) }
         )
         .expect("both prefix and witness RHS are closed in outer's instance");
     assert_eq!(proof.type_arguments(), [TypeKind::I64]);
-    assert!(
-        matches!(proof.closed_selection().solution().callable_type(),
-        TypeKind::Function { params, .. } if params.as_ref() == [TypeKind::I64])
-    );
+    assert!(matches!(closed(&proof).solution().callable_type(),
+        TypeKind::Function { params, .. } if params.as_ref() == [TypeKind::I64]));
     assert!(
         matches!(proof.specialized_type(), TypeKind::Function { params, return_type, .. }
         if params.as_ref() == [TypeKind::I64] && **return_type == TypeKind::I64)
@@ -367,10 +373,8 @@ flow main() -> bool { let text = outer("saved", "text"); return outer(true, fals
         )
         .expect("source<T=String> composed with use<T=bool> demand");
     assert_eq!(proof.type_arguments(), [TypeKind::Bool]);
-    assert!(
-        matches!(proof.closed_selection().solution().callable_type(),
-        TypeKind::Function { params, .. } if params.as_ref() == [TypeKind::String])
-    );
+    assert!(matches!(closed(&proof).solution().callable_type(),
+        TypeKind::Function { params, .. } if params.as_ref() == [TypeKind::String]));
     assert!(
         matches!(proof.specialized_type(), TypeKind::Function { params, return_type, .. }
         if params.as_ref() == [TypeKind::Bool] && **return_type == TypeKind::Bool)

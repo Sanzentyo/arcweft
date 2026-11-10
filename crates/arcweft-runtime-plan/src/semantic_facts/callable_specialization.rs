@@ -23,6 +23,7 @@ use super::{
 pub enum RuntimeProjectCallableSourceOrigin {
     Root,
     Continuation(RuntimeProjectContinuationLineageId),
+    Retained(CheckedProjectFunctionCallableSourceDigest),
 }
 
 /// A closed producing context is part of source identity, including retained
@@ -139,9 +140,12 @@ impl RuntimeProjectCallableSourceFact {
         };
         let root = match (origin, root) {
             (RuntimeProjectCallableSourceOrigin::Root, None) => key.clone(),
-            (RuntimeProjectCallableSourceOrigin::Continuation(_), Some(root))
-                if root.origin() == RuntimeProjectCallableSourceOrigin::Root
-                    && root.callable() == key.callable() =>
+            (
+                RuntimeProjectCallableSourceOrigin::Continuation(_)
+                | RuntimeProjectCallableSourceOrigin::Retained(_),
+                Some(root),
+            ) if root.origin() == RuntimeProjectCallableSourceOrigin::Root
+                && root.callable() == key.callable() =>
             {
                 root
             }
@@ -249,7 +253,7 @@ pub struct RuntimeCallableSpecializationFact {
     source: RuntimeNormalizedType,
     target: RuntimeNormalizedType,
     arguments: RuntimeFunctionSpecializationArguments<RuntimeNormalizedType>,
-    selections: BTreeMap<RuntimeProjectCallableSourceKey, RuntimeProjectFunctionInstanceKey>,
+    selections: BTreeMap<RuntimeProjectCallableSourceKey, RuntimeProjectCallableValueTarget>,
 }
 
 /// An expression evaluates its independently checked source exactly once,
@@ -286,7 +290,7 @@ impl RuntimeCallableSpecializationFact {
         selections: impl IntoIterator<
             Item = (
                 RuntimeProjectCallableSourceKey,
-                RuntimeProjectFunctionInstanceKey,
+                RuntimeProjectCallableValueTarget,
             ),
         >,
     ) -> Result<Self, RuntimeCallableSpecializationFactError> {
@@ -298,10 +302,10 @@ impl RuntimeCallableSpecializationFact {
             return Err(RuntimeCallableSpecializationFactError::Source);
         }
         let mut rows = BTreeMap::new();
-        for (origin, instance) in selections {
+        for (origin, selection) in selections {
             if origin.function_type() != source.identity()
-                || origin.callable() != instance.callable()
-                || rows.insert(origin, instance).is_some()
+                || origin.callable() != selection.callable()
+                || rows.insert(origin, selection).is_some()
             {
                 return Err(RuntimeCallableSpecializationFactError::Selection);
             }
@@ -331,24 +335,24 @@ impl RuntimeCallableSpecializationFact {
     }
     pub const fn selections(
         &self,
-    ) -> &BTreeMap<RuntimeProjectCallableSourceKey, RuntimeProjectFunctionInstanceKey> {
+    ) -> &BTreeMap<RuntimeProjectCallableSourceKey, RuntimeProjectCallableValueTarget> {
         &self.selections
     }
     pub fn with_selection(
         mut self,
         source: RuntimeProjectCallableSourceKey,
-        instance: RuntimeProjectFunctionInstanceKey,
+        target: RuntimeProjectCallableValueTarget,
     ) -> Result<Self, RuntimeCallableSpecializationFactError> {
         if source.function_type() != self.source.identity()
-            || source.callable() != instance.callable()
+            || source.callable() != target.callable()
             || self
                 .selections
                 .get(&source)
-                .is_some_and(|selected| selected != &instance)
+                .is_some_and(|selected| selected != &target)
         {
             return Err(RuntimeCallableSpecializationFactError::Selection);
         }
-        self.selections.insert(source, instance);
+        self.selections.insert(source, target);
         Ok(self)
     }
     pub(super) fn append_normalized_types<'a>(
@@ -417,13 +421,32 @@ pub(super) fn admit_specializations(
             let source = sources
                 .get(source)
                 .ok_or(RuntimeCallableSpecializationFactError::Inventory)?;
-            let target = instances
-                .get(target)
-                .ok_or(RuntimeCallableSpecializationFactError::Inventory)?;
-            if source.function_type() != fact.source()
-                || source.group().get() > target.key().group().get()
-                || source.callable().declaration() != target.callable().declaration()
-            {
+            if source.function_type() != fact.source() {
+                return Err(RuntimeCallableSpecializationFactError::Inventory);
+            }
+            let valid = match target {
+                RuntimeProjectCallableValueTarget::Closed(key) => {
+                    instances.get(key).is_some_and(|target| {
+                        source.group().get() <= target.key().group().get()
+                            && source.callable().declaration() == target.callable().declaration()
+                    })
+                }
+                RuntimeProjectCallableValueTarget::Source(key) => {
+                    sources.get(key).is_some_and(|next| {
+                        let RuntimeTypeShape::Function { result, .. } = fact.target().shape()
+                        else {
+                            return false;
+                        };
+                        next.key().origin()
+                            == RuntimeProjectCallableSourceOrigin::Retained(source.key().digest())
+                            && next.root() == source.root()
+                            && next.group().get() == source.group().get() + 1
+                            && next.function_type() == result.as_ref()
+                            && matches!(source.attached(), RuntimeCallableAttachedContract::None)
+                    })
+                }
+            };
+            if !valid {
                 return Err(RuntimeCallableSpecializationFactError::Inventory);
             }
         }

@@ -1,9 +1,11 @@
 //! Projection of checked lexical binders into executable type declarations.
 
-use arcweft_core::effect_row::{DecisionControl, DecisionWork};
+use arcweft_core::effect_row::{DecisionControl, DecisionWork, EffectFormula};
 use arcweft_core::plan::{
-    RuntimeArrayLength, RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope,
+    RuntimeArrayLength, RuntimeBoundEffectReference, RuntimeFunctionTypeContract,
+    RuntimeTypeBinder, RuntimeTypeScope,
 };
+use arcweft_lang_sema::effect_row::EffectRow;
 use arcweft_lang_sema::types::{
     ArrayLength, GenericConstReference, GenericEffectReference, GenericScope,
 };
@@ -51,6 +53,12 @@ pub(super) fn length(
 
 struct ProjectionWork(u64);
 
+impl ProjectionWork {
+    fn new() -> Self {
+        Self(arcweft_core::entry::RuntimeSchemaLimits::engine_default().max_validation_work)
+    }
+}
+
 impl DecisionControl for ProjectionWork {
     type Error = RuntimeSemanticProjectionError;
 
@@ -62,6 +70,38 @@ impl DecisionControl for ProjectionWork {
     }
 }
 
+fn effect_reference(
+    reference: &GenericEffectReference,
+    scope: &RuntimeTypeScope,
+) -> Result<RuntimeBoundEffectReference, RuntimeSemanticProjectionError> {
+    match reference {
+        GenericEffectReference::Bound(reference) => scope
+            .bound_effect(reference.depth(), reference.slot())
+            .map_err(invalid),
+        _ => Err(invalid(
+            "unsealed effect reference reached executable function projection",
+        )),
+    }
+}
+
+fn project_effects(
+    effects: &EffectRow,
+    scope: &RuntimeTypeScope,
+    work: &mut ProjectionWork,
+) -> Result<EffectFormula<RuntimeBoundEffectReference>, RuntimeSemanticProjectionError> {
+    effects
+        .formula()
+        .ok_or_else(|| invalid("unknown effect row reached executable function projection"))?
+        .map_references(work, &mut |reference, _| effect_reference(reference, scope))
+}
+
+pub(super) fn effects(
+    source: &EffectRow,
+    scope: &RuntimeTypeScope,
+) -> Result<EffectFormula<RuntimeBoundEffectReference>, RuntimeSemanticProjectionError> {
+    project_effects(source, scope, &mut ProjectionWork::new())
+}
+
 pub(super) fn function(
     binder: arcweft_lang_sema::types::GenericBinder,
     predicate: &arcweft_lang_sema::effect_row::EffectPredicate,
@@ -70,23 +110,11 @@ pub(super) fn function(
 ) -> Result<RuntimeFunctionTypeContract, RuntimeSemanticProjectionError> {
     let binder = RuntimeTypeBinder::new(binder.types(), binder.const_lengths(), binder.effects());
     let child = scope.enter(binder).map_err(invalid)?;
-    let mut work = ProjectionWork(
-        arcweft_core::entry::RuntimeSchemaLimits::engine_default().max_validation_work,
-    );
-    let mut reference = |reference: &GenericEffectReference, _: &mut ProjectionWork| match reference
-    {
-        GenericEffectReference::Bound(reference) => child
-            .bound_effect(reference.depth(), reference.slot())
-            .map_err(invalid),
-        _ => Err(invalid(
-            "unsealed effect reference reached executable function projection",
-        )),
-    };
-    let invocation = effects
-        .formula()
-        .ok_or_else(|| invalid("unknown effect row reached executable function projection"))?
-        .map_references(&mut work, &mut reference)?;
-    let predicate = predicate.map_references(&mut work, &mut reference)?;
+    let mut work = ProjectionWork::new();
+    let invocation = project_effects(effects, &child, &mut work)?;
+    let predicate = predicate.map_references(&mut work, &mut |reference, _| {
+        effect_reference(reference, &child)
+    })?;
     let contract = RuntimeFunctionTypeContract::new(binder, predicate, invocation);
     contract.child_scope(scope).map_err(invalid)?;
     Ok(contract)

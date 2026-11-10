@@ -2230,26 +2230,30 @@ fn issue_scope_initialization(
     enclosing: &EnclosingGenericParameterScope,
     continuation_seed: Option<PreparedCallContinuationSeed>,
 ) -> Result<PreparedConstraintInitialization, CallConstraintInvariant> {
-    let (schema, current_group, terminal, implicit_extension_group) = match usage {
-        ConstraintScopeUse::Call(candidate) => {
-            let current_group = candidate.call_group();
-            let implicit_extension_group = match candidate.instantiation() {
-                super::CallableInstantiation::Extension { group, .. } if *group > current_group => {
-                    Some(*group)
-                }
-                _ => None,
-            };
-            (
-                candidate.schema(),
-                current_group,
-                is_terminal_group(candidate),
-                implicit_extension_group,
-            )
-        }
-        ConstraintScopeUse::Specialization(schema) => {
-            (schema, CallableGroupIndex::ZERO, true, None)
-        }
-    };
+    let (schema, current_group, terminal, retain_result_binder, implicit_extension_group) =
+        match usage {
+            ConstraintScopeUse::Call(candidate) => {
+                let current_group = candidate.call_group();
+                let implicit_extension_group = match candidate.instantiation() {
+                    super::CallableInstantiation::Extension { group, .. }
+                        if *group > current_group =>
+                    {
+                        Some(*group)
+                    }
+                    _ => None,
+                };
+                (
+                    candidate.schema(),
+                    current_group,
+                    candidate.next_group_for(current_group).is_none(),
+                    candidate.permits_residual_result(current_group),
+                    implicit_extension_group,
+                )
+            }
+            ConstraintScopeUse::Specialization(schema) => {
+                (schema, CallableGroupIndex::ZERO, true, false, None)
+            }
+        };
     let inventory = schema.generic_inventory();
     if schema.group(current_group).is_none() {
         return Err(CallConstraintInvariant::MalformedSchemaInventory);
@@ -2321,13 +2325,11 @@ fn issue_scope_initialization(
                 TypeConstraintParameterEligibility::FutureEligible
             }
             (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
-                if !terminal =>
+                if retain_result_binder =>
             {
                 TypeConstraintParameterEligibility::FutureEligible
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
-                if terminal =>
-            {
+            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result) => {
                 TypeConstraintParameterEligibility::Bindable
             }
             (super::CallableSchemaGenericRole::Candidate, _) => {
@@ -2374,13 +2376,11 @@ fn issue_scope_initialization(
                 TypeConstraintConstEligibility::FutureEligible
             }
             (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
-                if !terminal =>
+                if retain_result_binder =>
             {
                 TypeConstraintConstEligibility::FutureEligible
             }
-            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
-                if terminal =>
-            {
+            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result) => {
                 TypeConstraintConstEligibility::Bindable
             }
             (super::CallableSchemaGenericRole::Candidate, _) => {
@@ -2466,15 +2466,10 @@ fn issue_scope_initialization(
                     CallableGenericFirstUse::Group(_) if !terminal => {
                         EffectConstraintEligibility::FutureEligible
                     }
-                    CallableGenericFirstUse::Result if !terminal => {
+                    CallableGenericFirstUse::Result if retain_result_binder => {
                         EffectConstraintEligibility::FutureEligible
                     }
-                    CallableGenericFirstUse::Result if terminal => {
-                        EffectConstraintEligibility::Bindable
-                    }
-                    CallableGenericFirstUse::Result => {
-                        unreachable!("terminal state exhaustively selects result eligibility")
-                    }
+                    CallableGenericFirstUse::Result => EffectConstraintEligibility::Bindable,
                     CallableGenericFirstUse::Group(_) => {
                         return Err(CallConstraintInvariant::TerminalFutureEligibleParameter);
                     }
@@ -2730,8 +2725,4 @@ fn deferred_for_candidate(
         })
         .collect();
     DeferredContinuationInventory { types, consts }
-}
-
-fn is_terminal_group(candidate: &super::PreparedResolvedCallable) -> bool {
-    candidate.next_group_for(candidate.call_group()).is_none()
 }

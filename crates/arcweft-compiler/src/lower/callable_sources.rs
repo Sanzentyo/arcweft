@@ -1,10 +1,9 @@
 //! Projection of Sema-owned callable sources and checked specialization proofs.
 
-use arcweft_core::effect_row::EffectFormula;
 use arcweft_core::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableParameterCoordinate,
     RuntimeCallableParameterInput, RuntimeCallableParameterKind, RuntimeCallableRetainedInput,
-    RuntimeCallableRetainedRole, RuntimeFunctionSpecializationArguments, RuntimeTypeScope,
+    RuntimeCallableRetainedRole, RuntimeFunctionSpecializationArguments,
 };
 use arcweft_lang_sema::callable::{
     CallableParameterCoordinate, CallableParameterPassing, CallableParameterPresence,
@@ -59,6 +58,9 @@ pub(super) fn source(
         CheckedProjectFunctionCallableOrigin::Root => RuntimeProjectCallableSourceOrigin::Root,
         CheckedProjectFunctionCallableOrigin::Continuation { lineage } => {
             RuntimeProjectCallableSourceOrigin::Continuation(lineage.runtime_lineage_id())
+        }
+        CheckedProjectFunctionCallableOrigin::Retained { predecessor } => {
+            RuntimeProjectCallableSourceOrigin::Retained(predecessor)
         }
     };
     let retained = checked
@@ -150,6 +152,7 @@ pub(super) fn source(
 pub(super) fn specialization(
     source: &RuntimeProjectCallableSourceFact,
     checked: &CheckedProjectFunctionSpecialization,
+    target: RuntimeProjectCallableValueTarget,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -161,17 +164,11 @@ pub(super) fn specialization(
     }
     let (source_type, target_type, arguments) =
         specialization_types(checked, symbols, world, analysis)?;
-    let closed = checked.closed_selection();
-    let instance = RuntimeProjectFunctionInstanceKey::new(
-        source.callable().runtime().clone(),
-        closed.solution().instantiation(),
-        closed.group(),
-    );
     RuntimeCallableSpecializationFact::try_new(
         source_type,
         target_type,
         arguments,
-        [(source.key().clone(), instance)],
+        [(source.key().clone(), target)],
     )
     .map_err(|error| RuntimeSemanticProjectionError::Type {
         reason: error.to_string(),
@@ -191,22 +188,32 @@ pub(super) fn specialization_types(
     ),
     RuntimeSemanticProjectionError,
 > {
+    let scope = type_scopes::scope(checked.argument_scope())?;
     let arguments = RuntimeFunctionSpecializationArguments {
         types: checked
             .type_arguments()
             .iter()
-            .map(|ty| runtime_type(ty, symbols, world, analysis))
+            .map(|ty| {
+                runtime_type_scoped_at(
+                    ty,
+                    symbols,
+                    world,
+                    analysis,
+                    &RuntimeTypeProjectionPath::root(),
+                    checked.argument_scope(),
+                )
+            })
             .collect::<Result<_, _>>()?,
         const_lengths: checked
             .const_arguments()
             .iter()
-            .map(|length| type_scopes::length(length, &RuntimeTypeScope::root()))
+            .map(|length| type_scopes::length(length, &scope))
             .collect::<Result<_, _>>()?,
         effects: checked
             .effect_arguments()
             .iter()
-            .map(|effects| EffectFormula::literal(effects.clone(), None))
-            .collect(),
+            .map(|effects| type_scopes::effects(effects, &scope))
+            .collect::<Result<_, _>>()?,
     };
     Ok((
         runtime_type(checked.source_type(), symbols, world, analysis)?,

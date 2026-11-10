@@ -8826,8 +8826,12 @@ impl RuntimePlanSemanticFacts {
             .map(|root| root.instance().clone())
             .collect::<BTreeSet<_>>();
         for specialization in callable_specializations.values() {
-            referenced_project_function_instances
-                .extend(specialization.selections().values().cloned());
+            referenced_project_function_instances.extend(
+                specialization
+                    .selections()
+                    .values()
+                    .filter_map(|target| target.instance().cloned()),
+            );
         }
         let mut callable_values = values
             .iter()

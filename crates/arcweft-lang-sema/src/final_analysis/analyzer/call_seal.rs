@@ -1345,7 +1345,6 @@ impl SealedSelectedCall {
             }
             return Ok(Some((callee, PreparedExpressionFact::from(updated))));
         }
-        let ty = selected_callable_type(&self.application, checked_callables)?;
         let specialization = previous
             .value_type()
             .filter(|source| {
@@ -1383,6 +1382,11 @@ impl SealedSelectedCall {
                     failure,
                 )
             })?;
+        let ty = selected_callable_type(
+            &self.application,
+            checked_callables,
+            specialization.is_some(),
+        )?;
         if specialization
             .as_ref()
             .is_some_and(|witness| witness.specialized_type() != &ty)
@@ -1792,6 +1796,7 @@ fn checked_call_result_schema(
 fn selected_callable_type(
     application: &crate::callable::CheckedCallApplication,
     checked_callables: &crate::callable::CheckedCallableCatalog,
+    specializes_input: bool,
 ) -> Result<TypeKind, FinalSemanticAnalysisError> {
     let selected = application.core().candidates().selected();
     if let ResolvedCallableState::Continuation(continuation) = selected.state() {
@@ -1807,16 +1812,18 @@ fn selected_callable_type(
                 error,
             )
         })?;
-    application
-        .core()
-        .solution()
-        .instantiate_result(&declared)
-        .map_err(|error| {
-            final_call_seal_error(
-                FinalCallSealLocation::Site(application.core().site()),
-                error,
-            )
-        })
+    let solution = application.core().solution();
+    let projected = if specializes_input {
+        solution.instantiate_call_input(&declared)
+    } else {
+        solution.instantiate_result(&declared)
+    };
+    projected.map_err(|error| {
+        final_call_seal_error(
+            FinalCallSealLocation::Site(application.core().site()),
+            error,
+        )
+    })
 }
 
 impl super::Analyzer<'_, '_, '_> {

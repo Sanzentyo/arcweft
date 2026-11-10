@@ -1271,6 +1271,15 @@ impl FrozenCallTypeSolution {
         Ok(self.solution.apply_result_template(ty)?)
     }
 
+    pub(crate) fn instantiate_call_input(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, CallConstraintInvariant> {
+        self.solution
+            .apply_call_input_template_with_control(ty, &mut crate::types::UnmeteredTypeProjection)
+            .map_err(|error| error.into_instantiation().into())
+    }
+
     /// Source values are already normalized by source completion.
     /// Their free declarations belong to the caller and must not be treated
     /// as this application's formal slots, even in recursive calls.

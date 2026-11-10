@@ -58,6 +58,38 @@ impl TypeConstraintSolution {
         self.apply_template_under(ty, &GenericScope::default(), control)
     }
 
+    /// Projects the arrow consumed by one physical application. The caller
+    /// must join a residual result with the selected code origin's retaining
+    /// group before it may issue an executable specialization.
+    pub(crate) fn apply_call_input_template_with_control<C: TypeProjectionControl>(
+        &self,
+        template: &TypeKind,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+        let projected = self.apply_template_with_control(template, control)?;
+        let scope = projected.view().scope().clone();
+        if scope.binders().is_empty() {
+            return projected.view().to_quantified_type_with_control(control);
+        }
+        let TypeKind::Function {
+            binder,
+            params,
+            return_type,
+            effects,
+            ..
+        } = projected.into_value()
+        else {
+            return Err(TypeInstantiationError::UnresolvedType.into());
+        };
+        if !binder.is_empty() {
+            return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
+        }
+        let result = ScopedTypeView::sealed(&return_type, &scope)
+            .quantify_with_predicate_and_control(&self.effect_predicate, control)?;
+        let arrow = TypeKind::function_with_effects(params, result, effects);
+        clone_scoped_term_with_control(&arrow, &GenericScope::default(), 1, control)
+    }
+
     pub(crate) fn apply_template_under<C: TypeProjectionControl>(
         &self,
         ty: &TypeKind,

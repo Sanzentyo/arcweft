@@ -2345,6 +2345,16 @@ fn safe_lifetime_promotion_follows_invoked_returned_prefixes() {
             false,
         ),
         (
+            two_poly_suffix_groups.clone(),
+            "{ let create = |seed: i64| { stage(seed) }; let partial = create(7i64); let second = partial(loan); second(\"owned\") }",
+            false,
+        ),
+        (
+            two_poly_suffix_groups.clone(),
+            "{ let create = |seed: i64| { stage(seed) }; let partial = create(7i64); let second = partial(\"owned\"); second(loan) }",
+            true,
+        ),
+        (
             two_poly_suffix_groups,
             "{ let create = |seed: i64| { stage(seed) }; let partial = create(7i64); let second: (&i64) -> ((Unit) -> i64 effects {}) effects {} = partial(\"owned\"); second(loan) }",
             true,

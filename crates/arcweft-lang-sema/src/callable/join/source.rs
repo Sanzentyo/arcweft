@@ -18,7 +18,7 @@ use crate::{
     callable::{CheckedCallableAttachedContentParameter, CheckedFunctionSpecialization},
     types::{
         GenericDeclarationBinder, ScopedType, ScopedTypeView, TypeKind, TypeProjectionControl,
-        TypeProjectionError,
+        TypeProjectionError, constraints::TypeInstantiationError,
     },
 };
 use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
@@ -33,6 +33,9 @@ pub enum CheckedProjectFunctionCallableOrigin {
     Root,
     Continuation {
         lineage: CheckedCallContinuationDigest,
+    },
+    Retained {
+        predecessor: CheckedProjectFunctionCallableSourceDigest,
     },
 }
 
@@ -102,6 +105,11 @@ impl CheckedProjectFunctionCallableAttached {
 enum SourceProjection {
     Declaration(GenericDeclarationBinder),
     Continuation(Arc<FrozenCallTypeSolution>),
+    Retained {
+        previous: Arc<CheckedProjectFunctionCallableSource>,
+        witness: Arc<CheckedFunctionSpecialization>,
+        enclosing: Option<CheckedProjectFunctionInstanceSolution>,
+    },
 }
 
 /// A checked source's function scheme, formal layout and producing environment.
@@ -164,15 +172,44 @@ impl CheckedProjectFunctionCallableSource {
         ty: &TypeKind,
         control: &mut C,
     ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
-        let projected = match &self.projection {
+        let mut steps = Vec::new();
+        let mut source = self;
+        while let SourceProjection::Retained {
+            previous,
+            witness,
+            enclosing,
+        } = &source.projection
+        {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+            steps.push((witness, enclosing));
+            source = previous;
+        }
+        let projected = match &source.projection {
             SourceProjection::Declaration(binder) => binder.project_with_control(ty, control)?,
             SourceProjection::Continuation(solution) => {
                 solution.project_template_with_control(ty, control)?
             }
+            SourceProjection::Retained { .. } => unreachable!("walk stopped at a source producer"),
         };
-        self.caller()
-            .unwrap_or(&ClosedTypeInstantiation::default())
-            .instantiate_scoped_type_with_control(projected.view(), control)
+        let empty = ClosedTypeInstantiation::default();
+        let mut projected = source
+            .caller()
+            .unwrap_or(&empty)
+            .instantiate_scoped_type_with_control(projected.view(), control)?;
+        for (witness, enclosing) in steps.into_iter().rev() {
+            let solution = witness.solution();
+            if projected.view().scope() != solution.template_scope() {
+                return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
+            }
+            let value = solution.apply_template_with_control(projected.view().value(), control)?;
+            projected = enclosing
+                .as_ref()
+                .map_or(&empty, |row| row.solution.as_ref())
+                .instantiate_scoped_type_with_control(value.view(), control)?;
+        }
+        Ok(projected)
     }
 
     fn finish<C: TypeProjectionControl>(
@@ -254,7 +291,9 @@ impl CheckedProjectFunctionCallableSource {
             SourceProjection::Continuation(solution) if solution.is_fully_instantiated() => {
                 Some(solution.close_instantiation_with_control(self.caller(), control)?)
             }
-            SourceProjection::Declaration(_) | SourceProjection::Continuation(_) => None,
+            SourceProjection::Declaration(_)
+            | SourceProjection::Continuation(_)
+            | SourceProjection::Retained { .. } => None,
         };
         self.closed_selection = body
             .map(|body| self.close_body(body, control))
@@ -286,28 +325,112 @@ impl CheckedProjectFunctionCallableSource {
                 CheckedProjectFunctionRuntimeSelectionError::SpecializationSourceMismatch.into(),
             );
         }
+        let expected = caller.instantiate_type_with_control(witness.specialized_type(), control)?;
+        if !witness.solution().residual_scope().binders().is_empty() {
+            let next_group = CallableGroupIndex::try_from_usize(self.group.get() + 1)
+                .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+            let TypeKind::Function {
+                binder,
+                return_type,
+                ..
+            } = &expected
+            else {
+                return Err(
+                    CheckedProjectFunctionRuntimeSelectionError::SpecializationResultMismatch
+                        .into(),
+                );
+            };
+            if !binder.is_empty()
+                || self.attached.is_some()
+                || self.checked.signature().group(next_group).is_none()
+                || !matches!(return_type.as_ref(), TypeKind::Function { binder, .. }
+                    if witness.solution().residual_scope().binders() == [*binder])
+            {
+                return Err(
+                    CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into(),
+                );
+            }
+            let next = Self {
+                authority: self.authority.clone(),
+                digest: CheckedProjectFunctionCallableSourceDigest::UNSEALED,
+                declaration: self.declaration.clone(),
+                checked: self.checked.clone(),
+                origin: CheckedProjectFunctionCallableOrigin::Retained {
+                    predecessor: self.digest,
+                },
+                group: next_group,
+                function_type: return_type.as_ref().clone(),
+                parameters: Box::new([]),
+                retained_parameters: Box::new([]),
+                attached: None,
+                projection: SourceProjection::Retained {
+                    previous: Arc::new(self.clone()),
+                    witness: Arc::new(witness.clone()),
+                    enclosing: witness_enclosing.cloned(),
+                },
+                base_instantiation: self.base_instantiation.clone(),
+                source_enclosing: self.source_enclosing.clone(),
+                closed_selection: None,
+            }
+            .finish(control)?;
+            return CheckedProjectFunctionSpecialization::seal_retained(
+                self,
+                expected,
+                next,
+                witness.solution(),
+                caller,
+                control,
+            );
+        }
         let arguments = witness.close_arguments_with_control(Some(caller), control)?;
-        let body = match &self.projection {
-            SourceProjection::Declaration(binder) => {
-                arguments.for_declaration_with_control(binder, control)?
-            }
-            SourceProjection::Continuation(solution) => {
-                solution.close_residual_with_control(&arguments, self.caller(), control)?
-            }
-        };
+        let body = self.close_source_arguments(&arguments, control)?;
         let proof = CheckedProjectFunctionSpecialization::seal(
             self,
             arguments,
             self.close_body(body, control)?,
             control,
         )?;
-        let expected = caller.instantiate_type_with_control(witness.specialized_type(), control)?;
         if !super::specialization::same_type(proof.specialized_type(), &expected, control)? {
             return Err(
                 CheckedProjectFunctionRuntimeSelectionError::SpecializationResultMismatch.into(),
             );
         }
         Ok(proof)
+    }
+
+    fn close_source_arguments<C: TypeProjectionControl>(
+        &self,
+        arguments: &ClosedTypeInstantiation,
+        control: &mut C,
+    ) -> Result<ClosedTypeInstantiation, TypeProjectionError<C::Error>> {
+        let mut composed = None;
+        let mut source = self;
+        while let SourceProjection::Retained {
+            previous,
+            witness,
+            enclosing,
+        } = &source.projection
+        {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+            composed = Some(witness.solution().close_residual_with_control(
+                composed.as_ref().unwrap_or(arguments),
+                enclosing.as_ref().map(|row| row.solution.as_ref()),
+                control,
+            )?);
+            source = previous;
+        }
+        let arguments = composed.as_ref().unwrap_or(arguments);
+        match &source.projection {
+            SourceProjection::Declaration(binder) => {
+                arguments.for_declaration_with_control(binder, control)
+            }
+            SourceProjection::Continuation(solution) => {
+                solution.close_residual_with_control(arguments, source.caller(), control)
+            }
+            SourceProjection::Retained { .. } => unreachable!("walk stopped at a source producer"),
+        }
     }
 
     pub(super) fn specialize_completed_call<C: TypeProjectionControl>(
@@ -324,6 +447,11 @@ impl CheckedProjectFunctionCallableSource {
             }
             SourceProjection::Continuation(solution) => {
                 solution.residual_arguments_with_control(&body, self.caller(), control)?
+            }
+            SourceProjection::Retained { .. } => {
+                return Err(
+                    CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into(),
+                );
             }
         };
         CheckedProjectFunctionSpecialization::seal(

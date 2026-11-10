@@ -14,11 +14,15 @@ use super::{
     },
 };
 use crate::{
+    effect_row::EffectRow,
     effects::EffectSet,
-    types::{GenericScope, TypeProjectionControl, TypeProjectionError},
+    types::{
+        GenericScope, TypeProjectionControl, TypeProjectionError,
+        constraints::TypeConstraintSolution,
+    },
 };
 
-/// A closed substitution of one program-callable source scheme. Argument
+/// A substitution of one program-callable source scheme. Argument
 /// slices use the source binder's ordinal order in each namespace, independent
 /// of declaration names and caller expression identities.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,10 +32,17 @@ pub struct CheckedProjectFunctionSpecialization {
     next_group: CallableGroupIndex,
     source_type: TypeKind,
     specialized_type: TypeKind,
+    argument_scope: GenericScope,
     type_arguments: Box<[TypeKind]>,
     const_arguments: Box<[ArrayLength]>,
-    effect_arguments: Box<[EffectSet]>,
-    closed_selection: CheckedProjectFunctionRootRuntimeSelection,
+    effect_arguments: Box<[EffectRow]>,
+    target: CheckedProjectFunctionSpecializationTarget,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedProjectFunctionSpecializationTarget {
+    Closed(CheckedProjectFunctionRootRuntimeSelection),
+    Retain(Box<CheckedProjectFunctionCallableSource>),
 }
 
 impl CheckedProjectFunctionSpecialization {
@@ -56,11 +67,14 @@ impl CheckedProjectFunctionSpecialization {
     pub const fn const_arguments(&self) -> &[ArrayLength] {
         &self.const_arguments
     }
-    pub const fn effect_arguments(&self) -> &[EffectSet] {
+    pub const fn effect_arguments(&self) -> &[EffectRow] {
         &self.effect_arguments
     }
-    pub const fn closed_selection(&self) -> &CheckedProjectFunctionRootRuntimeSelection {
-        &self.closed_selection
+    pub const fn argument_scope(&self) -> &GenericScope {
+        &self.argument_scope
+    }
+    pub const fn target(&self) -> &CheckedProjectFunctionSpecializationTarget {
+        &self.target
     }
 
     pub(super) fn seal<C: TypeProjectionControl>(
@@ -107,7 +121,9 @@ impl CheckedProjectFunctionSpecialization {
                 control
                     .visit_binding()
                     .map_err(TypeProjectionError::Control)?;
-                empty.project_effect_row_with_control(value.value(), 1, control)
+                empty
+                    .project_effect_row_with_control(value.value(), 1, control)
+                    .map(EffectRow::closed)
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
         Ok(Self {
@@ -116,10 +132,74 @@ impl CheckedProjectFunctionSpecialization {
             next_group: source.group(),
             source_type: empty.instantiate_type_with_control(source.function_type(), control)?,
             specialized_type,
+            argument_scope: GenericScope::default(),
             type_arguments,
             const_arguments,
             effect_arguments,
-            closed_selection,
+            target: CheckedProjectFunctionSpecializationTarget::Closed(closed_selection),
+        })
+    }
+
+    pub(super) fn seal_retained<C: TypeProjectionControl>(
+        source: &CheckedProjectFunctionCallableSource,
+        specialized_type: TypeKind,
+        next: CheckedProjectFunctionCallableSource,
+        solution: &TypeConstraintSolution,
+        caller: &ClosedTypeInstantiation,
+        control: &mut C,
+    ) -> Result<Self, CheckedProjectFunctionInstanceProjectionError<C::Error>> {
+        let scope = solution.template_scope();
+        let [binder] = scope.binders() else {
+            return Err(
+                CheckedProjectFunctionRuntimeSelectionError::SpecializationSourceMismatch.into(),
+            );
+        };
+        let root = GenericScope::default();
+        let residual = solution.residual_scope();
+        let type_arguments = (0..binder.types())
+            .map(|slot| {
+                control
+                    .visit_binding()
+                    .map_err(TypeProjectionError::Control)?;
+                let ty = TypeKind::GenericParam(scope.bound_type(0, slot)?);
+                let value = solution.apply_template_with_control(&ty, control)?;
+                caller
+                    .instantiate_scoped_type_with_control(value.view(), control)
+                    .map(|value| value.view().value().clone())
+            })
+            .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
+        let const_arguments = (0..binder.const_lengths())
+            .map(|slot| {
+                control
+                    .visit_binding()
+                    .map_err(TypeProjectionError::Control)?;
+                let length = ArrayLength::Generic(scope.bound_const(0, slot)?);
+                let value = solution.apply_length_under(&length, &root, control)?;
+                caller.instantiate_scoped_length_with_control(&value, residual, control)
+            })
+            .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
+        let effect_arguments = (0..binder.effects())
+            .map(|slot| {
+                control
+                    .visit_binding()
+                    .map_err(TypeProjectionError::Control)?;
+                let row = EffectRow::open(EffectSet::new(), scope.bound_effect(0, slot)?);
+                let value = solution.apply_effects_under(&row, &root, control)?;
+                caller.instantiate_scoped_effects_with_control(&value, residual, control)
+            })
+            .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
+        Ok(Self {
+            source: source.origin(),
+            source_digest: source.source_digest(),
+            next_group: source.group(),
+            source_type: ClosedTypeInstantiation::default()
+                .instantiate_type_with_control(source.function_type(), control)?,
+            specialized_type,
+            argument_scope: residual.clone(),
+            type_arguments,
+            const_arguments,
+            effect_arguments,
+            target: CheckedProjectFunctionSpecializationTarget::Retain(Box::new(next)),
         })
     }
 }

@@ -1,13 +1,97 @@
 //! Declaration roots and continuation values carry one scoped source authority.
 
-use super::{analyze, fixture, project_specialization::selections};
+use super::{
+    analyze, fixture,
+    project_specialization::{closed, selections},
+};
 use crate::{
     callable::{
         CallableGroupIndex, CallableParameterPassing, CallableParameterPresence,
-        CheckedProjectFunctionCallableOrigin,
+        CheckedProjectFunctionCallableOrigin, CheckedProjectFunctionSpecializationTarget,
     },
     types::{GenericBinder, TypeKind, UnmeteredTypeProjection},
 };
+
+#[test]
+fn project_callable_source_specializes_successive_returned_groups() {
+    let fixture = fixture(
+        r#"
+fn stage<A, B, C>(seed: A)(middle: B)(late: C) -> ((i64) -> i64 effects {}) {
+    |amount: i64| -> i64 { let _ = seed; let _ = middle; let _ = late; amount + 2i64 }
+}
+flow main() -> i64 {
+    let create = |seed: i64| { stage(seed) }
+    let shared = create(7i64)
+    let next = shared("left")
+    let callback = next(3i64)
+    return callback(40i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("inferred returned groups");
+    let catalog = analysis.checked_callables();
+    let mut control = UnmeteredTypeProjection;
+    let producer = selections(&analysis, "stage").remove(0);
+    let source = producer
+        .callable_value_source_with_control(catalog, None, &mut control)
+        .unwrap();
+    let witness_for = |ty: &TypeKind| {
+        analysis
+            .expressions()
+            .filter_map(|(_, fact)| fact.function_specialization())
+            .find(|witness| witness.source_type() == ty)
+            .unwrap()
+    };
+    let proof = source
+        .specialize_callable_value_with_control(
+            catalog,
+            witness_for(source.function_type()),
+            None,
+            &mut control,
+        )
+        .unwrap();
+    let CheckedProjectFunctionSpecializationTarget::Retain(next) = proof.target() else {
+        panic!("middle group must retain a source scheme");
+    };
+    assert_eq!(
+        next.origin(),
+        CheckedProjectFunctionCallableOrigin::Retained {
+            predecessor: source.source_digest(),
+        }
+    );
+    assert_eq!(next.group().get(), 2);
+    assert_eq!(
+        proof.argument_scope().binders(),
+        [GenericBinder::new(1, 0, 0)]
+    );
+    assert_eq!(proof.type_arguments()[0], TypeKind::String);
+    assert_eq!(
+        proof.type_arguments()[1],
+        TypeKind::GenericParam(proof.argument_scope().bound_type(0, 0).unwrap())
+    );
+    assert_eq!(next.retained_parameters().len(), 2);
+    assert_eq!(
+        next.retained_parameters()[0].binding_type().value(),
+        &TypeKind::I64
+    );
+    assert_eq!(
+        next.retained_parameters()[1].binding_type().value(),
+        &TypeKind::String
+    );
+
+    let proof = next
+        .specialize_callable_value_with_control(
+            catalog,
+            witness_for(next.function_type()),
+            None,
+            &mut control,
+        )
+        .unwrap();
+    assert_eq!(closed(&proof).group(), next.group());
+    assert!(proof.argument_scope().binders().is_empty());
+    assert_eq!(proof.type_arguments(), [TypeKind::I64]);
+}
 
 #[test]
 fn callable_source_and_continuation_reject_a_foreign_catalog() {
@@ -145,7 +229,7 @@ flow main() -> i64 {
     assert_eq!(value.source_digest(), source.source_digest());
     assert_eq!(value.source_digest(), terminal.source_digest());
     assert_eq!(value.type_arguments(), [TypeKind::I64]);
-    assert_eq!(value.closed_selection(), terminal.closed_selection());
+    assert_eq!(closed(&value), closed(&terminal));
 }
 
 #[test]
@@ -193,8 +277,8 @@ flow main() -> bool { let text = outer("saved"); return outer(true) }
     assert_eq!(proofs[0].source_digest(), proofs[1].source_digest());
     assert_ne!(proofs[0].type_arguments(), proofs[1].type_arguments());
     assert_ne!(
-        proofs[0].closed_selection().solution().instantiation(),
-        proofs[1].closed_selection().solution().instantiation()
+        closed(&proofs[0]).solution().instantiation(),
+        closed(&proofs[1]).solution().instantiation()
     );
 }
 

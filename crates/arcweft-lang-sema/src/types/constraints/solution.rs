@@ -114,6 +114,10 @@ pub(crate) struct TypeConstraintSolution {
 }
 
 impl TypeConstraintSolution {
+    pub(crate) fn residual_scope(&self) -> &GenericScope {
+        self.residual.scope()
+    }
+
     pub(crate) fn template_scope(&self) -> &GenericScope {
         self.authority.parameter_scope.template_scope()
     }

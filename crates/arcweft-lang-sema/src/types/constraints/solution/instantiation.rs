@@ -304,6 +304,34 @@ impl ClosedTypeInstantiation {
         ))
     }
 
+    pub(crate) fn instantiate_scoped_length_with_control<C: TypeProjectionControl>(
+        &self,
+        length: &ArrayLength,
+        scope: &GenericScope,
+        control: &mut C,
+    ) -> Result<ArrayLength, TypeProjectionError<C::Error>> {
+        control
+            .visit_node(TypeProjectionNodeKind::Const, 1)
+            .map_err(TypeProjectionError::Control)?;
+        self.project_length_with_control(length, &GenericScope::default(), scope, 1, control)
+    }
+
+    pub(crate) fn instantiate_scoped_effects_with_control<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        scope: &GenericScope,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        self.project_contextual_effects_with_control(
+            row,
+            scope,
+            &GenericScope::default(),
+            scope,
+            1,
+            control,
+        )
+    }
+
     fn project_contextual_type_with_control<C: TypeProjectionControl>(
         &self,
         ty: &TypeKind,
@@ -349,26 +377,35 @@ impl ClosedTypeInstantiation {
                 self.project_length_with_control(length, template, scope, depth, control)
             },
             &|row, source, target, depth, control| {
-                super::template::map_effects_with_control(
-                    row,
-                    depth,
-                    control,
-                    &|reference, control| {
-                        if let Some(parameter) = reference.template_key(template, source)? {
-                            let replacement = self
-                                .effect_binding(&parameter)
-                                .ok_or(TypeInstantiationError::UnboundEffect { parameter })?;
-                            visit_effect_row(control, replacement, depth)?;
-                            return Ok(replacement.clone());
-                        }
-                        Ok(EffectRow::open(
-                            crate::effects::EffectSet::new(),
-                            super::template::keep_effect(reference, target)?,
-                        ))
-                    },
+                self.project_contextual_effects_with_control(
+                    row, source, template, target, depth, control,
                 )
             },
         )
+    }
+
+    fn project_contextual_effects_with_control<C: TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        source: &GenericScope,
+        template: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        super::template::map_effects_with_control(row, depth, control, &|reference, control| {
+            if let Some(parameter) = reference.template_key(template, source)? {
+                let replacement = self
+                    .effect_binding(&parameter)
+                    .ok_or(TypeInstantiationError::UnboundEffect { parameter })?;
+                visit_effect_row(control, replacement, depth)?;
+                return Ok(replacement.clone());
+            }
+            Ok(EffectRow::open(
+                crate::effects::EffectSet::new(),
+                super::template::keep_effect(reference, target)?,
+            ))
+        })
     }
 
     fn project_length_with_control<C: TypeProjectionControl>(

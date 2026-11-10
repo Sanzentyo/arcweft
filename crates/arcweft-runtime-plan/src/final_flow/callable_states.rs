@@ -7,6 +7,7 @@ pub(super) use group_chain::CallableGroupChain;
 use crate::semantic_facts::{
     RuntimeCallableSpecializationFact, RuntimeCallableSpecializationKey,
     RuntimeProjectCallableSourceFact, RuntimeProjectCallableSourceKey,
+    RuntimeProjectCallableValueTarget,
 };
 use arcweft_core::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableInputSource,
@@ -225,6 +226,38 @@ fn collect_application(
             binding_ty: input.binding_ty().identity(),
         })
         .collect();
+    let definition = retaining_state(
+        group,
+        plan.application_type().identity(),
+        abi.function_type().identity(),
+        origin.clone(),
+        target.clone(),
+        retained,
+        parameters,
+    )?;
+    let key = (key.clone(), plan.application_type().identity());
+    match definitions.entry(key) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(definition);
+            Ok(())
+        }
+        std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &definition => Ok(()),
+        std::collections::btree_map::Entry::Occupied(_) => Err(error(
+            "same source and application type have different state layouts",
+        )),
+    }
+}
+
+fn retaining_state(
+    group: u32,
+    function_type: RuntimeSemanticTypeId,
+    result: RuntimeSemanticTypeId,
+    origin: RuntimeCallableStateSeedId,
+    next: RuntimeCallableStateSeedId,
+    retained: Box<[RuntimeCallableRetainedInput<RuntimeSemanticTypeId>]>,
+    parameters: Box<[RuntimeCallableParameterInput<RuntimeSemanticTypeId>]>,
+) -> Result<RuntimeCallableStateSeed, RuntimePlanLowerError> {
+    let error = RuntimePlanLowerError::new;
     let values: Box<[_]> = (0..retained.len())
         .map(|position| {
             Ok(RuntimeCallableInputSource::Retained {
@@ -239,9 +272,9 @@ fn collect_application(
             })
         }))
         .collect::<Result<_, RuntimePlanLowerError>>()?;
-    let definition = RuntimeCallableStateDefinition {
-        function_type: plan.application_type().identity(),
-        origin: origin.clone(),
+    Ok(RuntimeCallableStateDefinition {
+        function_type,
+        origin,
         position: if group == 0 {
             RuntimeCallablePosition::Unapplied
         } else {
@@ -251,25 +284,14 @@ fn collect_application(
         },
         retained,
         parameters,
-        result: abi.function_type().identity(),
+        result,
         attached: RuntimeCallableAttachedContract::None,
         transition: RuntimeCallableTransition::Retain {
-            state: target.clone(),
+            state: next,
             values,
         },
         partials: Box::new([]),
-    };
-    let key = (key.clone(), plan.application_type().identity());
-    match definitions.entry(key) {
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(definition);
-            Ok(())
-        }
-        std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &definition => Ok(()),
-        std::collections::btree_map::Entry::Occupied(_) => Err(error(
-            "same source and application type have different state layouts",
-        )),
-    }
+    })
 }
 
 fn materialize_source(
@@ -376,31 +398,56 @@ fn materialize_specialization(
     };
     let mut pairs = Vec::new();
     let mut targets = Vec::new();
-    for (source_key, instance_key) in specialization.selections() {
+    for (source_key, selection) in specialization.selections() {
         let source = facts
             .callable_source(source_key)
             .ok_or_else(|| error("source is absent"))?;
-        let instance = facts
-            .project_function_instance(instance_key)
-            .ok_or_else(|| error("selected instance is absent"))?;
         let source_state = sources
             .get(source_key)
             .ok_or_else(|| error("source state is absent"))?;
         let origin = sources
             .get(source.root())
             .ok_or_else(|| error("source root is absent"))?;
-        let target_states = materialize_instance_from(
-            instance,
-            source.group().get(),
-            Some(origin.clone()),
-            sites,
-            defaults,
-            builder,
-        )?;
-        let target = target_states
-            .first()
-            .cloned()
-            .ok_or_else(|| error("target chain is empty"))?;
+        let target = match selection {
+            RuntimeProjectCallableValueTarget::Closed(instance_key) => {
+                let instance = facts
+                    .project_function_instance(instance_key)
+                    .ok_or_else(|| error("selected instance is absent"))?;
+                materialize_instance_from(
+                    instance,
+                    source.group().get(),
+                    Some(origin.clone()),
+                    sites,
+                    defaults,
+                    builder,
+                )?
+                .first()
+                .cloned()
+                .ok_or_else(|| error("target chain is empty"))?
+            }
+            RuntimeProjectCallableValueTarget::Source(next_key) => {
+                let next = facts
+                    .callable_source(next_key)
+                    .ok_or_else(|| error("retained source is absent"))?;
+                let next_state = sources
+                    .get(next_key)
+                    .ok_or_else(|| error("retained source state is absent"))?;
+                let definition = retained_specialization_state(
+                    source,
+                    next,
+                    specialization.target(),
+                    origin.clone(),
+                    next_state.clone(),
+                )?;
+                let state = builder
+                    .reserve_callable_state_seed()
+                    .map_err(|failure| error(&failure.to_string()))?;
+                builder
+                    .define_callable_state_seed(&state, definition)
+                    .map_err(|failure| error(&failure.to_string()))?;
+                state
+            }
+        };
         targets.push((source_key.digest(), target.clone()));
         pairs.push(RuntimeCallableSpecializationState {
             source: source_state.clone(),
@@ -426,6 +473,70 @@ fn materialize_specialization(
         })
         .map_err(|failure| error(&failure.to_string()))?;
     Ok((seed, targets))
+}
+
+fn retained_specialization_state(
+    source: &RuntimeProjectCallableSourceFact,
+    next: &RuntimeProjectCallableSourceFact,
+    specialized: &RuntimeNormalizedType,
+    origin: RuntimeCallableStateSeedId,
+    next_state: RuntimeCallableStateSeedId,
+) -> Result<RuntimeCallableStateSeed, RuntimePlanLowerError> {
+    let error = |message: &str| {
+        RuntimePlanLowerError::new(format!(
+            "retained callable specialization {:?}: {message}",
+            source.key(),
+        ))
+    };
+    let RuntimeTypeShape::Function {
+        parameters, result, ..
+    } = specialized.shape()
+    else {
+        return Err(error("specialized input type is not a function"));
+    };
+    let current = next
+        .retained()
+        .strip_prefix(source.retained())
+        .ok_or_else(|| error("next source changed the retained input prefix"))?;
+    if parameters.len() != current.len() || parameters.len() != source.parameters().len() {
+        return Err(error("next source does not retain every current formal"));
+    }
+    let parameters = source
+        .parameters()
+        .iter()
+        .zip(parameters.iter().zip(current))
+        .map(|(formal, (abi, binding))| {
+            if binding.role != RuntimeCallableRetainedRole::Parameter(formal.coordinate) {
+                return Err(error(
+                    "next source retained a different parameter coordinate",
+                ));
+            }
+            Ok(RuntimeCallableParameterInput {
+                coordinate: formal.coordinate,
+                kind: formal.kind,
+                abi_ty: abi.identity(),
+                binding_ty: binding.ty.identity(),
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let group =
+        u32::try_from(source.group().get()).map_err(|_| error("group exceeds state coordinate"))?;
+    retaining_state(
+        group,
+        specialized.identity(),
+        result.identity(),
+        origin,
+        next_state,
+        source
+            .retained()
+            .iter()
+            .map(|input| RuntimeCallableRetainedInput {
+                role: input.role,
+                ty: input.ty.identity(),
+            })
+            .collect(),
+        parameters,
+    )
 }
 
 fn materialize_instance(

@@ -38,6 +38,10 @@ impl CheckedProjectFunctionCallableSource {
                 hasher.update(&[1]);
                 hasher.update(lineage.as_bytes());
             }
+            CheckedProjectFunctionCallableOrigin::Retained { predecessor } => {
+                hasher.update(&[2]);
+                hasher.update(predecessor.as_bytes());
+            }
         }
         super::super::write_group(&mut hasher, self.group);
         // Schema admission requires every declared generic to occur in this

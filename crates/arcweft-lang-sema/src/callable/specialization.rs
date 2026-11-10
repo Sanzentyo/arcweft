@@ -212,8 +212,7 @@ impl CheckedFunctionSpecialization {
             return_type.as_ref().clone(),
             effects.clone(),
         );
-        let projected = solution.apply_template_with_control(&template, control)?;
-        let specialized = projected.view().to_quantified_type_with_control(control)?;
+        let specialized = solution.apply_call_input_template_with_control(&template, control)?;
         let source_digest = source
             .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), control)?;
         let target_digest = specialized
@@ -328,6 +327,10 @@ impl CheckedFunctionSpecialization {
     }
     pub const fn digest(&self) -> CheckedFunctionSpecializationDigest {
         self.digest
+    }
+
+    pub(super) fn solution(&self) -> &TypeConstraintSolution {
+        &self.solution
     }
 
     pub(crate) fn close_arguments_with_control<C: TypeProjectionControl>(

@@ -1253,7 +1253,7 @@ mod returned_shared_prefix_with_distinct_later_types {
         RuntimeStepStopReason,
     };
 
-    const SOURCE: &str = r#"
+    const ONE_SUFFIX: &str = r#"
 entry cli @entry.main { goto @flow.main }
 fn stage<A, B>(seed: A)(late: B) -> ((i64) -> i64 effects {}) {
     |amount: i64| -> i64 { let _ = seed; let _ = late; amount + 2i64 }
@@ -1267,19 +1267,45 @@ flow main() -> i64 {
 }
 "#;
 
+    const TWO_SUFFIXES: &str = r#"
+entry cli @entry.main { goto @flow.main }
+fn stage<A, B, C>(seed: A)(middle: B)(late: C) -> ((i64) -> i64 effects {}) {
+    |amount: i64| -> i64 { let _ = seed; let _ = middle; let _ = late; amount + 2i64 }
+}
+flow main() -> i64 {
+    let create = |seed: i64| { stage(seed) }
+    let shared = create(7i64)
+    let first = shared("left")
+    let second = shared(2i64)
+    let callback1 = first(3i64)
+    let callback2 = second("right")
+    return callback1(19i64) + callback2(19i64)
+}
+"#;
+
     #[test]
     fn native() {
-        assert_native_return(SOURCE, "42");
+        for source in [ONE_SUFFIX, TWO_SUFFIXES] {
+            assert_native_return(source, "42");
+        }
     }
 
     #[test]
     fn awbc() {
-        assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+        for source in [ONE_SUFFIX, TWO_SUFFIXES] {
+            assert_awbc_return(source, RuntimeValue::i64(42));
+        }
     }
 
     #[test]
     fn awbc_product_restores_each_stopped_step_from_public_json() {
-        let compiled = compile_source(SOURCE).unwrap();
+        for source in [ONE_SUFFIX, TWO_SUFFIXES] {
+            assert_awbc_product_restores_each_stopped_step(source);
+        }
+    }
+
+    fn assert_awbc_product_restores_each_stopped_step(source: &str) {
+        let compiled = compile_source(source).unwrap();
         let program = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "shared.arcw")
             .lower()
             .unwrap()

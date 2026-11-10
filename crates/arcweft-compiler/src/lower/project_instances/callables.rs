@@ -7,7 +7,7 @@ use arcweft_lang_hir::identity::ExprId;
 use arcweft_lang_sema::callable::{
     CheckedFunctionSpecialization, CheckedProjectFunctionCallableSource,
     CheckedProjectFunctionCallableSourceDigest, CheckedProjectFunctionInstanceSolution,
-    CheckedProjectFunctionSpecialization,
+    CheckedProjectFunctionSpecialization, CheckedProjectFunctionSpecializationTarget,
 };
 use arcweft_runtime_plan::semantic_facts::{
     RuntimeCallableSpecializationFact, RuntimeCallableSpecializationKey, RuntimeNormalizedType,
@@ -543,30 +543,60 @@ impl ProjectInstantiationSession {
                     .map_err(|error| projection_error(demand.origin, error))?,
                 ProjectCallableDemandProof::Input { checked, .. } => checked.clone(),
             };
-            let fact =
-                callable_sources::specialization(&source.fact, &checked, symbols, world, analysis)?;
+            let target = match checked.target() {
+                CheckedProjectFunctionSpecializationTarget::Closed(closed) => {
+                    let solution = closed.solution().clone();
+                    let instance = RuntimeProjectFunctionInstanceKey::new(
+                        source.fact.callable().runtime().clone(),
+                        solution.instantiation(),
+                        closed.group(),
+                    );
+                    self.request_from(
+                        use_key.caller.clone(),
+                        instance.clone(),
+                        ProjectInstanceNode {
+                            origin: demand.origin,
+                            callable: source.fact.callable().clone(),
+                            selection: ProjectInstanceSelection::from_root(closed),
+                            solution,
+                        },
+                    )?;
+                    RuntimeProjectCallableValueTarget::Closed(instance)
+                }
+                CheckedProjectFunctionSpecializationTarget::Retain(next) => {
+                    let fact = callable_sources::source(
+                        next,
+                        Some(source.fact.root().clone()),
+                        symbols,
+                        world,
+                        analysis,
+                    )?;
+                    let work = &self.work;
+                    let instances = self.nodes.len() as u64;
+                    let edges = self.edges.len() as u64;
+                    let next_key = self.callables.insert_source(
+                        ProjectCallableSourceNode {
+                            checked: next.as_ref().clone(),
+                            fact,
+                        },
+                        || work.charge_graph(demand.origin, 1, instances, edges),
+                    )?;
+                    RuntimeProjectCallableValueTarget::Source(next_key)
+                }
+            };
+            let fact = callable_sources::specialization(
+                &source.fact,
+                &checked,
+                target.clone(),
+                symbols,
+                world,
+                analysis,
+            )?;
             if fact.source() != &demand.source || fact.target() != &demand.target {
                 return Err(demand
                     .origin
                     .error("checked specialization disagrees with source/use type evidence"));
             }
-            let closed = checked.closed_selection();
-            let solution = closed.solution().clone();
-            let instance = RuntimeProjectFunctionInstanceKey::new(
-                source.fact.callable().runtime().clone(),
-                solution.instantiation(),
-                closed.group(),
-            );
-            self.request_from(
-                use_key.caller.clone(),
-                instance.clone(),
-                ProjectInstanceNode {
-                    origin: demand.origin,
-                    callable: source.fact.callable().clone(),
-                    selection: ProjectInstanceSelection::from_root(closed),
-                    solution,
-                },
-            )?;
             let key = fact.key().clone();
             if let Some(existing) = self.callables.uses.get(&use_key)
                 && existing != &key
@@ -580,7 +610,7 @@ impl ProjectInstantiationSession {
                 self.callables.specializations.insert(
                     key,
                     existing
-                        .with_selection(source_key, instance)
+                        .with_selection(source_key, target)
                         .map_err(|error| demand.origin.error(error.to_string()))?,
                 );
             } else {

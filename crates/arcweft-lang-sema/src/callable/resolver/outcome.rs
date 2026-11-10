@@ -1063,6 +1063,21 @@ impl PreparedResolvedCallable {
             })
     }
 
+    /// A checked next group or a first-class function result can own scheme
+    /// parameters unused by the current invocation.
+    pub(crate) fn permits_residual_result(&self, group: CallableGroupIndex) -> bool {
+        self.next_group_for(group).is_some()
+            || (matches!(
+                self.id(),
+                CallableCandidateId::Local(_) | CallableCandidateId::FunctionValue(_)
+            ) && !self
+                .schema()
+                .generic_inventory()
+                .template_binder()
+                .is_empty()
+                && matches!(self.schema().value_type(), Some(TypeKind::Function { .. })))
+    }
+
     pub(crate) fn result_schema_for_group(
         &self,
         current_group: CallableGroupIndex,
