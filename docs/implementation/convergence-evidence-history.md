@@ -16420,3 +16420,21 @@ Viewのfitとホストの文字拡大率から一つの `TextMetricScale` を作
 Cargo tree の既定・全 feature・全ターゲットと Windows 用 Cargo metadata の逆依存は HIR を含む23パッケージで一致した。nextest は 4,898 件成功、0 件失敗、9 件スキップ。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest 2 件、Web Player の Wasm check も通過した。
 
 [ソース照合、実入力、失敗、全コマンドの原本](acceptance-evidence/task-staged-attached-default.raw.zip)は223件、1444533 bytes、SHA-256 66ed43861f68a677dfda106e41843241e8a7d6eafcae156a46dd7497286a814f。
+
+### Recursive terminal effects in function values
+
+2026-11-10に親 acf328b5535de49a6e35d091df97cfa2f0b48b38 と公開 Source 6e9e72458880680839f899706d88034311f0c7fa を確認した。tree は 6cb935b2debba556600f57209a9e52a86856c964。公開先の6 blobを照合した。追跡対象の差分は0件で、既存の未追跡 %SystemDrive%/ があった。
+
+親の実CLIは単一グループの直接再帰を受理した一方、同じ宣言を呼出し側で関数値に束縛すると prepared call graph invariant で拒否した。単独再帰のモノモーフィック版とジェネリック版、ジェネリック相互再帰で再現した。関数値の型を求める段階で型検査済みの終端呼び出しを再帰的に準備し、同じ宣言の投影へ再入していた。
+
+関数値の準備と最終解析で、型検査済みの終端呼び出しの効果式を同じ処理で閉じる。各辺は選択済みの application の置換を保持し、明示効果行を境界に使う。閉じた行を関数値の型に反映し、純粋な callback が要求される呼び出しは実行可能な application を公開せず拒否する。Sema で宣言と呼出し元の記述順を両方検証した。
+
+Compiler の待機テストは、ジェネリック相互再帰の関数値と共有 prefix を保持した状態で100 ms待つ。40 msでは追加操作も再通知も発生せず、60 msで再開する。共有 prefix を String と i64 で適用し、prefix の一度の評価、7件の再帰ログの順序、戻り値42、各ステップ最大1操作を Native と canonical decoded AWBC で確認した。AWBC は各ステップを公開JSONで保存・復元した。初回の検証では待機通知も出ることをテストの観測対象に含めていなかった。初回ログを保持し、100 msの待機通知を1回だけ観測するよう修正した。効果推論と待機の対象38件は全件成功。
+
+最終 Source の CLI は、直接呼び出し、関数値、共有 prefix の12実行が42を返し、ログ順と操作上限が両 executor で一致した。headless で論理時間を進めない2実行は100 msの待機に到達した。再帰本体内での自己関数値、通常本体の段階適用、prefix を束縛してから呼ぶ再帰、attached default を含む段階適用の効果推論は、型検査で semantic expression dependency cycle を返した。自己関数値の対照入力は効果行を明示すると両 executor で42を返した。明示効果行の attached default と単一グループの直接再帰も型検査を通過した。残る循環は、型検査済みの効果グラフを作る前に、同じ宣言の終端 effect row を関数値の型から要求する箇所にある。
+
+別の探索入力では、効果を推論する3つの callback を再帰呼び出しに渡すと、並び替える版と元の順序を保つ版の両方が shared callable resolution failed で拒否された。同じ3つの callback を使う非再帰の対照は通過した。この入力は最終 Source で採取した。親との比較は行っていない。
+
+Cargo tree の既定・全 feature・全ターゲットと Windows の Cargo metadata で、Sema を含む逆依存22パッケージが一致した。nextest は 3,920 件成功、0 件失敗、1 件スキップ。対象実行のうち Compiler の待機21件を再利用し、Sema 17件は全件実行に含めて集計した。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest、Web Player の Wasm check が通過した。Clippy には警告がある。
+
+[ソース照合、実入力、失敗、全コマンドの原本](acceptance-evidence/task-recursive-terminal-effects.raw.zip)は141件、1564330 bytes、SHA-256 c6278c678b33212c68f25016ece854f55d0ee044ef2445a070207cb17d31bc7a。
