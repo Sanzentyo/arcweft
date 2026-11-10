@@ -1481,6 +1481,7 @@ pub enum CheckedGeneratedLocalRole {
     FanoutResult,
     ActionChannel,
     ActionPayload,
+    ImplicitBodyResult,
 }
 
 impl CheckedGeneratedLocalRole {
@@ -1515,6 +1516,7 @@ impl CheckedGeneratedLocalRole {
             Self::FanoutResult => 26,
             Self::ActionChannel => 27,
             Self::ActionPayload => 28,
+            Self::ImplicitBodyResult => 29,
         };
         hasher.update(&[tag]);
         match self {

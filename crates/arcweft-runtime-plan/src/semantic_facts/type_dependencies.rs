@@ -8,13 +8,13 @@ use super::{
     RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureParameterFact,
     RuntimeContentFragmentFact, RuntimeDialogueApplication, RuntimeDialogueEffectTrigger,
     RuntimeDialogueValueExpression, RuntimeExecutableCaptureFact, RuntimeExecutableTypeProjection,
-    RuntimeIteratorFact, RuntimeNormalizedType, RuntimeProjectAttachedDefaultCapture,
-    RuntimeProjectCallable, RuntimeProjectContinuationAbi, RuntimeProjectFunctionExpressionPayload,
-    RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionStatementPayload,
-    RuntimeRecordExpressionFact, RuntimeRecordPatternFact, RuntimeResolvedAttachedContent,
-    RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand,
-    RuntimeResolvedHostCallOwner, RuntimeResolvedNominalRecordField,
+    RuntimeImplicitCallableBodyFact, RuntimeIteratorFact, RuntimeNormalizedType,
+    RuntimeProjectAttachedDefaultCapture, RuntimeProjectCallable, RuntimeProjectContinuationAbi,
+    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionInstanceFact,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionPatternPayload,
+    RuntimeProjectFunctionStatementPayload, RuntimeRecordExpressionFact, RuntimeRecordPatternFact,
+    RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+    RuntimeResolvedCallOperand, RuntimeResolvedHostCallOwner, RuntimeResolvedNominalRecordField,
     RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeStandardMapCollection,
     RuntimeTryFact,
 };
@@ -363,12 +363,17 @@ impl RuntimeProjectFunctionExpressionPayload {
                     .visit_operand_types(&mut |ty| roots.push(ty));
             }
             Self::Try(tried) => tried.append_normalized_types(roots),
-            Self::ImplicitCallable {
-                callable, tried, ..
-            } => {
+            Self::ImplicitCallable { callable, body } => {
                 roots.extend([callable.parameter(), callable.result()]);
-                if let Some(tried) = tried {
-                    tried.append_normalized_types(roots);
+                match body {
+                    RuntimeImplicitCallableBodyFact::Call(call) => {
+                        call.append_normalized_types(roots)
+                    }
+                    RuntimeImplicitCallableBodyFact::Try(tried) => {
+                        tried.append_normalized_types(roots)
+                    }
+                    RuntimeImplicitCallableBodyFact::Plain
+                    | RuntimeImplicitCallableBodyFact::Pipe(_) => {}
                 }
             }
             Self::DialogueApplication {

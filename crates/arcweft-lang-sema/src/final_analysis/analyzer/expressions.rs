@@ -66,8 +66,13 @@ use super::expression_error::{
 };
 use super::state::{
     CandidateFactOperationFailure, CandidateFactTransactionAction,
-    CandidateFactTransactionAuthority,
+    CandidateFactTransactionAuthority, CandidateFactTransactionOutcome,
 };
+
+pub(super) enum ImplicitCallableSelection {
+    Required(Box<[ExprId]>),
+    Contextual(Box<[ExprId]>),
+}
 
 use super::entities::EntityReferenceResolutionError;
 
@@ -476,12 +481,21 @@ impl Analyzer<'_, '_, '_> {
                 self.facts.candidate_expression(authority, owner)?
             }
         };
-        if !matches!(
-            fact,
-            Some(PreparedExpressionFact::Complete(ref value))
-                if matches!(value.result(), crate::final_analysis::CheckedExpressionResult::Unavailable)
-                    && matches!(value.resolution(), CheckedExpressionResolution::Call)
-        ) {
+        let Some(fact) = fact else {
+            return Ok(false);
+        };
+        self.has_prepared_unselected_call_diagnostic(owner, &fact)
+    }
+
+    fn has_prepared_unselected_call_diagnostic(
+        &self,
+        owner: ExprId,
+        fact: &PreparedExpressionFact,
+    ) -> Result<bool, super::CandidateFactTransactionViolation> {
+        if !matches!(fact, PreparedExpressionFact::Complete(value)
+            if matches!(value.result(), crate::final_analysis::CheckedExpressionResult::Unavailable)
+                && matches!(value.resolution(), CheckedExpressionResolution::Call))
+        {
             return Ok(false);
         }
         Ok(self
@@ -740,6 +754,87 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(checked.into());
         }
+        match self.implicit_callable_selection(module, owner, expectation)? {
+            Some(ImplicitCallableSelection::Required(placeholders)) => {
+                return self.check_implicit_callable_expression(
+                    context,
+                    module,
+                    owner,
+                    expression,
+                    expectation,
+                    placeholders,
+                    transaction_authority,
+                );
+            }
+            Some(ImplicitCallableSelection::Contextual(placeholders)) => {
+                // An enclosing callable can supply a bare argument's value.
+                // The same argument can independently be a callback when its
+                // declared parameter requires a function.
+                let outcome = self
+                    .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+                        |this, authority, transaction| {
+                            let candidate_context = context.child_candidate(authority);
+                            match this.check_implicit_callable_expression(
+                                &candidate_context,
+                                module,
+                                owner,
+                                expression,
+                                expectation,
+                                placeholders,
+                                &transaction,
+                            ) {
+                                Ok(checked) => {
+                                    Ok(CandidateFactTransactionAction::Commit(Some(checked)))
+                                }
+                                Err(CandidateFactOperationFailure::Expression(
+                                    AnalyzerExpressionError::Rejected(_),
+                                )) => Ok(CandidateFactTransactionAction::Rollback(None)),
+                                Err(error) => Err(error),
+                            }
+                        },
+                    )?;
+                match outcome {
+                    CandidateFactTransactionOutcome::Committed(Some(checked)) => {
+                        return Ok(checked);
+                    }
+                    CandidateFactTransactionOutcome::RolledBack(None) => {}
+                    _ => {
+                        return Err(AnalyzerExpressionError::fact(
+                            super::CandidateFactTransactionViolation::UnrecoverableLedger,
+                        )
+                        .into());
+                    }
+                }
+            }
+            None => {}
+        }
+        match self.check_prepared_expression_kind(
+            context,
+            module,
+            owner,
+            expression,
+            expectation,
+        )? {
+            Some(prepared) => Ok(prepared),
+            None => self
+                .check_expression_kind::<CandidateFactOperationFailure>(
+                    context,
+                    module,
+                    owner,
+                    expression,
+                    expectation,
+                    transaction_authority,
+                )
+                .map(Into::into),
+        }
+    }
+
+    pub(super) fn implicit_callable_selection(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+    ) -> Result<Option<ImplicitCallableSelection>, AnalyzerExpressionError> {
         let expression_uses = self
             .topology
             .module(owner.module())
@@ -753,50 +848,34 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
+        let required = region.requires_abstraction();
+        if !required
+            && !matches!(expectation.contextual_shape(), Some(TypeKind::Function { params, .. }) if params.len() == 1)
+        {
+            return Ok(None);
+        }
         let placeholders = region.placeholders().collect::<Vec<_>>().into_boxed_slice();
-        let inside_implicit_callable = self.implicit_callable_stack.iter().rev().any(|context| {
+        if placeholders.is_empty() {
+            return Ok(None);
+        }
+        if let Some(enclosing) = self.implicit_callable_stack.iter().rev().find(|context| {
             expression_uses
                 .implicit_callable_region(context.owner)
                 .is_ok_and(|region| region.contains_expression(owner))
-        });
-        let reentering_implicit_callable = self
-            .implicit_callable_stack
-            .iter()
-            .any(|scope| scope.owner == owner);
-        let checked = if placeholders.is_empty()
-            || (inside_implicit_callable && !reentering_implicit_callable)
+        }) && enclosing.owner != owner
+            && !(expression_uses
+                .row(owner)
+                .is_some_and(|row| row.is_bare_argument_placeholder())
+                && matches!(expectation.contextual_shape(), Some(expected @ TypeKind::Function { params, .. })
+                    if params.len() == 1 && !expected.accepts(&enclosing.parameter)))
         {
-            match self.check_prepared_expression_kind(
-                context,
-                module,
-                owner,
-                expression,
-                expectation,
-            )? {
-                Some(prepared) => Ok(prepared),
-                None => self
-                    .check_expression_kind::<CandidateFactOperationFailure>(
-                        context,
-                        module,
-                        owner,
-                        expression,
-                        expectation,
-                        transaction_authority,
-                    )
-                    .map(Into::into),
-            }
+            return Ok(None);
+        }
+        Ok(Some(if required {
+            ImplicitCallableSelection::Required(placeholders)
         } else {
-            self.check_implicit_callable_expression::<CandidateFactOperationFailure>(
-                context,
-                module,
-                owner,
-                expression,
-                expectation,
-                placeholders,
-                transaction_authority,
-            )
-        };
-        checked
+            ImplicitCallableSelection::Contextual(placeholders)
+        }))
     }
 
     fn finish_fresh_expression(
@@ -1027,11 +1106,18 @@ impl Analyzer<'_, '_, '_> {
                     },
                 )
             })();
-            let context = self
+            let scope = self
                 .implicit_callable_stack
                 .pop()
                 .expect("implicit callable context was just pushed");
             let body = body?;
+            if body.value_type().is_none()
+                && self
+                    .has_prepared_unselected_call_diagnostic(owner, &body)
+                    .map_err(AnalyzerExpressionError::fact)?
+            {
+                return Err(AnalyzerExpressionError::rejected(owner).into());
+            }
             let body_type = body.value_type().cloned().ok_or_else(|| {
                 AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
@@ -1041,7 +1127,7 @@ impl Analyzer<'_, '_, '_> {
                 body.try_propagation()
                 && site == owner
             {
-                context
+                scope
                     .result
                     .clone()
                     .filter(|result| carrier.accepts_wrapped_success(result))
@@ -1053,7 +1139,7 @@ impl Analyzer<'_, '_, '_> {
                     owner,
                     body_type,
                     &body,
-                    context.result.as_ref(),
+                    scope.result.as_ref(),
                 )?
             };
             let effects = self
@@ -1076,6 +1162,22 @@ impl Analyzer<'_, '_, '_> {
             };
             (body, result, effects)
         };
+        let parameter_occurrences = placeholders
+            .into_vec()
+            .into_iter()
+            .filter(|occurrence| {
+                *occurrence == owner
+                    || self
+                        .facts
+                        .expressions()
+                        .get(occurrence)
+                        .and_then(PreparedExpressionFact::implicit_parameter_owner)
+                        == Some(owner)
+            })
+            .collect::<Box<[_]>>();
+        if parameter_occurrences.is_empty() {
+            return Err(AnalyzerExpressionError::rejected(owner).into());
+        }
         let ty = TypeKind::function_with_effects([parameter.clone()], result.clone(), body_effects);
         if expectation
             .complete_type()
@@ -1094,7 +1196,12 @@ impl Analyzer<'_, '_, '_> {
                     },
                     EffectSet::new(),
                 ),
-                PreparedOwnerBoundResolution::implicit_callable(parameter, result, body),
+                PreparedOwnerBoundResolution::implicit_callable(
+                    parameter,
+                    result,
+                    body,
+                    parameter_occurrences,
+                ),
             ),
         ))
     }
@@ -1446,12 +1553,20 @@ impl Analyzer<'_, '_, '_> {
         expectation: &AnalyzerExpressionExpectation<'_>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let operand = self.evaluate_expression(context, operation.operand(), None)?;
-        let operand_type = operand.value_type().cloned().ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                owner: operation.operand(),
-            })
-        })?;
-        let carrier = CheckedTryCarrier::from_operand_type(&operand_type)
+        let Some(operand_type) = operand.value_type() else {
+            if self
+                .has_prepared_unselected_call_diagnostic(operation.operand(), &operand)
+                .map_err(AnalyzerExpressionError::fact)?
+            {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
+            return Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: operation.operand(),
+                },
+            ));
+        };
+        let carrier = CheckedTryCarrier::from_operand_type(operand_type)
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
         let boundary = self.resolve_prepared_try_boundary(module, owner, scope, &carrier)?;
         // A direct Try expression evaluates to the carrier's success value,

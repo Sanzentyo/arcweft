@@ -655,6 +655,26 @@ impl CheckedImplicitCallable {
         &self.body
     }
 
+    pub(super) fn seal_call_body(
+        &mut self,
+        owner: ExprId,
+        source: &TypeKind,
+        resolution: CheckedExpressionResolution,
+    ) -> Result<(), crate::callable::CallConstraintInvariant> {
+        let CheckedImplicitCallableBody::Plain(body) = &mut self.body else {
+            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        };
+        if self.lookup_owner != owner
+            || &self.result != source
+            || body.checked_call_site(owner).is_none()
+            || body.checked_call_site(owner) != resolution.checked_call_site(owner)
+        {
+            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        }
+        **body = resolution;
+        Ok(())
+    }
+
     pub(crate) fn validate_authority(
         &self,
         expected: &Arc<HirProjectEvaluationTopology>,
@@ -704,12 +724,14 @@ impl CheckedImplicitCallable {
         &self,
         expressions: &BTreeMap<ExprId, CheckedExpression>,
         coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
+        admitted: impl Fn(ExprId) -> bool,
         record_fields: impl Fn(ExprId) -> Option<&'fields [super::super::CheckedExpressionRecordField]>,
         local_type: impl Fn(LocalId) -> Option<TypeKind>,
     ) -> Result<(), CheckedCaptureAuthorityViolation> {
         let expected = super::super::free_capture::implicit_region_inputs(
             &self.topology,
             self.lookup_owner,
+            &admitted,
             |expression, access| {
                 let fact = expressions.get(&expression).ok_or(
                     crate::final_analysis::FinalSemanticAnalysisError::CaptureAuthority {
@@ -744,6 +766,40 @@ impl CheckedImplicitCallable {
             }
             _ => CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch,
         })?;
+        let region = self
+            .topology
+            .module(self.lookup_owner.module())
+            .ok_or(CheckedCaptureAuthorityViolation::MissingProducer {
+                owner: self.lookup_owner,
+            })?
+            .expression_uses()
+            .implicit_callable_region(self.lookup_owner)
+            .map_err(|_| CheckedCaptureAuthorityViolation::PlaceholderEvidenceMismatch)?;
+        let selected_parameters = region
+            .placeholders()
+            .filter(|owner| admitted(*owner))
+            .filter_map(|owner| {
+                let resolution = if owner == self.lookup_owner {
+                    let CheckedImplicitCallableBody::Plain(body) = &self.body else {
+                        return None;
+                    };
+                    body.as_ref()
+                } else {
+                    expressions.get(&owner)?.resolution()
+                };
+                let CheckedExpressionResolution::ImplicitParameter(parameter) = resolution else {
+                    return None;
+                };
+                (parameter.callable() == self.identity)
+                    .then_some((owner, parameter.occurrence_ordinal()))
+            });
+        if !selected_parameters.eq(self
+            .parameter_occurrences
+            .iter()
+            .map(|occurrence| (occurrence.lookup_expression, occurrence.ordinal)))
+        {
+            return Err(CheckedCaptureAuthorityViolation::PlaceholderEvidenceMismatch);
+        }
         if expected.len() != self.capture_occurrences.len() {
             return Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch);
         }
@@ -823,20 +879,16 @@ fn validate_implicit_callable_evidence(
         .map_err(|_| CheckedCaptureAuthorityViolation::MissingProducer {
             owner: lookup_owner,
         })?;
-    let placeholders = region.placeholders().collect::<Vec<_>>();
-    if placeholders.len() != parameter_occurrences.len()
-        || !placeholders
+    let mut placeholders = region.placeholders();
+    if parameter_occurrences.is_empty()
+        || !parameter_occurrences
             .iter()
-            .zip(parameter_occurrences.iter())
             .enumerate()
-            .all(|(ordinal, (placeholder, occurrence))| {
+            .all(|(ordinal, occurrence)| {
                 u32::try_from(ordinal).ok() == Some(occurrence.ordinal)
-                    && *placeholder == occurrence.lookup_expression
+                    && placeholders.any(|placeholder| placeholder == occurrence.lookup_expression)
             })
     {
-        return Err(CheckedCaptureAuthorityViolation::PlaceholderEvidenceMismatch);
-    }
-    if parameter_occurrences.is_empty() {
         return Err(CheckedCaptureAuthorityViolation::PlaceholderEvidenceMismatch);
     }
     let mut sites = std::collections::BTreeSet::new();
@@ -1132,6 +1184,7 @@ mod tests {
                     report.accepted_root_catalog(),
                     &report
                 ),
+                |owner| report.checked_expression_edge_fact(owner).is_ok(),
                 |owner| report
                     .checked_expression_edge_fact(owner)
                     .ok()
@@ -1211,6 +1264,7 @@ mod tests {
                     report.accepted_root_catalog(),
                     &report
                 ),
+                |owner| report.checked_expression_edge_fact(owner).is_ok(),
                 |owner| report
                     .checked_expression_edge_fact(owner)
                     .ok()
@@ -1256,6 +1310,7 @@ mod tests {
                     report.accepted_root_catalog(),
                     &report
                 ),
+                |owner| report.checked_expression_edge_fact(owner).is_ok(),
                 |owner| report
                     .checked_expression_edge_fact(owner)
                     .ok()
@@ -1295,6 +1350,7 @@ mod tests {
                     report.accepted_root_catalog(),
                     &report
                 ),
+                |owner| report.checked_expression_edge_fact(owner).is_ok(),
                 |owner| report
                     .checked_expression_edge_fact(owner)
                     .ok()

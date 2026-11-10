@@ -152,6 +152,7 @@ impl CheckedLocalInputSource {
 pub(super) fn implicit_region_inputs(
     topology: &arcweft_lang_hir::project::HirProjectEvaluationTopology,
     owner: ExprId,
+    admitted: impl Fn(ExprId) -> bool,
     expression: impl Fn(
         ExprId,
         CaptureAccess,
@@ -166,11 +167,10 @@ pub(super) fn implicit_region_inputs(
         .implicit_callable_region(owner)
         .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
     let mut ordered = Vec::new();
-    for row in module
-        .expression_uses()
-        .rows()
-        .iter()
-        .filter(|row| region.contains_expression(row.expression()))
+    for row in
+        module.expression_uses().rows().iter().filter(|row| {
+            admitted(row.expression()) && region.contains_expression(row.expression())
+        })
     {
         let inputs = expression(row.expression(), row.capture_access())?;
         for input in inputs.sources {

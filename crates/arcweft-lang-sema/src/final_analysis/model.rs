@@ -2856,6 +2856,20 @@ impl CheckedExpression {
         Ok(self)
     }
 
+    pub(in crate::final_analysis) fn with_sealed_application(
+        mut self,
+        owner: ExprId,
+        source: TypeKind,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+    ) -> Result<Self, crate::callable::CallConstraintInvariant> {
+        if let CheckedExpressionResolution::ImplicitCallable(callable) = &mut self.data.resolution {
+            callable.seal_call_body(owner, &source, resolution)?;
+            return Ok(self);
+        }
+        self.with_sealed_value(source, effects, resolution)
+    }
+
     pub(crate) fn with_function_specialization(
         mut self,
         owner: ExprId,

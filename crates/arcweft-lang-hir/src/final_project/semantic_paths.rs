@@ -1882,15 +1882,11 @@ impl HirCaptureEvaluationIndex {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HirExpressionCallableBoundary {
-    Call,
     ExplicitClosure,
+    ImplicitArgument,
 }
 
 impl HirExpressionCallableBoundary {
-    const fn cuts_implicit_callable_region(self) -> bool {
-        matches!(self, Self::Call | Self::ExplicitClosure)
-    }
-
     const fn cuts_pipe_left_region(self) -> bool {
         matches!(self, Self::ExplicitClosure)
     }
@@ -1983,9 +1979,21 @@ impl HirExpressionUseRow {
         self.placeholder
     }
 
-    fn cuts_implicit_callable_region(&self) -> bool {
-        self.callable_boundary
-            .is_some_and(HirExpressionCallableBoundary::cuts_implicit_callable_region)
+    pub const fn is_bare_argument_placeholder(&self) -> bool {
+        matches!(
+            self.placeholder,
+            Some(HirPlaceholderKind::PartialApplication)
+        ) && self.is_argument()
+    }
+
+    const fn is_argument(&self) -> bool {
+        matches!(
+            self.parent,
+            Some(HirExpressionUseParent::Direct {
+                role: HirExpressionChildRole::Argument { .. },
+                ..
+            })
+        )
     }
 
     fn cuts_pipe_left_region(&self) -> bool {
@@ -2042,6 +2050,19 @@ impl HirImplicitCallableRegion<'_> {
                     && self.contains_expression(row.expression()))
                 .then_some(row.expression())
             })
+    }
+
+    /// Bare argument placeholders can bind to this expression when it is
+    /// contextually a callable. A placeholder at the root or in another
+    /// operand position requires its own abstraction.
+    pub fn requires_abstraction(&self) -> bool {
+        self.placeholders().any(|owner| {
+            owner == self.root
+                || self
+                    .index
+                    .row(owner)
+                    .is_some_and(|row| !row.is_bare_argument_placeholder())
+        })
     }
 }
 
@@ -2112,6 +2133,36 @@ impl HirPipeLeftRegion<'_> {
 }
 
 impl HirExpressionUseIndex {
+    /// A composed argument with an open placeholder is its own expression
+    /// region. A bare placeholder in an argument slot belongs to the call's
+    /// enclosing expression. Unrelated call arguments stay in the body.
+    fn seal_implicit_argument_boundaries(
+        rows: &mut [HirExpressionUseRow],
+        by_expression: &BTreeMap<ExprId, u32>,
+    ) -> Result<(), HirSemanticPathError> {
+        let mut open = vec![false; rows.len()];
+        for index in (0..rows.len()).rev() {
+            let row = &mut rows[index];
+            if row.callable_boundary == Some(HirExpressionCallableBoundary::ExplicitClosure) {
+                continue;
+            }
+            let bare = row.placeholder == Some(HirPlaceholderKind::PartialApplication);
+            if open[index] && row.is_argument() && !bare {
+                row.callable_boundary = Some(HirExpressionCallableBoundary::ImplicitArgument);
+            } else if (bare || open[index])
+                && let Some(parent) = row.parent_expression()
+            {
+                let parent = by_expression
+                    .get(&parent)
+                    .map(|parent| *parent as usize)
+                    .filter(|parent| *parent < index)
+                    .ok_or(HirSemanticPathError::InvalidOwnedPath)?;
+                open[parent] = true;
+            }
+        }
+        Ok(())
+    }
+
     /// Finds the nearest selected implicit frame enclosing evaluation of this
     /// expression. The expression itself is excluded: returning a callable
     /// value does not invoke that value. Selection is supplied by sema; the
@@ -2133,7 +2184,7 @@ impl HirExpressionUseIndex {
             if is_selected(owner) && self.region_contains(owner, expression) {
                 return Ok(Some(owner));
             }
-            if row.cuts_implicit_callable_region() {
+            if row.callable_boundary().is_some() {
                 return Ok(None);
             }
             parent = row.parent_expression();
@@ -2165,9 +2216,11 @@ impl HirExpressionUseIndex {
                 return false;
             };
             if current == root {
-                return current == candidate_root || !row.cuts_implicit_callable_region();
+                return current == candidate_root
+                    || row.callable_boundary()
+                        != Some(HirExpressionCallableBoundary::ExplicitClosure);
             }
-            if current != candidate_root && row.cuts_implicit_callable_region() {
+            if current != candidate_root && row.callable_boundary().is_some() {
                 return false;
             }
             let Some(parent) = row.parent_expression() else {
@@ -5023,6 +5076,10 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 return Err(HirSemanticPathError::InvalidOwnedPath);
             }
         }
+        HirExpressionUseIndex::seal_implicit_argument_boundaries(
+            &mut expression_use_rows,
+            &expression_uses_by_id,
+        )?;
         let selection_roots = self.selection_roots.into_boxed_slice();
         let selection_edges = self
             .selection_edges
@@ -5421,7 +5478,6 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             .checked_add(1)
             .ok_or(HirSemanticPathError::OrdinalOverflow)?;
         let callable_boundary = match kind {
-            HirExprKind::Call(_) => Some(HirExpressionCallableBoundary::Call),
             HirExprKind::Closure(_) => Some(HirExpressionCallableBoundary::ExplicitClosure),
             _ => None,
         };

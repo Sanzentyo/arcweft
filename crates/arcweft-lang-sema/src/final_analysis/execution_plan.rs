@@ -538,6 +538,11 @@ fn execution_plan_for_expression_with_roles(
         | CheckedExpressionResolution::ViewFxApplication(_) => {
             call(crate::callable::CheckedCallSite::HirCall(owner), None)
         }
+        resolution @ CheckedExpressionResolution::ImplicitCallable(_)
+            if let Some(site) = resolution.checked_call_site(owner) =>
+        {
+            call(site, None)
+        }
         CheckedExpressionResolution::ContentApplication(application) => {
             match application.as_ref() {
                 super::CheckedContentApplication::Value { .. } => {

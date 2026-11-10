@@ -232,6 +232,7 @@ pub(crate) struct PreparedImplicitCallable {
     parameter: TypeKind,
     result: TypeKind,
     body: PreparedImplicitCallableBody,
+    parameter_occurrences: Box<[ExprId]>,
 }
 
 impl PreparedImplicitCallable {
@@ -245,6 +246,10 @@ impl PreparedImplicitCallable {
 
     pub(crate) const fn body(&self) -> &PreparedImplicitCallableBody {
         &self.body
+    }
+
+    pub(crate) const fn parameter_occurrences(&self) -> &[ExprId] {
+        &self.parameter_occurrences
     }
 }
 
@@ -418,11 +423,13 @@ impl PreparedOwnerBoundResolution {
         parameter: TypeKind,
         result: TypeKind,
         body: PreparedImplicitCallableBody,
+        parameter_occurrences: Box<[ExprId]>,
     ) -> Self {
         Self::ImplicitCallable(PreparedImplicitCallable {
             parameter,
             result,
             body,
+            parameter_occurrences,
         })
     }
 
@@ -1032,6 +1039,15 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(crate) const fn implicit_parameter_owner(&self) -> Option<ExprId> {
+        if let Self::OwnerBound(value) = self
+            && let PreparedOwnerBoundResolution::ImplicitParameter(parameter) = value.resolution()
+        {
+            return Some(parameter.callable());
+        }
+        None
+    }
+
     pub(crate) fn carrier_block(&self) -> Option<&super::CheckedCarrierBlock> {
         match self {
             Self::Complete(value) => value.carrier_block(),

@@ -1511,7 +1511,7 @@ fn assert_capture_and_region_indexes(
         .collect::<BTreeSet<_>>();
     let region_placeholders = region.placeholders().collect::<BTreeSet<_>>();
     assert!(all_placeholders.len() >= 3);
-    assert_eq!(region_placeholders.len(), 1);
+    assert_eq!(region_placeholders.len(), 2);
     assert!(region_placeholders.is_subset(&all_placeholders));
 }
 

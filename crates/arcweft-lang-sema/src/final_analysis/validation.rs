@@ -748,6 +748,9 @@ pub(super) fn validate_expressions(
             CheckedExpressionResolution::CompileTimeScalar(scalar) => {
                 scalar.original().checked_call_site(owner).is_some()
             }
+            resolution @ CheckedExpressionResolution::ImplicitCallable(_) => {
+                resolution.checked_call_site(owner).is_some()
+            }
             CheckedExpressionResolution::ContentApplication(_) => matches!(
                 resolve_module(modules, owner.module())
                     .and_then(|module| {
@@ -3184,13 +3187,31 @@ fn validate_call_result(
         .ok_or(FinalSemanticAnalysisError::CallFactMismatch);
     };
     let effects = application.core().effects();
-    if application.result().value_type() != checked.source_value_type()
-        || !effects.is_known()
-        || !effects
-            .constant_effects()
-            .map_err(|_| FinalSemanticAnalysisError::OpenEffectRow)?
-            .is_subset(checked.effects())
-    {
+    if !effects.is_known() {
+        return Err(FinalSemanticAnalysisError::CallFactMismatch);
+    }
+    let effects = effects
+        .constant_effects()
+        .map_err(|_| FinalSemanticAnalysisError::OpenEffectRow)?;
+    let matches =
+        if let CheckedExpressionResolution::ImplicitCallable(callable) = checked.resolution() {
+            let Some(TypeKind::Function {
+                effects: latent, ..
+            }) = checked.source_value_type()
+            else {
+                return Err(FinalSemanticAnalysisError::CallFactMismatch);
+            };
+            application.result().value_type() == Some(callable.result())
+                && effects.is_subset(
+                    &latent
+                        .constant_effects()
+                        .map_err(|_| FinalSemanticAnalysisError::OpenEffectRow)?,
+                )
+        } else {
+            application.result().value_type() == checked.source_value_type()
+                && effects.is_subset(checked.effects())
+        };
+    if !matches {
         return Err(FinalSemanticAnalysisError::CallFactMismatch);
     }
     // A checked application inside a generic body may retain a symbolic row

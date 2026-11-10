@@ -947,8 +947,7 @@ pub enum RuntimeProjectFunctionExpressionPayload {
     Try(RuntimeTryFact),
     ImplicitCallable {
         callable: RuntimeImplicitCallableFact,
-        tried: Option<RuntimeTryFact>,
-        pipe: Option<RuntimePipeFact>,
+        body: RuntimeImplicitCallableBodyFact,
     },
     Pipe(RuntimePipeFact),
     DialogueApplication {
@@ -959,6 +958,27 @@ pub enum RuntimeProjectFunctionExpressionPayload {
         fragments: Box<[RuntimeContentFragmentFact]>,
     },
     Closure(Box<RuntimeClosureInstanceFact>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeImplicitCallableBodyFact {
+    Plain,
+    Call(Box<RuntimeResolvedCall>),
+    Try(RuntimeTryFact),
+    Pipe(RuntimePipeFact),
+}
+
+impl RuntimeProjectFunctionExpressionPayload {
+    pub fn call(&self) -> Option<&RuntimeResolvedCall> {
+        match self {
+            Self::Call(call) => Some(call),
+            Self::ImplicitCallable {
+                body: RuntimeImplicitCallableBodyFact::Call(call),
+                ..
+            } => Some(call),
+            _ => None,
+        }
+    }
 }
 
 /// Runtime value produced by reducing one exact checked compile-time call.
@@ -1816,7 +1836,10 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             {
                 return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
             }
-            let call_producer = matches!(expression.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if call.requires_producer_definition());
+            let call_producer = expression
+                .payload()
+                .call()
+                .is_some_and(RuntimeResolvedCall::requires_producer_definition);
             match expression.producer() {
                 Some(producer)
                     if producer.matches_authority(expression.owner(), &local_uses)
@@ -2198,10 +2221,13 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             .and_then(|index| self.expressions[index].producer())
     }
     pub fn call(&self, owner: ExprId) -> Option<&RuntimeResolvedCall> {
-        match self.expression(owner)?.payload() {
-            RuntimeProjectFunctionExpressionPayload::Call(call) => Some(call),
-            _ => None,
-        }
+        self.expression(owner)?.payload().call()
+    }
+
+    pub(super) fn call_source_type(&self, owner: ExprId) -> Option<&RuntimeNormalizedType> {
+        self.implicit_callable(owner)
+            .map(RuntimeImplicitCallableFact::result)
+            .or_else(|| self.expression_source_type(owner))
     }
 
     pub fn value(&self, owner: ExprId) -> Option<&RuntimeResolvedValue> {
@@ -2265,7 +2291,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         match self.expression(owner)?.payload() {
             RuntimeProjectFunctionExpressionPayload::Try(value) => Some(value),
             RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
-                tried: Some(value),
+                body: RuntimeImplicitCallableBodyFact::Try(value),
                 ..
             } => Some(value),
             _ => None,
@@ -2285,7 +2311,8 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         match self.expression(owner)?.payload() {
             RuntimeProjectFunctionExpressionPayload::Pipe(value)
             | RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
-                pipe: Some(value), ..
+                body: RuntimeImplicitCallableBodyFact::Pipe(value),
+                ..
             }
             | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect {
                 pipe: Some(value), ..
@@ -2656,14 +2683,12 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         visitor: &mut impl FnMut(ExprId, &'facts RuntimeResolvedCall),
     ) {
         for expression in &self.expressions {
-            match expression.payload() {
-                RuntimeProjectFunctionExpressionPayload::Call(call) => {
-                    visitor(expression.owner(), call);
-                }
-                RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
-                    closure.semantics().visit_calls(visitor);
-                }
-                _ => {}
+            if let Some(call) = expression.payload().call() {
+                visitor(expression.owner(), call);
+            }
+            if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
+            {
+                closure.semantics().visit_calls(visitor);
             }
         }
     }
@@ -2678,20 +2703,18 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         ),
     ) {
         for expression in &self.expressions {
-            match expression.payload() {
-                RuntimeProjectFunctionExpressionPayload::Call(call) => {
-                    visitor(scope, expression.owner(), call);
-                }
-                RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
-                    closure.semantics().visit_scoped_calls(
-                        RuntimeScopedExecutableSemanticFactView::closure(
-                            closure.key(),
-                            closure.semantics(),
-                        ),
-                        visitor,
-                    );
-                }
-                _ => {}
+            if let Some(call) = expression.payload().call() {
+                visitor(scope, expression.owner(), call);
+            }
+            if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
+            {
+                closure.semantics().visit_scoped_calls(
+                    RuntimeScopedExecutableSemanticFactView::closure(
+                        closure.key(),
+                        closure.semantics(),
+                    ),
+                    visitor,
+                );
             }
         }
     }

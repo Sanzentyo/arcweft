@@ -286,6 +286,13 @@ one. Carrier blocks catch only Result/Option residuals; `return`, `break`,
 up to an explicit callable boundary. A carrier block does not stop that
 abstraction.
 
+A composed call argument such as `_ + 1` has its own expression region for
+implicit abstraction. A bare argument `_` can read the surrounding implicit
+callable's parameter, as in a contextually typed `try keep(_)`. An argument
+whose formal expects a unary function can also use a bare `_` as the identity
+callable. If the surrounding parameter already satisfies the formal, the
+argument reads that parameter.
+
 ```arcw
 await _
 // Need<T> -> T effects { control.suspend }

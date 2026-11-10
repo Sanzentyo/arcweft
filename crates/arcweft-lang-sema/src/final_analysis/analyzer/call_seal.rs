@@ -2057,7 +2057,12 @@ impl super::Analyzer<'_, '_, '_> {
                                 )
                             }
                             PreparedExpressionFact::Complete(previous) => previous
-                                .with_sealed_value(result, update.effects, resolution)
+                                .with_sealed_application(
+                                    pending.owner,
+                                    result,
+                                    update.effects,
+                                    resolution,
+                                )
                                 .map_err(|error| {
                                     final_call_seal_error(
                                         FinalCallSealLocation::Site(

@@ -423,6 +423,15 @@ impl ProjectFunctionFrameLocals {
         function: Option<&RuntimeNormalizedType>,
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Self, RuntimePlanLowerError> {
+        Self::admit_view_for_body(facts, function, None, builder)
+    }
+
+    fn admit_view_for_body(
+        facts: crate::semantic_facts::RuntimeExecutableSemanticFactView<'_>,
+        function: Option<&RuntimeNormalizedType>,
+        implicit_body: Option<ExprId>,
+        builder: &mut RuntimePlanBuilder,
+    ) -> Result<Self, RuntimePlanLowerError> {
         let declaration =
             |source, ty: &RuntimeNormalizedType, context: Option<&RuntimeNormalizedType>| {
                 match function.or(context).filter(|_| !ty.scope().is_root()) {
@@ -498,7 +507,7 @@ impl ProjectFunctionFrameLocals {
                 ));
             }
         }
-        frame.control = ControlLocals::admit(facts, function, builder)?;
+        frame.control = ControlLocals::admit(facts, function, implicit_body, builder)?;
         Ok(frame)
     }
 }
@@ -1452,6 +1461,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                 instance.semantics(),
             ),
             None,
+            None,
             &mut builder,
         )
         .map_err(|error| vec![error])?;
@@ -1507,6 +1517,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
             })?;
         frame.control = ControlLocals::admit(
             crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(semantics),
+            None,
             None,
             &mut builder,
         )
@@ -1642,6 +1653,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                 closure.semantics(),
             ),
             None,
+            None,
             &mut builder,
         )
         .map_err(|error| vec![error])?;
@@ -1767,6 +1779,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     let empty_dialogue_content = BTreeMap::new();
     let control_locals = ControlLocals::admit(
         crate::semantic_facts::RuntimeExecutableSemanticFactView::global(facts),
+        None,
         None,
         &mut builder,
     )
@@ -2498,7 +2511,12 @@ fn reserve_implicit_function_sites<'facts>(
         } else {
             RuntimeValueOwnershipRequirement::Owned
         };
-        let mut frame = match ProjectFunctionFrameLocals::admit_view(scope.facts(), None, builder) {
+        let mut frame = match ProjectFunctionFrameLocals::admit_view_for_body(
+            scope.facts(),
+            None,
+            Some(owner),
+            builder,
+        ) {
             Ok(frame) => frame,
             Err(error) => {
                 errors.push(error);
@@ -6339,6 +6357,9 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         expression: ExprId,
     ) -> Result<&RuntimeNormalizedType, RuntimePlanLowerError> {
+        if self.implicit_body_root() == Some(expression) {
+            return self.expression_source_type(expression);
+        }
         self.semantic_facts
             .expression_type(expression)
             .ok_or_else(|| {
@@ -6351,6 +6372,16 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         expression: ExprId,
     ) -> Result<&RuntimeNormalizedType, RuntimePlanLowerError> {
+        if self.implicit_body_root() == Some(expression) {
+            return self
+                .implicit_callable(expression)
+                .map(|callable| callable.result())
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "accepted implicit body result is missing for {expression:?}"
+                    ))
+                });
+        }
         self.semantic_facts
             .expression_source_type(expression)
             .ok_or_else(|| {
@@ -7627,6 +7658,15 @@ impl<'a> FinalFlowLowerer<'a> {
             }
             return self.lower_flow_value_with_overrides(selected, continuation, overrides);
         }
+        if self.implicit_body_root() != Some(expression)
+            && self.implicit_callable(expression).is_some()
+        {
+            let value = self
+                .expr_lowerer()
+                .lower_source(expression)
+                .map_err(RuntimePlanLowerError::new)?;
+            return self.apply_value_continuation(value, continuation);
+        }
         if let Some(effect) = self.evaluated_effect(expression).cloned() {
             let registry_argument = match effect.effect() {
                 RuntimeEvaluatedEffect::RegistryDrop { argument, .. } => Some(*argument),
@@ -7736,15 +7776,6 @@ impl<'a> FinalFlowLowerer<'a> {
                 }
             }
             return self.lower_selected_callable_or_need_value(expression, continuation, overrides);
-        }
-        if self.implicit_body_root() != Some(expression)
-            && self.implicit_callable(expression).is_some()
-        {
-            let value = self
-                .expr_lowerer()
-                .lower_source(expression)
-                .map_err(RuntimePlanLowerError::new)?;
-            return self.apply_value_continuation(value, continuation);
         }
         match resolved.kind() {
             HirExprKind::Thread(thread) => {

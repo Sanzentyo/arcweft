@@ -158,7 +158,7 @@ pub(super) fn seal(
         let (_, ty, _) = prepared_shell_parts(prepared.shell(), owner)?;
         let function_type = ty.semantic_identity_digest()?;
         let seed = prepare_callable_seed(
-            &topology,
+            (&topology, structural_edges),
             owner,
             function_type,
             callable,
@@ -631,16 +631,18 @@ fn seal_owner_bound_body(
                 .get(&parameter.callable())
                 .copied()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            let region = topology
-                .module(parameter.callable().module())
-                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-                .expression_uses()
-                .implicit_callable_region(parameter.callable())
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            let occurrence_ordinal = region
-                .placeholders()
-                .enumerate()
-                .find_map(|(ordinal, expression)| (expression == owner).then_some(ordinal))
+            let Some(PreparedExpressionFact::OwnerBound(fact)) =
+                expressions.get(&parameter.callable())
+            else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let PreparedOwnerBoundResolution::ImplicitCallable(callable) = fact.resolution() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let occurrence_ordinal = callable
+                .parameter_occurrences()
+                .iter()
+                .position(|expression| *expression == owner)
                 .and_then(|ordinal| u32::try_from(ordinal).ok())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             Ok(CheckedExpressionResolution::ImplicitParameter(
@@ -719,7 +721,10 @@ impl PreparedImplicitCallableSealSeed {
 }
 
 fn prepare_callable_seed(
-    topology: &Arc<HirProjectEvaluationTopology>,
+    (topology, structural_edges): (
+        &Arc<HirProjectEvaluationTopology>,
+        &super::match_edges::CheckedStructuralEdgeDraft,
+    ),
     owner: ExprId,
     function_type: crate::types::SemanticTypeDigest,
     prepared: &PreparedImplicitCallable,
@@ -728,18 +733,13 @@ fn prepare_callable_seed(
     local_types: &BTreeMap<LocalId, TypeKind>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<PreparedImplicitCallableSealSeed, FinalSemanticAnalysisError> {
-    let module = topology
-        .module(owner.module())
-        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-    let region = module
-        .expression_uses()
-        .implicit_callable_region(owner)
-        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
     let owner_coordinate = coordinates
         .expression(owner)
         .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    let parameter_occurrences = region
-        .placeholders()
+    let parameter_occurrences = prepared
+        .parameter_occurrences()
+        .iter()
+        .copied()
         .enumerate()
         .map(|(ordinal, expression)| {
             let ordinal = u32::try_from(ordinal)
@@ -759,6 +759,7 @@ fn prepare_callable_seed(
     let uses = super::free_capture::implicit_region_inputs(
         topology,
         owner,
+        |expression| structural_edges.contains_expression(expression),
         |expression, access| {
             let fact = expressions.get(&expression).ok_or(
                 FinalSemanticAnalysisError::CaptureAuthority {

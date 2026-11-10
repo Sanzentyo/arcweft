@@ -85,6 +85,7 @@ fn a_root_try_delivers_success_and_residual_to_the_closure_caller() {
         "try _",
         "|value| try keep(value)",
         "try { let _ = keep(()); _ }",
+        "try keep(_)",
     ] {
         let definitions = format!(
             r#"
@@ -137,6 +138,37 @@ fn a_root_try_rejects_a_mismatched_wrapped_success_payload() {
         );
         let error = compile_source(&source).expect_err("the returned carrier expects Bool");
         assert_eq!(error.project().stage(), "type-check");
+    }
+}
+
+#[test]
+fn implicit_call_arguments_keep_their_selected_callable_owner() {
+    let definitions = r#"
+fn keep<T>(value: T) -> T { value }
+fn add(left: i64, right: i64) -> i64 { left + right }
+fn apply(f: (i64 -> i64 effects {}), value: i64) -> i64 { f(value) }
+fn retain(f: (i64 -> i64 effects {}), ignored: i64) -> (i64 -> i64 effects {}) { f }
+fn add_to(offset: i64) -> (i64 -> i64 effects {}) {
+    let f: (i64 -> i64 effects {}) = add(right = offset + 1i64, left = _)
+    f
+}
+fn with_identity(offset: i64) -> (i64 -> i64 effects {}) {
+    let f: (i64 -> i64 effects {}) = { let bonus = apply(_, offset); add(_, bonus) }
+    f
+}
+"#;
+    for flow in [
+        "flow main() -> i64 { let f: (i64 -> i64 effects {}) = keep(_); return f(42i64) }",
+        "flow main() -> i64 { let f: (i64 -> i64 effects {}) = keep(_) + 1i64; return f(41i64) }",
+        "flow main() -> i64 { let f: (i64 -> i64 effects {}) = add(_, _); return f(21i64) }",
+        "flow main() -> i64 { let f = add_to(2i64); return f(39i64) }",
+        "flow main() -> i64 { let f = with_identity(2i64); return f(40i64) }",
+        "flow main() -> i64 { return apply(_, 42i64) }",
+        "flow main() -> i64 { let f: (i64 -> i64 effects {}) = retain(_, 0i64); return f(42i64) }",
+        "flow main() -> i64 { return apply(keep(_), 42i64) }",
+        "flow main() -> i64 { return apply(_ + 1i64, 41i64) }",
+    ] {
+        assert_case(definitions, flow, RuntimeValue::i64(42), "42");
     }
 }
 

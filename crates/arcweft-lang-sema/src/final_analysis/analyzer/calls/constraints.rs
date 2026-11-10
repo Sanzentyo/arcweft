@@ -1564,7 +1564,13 @@ impl<'a, 'project, 'catalog, 'control>
                     )),
                 ))
             })?;
-            if let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind() {
+            if let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind()
+                && self
+                    .analyzer
+                    .implicit_callable_selection(module, expression_owner, &expectation)
+                    .map_err(|error| AnalyzerCallCheckFailure::expression(source_id, phase, error))?
+                    .is_none()
+            {
                 let (pending, prepared_children) = self
                     .analyzer
                     .probe_correlated_call_constraint_source(

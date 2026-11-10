@@ -212,13 +212,14 @@ use arcweft_runtime_plan::{
         RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
         RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
         RuntimeExecutableCaptureFact, RuntimeExecutableSemanticScope, RuntimeFormatExecutableScope,
-        RuntimeFormatTemplateFact, RuntimeFormatTemplateKey, RuntimeImplicitCallableFact,
-        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
-        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
-        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
-        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
-        RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
-        RuntimeProjectCallable, RuntimeProjectCallableValueTarget, RuntimeProjectContinuationAbi,
+        RuntimeFormatTemplateFact, RuntimeFormatTemplateKey, RuntimeImplicitCallableBodyFact,
+        RuntimeImplicitCallableFact, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
+        RuntimeIteratorWitnessFact, RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind,
+        RuntimeNominalRecordFactError, RuntimeNormalizedType, RuntimeNormalizedVariantCase,
+        RuntimePipeFact, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
+        RuntimePositionedAttachedContent, RuntimeProjectAttachedDefaultCapture,
+        RuntimeProjectAttachedDefaultFunctionFact, RuntimeProjectCallable,
+        RuntimeProjectCallableValueTarget, RuntimeProjectContinuationAbi,
         RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
         RuntimeProjectFunctionCallOutcome, RuntimeProjectFunctionCallPlan,
         RuntimeProjectFunctionCallSpecialization, RuntimeProjectFunctionExecution,
@@ -7750,7 +7751,15 @@ fn discover_runtime_project_executable_dependencies(
                 world,
                 analysis,
             )?;
-            match row.family() {
+            let family = if row.family()
+                == CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable
+                && analysis.call(row.owner()).is_some()
+            {
+                CheckedExecutableRuntimeExpressionFactFamily::Call
+            } else {
+                row.family()
+            };
+            match family {
                 CheckedExecutableRuntimeExpressionFactFamily::Call => {
                     let owner = row.owner();
                     let application = analysis
@@ -8606,34 +8615,36 @@ fn runtime_executable_semantic_facts<'abi>(
                     &local_uses,
                 )
                 .map_err(|source| error(owner, &source.to_string()))?;
-                let (tried, pipe) = match view.body() {
-                    FinalAnalysisImplicitCallableBody::Plain(_) => (None, None),
-                    FinalAnalysisImplicitCallableBody::Try(tried) => (
-                        Some(runtime_try_fact(
+                let body = match view.body() {
+                    FinalAnalysisImplicitCallableBody::Plain(_) => {
+                        if let Some(facts) = analysis.call(owner) {
+                            RuntimeImplicitCallableBodyFact::Call(Box::new(runtime_call(
+                                owner, facts, project, symbols, world, analysis, lexical, instances,
+                            )?))
+                        } else {
+                            RuntimeImplicitCallableBodyFact::Plain
+                        }
+                    }
+                    FinalAnalysisImplicitCallableBody::Try(tried) => {
+                        RuntimeImplicitCallableBodyFact::Try(runtime_try_fact(
                             owner,
                             tried,
                             symbols,
                             world,
                             analysis,
                             lexical.types(),
-                        )?),
-                        None,
-                    ),
-                    FinalAnalysisImplicitCallableBody::Pipe(pipe) => (
-                        None,
-                        Some(RuntimePipeFact::new(
+                        )?)
+                    }
+                    FinalAnalysisImplicitCallableBody::Pipe(pipe) => {
+                        RuntimeImplicitCallableBodyFact::Pipe(RuntimePipeFact::new(
                             pipe.binding_identity(),
                             pipe.left(),
                             pipe.right(),
                             pipe.placeholders().collect(),
-                        )),
-                    ),
+                        ))
+                    }
                 };
-                RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
-                    callable,
-                    tried,
-                    pipe,
-                }
+                RuntimeProjectFunctionExpressionPayload::ImplicitCallable { callable, body }
             }
             CheckedExecutableRuntimeExpressionFactFamily::Pipe => {
                 let pipe = execution.pipe(owner)?;
@@ -8707,7 +8718,10 @@ fn runtime_executable_semantic_facts<'abi>(
         )? {
             fact = fact.with_scope(scope);
         }
-        let producer_kind = if matches!(fact.payload(), RuntimeProjectFunctionExpressionPayload::Call(call) if call.requires_producer_definition())
+        let producer_kind = if fact
+            .payload()
+            .call()
+            .is_some_and(RuntimeResolvedCall::requires_producer_definition)
         {
             Some(arcweft_lang_sema::CheckedExpressionProducerKind::Call)
         } else if expected.producer_kind()

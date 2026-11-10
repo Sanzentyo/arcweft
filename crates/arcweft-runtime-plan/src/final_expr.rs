@@ -1356,6 +1356,9 @@ impl<'hir> FinalExprLowerer<'hir> {
         owner: ExprId,
         continuation: PureTryContinuation,
     ) -> Result<RuntimeExprSeed, String> {
+        if self.implicit_body_root != Some(owner) && self.implicit_callable(owner).is_some() {
+            return self.apply_try_continuation(self.lower(owner)?, continuation);
+        }
         let expression = self.resolve_expression(owner)?;
         if let HirExprKind::Try(operation) = expression.kind() {
             return self.lower_with_try_continuation(

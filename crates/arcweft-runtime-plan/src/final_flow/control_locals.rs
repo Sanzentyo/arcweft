@@ -58,6 +58,7 @@ enum ValueRole {
     Pipe,
     Expression,
     FinalExpression,
+    ImplicitBodyResult,
     Guard,
 }
 impl ValueRole {
@@ -67,6 +68,7 @@ impl ValueRole {
             Self::Pipe => Role::PipeOperand,
             Self::Expression => Role::ExpressionSource,
             Self::FinalExpression => Role::ExpressionResult,
+            Self::ImplicitBodyResult => Role::ImplicitBodyResult,
             Self::Guard => Role::GuardValue,
         }
     }
@@ -309,7 +311,7 @@ impl LocalRequest<'_> {
                     ValueRole::Pipe => {
                         result.pipes.insert(*owner, local);
                     }
-                    ValueRole::Expression => {
+                    ValueRole::Expression | ValueRole::ImplicitBodyResult => {
                         result.expression_values.insert(*owner, local);
                     }
                     ValueRole::FinalExpression => {
@@ -373,6 +375,7 @@ struct ControlLocalInventory<'a> {
 impl<'a> ControlLocalInventory<'a> {
     fn from_facts(
         facts: RuntimeExecutableSemanticFactView<'a>,
+        implicit_body: Option<ExprId>,
     ) -> Result<Self, RuntimePlanLowerError> {
         let mut inventory = Self {
             requests: Vec::new(),
@@ -381,7 +384,7 @@ impl<'a> ControlLocalInventory<'a> {
         let mut checked = Ok(());
         facts.visit_runtime_expression_types(&mut |owner, ty| {
             if checked.is_ok() {
-                checked = inventory.expression(facts, owner, ty);
+                checked = inventory.expression(facts, owner, ty, implicit_body == Some(owner));
             }
         });
         checked?;
@@ -469,9 +472,24 @@ impl<'a> ControlLocalInventory<'a> {
         facts: RuntimeExecutableSemanticFactView<'a>,
         owner: ExprId,
         ty: &'a RuntimeNormalizedType,
+        implicit_body: bool,
     ) -> Result<(), RuntimePlanLowerError> {
-        let source = facts.expression_source_type(owner).unwrap_or(ty);
-        self.value(facts, owner, source, ValueRole::Expression)?;
+        let (ty, source, role) = if implicit_body {
+            let result = facts
+                .implicit_callable(owner)
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("implicit body has no admitted callable definition")
+                })?
+                .result();
+            (result, result, ValueRole::ImplicitBodyResult)
+        } else {
+            (
+                ty,
+                facts.expression_source_type(owner).unwrap_or(ty),
+                ValueRole::Expression,
+            )
+        };
+        self.value(facts, owner, source, role)?;
         if source.identity() != ty.identity() {
             self.value(facts, owner, ty, ValueRole::FinalExpression)?;
         }
@@ -667,9 +685,10 @@ impl ControlLocals {
     pub(super) fn admit(
         facts: RuntimeExecutableSemanticFactView<'_>,
         function: Option<&RuntimeNormalizedType>,
+        implicit_body: Option<ExprId>,
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Self, RuntimePlanLowerError> {
-        let inventory = ControlLocalInventory::from_facts(facts)?;
+        let inventory = ControlLocalInventory::from_facts(facts, implicit_body)?;
         builder
             .check_local_request_capacity(inventory.count)
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;

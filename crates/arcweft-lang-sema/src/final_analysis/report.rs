@@ -849,7 +849,14 @@ impl FinalAnalysisExecutionProjection<'_> {
                 if !self.analysis.calls.contains_key(&owner) {
                     return Err(FinalAnalysisExecutionProjectionError::MissingCallFacts { owner });
                 }
-                CheckedExecutableRuntimeExpressionFactFamily::Call
+                if matches!(
+                    expression.resolution(),
+                    CheckedExpressionResolution::ImplicitCallable(_)
+                ) {
+                    CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable
+                } else {
+                    CheckedExecutableRuntimeExpressionFactFamily::Call
+                }
             } else if plan.residual_value_application().is_some() {
                 if !self.analysis.calls.contains_key(&owner) {
                     return Err(FinalAnalysisExecutionProjectionError::MissingCallFacts { owner });
@@ -1639,6 +1646,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
                             &accepted_roots,
                             &structural_edges,
                         ),
+                        |owner| structural_edges.contains_expression(owner),
                         |owner| structural_edges.record_fields(owner).ok(),
                         |local| locals.get(&local).map(|binding| binding.ty().clone()),
                     )
