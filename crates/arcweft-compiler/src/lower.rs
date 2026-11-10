@@ -1347,35 +1347,11 @@ fn project_runtime_semantic_fact_inventories(
                 }
             }
             CheckedExpressionResolution::Nominal(nominal) => {
-                let fields = analysis
-                    .checked_expression_edge_fact(owner)
-                    .map_err(|source| RuntimeSemanticProjectionError::ExpressionEdges {
-                        owner,
-                        source,
-                    })?
-                    .record_fields()
-                    .iter()
-                    .map(|field| {
-                        let source = match field.source() {
-                            CheckedRecordValueSource::Expression(source) => {
-                                RuntimeRecordExpressionSource::Expression(source.raw())
-                            }
-                            CheckedRecordValueSource::Binding(source) => {
-                                RuntimeRecordExpressionSource::Binding(source.raw())
-                            }
-                        };
-                        RuntimeRecordExpressionField::new(field.runtime_field(), source)
-                    })
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
-                let record = RuntimeRecordExpressionFact::try_new(
+                let record = runtime_record_expression(
+                    owner,
                     runtime_nominal_record(nominal, symbols, world, analysis)?,
-                    fields,
-                )
-                .map_err(|source| RuntimeSemanticProjectionError::RecordPlan {
-                    owner: RuntimeRecordExecutableOwner::Expression(owner),
-                    source,
-                })?;
+                    analysis,
+                )?;
                 input.push_nominal_record(owner, record);
             }
             CheckedExpressionResolution::Variant(variant) => {
@@ -1457,6 +1433,26 @@ fn project_runtime_semantic_fact_inventories(
                 match body {
                     FinalAnalysisImplicitCallableBody::Plain(_)
                     | FinalAnalysisImplicitCallableBody::Call { .. } => {}
+                    FinalAnalysisImplicitCallableBody::Select(select) => {
+                        let select =
+                            runtime_select(owner, select, world, analysis)?.ok_or_else(|| {
+                                RuntimeSemanticProjectionError::Call {
+                                    owner,
+                                    reason: "implicit select has no runtime projection".to_owned(),
+                                }
+                            })?;
+                        input.push_select(owner, select);
+                    }
+                    FinalAnalysisImplicitCallableBody::NominalRecord(nominal) => {
+                        input.push_nominal_record(
+                            owner,
+                            runtime_record_expression(
+                                owner,
+                                runtime_nominal_record(nominal, symbols, world, analysis)?,
+                                analysis,
+                            )?,
+                        );
+                    }
                     FinalAnalysisImplicitCallableBody::Try(tried) => {
                         push_runtime_try_fact(&mut input, owner, tried, symbols, world, analysis)?;
                     }
@@ -6291,6 +6287,36 @@ fn runtime_nominal(
     ))
 }
 
+fn runtime_record_expression(
+    owner: ExprId,
+    record: RuntimeResolvedNominalRecord,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimeRecordExpressionFact, RuntimeSemanticProjectionError> {
+    let fields = analysis
+        .checked_expression_edge_fact(owner)
+        .map_err(|source| RuntimeSemanticProjectionError::ExpressionEdges { owner, source })?
+        .record_fields()
+        .iter()
+        .map(|field| {
+            let source = match field.source() {
+                CheckedRecordValueSource::Expression(source) => {
+                    RuntimeRecordExpressionSource::Expression(source.raw())
+                }
+                CheckedRecordValueSource::Binding(source) => {
+                    RuntimeRecordExpressionSource::Binding(source.raw())
+                }
+            };
+            RuntimeRecordExpressionField::new(field.runtime_field(), source)
+        })
+        .collect::<Box<[_]>>();
+    RuntimeRecordExpressionFact::try_new(record, fields).map_err(|source| {
+        RuntimeSemanticProjectionError::RecordPlan {
+            owner: RuntimeRecordExecutableOwner::Expression(owner),
+            source,
+        }
+    })
+}
+
 fn runtime_nominal_record(
     nominal: &CheckedProjectNominal,
     symbols: &ProjectSymbolTable,
@@ -8198,6 +8224,43 @@ fn runtime_executable_semantic_facts<'abi>(
         let hir = module
             .resolve_expr(owner)
             .map_err(|_| error(owner, "instance expression is absent from its HIR module"))?;
+        let project_select = |select: &CheckedSelectResolution| {
+            let closed_owner = match hir.kind() {
+                HirExprKind::Select(hir_select) => analysis
+                    .expression(hir_select.target())
+                    .and_then(|target| target.value_type())
+                    .map(|ty| {
+                        runtime_type_under(ty, lexical.types(), symbols, world, analysis)
+                            .map(|ty| ty.identity())
+                    })
+                    .transpose()?,
+                _ => expected.children().first().and_then(|target| {
+                    projected_types
+                        .get(&HirValueTypeOwner::Expression(*target))
+                        .map(|ty| ty.identity())
+                }),
+            };
+            runtime_select_under(owner, select, closed_owner, world, analysis)?
+                .ok_or_else(|| error(owner, "instance Select has no runtime projection"))
+        };
+        let project_record = |nominal: &CheckedProjectNominal, ty: &RuntimeNormalizedType| {
+            let arcweft_runtime_plan::semantic_facts::RuntimeNominalDefinition::Record(record) =
+                nominals::definition(ty, symbols, world, analysis)?
+            else {
+                return Err(error(owner, "nominal record projection selects a variant"));
+            };
+            if !matches!(record.nominal().source(),
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedNominalSource::Project {
+                    declaration, owner: declaration_owner, ..
+                } if declaration == nominal.declaration() && *declaration_owner == nominal.owner())
+            {
+                return Err(error(
+                    owner,
+                    "nominal record projection changes its declaration owner",
+                ));
+            }
+            runtime_record_expression(owner, record, analysis)
+        };
         let payload = match expected.family() {
             CheckedExecutableRuntimeExpressionFactFamily::Structural => {
                 RuntimeProjectFunctionExpressionPayload::Structural
@@ -8393,25 +8456,7 @@ fn runtime_executable_semantic_facts<'abi>(
                         "instance Select family disagrees with checked expression",
                     ));
                 };
-                let closed_owner = match hir.kind() {
-                    HirExprKind::Select(hir_select) => analysis
-                        .expression(hir_select.target())
-                        .and_then(|target| target.value_type())
-                        .map(|ty| {
-                            runtime_type_under(ty, lexical.types(), symbols, world, analysis)
-                                .map(|ty| ty.identity())
-                        })
-                        .transpose()?,
-                    _ => expected.children().first().and_then(|target| {
-                        projected_types
-                            .get(&HirValueTypeOwner::Expression(*target))
-                            .map(|ty| ty.identity())
-                    }),
-                };
-                RuntimeProjectFunctionExpressionPayload::Select(
-                    runtime_select_under(owner, select, closed_owner, world, analysis)?
-                        .ok_or_else(|| error(owner, "instance Select has no runtime projection"))?,
-                )
+                RuntimeProjectFunctionExpressionPayload::Select(project_select(select)?)
             }
             CheckedExecutableRuntimeExpressionFactFamily::NominalRecord => {
                 let CheckedExpressionResolution::Nominal(nominal) = checked.resolution() else {
@@ -8420,57 +8465,12 @@ fn runtime_executable_semantic_facts<'abi>(
                         "instance nominal-record family disagrees with checked expression",
                     ));
                 };
-                let fields = analysis
-                    .checked_expression_edge_fact(owner)
-                    .map_err(|source| RuntimeSemanticProjectionError::ExpressionEdges {
-                        owner,
-                        source,
-                    })?
-                    .record_fields()
-                    .iter()
-                    .map(|field| {
-                        RuntimeRecordExpressionField::new(
-                            field.runtime_field(),
-                            match field.source() {
-                                CheckedRecordValueSource::Expression(source) => {
-                                    RuntimeRecordExpressionSource::Expression(source.raw())
-                                }
-                                CheckedRecordValueSource::Binding(source) => {
-                                    RuntimeRecordExpressionSource::Binding(source.raw())
-                                }
-                            },
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
                 let ty = projected_types
                     .get(&HirValueTypeOwner::Expression(owner))
                     .ok_or_else(|| {
                         error(owner, "nominal record has no executable type projection")
                     })?;
-                let arcweft_runtime_plan::semantic_facts::RuntimeNominalDefinition::Record(record) =
-                    nominals::definition(ty, symbols, world, analysis)?
-                else {
-                    return Err(error(owner, "nominal record projection selects a variant"));
-                };
-                if !matches!(record.nominal().source(),
-                    arcweft_runtime_plan::semantic_facts::RuntimeResolvedNominalSource::Project {
-                        declaration, owner: declaration_owner, ..
-                    } if declaration == nominal.declaration() && *declaration_owner == nominal.owner())
-                {
-                    return Err(error(
-                        owner,
-                        "nominal record projection changes its declaration owner",
-                    ));
-                }
-                RuntimeProjectFunctionExpressionPayload::NominalRecord(
-                    RuntimeRecordExpressionFact::try_new(record, fields).map_err(|source| {
-                        RuntimeSemanticProjectionError::RecordPlan {
-                            owner: RuntimeRecordExecutableOwner::Expression(owner),
-                            source,
-                        }
-                    })?,
-                )
+                RuntimeProjectFunctionExpressionPayload::NominalRecord(project_record(nominal, ty)?)
             }
             CheckedExecutableRuntimeExpressionFactFamily::Variant => {
                 let variant = match checked.resolution() {
@@ -8627,6 +8627,15 @@ fn runtime_executable_semantic_facts<'abi>(
                 let body = match body {
                     FinalAnalysisImplicitCallableBody::Plain(_) => {
                         RuntimeImplicitCallableBodyFact::Plain
+                    }
+                    FinalAnalysisImplicitCallableBody::Select(select) => {
+                        RuntimeImplicitCallableBodyFact::Select(project_select(select)?)
+                    }
+                    FinalAnalysisImplicitCallableBody::NominalRecord(nominal) => {
+                        RuntimeImplicitCallableBodyFact::NominalRecord(Box::new(project_record(
+                            nominal,
+                            callable.result(),
+                        )?))
                     }
                     FinalAnalysisImplicitCallableBody::Call { facts, .. } => {
                         RuntimeImplicitCallableBodyFact::Call(Box::new(runtime_call(

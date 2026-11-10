@@ -1229,7 +1229,7 @@ impl FinalAnalysisExecutionProjection<'_> {
             .collect::<Result<Box<[_]>, FinalAnalysisExecutionProjectionError>>()?;
         let body = match callable.body() {
             CheckedImplicitCallableBody::Plain(resolution)
-                if resolution.checked_call_site(owner).is_some() =>
+                if resolution.resolution().checked_call_site(owner).is_some() =>
             {
                 let facts = self
                     .analysis
@@ -1241,9 +1241,15 @@ impl FinalAnalysisExecutionProjection<'_> {
                     .ok_or(FinalAnalysisExecutionProjectionError::UnselectedCall { owner })?;
                 FinalAnalysisImplicitCallableBody::Call { facts, result }
             }
-            CheckedImplicitCallableBody::Plain(resolution) => {
-                FinalAnalysisImplicitCallableBody::Plain(resolution)
-            }
+            CheckedImplicitCallableBody::Plain(resolution) => match resolution.resolution() {
+                CheckedExpressionResolution::Nominal(nominal) => {
+                    FinalAnalysisImplicitCallableBody::NominalRecord(nominal)
+                }
+                CheckedExpressionResolution::Select(select) => {
+                    FinalAnalysisImplicitCallableBody::Select(select)
+                }
+                plain => FinalAnalysisImplicitCallableBody::Plain(plain),
+            },
             CheckedImplicitCallableBody::Try(tried) => {
                 FinalAnalysisImplicitCallableBody::Try(FinalAnalysisTryView { tried })
             }
@@ -1341,6 +1347,8 @@ impl FinalAnalysisImplicitCallableView<'_> {
 #[derive(Clone, Copy)]
 pub enum FinalAnalysisImplicitCallableBody<'analysis> {
     Plain(&'analysis CheckedExpressionResolution),
+    Select(&'analysis super::CheckedSelectResolution),
+    NominalRecord(&'analysis super::CheckedProjectNominal),
     Call {
         facts: &'analysis CallTargetFacts,
         result: &'analysis TypeKind,
@@ -1353,7 +1361,11 @@ impl<'analysis> FinalAnalysisImplicitCallableBody<'analysis> {
     pub const fn call_result(self) -> Option<&'analysis TypeKind> {
         match self {
             Self::Call { result, .. } => Some(result),
-            Self::Plain(_) | Self::Try(_) | Self::Pipe(_) => None,
+            Self::Plain(_)
+            | Self::Select(_)
+            | Self::NominalRecord(_)
+            | Self::Try(_)
+            | Self::Pipe(_) => None,
         }
     }
 }

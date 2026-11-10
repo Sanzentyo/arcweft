@@ -1146,7 +1146,7 @@ impl CheckedExpressionResolution {
             | Self::PostfixBracket(_) => None,
             Self::ImplicitCallable(callable) => match callable.body() {
                 CheckedImplicitCallableBody::Plain(resolution) => {
-                    resolution.checked_call_site(owner)
+                    resolution.resolution().checked_call_site(owner)
                 }
                 CheckedImplicitCallableBody::Try(_) | CheckedImplicitCallableBody::Pipe(_) => None,
             },
@@ -2864,7 +2864,7 @@ impl CheckedExpression {
         resolution: CheckedExpressionResolution,
     ) -> Result<Self, crate::callable::CallConstraintInvariant> {
         if let CheckedExpressionResolution::ImplicitCallable(callable) = &mut self.data.resolution {
-            callable.seal_call_body(owner, &source, resolution)?;
+            callable.seal_call_body(owner, &source, effects, resolution)?;
             return Ok(self);
         }
         self.with_sealed_value(source, effects, resolution)

@@ -274,7 +274,7 @@ impl MatchExpressionCorpusObservation {
         if let CheckedExpressionResolution::ImplicitCallable(callable) = resolution
             && let CheckedImplicitCallableBody::Plain(inner) = callable.body()
         {
-            self.record_resolution(inner);
+            self.record_resolution(inner.resolution());
         }
     }
 }

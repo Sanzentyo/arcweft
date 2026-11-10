@@ -286,6 +286,10 @@ one. Carrier blocks catch only Result/Option residuals; `return`, `break`,
 up to an explicit callable boundary. A carrier block does not stop that
 abstraction.
 
+With a unary function type as context, `Boxed { value = _ }` constructs a
+record on each call, and `_.value` reads the supplied record's field. Other
+fields can read the callable's captures, including through field shorthand.
+
 A composed call argument such as `_ + 1` has its own expression region for
 implicit abstraction. A bare argument `_` can read the surrounding implicit
 callable's parameter, as in a contextually typed `try keep(_)`. An argument

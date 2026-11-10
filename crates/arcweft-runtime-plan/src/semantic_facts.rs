@@ -9240,6 +9240,17 @@ impl RuntimePlanSemanticFacts {
                     expression: *expression,
                 });
             }
+            let kind = resolve_expr(&modules, *expression)?;
+            if matches!(kind, HirExprKind::Record(_) | HirExprKind::RecordLiteral(_))
+                && nominal_records.get(expression).is_none_or(|record| {
+                    record.nominal().nominal().identity() != fact.result().identity()
+                })
+                || matches!(kind, HirExprKind::Select(_)) && !selects.contains_key(expression)
+            {
+                return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
+                    expression: *expression,
+                });
+            }
             for placeholder in fact.placeholders() {
                 if !matches!(
                     resolve_expr(&modules, *placeholder)?,
@@ -14871,6 +14882,15 @@ fn validate_project_function_semantic_catalog(
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
                 match (body, hir) {
+                    (RuntimeImplicitCallableBodyFact::Select(select), HirExprKind::Select(_)) => {
+                        validate_select(modules, owner, select)?;
+                    }
+                    (
+                        RuntimeImplicitCallableBodyFact::NominalRecord(record),
+                        HirExprKind::Record(_) | HirExprKind::RecordLiteral(_),
+                    ) if record.nominal().nominal().identity() == fact.result().identity() => {
+                        validate_record_expression_fact(modules, owner, record)?;
+                    }
                     (RuntimeImplicitCallableBodyFact::Call(call), HirExprKind::Call(hir_call)) => {
                         validate_call(
                             modules,
@@ -14900,7 +14920,13 @@ fn validate_project_function_semantic_catalog(
                             && !pipe.placeholders().is_empty()
                             && row.children().contains(&pipe.left())
                             && row.children().contains(&pipe.right()) => {}
-                    (RuntimeImplicitCallableBodyFact::Plain, _) => {}
+                    (RuntimeImplicitCallableBodyFact::Plain, kind)
+                        if !matches!(
+                            kind,
+                            HirExprKind::Select(_)
+                                | HirExprKind::Record(_)
+                                | HirExprKind::RecordLiteral(_)
+                        ) => {}
                     _ => return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance),
                 }
             }

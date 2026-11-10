@@ -180,18 +180,35 @@ pub(super) fn seal(
         }
     }
 
-    let mut callables = BTreeMap::new();
     for owner in callable_owners.iter().copied() {
         let seed = callable_seeds
             .get(&owner)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let evidence = callable_evidence
-            .remove(&owner)
+            .get(&owner)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let Some(PreparedExpressionFact::OwnerBound(prepared)) = expressions.get(&owner) else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let (shell, _ty, effects) = prepared_shell_parts(prepared.shell(), owner)?;
+        if let Some(body) = seed.body.nominal_expression() {
+            replacements.insert(
+                owner,
+                super::PreparedOwnerBoundExpression::new(
+                    shell,
+                    PreparedOwnerBoundResolution::ImplicitNominalBody {
+                        identity: Arc::new(evidence.clone()),
+                        body,
+                    },
+                )
+                .into(),
+            );
+            continue;
+        }
         let checked = seal_callable_seed(
             &topology,
             seed,
-            evidence,
+            evidence.clone(),
             expressions,
             &pipes,
             &callable_identities,
@@ -199,16 +216,10 @@ pub(super) fn seal(
             coordinates,
             structural_edges,
         )?;
-        let Some(PreparedExpressionFact::OwnerBound(prepared)) = expressions.get(&owner) else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        let (shell, _ty, effects) = prepared_shell_parts(prepared.shell(), owner)?;
         let (value, _) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if value.source_type().semantic_identity_digest()? != seed.function_type
-            || callables.insert(owner, checked.clone()).is_some()
-        {
+        if value.source_type().semantic_identity_digest()? != seed.function_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let mut published = CheckedExpression::typed_value(
@@ -266,7 +277,7 @@ pub(super) fn seal(
         else {
             continue;
         };
-        let callable = callables
+        let callable = callable_evidence
             .get(&parameter.callable())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         if parameter.parameter() != callable.parameter() {
@@ -682,7 +693,8 @@ fn seal_owner_bound_body(
                 value_type,
             )))
         }
-        PreparedOwnerBoundResolution::ImplicitCallable(_) => {
+        PreparedOwnerBoundResolution::ImplicitCallable(_)
+        | PreparedOwnerBoundResolution::ImplicitNominalBody { .. } => {
             Err(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
     }
@@ -773,6 +785,11 @@ fn prepare_callable_seed(
                     },
                 },
             )?;
+            let fact = if expression == owner {
+                prepared.body().expression()
+            } else {
+                fact
+            };
             super::free_capture::CheckedCaptureExpression::from_prepared(
                 expression,
                 fact,
@@ -785,7 +802,11 @@ fn prepare_callable_seed(
                 access,
             )
         },
-        |expression| match expressions.get(&expression) {
+        |expression| match if expression == owner {
+            Some(prepared.body().expression())
+        } else {
+            expressions.get(&expression)
+        } {
             Some(PreparedExpressionFact::ProjectRecord(record)) => {
                 Some(record.fields().iter().map(|field| field.source()).collect())
             }
@@ -890,9 +911,7 @@ fn seal_callable_seed(
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
 ) -> Result<CheckedImplicitCallable, FinalSemanticAnalysisError> {
     let body = match seed.body.expression() {
-        PreparedExpressionFact::Complete(body) => {
-            CheckedImplicitCallableBody::Plain(Box::new(body.resolution().clone()))
-        }
+        PreparedExpressionFact::Complete(body) => CheckedImplicitCallableBody::Plain(body.clone()),
         PreparedExpressionFact::OwnerBound(owner_bound) => {
             let resolution = seal_owner_bound_body(
                 topology,
@@ -908,7 +927,16 @@ fn seal_callable_seed(
             match resolution {
                 CheckedExpressionResolution::Try(tried) => CheckedImplicitCallableBody::Try(tried),
                 CheckedExpressionResolution::Pipe(pipe) => CheckedImplicitCallableBody::Pipe(pipe),
-                resolution => CheckedImplicitCallableBody::Plain(Box::new(resolution)),
+                resolution => {
+                    let (value, effects) = owner_bound
+                        .shell()
+                        .clone()
+                        .into_value_parts()
+                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                    CheckedImplicitCallableBody::Plain(CheckedExpression::typed_value(
+                        value, effects, resolution,
+                    ))
+                }
             }
         }
         _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),

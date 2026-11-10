@@ -373,7 +373,11 @@ impl RuntimeProjectFunctionExpressionPayload {
                     RuntimeImplicitCallableBodyFact::Try(tried) => {
                         tried.append_normalized_types(roots)
                     }
+                    RuntimeImplicitCallableBodyFact::NominalRecord(record) => {
+                        record.append_normalized_types(roots)
+                    }
                     RuntimeImplicitCallableBodyFact::Plain
+                    | RuntimeImplicitCallableBodyFact::Select(_)
                     | RuntimeImplicitCallableBodyFact::Pipe(_) => {}
                 }
             }

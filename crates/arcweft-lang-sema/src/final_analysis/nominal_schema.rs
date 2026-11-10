@@ -1596,6 +1596,7 @@ fn preseal_project_record_expressions(
     expressions
         .iter()
         .filter_map(|(owner, fact)| {
+            let fact = fact.implicit_body_expression().unwrap_or(fact);
             let PreparedExpressionFact::ProjectRecord(prepared) = fact else {
                 return None;
             };
@@ -1717,6 +1718,47 @@ fn seal_prepared_expression(
     FinalSemanticAnalysisError,
 > {
     match fact {
+        PreparedExpressionFact::OwnerBound(prepared)
+            if matches!(
+                prepared.resolution(),
+                super::PreparedOwnerBoundResolution::ImplicitNominalBody { .. }
+            ) =>
+        {
+            let (
+                shell,
+                super::PreparedOwnerBoundResolution::ImplicitNominalBody { identity, body },
+            ) = prepared.into_parts()
+            else {
+                unreachable!("matched nominal body")
+            };
+            let (body, fields) = seal_prepared_expression(
+                owner,
+                Arc::unwrap_or_clone(body),
+                context,
+                project_nominals,
+                sealed_record,
+            )?;
+            let body = body
+                .into_complete()
+                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let callable = Arc::unwrap_or_clone(identity)
+                .finalize(super::CheckedImplicitCallableBody::Plain(body))?;
+            let (value, effects) = shell
+                .into_value_parts()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            if value.source_type().semantic_identity_digest()? != callable.function_type() {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            Ok((
+                CheckedExpression::typed_value(
+                    value,
+                    effects,
+                    CheckedExpressionResolution::ImplicitCallable(Box::new(callable)),
+                )
+                .into(),
+                fields,
+            ))
+        }
         PreparedExpressionFact::CompileTimeScalar(prepared) => {
             let (shell, scalar, original) = prepared.into_parts();
             let (original, record_fields) = seal_prepared_expression(

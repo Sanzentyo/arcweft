@@ -1082,32 +1082,43 @@ impl Analyzer<'_, '_, '_> {
                     placeholders: placeholders.clone(),
                 });
             let body: Result<PreparedExpressionFact, E> = (|| {
-                Ok(
-                    match self.check_prepared_expression_kind(
+                let body = match self.check_prepared_expression_kind(
+                    context,
+                    module,
+                    owner,
+                    expression,
+                    &body_expectation,
+                )? {
+                    Some(
+                        body @ (PreparedExpressionFact::OwnerBound(_)
+                        | PreparedExpressionFact::ProjectField(_)
+                        | PreparedExpressionFact::ProjectRecord(_)),
+                    ) => body,
+                    Some(other) => {
+                        PreparedExpressionFact::from(other.into_complete().map_err(|_| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::WrongPayloadFamily,
+                            )
+                        })?)
+                    }
+                    None => PreparedExpressionFact::from(self.check_expression_kind::<E>(
                         context,
                         module,
                         owner,
                         expression,
                         &body_expectation,
-                    )? {
-                        Some(body @ PreparedExpressionFact::OwnerBound(_)) => body,
-                        Some(other) => {
-                            PreparedExpressionFact::from(other.into_complete().map_err(|_| {
-                                AnalyzerExpressionError::fatal(
-                                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                                )
-                            })?)
-                        }
-                        None => PreparedExpressionFact::from(self.check_expression_kind::<E>(
-                            context,
-                            module,
-                            owner,
-                            expression,
-                            &body_expectation,
-                            transaction_authority,
-                        )?),
-                    },
-                )
+                        transaction_authority,
+                    )?),
+                };
+                if matches!(
+                    &body,
+                    PreparedExpressionFact::ProjectField(_)
+                        | PreparedExpressionFact::ProjectRecord(_)
+                ) {
+                    self.record_implicit_capture_fact(owner, &body)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                }
+                Ok(body)
             })();
             let scope = self
                 .implicit_callable_stack

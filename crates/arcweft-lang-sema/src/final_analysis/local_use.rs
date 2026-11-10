@@ -2600,7 +2600,7 @@ impl<'a> LocalUseChecker<'a> {
         };
         let inputs = self
             .analysis
-            .checked_capture_inputs(owner)
+            .checked_body_capture_inputs(owner)
             .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
         for field in edges.record_fields() {
             match field.source() {
@@ -2670,7 +2670,7 @@ impl<'a> LocalUseChecker<'a> {
                 if matches!(
                     callable.body(),
                     super::CheckedImplicitCallableBody::Plain(body)
-                        if matches!(body.as_ref(), CheckedExpressionResolution::ImplicitParameter(_))
+                        if matches!(body.resolution(), CheckedExpressionResolution::ImplicitParameter(_))
                 ) =>
             {
                 self.use_synthetic(

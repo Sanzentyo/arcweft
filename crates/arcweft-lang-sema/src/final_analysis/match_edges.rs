@@ -755,6 +755,9 @@ impl CheckedStructuralEdgeDraft {
             if checked_owner.checked_call_site(owner).is_some() {
                 call_owners.insert(owner);
             }
+            let record_owner = checked_owner
+                .implicit_body_expression()
+                .unwrap_or(checked_owner);
             let mut record = None;
             match (
                 matches!(
@@ -762,12 +765,12 @@ impl CheckedStructuralEdgeDraft {
                     HirExprKind::Record(_) | HirExprKind::RecordLiteral(_)
                 ),
                 matches!(
-                    checked_owner,
+                    record_owner,
                     super::PreparedExpressionFact::ProjectRecord(_)
                 ),
             ) {
                 (true, true) => {
-                    let super::PreparedExpressionFact::ProjectRecord(prepared) = checked_owner
+                    let super::PreparedExpressionFact::ProjectRecord(prepared) = record_owner
                     else {
                         unreachable!()
                     };

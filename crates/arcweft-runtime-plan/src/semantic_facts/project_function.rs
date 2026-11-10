@@ -963,6 +963,8 @@ pub enum RuntimeProjectFunctionExpressionPayload {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeImplicitCallableBodyFact {
     Plain,
+    Select(RuntimeResolvedSelect),
+    NominalRecord(Box<RuntimeRecordExpressionFact>),
     Call(Box<RuntimeResolvedCall>),
     Try(RuntimeTryFact),
     Pipe(RuntimePipeFact),
@@ -2247,7 +2249,11 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
 
     pub fn select(&self, owner: ExprId) -> Option<&RuntimeResolvedSelect> {
         match self.expression(owner)?.payload() {
-            RuntimeProjectFunctionExpressionPayload::Select(value) => Some(value),
+            RuntimeProjectFunctionExpressionPayload::Select(value)
+            | RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
+                body: RuntimeImplicitCallableBodyFact::Select(value),
+                ..
+            } => Some(value),
             _ => None,
         }
     }
@@ -2255,6 +2261,10 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn nominal_record(&self, owner: ExprId) -> Option<&RuntimeRecordExpressionFact> {
         match self.expression(owner)?.payload() {
             RuntimeProjectFunctionExpressionPayload::NominalRecord(value) => Some(value),
+            RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
+                body: RuntimeImplicitCallableBodyFact::NominalRecord(value),
+                ..
+            } => Some(value),
             _ => None,
         }
     }

@@ -306,7 +306,10 @@ impl CheckedCaptureExpression {
             )?;
             value.descends = false;
         }
-        for field in record_fields {
+        for field in record_fields
+            .iter()
+            .filter(|_| value.record_sources.is_some())
+        {
             if let CheckedRecordValueSource::Binding(source) = field.source() {
                 value.sources.push(CheckedLocalInputSource {
                     site: CheckedLocalUseSite::RecordField {
@@ -720,6 +723,31 @@ impl super::FinalSemanticAnalysis {
         let checked = self
             .expression(owner)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+        self.capture_inputs_for(owner, checked)
+    }
+
+    pub(super) fn checked_body_capture_inputs(
+        &self,
+        owner: ExprId,
+    ) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError> {
+        let checked = self
+            .expression(owner)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+        let body = match checked.resolution() {
+            CheckedExpressionResolution::ImplicitCallable(callable) => match callable.body() {
+                super::CheckedImplicitCallableBody::Plain(body) => body,
+                _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+            },
+            _ => checked,
+        };
+        self.capture_inputs_for(owner, body)
+    }
+
+    fn capture_inputs_for(
+        &self,
+        owner: ExprId,
+        checked: &CheckedExpression,
+    ) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError> {
         if let CheckedExpressionResolution::Closure(closure) = checked.resolution() {
             for capture in closure.captures() {
                 let capture_type = self

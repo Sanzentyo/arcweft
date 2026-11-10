@@ -1075,7 +1075,7 @@ fn expression_resolution_matches(
         (kind, CheckedExpressionResolution::ImplicitCallable(callable)) => {
             match callable.body() {
                 CheckedImplicitCallableBody::Plain(resolution) => {
-                    expression_resolution_matches(kind, resolution)
+                    expression_resolution_matches(kind, resolution.resolution())
                 }
                 CheckedImplicitCallableBody::Try(_) => matches!(kind, HirExprKind::Try(_)),
                 CheckedImplicitCallableBody::Pipe(pipe) => matches!(
@@ -2121,7 +2121,7 @@ fn validate_implicit_callable(
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
         let (resolution, type_matches) = if placeholder == owner {
             let resolution = match callable.body() {
-                CheckedImplicitCallableBody::Plain(resolution) => resolution.as_ref(),
+                CheckedImplicitCallableBody::Plain(resolution) => resolution.resolution(),
                 CheckedImplicitCallableBody::Try(_) | CheckedImplicitCallableBody::Pipe(_) => {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
@@ -2163,7 +2163,7 @@ fn validate_implicit_callable(
             expressions,
             owner,
             callable.result(),
-            resolution,
+            resolution.resolution(),
             structural_edges,
             coordinates,
         ),

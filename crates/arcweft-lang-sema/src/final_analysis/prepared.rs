@@ -203,6 +203,10 @@ impl PreparedMethodExpression {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedOwnerBoundResolution {
     ImplicitCallable(PreparedImplicitCallable),
+    ImplicitNominalBody {
+        identity: Arc<super::CheckedImplicitCallableIdentityEvidence>,
+        body: Arc<PreparedExpressionFact>,
+    },
     ImplicitParameter(PreparedImplicitParameter),
     Pipe(PreparedPipe),
     PipeLeft(PreparedPipeLeft),
@@ -225,7 +229,10 @@ impl PreparedImplicitCallableBody {
     ) -> Result<Self, super::FinalSemanticAnalysisError> {
         if !matches!(
             expression,
-            PreparedExpressionFact::Complete(_) | PreparedExpressionFact::OwnerBound(_)
+            PreparedExpressionFact::Complete(_)
+                | PreparedExpressionFact::OwnerBound(_)
+                | PreparedExpressionFact::ProjectField(_)
+                | PreparedExpressionFact::ProjectRecord(_)
         ) {
             return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);
         }
@@ -237,6 +244,14 @@ impl PreparedImplicitCallableBody {
 
     pub(super) fn expression(&self) -> &PreparedExpressionFact {
         &self.expression
+    }
+
+    pub(super) fn nominal_expression(&self) -> Option<Arc<PreparedExpressionFact>> {
+        matches!(
+            self.expression(),
+            PreparedExpressionFact::ProjectField(_) | PreparedExpressionFact::ProjectRecord(_)
+        )
+        .then(|| Arc::clone(&self.expression))
     }
 
     pub(super) const fn value_results(&self) -> &[super::model::CallableResultSource] {
@@ -510,6 +525,10 @@ impl PreparedOwnerBoundExpression {
         &self.resolution
     }
 
+    pub(super) fn into_parts(self) -> (PreparedExpressionShell, PreparedOwnerBoundResolution) {
+        (self.shell, self.resolution)
+    }
+
     pub(crate) const fn value_type(&self) -> Option<&TypeKind> {
         self.shell.value_type()
     }
@@ -528,7 +547,8 @@ impl PreparedOwnerBoundExpression {
                 .expression()
                 .complete()
                 .and_then(|body| body.resolution().checked_call_site(owner)),
-            PreparedOwnerBoundResolution::ImplicitParameter(_)
+            PreparedOwnerBoundResolution::ImplicitNominalBody { .. }
+            | PreparedOwnerBoundResolution::ImplicitParameter(_)
             | PreparedOwnerBoundResolution::Pipe(_)
             | PreparedOwnerBoundResolution::PipeLeft(_)
             | PreparedOwnerBoundResolution::Try(_) => None,
@@ -545,6 +565,9 @@ impl PreparedOwnerBoundExpression {
                 visitor(callable.parameter())?;
                 visitor(callable.result())?;
                 callable.body().expression().visit_types(visitor)
+            }
+            PreparedOwnerBoundResolution::ImplicitNominalBody { body, .. } => {
+                body.visit_types(visitor)
             }
             PreparedOwnerBoundResolution::ImplicitParameter(parameter) => {
                 visitor(parameter.parameter())
@@ -1055,6 +1078,19 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(super) fn implicit_body_expression(&self) -> Option<&Self> {
+        let Self::OwnerBound(value) = self else {
+            return None;
+        };
+        match value.resolution() {
+            PreparedOwnerBoundResolution::ImplicitCallable(callable) => {
+                Some(callable.body().expression())
+            }
+            PreparedOwnerBoundResolution::ImplicitNominalBody { body, .. } => Some(body),
+            _ => None,
+        }
+    }
+
     pub(super) fn implicit_callable(&self) -> Option<&PreparedImplicitCallable> {
         let Self::OwnerBound(value) = self else {
             return None;
@@ -1435,6 +1471,7 @@ impl PreparedExpressionFact {
             Self::OwnerBound(value) => matches!(
                 value.resolution(),
                 PreparedOwnerBoundResolution::ImplicitCallable(_)
+                    | PreparedOwnerBoundResolution::ImplicitNominalBody { .. }
             ),
             Self::CompileTimeScalar(value) => value.original().creates_implicit_callable(),
             _ => matches!(

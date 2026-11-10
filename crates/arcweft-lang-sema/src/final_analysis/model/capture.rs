@@ -114,7 +114,7 @@ impl CheckedImplicitCallableIdentity {
 /// callable body is closed.  This is the transaction's phase-one result: it
 /// carries the complete identity inputs, but no provisional expression
 /// resolution and no final callable publication.
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedImplicitCallableIdentityEvidence {
     topology: Arc<HirProjectEvaluationTopology>,
     lookup_owner: ExprId,
@@ -177,6 +177,16 @@ impl CheckedImplicitCallableIdentityEvidence {
         self.identity
     }
 
+    pub(in crate::final_analysis) const fn parameter(&self) -> &TypeKind {
+        &self.parameter
+    }
+
+    pub(in crate::final_analysis) const fn parameter_occurrences(
+        &self,
+    ) -> &[CheckedImplicitParameterOccurrence] {
+        &self.parameter_occurrences
+    }
+
     pub(crate) fn finalize(
         self,
         body: CheckedImplicitCallableBody,
@@ -207,7 +217,7 @@ impl CheckedImplicitCallableIdentityEvidence {
 /// kept in the third, exhaustive branch.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedImplicitCallableBody {
-    Plain(Box<CheckedExpressionResolution>),
+    Plain(CheckedExpression),
     Try(CheckedTry),
     Pipe(CheckedPipe),
 }
@@ -659,6 +669,7 @@ impl CheckedImplicitCallable {
         &mut self,
         owner: ExprId,
         source: &TypeKind,
+        effects: crate::effects::EffectSet,
         resolution: CheckedExpressionResolution,
     ) -> Result<(), crate::callable::CallConstraintInvariant> {
         let CheckedImplicitCallableBody::Plain(body) = &mut self.body else {
@@ -666,12 +677,14 @@ impl CheckedImplicitCallable {
         };
         if self.lookup_owner != owner
             || (&self.result != source && *source != TypeKind::Never)
-            || body.checked_call_site(owner).is_none()
-            || body.checked_call_site(owner) != resolution.checked_call_site(owner)
+            || body.resolution().checked_call_site(owner).is_none()
+            || body.resolution().checked_call_site(owner) != resolution.checked_call_site(owner)
         {
             return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
-        **body = resolution;
+        *body = body
+            .clone()
+            .with_sealed_value(source.clone(), effects, resolution)?;
         Ok(())
     }
 
@@ -700,7 +713,7 @@ impl CheckedImplicitCallable {
         visitor(self.parameter())?;
         visitor(self.result())?;
         match self.body() {
-            CheckedImplicitCallableBody::Plain(resolution) => resolution.visit_types(visitor),
+            CheckedImplicitCallableBody::Plain(body) => body.visit_types(visitor),
             CheckedImplicitCallableBody::Try(tried) => tried.visit_types(visitor),
             CheckedImplicitCallableBody::Pipe(_) => Ok(()),
         }
@@ -748,6 +761,10 @@ impl CheckedImplicitCallable {
                         },
                     },
                 )?;
+                let fact = match (expression == self.lookup_owner, &self.body) {
+                    (true, CheckedImplicitCallableBody::Plain(body)) => body,
+                    _ => fact,
+                };
                 let fields = record_fields(expression)
                     .ok_or(crate::final_analysis::FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 super::super::free_capture::CheckedCaptureExpression::from_checked(
@@ -791,7 +808,7 @@ impl CheckedImplicitCallable {
                     let CheckedImplicitCallableBody::Plain(body) = &self.body else {
                         return None;
                     };
-                    body.as_ref()
+                    body.resolution()
                 } else {
                     expressions.get(&owner)?.resolution()
                 };

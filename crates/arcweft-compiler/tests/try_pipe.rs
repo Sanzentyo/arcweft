@@ -196,6 +196,28 @@ fn handoff(callback: (i64 -> i64 effects {})) -> (i64 -> i64 effects {}) {
 }
 
 #[test]
+fn implicit_callable_nominal_bodies_preserve_fields_and_captures() {
+    let definitions = r#"
+struct Boxed<T> { value: T, offset: i64 }
+fn wrap<T>(value: T, offset: i64) -> Boxed<T> {
+    let make: (T -> Boxed<T> effects {}) = Boxed { offset, value = _ };
+    make(value)
+}
+fn read<T>(record: Boxed<T>) -> T {
+    let field: (Boxed<T> -> T effects {}) = _.value;
+    field(record)
+}
+"#;
+    for flow in [
+        "flow main() -> i64 { let make: (i64 -> Boxed<i64> effects {}) = Boxed { value = _, offset = 2i64 }; let get: (Boxed<i64> -> i64 effects {}) = _.value; let record = make(42i64); return get(record) }",
+        "flow main() -> i64 { let result = wrap(|n: i64| n + 1i64, 1i64); let callback = read(result); return callback(41i64) }",
+        "flow main() -> i64 { let result = wrap(40i64, 2i64); let get: (Boxed<i64> -> i64 effects {}) = _.offset; return read(result) + get(result) }",
+    ] {
+        assert_case(definitions, flow, RuntimeValue::i64(42), "42");
+    }
+}
+
+#[test]
 fn an_implicit_call_body_can_diverge_under_a_contextual_return_type() {
     compile_source(
         r#"

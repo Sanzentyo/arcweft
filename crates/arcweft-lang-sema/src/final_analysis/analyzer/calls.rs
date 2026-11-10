@@ -4544,6 +4544,11 @@ impl Analyzer<'_, '_, '_> {
             let fact = self.facts.expressions().get(&expression).ok_or_else(|| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
+            let fact = if *owner == expression {
+                fact.implicit_body_expression().unwrap_or(fact)
+            } else {
+                fact
+            };
             let inputs = super::super::free_capture::CheckedCaptureExpression::from_prepared(
                 expression,
                 fact,
@@ -4564,9 +4569,15 @@ impl Analyzer<'_, '_, '_> {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
                 })?;
             let order = input
-                .source_order(&self.topology, |owner| {
-                    match self.facts.expressions().get(&owner) {
-                        Some(super::PreparedExpressionFact::ProjectRecord(record)) => {
+                .source_order(&self.topology, |record_owner| {
+                    let fact = self.facts.expressions().get(&record_owner)?;
+                    let fact = if *owner == record_owner {
+                        fact.implicit_body_expression().unwrap_or(fact)
+                    } else {
+                        fact
+                    };
+                    match fact {
+                        super::PreparedExpressionFact::ProjectRecord(record) => {
                             Some(record.fields().iter().map(|field| field.source()).collect())
                         }
                         _ => None,

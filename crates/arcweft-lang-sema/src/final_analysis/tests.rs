@@ -1819,6 +1819,45 @@ fn safe_lifetime_promotion_follows_implicit_callable_results() {
 }
 
 #[test]
+fn safe_lifetime_promotion_checks_nominal_implicit_callable_storage() {
+    let callback = "(i64 -> i64 effects {})";
+    for (operation, argument, borrowed) in [
+        (
+            format!("let wrap: ({callback} -> Boxed effects {{}}) = Boxed {{ callback = _ }};"),
+            "wrap(borrowed)",
+            true,
+        ),
+        (
+            format!("let wrap: ({callback} -> Boxed effects {{}}) = Boxed {{ callback = _ }};"),
+            "wrap(owned)",
+            false,
+        ),
+        (
+            format!("let read_field: (Boxed -> {callback} effects {{}}) = _.callback;"),
+            "read_field(Boxed { callback = borrowed })",
+            true,
+        ),
+        (
+            format!("let read_field: (Boxed -> {callback} effects {{}}) = _.callback;"),
+            "read_field(Boxed { callback = owned })",
+            false,
+        ),
+    ] {
+        let source = format!(
+            "struct Boxed {{ callback: {callback} }}
+            flow main(loan: &i64) {{
+                let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                let owned = |n: i64| -> i64 {{ n }};
+                {operation}
+                let packed = {argument};
+                let _ = packed.promote('flow);
+            }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "packed", borrowed);
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload() {
     let callback = "(i64 -> i64 effects {})";
     let carrier = format!("Result<{callback}, {callback}>");

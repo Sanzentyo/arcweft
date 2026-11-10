@@ -2857,7 +2857,7 @@ fn write_resolution_payload(
                     write_complete_resolution_payload(
                         hasher,
                         owner,
-                        resolution,
+                        resolution.resolution(),
                         Some(callable.result()),
                         coordinates,
                         analysis,
