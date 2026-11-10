@@ -49,6 +49,7 @@ use super::{
     ProbeComparisonOperator, PromotionCallableId, ResolvedCharacterOwner, ResultConstructorKind,
     SignatureOrigin, StageMethodId, StdFloatCallableId, StdFloatOperation,
     TypeReceiverInstantiation, VariantPayloadRequirement, VectorDimensions,
+    schema::CallableGroupTransition,
 };
 
 const RESOLVED_CALLABLE_DOMAIN: &[u8] = b"arcweft.lang.resolved-callable.v1\0";
@@ -720,18 +721,12 @@ impl ResolvedCallableBase {
         self.instantiation.visit_types(visitor)
     }
 
-    pub(crate) fn next_group_for(&self, current: CallableGroupIndex) -> Option<CallableGroupIndex> {
-        let next = CallableGroupIndex::try_from_usize(current.get().checked_add(1)?).ok()?;
-        self.schema()
-            .group(next)
-            .is_some()
-            .then_some(next)
-            .filter(|next| {
-                !matches!(
-                    self.instantiation(),
-                    ResolvedCallableBaseInstantiation::Extension { group, .. } if group == next
-                )
-            })
+    fn complete_group(&self, current: CallableGroupIndex) -> Option<CallableGroupTransition> {
+        let receiver = match self.instantiation() {
+            ResolvedCallableBaseInstantiation::Extension { group, .. } => Some(*group),
+            _ => None,
+        };
+        self.schema().complete_group(current, receiver)
     }
 
     /// Builds the canonical projected callable type from this checked base.
@@ -762,37 +757,25 @@ impl ResolvedCallableBase {
             .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
     }
 
-    fn result_schema_for_group(
+    fn result_schema_after_group(
         &self,
-        current: CallableGroupIndex,
+        transition: CallableGroupTransition,
         solution: &FrozenCallTypeSolution,
         terminal_effects: &EffectRow,
         inferred_result_schema: Option<&CallableResultSchema>,
     ) -> Result<CallableResultSchema, CallConstraintInvariant> {
-        let next = CallableGroupIndex::try_from_usize(
-            current
-                .get()
-                .checked_add(1)
-                .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?,
-        )
-        .map_err(|_| CallConstraintInvariant::PreparedGroupMismatch)?;
-        if matches!(
-            self.instantiation(),
-            ResolvedCallableBaseInstantiation::Extension { group, .. } if *group == next
-        ) || self.schema().group(next).is_none()
-        {
-            return match inferred_result_schema.unwrap_or_else(|| self.schema().result_schema()) {
+        match transition.next() {
+            None => match inferred_result_schema.unwrap_or_else(|| self.schema().result_schema()) {
                 CallableResultSchema::Value(result) => solution
                     .instantiate_result(result)
                     .map(CallableResultSchema::Value),
                 CallableResultSchema::ContentEmission(operation) => {
                     Ok(CallableResultSchema::ContentEmission(*operation))
                 }
-            };
-        } else {
-            return remaining_function_type(self.schema(), next, terminal_effects)
+            },
+            Some(next) => remaining_function_type(self.schema(), next, terminal_effects)
                 .and_then(|result| solution.instantiate_result(&result))
-                .map(CallableResultSchema::Value);
+                .map(CallableResultSchema::Value),
         }
     }
 }
@@ -2329,7 +2312,7 @@ impl CheckedCallExecutionProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCallApplicationCore {
     site: CheckedCallApplicationSite,
-    current_group: CallableGroupIndex,
+    transition: CallableGroupTransition,
     candidates: CheckedCandidateInventory,
     consumer: CheckedCallConsumerAdmission,
     solution: Arc<FrozenCallTypeSolution>,
@@ -2341,13 +2324,12 @@ pub struct CheckedCallApplicationCore {
 
 pub(crate) struct CheckedCallApplicationCoreSeal<'a> {
     pub(crate) site: CheckedCallApplicationSite,
-    pub(crate) current_group: CallableGroupIndex,
+    pub(crate) transition: CallableGroupTransition,
     pub(crate) candidates: CheckedCandidateInventory,
     pub(crate) consumer: CheckedCallConsumerAdmissionSeal,
     pub(crate) solution: Arc<FrozenCallTypeSolution>,
     pub(crate) callee: CheckedCallCalleeExecution,
     pub(crate) execution: CheckedCallExecutionProjectionSeal,
-    pub(crate) effects: EffectRow,
     pub(crate) terminal_effects: &'a EffectRow,
 }
 
@@ -2412,7 +2394,7 @@ impl CheckedCallConsumerAdmission {
     fn seal(
         input: CheckedCallConsumerAdmissionSeal,
         selected: &ResolvedCallable,
-        current_group: CallableGroupIndex,
+        transition: CallableGroupTransition,
         solution: &FrozenCallTypeSolution,
         terminal_effects: &EffectRow,
     ) -> Result<Self, CallConstraintInvariant> {
@@ -2420,8 +2402,8 @@ impl CheckedCallConsumerAdmission {
             CheckedCallConsumerAdmissionSeal::Ordinary => Ok(Self::Ordinary),
             CheckedCallConsumerAdmissionSeal::ViewFxProducer { runtime_parameters } => {
                 let result_is_fx = matches!(
-                    selected.base().result_schema_for_group(
-                        current_group,
+                    selected.base().result_schema_after_group(
+                        transition,
                         solution,
                         terminal_effects,
                         None,
@@ -2465,7 +2447,7 @@ impl CheckedCallConsumerAdmission {
                         _ => matches!(selected.id(), CallableCandidateId::Project(_))
                             && result_is_fx,
                     };
-                    if coordinate.group() != current_group
+                    if coordinate.group() != transition.current()
                         || previous.is_some_and(|previous| previous >= *coordinate)
                         || parameter.consumer() != &CallableParameterConsumer::Value
                         || canonical_expected != *expected
@@ -2508,32 +2490,40 @@ impl CheckedCallApplicationCore {
         input: CheckedCallApplicationCoreSeal<'_>,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
         let selected = input.candidates.selected();
+        let transition = input.transition;
+        let current = transition.current();
         if input.solution.base() != selected.base().digest()
             || input.solution.schema() != selected.schema().semantic_digest()
-            || input.solution.completed_group() != input.current_group
-            || selected.call_group() != input.current_group
+            || input.solution.completed_group() != current
+            || selected.call_group() != current
         {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
         validate_callee(&input.callee, selected)?;
+        if selected.base().complete_group(current) != Some(transition) {
+            return Err(CallConstraintInvariant::PreparedGroupMismatch);
+        }
+        let effects = if selected.id().is_flow_transfer() || transition.next().is_some() {
+            EffectRow::closed(crate::effects::EffectSet::new())
+        } else {
+            input
+                .solution
+                .specialize_effect_row(input.terminal_effects)?
+        };
         if let Some(fixed) = selected.schema().effects().fixed_row() {
-            let expected = if selected
-                .base()
-                .next_group_for(input.current_group)
-                .is_some()
-            {
+            let expected = if transition.next().is_some() {
                 EffectRow::closed(crate::effects::EffectSet::new())
             } else {
                 input.solution.specialize_effect_row(fixed)?
             };
-            if expected != input.effects {
+            if expected != effects {
                 return Err(CallConstraintInvariant::PreparedSchemaMismatch);
             }
         }
         let consumer = CheckedCallConsumerAdmission::seal(
             input.consumer,
             selected,
-            input.current_group,
+            transition,
             &input.solution,
             input.terminal_effects,
         )?;
@@ -2542,12 +2532,12 @@ impl CheckedCallApplicationCore {
             selected,
             &consumer,
             &input.solution,
-            input.current_group,
+            current,
             &input.site,
         )?;
         let mut encoder = CheckedCallCanonicalEncoder::new(APPLICATION_CORE_DOMAIN);
         encoder.digest(input.candidates.digest().as_bytes());
-        encoder.index(input.current_group.get())?;
+        encoder.index(current.get())?;
         encoder.digest(input.solution.digest().as_bytes());
         match &consumer {
             CheckedCallConsumerAdmission::Ordinary => encoder.tag(0),
@@ -2575,17 +2565,17 @@ impl CheckedCallApplicationCore {
             execution.attached_content(),
             execution.attached_content_abi_type.as_ref(),
         )?;
-        encoder.effect_row(&input.effects)?;
+        encoder.effect_row(&effects)?;
         let digest = CheckedCallApplicationCoreDigest(encoder.finish());
         Ok(Arc::new(Self {
             site: input.site,
-            current_group: input.current_group,
+            transition,
             candidates: input.candidates,
             consumer,
             solution: input.solution,
             callee: input.callee,
             execution,
-            effects: input.effects,
+            effects,
             digest,
         }))
     }
@@ -2605,7 +2595,10 @@ impl CheckedCallApplicationCore {
         self.site.coordinate()
     }
     pub const fn current_group(&self) -> CallableGroupIndex {
-        self.current_group
+        self.transition.current()
+    }
+    pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
+        self.transition.next()
     }
     pub const fn candidates(&self) -> &CheckedCandidateInventory {
         &self.candidates
@@ -2631,7 +2624,7 @@ impl CheckedCallApplicationCore {
             .candidates
             .selected()
             .schema()
-            .attached_content_for_group(self.current_group);
+            .attached_content_for_group(self.current_group());
         self.execution.runtime_operands(attached)
     }
     /// Returns the exact normalized type receiver only for the sealed direct
@@ -2690,13 +2683,13 @@ pub struct CheckedCallContinuation {
 impl CheckedCallContinuation {
     fn seal_from_core(
         core: &Arc<CheckedCallApplicationCore>,
-        next_group: CallableGroupIndex,
         function_type: TypeKind,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
         let base = Arc::clone(core.candidates().selected().base());
-        if base.next_group_for(core.current_group()) != Some(next_group)
-            || !matches!(function_type, TypeKind::Function { .. })
-        {
+        let next_group = core
+            .next_group()
+            .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)?;
+        if !matches!(function_type, TypeKind::Function { .. }) {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
         let mut encoder = CheckedCallCanonicalEncoder::new(CONTINUATION_DOMAIN);
@@ -3019,13 +3012,13 @@ impl CheckedCallApplication {
         selected_display_witness: Option<CheckedDisplayWitness>,
     ) -> Result<Self, CallConstraintInvariant> {
         let base = core.candidates().selected().base();
-        let projected = base.result_schema_for_group(
-            core.current_group(),
+        let projected = base.result_schema_after_group(
+            core.transition,
             core.solution(),
             terminal_effects,
             inferred_result_schema,
         )?;
-        let result = match (base.next_group_for(core.current_group()), expected) {
+        let result = match (core.next_group(), expected) {
             (None, CheckedCallResultSeal::Value { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {
                 if !core.solution().deferred().is_empty()
@@ -3048,13 +3041,13 @@ impl CheckedCallApplication {
                 }
                 CheckedCallResult::ContentEmission(operation)
             }
-            (Some(next), CheckedCallResultSeal::Continuation { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
+            (Some(_), CheckedCallResultSeal::Continuation { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {
                 let CallableResultSchema::Value(projected) = projected else {
                     return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
                 };
                 CheckedCallResult::Continuation(CheckedCallContinuation::seal_from_core(
-                    &core, next, projected,
+                    &core, projected,
                 )?)
             }
             _ => return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch),

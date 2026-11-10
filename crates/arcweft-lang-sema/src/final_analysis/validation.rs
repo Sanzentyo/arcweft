@@ -799,10 +799,7 @@ pub(super) fn validate_expressions(
                 || application.core().application_site() != effect.application()
                 || application.digest() != effect.application_digest()
                 || selected.schema().evaluated_effect() != Some(effect.disposition())
-                || selected
-                    .base()
-                    .next_group_for(application.core().current_group())
-                    .is_some()
+                || application.core().next_group().is_some()
                 || !matches!(application.result(), CheckedCallResult::Value(_))
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);

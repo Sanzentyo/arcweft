@@ -25,7 +25,7 @@ pub(crate) use constraints::{
 
 use semantics::select_prepared_candidates;
 pub(super) use semantics::{
-    checked_project_nominal, final_call_effects, final_callable_effect_row, final_callable_effects,
+    checked_project_nominal, final_callable_effect_row, final_callable_effects,
     nominal_substitutions,
 };
 

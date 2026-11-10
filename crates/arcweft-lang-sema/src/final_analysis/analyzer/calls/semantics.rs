@@ -95,8 +95,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         transaction: &PreparedCallApplicationTransaction,
     ) -> Result<EffectSet, FinalSemanticAnalysisError> {
-        let mut effects = self
-            .source_call_intrinsic_effects(transaction.candidate(), transaction.current_group())?;
+        let mut effects = self.source_call_intrinsic_effects(transaction.application())?;
         if let Some(argument) = transaction.registry_drop_argument() {
             let module = self.module(owner.module())?;
             let resolve = |expression| {
@@ -128,10 +127,10 @@ impl Analyzer<'_, '_, '_> {
     /// An unknown fixed/detached row has no such deferred authority.
     fn source_call_intrinsic_effects(
         &self,
-        candidate: &PreparedResolvedCallable,
-        current_group: CallableGroupIndex,
+        application: &crate::callable::PreparedCallableApplication,
     ) -> Result<EffectSet, FinalSemanticAnalysisError> {
-        if candidate.id().is_flow_transfer() || candidate.next_group_for(current_group).is_some() {
+        let candidate = application.selected();
+        if candidate.id().is_flow_transfer() || application.next_group().is_some() {
             return Ok(EffectSet::new());
         }
         let terminal_effects = self.source_callable_terminal_effects(candidate)?;
@@ -257,18 +256,6 @@ pub(in super::super) fn final_callable_effect_row<'a>(
         .cloned()
         .map(Cow::Owned)
         .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
-}
-
-pub(in super::super) fn final_call_effects(
-    candidate: &ResolvedCallable,
-    current_group: CallableGroupIndex,
-    checked: &CheckedCallableCatalog,
-) -> Result<EffectRow, FinalSemanticAnalysisError> {
-    if candidate.id().is_flow_transfer() || candidate.base().next_group_for(current_group).is_some()
-    {
-        return Ok(EffectRow::closed(EffectSet::new()));
-    }
-    final_callable_effects(candidate, checked)
 }
 
 pub(super) fn select_prepared_candidates(

@@ -20,16 +20,16 @@ use super::{
     CallConstraintInvariant, CallableGroupIndex, CallableResultSchema,
     CallableSignatureSchemaDigest, CallableTerminalEffectProjection,
     DetachedPreparedResolvedCallable, PreparedResolvedCallable,
-    PreparedResolvedCallableDetachArena,
+    PreparedResolvedCallableDetachArena, schema::CallableGroupTransition,
 };
 
-/// One selected callable together with the exact completed group and lower
+/// One selected callable together with the exact group transition and lower
 /// solution that produced it.  This is intentionally move-only: a selected
 /// application is transferred from the candidate runner into the prepared
 /// call graph and is never reconstructed from a public triplet.
 pub(crate) struct PreparedCallableApplication {
     selected: Arc<PreparedResolvedCallable>,
-    completed_group: CallableGroupIndex,
+    transition: CallableGroupTransition,
     solution: Arc<TypeConstraintSolution>,
     result: CallableResultSchema,
 }
@@ -61,7 +61,7 @@ pub(crate) enum PreparedCallableApplicationReplayMismatch {
     #[error("selected callable differs")]
     SelectedCallable,
     #[error("completed group differs")]
-    CompletedGroup,
+    GroupTransition,
     #[error("constraint solution differs")]
     Solution,
     #[error("projected application result differs")]
@@ -74,6 +74,7 @@ pub(crate) enum PreparedCallableApplicationReplayMismatch {
 /// can recompute it from the frozen checked-catalog row.
 pub(crate) struct DetachedPreparedCallableApplication {
     selected: DetachedPreparedResolvedCallable,
+    transition: CallableGroupTransition,
     solution: super::checked_application::FrozenCallTypeSolutionSeed,
 }
 
@@ -82,9 +83,10 @@ impl DetachedPreparedCallableApplication {
         self,
     ) -> (
         DetachedPreparedResolvedCallable,
+        CallableGroupTransition,
         super::checked_application::FrozenCallTypeSolutionSeed,
     ) {
-        (self.selected, self.solution)
+        (self.selected, self.transition, self.solution)
     }
 }
 
@@ -103,9 +105,9 @@ impl PreparedCallableApplication {
         if selected.schema().group(completed_group).is_none() {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
-        let declared = selected
-            .result_schema_for_group(completed_group, terminal_effects)?
-            .into_ready()?;
+        let (transition, declared) =
+            selected.project_group_result(completed_group, terminal_effects)?;
+        let declared = declared.into_ready()?;
         let result = match declared {
             CallableResultSchema::Value(value) => {
                 CallableResultSchema::Value(solution.apply_result_template(&value)?)
@@ -116,7 +118,7 @@ impl PreparedCallableApplication {
         };
         Ok(Self {
             selected,
-            completed_group,
+            transition,
             solution,
             result,
         })
@@ -130,8 +132,12 @@ impl PreparedCallableApplication {
         &self.selected
     }
 
-    pub(crate) fn completed_group(&self) -> CallableGroupIndex {
-        self.completed_group
+    pub(crate) const fn completed_group(&self) -> CallableGroupIndex {
+        self.transition.current()
+    }
+
+    pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
+        self.transition.next()
     }
 
     pub(super) fn schema(&self) -> CallableSignatureSchemaDigest {
@@ -277,8 +283,8 @@ impl PreparedCallableApplication {
         if !self.selected.replay_eq(&other.selected) {
             return Some(PreparedCallableApplicationReplayMismatch::SelectedCallable);
         }
-        if self.completed_group != other.completed_group {
-            return Some(PreparedCallableApplicationReplayMismatch::CompletedGroup);
+        if self.transition != other.transition {
+            return Some(PreparedCallableApplicationReplayMismatch::GroupTransition);
         }
         if self.solution != other.solution {
             return Some(PreparedCallableApplicationReplayMismatch::Solution);
@@ -298,7 +304,7 @@ impl PreparedCallableApplication {
     ) -> Result<DetachedPreparedCallableApplication, CallConstraintInvariant> {
         let Self {
             selected,
-            completed_group,
+            transition,
             solution,
             result: _,
         } = self;
@@ -306,9 +312,10 @@ impl PreparedCallableApplication {
         let selected = arena.detach(selected)?;
         Ok(DetachedPreparedCallableApplication {
             selected,
+            transition,
             solution: super::checked_application::FrozenCallTypeSolutionSeed::from_prepared(
                 schema,
-                completed_group,
+                transition.current(),
                 solution,
             ),
         })

@@ -1026,12 +1026,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 self.graph.validate_prefix(prefix)?;
                 let application = prefix.application();
                 let sealed_result = application.result_schema()?;
-                if *result != sealed_result
-                    || application
-                        .selected()
-                        .next_group_for(application.completed_group())
-                        .is_some()
-                {
+                if *result != sealed_result || application.next_group().is_some() {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 }
                 let Some(sealed_result) = sealed_result.value_type() else {
@@ -1727,7 +1722,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         let selected = application.selected();
         self.validate_prepared_candidate_ancestry(selected)?;
         let result = application.result_schema()?;
-        let next_group = selected.next_group_for(completed_group);
+        let next_group = application.next_group();
         let function_type = if next_group.is_some() {
             Some(application.function_type()?)
         } else {
@@ -1936,8 +1931,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
         let parent_next = parent_application
-            .selected()
-            .next_group_for(parent_application.completed_group())
+            .next_group()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
         if selected.call_group() != parent_next {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
@@ -1987,7 +1981,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         let result = application.result_schema()?;
-        let next_group = selected.next_group_for(application.completed_group());
+        let next_group = application.next_group();
         match &node.payload {
             PreparedCallNodePayload::SelectedContinuation(_) => {
                 let function_type = application.function_type()?;
@@ -2063,8 +2057,8 @@ impl<P, U> PreparedCallGraph<P, U> {
         if !application.base_matches(candidate) {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
-        let expected_next = selected
-            .next_group_for(application.completed_group())
+        let expected_next = application
+            .next_group()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
         if candidate.call_group() != expected_next {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
@@ -2106,8 +2100,8 @@ impl<P, U> PreparedCallGraph<P, U> {
         debug_assert_eq!(continuation.coordinate.node, reference.0.node);
         let application = continuation.prefix.application();
         let selected = application.selected();
-        let current_group = selected
-            .next_group_for(application.completed_group())
+        let current_group = application
+            .next_group()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
         let function_type = application.function_type()?;
         let deferred = deferred_for_candidate(selected, application.completed_group());

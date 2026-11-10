@@ -528,9 +528,7 @@ impl Analyzer<'_, '_, '_> {
                 (
                     selected.schema().semantic_digest(),
                     disposition,
-                    selected
-                        .next_group_for(application.completed_group())
-                        .is_some(),
+                    application.next_group().is_some(),
                 )
             } else {
                 let Some(application) = self
@@ -551,10 +549,7 @@ impl Analyzer<'_, '_, '_> {
                 (
                     selected.schema().semantic_digest(),
                     disposition,
-                    selected
-                        .base()
-                        .next_group_for(application.core().current_group())
-                        .is_some(),
+                    application.core().next_group().is_some(),
                 )
             };
         if has_remaining_group {
@@ -1643,10 +1638,7 @@ impl Analyzer<'_, '_, '_> {
                 if application.core().site() != site
                     || selected.schema().evaluated_effect().is_some()
                     || selected.call_group() != application.core().current_group()
-                    || selected
-                        .base()
-                        .next_group_for(application.core().current_group())
-                        .is_some()
+                    || application.core().next_group().is_some()
                     || !matches!(
                         application.result(),
                         CheckedCallResult::Value(TypeKind::Unit)
@@ -1898,10 +1890,7 @@ impl Analyzer<'_, '_, '_> {
             || selected.schema().semantic_digest() != schema
             || selected.schema().evaluated_effect() != Some(disposition)
             || selected.call_group() != core.current_group()
-            || selected
-                .base()
-                .next_group_for(core.current_group())
-                .is_some()
+            || core.next_group().is_some()
             || !matches!(application.result(), CheckedCallResult::Value(_))
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -2092,10 +2081,7 @@ impl Analyzer<'_, '_, '_> {
             || !Arc::ptr_eq(prefix_selected.base(), continuation.base())
             || !Arc::ptr_eq(prefix_core.solution(), continuation.inherited_solution())
             || prefix_core.current_group() != continuation.inherited_solution().completed_group()
-            || continuation
-                .base()
-                .next_group_for(prefix_core.current_group())
-                != Some(continuation.next_group())
+            || prefix_core.next_group() != Some(continuation.next_group())
             || continuation.inherited_solution().base() != continuation.base().digest()
             || continuation.inherited_solution().schema() != schema
             || terminal_core.solution().base() != continuation.base().digest()
@@ -2188,10 +2174,7 @@ impl Analyzer<'_, '_, '_> {
             || *constructor_owner != source.ty().semantic_identity_digest()?
             || !matches!(selected.state(), ResolvedCallableState::Base)
             || selected.call_group() != core.current_group()
-            || selected
-                .base()
-                .next_group_for(core.current_group())
-                .is_some()
+            || core.next_group().is_some()
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }

@@ -3373,6 +3373,10 @@ impl RanCandidateTransaction {
 }
 
 impl PreparedCallApplicationTransaction {
+    pub(super) fn application(&self) -> &PreparedCallableApplication {
+        &self.data.application
+    }
+
     pub(super) fn specialization_result(
         &self,
     ) -> Option<
@@ -5252,15 +5256,14 @@ pub(crate) fn validate_and_prepare_call_constraints(
 
     let mut next_application_constraints = Vec::new();
     let result_constraint = if expected_result.is_some() || expected_application_callee.is_some() {
-        let result = candidate
-            .result_schema_for_group(group, terminal_effects)
-            .map_err(|error| {
-                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-            })?
-            .into_ready()
+        let (transition, result) = candidate
+            .project_group_result(group, terminal_effects)
             .map_err(|error| {
                 CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
             })?;
+        let result = result.into_ready().map_err(|error| {
+            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+        })?;
         let CallableResultSchema::Value(mut pattern) = result else {
             return Err(CallAnalysisFailure::Invariant(
                 CallAnalysisInvariant::Constraint(
@@ -5269,7 +5272,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
             ));
         };
         let expected = if let Some(next) = expected_application_callee
-            && candidate.next_group_for(group).is_some()
+            && transition.next().is_some()
         {
             let TypeKind::Function {
                 params,

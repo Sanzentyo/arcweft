@@ -10,6 +10,7 @@ use super::{
     ResolveCallError, ResolvedAssociatedTypeReceiver, TypeKind,
 };
 use crate::callable::CallableResultSchema;
+use crate::callable::schema::CallableGroupTransition;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignatureOrigin {
@@ -105,34 +106,28 @@ impl PreparedResolvedCallableDefinition {
             .declared_function_type_from_group(start, effects)
     }
 
-    fn projected_result_schema_for_group(
+    fn complete_group(&self, current: CallableGroupIndex) -> Option<CallableGroupTransition> {
+        let receiver = match self.instantiation {
+            CallableInstantiation::Extension { group, .. } => Some(group),
+            _ => None,
+        };
+        self.schema().complete_group(current, receiver)
+    }
+
+    fn projected_result_after_group(
         &self,
-        current_group: CallableGroupIndex,
+        transition: CallableGroupTransition,
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
     {
-        let next = CallableGroupIndex::try_from_usize(
-            current_group
-                .get()
-                .checked_add(1)
-                .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?,
-        )
-        .map_err(|_| super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-        if matches!(
-            self.instantiation,
-            CallableInstantiation::Extension { group, .. } if group == next
-        ) || self.schema().group(next).is_none()
-        {
-            if self.schema().group(current_group).is_none() {
-                return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
-            }
+        let Some(next) = transition.next() else {
             return Ok(CallableProjection::Ready(
                 terminal_effects
                     .inferred_result_schema()
                     .cloned()
                     .unwrap_or_else(|| self.schema().result_schema().clone()),
             ));
-        }
+        };
         match terminal_effects {
             CallableTerminalEffectProjection::Known { effects, .. } => self
                 .projected_function_type_from_group(next, effects)
@@ -1050,17 +1045,7 @@ impl PreparedResolvedCallable {
         &self,
         current_group: CallableGroupIndex,
     ) -> Option<CallableGroupIndex> {
-        let next = CallableGroupIndex::try_from_usize(current_group.get().checked_add(1)?).ok()?;
-        self.schema()
-            .group(next)
-            .is_some()
-            .then_some(next)
-            .filter(|next| {
-                !matches!(
-                    self.instantiation(),
-                    CallableInstantiation::Extension { group, .. } if group == next
-                )
-            })
+        self.definition.complete_group(current_group)?.next()
     }
 
     /// A checked next group or a first-class function result can own scheme
@@ -1084,8 +1069,29 @@ impl PreparedResolvedCallable {
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
     {
-        self.definition
-            .projected_result_schema_for_group(current_group, terminal_effects)
+        self.project_group_result(current_group, terminal_effects)
+            .map(|(_, result)| result)
+    }
+
+    pub(crate) fn project_group_result(
+        &self,
+        current_group: CallableGroupIndex,
+        terminal_effects: CallableTerminalEffectProjection<'_>,
+    ) -> Result<
+        (
+            CallableGroupTransition,
+            CallableProjection<CallableResultSchema>,
+        ),
+        super::super::CallConstraintInvariant,
+    > {
+        let transition = self
+            .definition
+            .complete_group(current_group)
+            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
+        let result = self
+            .definition
+            .projected_result_after_group(transition, terminal_effects)?;
+        Ok((transition, result))
     }
 }
 

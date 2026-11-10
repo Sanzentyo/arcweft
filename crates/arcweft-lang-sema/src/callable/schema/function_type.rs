@@ -28,6 +28,25 @@ pub(crate) enum CallableFunctionTypeProjectionError<E> {
     Projection(E),
 }
 
+/// Position accepted by the callable schema when an application supplies its
+/// whole current group. The next group, when present, retains the application
+/// instead of entering the callable body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CallableGroupTransition {
+    current: CallableGroupIndex,
+    next: Option<CallableGroupIndex>,
+}
+
+impl CallableGroupTransition {
+    pub(crate) const fn current(self) -> CallableGroupIndex {
+        self.current
+    }
+
+    pub(crate) const fn next(self) -> Option<CallableGroupIndex> {
+        self.next
+    }
+}
+
 impl CallableParameterPassing {
     /// Binding storage for an ordinary runtime parameter. Named rest values
     /// have no ordinary project-function ABI and remain a typed absence.
@@ -41,6 +60,20 @@ impl CallableParameterPassing {
 }
 
 impl CallableSignatureSchema {
+    pub(crate) fn complete_group(
+        &self,
+        current: CallableGroupIndex,
+        implicit_receiver: Option<CallableGroupIndex>,
+    ) -> Option<CallableGroupTransition> {
+        self.group(current)?;
+        let next = current
+            .get()
+            .checked_add(1)
+            .and_then(|index| CallableGroupIndex::try_from_usize(index).ok())
+            .filter(|next| Some(*next) != implicit_receiver && self.group(*next).is_some());
+        Some(CallableGroupTransition { current, next })
+    }
+
     /// A declaration's value owns its used generic slots as lexical binders.
     /// Rigid references from an enclosing declaration remain free.
     pub(crate) fn quantify_function_value(

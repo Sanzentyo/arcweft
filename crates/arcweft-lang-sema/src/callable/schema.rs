@@ -3684,7 +3684,7 @@ impl CallableArgumentPolicy {
 mod families;
 mod function_type;
 
-pub(crate) use function_type::CallableFunctionTypeProjectionError;
+pub(crate) use function_type::{CallableFunctionTypeProjectionError, CallableGroupTransition};
 
 pub(super) use families::{dialogue_schema, presentation_schema};
 pub(crate) use families::{fx_callable_schema, presentation_content_schema};

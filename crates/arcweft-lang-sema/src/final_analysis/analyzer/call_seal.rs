@@ -39,7 +39,7 @@ use crate::{
 use super::calls::{
     AnalyzerDetachedCandidateRecord, AnalyzerDetachedConsideredCandidate,
     AnalyzerDetachedUnselectedCall, AnalyzerDetachedUnselectedOutcome, AnalyzerPreparedCallGraph,
-    AnalyzerPreparedCalleeExpression, AnalyzerPreparedExpressionResolution, final_call_effects,
+    AnalyzerPreparedCalleeExpression, AnalyzerPreparedExpressionResolution,
     final_callable_effect_row, final_callable_effects,
 };
 use super::display::DisplayConformanceCatalog;
@@ -1487,7 +1487,7 @@ fn seal_selected_call(
             CallConstraintInvariant::PreparedCallSiteMismatch,
         ));
     }
-    let (selected, solution_seed) = application.into_parts();
+    let (selected, transition, solution_seed) = application.into_parts();
     let considered = core::mem::take(&mut record.inventory);
     let inventory = seal_selected_inventory(
         location,
@@ -1541,11 +1541,6 @@ fn seal_selected_call(
         .transpose()?;
     let inferred_result_schema =
         checked_facts.and_then(crate::callable::CheckedCallableFacts::inferred_result_schema);
-    let terminal_call_effects =
-        final_call_effects(selected, solution.completed_group(), checked_callables)?;
-    let effects = solution
-        .specialize_effect_row(&terminal_call_effects)
-        .map_err(|error| final_call_seal_error(location, error))?;
     let consumer = record
         .consumer
         .checked_seal(selected)
@@ -1553,13 +1548,12 @@ fn seal_selected_call(
     let core = crate::callable::CheckedCallApplicationCore::seal(
         crate::callable::CheckedCallApplicationCoreSeal {
             site,
-            current_group: solution.completed_group(),
+            transition,
             candidates: inventory,
             consumer,
             solution,
             callee,
             execution,
-            effects,
             terminal_effects: terminal_effects.as_ref(),
         },
     )
