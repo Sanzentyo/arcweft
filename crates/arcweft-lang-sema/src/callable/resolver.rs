@@ -1333,13 +1333,14 @@ impl PreparedFunctionValueOriginQuery {
         module: &HirModule,
         fact: &PreparedExpressionFact,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
-        if self.purpose == PreparedFunctionValueOriginPurpose::Storage
-            && (matches!(
-                fact,
-                PreparedExpressionFact::ProjectRecord(_)
-                    | PreparedExpressionFact::ProjectField(_)
-                    | PreparedExpressionFact::Variant(_)
-            ) || fact.try_carrier().is_some())
+        // Nominal fields can yield function values before the nominal schema
+        // seals their projection. The field expression owns the produced value.
+        if matches!(fact, PreparedExpressionFact::ProjectField(_))
+            || (self.purpose == PreparedFunctionValueOriginPurpose::Storage
+                && (matches!(
+                    fact,
+                    PreparedExpressionFact::ProjectRecord(_) | PreparedExpressionFact::Variant(_)
+                ) || fact.try_carrier().is_some()))
         {
             return Ok(self.ready(
                 PreparedFunctionValueOriginProducer::IndependentExpression {
