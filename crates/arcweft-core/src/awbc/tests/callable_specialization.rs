@@ -291,6 +291,152 @@ fn callable_specialization_verification_rejects_wrong_register_types_and_relatio
 }
 
 #[test]
+fn callable_specialization_retains_the_applied_input_and_the_next_groups_binder() {
+    let mut program = specialization_program();
+    let source_binder = RuntimeTypeBinder::new(2, 0, 0);
+    let next_binder = RuntimeTypeBinder::new(1, 0, 0);
+    let source_scope = RuntimeTypeScope::root().enter(source_binder).unwrap();
+    let next_scope = RuntimeTypeScope::root().enter(next_binder).unwrap();
+    let function = |binder, parameter, result| AwbcRuntimeTypeShape::Function {
+        contract: RuntimeFunctionTypeContract::new(
+            binder,
+            EffectPredicate::unconstrained(),
+            EffectFormula::empty(),
+        ),
+        parameters: vec![parameter],
+        result,
+    };
+    let middle_parameter = AwbcTypeId(2);
+    let closed_middle = AwbcTypeId(3);
+    let source_late = AwbcTypeId(6);
+    let source_result = AwbcTypeId(7);
+    let target_result = AwbcTypeId(8);
+    let target_late = AwbcTypeId(9);
+    program.runtime_types[2] = runtime_type(
+        0x52,
+        AwbcRuntimeTypeShape::BoundType(source_scope.bound_type(0, 0).unwrap()),
+    )
+    .with_scope(source_scope.clone());
+    program.runtime_types[4] = runtime_type(
+        0x54,
+        function(source_binder, middle_parameter, source_result),
+    );
+    program.runtime_types[5] = runtime_type(
+        0x55,
+        function(RuntimeTypeBinder::EMPTY, closed_middle, target_result),
+    );
+    program.runtime_types.extend([
+        runtime_type(
+            0x56,
+            AwbcRuntimeTypeShape::BoundType(source_scope.bound_type(0, 1).unwrap()),
+        )
+        .with_scope(source_scope.clone()),
+        runtime_type(
+            0x57,
+            function(RuntimeTypeBinder::EMPTY, source_late, source_late),
+        )
+        .with_scope(source_scope),
+        runtime_type(0x58, function(next_binder, target_late, target_late)),
+        runtime_type(
+            0x59,
+            AwbcRuntimeTypeShape::BoundType(next_scope.bound_type(0, 0).unwrap()),
+        )
+        .with_scope(next_scope),
+    ]);
+    let next = callable_state_id(2);
+    program.callable_states[0].result = source_result;
+    program.callable_states[1].result = target_result;
+    program.callable_states[1].transition = RuntimeCallableTransition::Retain {
+        state: next,
+        values: Box::new([RuntimeCallableInputSource::Argument { position: 0 }]),
+    };
+    let retained = program.callable_states[1].parameters[0].coordinate;
+    program
+        .callable_states
+        .push(RuntimeCallableStateDefinition {
+            function_type: target_result,
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::AfterGroup { completed: 0 },
+            retained: Box::new([crate::plan::RuntimeCallableRetainedInput {
+                role: crate::plan::RuntimeCallableRetainedRole::Parameter(retained),
+                ty: closed_middle,
+            }]),
+            parameters: Box::new([RuntimeCallableParameterInput {
+                coordinate: RuntimeCallableParameterCoordinate {
+                    group: 1,
+                    parameter: 0,
+                },
+                kind: RuntimeCallableParameterKind::Fixed,
+                abi_ty: target_late,
+                binding_ty: target_late,
+            }]),
+            result: target_late,
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::RequiresSpecialization,
+            partials: Box::new([]),
+        });
+    program.callable_specializations[0].arguments.types = Box::new([closed_middle, target_late]);
+    program.frame_layouts[0]
+        .slots
+        .extend([closed_middle, target_result].map(|ty| AwbcFrameSlot {
+            name: None,
+            ty,
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }));
+    program.constants.push(AwbcConstant::UInt {
+        kind: AwbcUnsignedIntKind::U32,
+        bits: 42u128.to_le_bytes(),
+    });
+    program.instructions.extend([
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::ApplyGroup {
+            dst: AwbcRegisterId(3),
+            callee: AwbcRegisterId(1),
+            args: vec![AwbcRegisterId(2)],
+        },
+    ]);
+    program.blocks[0].instructions.len = 4;
+    program.blocks[1].instructions.start = 4;
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = Arc::new(AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap());
+    assert_eq!(decoded.encode_canonical().unwrap(), bytes);
+    decoded
+        .verify(Default::default(), Default::default())
+        .unwrap();
+    let execution = super::super::vm::VmExecutionContext::for_program(
+        RuntimeArtifactFingerprint::try_from_bytes(*blake3::hash(&bytes).as_bytes()).unwrap(),
+        super::admitted_program(&decoded),
+    );
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 8).unwrap();
+    let mut host = super::super::vm::RejectingVmHost;
+    for _ in 0..4 {
+        let step = super::super::vm::step_with_host_context(
+            &decoded,
+            &mut fiber,
+            super::super::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+            &execution,
+            &mut host,
+        )
+        .unwrap();
+        assert_eq!(step.executed, 1);
+    }
+    let RuntimeValue::Callable(retained) = fiber.frames[0].registers[3].as_ref().unwrap() else {
+        panic!("the retaining application produces the next callable");
+    };
+    assert_eq!(retained.state(), next);
+    assert_eq!(retained.retained(), &[RuntimeValue::u32(42)]);
+    retained
+        .validate_for_owner(&RuntimeProgramOwner::Awbc(decoded))
+        .unwrap();
+}
+
+#[test]
 fn callable_specialization_verification_enforces_table_and_cumulative_work_budgets() {
     let program = specialization_program();
     assert_eq!(

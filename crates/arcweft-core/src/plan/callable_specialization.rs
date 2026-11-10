@@ -17,6 +17,9 @@ use super::{
     RuntimePlanTypeProjection, RuntimeTypeScope,
 };
 
+mod retained;
+use retained::RetainedResultBinder;
+
 /// Simultaneous arguments in the source function binder's namespace order.
 /// References in the right-hand sides belong to the target function's scope.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -452,10 +455,14 @@ impl<T: Copy + Eq + Ord> RuntimeCallableSpecializationDefinition<T, RuntimeCalla
         }
         let (
             Some(RuntimePlanTypeProjection::Function {
-                contract: source, ..
+                contract: source,
+                result: source_result,
+                ..
             }),
             Some(RuntimePlanTypeProjection::Function {
-                contract: target, ..
+                contract: target,
+                result: target_result,
+                ..
             }),
         ) = (
             context.type_projection(self.source_type),
@@ -465,6 +472,27 @@ impl<T: Copy + Eq + Ord> RuntimeCallableSpecializationDefinition<T, RuntimeCalla
             return Err(RuntimeCallableSpecializationError::TypeMismatch);
         };
         let binder = source.binder();
+        let mut work = SpecializationWork {
+            remaining: maximum_work,
+        };
+        let retained_result = RetainedResultBinder::between(
+            context,
+            &source,
+            source_result,
+            &target,
+            target_result,
+            &mut work,
+        )?;
+        let target_binder = retained_result
+            .as_ref()
+            .map_or(target.binder(), RetainedResultBinder::binder);
+        if retained_result.is_some()
+            && (target_binder.types() > binder.types()
+                || target_binder.const_lengths() > binder.const_lengths()
+                || target_binder.effects() > binder.effects())
+        {
+            return Err(RuntimeCallableSpecializationError::InvalidScope);
+        }
         if self.arguments.types.len() != usize::from(binder.types())
             || self.arguments.const_lengths.len() != usize::from(binder.const_lengths())
             || self.arguments.effects.len() != binder.effects() as usize
@@ -472,7 +500,7 @@ impl<T: Copy + Eq + Ord> RuntimeCallableSpecializationDefinition<T, RuntimeCalla
             return Err(RuntimeCallableSpecializationError::ArgumentArity);
         }
         let target_scope = RuntimeTypeScope::root()
-            .enter(target.binder())
+            .enter(target_binder)
             .map_err(|_| RuntimeCallableSpecializationError::InvalidScope)?;
         for ty in &self.arguments.types {
             let scope = context
@@ -497,17 +525,19 @@ impl<T: Copy + Eq + Ord> RuntimeCallableSpecializationDefinition<T, RuntimeCalla
         let mut checker = TypeChecker {
             context,
             arguments: &self.arguments,
-            target_binder: target.binder(),
-            work: SpecializationWork {
-                remaining: maximum_work,
-            },
+            target_binder,
+            work,
         };
-        checker.compare(
-            self.source_type,
-            self.target_type,
-            TypeSide::Source { nested: 0 },
-            true,
-        )?;
+        if let Some(retained) = &retained_result {
+            retained.compare(&mut checker, self.source_type, self.target_type)?;
+        } else {
+            checker.compare(
+                self.source_type,
+                self.target_type,
+                TypeSide::Source { nested: 0 },
+                true,
+            )?;
+        }
         let mut state_map = BTreeMap::new();
         let mut target_states = BTreeSet::new();
         for row in &self.states {
@@ -538,18 +568,22 @@ impl<T: Copy + Eq + Ord> RuntimeCallableSpecializationDefinition<T, RuntimeCalla
             }
             anchored |= source.function_type == self.source_type
                 && target.function_type == self.target_type;
-            checker.compare(
-                source.function_type,
-                target.function_type,
-                TypeSide::Source { nested: 0 },
-                true,
-            )?;
-            checker.compare(
-                source.result,
-                target.result,
-                TypeSide::Source { nested: 0 },
-                false,
-            )?;
+            if let Some(retained) = &retained_result {
+                retained.validate_states(self.source_type, self.target_type, source, target)?;
+            } else {
+                checker.compare(
+                    source.function_type,
+                    target.function_type,
+                    TypeSide::Source { nested: 0 },
+                    true,
+                )?;
+                checker.compare(
+                    source.result,
+                    target.result,
+                    TypeSide::Source { nested: 0 },
+                    false,
+                )?;
+            }
             for (left, right) in source.retained.iter().zip(target.retained.iter()) {
                 if left.role != right.role {
                     return Err(RuntimeCallableSpecializationError::StateMismatch);
@@ -996,6 +1030,156 @@ mod tests {
         assert_eq!(
             definition.validate(&context, 10_000),
             Err(RuntimeCallableSpecializationError::TypeMismatch)
+        );
+    }
+
+    #[test]
+    fn retaining_specialization_transports_type_const_and_effect_binders_to_the_next_group() {
+        let source_binder = RuntimeTypeBinder::new(2, 1, 1);
+        let residual = RuntimeTypeBinder::new(1, 1, 1);
+        let root = RuntimeTypeScope::root();
+        let source_scope = root.enter(source_binder).unwrap();
+        let result_scope = root.enter(residual).unwrap();
+        let late_effect = EffectFormula::literal(
+            EffectSet::new(),
+            Some(RuntimeBoundEffectReference::from_coordinates(0, 0)),
+        );
+        let predicate = late_effect
+            .subset(
+                &EffectFormula::empty(),
+                &mut SpecializationWork { remaining: 100 },
+            )
+            .unwrap();
+        let plain = RuntimeFunctionTypeContract::monomorphic(EffectSet::new());
+        let function = |contract, parameter, result| RuntimePlanTypeProjection::Function {
+            contract,
+            parameters: Box::new([parameter]),
+            result,
+        };
+        let bound = |slot| {
+            RuntimePlanTypeProjection::BoundType(RuntimeBoundTypeReference::from_coordinates(
+                0, slot,
+            ))
+        };
+        let length = RuntimeArrayLength::Bound(RuntimeBoundConstReference::from_coordinates(0, 0));
+        let mut context = Context::default();
+        context.types = BTreeMap::from([
+            (
+                0,
+                (
+                    root.clone(),
+                    function(
+                        RuntimeFunctionTypeContract::new(
+                            source_binder,
+                            predicate.clone(),
+                            EffectFormula::empty(),
+                        ),
+                        2,
+                        4,
+                    ),
+                ),
+            ),
+            (1, (root.clone(), function(plain, 3, 5))),
+            (2, (source_scope.clone(), bound(0))),
+            (3, (root.clone(), RuntimePlanTypeProjection::Bool)),
+            (
+                4,
+                (
+                    source_scope.clone(),
+                    function(
+                        RuntimeFunctionTypeContract::new(
+                            RuntimeTypeBinder::EMPTY,
+                            EffectPredicate::unconstrained(),
+                            late_effect.clone(),
+                        ),
+                        8,
+                        6,
+                    ),
+                ),
+            ),
+            (
+                5,
+                (
+                    root,
+                    function(
+                        RuntimeFunctionTypeContract::new(residual, predicate, late_effect.clone()),
+                        9,
+                        7,
+                    ),
+                ),
+            ),
+            (6, (source_scope.clone(), bound(1))),
+            (7, (result_scope.clone(), bound(0))),
+            (
+                8,
+                (
+                    source_scope,
+                    RuntimePlanTypeProjection::Array { item: 6, length },
+                ),
+            ),
+            (
+                9,
+                (
+                    result_scope,
+                    RuntimePlanTypeProjection::Array { item: 7, length },
+                ),
+            ),
+        ]);
+        let source = RuntimeCallableStateId::for_index(0).unwrap();
+        let target = RuntimeCallableStateId::for_index(1).unwrap();
+        let next = RuntimeCallableStateId::for_index(2).unwrap();
+        let mut input = state(
+            0,
+            source,
+            2,
+            RuntimeCallableTransition::RequiresSpecialization,
+        );
+        input.result = 4;
+        let mut output = state(
+            1,
+            source,
+            3,
+            RuntimeCallableTransition::Retain {
+                state: next,
+                values: Box::new([super::super::RuntimeCallableInputSource::Argument {
+                    position: 0,
+                }]),
+            },
+        );
+        output.result = 5;
+        context.states.insert(source, input);
+        context.states.insert(target, output);
+        let definition = RuntimeCallableSpecializationDefinition {
+            source_type: 0,
+            target_type: 1,
+            arguments: RuntimeFunctionSpecializationArguments {
+                types: Box::new([3, 7]),
+                const_lengths: Box::new([length]),
+                effects: Box::new([late_effect]),
+            },
+            states: Box::new([RuntimeCallableSpecializationState { source, target }]),
+        };
+        let work = definition.validate_counted(&context, 10_000).unwrap();
+        assert_eq!(
+            definition.validate(&context, work - 1),
+            Err(RuntimeCallableSpecializationError::WorkLimit)
+        );
+
+        let mut wrong_layout = definition.clone();
+        wrong_layout.arguments.const_lengths[0] = RuntimeArrayLength::Constant(4);
+        assert_eq!(
+            wrong_layout.validate(&context, 10_000),
+            Err(RuntimeCallableSpecializationError::TypeMismatch)
+        );
+
+        context.states.get_mut(&target).unwrap().transition = RuntimeCallableTransition::Invoke {
+            function: 0,
+            captures: Box::new([]),
+            arguments: Box::new([]),
+        };
+        assert_eq!(
+            definition.validate(&context, 10_000),
+            Err(RuntimeCallableSpecializationError::StateMismatch)
         );
     }
 }

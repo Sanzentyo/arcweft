@@ -518,6 +518,15 @@ not copy numeric values into feature-local tables.
 |  | `4a` | `RequireUnrestricted { value }` | validate transitive Copy ownership without copying or consuming |
 |  | `4b..7f` | unassigned | reject |
 
+`SpecializeCallable` uses the same state relation in RuntimePlan and AWBC.
+A retaining group may bind its current parameters while transferring the
+remaining type, const, and effect parameters to the returned function. The
+relation checks the applied group's parameter types and invocation effects,
+then checks the returned function under the transferred binder, including its
+effect predicate. This form requires the exact source and target state pair
+for that group. The target retains the admitted values and advances to the
+next group under the same callable origin.
+
 `RequireUnrestricted` checks the complete runtime graph before the verifier's
 value-dependent Copy proof may be used by `CopyValue`. A function carrier alone
 does not establish that proof. Writes and mutations update the same ownership
