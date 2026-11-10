@@ -21566,5 +21566,716 @@
         }
       ]
     }
+  },
+  "lifetimePromotionProjectedStorage": {
+    "version": 1,
+    "recordedAtUtc": "2026-11-10T04:35:48.8151205Z",
+    "source": "5dc83f538f4ae153e354ecd904ef8ed45d157057",
+    "base": "ad222a8fcf07a349b5f2b409bbe0aea05424024f",
+    "worktree": "Existing main and origin/main matched at the published source. The pre-existing untracked %SystemDrive%/ directory was present.",
+    "publication": {
+      "version": 1,
+      "base": "ad222a8fcf07a349b5f2b409bbe0aea05424024f",
+      "source": "5dc83f538f4ae153e354ecd904ef8ed45d157057",
+      "tree": "66d230e2e22139d7fb45f5796927065ec3bb0e57",
+      "blobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+          "blob": "542b1c10e55b03ae34927b45791852c396199d52",
+          "sha256": "32822b16de4cb1741262de9af5e82caead932090cb4e7deaeadc887eab80cb31"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+          "blob": "807aeaf2f7b9277b415c86cad90e3ae0c3973f48",
+          "sha256": "157800c071715f56e7ca53ba37ae56fcc44c6acf8a9e1e468ecf790a84d138ad"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "blob": "8a824eb0c87094690388689f158d3f283394dc7a",
+          "sha256": "44781b4b416cbbe4d228e950634a271310bfeb814d2908aba27cf358a977eb9b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/structural.rs",
+          "blob": "b9d2415f9107f2457cbc02e670c925e1496bea69",
+          "sha256": "626285a94e1059c587a1e679d1abe3ee5f9bd447f0c77ba253821a27991277d7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "blob": "6b43071a65e8a7040e1aa7d9e8f67db850fea8ee",
+          "sha256": "c26e67afaeb5007c0d548c08879b48c8b3d03aa85220d60bd177e944c713937b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/prepared.rs",
+          "blob": "1f855f813a471d4e899bca0b66764e622beeca43",
+          "sha256": "225eb41abd8f25d8309ed451b14b81b66fe890695e2cff81642bc86bcf0292f2"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "cee098b5a81a1052995614477107c702ff6d0138",
+          "sha256": "1707702c51d7bf065c84ccaeb2959b806750e4a37bb4712fca884e8983053a45"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "6a7725934b15f9bd32138726e0cf6c87162b3aee",
+          "sha256": "cbfb3bf3a023a829fb313df50e73837a584c605fc52106c5ad8f70bb75d2864c"
+        }
+      ],
+      "patchSha256": "1ff42009dc0985761d81dfebc9dc3e0fe0df68c24cb9afcc0ccdb312e8cc39a6",
+      "publishedAtUtc": "2026-11-10T04:32:20.4656325Z"
+    },
+    "design": "Capture analysis interns a bounded projection path with the existing origin and invocation worklist. Field projections select a checked nominal declaration and field ordinal and are preserved through the actual parameter and result mapping. The existing body completion owner reports reachable success sources and the Result residual operands delivered to each carrier block. Try as a value selects its success payload.",
+    "statusReconciliation": "Supersedes the previous open entries for selected fields and option carrier blocks. The same fourteen CLI inputs on the earlier source reached the execution-unavailable diagnostic. The published source rejects the eight receivers that retain a borrowed closure at their primary spans.",
+    "semaNextest": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-lang-sema",
+        "--lib",
+        "--tests",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast"
+      ],
+      "pass": 1460,
+      "fail": 0,
+      "skip": 0,
+      "log": "sema-nextest.log"
+    },
+    "focusedAttempts": {
+      "existingPass": 19,
+      "existingLog": "initial-nextest.log",
+      "expandedPass": 20,
+      "expandedFail": 1,
+      "expandedLog": "focused-nextest.log",
+      "correction": "The added generic field fixture used the reserved word select as a function name. Renamed it to choose_field and verified the final whole Sema suite."
+    },
+    "pairedCli": {
+      "before": "baseline/receipt.json",
+      "after": "final-cli/receipt.json",
+      "baselineCliSha256": "5f72e602448f025e1219fb83e59739213432706058ca2f8ee794ca5c1f2a8802",
+      "cliSha256": "b60e18b6f10c1cc914cc39927e999dbb6b5d3374e247a580b564b9d96e83d561",
+      "cases": 14,
+      "expected": 14,
+      "borrowedReceiver": 8,
+      "executionUnavailableControls": 6,
+      "exactInputAndPrimarySpan": true
+    },
+    "scopeProbes": {
+      "version": 1,
+      "source": "5dc83f538f4ae153e354ecd904ef8ed45d157057",
+      "cliSha256": "b60e18b6f10c1cc914cc39927e999dbb6b5d3374e247a580b564b9d96e83d561",
+      "cases": [
+        {
+          "name": "callable-residual-generic",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "e9db7d87e51244959d1b2d509de86be6c487f133d4664deee6e2d6edb5446660",
+          "reportSha256": "1d830648a87edb30f7cc9f14ae95ee878b9d914ffc1c12da4fcb881985faa1e6"
+        },
+        {
+          "name": "callable-residual-typed",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "95108562efab94e2e1cd491cf6906485d70fee37b778d44cf183f4f20ee79254",
+          "reportSha256": "d31b91bd5a52ca7d02559e91fe50a03a68329dd3d88d0a2967c7d0b2f38e2222"
+        }
+      ]
+    },
+    "scopeProbeCorrection": "The initial function-tail probe returned i64 from a declared Result function. The two corrected callable-boundary probes supply an Ok success value and reproduce the execution-unavailable diagnostic for the escaped residual.",
+    "quality": {
+      "version": 1,
+      "source": "5dc83f538f4ae153e354ecd904ef8ed45d157057",
+      "target": "x86_64-pc-windows-msvc",
+      "resolvedGraphSha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172",
+      "resolvedPackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "active": null,
+      "results": [
+        {
+          "name": "fmt",
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exit": 0,
+          "seconds": 29.2,
+          "summary": [],
+          "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "structure",
+          "command": [
+            "just",
+            "structure-audit-gate"
+          ],
+          "exit": 0,
+          "seconds": 5.05,
+          "summary": [
+            "blocking violations: 0"
+          ],
+          "logSha256": "1ecd8b229127c3949450967d1e2b2262c8cdc1ebc3b47db93fc72e818b9dfb16"
+        },
+        {
+          "name": "workspace-check",
+          "command": [
+            "cargo",
+            "check",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exit": 0,
+          "seconds": 108.87,
+          "summary": [],
+          "logSha256": "2999b75b28c894c86b5c9f38093dcf8213a9fb95016698ec8cb19cd855d31c1c"
+        },
+        {
+          "name": "workspace-clippy",
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exit": 0,
+          "seconds": 52.63,
+          "summary": [],
+          "logSha256": "ee4840f410d7877bf66f72b866c5feb1aadc5d5962c3c48b0a0b06074c494fe4"
+        },
+        {
+          "name": "compiler-carriers",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scope_propagation",
+            "--test",
+            "try_pipe"
+          ],
+          "exit": 0,
+          "seconds": 62.9,
+          "summary": [
+            "     Summary [   2.035s] 21 tests run: 21 passed, 0 skipped"
+          ],
+          "logSha256": "8ee6f76401d0e62d598becd685819a990774269b5716235679c8a90d3f0f1ae3"
+        },
+        {
+          "name": "compiler-callables",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "callable_execution",
+            "-E",
+            "test(returned_shared_prefix_with_distinct_later_types)"
+          ],
+          "exit": 0,
+          "seconds": 19.03,
+          "summary": [
+            "     Summary [   2.302s] 3 tests run: 3 passed, 325 skipped"
+          ],
+          "logSha256": "16d6638587749512fa45db32829df738132ec5760c2d0426687288f164ee5619"
+        },
+        {
+          "name": "lsp-diagnostics",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "-p",
+            "arcweft-lsp",
+            "--lib",
+            "-E",
+            "test(diagnostics::tests)"
+          ],
+          "exit": 0,
+          "seconds": 64.3,
+          "summary": [
+            "     Summary [   0.295s] 22 tests run: 22 passed, 199 skipped"
+          ],
+          "logSha256": "5d494085bb6e3536d4ed462b7d03db58ba8da4054032fee93ab6d4b296e4f74a"
+        }
+      ]
+    },
+    "downstreamNextest": {
+      "compiler-carriers": {
+        "run": 21,
+        "pass": 21,
+        "fail": 0,
+        "skip": 0
+      },
+      "compiler-callables": {
+        "run": 3,
+        "pass": 3,
+        "fail": 0,
+        "skip": 325
+      },
+      "lsp-diagnostics": {
+        "run": 22,
+        "pass": 22,
+        "fail": 0,
+        "skip": 199
+      }
+    },
+    "qualityScope": "The proof change uses shared completion evidence. The full Sema suite, workspace all-target all-feature check and Clippy, structure gate, Compiler carrier and callable regressions, and LSP diagnostic tests cover the affected boundary. The preceding complete reverse-dependency execution remains recorded on its own source.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-lifetime-promotion-projected-storage.raw.zip",
+      "sha256": "9a6c94947421b58a774b54ed6d44b3169e40fbd185acfc249a60ce24367c5389",
+      "entries": [
+        {
+          "path": "fixtures/field_borrowed.arcw",
+          "sha256": "66ecd0cd631354bc733cf68125c31d154efc75b1f53ee7824b6ecac948e8233e"
+        },
+        {
+          "path": "fixtures/field_direct_borrow_sibling.arcw",
+          "sha256": "deef63909817e2fb587d38f98be5be0841f9255c470c2ca39bce5ff0ac3844d4"
+        },
+        {
+          "path": "fixtures/field_generic_borrowed.arcw",
+          "sha256": "56851992bdae271eaa46609c6890d72e4d475951c16d6865f79f020654b07979"
+        },
+        {
+          "path": "fixtures/field_generic_owned.arcw",
+          "sha256": "68999eaa8352c2c28e8dd8091ed23a26c76f5676c8614ac3a192625665b3871c"
+        },
+        {
+          "path": "fixtures/field_generic_receiver.arcw",
+          "sha256": "ad58c5ad6923e59df507eb99df28a5d1af13985a6ace85507b19cf393d953dd4"
+        },
+        {
+          "path": "fixtures/field_nested_alias.arcw",
+          "sha256": "befc36d25a548b24a7656b656f97e705ab90216bf4e582bed7c691458a4023aa"
+        },
+        {
+          "path": "fixtures/field_owned.arcw",
+          "sha256": "4cd9e6c4d726012ccdd5d3929fad9d7ea31c994af4133779984c403b811f6bdb"
+        },
+        {
+          "path": "fixtures/option_owned.arcw",
+          "sha256": "db2de22ceca3fdbcee09085363ef357390e0e43667096b4be5cfeff11459f0e8"
+        },
+        {
+          "path": "fixtures/option_tail.arcw",
+          "sha256": "fc172f20d2aa9fea5d406294734479751be56ef38fb574ebb9abfc20891abc00"
+        },
+        {
+          "path": "fixtures/option_try_success.arcw",
+          "sha256": "6df308cf870b2c0345ea4bfdafa9e7251437bf113372c9d6f6ea1d87594e0f6b"
+        },
+        {
+          "path": "fixtures/result_nested_residual.arcw",
+          "sha256": "acce3f2320de741b8af1f52759b24c64b1b7ed284ea32c3789890db37412dd53"
+        },
+        {
+          "path": "fixtures/result_ok_discarded.arcw",
+          "sha256": "f6bfe0484c0bf1dbe9473611cfe9301ff9b63addae524716f59a851e1133e0ae"
+        },
+        {
+          "path": "fixtures/result_residual.arcw",
+          "sha256": "bc1c75975c4a5b9b413f0c6fa9e20bc92a6f9bcbca571323b8f6549c46abc4eb"
+        },
+        {
+          "path": "fixtures/result_tail.arcw",
+          "sha256": "ad1c56911347d26c301049903bdeb1f4187f9a7143465d2e304345311e83567d"
+        },
+        {
+          "path": "baseline/field_borrowed.json",
+          "sha256": "5b8ad77b97684f88cc2938347fb39fc5734643c70b891a8b2f589596c6b13745"
+        },
+        {
+          "path": "baseline/field_borrowed.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/field_direct_borrow_sibling.json",
+          "sha256": "0caff1a61786fc792061fd296b78caa725223e091eb9061e5828a28654ace655"
+        },
+        {
+          "path": "baseline/field_direct_borrow_sibling.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/field_generic_borrowed.json",
+          "sha256": "e898049d9b78845a9c859cd5ab4751d20790ae2393ce6f9822ca63209e0eb29d"
+        },
+        {
+          "path": "baseline/field_generic_borrowed.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/field_generic_owned.json",
+          "sha256": "54036882b7141d9573147496b70e18ebf9dda9ab0c879251afeda79af4a4cb78"
+        },
+        {
+          "path": "baseline/field_generic_owned.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/field_generic_receiver.json",
+          "sha256": "25cc3fae25a8d7a5c562d7442ed2cbcaae936dc561fe7a98171cd6cf78eb6985"
+        },
+        {
+          "path": "baseline/field_generic_receiver.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/field_nested_alias.json",
+          "sha256": "14f9fd5c7714c8a2ad69782d67301eb2e07201c852aa856afdb7801a0f514329"
+        },
+        {
+          "path": "baseline/field_nested_alias.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/field_owned.json",
+          "sha256": "6390d3b7956cca4511d8e497d3909688ddbe2f902d79ab5df750abbf24992b5c"
+        },
+        {
+          "path": "baseline/field_owned.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/option_owned.json",
+          "sha256": "d6d5a81015f2bb24ba2dd426a32030fe7bc7cd5dbbf4f21cfd611abb8c0eec55"
+        },
+        {
+          "path": "baseline/option_owned.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/option_tail.json",
+          "sha256": "77331b772001582fcd8f237d9f0fa3bc0c623bd7902b7e6dc9255ee6b94d28b0"
+        },
+        {
+          "path": "baseline/option_tail.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/option_try_success.json",
+          "sha256": "cb003504e8857299cba9ae0dd90dfe44746e1c20b9aae67cccad34a37ba6e2bf"
+        },
+        {
+          "path": "baseline/option_try_success.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/receipt.json",
+          "sha256": "597ea03fcd4abdf464966814e060424697afc90e49963f4bfeffd55ac206f287"
+        },
+        {
+          "path": "baseline/result_nested_residual.json",
+          "sha256": "3db6234ce86268fe725c2a162c2b9efc8f8f01e9d11c05d3118c348ed3e091af"
+        },
+        {
+          "path": "baseline/result_nested_residual.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/result_ok_discarded.json",
+          "sha256": "1dfc905b32a1cc2c0edf0356bc2c2f7be74f5ce3ba7be71159bfb22d10b425f9"
+        },
+        {
+          "path": "baseline/result_ok_discarded.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/result_residual.json",
+          "sha256": "ac907b2c7c3320dcaa0f96635cba0612986d18bd3bc117fe41114d3588c71508"
+        },
+        {
+          "path": "baseline/result_residual.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "baseline/result_tail.json",
+          "sha256": "b0d435dc4975010c313b716f7304225e29d192681e78765cfee713f5fd235b93"
+        },
+        {
+          "path": "baseline/result_tail.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/build.log",
+          "sha256": "b2f54f6ae3a10cb39d38ab44ed2bde2eea4dbec14b355da97e7f17459731364e"
+        },
+        {
+          "path": "final-cli/field_borrowed.json",
+          "sha256": "c612c31b65697bbe4dd2813ca5fdeafb7f84ea76d5e0e3a05248ceca1dbcd631"
+        },
+        {
+          "path": "final-cli/field_borrowed.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/field_direct_borrow_sibling.json",
+          "sha256": "0caff1a61786fc792061fd296b78caa725223e091eb9061e5828a28654ace655"
+        },
+        {
+          "path": "final-cli/field_direct_borrow_sibling.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/field_generic_borrowed.json",
+          "sha256": "94931a8bfac77abfafb367fa34578099482fe3d9479ff119b5eb3761179379f0"
+        },
+        {
+          "path": "final-cli/field_generic_borrowed.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/field_generic_owned.json",
+          "sha256": "54036882b7141d9573147496b70e18ebf9dda9ab0c879251afeda79af4a4cb78"
+        },
+        {
+          "path": "final-cli/field_generic_owned.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/field_generic_receiver.json",
+          "sha256": "37efa6692350b898eb0cdaf68a6c557da0c11a1c55751c6a3f6fd73aa4b725e7"
+        },
+        {
+          "path": "final-cli/field_generic_receiver.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/field_nested_alias.json",
+          "sha256": "b18b338cc5ce7fe5c2da3954604d89d3fd593153fe3c99724a131da28219b007"
+        },
+        {
+          "path": "final-cli/field_nested_alias.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/field_owned.json",
+          "sha256": "6390d3b7956cca4511d8e497d3909688ddbe2f902d79ab5df750abbf24992b5c"
+        },
+        {
+          "path": "final-cli/field_owned.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/option_owned.json",
+          "sha256": "d6d5a81015f2bb24ba2dd426a32030fe7bc7cd5dbbf4f21cfd611abb8c0eec55"
+        },
+        {
+          "path": "final-cli/option_owned.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/option_tail.json",
+          "sha256": "afbe74ed7120e54fca5757d42a8553d08e384a6d5f03b44e4ba5b54423ed24f6"
+        },
+        {
+          "path": "final-cli/option_tail.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/option_try_success.json",
+          "sha256": "fc4b2cb2b3528ed26d49428b5e195131475eaf0a1f575f338777f7b537e80f95"
+        },
+        {
+          "path": "final-cli/option_try_success.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/receipt.json",
+          "sha256": "14f868384aa7e41e21e636ce2d2b3e1c17ce6ccc27dd15271e9be3aacf8642d9"
+        },
+        {
+          "path": "final-cli/result_nested_residual.json",
+          "sha256": "3db6234ce86268fe725c2a162c2b9efc8f8f01e9d11c05d3118c348ed3e091af"
+        },
+        {
+          "path": "final-cli/result_nested_residual.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/result_ok_discarded.json",
+          "sha256": "1dfc905b32a1cc2c0edf0356bc2c2f7be74f5ce3ba7be71159bfb22d10b425f9"
+        },
+        {
+          "path": "final-cli/result_ok_discarded.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/result_residual.json",
+          "sha256": "ded3a8af2645269ce54b6c3fe8d55a1a1f09276129171e3ca2027efe7add8220"
+        },
+        {
+          "path": "final-cli/result_residual.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "final-cli/result_tail.json",
+          "sha256": "4971da083cfabfd2ede03a86dbbfb955a257e153e005715b3dd593c3232f7e5d"
+        },
+        {
+          "path": "final-cli/result_tail.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scope-probe/callable-residual-generic.arcw",
+          "sha256": "e9db7d87e51244959d1b2d509de86be6c487f133d4664deee6e2d6edb5446660"
+        },
+        {
+          "path": "scope-probe/callable-residual-generic.json",
+          "sha256": "1d830648a87edb30f7cc9f14ae95ee878b9d914ffc1c12da4fcb881985faa1e6"
+        },
+        {
+          "path": "scope-probe/callable-residual-generic.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scope-probe/callable-residual-typed.arcw",
+          "sha256": "95108562efab94e2e1cd491cf6906485d70fee37b778d44cf183f4f20ee79254"
+        },
+        {
+          "path": "scope-probe/callable-residual-typed.json",
+          "sha256": "d31b91bd5a52ca7d02559e91fe50a03a68329dd3d88d0a2967c7d0b2f38e2222"
+        },
+        {
+          "path": "scope-probe/callable-residual-typed.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scope-probe/callable-residual.arcw",
+          "sha256": "b558422d45698b0535767baa5a83985a77e5eef1e98b67487e67f316176fcaeb"
+        },
+        {
+          "path": "scope-probe/callable-residual.json",
+          "sha256": "c3eef73bd076bcab4a440c0fd1e67eb204fb676a6f59fdb3a4dcada4d526eab6"
+        },
+        {
+          "path": "scope-probe/callable-residual.json.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scope-probe/corrected.receipt.json",
+          "sha256": "b1e961c94a49919af4b77aa96c941f4a0c7744893f669b0ba5f887c58c20dc46"
+        },
+        {
+          "path": "scope-probe/receipt.json",
+          "sha256": "71c6f4ecc7ec96c67c9d4c8576af615a26648e29f3db88f452bf7ae867312ed5"
+        },
+        {
+          "path": "quality/compiler-callables.log",
+          "sha256": "16d6638587749512fa45db32829df738132ec5760c2d0426687288f164ee5619"
+        },
+        {
+          "path": "quality/compiler-carriers.log",
+          "sha256": "8ee6f76401d0e62d598becd685819a990774269b5716235679c8a90d3f0f1ae3"
+        },
+        {
+          "path": "quality/fmt.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "quality/lsp-diagnostics.log",
+          "sha256": "5d494085bb6e3536d4ed462b7d03db58ba8da4054032fee93ab6d4b296e4f74a"
+        },
+        {
+          "path": "quality/receipt.json",
+          "sha256": "d3b589ccf0b9ec85798d0497609e64ec1bcb4991c223ff6f7e67d0efa9b3d948"
+        },
+        {
+          "path": "quality/structure.log",
+          "sha256": "1ecd8b229127c3949450967d1e2b2262c8cdc1ebc3b47db93fc72e818b9dfb16"
+        },
+        {
+          "path": "quality/workspace-check.log",
+          "sha256": "2999b75b28c894c86b5c9f38093dcf8213a9fb95016698ec8cb19cd855d31c1c"
+        },
+        {
+          "path": "quality/workspace-clippy.log",
+          "sha256": "ee4840f410d7877bf66f72b866c5feb1aadc5d5962c3c48b0a0b06074c494fe4"
+        },
+        {
+          "path": "expectations.json",
+          "sha256": "59697f9f6f18c4d997294279f7d6980c9a1b5b9dd4eb3fde2a30cfa1c7fc190c"
+        },
+        {
+          "path": "default.rdeps.log",
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "path": "all-features.rdeps.log",
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "path": "initial-nextest.log",
+          "sha256": "12ad03bf17d9f0c5622cfa32d6778b550257ab995e7aee07c723184cacf170ff"
+        },
+        {
+          "path": "focused-nextest.log",
+          "sha256": "f8500ead44bdcedafd2a0c78be2dd2adcecb682d95bd4216d3e00f5fa003df65"
+        },
+        {
+          "path": "sema-nextest.log",
+          "sha256": "241658fc13681942b45c00a6f3e3e774fb7ca9bc6859679a357df7754e6396f1"
+        },
+        {
+          "path": "source.publication.json",
+          "sha256": "0c3c4bdacc4540980e40364935ce903f9e6c351747b13373d0ee2b21b9d8d793"
+        },
+        {
+          "path": "source.reviewed.patch",
+          "sha256": "1ff42009dc0985761d81dfebc9dc3e0fe0df68c24cb9afcc0ccdb312e8cc39a6"
+        }
+      ]
+    }
   }
 }
