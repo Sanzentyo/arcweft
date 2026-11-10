@@ -16488,3 +16488,19 @@ Compiler の回帰テストは、共有 prefix と再帰ジェネリックの at
 Cargo tree と Windows の Cargo metadata の逆依存は52パッケージで一致し、全ターゲットのグラフには `arcweft-render-web` が加わった。CLI 以外の一括 nextest は Windows のページファイル不足（OS error 1455）でコンパイル時に停止した。Cargo のターゲット一覧と照合した63組に分け、7,470件成功、0件失敗、18件スキップ。全件が明示的な `#[ignore]` である GPU の1組は、既定の選択を維持し、一覧と再実行で3件スキップを照合した。CLI の226件を合わせて7,696件成功。型関係と spread の先行実行2件は重複集計から除いた。全ターゲット・全 feature の workspace check／Clippy、Wasm check、doctest 80件、整形、構造ゲートが通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
 
 [ソース照合、実入力、途中の失敗、全コマンドの原本](acceptance-evidence/task-project-call-callback-effects.raw.zip)は205件、2172708 bytes、SHA-256 8211067186ce3a815194fca84cb6f7bc517753f6d64bd5f0d1b0c12c0b8ff5e7。
+
+### Callable group transitions
+
+2026-11-11に基点 `ff4e6e4ca11f773ad9d8cf50a8a6fe1a327ef382`、公開 Source `6e8b35a65350a2366df951144e01f2e4cb646472`、tree `59dcc166d70732ce0c65494bead91e894ed1acfe` を照合した。公開先の変更13 blobを確認した。追跡対象の差分は0件で、既存の未追跡 `%SystemDrive%/` があった。
+
+完了したグループの次の座標は `CallableSignatureSchema` が決める。候補の結果型を投影する時点で型付き遷移を作り、準備済みの呼び出しから最終封印へ渡す。結果の投影、継続の照合、効果の集計は同じ遷移を読む。適用のダイジェストには従来どおり、選択候補、現在のグループ、確定した効果などを記録する。
+
+基点と最終 Source の CLI で8入力の `compile --emit check` の JSON が一致した。別グループに進む対照は通過した。同一グループの直接呼び出し、関数値、固定長 spread、placeholder、明示効果の許容行が広い例と一致する例は `no admissible final type`、即時連鎖は共有の呼び出し解決の診断を返した。いずれも型検査段階だった。必須の固定引数が不足すると `map_call_arguments` が候補を落とす。効果行が一致する例と純粋な直接呼び出しでも再現したため、従来は共有 prefix の callback 効果の行に併記していた失敗を、同一グループ内の部分適用の行へ移した。
+
+最終 CLI では、別グループの対照、純粋な callback を明示した広い効果行へ渡す例、宣言を後置した attached default を Bytecode VM／AWBC Product で計6回実行した。各ステップ最大1操作で42を返した。後者2例は先行実行とステップ数とログ順が一致した。Compiler の待機テストでは Native とデコード済み AWBC の再開、共有 prefix の後段 callback、公開 JSON からの復元を確認した。
+
+`cargo clean` は workspace の `target` を削除し、185,404ファイル、274.9 GiB と報告した。直後の `D:` の空きは約420 GiBだった。再検証は `CARGO_INCREMENTAL=0` で実行した。初回は未公開コミット `32df2ca89d2e2870955eece22b2d9495979f87cd` の参照メソッド不足で Rust E0599 になった。メソッドを追加し、最終 Source の Sema 1,471件が通過した。削除前の対象28件と初回の失敗は最終件数から分けて保持する。
+
+Cargo tree の既定、全 feature、全ターゲットと Windows の Cargo metadata は、Sema の推移的逆依存22パッケージで一致した。nextest は3,926件成功、0件失敗、1件スキップ。全ターゲット・全 feature の workspace check／Clippy、整形、Web Player の Wasm check、doctest 2件、構造ゲートが通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
+
+[基点と公開の照合、実入力、初回失敗、全コマンドの原本](acceptance-evidence/task-call-group-transition.raw.zip)は111件、1581941 bytes、SHA-256 `c8541a80e8698507bce5ecbf37af46d9fa4b82234b0e116c96be44a0a2a0b05b`。
