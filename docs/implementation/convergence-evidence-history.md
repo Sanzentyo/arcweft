@@ -16472,3 +16472,19 @@ Sema と Compiler の推移的逆依存は、Cargo tree の既定・全 feature�
 [ソース照合、実入力、途中の失敗、全コマンドの原本](acceptance-evidence/task-shared-prefix-callback-effects.raw.zip)は161件、1591241 bytes、SHA-256 67048773f2eaf731a7ac96241575e0cb44569dc6f55193bb6031ac5d02c8da89。
 
 2026-11-11、公開済みの `main`（b3eaab4cea7bd725ffcbd0937de22e74f0f04b9f、追跡対象の差分0件）で、ユーザーの指定によりワークスペース全体に `cargo clean` を実行した。終了0で35,912ファイル（Cargo 報告96.6 GiB）を削除し、直後に `target` が消えた。D: の空きは326.36 GiBから419.58 GiBに増えた。空の出力先から `cargo nextest list --locked -p arcweft-compiler --test flow_wait -E 'test(=shared_prefix_restores_independent_callback_effects_in_an_attached_default)'` で選択を確認し、同じ指定の `cargo nextest run` を `--no-tests fail` 付きで実行した。1件成功、0件失敗、フィルター対象外21件。実行 ID は `cde0cbec-906e-4a3d-b764-3a134c874ca6`。再ビルドではコンパイル警告が出た。
+
+### Callable operand effect compatibility
+
+2026-11-11、追跡対象の差分0件で基点 bd1efeda2f581301fae05fbf81522eb0bdbd3cc9 を確認した。実装 1d7c8021807ba82c9d1e4604497b9080d8215404、spread 診断の保持 e975cf9c892c2bb1c5e62a98ecad32f2aac03674、最終 Source af66f988aa46311ed9a06f7a8b4f4a4e2b6436b1 を公開した。最終 tree は b37ee7aeb28de8839afa69a02f5a5579e3292fee。公開先の12 blob を照合した。
+
+先行 Source 7c2b1cee6dcc03edfa0a5c3c78e5ea80d4299dfc の CLI は、純粋な callback を広い許容効果の引数に渡す単一・複数グループと attached default の入力を、RuntimePlan の固定引数型照合で拒否した。今回の基点でも Compiler の回帰入力で再現した。Sema の受理と実行側の型照合が一致しなかったため、現状一覧の拒否記述を対象入力の通過に更新した。先行 CLI の実行と診断は共有 prefix の検証原本に保持する。
+
+実行時の値受入が使う型関係を、RuntimePlan の構築と AWBC の関数引数の照合でも使う。現在のフレームの型・効果の束縛を固定し、関数の入力を反変、結果と呼び出し効果を共変に検査する。AWBC の完全適用は宣言された結果型を照合し、許容される実行状態を Copy 証明に含める。型比較は既存の検証作業量に計上する。Core の構築とデータフロー検証はそれぞれの命令の受入を所有し、効果の型関係は `program_types` が所有する。各ファイルの測定と構造ゲートを原本に含めた。
+
+Compiler の回帰テストは、共有 prefix と再帰ジェネリックの attached default を通して String と i64 の callback を呼ぶ。Native／AWBC で100 msの待機を40 msと60 msに分け、各ステップ最大1操作で捕捉値、ログ順、戻り値42を確認した。AWBC は各ステップで公開 JSON を保存・復元した。最初の回帰は RuntimePlan の型照合で失敗し、次に AWBC が完全一致の状態を要求して拒否した。実行まで進んだ中間入力は256操作を使い切った。直接呼び出しは独立した CLI 入力で検証し、待機の入力は段階適用と関数値呼び出しを含めた。既存の待機上限を維持した。spread 診断を保持する中間コミットの Rust E0521 と、型関係テストの検証予算診断の初期期待違いも原本に保持した。
+
+最終 CLI の14実行は各ステップ最大1操作で42を返し、診断とログ順を照合した。単一・複数グループ、宣言を後置した attached default、後段関数値を返す callback を含む。純粋な引数を要求する呼び出しに `log.write` を使う callback を渡す負例は型検査で拒否した。同一グループ内の部分適用の探索入力は、純粋な関数と効果行が一致する関数の双方、および直接呼び出しの対照で型検査の admissible final type エラーを返した。
+
+Cargo tree と Windows の Cargo metadata の逆依存は52パッケージで一致し、全ターゲットのグラフには `arcweft-render-web` が加わった。CLI 以外の一括 nextest は Windows のページファイル不足（OS error 1455）でコンパイル時に停止した。Cargo のターゲット一覧と照合した63組に分け、7,470件成功、0件失敗、18件スキップ。全件が明示的な `#[ignore]` である GPU の1組は、既定の選択を維持し、一覧と再実行で3件スキップを照合した。CLI の226件を合わせて7,696件成功。型関係と spread の先行実行2件は重複集計から除いた。全ターゲット・全 feature の workspace check／Clippy、Wasm check、doctest 80件、整形、構造ゲートが通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
+
+[ソース照合、実入力、途中の失敗、全コマンドの原本](acceptance-evidence/task-project-call-callback-effects.raw.zip)は205件、2172708 bytes、SHA-256 8211067186ce3a815194fca84cb6f7bc517753f6d64bd5f0d1b0c12c0b8ff5e7。
