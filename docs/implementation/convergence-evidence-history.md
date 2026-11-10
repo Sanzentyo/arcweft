@@ -16454,3 +16454,19 @@ Cargo tree の既定・全 feature・全ターゲットと Windows の Cargo met
 Sema と Compiler からの推移的逆依存は、Cargo tree の既定・全 feature・全ターゲットと Windows の Cargo metadata で22パッケージに一致した。nextest は 3,924 件成功、0 件失敗、1 件スキップ。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest、Web Player の Wasm check が通過した。Clippy には警告がある。
 
 [ソース照合、実入力、途中の失敗、全コマンドの原本](acceptance-evidence/task-recursive-callback-effects.raw.zip)は189件、1631854 bytes、SHA-256 e4936f9a8352a16d496f3891c911fb7a89528df0ae93c76d5dc70ca33e812943。
+
+### Shared prefix callback effect projection
+
+2026-11-11に親 14db5f4aef00f698763d77a28c0ac03e92093644、公開 Source 7c2b1cee6dcc03edfa0a5c3c78e5ea80d4299dfc、tree d07189f2ca92fff9ba9bb878e173910efb634894 を照合した。公開先の変更5 blobを確認した。追跡対象の差分は0件で、既存の未追跡 %SystemDrive%/ があった。
+
+親の CLI は、後段 callback の効果を省略した保持 prefix、即時連鎖、再帰するジェネリック関数を呼ぶ attached default を、RuntimePlan 生成時の generic binder depth 0 is outside the lexical scope で拒否した。空の効果行を明示した最小対照は通った。
+
+Sema の継続入力は後段 binder を含む型を保持する。確定した適用型は、同じ適用の引数型、結果型、選択済み効果行から作る。継続結果はその binder を保持する。旧 runtime selection から、継続入力と確定した適用を兼ねていた関数型を除いた。意味解析のテストでは、同じ継続の純粋な適用と fs.read を伴う適用の行がそれぞれ確定することを確認した。
+
+Compiler の回帰テストでは、共有 prefix を一度評価し、100 msの待機を40 msと60 msに分ける。40 msでは追加操作も効果も発生せず、60 msで再開する。attached default から再帰ジェネリック関数を通じて String と i64 の callback を呼ぶ。捕捉文字列、2回の default ログ、戻り値42を、Native と canonical decoded AWBC で確認した。各ステップ最大1操作で、AWBC は各ステップを公開 JSON で保存・復元した。初回のテストは Native の成果物 ID を束縛せずに失敗した。既存の成果物束縛処理を共有して再実行し、対象41件が通過した。
+
+最終 Source の CLI は、最小例、通常本体、attached default、宣言を後置した対照、明示効果の一致する対照を VM／AWBC で計12回実行し、各ステップ最大1操作で42を返した。ログ順を照合した。純粋な callback を明示的に広い効果行へ渡す3入力は、RuntimePlan の固定引数型照合で拒否された。再帰本体内の自己関数値、効果推論付きの再帰の段階適用、4つの callback を巡回させる入力の拒否も再現した。
+
+Sema と Compiler の推移的逆依存は、Cargo tree の既定・全 feature・全ターゲットと Windows の Cargo metadata で22パッケージに一致した。nextest は 3,925 件成功、0 件失敗、1 件スキップ。対象実行の Compiler 待機22件を集計に再利用した。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest、Web Player の Wasm check が通過した。Clippy には警告がある。
+
+[ソース照合、実入力、途中の失敗、全コマンドの原本](acceptance-evidence/task-shared-prefix-callback-effects.raw.zip)は161件、1591241 bytes、SHA-256 67048773f2eaf731a7ac96241575e0cb44569dc6f55193bb6031ac5d02c8da89。
