@@ -589,10 +589,7 @@ fn prepare_attached_content_operand(
     candidate: &PreparedResolvedCallable,
     current_group: CallableGroupIndex,
 ) -> Result<PreparedAttachedContentAdmission, crate::callable::CallConstraintInvariant> {
-    let parameter = candidate
-        .schema()
-        .attached_content()
-        .filter(|parameter| parameter.group() == current_group);
+    let parameter = candidate.schema().attached_content_for_group(current_group);
     let body = match site {
         crate::callable::CheckedCallSite::HirCall(expression) if expression == owner => None,
         crate::callable::CheckedCallSite::AttachedContentApplication {

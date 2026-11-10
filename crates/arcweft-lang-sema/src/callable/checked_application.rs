@@ -2649,8 +2649,12 @@ impl CheckedCallApplicationCore {
     /// parameter's presence while C1 supplies its instantiated ABI type and
     /// destination position.
     pub fn runtime_operands(&self) -> Box<[CheckedCallRuntimeOperand<'_>]> {
-        self.execution
-            .runtime_operands(self.candidates.selected().schema().attached_content())
+        let attached = self
+            .candidates
+            .selected()
+            .schema()
+            .attached_content_for_group(self.current_group);
+        self.execution.runtime_operands(attached)
     }
     /// Returns the exact normalized type receiver only for the sealed direct
     /// type-receiver execution pair.  Consumers cannot infer associated-type
@@ -3899,10 +3903,7 @@ fn validate_attached_content_inventory(
     operand: Option<&CheckedCallAttachedContentOperand>,
     abi_type: Option<&TypeKind>,
 ) -> Result<(), CallConstraintInvariant> {
-    let parameter = selected
-        .schema()
-        .attached_content()
-        .filter(|parameter| parameter.group() == current_group);
+    let parameter = selected.schema().attached_content_for_group(current_group);
     let source_is_valid = |source: &CheckedCallAttachedContentSource| {
         source.raw().owner() == site.raw().expression()
             && source.application() == site.coordinate()

@@ -529,8 +529,7 @@ impl PreparedCallInputs {
             && match (
                 candidate
                     .schema()
-                    .attached_content()
-                    .filter(|parameter| parameter.group() == candidate.call_group()),
+                    .attached_content_for_group(candidate.call_group()),
                 self.attached_content,
             ) {
                 (None, None) => true,

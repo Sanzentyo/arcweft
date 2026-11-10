@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use arcweft_lang_hir::{
     expr::{HirChoicePlanItem, HirExprKind},
     identity::{ExprId, HirModuleId, ItemId, StmtId},
-    project::HirSemanticPathStep,
     stmt::HirTrigger,
     symbol::CallableDeclarationKey,
 };
@@ -101,7 +100,8 @@ impl PreparedExecutableDeclarationInventory {
                     .statements()
                     .filter_map(|(owner, _)| {
                         body.paths().statement(owner).and_then(|path| {
-                            executable_body_path(path.steps()).then_some((path.steps(), owner))
+                            path.is_declaration_invocation()
+                                .then_some((path.steps(), owner))
                         })
                     })
                     .collect::<Vec<_>>();
@@ -116,7 +116,7 @@ impl PreparedExecutableDeclarationInventory {
                     .filter_map(|(owner, _)| {
                         body.paths()
                             .expression(owner)
-                            .and_then(|path| executable_body_path(path.steps()).then_some(owner))
+                            .and_then(|path| path.is_declaration_invocation().then_some(owner))
                     })
                     .collect::<Vec<_>>()
                     .into_boxed_slice();
@@ -151,12 +151,6 @@ impl PreparedExecutableDeclarationInventory {
     pub(in crate::final_analysis::analyzer) fn len(&self) -> usize {
         self.declarations.len()
     }
-}
-
-pub(in crate::final_analysis::analyzer) fn executable_body_path(
-    steps: &[HirSemanticPathStep],
-) -> bool {
-    matches!(steps.first(), Some(HirSemanticPathStep::DeclarationBody(_)))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -2805,6 +2805,14 @@ impl CallableSignatureSchema {
         self.core.attached_content
     }
 
+    pub(crate) fn attached_content_for_group(
+        &self,
+        group: CallableGroupIndex,
+    ) -> Option<CallableAttachedContentParameter> {
+        self.attached_content()
+            .filter(|parameter| parameter.group() == group)
+    }
+
     /// Returns the exact owner dependency of a context-dependent schema, when
     /// one exists. The dependency is an identity carrier rather than a
     /// source/display name and is included in the schema semantic digest.

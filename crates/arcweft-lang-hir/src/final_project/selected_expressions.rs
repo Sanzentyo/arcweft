@@ -662,8 +662,8 @@ impl HirAnalysisProjectView<'_> {
         )
     }
 
-    /// Selects one body's expression edges and applies accepted static
-    /// qualifier decisions supplied by the checked semantic owner.
+    /// Selects one invocation's expression edges, including its attached
+    /// default prologue, and applies the checked static qualifier decisions.
     pub fn selected_declaration_expression_graph_with_select_target_disposition(
         self,
         topology: &Arc<HirProjectEvaluationTopology>,
@@ -679,12 +679,9 @@ impl HirAnalysisProjectView<'_> {
         let outer = topology
             .expression_owners()
             .filter(|owner| {
-                paths.expression(*owner).is_some_and(|path| {
-                    matches!(
-                        path.steps().first(),
-                        Some(super::HirSemanticPathStep::DeclarationBody(_))
-                    )
-                })
+                paths
+                    .expression(*owner)
+                    .is_some_and(super::HirSemanticOwnerPath::is_declaration_invocation)
             })
             .collect::<BTreeSet<_>>();
         let traversal =

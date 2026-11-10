@@ -38,7 +38,7 @@ mod worklist;
 
 pub(in crate::final_analysis::analyzer) use inventory::{
     AdjacencyWorkKind, PreparedExecutableDeclaration, PreparedExecutableDeclarationInventory,
-    executable_body_path, extract_declaration_adjacency,
+    extract_declaration_adjacency,
 };
 #[cfg(test)]
 pub(in crate::final_analysis::analyzer) use verification::{
@@ -150,7 +150,7 @@ impl PreparedStatementIngressSeal {
 }
 
 impl Analyzer<'_, '_, '_> {
-    pub(super) fn is_executable_declaration_body_owner(
+    pub(super) fn is_declaration_invocation_owner(
         &self,
         owner: HirSemanticPathOwnerId,
     ) -> Result<bool, FinalSemanticAnalysisError> {
@@ -161,7 +161,7 @@ impl Analyzer<'_, '_, '_> {
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
         Ok({
             matches!(location.root(), HirSemanticPathRoot::Declaration(_))
-                && executable_body_path(location.path().steps())
+                && location.path().is_declaration_invocation()
         })
     }
 
@@ -500,7 +500,8 @@ impl Analyzer<'_, '_, '_> {
             .locals()
             .filter_map(|(owner, local)| {
                 view.paths().local(owner).and_then(|path| {
-                    executable_body_path(path.steps()).then(|| (owner, local.clone()))
+                    path.is_declaration_invocation()
+                        .then(|| (owner, local.clone()))
                 })
             })
             .collect::<Vec<_>>();

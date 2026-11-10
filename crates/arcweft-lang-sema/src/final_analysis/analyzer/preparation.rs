@@ -701,9 +701,7 @@ impl Analyzer<'_, '_, '_> {
             {
                 continue;
             }
-            if !self
-                .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Statement(owner))?
-            {
+            if !self.is_declaration_invocation_owner(HirSemanticPathOwnerId::Statement(owner))? {
                 residual.push((owner, statement));
             }
         }
@@ -825,9 +823,7 @@ impl Analyzer<'_, '_, '_> {
             {
                 continue;
             }
-            if !self
-                .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Expression(owner))?
-            {
+            if !self.is_declaration_invocation_owner(HirSemanticPathOwnerId::Expression(owner))? {
                 residual.insert(owner);
             }
         }
@@ -1145,9 +1141,7 @@ impl Analyzer<'_, '_, '_> {
                 if !selected.contains_owner(SyntheticOwner::Local(owner)) {
                     continue;
                 }
-                if self
-                    .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Local(owner))?
-                {
+                if self.is_declaration_invocation_owner(HirSemanticPathOwnerId::Local(owner))? {
                     continue;
                 }
                 if local.is_poisoned() {

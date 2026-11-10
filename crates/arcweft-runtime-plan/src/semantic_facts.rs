@@ -1775,6 +1775,42 @@ impl RuntimeAwaitFact {
     pub fn observers(&self) -> &[RuntimeAwaitPendingObserverFact] {
         &self.observers
     }
+
+    fn validate<'ty>(
+        &self,
+        expression: ExprId,
+        source: &HirExprKind,
+        operand: Option<&RuntimeNormalizedType>,
+        result: Option<&RuntimeNormalizedType>,
+        pattern_type: impl Fn(PatternId) -> Option<&'ty RuntimeNormalizedType>,
+    ) -> Result<(), RuntimeSemanticFactsError> {
+        let invalid = RuntimeSemanticFactsError::InvalidAwaitFact { expression };
+        let HirExprKind::Await(awaited) = source else {
+            return Err(invalid);
+        };
+        let payload = operand
+            .and_then(RuntimeNormalizedType::awaited_payload)
+            .ok_or(RuntimeSemanticFactsError::InvalidAwaitFact { expression })?;
+        if awaited.operand() != self.operand()
+            || result != Some(payload)
+            || awaited.branches().len() != self.observers().len()
+            || awaited
+                .branches()
+                .iter()
+                .zip(self.observers())
+                .any(|(authored, checked)| {
+                    authored.kind() != HirAwaitBranchKind::Pending
+                        || authored.pattern() != Some(checked.pattern())
+                        || !matches!(
+                            pattern_type(checked.pattern()).map(RuntimeNormalizedType::shape),
+                            Some(RuntimeTypeShape::Progress)
+                        )
+                })
+        {
+            return Err(invalid);
+        }
+        Ok(())
+    }
 }
 
 /// Closed carrier consumed by one checked prefix Try expression.
@@ -9162,49 +9198,13 @@ impl RuntimePlanSemanticFacts {
                 *expression,
                 RuntimeSemanticFactFamily::Await,
             )?;
-            let HirExprKind::Await(awaited) = resolve_expr(&modules, *expression)? else {
-                return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
-                    expression: *expression,
-                });
-            };
-            if awaited.operand() != fact.operand()
-                || fact.observers().len() != awaited.branches().len()
-            {
-                return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
-                    expression: *expression,
-                });
-            }
-            let Some(operand) = expression_types.get(&fact.operand()) else {
-                return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
-                    expression: *expression,
-                });
-            };
-            let Some(item) = operand.awaited_payload() else {
-                return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
-                    expression: *expression,
-                });
-            };
-            if expression_types.get(expression) != Some(item) {
-                return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
-                    expression: *expression,
-                });
-            }
-            for (authored, checked) in awaited.branches().iter().zip(fact.observers()) {
-                if authored.kind() != HirAwaitBranchKind::Pending
-                    || authored.pattern() != Some(checked.pattern())
-                    || !matches!(
-                        pattern_types
-                            .get(&checked.pattern())
-                            .copied()
-                            .map(RuntimeNormalizedType::shape),
-                        Some(RuntimeTypeShape::Progress)
-                    )
-                {
-                    return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
-                        expression: *expression,
-                    });
-                }
-            }
+            fact.validate(
+                *expression,
+                resolve_expr(&modules, *expression)?,
+                expression_types.get(&fact.operand()),
+                expression_types.get(expression),
+                |pattern| pattern_types.get(&pattern).copied(),
+            )?;
         }
 
         for (expression, fact) in &implicit_callables {
@@ -14802,33 +14802,13 @@ fn validate_project_function_semantic_catalog(
                 }
             }
             RuntimeProjectFunctionExpressionPayload::Await(fact) => {
-                let HirExprKind::Await(awaited) = hir else {
-                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
-                };
-                if awaited.operand() != fact.operand()
-                    || fact.observers().len() != awaited.branches().len()
-                    || !matches!(
-                        expression_types
-                            .get(&fact.operand())
-                            .map(RuntimeNormalizedType::shape),
-                        Some(RuntimeTypeShape::Need(_))
-                    )
-                    || awaited
-                        .branches()
-                        .iter()
-                        .zip(fact.observers())
-                        .any(|(authored, checked)| {
-                            authored.pattern() != Some(checked.pattern())
-                                || !matches!(
-                                    pattern_types
-                                        .get(&checked.pattern())
-                                        .map(RuntimeNormalizedType::shape),
-                                    Some(RuntimeTypeShape::Progress)
-                                )
-                        })
-                {
-                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
-                }
+                fact.validate(
+                    owner,
+                    hir,
+                    expression_types.get(&fact.operand()),
+                    semantics.expression_source_type(owner),
+                    |pattern| pattern_types.get(&pattern),
+                )?;
             }
             RuntimeProjectFunctionExpressionPayload::Choice(fact) => {
                 let HirExprKind::Choice(choice) = hir else {

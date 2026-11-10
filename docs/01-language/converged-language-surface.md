@@ -223,6 +223,9 @@ sealed once after those defaults; there is no preliminary interface identity
 and no call/recursion restriction introduced solely for hashing.
 
 Default expressions retain their checked effects and suspension behavior.
+The attached default contributes to the inferred effect row of the terminal
+group. Earlier groups create continuations with their ordinary arguments and
+the latent terminal effect row.
 Omission enters the declaring callable's ordinary function frame, evaluates
 the default exactly once in its `None` prologue branch, binds the declared
 content local, and then continues into the authored body. Presence bypasses

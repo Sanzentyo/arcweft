@@ -286,6 +286,18 @@ impl HirSemanticOwnerPath {
         &self.steps
     }
 
+    /// Whether this owner belongs to an invocation's authored body or to its
+    /// attached-content default prologue.
+    pub fn is_declaration_invocation(&self) -> bool {
+        matches!(
+            self.steps.first(),
+            Some(
+                HirSemanticPathStep::DeclarationBody(_)
+                    | HirSemanticPathStep::AttachedContentDefault
+            )
+        )
+    }
+
     pub const fn hops(&self) -> &[HirExpressionSemanticHop] {
         &self.hops
     }

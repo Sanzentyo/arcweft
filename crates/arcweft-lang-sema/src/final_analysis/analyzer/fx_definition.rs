@@ -103,7 +103,10 @@ impl PreparedFxDefinitionBodyObligations {
                 return Err(CheckedFxDefinitionSealError::OwnerInvariant);
             };
             if !declarations.contains(declaration)
-                || !super::executable_ingress::executable_body_path(location.path().steps())
+                || !matches!(
+                    location.path().steps().first(),
+                    Some(arcweft_lang_hir::project::HirSemanticPathStep::DeclarationBody(_))
+                )
             {
                 return Err(CheckedFxDefinitionSealError::OwnerInvariant);
             }

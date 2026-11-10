@@ -1194,8 +1194,7 @@ fn checked_execution_projection(
     }
     let attached_parameter = selected
         .schema()
-        .attached_content()
-        .filter(|parameter| parameter.group() == selected.call_group());
+        .attached_content_for_group(selected.call_group());
     let mut attached_content_abi_type = None;
     let attached_content = match (attached_parameter, record.inputs.attached_content()) {
         (None, None) => None,

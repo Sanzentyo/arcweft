@@ -4,11 +4,16 @@ use arcweft_compiler::source::compile_source;
 use arcweft_core::{
     awbc::{
         product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductProgram},
-        schema::AwbcProgram,
+        schema::{AwbcEntryId, AwbcProgram},
     },
+    effect::RuntimeArtifactFingerprint,
     engine::{Engine, FlowExit, FlowFiberStatus},
     executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor},
-    step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    plan::RuntimePlan,
+    step::{
+        RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+        RuntimeStepResult, RuntimeStepStopReason,
+    },
     time::LogicalDuration,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -17,15 +22,18 @@ use std::sync::Arc;
 fn native(body: &str) -> Engine {
     let source = format!("{body}\nentry cli @entry.main {{ goto @flow.main }}\n");
     let compiled = compile_source(&source).unwrap_or_else(|error| panic!("{source}: {error:?}"));
-    let flow = compiled
-        .plan
+    native_plan(compiled.plan)
+}
+
+fn native_plan(plan: RuntimePlan) -> Engine {
+    let flow = plan
         .flows()
         .iter()
         .find(|flow| flow.id.public_label().as_str() == "flow.main")
         .unwrap()
         .id
         .clone();
-    Engine::for_flow(compiled.plan, &flow).unwrap()
+    Engine::for_flow(plan, &flow).unwrap()
 }
 
 fn step(engine: &mut Engine, nanos: u64) -> arcweft_core::step::RuntimeStepResult {
@@ -371,6 +379,185 @@ flow main() -> i64 {
     assert_eq!(awbc.fiber().frame.status, returned);
     assert_eq!(native_logs, ["drop", "keep"]);
     assert_eq!(awbc_logs, ["drop", "keep"]);
+}
+
+#[test]
+fn staged_attached_defaults_resume_cleanup_and_thread_await() {
+    let body = r#"
+fn stage<A, B>(prefix: A)(later: B, label: String, seed: DialogueContent, inspect: B -> String effects {})[body: DialogueContent = {
+    let _ = prefix
+    log.info(label)
+    log.info(inspect(later))
+    if label == "default-1" {
+        defer {
+            log.info("cleanup-enter")
+            wait(0.1s)
+            log.info("cleanup-resume")
+        }
+    } else {
+        let child = thread {
+            log.info("thread-enter")
+            wait(0.1s)
+            log.info("thread-resume")
+            return 1i64
+        }
+        let joined = await child
+        if joined == 1i64 { log.info("joined") }
+    }
+    seed
+}] -> DialogueContent {
+    log.info("body")
+    body
+}
+
+flow main() -> i64 {
+    let shared = stage({ log.info("prefix"); 7i64 })
+    let _ = shared(
+        label = { log.info("label-1"); "default-1" },
+        later = { log.info("later-1"); "left" },
+        seed = fmt("first"),
+        inspect = |value: String| value
+    )
+    let _ = shared(
+        label = { log.info("label-2"); "default-2" },
+        later = { log.info("later-2"); 40i64 },
+        seed = fmt("second"),
+        inspect = |value: i64| if value == 40i64 { "right" } else { "unexpected" }
+    )
+    return 42i64
+}
+"#;
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    };
+    let source = format!("{body}\nentry cli @entry.main {{ goto @flow.main }}\n");
+    let mut compiled = compile_source(&source).unwrap();
+    let [entry] = compiled.plan.entries() else {
+        panic!("one Flow entry")
+    };
+    let program = AwbcLowerer::for_entry(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "staged-default.arcw",
+        &entry.id,
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
+    assert_eq!(decoded, program);
+    let artifact =
+        RuntimeArtifactFingerprint::try_from_bytes(*blake3::hash(&bytes).as_bytes()).unwrap();
+    compiled.plan.bind_artifact(artifact).unwrap();
+    let mut engine = native_plan(compiled.plan);
+    assert_staged_default_waits(|nanos| {
+        engine.step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(nanos),
+                ..Default::default()
+            },
+            options,
+        )
+    });
+
+    let mut product =
+        Some(ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap());
+    assert_staged_default_waits(|nanos| {
+        let (restored, result) = product_step_with_options(product.take().unwrap(), nanos, options);
+        product = Some(restored);
+        result
+    });
+}
+
+fn assert_staged_default_waits(mut step: impl FnMut(u64) -> RuntimeStepResult) {
+    fn next_boundary(
+        step: &mut impl FnMut(u64) -> RuntimeStepResult,
+        elapsed: u64,
+    ) -> (RuntimeStepResult, Vec<String>, usize) {
+        let mut logs = Vec::new();
+        let mut program_starts = 0;
+        for tick in 0..256 {
+            let result = step(if tick == 0 { elapsed } else { 0 });
+            assert!(
+                result.output.diagnostics.is_empty(),
+                "{:?}",
+                result.output.diagnostics
+            );
+            for submission in &result.output.requests.tasks {
+                use arcweft_core::task::{TaskHandleType, TaskRequest};
+                assert!(matches!(
+                    &submission.spec().request,
+                    TaskRequest::Program(_)
+                ));
+                assert!(matches!(
+                    submission.spec().producer.handle_type(),
+                    TaskHandleType::ThreadHandle { .. }
+                ));
+                program_starts += 1;
+            }
+            assert!(result.stats.executed_ops <= 1);
+            logs.extend(result.output.effects.line.iter().filter_map(|effect| {
+                let arcweft_core::effect::LineEffectRequest::Log(log) = effect else {
+                    return None;
+                };
+                Some(log.message.clone())
+            }));
+            if matches!(
+                result.stop_reason,
+                RuntimeStepStopReason::Blocked | RuntimeStepStopReason::Done
+            ) {
+                return (result, logs, program_starts);
+            }
+        }
+        panic!("default did not reach a wait or return: {logs:?}");
+    }
+
+    let mut blocked_after = |elapsed, expected: &[&str], expected_starts| {
+        let (result, logs, program_starts) = next_boundary(&mut step, elapsed);
+        assert_eq!(result.stop_reason, RuntimeStepStopReason::Blocked);
+        assert_eq!(logs, expected);
+        assert_eq!(program_starts, expected_starts);
+        if elapsed == 40_000_000 {
+            assert_eq!(result.stats.executed_ops, 0);
+        }
+    };
+    blocked_after(
+        0,
+        &[
+            "prefix",
+            "label-1",
+            "later-1",
+            "default-1",
+            "left",
+            "cleanup-enter",
+        ],
+        0,
+    );
+    blocked_after(40_000_000, &[], 0);
+    blocked_after(
+        60_000_000,
+        &[
+            "cleanup-resume",
+            "body",
+            "label-2",
+            "later-2",
+            "default-2",
+            "right",
+            "thread-enter",
+        ],
+        1,
+    );
+    blocked_after(40_000_000, &[], 0);
+    let (result, logs, program_starts) = next_boundary(&mut step, 60_000_000);
+    assert_eq!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return("42".into()))
+    );
+    assert_eq!(logs, ["thread-resume", "joined", "body"]);
+    assert_eq!(program_starts, 0);
 }
 
 fn finish_product(runtime: ArcweftRuntimeExecutor) {
