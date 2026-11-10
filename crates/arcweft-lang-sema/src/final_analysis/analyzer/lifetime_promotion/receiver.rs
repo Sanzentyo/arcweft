@@ -1,4 +1,4 @@
-//! Prove that a receiver type can retain a borrow through its value storage.
+//! Classify the stored parts of a promotion receiver's type.
 
 use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
@@ -23,29 +23,38 @@ use crate::{
     },
 };
 
-/// A declaration either stores a borrow itself or can store the values of
-/// certain type parameters. These dependencies are independent of any one
-/// instantiation and remain finite even when recursive arguments grow.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub(in crate::final_analysis::analyzer::lifetime_promotion) enum TypeStorage {
+    #[default]
+    Ordinary,
+    /// The stored value can contain a callable. Its capture types come from
+    /// the checked producer, outside the callable's signature.
+    Callable,
+    Borrowed,
+}
+
+/// A declaration may store a borrow or callable itself and may retain certain
+/// type parameters. The summary stays finite as recursive arguments grow.
 #[derive(Debug, Default, Eq, PartialEq)]
-struct StoredBorrow {
-    direct: bool,
+struct StoredType {
+    direct: TypeStorage,
     parameters: BTreeSet<u16>,
 }
 
-impl StoredBorrow {
+impl StoredType {
     fn include(&mut self, other: Self) {
-        if other.direct {
-            self.direct = true;
+        self.direct = self.direct.max(other.direct);
+        if self.direct == TypeStorage::Borrowed {
             self.parameters.clear();
-        } else if !self.direct {
+        } else {
             self.parameters.extend(other.parameters);
         }
     }
 }
 
 #[derive(Default)]
-struct DeclarationBorrow {
-    stored: StoredBorrow,
+struct DeclarationStorage {
+    stored: StoredType,
     dependents: BTreeSet<ProjectNominalDeclarationId>,
 }
 
@@ -54,7 +63,7 @@ pub(super) struct ReceiverBorrowQuery<'a> {
     control: FinalSemanticAnalysisControl<'a>,
     source_span: &'a SourceSpan,
     remaining: u64,
-    declarations: BTreeMap<ProjectNominalDeclarationId, DeclarationBorrow>,
+    declarations: BTreeMap<ProjectNominalDeclarationId, DeclarationStorage>,
     pending: BTreeSet<ProjectNominalDeclarationId>,
 }
 
@@ -93,17 +102,15 @@ impl<'a> ReceiverBorrowQuery<'a> {
         }
     }
 
-    pub(super) fn contains_borrow(
+    pub(super) fn storage(
         &mut self,
         root: &TypeKind,
         types: &BTreeMap<TypeId, TypeKind>,
-    ) -> Result<bool, FinalSemanticAnalysisError> {
+    ) -> Result<TypeStorage, FinalSemanticAnalysisError> {
         loop {
-            if self.inspect(root, None, 1)?.direct {
-                return Ok(true);
-            }
-            if self.pending.is_empty() {
-                return Ok(false);
+            let direct = self.inspect(root, None, 1)?.direct;
+            if direct == TypeStorage::Borrowed || self.pending.is_empty() {
+                return Ok(direct);
             }
             // Each summary grows toward more retained parameters or a direct
             // borrow. Revisit only declarations that consumed a changed summary.
@@ -158,9 +165,9 @@ impl<'a> ReceiverBorrowQuery<'a> {
         &mut self,
         declaration: &ProjectNominalDeclaration,
         types: &BTreeMap<TypeId, TypeKind>,
-    ) -> Result<StoredBorrow, FinalSemanticAnalysisError> {
+    ) -> Result<StoredType, FinalSemanticAnalysisError> {
         let owner = declaration.id();
-        let mut stored = StoredBorrow::default();
+        let mut stored = StoredType::default();
         match declaration.body() {
             ProjectNominalBody::Struct { fields } => {
                 for field in fields {
@@ -192,13 +199,13 @@ impl<'a> ReceiverBorrowQuery<'a> {
 
     fn include_member(
         &mut self,
-        stored: &mut StoredBorrow,
+        stored: &mut StoredType,
         owner: &ProjectNominalDeclarationId,
         ty: TypeId,
         types: &BTreeMap<TypeId, TypeKind>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.charge(1)?;
-        if !stored.direct {
+        if stored.direct != TypeStorage::Borrowed {
             let ty = types
                 .get(&ty)
                 .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty })?;
@@ -216,15 +223,18 @@ impl<'a> ReceiverBorrowQuery<'a> {
         ty: &TypeKind,
         owner: Option<&ProjectNominalDeclarationId>,
         depth: u16,
-    ) -> Result<StoredBorrow, FinalSemanticAnalysisError> {
+    ) -> Result<StoredType, FinalSemanticAnalysisError> {
         self.charge(1)?;
         if depth > NominalResolutionLimits::PRODUCTION.recursive_type_depth() {
             return Err(self.limit());
         }
         let child = depth + 1;
-        let mut stored = StoredBorrow::default();
+        let mut stored = StoredType::default();
         match ty {
-            TypeKind::BorrowRef { .. } | TypeKind::Slice(_) => stored.direct = true,
+            TypeKind::BorrowRef { .. } | TypeKind::Slice(_) => {
+                stored.direct = TypeStorage::Borrowed
+            }
+            TypeKind::Function { .. } => stored.direct = TypeStorage::Callable,
             TypeKind::GenericParam(reference) => {
                 if let Some(parameter) = reference.free_parameter()
                     && matches!(parameter.owner(), GenericParameterOwnerId::Nominal(id) if Some(id) == owner)
@@ -238,15 +248,14 @@ impl<'a> ReceiverBorrowQuery<'a> {
                     Entry::Occupied(entry) => entry.into_mut(),
                     Entry::Vacant(entry) => {
                         self.pending.insert(id.clone());
-                        entry.insert(DeclarationBorrow::default())
+                        entry.insert(DeclarationStorage::default())
                     }
                 };
                 if let Some(owner) = owner {
                     row.dependents.insert(owner.clone());
                 }
-                if row.stored.direct {
-                    stored.direct = true;
-                } else {
+                stored.direct = row.stored.direct;
+                if stored.direct != TypeStorage::Borrowed {
                     let parameters = row.stored.parameters.iter().copied().collect::<Vec<_>>();
                     for ordinal in parameters {
                         let argument = nominal
@@ -254,7 +263,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
                             .get(usize::from(ordinal))
                             .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
                         stored.include(self.inspect(argument, owner, child)?);
-                        if stored.direct {
+                        if stored.direct == TypeStorage::Borrowed {
                             break;
                         }
                     }
@@ -283,14 +292,14 @@ impl<'a> ReceiverBorrowQuery<'a> {
                 error: second,
             } => {
                 stored = self.inspect(first, owner, child)?;
-                if !stored.direct {
+                if stored.direct != TypeStorage::Borrowed {
                     stored.include(self.inspect(second, owner, child)?);
                 }
             }
             TypeKind::Choice(items) | TypeKind::Tuple(items) => {
                 for item in items {
                     stored.include(self.inspect(item, owner, child)?);
-                    if stored.direct {
+                    if stored.direct == TypeStorage::Borrowed {
                         break;
                     }
                 }
@@ -298,7 +307,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
             TypeKind::VariantPayload(payload) => {
                 for field in payload.stored_fields() {
                     stored.include(self.inspect(field, owner, child)?);
-                    if stored.direct {
+                    if stored.direct == TypeStorage::Borrowed {
                         break;
                     }
                 }
@@ -306,8 +315,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
             // Result/signature types, handles and opaque types do not describe
             // their stored captures or resources. Their owner must supply that
             // evidence before an executable promotion can be admitted.
-            TypeKind::Function { .. }
-            | TypeKind::Seq(_)
+            TypeKind::Seq(_)
             | TypeKind::Stream { .. }
             | TypeKind::Parser { .. }
             | TypeKind::Need(_)

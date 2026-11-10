@@ -12,15 +12,9 @@ use crate::callable::{
 };
 
 use super::{
-    FinalSemanticAnalysisError, ReceiverBorrowQuery, localization::RetainedBodyProjection,
+    FinalSemanticAnalysisError, ReceiverBorrowQuery, TypeStorage,
+    localization::RetainedBodyProjection,
 };
-
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) enum TypeStorage {
-    Ordinary,
-    Borrowed,
-    Callable,
-}
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ApplicationStorage {

@@ -1333,6 +1333,19 @@ impl PreparedFunctionValueOriginQuery {
         module: &HirModule,
         fact: &PreparedExpressionFact,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
+        if self.purpose == PreparedFunctionValueOriginPurpose::Storage
+            && matches!(
+                fact,
+                PreparedExpressionFact::ProjectRecord(_) | PreparedExpressionFact::Variant(_)
+            )
+        {
+            return Ok(self.ready(
+                PreparedFunctionValueOriginProducer::IndependentExpression {
+                    producer: self.current,
+                },
+                Vec::new(),
+            ));
+        }
         if let PreparedExpressionFact::OwnerBound(owner_bound) = fact {
             if matches!(
                 owner_bound.resolution(),

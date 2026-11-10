@@ -1464,6 +1464,120 @@ fn safe_lifetime_promotion_checks_borrows_in_stored_receiver_types() {
 }
 
 #[test]
+fn safe_lifetime_promotion_follows_callable_storage_in_aggregates() {
+    for (declarations, build) in [
+        ("", "let packed = (7i64, callback)"),
+        ("", "let packed = [callback]"),
+        ("", "let packed = [callback; 1]"),
+        ("", "let packed = Some(callback)"),
+        (
+            "",
+            "let packed: Result<(i64 -> i64 effects {}), i64> = Ok(callback)",
+        ),
+        (
+            "",
+            "let packed: Result<i64, (i64 -> i64 effects {})> = Err(callback)",
+        ),
+        (
+            "struct Packed<T> { callback: T }",
+            "let packed = Packed { callback }",
+        ),
+        (
+            "struct Packed<T> { callback: T }",
+            "let packed = Packed { callback: callback }",
+        ),
+        (
+            "enum Packed { Stored(i64 -> i64 effects {}), Empty }",
+            "let packed: Packed = .Stored(callback)",
+        ),
+        (
+            "fn identity<T>(value: T) -> T { value }",
+            "let packed = identity((7i64, callback))",
+        ),
+        (
+            "fn pack<T>(value: T) -> Option<T> { Some(value) }",
+            "let packed = pack(callback)",
+        ),
+        (
+            "struct Packed<T> { callback: T }",
+            "let inner = Packed { callback }; let packed = || -> i64 { let _ = inner; 7i64 }",
+        ),
+    ] {
+        for (body, code, span) in [
+            (
+                "let _ = loan; value",
+                "sema.lifetime.promotion_receiver",
+                "packed",
+            ),
+            (
+                "value",
+                "sema.lifetime.promotion_execution",
+                "packed.promote('flow)",
+            ),
+        ] {
+            let source = format!(
+                "{declarations}\nflow main(loan: &i64) {{
+                    let callback = |value: i64| -> i64 {{ {body} }};
+                    {build};
+                    let _ = packed.promote('flow);
+                }}"
+            );
+            let fixture = fixture(&source, None);
+            let error = analyze(&fixture).expect_err("promotion has no executable transfer");
+            let diagnostic = error
+                .source_diagnostic()
+                .unwrap_or_else(|| panic!("{source}: {error:?}"));
+            assert_eq!(
+                diagnostic.code().unwrap().as_str(),
+                code,
+                "{source}: {error:?}"
+            );
+            assert_eq!(
+                &source[diagnostic.span().unwrap().range().as_range()],
+                span,
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn safe_lifetime_promotion_ignores_callable_arguments_absent_from_storage() {
+    for (declarations, value) in [
+        ("", "[callback; 0]"),
+        (
+            "fn discard<T>(value: T) -> Option<T> { let _ = value; None }",
+            "discard(callback)",
+        ),
+        (
+            "struct Marker<T> { number: i64 }
+             fn mark<T>(value: T) -> Marker<T> { let _ = value; Marker { number: 7i64 } }",
+            "mark(callback)",
+        ),
+    ] {
+        let source = format!(
+            "{declarations}\nflow main(loan: &i64) {{
+                let callback = |value: i64| -> i64 {{ let _ = loan; value }};
+                let packed = {value};
+                let _ = packed.promote('flow);
+            }}"
+        );
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("promotion has no executable transfer");
+        let diagnostic = error.source_diagnostic().unwrap();
+        assert_eq!(
+            diagnostic.code().unwrap().as_str(),
+            "sema.lifetime.promotion_execution",
+            "{source}: {error:?}"
+        );
+        assert_eq!(
+            &source[diagnostic.span().unwrap().range().as_range()],
+            "packed.promote('flow)",
+        );
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_propagates_only_changed_nominal_storage() {
     use std::fmt::Write as _;
 

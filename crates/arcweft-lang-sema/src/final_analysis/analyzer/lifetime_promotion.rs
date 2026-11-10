@@ -17,14 +17,13 @@ mod captures;
 #[path = "lifetime_promotion/receiver.rs"]
 mod receiver;
 
-use self::receiver::ReceiverBorrowQuery;
+use self::receiver::{ReceiverBorrowQuery, TypeStorage};
 use super::{
     Analyzer, FinalSemanticAnalysisError, expression_error::AnalyzerExpressionContext,
     statements::expression_span,
 };
 use crate::{
     callable::PreparedCallCalleeConstraintInputs, final_analysis::model::LifetimeLexicalActivation,
-    types::TypeKind,
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -112,14 +111,14 @@ impl Analyzer<'_, '_, '_> {
         ) {
             let source_span = expression_span(module, *source)?;
             let mut receiver = ReceiverBorrowQuery::new(self.symbols, self.control, &source_span);
-            if receiver.contains_borrow(actual, &self.types)?
-                || (matches!(actual, TypeKind::Function { .. })
-                    && self.function_value_has_borrowed_captures(
-                        context,
-                        *source,
-                        &mut receiver,
-                    )?)
-            {
+            let borrowed = match receiver.storage(actual, &self.types)? {
+                TypeStorage::Borrowed => true,
+                TypeStorage::Callable => {
+                    self.value_has_borrowed_captures(context, *source, &mut receiver)?
+                }
+                TypeStorage::Ordinary => false,
+            };
+            if borrowed {
                 return Err(
                     FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver { source_span },
                 );

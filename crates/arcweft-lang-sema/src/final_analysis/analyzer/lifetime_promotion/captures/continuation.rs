@@ -4,11 +4,11 @@ use crate::callable::{CallableCandidateId, PreparedResolvedCallable};
 
 use super::{
     Analyzer, AnalyzerExpressionContext, CaptureEvaluation, FinalSemanticAnalysisError,
-    ReceiverBorrowQuery,
+    ReceiverBorrowQuery, TypeStorage,
     inputs::SuffixInput,
     invocation::SourceInvocation,
     localization::RetainedBodyProjection,
-    worklist::{BorrowDependencies, Invocation, Observation, TypeStorage, ValueOrigin},
+    worklist::{BorrowDependencies, Invocation, Observation, ValueOrigin},
 };
 
 impl Analyzer<'_, '_, '_> {

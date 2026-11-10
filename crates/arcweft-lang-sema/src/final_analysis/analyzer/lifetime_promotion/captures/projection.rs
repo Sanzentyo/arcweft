@@ -21,9 +21,9 @@ use crate::{
 };
 
 use super::{
-    Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery, call_storage_error,
+    Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery, TypeStorage, call_storage_error,
     storage_projection_error,
-    worklist::{ApplicationStorage, BodyProjection, TypeStorage},
+    worklist::{ApplicationStorage, BodyProjection},
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -219,13 +219,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<TypeStorage, FinalSemanticAnalysisError> {
         let projected = self.project_value_storage(ty, projections, receiver)?;
         let ty = projected.as_ref().map_or(ty, |term| term.view().value());
-        if receiver.contains_borrow(ty, &self.types)? {
-            Ok(TypeStorage::Borrowed)
-        } else if matches!(ty, TypeKind::Function { .. }) {
-            Ok(TypeStorage::Callable)
-        } else {
-            Ok(TypeStorage::Ordinary)
-        }
+        receiver.storage(ty, &self.types)
     }
 
     pub(super) fn project_value_storage(

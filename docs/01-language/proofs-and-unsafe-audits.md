@@ -160,7 +160,12 @@ contributes to this check when it is used in the value's storage. Callable
 signatures and deferred result types describe operations. The ownership
 check follows resolved capture bindings and the function values returned by
 the receiver expression. A borrow retained in a closure's captures makes that
-closure a borrowed receiver. For a direct call to a source function, the
+closure a borrowed receiver. The check follows callable values stored in
+tuple and sequence elements, initialized record fields, and selected
+variant, `Option`, and `Result` constructor payloads. Record shorthand uses
+the checked local binding as its field source. A zero-length array or a
+discarded argument contributes no stored capture.
+For a direct call to a source function, the
 ownership check follows its reachable return values and normal result under
 the selected call's type arguments. When the result uses a function value
 from a whole parameter binding, the check follows the expression supplied to
