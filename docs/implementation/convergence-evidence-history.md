@@ -16404,3 +16404,19 @@ Viewのfitとホストの文字拡大率から一つの `TextMetricScale` を作
 
 [描画・組版・依存グラフ・公開照合の原本](acceptance-evidence/task-retained-typography-hidpi.raw.zip)は41件、715,403 bytes、SHA-256
 `b482f3b0a4fb3402b123f46e7e03fa636638e5372a2cee772495e1c070b68cc1`。
+
+### Staged attached defaults and Thread Await
+
+2026-11-10に親 79c2971e2a2c254248cf9013aeb7b6255ef82506 と公開 Source 4824232dcd6c64fcdc8eeec10a29d0168460c743 を確認した。tree は 2411e36fa259442bcb64deba60e334cbb1833893。公開先の14 blob を照合した。検証時の追跡対象の差分は0件で、既存の未追跡 %SystemDrive%/ があった。
+
+実 CLI の修正前入力では、純粋な段階適用と optional attached operand の段階適用が checked application の引数投影で panic した。default の効果を推論する入力は callable catalog の検証で拒否され、単一グループでも ThreadHandle の await は RuntimePlan の閉じたインスタンス検証で拒否された。実行文脈の外に裸の wait(Duration) を置いた探索入力も原本に保持した。待機の正例には Thread または defer の実行文脈を使った。
+
+先行グループの引数準備・封印・実行投影が、同じ CallableSignatureSchema のグループ選択を使う。attached default の HIR 座標を呼出しの実行領域に含め、終端の効果を推論する段階と、最終グラフの照合が同じ default を処理する。Fx 定義は宣言本体の座標で照合する。RuntimeAwaitFact が全体と閉じたインスタンスの両方で operand、結果型、Pending branch を検証する。Need と ThreadHandle は既存の型投影に従う。既存の公開保存と codec version 1 を使った。
+
+回帰テストは同じ prefix で String と i64 を選び、名前付き引数を記述順に評価し、捕捉した関数がそれぞれの値を読む。defer と Thread の2回の100 ms待機を40 msと60 msに分け、40 msでは効果も追加操作も発生せず、元の待機が続く。起動通知は Program の ThreadHandle 1件、Host 通知は0件。Native と canonical decoded AWBC は各ステップ最大1操作で42を返す。AWBC は各ステップで公開JSON保存と復元を行った。Compiler の待機全20件は成功。途中の実行では未束縛の成果物 ID、Program 起動通知の初期期待、待機に入る操作の初期期待を修正した。各失敗ログを原本に保持した。
+
+実 CLI の16入力を受理し、実行4件が42を返した。残る4実行は headless の論理時間を進めず、期待した待機に到達した。明示効果行を持つ再帰の段階適用は両 executor で default を2回実行した。効果行を推論させる再帰の段階適用は semantic expression dependency cycle で拒否された。追加の3入力では、通常本体の段階適用と prefix を束縛してから呼ぶ場合も同じ循環で拒否され、単一グループの再帰は受理された。
+
+Cargo tree の既定・全 feature・全ターゲットと Windows 用 Cargo metadata の逆依存は HIR を含む23パッケージで一致した。nextest は 4,898 件成功、0 件失敗、9 件スキップ。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、doctest 2 件、Web Player の Wasm check も通過した。
+
+[ソース照合、実入力、失敗、全コマンドの原本](acceptance-evidence/task-staged-attached-default.raw.zip)は223件、1444533 bytes、SHA-256 66ed43861f68a677dfda106e41843241e8a7d6eafcae156a46dd7497286a814f。
