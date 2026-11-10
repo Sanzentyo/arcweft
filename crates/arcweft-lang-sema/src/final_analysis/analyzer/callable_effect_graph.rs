@@ -1,20 +1,115 @@
 //! Callable-body call inventory, recursion rejection, and effect closure.
 
+use std::sync::Arc;
+
 use super::{
     BTreeMap, BTreeSet, CallableDeclarationOwner, CallableEffectSchema, CheckedCallableId, ExprId,
     FinalSemanticAnalysisControl, FinalSemanticAnalysisError, RecursiveCallableContractEdge,
     StagedCallableBody, calls::AnalyzerPreparedCallGraph,
 };
 use crate::{
-    callable::CheckedCallableDeclaration, effect_row::EffectRow,
+    callable::{
+        CheckedCallSite, CheckedCallableDeclaration, PreparedCallableApplication,
+        PreparedCallableEffectProjection, PreparedResolvedCallable,
+    },
+    effect_row::EffectRow,
     final_analysis::statement_effects::PreparedExecutionEffectCatalog,
 };
 
 type CallableEdges = BTreeMap<CheckedCallableId, BTreeMap<CheckedCallableId, BTreeSet<ExprId>>>;
 
-struct IndexedCallableCall<'a> {
-    target: CheckedCallableId,
-    application: &'a crate::callable::PreparedCallableApplication,
+pub(super) struct CallableEffectCall {
+    site: CheckedCallSite,
+    selected: Arc<PreparedResolvedCallable>,
+    projection: PreparedCallableEffectProjection,
+}
+
+impl CallableEffectCall {
+    pub(super) fn selected(
+        site: CheckedCallSite,
+        application: &PreparedCallableApplication,
+    ) -> Option<Self> {
+        let selected = application.selected();
+        if selected.id().is_flow_transfer()
+            || selected
+                .next_group_for(application.completed_group())
+                .is_some()
+            || !matches!(
+                selected.schema().effects(),
+                CallableEffectSchema::Project { .. }
+            )
+            || selected.checked().is_none()
+        {
+            return None;
+        }
+        Some(Self {
+            site,
+            selected: Arc::clone(application.selected_shared()),
+            projection: application.effect_projection(),
+        })
+    }
+
+    pub(super) fn target(&self) -> &CheckedCallableId {
+        self.selected
+            .checked()
+            .expect("effect call retains a checked declaration")
+    }
+
+    pub(super) fn candidate(&self) -> &PreparedResolvedCallable {
+        &self.selected
+    }
+
+    pub(super) fn expression(&self) -> ExprId {
+        self.site.expression()
+    }
+
+    fn specialize(&self, row: &EffectRow) -> Result<EffectRow, FinalSemanticAnalysisError> {
+        self.projection.specialize(row).map_err(|_| {
+            FinalSemanticAnalysisError::CallResolutionFailed {
+                owner: self.site.expression(),
+            }
+        })
+    }
+}
+
+/// Terminal application equations over checked declarations. Both on-demand
+/// callable projection and final analysis close the same kind of effect rows.
+#[derive(Default)]
+pub(super) struct CallableEffectEquations {
+    edges: CallableEdges,
+    calls: BTreeMap<ExprId, CallableEffectCall>,
+}
+
+impl CallableEffectEquations {
+    pub(super) fn insert_call(
+        &mut self,
+        call: CallableEffectCall,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        if self.calls.insert(call.site.expression(), call).is_some() {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
+        Ok(())
+    }
+
+    pub(super) fn insert_body(
+        &mut self,
+        caller: CheckedCallableId,
+        expressions: impl IntoIterator<Item = ExprId>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let mut targets = BTreeMap::<_, BTreeSet<_>>::new();
+        for expression in expressions {
+            if let Some(call) = self.calls.get(&expression) {
+                targets
+                    .entry(call.target().clone())
+                    .or_default()
+                    .insert(expression);
+            }
+        }
+        if self.edges.insert(caller, targets).is_some() {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,10 +134,9 @@ struct IndexedCallableExecution {
 ///
 /// Pending call facts are resolved to scopes exactly once. Body rows, closure
 /// rows, and recursion diagnostics all consume this immutable inventory.
-pub(super) struct CallableEffectGraph<'a> {
+pub(super) struct CallableEffectGraph {
     owners: BTreeMap<CheckedCallableId, CallableDeclarationOwner>,
-    edges: CallableEdges,
-    calls_by_expression: BTreeMap<ExprId, IndexedCallableCall<'a>>,
+    equations: CallableEffectEquations,
     execution_by_expression: BTreeMap<ExprId, IndexedCallableExecution>,
     closure_execution: BTreeMap<ExprId, IndexedClosureExecution>,
 }
@@ -85,10 +179,10 @@ pub(super) fn prepared_call_execution_rows(
     Ok(rows)
 }
 
-impl<'a> CallableEffectGraph<'a> {
+impl CallableEffectGraph {
     pub(super) fn build(
         bodies: &[StagedCallableBody],
-        prepared_calls: &'a AnalyzerPreparedCallGraph,
+        prepared_calls: &AnalyzerPreparedCallGraph,
         execution: &PreparedExecutionEffectCatalog,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
         catalog: &crate::callable::CheckedCallableCatalogBuilder,
@@ -102,7 +196,7 @@ impl<'a> CallableEffectGraph<'a> {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
         let body_ids = owners.keys().cloned().collect::<BTreeSet<_>>();
-        let mut calls_by_expression = BTreeMap::<ExprId, IndexedCallableCall<'a>>::new();
+        let mut equations = CallableEffectEquations::default();
         let mut execution_by_expression = BTreeMap::new();
         let mut closure_execution = BTreeMap::new();
 
@@ -274,58 +368,27 @@ impl<'a> CallableEffectGraph<'a> {
             {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
-            if selected
-                .next_group_for(application.completed_group())
-                .is_none()
-                && matches!(
-                    selected.schema().effects(),
-                    CallableEffectSchema::Project { .. }
-                )
-                && let Some(target) = selected.checked()
-                && body_ids.contains(target)
-                && calls_by_expression
-                    .insert(
-                        owner,
-                        IndexedCallableCall {
-                            target: target.clone(),
-                            application,
-                        },
-                    )
-                    .is_some()
+            if let Some(call) = CallableEffectCall::selected(node.site(), application)
+                && body_ids.contains(call.target())
             {
-                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                equations.insert_call(call)?;
             }
         }
 
-        let mut edges = body_ids
-            .into_iter()
-            .map(|body| (body, BTreeMap::new()))
-            .collect::<CallableEdges>();
         for body in bodies {
             control.check()?;
             let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };
-            let targets = edges
-                .get_mut(&body.id)
-                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             let expressions = execution
                 .declaration_effect_expressions(declaration)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            for expression in expressions {
-                if let Some(call) = calls_by_expression.get(&expression) {
-                    targets
-                        .entry(call.target.clone())
-                        .or_default()
-                        .insert(expression);
-                }
-            }
+            equations.insert_body(body.id.clone(), expressions)?;
         }
 
         Ok(Self {
             owners,
-            edges,
-            calls_by_expression,
+            equations,
             execution_by_expression,
             closure_execution,
         })
@@ -529,11 +592,12 @@ impl<'a> CallableEffectGraph<'a> {
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut rejected = Vec::new();
-        for component in strongly_connected_components(&self.edges) {
+        let edges = &self.equations.edges;
+        for component in strongly_connected_components(edges) {
             control.check()?;
             let recursive = component.len() > 1
                 || component.iter().any(|owner| {
-                    self.edges
+                    edges
                         .get(owner)
                         .is_some_and(|targets| targets.contains_key(owner))
                 });
@@ -547,7 +611,7 @@ impl<'a> CallableEffectGraph<'a> {
                 continue;
             }
             for caller in &component {
-                let Some(targets) = self.edges.get(caller) else {
+                let Some(targets) = edges.get(caller) else {
                     continue;
                 };
                 for (callee, expressions) in targets {
@@ -579,7 +643,41 @@ impl<'a> CallableEffectGraph<'a> {
         bounded_call_rows: &BTreeMap<CheckedCallableId, EffectRow>,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        for iteration in 0..=self.owners.len() {
+        self.equations.close(rows, bounded_call_rows, control)
+    }
+
+    pub(super) fn close_selected_expression_effects(
+        &self,
+        expressions: impl IntoIterator<Item = ExprId>,
+        base: &EffectRow,
+        rows: &BTreeMap<CheckedCallableId, EffectRow>,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<EffectRow, FinalSemanticAnalysisError> {
+        let mut effects = base.clone();
+        for expression in expressions {
+            control.check()?;
+            if let Some(call) = self.equations.calls.get(&expression) {
+                let target_row = rows
+                    .get(call.target())
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                let projected = call.specialize(target_row)?;
+                effects = crate::final_analysis::statement_effects::union_effect_rows(
+                    &effects, &projected, control,
+                )?;
+            }
+        }
+        Ok(effects)
+    }
+}
+
+impl CallableEffectEquations {
+    pub(super) fn close(
+        &self,
+        rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
+        boundary: &BTreeMap<CheckedCallableId, EffectRow>,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        for iteration in 0..=self.edges.len() {
             control.check()?;
             let previous = rows.clone();
             let mut changed = false;
@@ -589,27 +687,20 @@ impl<'a> CallableEffectGraph<'a> {
                     .cloned()
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 for (target, expressions) in targets {
-                    let Some(target_row) = bounded_call_rows
+                    let target_row = boundary
                         .get(target)
                         .or_else(|| previous.get(target))
-                    else {
-                        continue;
-                    };
+                        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                     for expression in expressions {
                         control.check()?;
                         let call = self
-                            .calls_by_expression
+                            .calls
                             .get(expression)
                             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                        if &call.target != target {
+                        if call.target() != target {
                             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
                         }
-                        let projected = call
-                            .application
-                            .specialize_effect_row(target_row)
-                            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
-                                owner: *expression,
-                            })?;
+                        let projected = call.specialize(target_row)?;
                         row = crate::final_analysis::statement_effects::union_effect_rows(
                             &row, &projected, control,
                         )?;
@@ -623,39 +714,11 @@ impl<'a> CallableEffectGraph<'a> {
             if !changed {
                 return Ok(());
             }
-            if iteration == self.owners.len() {
+            if iteration == self.edges.len() {
                 return Err(FinalSemanticAnalysisError::AccountingOverflow);
             }
         }
         Ok(())
-    }
-
-    pub(super) fn close_selected_expression_effects(
-        &self,
-        expressions: impl IntoIterator<Item = ExprId>,
-        base: &EffectRow,
-        rows: &BTreeMap<CheckedCallableId, EffectRow>,
-        control: FinalSemanticAnalysisControl<'_>,
-    ) -> Result<EffectRow, FinalSemanticAnalysisError> {
-        let mut effects = base.clone();
-        for expression in expressions {
-            control.check()?;
-            if let Some(call) = self.calls_by_expression.get(&expression) {
-                let Some(target_row) = rows.get(&call.target) else {
-                    return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-                };
-                let projected =
-                    call.application
-                        .specialize_effect_row(target_row)
-                        .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
-                            owner: expression,
-                        })?;
-                effects = crate::final_analysis::statement_effects::union_effect_rows(
-                    &effects, &projected, control,
-                )?;
-            }
-        }
-        Ok(effects)
     }
 }
 

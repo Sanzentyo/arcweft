@@ -560,6 +560,106 @@ fn assert_staged_default_waits(mut step: impl FnMut(u64) -> RuntimeStepResult) {
     assert_eq!(program_starts, 0);
 }
 
+#[test]
+fn recursive_effectful_functions_resume_with_a_shared_generic_prefix() {
+    let body = r#"
+fn left<T>(value: T, count: i64) -> T {
+    log.info("left")
+    if count == 0i64 { value } else { right(value, count - 1i64) }
+}
+fn right<T>(value: T, count: i64) -> T {
+    log.info("right")
+    if count == 0i64 { value } else { left(value, count - 1i64) }
+}
+fn stage<A, B>(prefix: A)(value: B, count: i64) -> B {
+    let _ = prefix
+    left(value, count)
+}
+flow main() -> i64 {
+    let callback: (i64, i64) -> i64 effects { log.write } = right
+    let shared = stage({ log.info("prefix"); 7i64 })
+    wait(0.1s)
+    let text = shared("retained", 1i64)
+    if text == "retained" {
+        return callback(shared(42i64, 2i64), 1i64)
+    }
+    return 0i64
+}
+"#;
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    };
+    let mut engine = native(body);
+    assert_recursive_prefix_resume(|nanos| {
+        engine.step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(nanos),
+                ..Default::default()
+            },
+            options,
+        )
+    });
+
+    let mut executor = Some(product(body, true));
+    assert_recursive_prefix_resume(|nanos| {
+        let (restored, result) =
+            product_step_with_options(executor.take().unwrap(), nanos, options);
+        executor = Some(restored);
+        result
+    });
+}
+
+fn assert_recursive_prefix_resume(mut step: impl FnMut(u64) -> RuntimeStepResult) {
+    let mut next_boundary = |elapsed| {
+        let mut logs = Vec::new();
+        let mut waits = Vec::new();
+        for tick in 0..256 {
+            let result = step(if tick == 0 { elapsed } else { 0 });
+            assert!(
+                result.output.diagnostics.is_empty(),
+                "{:?}",
+                result.output.diagnostics
+            );
+            assert!(result.stats.executed_ops <= 1);
+            for effect in result.output.effects.line {
+                use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
+                match effect {
+                    LineEffectRequest::Log(log) => logs.push(log.message),
+                    LineEffectRequest::Wait(RuntimeWaitTarget::Duration(duration)) => {
+                        waits.push(duration);
+                    }
+                    other => panic!("unexpected recursive call effect: {other:?}"),
+                }
+            }
+            if matches!(
+                result.stop_reason,
+                RuntimeStepStopReason::Blocked | RuntimeStepStopReason::Done
+            ) {
+                return (result.fiber_status, result.stats.executed_ops, logs, waits);
+            }
+        }
+        panic!("recursive call did not reach a wait or return: {logs:?}");
+    };
+    let (status, _, logs, waits) = next_boundary(0);
+    assert!(matches!(status, FlowFiberStatus::DurationWaiting(_)));
+    assert_eq!(logs, ["prefix"]);
+    assert_eq!(waits, [LogicalDuration::from_nanos(100_000_000)]);
+    let (status, ops, logs, waits) = next_boundary(40_000_000);
+    assert!(matches!(status, FlowFiberStatus::DurationWaiting(_)));
+    assert_eq!(ops, 0);
+    assert!(logs.is_empty());
+    assert!(waits.is_empty());
+    let (status, _, logs, waits) = next_boundary(60_000_000);
+    assert_eq!(status, FlowFiberStatus::Done(FlowExit::Return("42".into())));
+    assert_eq!(
+        logs,
+        ["left", "right", "left", "right", "left", "right", "left"]
+    );
+    assert!(waits.is_empty());
+}
+
 fn finish_product(runtime: ArcweftRuntimeExecutor) {
     finish_product_return(runtime, "42");
 }

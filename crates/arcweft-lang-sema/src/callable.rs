@@ -39,7 +39,7 @@ pub use crate::types::StandardMapFamily;
 pub use crate::types::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub(crate) use application::{
     DetachedPreparedCallableApplication, PreparedCallableApplication,
-    PreparedCallableApplicationReplayMismatch,
+    PreparedCallableApplicationReplayMismatch, PreparedCallableEffectProjection,
 };
 pub use arcweft_presentation::fx::FxSourceConstructor;
 pub use arguments::CallableParameterCoordinate;

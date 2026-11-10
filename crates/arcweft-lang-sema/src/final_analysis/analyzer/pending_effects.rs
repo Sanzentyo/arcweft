@@ -1,12 +1,15 @@
 //! On-demand body prerequisites for prepared function-value projections.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    sync::Arc,
+};
 
 use crate::{
     callable::{
         CallableCandidateId, CallableInstantiation, CallableProjection,
         CallableTerminalEffectProjection, CheckedCallSite, CheckedCallableDeclaration,
-        PreparedCallableEffectProjectionSite, PreparedResolvedCallable,
+        CheckedCallableId, PreparedCallableEffectProjectionSite, PreparedResolvedCallable,
     },
     effect_row::EffectRow,
     final_analysis::{
@@ -19,8 +22,13 @@ use crate::{
 
 use super::{
     Analyzer,
-    callable_effect_graph::prepared_call_execution_rows,
-    executable_ingress::{PreparedExecutableDeclarationInventory, PreparedExecutableIngressFacts},
+    callable_effect_graph::{
+        CallableEffectCall, CallableEffectEquations, prepared_call_execution_rows,
+    },
+    executable_ingress::{
+        PreparedExecutableDeclaration, PreparedExecutableDeclarationInventory,
+        PreparedExecutableIngressFacts,
+    },
     expression_error::AnalyzerExpressionError,
     items::{inferred_callable_result_schema, result_schema_has_omitted_function_rows},
     state::CandidateFactTransactionAction,
@@ -143,7 +151,7 @@ impl Analyzer<'_, '_, '_> {
         let implicit = std::mem::take(&mut self.implicit_callable_stack);
         let pipes = std::mem::take(&mut self.pipe_stack);
         let function_sites = std::mem::take(&mut self.function_site_stack);
-        let prepared = self.prepare_callable_declaration_effects(&declaration);
+        let prepared = self.prepare_callable_declaration_effects(&checked);
         self.implicit_callable_stack = implicit;
         self.pipe_stack = pipes;
         self.function_site_stack = function_sites;
@@ -163,12 +171,57 @@ impl Analyzer<'_, '_, '_> {
 
     fn prepare_callable_declaration_effects(
         &mut self,
-        declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey,
+        root: &CheckedCallableId,
     ) -> Result<EffectRow, FinalSemanticAnalysisError> {
         let inventory = PreparedExecutableDeclarationInventory::build(self)?;
-        let body = inventory
-            .get(declaration)
-            .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        let mut pending = VecDeque::from([root.clone()]);
+        let mut scheduled = BTreeSet::from([root.clone()]);
+        let mut rows = BTreeMap::new();
+        let mut boundary = BTreeMap::new();
+        let mut equations = CallableEffectEquations::default();
+        while let Some(owner) = pending.pop_front() {
+            self.control.check()?;
+            let CheckedCallableDeclaration::Project(declaration) = owner.declaration() else {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            };
+            let body = inventory
+                .get(declaration)
+                .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+            let (row, calls) = self.prepare_declaration_effect_equation(body)?;
+            let mut applications = Vec::with_capacity(calls.len());
+            for call in calls {
+                self.control.check()?;
+                match self.source_callable_terminal_effects(call.candidate())? {
+                    CallableTerminalEffectProjection::Known { effects, .. } => {
+                        if let Some(previous) =
+                            boundary.insert(call.target().clone(), effects.clone())
+                            && previous != *effects
+                        {
+                            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                        }
+                    }
+                    CallableTerminalEffectProjection::Pending(target) => {
+                        if scheduled.insert(target.clone()) {
+                            pending.push_back(target.clone());
+                        }
+                    }
+                }
+                applications.push(call.expression());
+                equations.insert_call(call)?;
+            }
+            equations.insert_body(owner.clone(), applications)?;
+            rows.insert(owner, row);
+        }
+        equations.close(&mut rows, &boundary, self.control)?;
+        rows.remove(root)
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
+    }
+
+    fn prepare_declaration_effect_equation(
+        &mut self,
+        body: &PreparedExecutableDeclaration,
+    ) -> Result<(EffectRow, Vec<CallableEffectCall>), FinalSemanticAnalysisError> {
+        let declaration = body.declaration();
         if body.contains_event_scrutinee(&self.modules)? {
             // Event-dependent declarations require their ingress authority;
             // an absent ingress type is never replaced with an inferred type.
@@ -203,7 +256,7 @@ impl Analyzer<'_, '_, '_> {
                 statements: &statements,
                 control: self.control,
             })?;
-        let mut effects = prepared
+        let effects = prepared
             .declaration_effects(declaration)
             .cloned()
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
@@ -217,39 +270,10 @@ impl Analyzer<'_, '_, '_> {
             .map_err(FinalSemanticAnalysisError::from)?
             .selected_nodes()
             .filter(|node| evaluated.contains(&node.site().expression()))
-            .filter(|node| {
-                node.prefix()
-                    .application()
-                    .selected()
-                    .next_group_for(node.prefix().application().completed_group())
-                    .is_none()
-            })
-            .map(|node| {
-                (
-                    node.site(),
-                    Arc::clone(node.prefix().application().selected_shared()),
-                    node.prefix().application().effect_projection(),
-                )
+            .filter_map(|node| {
+                CallableEffectCall::selected(node.site(), node.prefix().application())
             })
             .collect::<Vec<_>>();
-        for (site, candidate, effect_projection) in calls {
-            self.prepare_callable_body_effects(site.into(), &candidate)?;
-            let CallableTerminalEffectProjection::Known { effects: row, .. } =
-                self.source_callable_terminal_effects(&candidate)?
-            else {
-                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-            };
-            let row = effect_projection.specialize(&row).map_err(|_| {
-                FinalSemanticAnalysisError::CallResolutionFailed {
-                    owner: site.expression(),
-                }
-            })?;
-            effects = crate::final_analysis::statement_effects::union_effect_rows(
-                &effects,
-                &row,
-                self.control,
-            )?;
-        }
-        Ok(effects)
+        Ok((effects, calls))
     }
 }

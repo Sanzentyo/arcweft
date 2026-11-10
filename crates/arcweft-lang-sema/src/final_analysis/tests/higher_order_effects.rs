@@ -51,6 +51,76 @@ fn application_rows(analysis: &FinalSemanticAnalysis, name: &str) -> Vec<Vec<Str
 }
 
 #[test]
+fn recursive_function_values_close_the_same_terminal_rows_as_direct_calls() {
+    let declarations = r#"
+fn read_marker() -> Unit effects { fs.read } { () }
+fn left<T>(value: T, count: i64) -> T {
+    log.info("left")
+    if count == 0i64 { value } else { right(value, count - 1i64) }
+}
+fn right<T>(value: T, count: i64) -> T {
+    read_marker()
+    if count == 0i64 { value } else { left(value, count - 1i64) }
+}
+fn pure(handler: (i64, i64) -> i64 effects {}) -> i64 { handler(42i64, 2i64) }
+"#;
+    let caller = r#"
+flow main() -> i64 {
+    let retained = left
+    return retained(42i64, 2i64)
+}
+fn rejects() { pure(left); }
+"#;
+    for source in [
+        format!("{declarations}{caller}"),
+        format!("{caller}{declarations}"),
+    ] {
+        let fixture = fixture(&source, None);
+        let analysis =
+            analyze(&fixture).expect("terminal recursion closes before value publication");
+        let expected = ["fs.read", "log.write"];
+        for name in ["left", "right"] {
+            let rows = application_rows(&analysis, name);
+            assert!(!rows.is_empty(), "{name} has a checked application");
+            for row in rows {
+                assert_eq!(row, expected);
+            }
+        }
+
+        let (_, module) = fixture
+            .project
+            .analysis_view()
+            .unwrap()
+            .modules()
+            .next()
+            .unwrap();
+        let retained = module
+            .locals()
+            .find_map(|(id, local)| (local.name().as_str() == "retained").then_some(id))
+            .unwrap();
+        let TypeKind::Function { effects, .. } = analysis.local(retained).unwrap().ty() else {
+            panic!("retained recursive declaration owns its function type");
+        };
+        assert_eq!(effects.closed_value().unwrap().to_labels(), expected);
+
+        let rejected = analysis
+            .calls()
+            .filter_map(|(owner, call)| {
+                matches!(
+                    call.outcome(),
+                    crate::callable::CallAnalysisOutcome::Rejected(_)
+                )
+                .then_some(owner)
+            })
+            .collect::<Vec<_>>();
+        let [owner] = rejected.as_slice() else {
+            panic!("the pure callback invocation is the only rejection");
+        };
+        super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
+    }
+}
+
+#[test]
 fn inferred_prefix_preserves_body_effects_and_aliases_in_either_source_order() {
     let declarations = concat!(
         "fn staged(first: i64)(second: i64) -> i64 { read(first + second) }\n",
