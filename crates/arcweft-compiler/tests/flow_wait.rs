@@ -432,27 +432,7 @@ flow main() -> i64 {
         budget: RuntimeStepBudget { max_ops: 1 },
         ..Default::default()
     };
-    let source = format!("{body}\nentry cli @entry.main {{ goto @flow.main }}\n");
-    let mut compiled = compile_source(&source).unwrap();
-    let [entry] = compiled.plan.entries() else {
-        panic!("one Flow entry")
-    };
-    let program = AwbcLowerer::for_entry(
-        &compiled.plan,
-        &compiled.dialogue_content,
-        "staged-default.arcw",
-        &entry.id,
-    )
-    .lower()
-    .unwrap()
-    .program;
-    let bytes = program.encode_canonical().unwrap();
-    let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
-    assert_eq!(decoded, program);
-    let artifact =
-        RuntimeArtifactFingerprint::try_from_bytes(*blake3::hash(&bytes).as_bytes()).unwrap();
-    compiled.plan.bind_artifact(artifact).unwrap();
-    let mut engine = native_plan(compiled.plan);
+    let (mut engine, executor) = artifact_bound_entry(body, "staged-default.arcw");
     assert_staged_default_waits(|nanos| {
         engine.step(
             RuntimeStepInput {
@@ -463,13 +443,35 @@ flow main() -> i64 {
         )
     });
 
-    let mut product =
-        Some(ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap());
+    let mut product = Some(executor);
     assert_staged_default_waits(|nanos| {
         let (restored, result) = product_step_with_options(product.take().unwrap(), nanos, options);
         product = Some(restored);
         result
     });
+}
+
+fn artifact_bound_entry(body: &str, name: &str) -> (Engine, ArcweftRuntimeExecutor) {
+    let source = format!("{body}\nentry cli @entry.main {{ goto @flow.main }}\n");
+    let mut compiled = compile_source(&source).unwrap();
+    let [entry] = compiled.plan.entries() else {
+        panic!("one Flow entry")
+    };
+    let program =
+        AwbcLowerer::for_entry(&compiled.plan, &compiled.dialogue_content, name, &entry.id)
+            .lower()
+            .unwrap()
+            .program;
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap();
+    assert_eq!(decoded, program);
+    let artifact =
+        RuntimeArtifactFingerprint::try_from_bytes(*blake3::hash(&bytes).as_bytes()).unwrap();
+    compiled.plan.bind_artifact(artifact).unwrap();
+    (
+        native_plan(compiled.plan),
+        ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap(),
+    )
 }
 
 fn assert_staged_default_waits(mut step: impl FnMut(u64) -> RuntimeStepResult) {
@@ -586,13 +588,57 @@ flow main() -> i64 {
     return 0i64
 }
 "#;
+    assert_shared_prefix_wait_in_both_executors(
+        native(body),
+        product(body, true),
+        &["left", "right", "left", "right", "left", "right", "left"],
+    );
+}
+
+#[test]
+fn shared_prefix_restores_independent_callback_effects_in_an_attached_default() {
+    let body = r#"
+fn repeat<T>(callback: T -> i64, value: T, remaining: i64) -> i64 {
+    if remaining == 0i64 { callback(value) } else { repeat(callback, value, remaining - 1i64) }
+}
+fn staged<A, B>(prefix: A)(later: B, callback: B -> i64, remaining: i64)[body: DialogueContent = {
+    let _ = prefix
+    let value = repeat(callback, later, remaining)
+    if value == 42i64 { log.info("default") }
+    fmt("default")
+}] -> DialogueContent { body }
+flow main() -> i64 {
+    let shared = staged({ log.info("prefix"); 7i64 })
+    let message = "captured"
+    let increment = 1i64
+    wait(0.1s)
+    let _ = shared("text", |value: String| {
+        log.info(message)
+        if value == "text" { 42i64 } else { 0i64 }
+    }, 1i64)
+    let _ = shared(41i64, |value: i64| value + increment, 1i64)
+    return 42i64
+}
+"#;
+    let (engine, executor) = artifact_bound_entry(body, "staged-callback-effects.arcw");
+    assert_shared_prefix_wait_in_both_executors(
+        engine,
+        executor,
+        &["captured", "default", "default"],
+    );
+}
+
+fn assert_shared_prefix_wait_in_both_executors(
+    mut engine: Engine,
+    executor: ArcweftRuntimeExecutor,
+    after_wait: &[&str],
+) {
     let options = RuntimeStepOptions {
         mode: RuntimeStepMode::OneOp,
         budget: RuntimeStepBudget { max_ops: 1 },
         ..Default::default()
     };
-    let mut engine = native(body);
-    assert_recursive_prefix_resume(|nanos| {
+    assert_prefix_resume(after_wait, |nanos| {
         engine.step(
             RuntimeStepInput {
                 dt: LogicalDuration::from_nanos(nanos),
@@ -602,8 +648,8 @@ flow main() -> i64 {
         )
     });
 
-    let mut executor = Some(product(body, true));
-    assert_recursive_prefix_resume(|nanos| {
+    let mut executor = Some(executor);
+    assert_prefix_resume(after_wait, |nanos| {
         let (restored, result) =
             product_step_with_options(executor.take().unwrap(), nanos, options);
         executor = Some(restored);
@@ -611,7 +657,7 @@ flow main() -> i64 {
     });
 }
 
-fn assert_recursive_prefix_resume(mut step: impl FnMut(u64) -> RuntimeStepResult) {
+fn assert_prefix_resume(after_wait: &[&str], mut step: impl FnMut(u64) -> RuntimeStepResult) {
     let mut next_boundary = |elapsed| {
         let mut logs = Vec::new();
         let mut waits = Vec::new();
@@ -653,10 +699,7 @@ fn assert_recursive_prefix_resume(mut step: impl FnMut(u64) -> RuntimeStepResult
     assert!(waits.is_empty());
     let (status, _, logs, waits) = next_boundary(60_000_000);
     assert_eq!(status, FlowFiberStatus::Done(FlowExit::Return("42".into())));
-    assert_eq!(
-        logs,
-        ["left", "right", "left", "right", "left", "right", "left"]
-    );
+    assert_eq!(logs, after_wait);
     assert!(waits.is_empty());
 }
 

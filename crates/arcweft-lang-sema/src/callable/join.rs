@@ -215,7 +215,7 @@ pub struct CheckedProjectFunctionRuntimeSelection {
     base_instantiation: ResolvedCallableBaseInstantiation,
     solution: Arc<FrozenCallTypeSolution>,
     input_continuation: Option<Arc<super::CheckedCallContinuation>>,
-    function_type: TypeKind,
+    application_type: TypeKind,
     callable_type: TypeKind,
     current_group_materialization: Box<[CheckedProjectFunctionParameterMaterialization]>,
     input: CheckedProjectFunctionRuntimeInput,
@@ -560,10 +560,6 @@ impl CheckedProjectFunctionRuntimeSelection {
         &self.solution
     }
 
-    pub const fn function_type(&self) -> &TypeKind {
-        &self.function_type
-    }
-
     /// Materialized callee-binding ABI for the completed group. Rest
     /// parameters own one binding row regardless of
     /// how many authored execution slots supplied that value.
@@ -786,20 +782,12 @@ pub(crate) fn select_project_function_runtime(
             .base()
             .callable_type_with_terminal_effects(checked.exposed_row())?,
     )?;
-    let (input, function_type) = match selected.state() {
-        ResolvedCallableState::Base => {
-            let ty = selected
-                .base()
-                .callable_type_with_terminal_effects(checked.exposed_row())
-                .map_err(CheckedProjectFunctionRuntimeSelectionError::from)?;
-            (
-                CheckedProjectFunctionRuntimeInput::Direct,
-                solution
-                    .instantiate_result(&ty)
-                    .map_err(CheckedProjectFunctionRuntimeSelectionError::from)?,
-            )
-        }
-        ResolvedCallableState::Continuation(continuation) => (
+    if !matches!(callable_type, TypeKind::Function { .. }) {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
+    }
+    let input = match selected.state() {
+        ResolvedCallableState::Base => CheckedProjectFunctionRuntimeInput::Direct,
+        ResolvedCallableState::Continuation(continuation) => {
             CheckedProjectFunctionRuntimeInput::Continuation {
                 abi: checked_project_continuation_runtime_abi(
                     continuation.digest(),
@@ -809,13 +797,9 @@ pub(crate) fn select_project_function_runtime(
                     &solution,
                     join.current_group().get(),
                 )?,
-            },
-            continuation.function_type().clone(),
-        ),
+            }
+        }
     };
-    if !matches!(function_type, TypeKind::Function { .. }) {
-        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
-    }
     let outcome = match application.result() {
         CheckedCallResult::Continuation(continuation)
             if join.next_group() == Some(continuation.next_group()) =>
@@ -854,6 +838,19 @@ pub(crate) fn select_project_function_runtime(
         &solution,
         join.current_group(),
     )?;
+    let result_type = match &outcome {
+        CheckedProjectFunctionRuntimeOutcome::Continue { abi, .. } => abi.function_type(),
+        CheckedProjectFunctionRuntimeOutcome::Invoke { result } => result,
+    };
+    // The incoming continuation owns its residual binder. The checked
+    // application already specializes the invocation row for this group.
+    let application_type = TypeKind::function_with_effects(
+        current_group_materialization
+            .iter()
+            .map(|parameter| parameter.abi_type().clone()),
+        result_type.clone(),
+        join.effects().clone(),
+    );
     Ok(Some(CheckedProjectFunctionRuntimeSelection {
         authority: catalog.authority_lease(),
         caller,
@@ -866,7 +863,7 @@ pub(crate) fn select_project_function_runtime(
             ResolvedCallableState::Base => None,
             ResolvedCallableState::Continuation(continuation) => Some(Arc::clone(continuation)),
         },
-        function_type,
+        application_type,
         callable_type,
         current_group_materialization,
         input,

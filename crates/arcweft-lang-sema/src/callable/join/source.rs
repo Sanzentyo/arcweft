@@ -582,32 +582,10 @@ impl CheckedProjectFunctionRuntimeSelection {
         control: &mut C,
     ) -> Result<TypeKind, CheckedProjectFunctionInstanceProjectionError<C::Error>> {
         self.validate_authority(catalog, enclosing)?;
-        let checked = checked_function(&self.declaration, catalog)?;
-        let group = checked
-            .signature()
-            .group(self.group)
-            .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?;
-        if group.parameters().len() != self.current_group_materialization.len() {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
-        }
-        let result = match &self.outcome {
-            CheckedProjectFunctionRuntimeOutcome::Continue { abi, .. } => abi.function_type(),
-            CheckedProjectFunctionRuntimeOutcome::Invoke { result } => result,
-        };
-        let TypeKind::Function { effects, .. } = &self.function_type else {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
-        };
-        let arrow = TypeKind::function_with_effects(
-            self.current_group_materialization
-                .iter()
-                .map(|parameter| parameter.abi_type().clone()),
-            result.clone(),
-            effects.clone(),
-        );
         let empty = ClosedTypeInstantiation::default();
         Ok(enclosing
             .map_or(&empty, |row| row.solution.as_ref())
-            .instantiate_type_with_control(&arrow, control)?)
+            .instantiate_type_with_control(&self.application_type, control)?)
     }
 
     pub fn callable_value_source_with_control<C: TypeProjectionControl>(

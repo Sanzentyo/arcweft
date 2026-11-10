@@ -868,6 +868,35 @@ flow main() -> i64 {
             .calls()
             .all(|(_, call)| call.selected_application().is_some())
     );
+    for (owner, application) in project_applications(&analysis, "apply_later") {
+        let selection = analysis.project_function_runtime(owner).unwrap().unwrap();
+        let arrow = selection
+            .application_function_type_with_control(
+                analysis.checked_callables(),
+                None,
+                &mut crate::types::UnmeteredTypeProjection,
+            )
+            .expect("the checked invocation has a scope independent of the incoming continuation");
+        let TypeKind::Function {
+            binder,
+            effects,
+            return_type,
+            ..
+        } = arrow
+        else {
+            panic!("one materialized application arrow");
+        };
+        assert!(binder.is_empty());
+        assert_eq!(&effects, application.core().effects());
+        if application.core().current_group().get() == 0 {
+            assert!(matches!(
+                return_type.as_ref(),
+                TypeKind::Function { binder, .. } if binder.effects() == 1
+            ));
+        } else {
+            assert_eq!(return_type.as_ref(), &TypeKind::I64);
+        }
+    }
 }
 
 #[test]
