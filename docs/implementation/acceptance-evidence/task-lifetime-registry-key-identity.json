@@ -28449,5 +28449,232 @@
       "sha256": "37ac741dee53a6a795e1b66a9396cfc460df9c7c290e98bf4564e430c9fe6010",
       "memberCount": 69
     }
+  },
+  "lifetimePromotionVariantAndPatternStorage": {
+    "version": 1,
+    "date": "2026-11-10",
+    "sourcePublication": {
+      "version": 1,
+      "source": "0c5afc9b6716a85c70c136a2ea936c7e77e425c7",
+      "initialSource": "4cdd13ea262c03755d962b5381577a6f00b39d55",
+      "variantSource": "9a9db52e1c03e358c404ab8b447a56cee22816fe",
+      "patternSource": "35668ab763b5a4af36d212f49235d3a72ea926fa",
+      "remote": "0c5afc9b6716a85c70c136a2ea936c7e77e425c7",
+      "tree": "d7cc969c7fd828daf289a480d6c4661205a8312d",
+      "blobs": [
+        {
+          "path": "crates/arcweft-compiler/tests/flow_wait.rs",
+          "blob": "ee37eb22b2767b081686d8ffe860b0f4c80e67e4",
+          "sha256": "5b454ce793a9efd0b8ed27fe1049adf27dfa6abeb463d68e201faed285ca618c"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "blob": "af63148fedbe18d4c27d83102484a83be1c56073",
+          "sha256": "6ce218f61e83ec5572ba60d9e1090b74ff9622f643e49a3f04528ef35b649aa5"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "blob": "33ce78ee144a72e9d1bf95023d8f6fc80e6994e1",
+          "sha256": "652adf28b79eac888a215bcb3c79cae0642f054c1806de161179b44312e1c013"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower/pattern.rs",
+          "blob": "3a9286fff227149efcfed1e707a5d5755f3e9f76",
+          "sha256": "6315fd1b48ea736f705ac81370005fb3133ff60d15c2631fe096abad6e7adc23"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/nominal_record_expr.rs",
+          "blob": "be3eb0bec9b5e6e1e502597654764cb6c83e25c6",
+          "sha256": "62b42557a15d5c1a3a62b5afbdbcbaeb45d5c62fe77b373df97ebe261b44b2dd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+          "blob": "e6bdd4b6f62a9df272f1b377198c39772d362773",
+          "sha256": "56a05e77ea096df735e4d36fc982f10e18c05d2dfeef69f1ecd0a0638203d719"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+          "blob": "cc9b1fbef13e445c7eaa65d5cb35df624bddb789",
+          "sha256": "6a0348d5c40d591fa9eda665cbdba13897f88e26dc3e6d4148ffe21700303e54"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "blob": "2b7941e6f29f955d9e19b09f1db62875ce0c4009",
+          "sha256": "2e276e71579aeaca7d9bd9b60a986f30b0785c124ae6acb958e18cacb15cb89a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/bindings.rs",
+          "blob": "1e3d0446f44f50d052d2f6660de63cfce434f5d3",
+          "sha256": "d8d4c8282d71340847f8abf6d1e917e8db67aaee6b0679ea30a59788fdcf8685"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "blob": "9290d74944bb06c42cab227a44245bc1da30595b",
+          "sha256": "6a2e0a34d8a2476783f536eac861389cb455a69ceae1e51def26cecaa93bcbac"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "blob": "2a0109d69c35e822b667ab2acfb342f7a4209a3a",
+          "sha256": "f2afd7b8048ca590a4e0f7f5635554a340d3e11dbb3f30a9de5b55344cdcd3d3"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "b02af6f423f32b451233310c67e0926d4e037ef8",
+          "sha256": "feb1e96b575bebfc778a32c2b40db11fd69d334d21c1d0415e2058f747368ba6"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/awbc_lower/expr.rs",
+          "blob": "a853d3a4327ccc6bc174a218804784ca82117260",
+          "sha256": "050f18a7382523fd0fe583bd145d712ff290b24119dd8acb89ff426a27b12660"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+          "blob": "706d5a72fa7d16bfd2de4e46384647216c599eac",
+          "sha256": "9c4ad84e6ad2daee5ec35c7afddf23f579edab6a355d53e70d209e4dacdd02e7"
+        },
+        {
+          "path": "docs/01-language/patterns-and-bindings.md",
+          "blob": "831e318089a9bcac9090ce40e3b3a156c371577c",
+          "sha256": "0d2e7585d86f5ab396b7de707c7f21c1905dc25f3e9fe2a69c17bf54cb9dfdf0"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "9acd3653b657ce13ba0b90046fb9b9002d601ff8",
+          "sha256": "02f411b037dbcd0f5d8fd25ea084ac3e5ed471208688bbbb344009d8a31004b6"
+        }
+      ]
+    },
+    "observedBaseline": {
+      "observedMain": "4cdd13ea262c03755d962b5381577a6f00b39d55",
+      "executableSha256": "b6f757187999eb93e92919e290d50f409f95cd3b5ef7db5a115b9662aa5ed95c"
+    },
+    "correction": "Supersedes the prior current status for variant formal payloads. The original CLI reached promotion_execution even when the selected variant case or immutable binding retained a borrowed capture. Checked variant, argument, field, and binding identities now trace the exact supplied value. A discarded field does not supply that value. The prior source also denied populated and empty record variant constructors during RuntimePlan lowering. RuntimePlan now evaluates named operands once in source order and supplies the admitted structural record in layout order. An empty record is distinct from a unit case.",
+    "focused": {
+      "variant": {
+        "source": "9a9db52e1c03e358c404ab8b447a56cee22816fe",
+        "cases": 13,
+        "testPass": 1,
+        "log": "variant-fixed-fixture.log",
+        "initialFailure": "Bool in the fixture was unresolved; the valid spelling is bool.",
+        "initialLog": "variant-first.log"
+      },
+      "immutable": {
+        "source": "35668ab763b5a4af36d212f49235d3a72ea926fa",
+        "cases": 12,
+        "testPass": 22,
+        "testFail": 0,
+        "filteredOut": 1422,
+        "log": "pattern-final.log",
+        "initialFailure": "The first binding patch replaced the consumer observation with the selected field observation. The existing selected-record-field test reported an internal owner error. Keeping the consumer and provider projections separate fixed it.",
+        "initialLog": "pattern-first.log",
+        "trace": "pattern-field-trace.log"
+      },
+      "wait": {
+        "source": "0c5afc9b6716a85c70c136a2ea936c7e77e425c7",
+        "testPass": 19,
+        "testFail": 0,
+        "log": "wait-first.log",
+        "newTest": "retained_variant_callable_resumes_after_a_wait_and_awbc_save",
+        "observed": "Both executors logged drop and keep once in source order, preserved the 100 ms wait with 60 ms remaining after 40 ms, and returned 42 at a one-operation step budget. Canonically decoded AWBC used public JSON save and owned restore after each step. Native resumed the live execution."
+      }
+    },
+    "ownership": {
+      "sema": "The storage worklist follows checked Sema and HIR coordinates. Binding inputs are recovered from the sealed HIR origin, and project cases use the same nominal template as selected constructor callables. The existing final-analysis integration suite exercises the projection alongside the rest of the promotion rules.",
+      "runtimePlan": "FinalExprLowerer projects checked operands onto the existing record field seed. AWBC lowering consumes the admitted complete field list and emits existing MakeRecord. It does not introduce a second source reader or change the version 1 codec.",
+      "core": "Core body construction owns record field admission for expressions and patterns. Engine evaluation builds the admitted runtime value from its enclosing type layout. These stay in their existing construction and evaluation owners, which changed by 3 and 13 lines respectively."
+    },
+    "unresolved": "The CLI control cases reach promotion_execution. Dynamic invocation without a known value origin, attached content/default storage, resource ownership, lifetime relations, proof obligations, and executable promotion remain outside the verified scope. This cut does not switch shared schedulers, drivers, rendering, or protocol boundaries. It exercises duration suspension and AWBC save within the affected owner tests.",
+    "workspaceClean": {
+      "command": [
+        "cargo",
+        "clean",
+        "--manifest-path",
+        "D:\\git\\arcweft\\Cargo.toml"
+      ],
+      "workspace": "D:\\git\\arcweft",
+      "target": "D:\\git\\arcweft\\target",
+      "source": "0c5afc9b6716a85c70c136a2ea936c7e77e425c7",
+      "exit": 0,
+      "removedFiles": 28663,
+      "reportedRemovedGiB": 78.1,
+      "freeGiBBefore": 344.66,
+      "freeGiBAfter": 419.49,
+      "targetExistedAfter": false,
+      "trackedChangesAfter": 0
+    },
+    "environment": {
+      "source": "0c5afc9b6716a85c70c136a2ea936c7e77e425c7",
+      "tree": "d7cc969c7fd828daf289a480d6c4661205a8312d",
+      "trackedDirty": false,
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "rustc": [
+        "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+        "binary: rustc",
+        "commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67",
+        "commit-date: 2026-10-13",
+        "host: x86_64-pc-windows-msvc",
+        "release: 1.99.1",
+        "LLVM version: 23.1.1"
+      ],
+      "nextest": [
+        "cargo-nextest 0.9.146 (8af696ddc 2026-09-21)",
+        "release: 0.9.146",
+        "commit-hash: 8af696ddcce8fff2962d6a5168b6d138b8616a35",
+        "commit-date: 2026-09-21",
+        "host: x86_64-pc-windows-msvc"
+      ],
+      "installedTargets": [
+        "aarch64-linux-android",
+        "wasm32-unknown-unknown",
+        "wasm32-wasip1",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "validationEnvironment": {
+        "CARGO_INCREMENTAL": "0"
+      }
+    },
+    "cliScope": "The headless CLI readiness inputs omit wait so the default clock does not hold the run in duration_waiting. The separate Compiler flow_wait regression advances logical time and checks the wait across AWBC restore. The baseline waiting CLI run is retained in the archive.",
+    "cli": {
+      "source": "0c5afc9b6716a85c70c136a2ea936c7e77e425c7",
+      "executableSha256": "894fdb918c413643e98cbd7dd5742e88727f28b9f972e18234041e2d05d09a82",
+      "borrowedReceiverDenials": 15,
+      "transferDiagnosticControls": 2,
+      "completedRuns": 8,
+      "result": "42",
+      "maxOperationsPerStep": 1,
+      "receipt": "cli/receipt.json",
+      "receiptSha256": "e997e27cee8d89370cbfbd73b909f9399132c11e0e9e89a9f2bbe82aaaca5de2"
+    },
+    "quality": {
+      "source": "0c5afc9b6716a85c70c136a2ea936c7e77e425c7",
+      "windowsPackages": 52,
+      "allTargetPackages": 53,
+      "stages": 38,
+      "nextestTotals": {
+        "run": 7686,
+        "pass": 7686,
+        "fail": 0,
+        "skip": 18
+      },
+      "otherChecks": [
+        "fmt",
+        "structure",
+        "workspace-check",
+        "workspace-clippy",
+        "doctests",
+        "wasm-check"
+      ],
+      "doctestsPassed": 82,
+      "receipt": "quality/receipt.json",
+      "receiptSha256": "fcaca4391f7257e78fd8d06dc98e1d880fcc9124eec31669a6327aa2bd5b362e"
+    },
+    "raw": {
+      "path": "task-lifetime-promotion-variant-storage.raw.zip",
+      "sha256": "9e88006ba123733151ad3ec844d5d31a0b998952255de066dcbe816fae47aa32",
+      "memberCount": 155
+    }
   }
 }
