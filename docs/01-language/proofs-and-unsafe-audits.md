@@ -177,6 +177,7 @@ that parameter in the selected argument group. A binding inside a tuple,
 record, or sequence parameter pattern follows its selected component through
 that group. Discarded siblings contribute no capture. A sequence rest binding
 retains the suffix, and a record rest binding retains the complete record.
+A variant pattern follows the matching case and the selected payload fields.
 A positional rest parameter follows the supplied elements and spreads in
 argument order. For recursive calls, the check propagates capture dependencies
 until they stop growing, using the storage properties of the selected type

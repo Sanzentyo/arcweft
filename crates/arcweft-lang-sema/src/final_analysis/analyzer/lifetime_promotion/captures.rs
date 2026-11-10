@@ -17,17 +17,18 @@ use arcweft_lang_hir::{
 use super::{Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery, TypeStorage};
 use crate::{
     callable::{
-        CallableCandidateId, CallableParameterCoordinate, CheckedCallSite,
-        PreparedCallGraphIngress, PreparedCallSiteDelivery, PreparedCaptureIdentityRow,
-        PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
-        PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginPurpose,
-        PreparedFunctionValueOriginQueryError, PreparedResolvedCallable,
-        prepare_function_value_origin_query_with_pending_captures,
+        CallableCandidateId, CallableParameterCoordinate, CallableParameterPassing,
+        CheckedCallSite, PreparedCallGraphIngress, PreparedCallSiteDelivery,
+        PreparedCaptureIdentityRow, PreparedFunctionValueOriginEvidence,
+        PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
+        PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
+        PreparedResolvedCallable, prepare_function_value_origin_query_with_pending_captures,
     },
     final_analysis::{
         FinalCallConstraintFailure, PreparedExpressionFact,
         analyzer::{
-            AnalyzerExpressionContext, CallAnalysisFailure, calls::CallAnalysisInvariant,
+            AnalyzerExpressionContext, CallAnalysisFailure,
+            calls::{AnalyzerPreparedCallPrefix, CallAnalysisInvariant},
             expression_error::AnalyzerExpressionError,
         },
         model::CallableResultSource,
@@ -59,8 +60,8 @@ mod structural;
 use self::invocation::StorageLexicalSite;
 use self::worklist::{
     BodyProjection, BorrowDependencies, CaptureWorklist, CarrierStorage, ClosureKind, FrameOwner,
-    Invocation, InvokedValue, Observation, StorageFrame, StorageProjection, ValueOrigin,
-    ValueSpecialization,
+    Invocation, InvokedValue, Observation, PositionalStorage, StorageFrame, StorageProjection,
+    ValueOrigin, ValueSpecialization,
 };
 
 type PendingCaptures = Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>;
@@ -588,7 +589,8 @@ impl Analyzer<'_, '_, '_> {
                         if !constructor {
                             return Ok(match selected.id() {
                                 CallableCandidateId::Project(declaration)
-                                    if declaration.owner() == CallableDeclarationOwner::Function =>
+                                    if declaration.owner()
+                                        == CallableDeclarationOwner::Function =>
                                 {
                                     CallStorage::SourceResult(declaration.clone())
                                 }
@@ -601,31 +603,14 @@ impl Analyzer<'_, '_, '_> {
                             });
                         }
                         if let Some((selection, remaining)) = work.selected_storage(call.result)? {
-                            use crate::callable::ResultConstructorKind;
-                            match (selected.id(), selection) {
-                                (CallableCandidateId::Option(_), StorageProjection::Carrier(CarrierStorage::OptionItem))
-                                | (CallableCandidateId::Result(ResultConstructorKind::Ok), StorageProjection::Carrier(CarrierStorage::ResultOk))
-                                | (CallableCandidateId::Result(ResultConstructorKind::Err), StorageProjection::Carrier(CarrierStorage::ResultErr)) => {
-                                    for (source, _) in prefix.record().value_inputs() {
-                                        receiver.charge(1)?;
-                                        pending.push((source, remaining));
-                                    }
-                                }
-                                (CallableCandidateId::RecordConstructor(_), StorageProjection::Field { nominal, ordinal })
-                                    if matches!(ty, TypeKind::ProjectNominal(result) if result.declaration() == nominal) =>
-                                {
-                                    let group = prefix.application().completed_group();
-                                    let ordinal = usize::try_from(*ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-                                    let formal = selected.schema().group(group)
-                                        .and_then(|group| group.parameters().get(ordinal))
-                                        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-                                    if let Some(source) = prefix.parameter_value_source(CallableParameterCoordinate::new(group, formal.index())) {
-                                        receiver.charge(1)?;
-                                        pending.push((source, remaining));
-                                    }
-                                }
-                                _ => {}
-                            }
+                            projected_constructor_sources(
+                                prefix,
+                                ty,
+                                (selection, remaining),
+                                work,
+                                receiver,
+                                pending,
+                            )?;
                             return Ok(CallStorage::NoWitness);
                         }
                     }
@@ -702,6 +687,91 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|error| error.into_public(*tail))?;
         Ok((item, values))
     }
+}
+
+fn projected_constructor_sources(
+    prefix: &AnalyzerPreparedCallPrefix,
+    ty: &TypeKind,
+    (selection, remaining): (&StorageProjection, Observation),
+    work: &CaptureWorklist,
+    receiver: &mut ReceiverBorrowQuery<'_>,
+    pending: &mut Vec<(ExprId, Observation)>,
+) -> Result<(), FinalSemanticAnalysisError> {
+    use crate::callable::ResultConstructorKind;
+    let selected = prefix.application().selected();
+    let carrier = match selected.id() {
+        CallableCandidateId::Option(_) => Some(CarrierStorage::OptionItem),
+        CallableCandidateId::Result(ResultConstructorKind::Ok) => Some(CarrierStorage::ResultOk),
+        CallableCandidateId::Result(ResultConstructorKind::Err) => Some(CarrierStorage::ResultErr),
+        CallableCandidateId::EnumVariant(case) => CarrierStorage::for_case(ty, case.case()),
+        _ => None,
+    };
+    let (ordinal, passing, observation) = match (selected.id(), selection) {
+        (_, StorageProjection::Carrier(expected)) if carrier == Some(*expected) => {
+            for (source, _) in prefix.record().value_inputs() {
+                receiver.charge(1)?;
+                pending.push((source, remaining));
+            }
+            return Ok(());
+        }
+        (
+            CallableCandidateId::RecordConstructor(_),
+            StorageProjection::Field { nominal, ordinal },
+        ) if matches!(ty, TypeKind::ProjectNominal(result) if result.declaration() == nominal) => {
+            (*ordinal, None, remaining)
+        }
+        (CallableCandidateId::EnumVariant(case), StorageProjection::VariantPayload(expected))
+            if case == expected =>
+        {
+            match work.selected_storage(remaining)? {
+                Some((
+                    StorageProjection::Element {
+                        family: PositionalStorage::Tuple,
+                        ordinal,
+                    },
+                    observation,
+                )) => (
+                    *ordinal,
+                    Some(CallableParameterPassing::PositionalOnly),
+                    observation,
+                ),
+                Some((
+                    StorageProjection::VariantField {
+                        case: owner,
+                        ordinal,
+                    },
+                    observation,
+                )) if owner == case => (
+                    *ordinal,
+                    Some(CallableParameterPassing::NamedOnly),
+                    observation,
+                ),
+                None if remaining == Observation::Stored => {
+                    for (source, _) in prefix.record().value_inputs() {
+                        receiver.charge(1)?;
+                        pending.push((source, remaining));
+                    }
+                    return Ok(());
+                }
+                _ => return Ok(()),
+            }
+        }
+        _ => return Ok(()),
+    };
+    let group = prefix.application().completed_group();
+    let formal = selected
+        .schema()
+        .group(group)
+        .and_then(|group| group.parameters().get(ordinal as usize))
+        .filter(|formal| passing.is_none_or(|passing| passing == formal.passing()))
+        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+    if let Some(source) =
+        prefix.parameter_value_source(CallableParameterCoordinate::new(group, formal.index()))
+    {
+        receiver.charge(1)?;
+        pending.push((source, observation));
+    }
+    Ok(())
 }
 
 fn call_storage_error(

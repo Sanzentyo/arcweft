@@ -9,7 +9,7 @@ use arcweft_lang_hir::{
     module::HirModule,
     pattern::{
         HirPatternBinding, HirPatternChildRole, HirPatternField, HirPatternKind,
-        HirPatternSequenceRest,
+        HirPatternSequenceRest, HirVariantPatternPayload,
     },
     project::{HirBindingSite, HirExpressionBindingRole, HirSemanticPathStep},
     scope::{HirScopeKind, HirScopeOwner},
@@ -23,6 +23,7 @@ use crate::{
         CheckedExpressionResolution, CheckedValueResolution, PreparedExpressionFact,
         model::CallableResultSource, prepared::PreparedRecordPatternSource,
     },
+    types::TypeKind,
 };
 
 use super::{
@@ -621,6 +622,35 @@ impl Analyzer<'_, '_, '_> {
                     selected.push(selection);
                     pattern = child;
                 }
+                (
+                    HirPatternKind::Variant(variant),
+                    HirSemanticPathStep::Pattern(HirPatternChildRole::VariantPayload),
+                ) => {
+                    let HirVariantPatternPayload::Pattern(child) = variant.payload() else {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    };
+                    let Some(TypeKind::VariantPayload(payload)) = self.facts.patterns().get(child)
+                    else {
+                        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable {
+                            owner: *child,
+                        });
+                    };
+                    if self.facts.patterns().get(&pattern) != Some(payload.owner_type()) {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    }
+                    let selection = if let Some(carrier) =
+                        CarrierStorage::for_case(payload.owner_type(), payload.case_ordinal())
+                    {
+                        StorageProjection::Carrier(carrier)
+                    } else {
+                        StorageProjection::VariantPayload(StorageProjection::enum_payload_case(
+                            payload,
+                            self.symbols,
+                        )?)
+                    };
+                    selected.push(selection);
+                    pattern = *child;
+                }
                 _ => return Ok(None),
             }
         }
@@ -670,6 +700,12 @@ impl Analyzer<'_, '_, '_> {
             _ => return Ok(None),
         }
         for projection in selected.into_iter().rev() {
+            if matches!(projection, StorageProjection::Carrier(_)) {
+                let Some(payload) = work.carrier_pattern_payload(observation)? else {
+                    return Ok(None);
+                };
+                observation = payload;
+            }
             observation = work.project(projection, observation, receiver)?;
         }
         Ok(Some(observation))
@@ -695,9 +731,12 @@ impl Analyzer<'_, '_, '_> {
             .patterns()
             .get(&pattern)
             .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
-        let crate::types::TypeKind::ProjectNominal(nominal) = ty else {
+        if !matches!(
+            ty,
+            TypeKind::ProjectNominal(_) | TypeKind::VariantPayload(_)
+        ) {
             return Ok(None);
-        };
+        }
         receiver.charge(fields.len() as u64)?;
         let prepared = self.prepare_record_pattern(module, pattern, path, fields, ty)?;
         let field = prepared
@@ -705,13 +744,19 @@ impl Analyzer<'_, '_, '_> {
             .iter()
             .find(|field| field.source_ordinal() == source_ordinal)
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-        Ok(Some((
-            StorageProjection::Field {
+        let ordinal = field.coordinate().declaration_ordinal();
+        let selection = match ty {
+            TypeKind::ProjectNominal(nominal) => StorageProjection::Field {
                 nominal: nominal.declaration().clone(),
-                ordinal: field.coordinate().declaration_ordinal(),
+                ordinal,
             },
-            field.source(),
-        )))
+            TypeKind::VariantPayload(payload) => StorageProjection::VariantField {
+                case: StorageProjection::enum_payload_case(payload, self.symbols)?,
+                ordinal,
+            },
+            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+        };
+        Ok(Some((selection, field.source())))
     }
 }
 

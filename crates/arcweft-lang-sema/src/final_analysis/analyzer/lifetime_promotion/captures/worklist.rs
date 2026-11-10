@@ -7,13 +7,16 @@ use std::{
 
 use arcweft_lang_hir::{
     identity::{ExprId, ItemId},
-    symbol::nominal::ProjectNominalDeclarationId,
+    symbol::{ProjectSymbolTable, nominal::ProjectNominalDeclarationId},
 };
 
 use crate::{
-    callable::{CallableParameterCoordinate, CheckedCallSite, SpecializedDeclarationProjection},
+    callable::{
+        CallableGenericParameterIssuer, CallableParameterCoordinate, CheckedCallSite,
+        EnumVariantSignatureId, SpecializedDeclarationProjection,
+    },
     final_analysis::CheckedTryCarrier,
-    types::{TypeProjectionControl, TypeProjectionNodeKind},
+    types::{TypeKind, TypeProjectionControl, TypeProjectionNodeKind, VariantPayloadType},
 };
 
 use super::{
@@ -94,6 +97,28 @@ pub(super) enum StorageProjection {
         ordinal: u32,
     },
     Carrier(CarrierStorage),
+    VariantPayload(EnumVariantSignatureId),
+    VariantField {
+        case: EnumVariantSignatureId,
+        ordinal: u32,
+    },
+}
+
+impl StorageProjection {
+    pub(super) fn enum_payload_case(
+        payload: &VariantPayloadType,
+        symbols: &ProjectSymbolTable,
+    ) -> Result<EnumVariantSignatureId, FinalSemanticAnalysisError> {
+        let (_, template) = CallableGenericParameterIssuer::for_enum_constructor_type(
+            payload.owner_type(),
+            symbols,
+        )
+        .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?;
+        Ok(EnumVariantSignatureId::new(
+            template.semantic_identity_digest()?,
+            payload.case_ordinal(),
+        ))
+    }
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -110,6 +135,15 @@ pub(super) enum CarrierStorage {
 }
 
 impl CarrierStorage {
+    pub(super) const fn for_case(ty: &TypeKind, ordinal: u32) -> Option<Self> {
+        match (ty, ordinal) {
+            (TypeKind::Option(_), 0) => Some(Self::OptionItem),
+            (TypeKind::Result { .. }, 0) => Some(Self::ResultOk),
+            (TypeKind::Result { .. }, 1) => Some(Self::ResultErr),
+            _ => None,
+        }
+    }
+
     pub(super) const fn success(carrier: &CheckedTryCarrier) -> Self {
         match carrier {
             CheckedTryCarrier::Option { .. } => Self::OptionItem,
@@ -444,6 +478,25 @@ impl CaptureWorklist {
                 Some(remaining)
             }
             None if observation == Observation::Stored => Some(Observation::Stored),
+            _ => None,
+        })
+    }
+
+    /// A carrier pattern exposes a one-field tuple, while the carrier stores
+    /// the field itself. Apply the outer case after removing that tuple step.
+    pub(super) fn carrier_pattern_payload(
+        &self,
+        observation: Observation,
+    ) -> Result<Option<Observation>, FinalSemanticAnalysisError> {
+        Ok(match self.selected_storage(observation)? {
+            Some((
+                StorageProjection::Element {
+                    family: PositionalStorage::Tuple,
+                    ordinal: 0,
+                },
+                remaining,
+            )) => Some(remaining),
+            None if observation == Observation::Stored => Some(observation),
             _ => None,
         })
     }

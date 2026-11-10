@@ -2009,6 +2009,85 @@ fn safe_lifetime_promotion_follows_record_and_rest_formal_storage() {
 }
 
 #[test]
+fn safe_lifetime_promotion_follows_selected_variant_formal_payloads() {
+    let callback = "(i64 -> i64 effects {})";
+    let result = format!("Result<{callback}, {callback}>");
+    let some = format!("fn take(.Some(selected): Option<{callback}>) -> {callback} {{ selected }}");
+    let ok = format!("fn take(.Ok(selected): {result}) -> {callback} {{ selected }}");
+    for (declaration, local, argument, borrowed) in [
+        (some.as_str(), "", "Some(borrowed)", true),
+        (some.as_str(), "", ".Some(borrowed)", true),
+        (some.as_str(), "", "option { borrowed }", true),
+        (some.as_str(), "", ".Some(owned)", false),
+        (ok.as_str(), "", "Ok(borrowed)", true),
+        (
+            ok.as_str(),
+            "",
+            "if choose { Ok(owned) } else { Err(borrowed) }",
+            false,
+        ),
+        (
+            &format!("fn take(.Err(selected): {result}) -> {callback} {{ selected }}"),
+            "",
+            ".Err(borrowed)",
+            true,
+        ),
+        (
+            "",
+            &format!("let take = |.Some(selected): Option<{callback}>| selected;"),
+            "Some(borrowed)",
+            true,
+        ),
+        (
+            "fn take<T>(.Full(selected): Slot<T>) -> T { selected }",
+            "",
+            ".Full(borrowed)",
+            true,
+        ),
+        (
+            &format!("fn take(.Both((selected, _)): Pair) -> {callback} {{ selected }}"),
+            "",
+            ".Both((borrowed, owned))",
+            true,
+        ),
+        (
+            &format!("fn take(.Both((selected, _)): Pair) -> {callback} {{ selected }}"),
+            "",
+            ".Both((owned, borrowed))",
+            false,
+        ),
+        (
+            &format!("fn take(.Fields {{ drop: _, keep }}: Pair) -> {callback} {{ keep }}"),
+            "",
+            ".Fields(drop = owned, keep = borrowed)",
+            true,
+        ),
+        (
+            &format!(
+                "fn take(.Fields {{ drop: _, keep: selected }}: Pair) -> {callback} {{ selected }}"
+            ),
+            "",
+            ".Fields(drop = borrowed, keep = owned)",
+            false,
+        ),
+    ] {
+        let source = format!(
+            "enum Slot<T> {{ Empty, Full T }}
+             enum Pair {{ Empty, Both ({callback}, {callback}), Fields {{ keep: {callback}, drop: {callback} }} }}
+             {declaration}
+             flow main(loan: &i64, choose: bool) {{
+                 let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                 let owned = |n: i64| -> i64 {{ n }};
+                 {local}
+                 let packed = take({argument});
+                 let _ = packed.promote('flow);
+             }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "packed", borrowed);
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload() {
     let callback = "(i64 -> i64 effects {})";
     let carrier = format!("Result<{callback}, {callback}>");

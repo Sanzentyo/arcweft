@@ -745,7 +745,7 @@ fn resolve_std_float(path: &CallablePath) -> Option<BuiltinCallableId> {
         .map(BuiltinCallableId::StdFloat)
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EnumVariantSignatureId {
     owner: SemanticTypeDigest,
     case: u32,
