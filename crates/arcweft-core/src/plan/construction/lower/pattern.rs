@@ -582,7 +582,7 @@ impl RecordFrame {
     ) -> Result<Progress, RuntimePlanBuildError> {
         if let Some(seed) = self.seeds.next() {
             let (field, seed) = seed.into_parts();
-            let (field, ty) = construction.resolve_pattern_record_field(owner, field)?;
+            let (field, ty) = construction.resolve_record_layout_field(owner, field)?;
             if !self.admitted.insert(field) {
                 return Err(RuntimePlanBuildError::DuplicateRecordField { owner, field });
             }

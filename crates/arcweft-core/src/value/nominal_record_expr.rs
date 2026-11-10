@@ -1,9 +1,9 @@
-//! Checked nominal-record expression carriers.
+//! Checked record expression carriers.
 
 use super::{RuntimeExpr, RuntimeRecordFieldId};
 
-/// A nominal-record expression whose nominal owner is the enclosing typed
-/// expression node.
+/// A record expression whose layout belongs to the enclosing typed expression
+/// node. This includes structural records used as variant payloads.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNominalRecordExpr {
     initializers: Box<[RuntimeNominalRecordFieldExpr]>,

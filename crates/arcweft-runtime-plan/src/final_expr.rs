@@ -2909,6 +2909,29 @@ impl<'hir> FinalExprLowerer<'hir> {
                         )))
                     }
                     Some(payload)
+                        if matches!(payload.shape(), RuntimeTypeShape::Record(fields)
+                            if fields.len() == scalar_values.len() && fields.iter().zip(&scalar_values)
+                                .all(|(field, value)| field.ty().identity() == value.ty())) =>
+                    {
+                        let fields = scalar_values
+                            .into_iter()
+                            .enumerate()
+                            .map(|(ordinal, value)| {
+                                let ordinal = u32::try_from(ordinal).map_err(|_| {
+                                    format!("variant constructor {id:?} has too many fields")
+                                })?;
+                                Ok(RuntimeNominalRecordFieldSeed::new(
+                                    RuntimeRecordFieldSeedId::from_zero_based(ordinal),
+                                    value,
+                                ))
+                            })
+                            .collect::<Result<Box<[_]>, String>>()?;
+                        Some(Box::new(RuntimeExprSeed::new(
+                            payload.identity(),
+                            RuntimeExprSeedKind::NominalRecord(fields),
+                        )))
+                    }
+                    Some(payload)
                         if scalar_values.len() == 1
                             && scalar_values
                                 .first()
@@ -3848,7 +3871,6 @@ impl<'hir> FinalExprLowerer<'hir> {
         call: &RuntimeResolvedCall,
         variant: &RuntimeResolvedVariant,
     ) -> Result<(), String> {
-        let operands = call.operands();
         let types = call
             .abi_operands()
             .map(|operand| {
@@ -3886,10 +3908,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             }
             None => false,
         };
-        (payload.is_some() == !operands.is_empty()
-            && (variant_payload_accepts_argument_types(payload, &types)
+        (variant_payload_accepts_argument_types(payload, &types)
                 || direct_graph_payload
-                || string_fallback))
+                || string_fallback)
         .then_some(())
         .ok_or_else(|| {
             format!(
@@ -4045,17 +4066,23 @@ fn variant_payload_accepts_argument_types(
     payload: Option<&RuntimeNormalizedType>,
     arguments: &[&RuntimeNormalizedType],
 ) -> bool {
-    match arguments {
-        [] => payload.is_none(),
-        arguments => matches!(
-            payload.map(RuntimeNormalizedType::shape),
-            Some(RuntimeTypeShape::Tuple(items))
-                if items.len() == arguments.len()
-                    && items
-                        .iter()
-                        .zip(arguments)
-                        .all(|(expected, actual)| expected == *actual)
-        ),
+    match payload.map(RuntimeNormalizedType::shape) {
+        None => arguments.is_empty(),
+        Some(RuntimeTypeShape::Tuple(items)) => {
+            items.len() == arguments.len()
+                && items
+                    .iter()
+                    .zip(arguments)
+                    .all(|(expected, actual)| expected == *actual)
+        }
+        Some(RuntimeTypeShape::Record(fields)) => {
+            fields.len() == arguments.len()
+                && fields
+                    .iter()
+                    .zip(arguments)
+                    .all(|(field, actual)| field.ty() == *actual)
+        }
+        _ => false,
     }
 }
 pub(crate) fn require_unrestricted_initializer(value: RuntimeExprSeed) -> RuntimeExprSeed {

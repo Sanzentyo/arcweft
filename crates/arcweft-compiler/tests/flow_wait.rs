@@ -218,8 +218,27 @@ fn saved(runtime: &ArcweftRuntimeExecutor) -> AwbcProductExecutorSaveSnapshot {
 }
 
 fn product_step(
+    runtime: ArcweftRuntimeExecutor,
+    nanos: u64,
+) -> (
+    ArcweftRuntimeExecutor,
+    arcweft_core::step::RuntimeStepResult,
+) {
+    product_step_with_options(
+        runtime,
+        nanos,
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 64 },
+            ..Default::default()
+        },
+    )
+}
+
+fn product_step_with_options(
     mut runtime: ArcweftRuntimeExecutor,
     nanos: u64,
+    options: RuntimeStepOptions,
 ) -> (
     ArcweftRuntimeExecutor,
     arcweft_core::step::RuntimeStepResult,
@@ -229,18 +248,14 @@ fn product_step(
             dt: LogicalDuration::from_nanos(nanos),
             ..Default::default()
         },
-        RuntimeStepOptions {
-            mode: RuntimeStepMode::Drain,
-            budget: RuntimeStepBudget { max_ops: 64 },
-            ..Default::default()
-        },
+        options,
     );
     assert!(
         result.output.diagnostics.is_empty(),
         "{:?}",
         result.output.diagnostics
     );
-    assert!(result.stats.executed_ops <= 64);
+    assert!(result.stats.executed_ops <= options.budget.max_ops);
     let snapshot = saved(&runtime);
     let bound = runtime.bind_product_save_snapshot(snapshot).unwrap();
     (
@@ -256,6 +271,106 @@ fn product_remaining(runtime: &ArcweftRuntimeExecutor) -> u64 {
         panic!("expected Duration wait: {:?}", runtime.fiber().frame.status)
     };
     wait.remaining().as_nanos()
+}
+
+#[test]
+fn retained_variant_callable_resumes_after_a_wait_and_awbc_save() {
+    let body = r#"
+enum Packet<T> { Other, Payload { keep: T, drop: i64 } }
+fn take<T>(.Payload { keep, .. }: Packet<T>) -> T { keep }
+flow main() -> i64 {
+    let offset = 1i64;
+    let packet: Packet<(i64 -> i64 effects {})> = .Payload(
+        drop = { log.info("drop"); 7i64 },
+        keep = { log.info("keep"); |n: i64| n + offset }
+    );
+    let callback = take(packet);
+    wait(0.1s);
+    return callback(41i64)
+}
+"#;
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    };
+    let mut native = native(body);
+    let mut awbc = product(body, true);
+    let append_logs = |step: &arcweft_core::step::RuntimeStepResult, logs: &mut Vec<String>| {
+        logs.extend(step.output.effects.line.iter().filter_map(|effect| {
+            if let arcweft_core::effect::LineEffectRequest::Log(log) = effect {
+                Some(log.message.clone())
+            } else {
+                None
+            }
+        }));
+    };
+    let mut native_logs = Vec::new();
+    let mut awbc_logs = Vec::new();
+    let mut native_step = |engine: &mut Engine, nanos| {
+        let step = engine.step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(nanos),
+                ..Default::default()
+            },
+            options,
+        );
+        assert!(
+            step.output.diagnostics.is_empty(),
+            "{:?}",
+            step.output.diagnostics
+        );
+        assert!(step.stats.executed_ops <= 1);
+        append_logs(&step, &mut native_logs);
+    };
+    let mut awbc_step = |runtime, nanos| {
+        let (runtime, step) = product_step_with_options(runtime, nanos, options);
+        append_logs(&step, &mut awbc_logs);
+        runtime
+    };
+    for _ in 0..128 {
+        if matches!(
+            native.fiber().frame.status,
+            FlowFiberStatus::DurationWaiting(_)
+        ) {
+            break;
+        }
+        native_step(&mut native, 0);
+    }
+    for _ in 0..128 {
+        if matches!(
+            awbc.fiber().frame.status,
+            FlowFiberStatus::DurationWaiting(_)
+        ) {
+            break;
+        }
+        awbc = awbc_step(awbc, 0);
+    }
+    assert_eq!(remaining(&native), 100_000_000);
+    assert_eq!(product_remaining(&awbc), 100_000_000);
+    native_step(&mut native, 40_000_000);
+    awbc = awbc_step(awbc, 40_000_000);
+    assert_eq!(remaining(&native), 60_000_000);
+    assert_eq!(product_remaining(&awbc), 60_000_000);
+    native_step(&mut native, 60_000_000);
+    awbc = awbc_step(awbc, 60_000_000);
+    for _ in 0..128 {
+        if matches!(native.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        native_step(&mut native, 0);
+    }
+    for _ in 0..128 {
+        if matches!(awbc.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        awbc = awbc_step(awbc, 0);
+    }
+    let returned = FlowFiberStatus::Done(FlowExit::Return("42".into()));
+    assert_eq!(native.fiber().frame.status, returned);
+    assert_eq!(awbc.fiber().frame.status, returned);
+    assert_eq!(native_logs, ["drop", "keep"]);
+    assert_eq!(awbc_logs, ["drop", "keep"]);
 }
 
 fn finish_product(runtime: ArcweftRuntimeExecutor) {

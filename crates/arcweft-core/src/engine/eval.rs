@@ -338,7 +338,7 @@ impl Engine {
                 self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive, pure_backend)
             }
             RuntimeExprKind::NominalRecord(record) => {
-                self.evaluate_nominal_record_expr(expr.ty(), record, pure_backend)
+                self.evaluate_record_expr(expr.ty(), record, pure_backend)
             }
             RuntimeExprKind::Variant { ordinal, payload } => {
                 self.evaluate_variant_expr(expr.ty(), *ordinal, payload.as_deref(), pure_backend)
@@ -861,7 +861,7 @@ impl Engine {
         Ok(result)
     }
 
-    fn evaluate_nominal_record_expr(
+    fn evaluate_record_expr(
         &mut self,
         ty: crate::runtime_id::RuntimePlanTypeId,
         record: &RuntimeNominalRecordExpr,
@@ -872,37 +872,36 @@ impl Engine {
             .type_table()
             .get(ty)
             .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
-        let RuntimePlanTypeProjection::Nominal {
-            nominal, layout, ..
-        } = declaration.projection()
-        else {
-            return Err(RuntimeEvalError::InvalidExpressionType(ty));
+        let field_count = match declaration.projection() {
+            RuntimePlanTypeProjection::Nominal { .. } => plan
+                .nominal_record_domains()
+                .get(ty)
+                .ok_or(RuntimeEvalError::MissingNominalRecordDomain(ty))?
+                .fields()
+                .len(),
+            RuntimePlanTypeProjection::Record(fields) => fields.len(),
+            _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
         };
-        let domain = plan
-            .nominal_record_domains()
-            .get(ty)
-            .ok_or(RuntimeEvalError::MissingNominalRecordDomain(ty))?;
         let mut fields = std::iter::repeat_with(|| None)
-            .take(domain.fields().len())
+            .take(field_count)
             .collect::<Vec<_>>();
         for initializer in record.initializers() {
             let value = self.evaluate_expr_with_backend(initializer.value(), pure_backend)?;
             let ordinal = usize::try_from(initializer.field().zero_based())
                 .map_err(|_| RuntimeEvalError::InvalidExpressionType(ty))?;
-            let Some(field) = domain.fields().get(ordinal) else {
+            let Some(field) = fields.get_mut(ordinal) else {
                 return Err(RuntimeEvalError::InvalidExpressionType(ty));
             };
-            if !self
-                .fiber
-                .frame
-                .env
-                .value_matches_type(plan.as_ref(), field.ty(), &value)?
-            {
+            if !self.fiber.frame.env.value_matches_type(
+                plan.as_ref(),
+                initializer.value().ty(),
+                &value,
+            )? {
                 return Err(RuntimeEvalError::InvalidExpressionType(
                     initializer.value().ty(),
                 ));
             }
-            fields[ordinal] = Some(value);
+            *field = Some(value);
         }
         let fields = fields
             .into_iter()
@@ -917,19 +916,33 @@ impl Engine {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(RuntimeValue::NominalRecord(
-            crate::value::RuntimeNominalRecordValue::new(
-                nominal.clone(),
-                declaration.semantic_identity(),
-                *layout,
-                fields,
+        match declaration.projection() {
+            RuntimePlanTypeProjection::Nominal {
+                nominal, layout, ..
+            } => Ok(RuntimeValue::NominalRecord(
+                crate::value::RuntimeNominalRecordValue::new(
+                    nominal.clone(),
+                    declaration.semantic_identity(),
+                    *layout,
+                    fields,
+                )
+                .with_type_instantiation(
+                    (!declaration.scope().is_root())
+                        .then(|| self.fiber.frame.env.function_instantiation_lease().cloned())
+                        .flatten(),
+                ),
+            )),
+            RuntimePlanTypeProjection::Record(layout) => crate::value::RuntimeRecordValue::try_new(
+                layout
+                    .iter()
+                    .zip(fields)
+                    .map(|(field, value)| (field.diagnostic_name().to_owned(), value))
+                    .collect(),
             )
-            .with_type_instantiation(
-                (!declaration.scope().is_root())
-                    .then(|| self.fiber.frame.env.function_instantiation_lease().cloned())
-                    .flatten(),
-            ),
-        ))
+            .map(RuntimeValue::Record)
+            .map_err(|_| RuntimeEvalError::InvalidExpressionType(ty)),
+            _ => Err(RuntimeEvalError::InvalidExpressionType(ty)),
+        }
     }
 
     fn evaluate_variant_expr(

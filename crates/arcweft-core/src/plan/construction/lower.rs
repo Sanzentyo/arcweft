@@ -1622,15 +1622,18 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         owner: RuntimePlanTypeId,
         fields: Box<[RuntimeNominalRecordFieldSeed]>,
     ) -> Result<RuntimeNominalRecordExpr, RuntimePlanBuildError> {
-        let domain = self
-            .nominal_record_domains
-            .get(owner)
-            .ok_or(RuntimePlanBuildError::UnknownNominalRecordDomain { owner })?;
+        let field_count = match self.nominal_record_domains.get(owner) {
+            Some(domain) => domain.fields().len(),
+            None => match self.projection(owner)? {
+                RuntimePlanTypeProjection::Record(fields) => fields.len(),
+                _ => return Err(RuntimePlanBuildError::UnknownNominalRecordDomain { owner }),
+            },
+        };
         let mut seen = BTreeSet::new();
         let mut lowered = Vec::with_capacity(fields.len());
         for field in fields {
             let (field, value) = field.into_parts();
-            let (field, expected) = self.resolve_record_field(owner, field)?;
+            let (field, expected) = self.resolve_record_layout_field(owner, field)?;
             if !seen.insert(field) {
                 return Err(RuntimePlanBuildError::DuplicateRecordField { owner, field });
             }
@@ -1638,8 +1641,8 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             require_same("nominal record field", expected, value.ty())?;
             lowered.push((field, value));
         }
-        for field in domain.fields() {
-            let field = field.field();
+        for ordinal in 0..field_count {
+            let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
             if !seen.contains(&field) {
                 return Err(RuntimePlanBuildError::MissingRecordField { owner, field });
             }
@@ -1670,7 +1673,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         Ok((field.field(), field.ty()))
     }
 
-    fn resolve_pattern_record_field(
+    fn resolve_record_layout_field(
         &self,
         owner: RuntimePlanTypeId,
         field: RuntimeRecordFieldSeedId,
@@ -1683,7 +1686,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         })?;
         let admitted = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
         let RuntimePlanTypeProjection::Record(fields) = self.projection(owner)? else {
-            return invalid_projection("structural record pattern owner", owner);
+            return invalid_projection("structural record owner", owner);
         };
         let field_ty = fields
             .get(ordinal)

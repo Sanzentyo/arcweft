@@ -73,6 +73,10 @@ match, it binds the same complete record value that was matched.
 
 ## Enum patterns
 
+Construct a record variant with named arguments, for example
+`.ChoiceSelected(id = selected)`. The arguments evaluate in source order.
+The payload stores them in the case's declared field order.
+
 ```arcw
 match maybe_route {
     .Some(route) => goto route

@@ -489,15 +489,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 dst
             }
             RuntimeExprKind::NominalRecord(record) => {
-                let Some(domain) = self.plan.nominal_record_domains().get(expr.ty()) else {
-                    panic!(
-                        "admitted nominal record expression type {} has no RuntimePlan record domain at {}",
-                        expr.ty(),
-                        self.path
-                    );
-                };
                 let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
-                let mut registers = vec![None; domain.fields().len()];
+                // RuntimePlan admits one initializer per layout field before lowering.
+                let mut registers = vec![None; record.initializers().len()];
                 for initializer in record.initializers() {
                     let value = self.lower(initializer.value());
                     registers[initializer.field().zero_based() as usize] = Some(value);
@@ -505,9 +499,8 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 let registers = registers
                     .into_iter()
                     .map(|register| {
-                        register.expect(
-                            "checked nominal record expression must initialize every layout field",
-                        )
+                        register
+                            .expect("checked record expression must initialize every layout field")
                     })
                     .collect();
                 let dst = self.frame.temp(ty);
