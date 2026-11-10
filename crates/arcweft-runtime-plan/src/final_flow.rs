@@ -3585,8 +3585,10 @@ fn define_function_sites(
                     &definition.locals.specialized_operands,
                 );
                 flow.expression_overrides = overrides;
-                flow.implicit_body_root = Some(definition.owner);
-                flow.lower_flow_value(definition.body, RuntimeFlowValueContinuation::Return)
+                flow.lower_callable_value_body(
+                    RuntimeTryBoundaryOwner::ImplicitFunctionSite(definition.owner),
+                    definition.body,
+                )
                     .map(|ops| RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                         effects: definition.effects.clone(), ops: ops.into_boxed_slice(),
                     })).map_err(|error| error.to_string())
@@ -3642,8 +3644,10 @@ fn define_closure_sites(
                         closure.key(),
                         closure.semantics(),
                     ))
-                    .lower_function_site_body(
-                        closure.owner(),
+                    .lower_callable_value_body(
+                        Some(RuntimeTryBoundaryOwner::ExplicitFunctionSite(
+                            closure.owner(),
+                        )),
                         closure.body(),
                         RuntimeExpressionOverrides::new(),
                     )
@@ -3657,18 +3661,19 @@ fn define_closure_sites(
                     RuntimeAssertionOwner::Closure(closure.key().closure().clone()),
                 )
                 .with_closure(locals, closure.key(), closure.semantics());
-                flow.lower_flow_value(closure.body(), RuntimeFlowValueContinuation::Return)
-                    .map(|ops| {
-                        let effects =
-                            RuntimeEffectSet::try_from_effects(closure.effects().iter().cloned())
-                                .expect(
-                                    "project closure effect row was validated during reservation",
-                                );
-                        RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
-                            effects,
-                            ops: ops.into_boxed_slice(),
-                        })
+                flow.lower_callable_value_body(
+                    RuntimeTryBoundaryOwner::ExplicitFunctionSite(closure.owner()),
+                    closure.body(),
+                )
+                .map(|ops| {
+                    let effects =
+                        RuntimeEffectSet::try_from_effects(closure.effects().iter().cloned())
+                            .expect("project closure effect row was validated during reservation");
+                    RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                        effects,
+                        ops: ops.into_boxed_slice(),
                     })
+                })
             }
         };
         match body.and_then(|body| {
@@ -3840,8 +3845,8 @@ fn define_project_default_function_sites(
                             instance.semantics(),
                         ),
                     )
-                    .lower_function_site_body(
-                        default.source(),
+                    .lower_callable_value_body(
+                        None,
                         default.source(),
                         RuntimeExpressionOverrides::new(),
                     )
@@ -4187,15 +4192,18 @@ fn define_pure_programs(
                     if let HirExprKind::Closure(closure) = expression.kind() {
                         if expression_compatible {
                             return lowerer
-                                .lower_function_site_body(
-                                    *owner,
+                                .lower_callable_value_body(
+                                    Some(RuntimeTryBoundaryOwner::ExplicitFunctionSite(*owner)),
                                     closure.body(),
                                     RuntimeExpressionOverrides::new(),
                                 )
                                 .map(RuntimeFunctionSiteBodySeed::Expression)
                                 .map_err(RuntimePlanLowerError::new);
                         }
-                        flow.lower_flow_value(closure.body(), RuntimeFlowValueContinuation::Return)?
+                        flow.lower_callable_value_body(
+                            RuntimeTryBoundaryOwner::ExplicitFunctionSite(*owner),
+                            closure.body(),
+                        )?
                     } else {
                         let callable =
                             definition.scope.implicit_callable(*owner).ok_or_else(|| {
@@ -4240,8 +4248,10 @@ fn define_pure_programs(
                                 .map_err(RuntimePlanLowerError::new);
                         }
                         flow.expression_overrides = overrides;
-                        flow.implicit_body_root = Some(*owner);
-                        flow.lower_flow_value(*owner, RuntimeFlowValueContinuation::Return)?
+                        flow.lower_callable_value_body(
+                            RuntimeTryBoundaryOwner::ImplicitFunctionSite(*owner),
+                            *owner,
+                        )?
                     }
                 }
                 CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
@@ -5840,7 +5850,7 @@ struct FinalFlowLowerer<'a> {
     task_plans: &'a arcweft_core::plan::RuntimeTaskPlanConstructionContext,
     expression_overrides: RuntimeExpressionOverrides,
     mutation_return: Option<RuntimeMutationReturn>,
-    implicit_body_root: Option<ExprId>,
+    function_site_body: Option<(RuntimeTryBoundaryOwner, ExprId)>,
     module: &'a HirModule,
     facts: &'a RuntimePlanSemanticFacts,
     flow_functions: &'a flow_functions::ReservedFlowFunctions,
@@ -6212,7 +6222,7 @@ impl<'a> FinalFlowLowerer<'a> {
             module,
             expression_overrides: RuntimeExpressionOverrides::new(),
             mutation_return: None,
-            implicit_body_root: None,
+            function_site_body: None,
             facts: context.facts,
             flow_functions: context.flow_functions,
             semantic_facts: RuntimeScopedExecutableSemanticFactView::global(context.facts),
@@ -6317,7 +6327,7 @@ impl<'a> FinalFlowLowerer<'a> {
         lowerer
             .with_scoped_semantics(self.semantic_facts)
             .with_overrides(self.expression_overrides.clone())
-            .with_implicit_body_root(self.implicit_body_root)
+            .with_implicit_body_root(self.implicit_body_root())
     }
 
     fn pattern_lowerer(&self) -> FinalPatternLowerer<'_> {
@@ -7325,7 +7335,7 @@ impl<'a> FinalFlowLowerer<'a> {
             }
             return self.contains_flow_value_expression(selected);
         }
-        if self.implicit_body_root != Some(expression)
+        if self.implicit_body_root() != Some(expression)
             && self.implicit_callable(expression).is_some()
         {
             return Ok(false);
@@ -7486,6 +7496,26 @@ impl<'a> FinalFlowLowerer<'a> {
             continuation,
             RuntimeExpressionOverrides::new(),
         )
+    }
+
+    fn lower_callable_value_body(
+        &mut self,
+        site: RuntimeTryBoundaryOwner,
+        body: ExprId,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let outer = self.function_site_body.replace((site, body));
+        let result = self.lower_flow_value(body, RuntimeFlowValueContinuation::Return);
+        self.function_site_body = outer;
+        result
+    }
+
+    fn implicit_body_root(&self) -> Option<ExprId> {
+        match self.function_site_body {
+            Some((RuntimeTryBoundaryOwner::ImplicitFunctionSite(owner), body)) if owner == body => {
+                Some(body)
+            }
+            _ => None,
+        }
     }
 
     fn lower_flow_value_with_overrides(
@@ -7707,7 +7737,7 @@ impl<'a> FinalFlowLowerer<'a> {
             }
             return self.lower_selected_callable_or_need_value(expression, continuation, overrides);
         }
-        if self.implicit_body_root != Some(expression)
+        if self.implicit_body_root() != Some(expression)
             && self.implicit_callable(expression).is_some()
         {
             let value = self
@@ -9221,6 +9251,18 @@ impl<'a> FinalFlowLowerer<'a> {
             locals.success.clone(),
             RuntimeLocalReadMode::Move,
         );
+        let success = if self.function_site_body == Some((fact.boundary(), owner)) {
+            let boundary = fact.wrapped_success_at(fact.boundary()).ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "checked Try success does not fit function-site body {owner:?}"
+                ))
+            })?;
+            normalized_variant_expression_seed(boundary, 0, Some(success)).map_err(|error| {
+                RuntimePlanLowerError::new(format!("function-site Try success is invalid: {error}"))
+            })?
+        } else {
+            success
+        };
         let success_ops = self.apply_value_continuation(success, outer)?;
         let (failure_pattern, failure_value) = match fact.carrier() {
             RuntimeTryCarrierFact::Result { residual, .. } => {
@@ -9316,12 +9358,18 @@ impl<'a> FinalFlowLowerer<'a> {
             RuntimeTryBoundaryOwner::Callable(_) | RuntimeTryBoundaryOwner::Thread(_) => {
                 Ok(vec![RuntimeFlowOpSeed::ReturnExpr(propagated)])
             }
-            RuntimeTryBoundaryOwner::ExplicitFunctionSite(boundary)
-            | RuntimeTryBoundaryOwner::ImplicitFunctionSite(boundary) => {
-                Err(RuntimePlanLowerError::new(format!(
-                    "Try residual for function site {boundary:?} reached Flow continuation lowering"
-                )))
+            RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
+            | RuntimeTryBoundaryOwner::ImplicitFunctionSite(_)
+                if self
+                    .function_site_body
+                    .is_some_and(|(site, _)| site == boundary) =>
+            {
+                Ok(vec![RuntimeFlowOpSeed::ReturnExpr(propagated)])
             }
+            RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
+            | RuntimeTryBoundaryOwner::ImplicitFunctionSite(_) => Err(RuntimePlanLowerError::new(
+                format!("Try residual targets inactive function site {boundary:?}"),
+            )),
             RuntimeTryBoundaryOwner::CarrierBlock(boundary) => {
                 let continuation = self
                     .carrier_continuations

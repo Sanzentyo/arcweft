@@ -80,24 +80,64 @@ fn invalid(value: Result<i64, String>) -> Result<i64, String> { try value }
 
 #[test]
 fn a_root_try_delivers_success_and_residual_to_the_closure_caller() {
-    let definitions = r#"
-fn relay(input: Result<i64, String>) -> Result<i64, String> {
-    let apply: (Result<i64, String> -> Result<i64, String> effects {}) = |value| try value
+    for callable in [
+        "|value| try value",
+        "try _",
+        "|value| try keep(value)",
+        "try { let _ = keep(()); _ }",
+    ] {
+        let definitions = format!(
+            r#"
+fn keep<T>(value: T) -> T {{ value }}
+fn relay_result(input: Result<i64, String>) -> Result<i64, String> {{
+    let apply: (Result<i64, String> -> Result<i64, String> effects {{}}) = {callable}
     apply(input)
+}}
+fn relay_option(input: Option<i64>) -> Option<i64> {{
+    let apply: (Option<i64> -> Option<i64> effects {{}}) = {callable}
+    apply(input)
+}}
+"#,
+        );
+        assert_case(
+            &definitions,
+            "flow main() -> i64 { return if let Ok(value) = relay_result(Ok(42i64)) { value } else { -1i64 } }",
+            RuntimeValue::i64(42),
+            "42",
+        );
+        assert_case(
+            &definitions,
+            "flow main() -> String { return if let Err(reason) = relay_result(Err(\"stopped\")) { reason } else { \"unexpected\" } }",
+            RuntimeValue::String("stopped".to_owned()),
+            "stopped",
+        );
+        assert_case(
+            &definitions,
+            "flow main() -> i64 { return if let Some(value) = relay_option(Some(42i64)) { value } else { -1i64 } }",
+            RuntimeValue::i64(42),
+            "42",
+        );
+        assert_case(
+            &definitions,
+            "flow main() -> i64 { return if let Some(value) = relay_option(None) { value } else { -1i64 } }",
+            RuntimeValue::i64(-1),
+            "-1",
+        );
+    }
 }
-"#;
-    assert_case(
-        definitions,
-        "flow main() -> i64 { return if let Ok(value) = relay(Ok(42i64)) { value } else { -1i64 } }",
-        RuntimeValue::i64(42),
-        "42",
-    );
-    assert_case(
-        definitions,
-        "flow main() -> String { return if let Err(reason) = relay(Err(\"stopped\")) { reason } else { \"unexpected\" } }",
-        RuntimeValue::String("stopped".to_owned()),
-        "stopped",
-    );
+
+#[test]
+fn a_root_try_rejects_a_mismatched_wrapped_success_payload() {
+    for callable in ["|value| try value", "try _"] {
+        let source = format!(
+            "fn relay(input: Result<i64, String>) -> Result<bool, String> {{
+                let apply: (Result<i64, String> -> Result<bool, String> effects {{}}) = {callable};
+                apply(input)
+            }}"
+        );
+        let error = compile_source(&source).expect_err("the returned carrier expects Bool");
+        assert_eq!(error.project().stage(), "type-check");
+    }
 }
 
 #[test]

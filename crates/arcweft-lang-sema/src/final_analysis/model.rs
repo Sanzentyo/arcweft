@@ -1406,6 +1406,14 @@ impl CheckedTryCarrier {
         }
     }
 
+    pub(super) fn accepts_wrapped_success(&self, boundary: &TypeKind) -> bool {
+        match (self, boundary) {
+            (Self::Result { success, .. }, TypeKind::Result { ok, .. })
+            | (Self::Option { success }, TypeKind::Option(ok)) => ok.accepts(success),
+            _ => false,
+        }
+    }
+
     pub(crate) const fn has_boundary_family(&self, boundary: &TypeKind) -> bool {
         matches!(
             (self, boundary),

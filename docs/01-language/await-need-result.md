@@ -175,6 +175,11 @@ try {
 is ordinary `Try(Block { tail = compute_result() })`. The block does not create
 a propagation boundary.
 
+When `try` is the entire body of a closure or an implicit callable with a
+contextual return carrier, the callable returns the successful payload wrapped
+in that carrier. A residual goes directly to the same caller. An ordinary
+function writes its success carrier explicitly.
+
 ## `result {}`
 
 `result` creates a local Result boundary. Normal completion wraps the tail in

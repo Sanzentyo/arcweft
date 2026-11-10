@@ -1037,14 +1037,14 @@ impl Analyzer<'_, '_, '_> {
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
                 )
             })?;
-            let propagates_to_function_site = matches!(
-                body.try_propagation(),
-                Some((TryDestination::ImplicitFunctionSite(site), _)) if site == owner
-            );
-            let result = if propagates_to_function_site {
+            let result = if let Some((TryDestination::ImplicitFunctionSite(site), carrier)) =
+                body.try_propagation()
+                && site == owner
+            {
                 context
                     .result
                     .clone()
+                    .filter(|result| carrier.accepts_wrapped_success(result))
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
             } else {
                 self.callable_body_result(
@@ -3247,13 +3247,18 @@ impl Analyzer<'_, '_, '_> {
                         .expect("function-site context was just pushed");
                 }
                 let body = body?;
-                let propagates_to_function_site = matches!(
-                    body.try_propagation(),
-                    Some((TryDestination::ExplicitFunctionSite(site), _)) if site == owner
-                );
-                let result = if propagates_to_function_site {
+                let wrapped_try = match body.try_propagation() {
+                    Some((TryDestination::ExplicitFunctionSite(site), carrier))
+                        if site == owner =>
+                    {
+                        Some(carrier)
+                    }
+                    _ => None,
+                };
+                let result = if let Some(carrier) = wrapped_try {
                     body_expected
                         .cloned()
+                        .filter(|result| carrier.accepts_wrapped_success(result))
                         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
                 } else {
                     if body.value_type().is_none()
@@ -3280,7 +3285,7 @@ impl Analyzer<'_, '_, '_> {
                     module,
                     owner,
                     closure.body(),
-                    propagates_to_function_site,
+                    wrapped_try.is_some(),
                     &completion,
                 )?;
                 let result = if let Some(expected) = body_expected {

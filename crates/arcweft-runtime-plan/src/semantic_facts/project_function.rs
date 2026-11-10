@@ -1525,9 +1525,16 @@ impl RuntimeClosureInstanceFact {
             || body.module() != owner.module()
             || semantics.partition().executable()
                 != &arcweft_lang_hir::project::HirRuntimeExecutableOwner::CallableBody(owner)
-            || semantics.expression_type(body).is_none_or(|body_type| {
-                body_type != result.as_ref()
-                    && !matches!(body_type.shape(), RuntimeTypeShape::Never)
+            || !semantics.expression_type(body).is_some_and(|body_type| {
+                let site = super::RuntimeTryBoundaryOwner::ExplicitFunctionSite(owner);
+                if let Some(tried) = semantics
+                    .tried(body)
+                    .filter(|tried| tried.boundary() == site)
+                {
+                    return body_type == tried.carrier().success()
+                        && tried.wrapped_success_at(site) == Some(result.as_ref());
+                }
+                body_type == result.as_ref() || matches!(body_type.shape(), RuntimeTypeShape::Never)
             })
         {
             return Err(RuntimeProjectFunctionFactError::InvalidClosureInstance);

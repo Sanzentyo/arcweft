@@ -724,20 +724,23 @@ impl<'hir> FinalExprLowerer<'hir> {
         ))
     }
 
-    pub(crate) fn lower_function_site_body(
+    pub(crate) fn lower_callable_value_body(
         &self,
-        site_owner: ExprId,
+        site: Option<RuntimeTryBoundaryOwner>,
         body: ExprId,
         overrides: RuntimeExpressionOverrides,
     ) -> Result<RuntimeExprSeed, String> {
         let lowerer = self.clone_with_overrides(overrides);
-        if let Some(tried) = lowerer.facts.tried(body).filter(|tried| {
-            tried.boundary() == RuntimeTryBoundaryOwner::ExplicitFunctionSite(site_owner)
-        }) {
+        if let Some(tried) = lowerer.tried(body)
+            && Some(tried.boundary()) == site
+        {
+            let boundary = tried.wrapped_success_at(tried.boundary()).ok_or_else(|| {
+                format!("checked Try success does not fit function-site body {body:?}")
+            })?;
             lowerer.lower_with_try_continuation(
                 body,
                 PureTryContinuation::WrapSuccess {
-                    boundary: Box::new(tried.boundary_type().clone()),
+                    boundary: Box::new(boundary.clone()),
                 },
             )
         } else if lowerer.contains_executable_try(body)? {
@@ -756,7 +759,11 @@ impl<'hir> FinalExprLowerer<'hir> {
             .ok_or_else(|| format!("admitted implicit callable is missing for {owner:?}"))?;
         let mut lowerer = self.clone_with_overrides(RuntimeExpressionOverrides::new());
         lowerer.implicit_body_root = Some(owner);
-        lowerer.lower_function_site_body(owner, owner, overrides)
+        lowerer.lower_callable_value_body(
+            Some(RuntimeTryBoundaryOwner::ImplicitFunctionSite(owner)),
+            owner,
+            overrides,
+        )
     }
 
     #[allow(

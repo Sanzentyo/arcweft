@@ -2047,6 +2047,43 @@ impl RuntimeTryFact {
     pub const fn boundary_type(&self) -> &RuntimeNormalizedType {
         &self.boundary_type
     }
+
+    /// A Try that is the body of its receiving function site wraps its normal
+    /// payload before returning it through that site's carrier ABI.
+    pub(crate) fn wrapped_success_at(
+        &self,
+        site: RuntimeTryBoundaryOwner,
+    ) -> Option<&RuntimeNormalizedType> {
+        if self.boundary != site
+            || !matches!(
+                site,
+                RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
+                    | RuntimeTryBoundaryOwner::ImplicitFunctionSite(_)
+            )
+        {
+            return None;
+        }
+        let item = match (self.carrier(), self.boundary_type().shape()) {
+            (RuntimeTryCarrierFact::Result { .. }, RuntimeTypeShape::Result { value, .. })
+            | (
+                RuntimeTryCarrierFact::Option { .. },
+                RuntimeTypeShape::Option { item: value, .. },
+            ) => value,
+            _ => return None,
+        };
+        let success = self.carrier().success();
+        (success == item.as_ref() || matches!(success.shape(), RuntimeTypeShape::Never))
+            .then_some(self.boundary_type())
+    }
+
+    fn matches_implicit_body_result(&self, owner: ExprId, result: &RuntimeNormalizedType) -> bool {
+        let site = RuntimeTryBoundaryOwner::ImplicitFunctionSite(owner);
+        if self.boundary() == site {
+            self.wrapped_success_at(site) == Some(result)
+        } else {
+            self.carrier().success() == result
+        }
+    }
 }
 
 fn try_boundary_type_matches(fact: &RuntimeTryFact) -> bool {
@@ -9285,18 +9322,10 @@ impl RuntimePlanSemanticFacts {
                     expression: *expression,
                 });
             };
-            let result_matches = match fact.boundary() {
-                RuntimeTryBoundaryOwner::ImplicitFunctionSite(boundary) => implicit_callables
-                    .get(&boundary)
-                    .is_some_and(|callable| callable.result() == fact.carrier().success()),
-                RuntimeTryBoundaryOwner::Infallible
-                | RuntimeTryBoundaryOwner::CarrierBlock(_)
-                | RuntimeTryBoundaryOwner::Thread(_)
-                | RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
-                | RuntimeTryBoundaryOwner::Callable(_) => {
-                    expression_types.get(expression) == Some(fact.carrier().success())
-                }
-            };
+            let result_matches = implicit_callables.get(expression).map_or_else(
+                || expression_types.get(expression) == Some(fact.carrier().success()),
+                |callable| fact.matches_implicit_body_result(*expression, callable.result()),
+            );
             if tried.operand() != fact.operand() || !result_matches {
                 return Err(RuntimeSemanticFactsError::InvalidTryFact {
                     expression: *expression,
@@ -14832,7 +14861,10 @@ fn validate_project_function_semantic_catalog(
                     || tried
                         .as_ref()
                         .is_some_and(|tried| {
-                            !try_boundary_type_matches(tried)
+                            !matches!(hir, HirExprKind::Try(operation) if operation.operand() == tried.operand())
+                                || expression_types.get(&tried.operand()) != Some(tried.carrier_type())
+                                || !tried.matches_implicit_body_result(owner, fact.result())
+                                || !try_boundary_type_matches(tried)
                                 || matches!(tried.boundary(), RuntimeTryBoundaryOwner::CarrierBlock(boundary)
                                     if semantics.expression_scope(boundary)
                                         .and_then(RuntimeScopeFact::carrier_block)
