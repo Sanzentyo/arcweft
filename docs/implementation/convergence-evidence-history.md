@@ -16504,3 +16504,17 @@ Cargo tree と Windows の Cargo metadata の逆依存は52パッケージで一
 Cargo tree の既定、全 feature、全ターゲットと Windows の Cargo metadata は、Sema の推移的逆依存22パッケージで一致した。nextest は3,926件成功、0件失敗、1件スキップ。全ターゲット・全 feature の workspace check／Clippy、整形、Web Player の Wasm check、doctest 2件、構造ゲートが通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
 
 [基点と公開の照合、実入力、初回失敗、全コマンドの原本](acceptance-evidence/task-call-group-transition.raw.zip)は111件、1581941 bytes、SHA-256 `c8541a80e8698507bce5ecbf37af46d9fa4b82234b0e116c96be44a0a2a0b05b`。
+
+### Callable partial invocation contract
+
+2026-11-11に基点 `0ede75167abd6ced20c4533c6758a9e268f03908`、Sema の公開 Source `e9d1c656b54beeeb46876482bea82562c513b13f`、最終公開 Source `05359ca88be6f93201ee732f950de44b05f66e3c` を照合した。最終 tree は `cc7032205d390aaddc8a17ce0473d884c55fd410`。公開先の変更15 blobを照合した。追跡対象の差分は0件で、既存の未追跡 `%SystemDrive%/` があった。
+
+Sema のジェネリック使用一覧は引数の初出を正式なグループ・仮引数座標で保持する。確定済みの型解は適用遷移を所有し、そこから未確定の型・定数の残り座標を投影する。準備済みグラフが同じ一覧を再構築する処理を削除した。既存のグループ適用のダイジェストは、正式な仮引数型とグループを記録する従来の version 1 の形を保つ。3グループの関数の第3グループの第2引数で初めて決まる型が、前2回の適用を経て最終呼び出しで確定することを検証した。
+
+修正前の RuntimePlan と AWBC は、`log.write` を許容する元の関数から効果行が空の継続への遷移を受理した。部分適用で変化する仮引数一覧と、保持する関数型の契約を分け、型スコープ・binder・述語・呼び出し効果が一致するかを `program_types` の共通の検査で確認する。RuntimePlan の構築と AWBC の検証がこの遷移を拒否し、正規の AWBC 部分適用は本体へ入る前に保持値のある継続を返した。修正前の受理2件と、試験のエラー型を訂正した過程も原本に含む。
+
+最終 CLI では[先行検証](#callable-group-transitions)の8入力で型検査 JSON が一致した。正規の6実行は Bytecode VM と AWBC Product で42を返し、各ステップ最大1操作だった。前回と比較した実行のステップ数とログ順も一致した。さらに、同じ継続へ `String` と `Bool` を渡す対照を追加した。2つのグループに分けると両実行器が42を返し、1つのグループに置くと Sema が `no admissible final type` で拒否した。Compiler の待機・復元23件も通過した。
+
+Cargo tree の既定と全 feature、および Windows の Cargo metadata は Sema と Core の推移的逆依存52パッケージで一致した。全ターゲットのグラフには `arcweft-render-web` が加わった。nextest は7,697件成功、0件失敗、18件スキップ。Core の単体2,350件、Sema の1,471件、CLI の226件を含む。GPU の全件スキップの組は一覧で既定の `ignore` 3件を確認した。一覧の最初の読み込みは Cargo の警告と JSON を同じログに書いたため停止した。標準出力と標準エラーを分けてその組から再開し、完了済みの結果を照合して保持した。全ターゲット・全 feature の workspace check／Clippy、Wasm check、doctest 82件、整形、構造ゲートが通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
+
+[ソース照合、実入力、修正前の受理、全コマンドの原本](acceptance-evidence/task-callable-partial-contract.raw.zip)は150件、2061511 bytes、SHA-256 `6eb35b2b3fad80340904a7519ed31020e19e211be0dc377e60891464f547ea90`。
