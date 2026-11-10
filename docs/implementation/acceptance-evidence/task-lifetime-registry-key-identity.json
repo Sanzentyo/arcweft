@@ -22277,5 +22277,332 @@
         }
       ]
     }
+  },
+  "lifetimePromotionCallableResiduals": {
+    "recordedDate": "2026-11-10",
+    "sourcePublication": {
+      "base": "4ce50db382dc1ab4706df56f7ad20dbf43dfacb2",
+      "source": "da5f0f7a12542e3f96aba818260f8a9451cdcf09",
+      "tree": "76af6299dba748e543abf9d71b99f126f416b47b",
+      "originMain": "da5f0f7a12542e3f96aba818260f8a9451cdcf09",
+      "receipt": {
+        "path": "runtime-source.published.json",
+        "sha256": "052c8e288f40eba460901ae6cc290cf923022f1d9ac8c75b5f002184ec1de05a"
+      }
+    },
+    "initialSourcePublication": {
+      "base": "e577c7884b257437cbea3357316c69e8f9ca2055",
+      "source": "4ce50db382dc1ab4706df56f7ad20dbf43dfacb2",
+      "tree": "40266022298e7bc28abf09f8f76cea6c81566e93",
+      "originMain": "4ce50db382dc1ab4706df56f7ad20dbf43dfacb2",
+      "receipt": {
+        "path": "source.published.json",
+        "sha256": "af0b3733ed1e63ae0caf2bc028814042da391578ac43e05bf662e8cb1c2e9c9e"
+      }
+    },
+    "observedWorkingTree": "main matched origin/main at inspection. No tracked or staged edits. Pre-existing untracked %SystemDrive%/ was outside the delivery.",
+    "supersedes": {
+      "field": "lifetimePromotionProjectedStorage",
+      "scope": "The two valid callable-boundary Result residual CLI inputs are repaired at this source. Their earlier output is retained.",
+      "beforeSource": "5dc83f538f4ae153e354ecd904ef8ed45d157057",
+      "beforeCliSha256": "b60e18b6f10c1cc914cc39927e999dbb6b5d3374e247a580b564b9d96e83d561",
+      "beforeArtifact": "task-lifetime-promotion-projected-storage.raw.zip#scope-probe/corrected.receipt.json",
+      "beforeReceiptSha256": "b1e961c94a49919af4b77aa96c941f4a0c7744893f669b0ba5f887c58c20dc46",
+      "paired": [
+        {
+          "name": "callable-residual-generic",
+          "inputSha256": "e9db7d87e51244959d1b2d509de86be6c487f133d4664deee6e2d6edb5446660",
+          "beforeCode": "sema.lifetime.promotion_execution",
+          "beforeReportSha256": "1d830648a87edb30f7cc9f14ae95ee878b9d914ffc1c12da4fcb881985faa1e6",
+          "afterCode": "sema.lifetime.promotion_receiver",
+          "afterReportSha256": "689216a3c2a3b0ee793e829527fa5c64f632d5f9c0ab1d077f3352743cddef37"
+        },
+        {
+          "name": "callable-residual-typed",
+          "inputSha256": "95108562efab94e2e1cd491cf6906485d70fee37b778d44cf183f4f20ee79254",
+          "beforeCode": "sema.lifetime.promotion_execution",
+          "beforeReportSha256": "d31b91bd5a52ca7d02559e91fe50a03a68329dd3d88d0a2967c7d0b2f38e2222",
+          "afterCode": "sema.lifetime.promotion_receiver",
+          "afterReportSha256": "0d2a1015ca5d99b88866cb463a2286efc045984fbecb67982fefa4819dd32cf6"
+        }
+      ]
+    },
+    "ownerDecision": "The generation-local Try destination is projected from prepared and sealed checked facts. Completion supplies reachable normal values, explicit returns and the Result residual operands for that exact destination. Projection through a known invocation follows its selected carrier payload and substitutes its original inputs. For root Try in explicit and implicit callables, the checked success payload and the carrier returned at the same function site are separate types. RuntimeTryFact owns the normalized wrap type. Both expression and executable lowerers consume it, and the executable lowerer resolves only an active callable site. Completion owns the control fold and its exits.",
+    "validation": {
+      "target": "x86_64-pc-windows-msvc",
+      "earlierFocusedSema": {
+        "summary": "Summary [   1.457s] 23 tests run: 23 passed, 1415 skipped",
+        "initial": {
+          "summary": "Summary [   1.223s] 23 tests run: 22 passed, 1 failed, 1415 skipped",
+          "correction": "The dead code control now uses a Unit tail. The dead Ok(9i64) expression did not receive a contextual error type and produced a missing checked result before the promotion query."
+        },
+        "log": {
+          "path": "quality/sema-focus.log",
+          "sha256": "0fee150328a41a2be249e24cf536e99ac9f5027b7461e0e33d7ed01f8908608f"
+        },
+        "initialLog": {
+          "path": "quality/sema-focus-initial.log",
+          "sha256": "8aedd82024607a8d0476c33a67492a6bd9a88725e28048959a7d5a3fbd7261d6"
+        }
+      },
+      "earlierSema": {
+        "summary": [
+          "     Summary [ 177.771s] 1462 tests run: 1462 passed (1 slow), 0 skipped"
+        ],
+        "receipt": {
+          "path": "quality/sema-owner.receipt.json",
+          "sha256": "ef22e4b50f7507dece56bbdc636fe9215b7413a4cbd078ac9bcf413dc21c5f10"
+        }
+      },
+      "earlierCompiler": {
+        "summary": "22 tests run: 21 passed, 1 failed",
+        "reason": "An explicit closure root Try produced a payload type while the closed function-site check required the wrapped result carrier.",
+        "log": {
+          "path": "quality/compiler-carriers.log",
+          "sha256": "5dbf5328f5069a3f80c32601ebc150d1350993a55094d60e732861bbecd5b50f"
+        }
+      },
+      "earlierWorkspaceCheck": {
+        "status": "interrupted",
+        "reason": "Interrupted after the Compiler integration failure. Final-source check supersedes this incomplete command.",
+        "receipt": {
+          "path": "quality/receipt.json",
+          "sha256": "0dbcbf0a0f50020fffe1102d7b9d703a7b2b5be1c2deac9ce71e947d89288b53"
+        }
+      },
+      "finalQuality": {
+        "source": "da5f0f7a12542e3f96aba818260f8a9451cdcf09",
+        "commandResults": {
+          "compiler-carriers": {
+            "exit": 0,
+            "summary": [
+              "     Summary [   3.627s] 23 tests run: 23 passed, 0 skipped"
+            ]
+          },
+          "fmt": {
+            "exit": 0,
+            "summary": []
+          },
+          "structure": {
+            "exit": 0,
+            "summary": [
+              "blocking violations: 0"
+            ]
+          },
+          "sema-owner": {
+            "exit": 0,
+            "summary": [
+              "     Summary [  67.906s] 1462 tests run: 1462 passed, 0 skipped"
+            ]
+          },
+          "runtime-plan-scopes": {
+            "exit": 0,
+            "summary": [
+              "     Summary [   0.545s] 2 tests run: 2 passed, 133 skipped"
+            ]
+          },
+          "compiler-callables": {
+            "exit": 0,
+            "summary": [
+              "     Summary [   2.352s] 3 tests run: 3 passed, 325 skipped"
+            ]
+          },
+          "lsp-diagnostics": {
+            "exit": 0,
+            "summary": [
+              "     Summary [   0.367s] 22 tests run: 22 passed, 199 skipped"
+            ]
+          },
+          "workspace-check": {
+            "exit": 0,
+            "summary": []
+          },
+          "workspace-clippy": {
+            "exit": 0,
+            "summary": []
+          }
+        },
+        "receipt": {
+          "path": "runtime-quality/receipt.json",
+          "sha256": "ff812163689b077b0f97c20ba248a1fec0087fded607a8af3283598742282ba6"
+        }
+      },
+      "reverseDependencies": {
+        "source": "da5f0f7a12542e3f96aba818260f8a9451cdcf09",
+        "previousMatrixSource": "c64fc78b1f2d8050e8b7bc776dc0f084e242f67f",
+        "packages": [
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-lang-sema",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-web",
+          "arcweft-project-loader",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-test",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3"
+        ],
+        "nextestTotals": {
+          "run": 3906,
+          "pass": 3906,
+          "fail": 0,
+          "skip": 1
+        },
+        "doctests": {
+          "passed": 2,
+          "failed": 0,
+          "log": {
+            "path": "reverse-nextest/doctests.log",
+            "sha256": "f89de48cb697e6d40f4d5cc25f6a268e2580b34df60d90df602e6692e796e1c5"
+          }
+        },
+        "receipt": {
+          "path": "reverse-nextest/receipt.json",
+          "sha256": "cb657544d2130abf8fcad747ed4b6ad2fe2cfe73aea9fdaf1842e46788354614"
+        }
+      },
+      "cliPromotion": {
+        "initialCliSha256": "a5ede8e410ffd7a8473c37285106af5db15efd2578f51697aa101aa006d31db9",
+        "finalCliSha256": "66d8721ceb84475f893a585a9d2a1d4cf29d48d633299bc14a1661a6f3f4ef94",
+        "cases": 11,
+        "borrowed": 6,
+        "ownedControl": 5,
+        "buildCommand": [
+          "cargo",
+          "build",
+          "--locked",
+          "--profile",
+          "test",
+          "-p",
+          "arcweft-cli",
+          "--bin",
+          "arcw"
+        ],
+        "initialReceipt": {
+          "path": "final-cli/receipt.json",
+          "sha256": "d0e9d8697a54003b51f533d71fb214ca196067d00fbc9774fd3ac58de2a1e9e2"
+        },
+        "finalReceipt": {
+          "path": "runtime-cli/receipt.json",
+          "sha256": "ee1b53e9647b3b69e9d2d32a3426f924ac70832ecd4642bb81f2878f5839530a"
+        }
+      },
+      "cliImplicitRootTry": {
+        "beforeSource": "4ce50db382dc1ab4706df56f7ad20dbf43dfacb2",
+        "beforeStage": "runtime-plan-lower",
+        "beforeCode": "compiler.runtime_semantic_projection",
+        "afterSource": "da5f0f7a12542e3f96aba818260f8a9451cdcf09",
+        "cases": [
+          {
+            "name": "implicit-result-err",
+            "inputSha256": "037a47dd29ba70b9f9ca643280a99a5c57d67bb1a042e86fc8a43471ac034d54",
+            "beforeCheckExit": 1,
+            "beforeCheckStage": "runtime-plan-lower",
+            "checkExit": 0,
+            "checkStage": null,
+            "checkReportSha256": "a5fcd37e86492aedabc995985f858b6aec75b38ddf6a4d16a48375102e06905e",
+            "runs": [
+              {
+                "executor": "bytecode-vm",
+                "exit": 0,
+                "finalStatus": "done Return(\"stopped\")",
+                "reportSha256": "a0725c81860e4a951f824a4d3423b94890a0916518bd6bc45930e0627f4a98d5",
+                "accepted": true
+              },
+              {
+                "executor": "awbc-product",
+                "exit": 0,
+                "finalStatus": "done Return(\"stopped\")",
+                "reportSha256": "ae330526bdf2f021f7b9f2ec33f84a4f811d02964fc26f6ccf15f3ccfc257c79",
+                "accepted": true
+              }
+            ],
+            "accepted": true
+          },
+          {
+            "name": "implicit-result-ok",
+            "inputSha256": "52ad74c3d3643d03b18aba6cb6093f83cb6e083b7907c5f0c361a9f088db8e3b",
+            "beforeCheckExit": 1,
+            "beforeCheckStage": "runtime-plan-lower",
+            "checkExit": 0,
+            "checkStage": null,
+            "checkReportSha256": "8b703ac525a578d60af1dc27f6af0980a775facbc27f6f2764c14b47d13ff502",
+            "runs": [
+              {
+                "executor": "bytecode-vm",
+                "exit": 0,
+                "finalStatus": "done Return(\"42\")",
+                "reportSha256": "88b14539faa8659c12748624c7a18d5a5edfa67e538184f59e9b64ea2a96b928",
+                "accepted": true
+              },
+              {
+                "executor": "awbc-product",
+                "exit": 0,
+                "finalStatus": "done Return(\"42\")",
+                "reportSha256": "41d92e169c98b841e0b78ac7cc416dd1a01027e93168fa72885185b481c3a17c",
+                "accepted": true
+              }
+            ],
+            "accepted": true
+          }
+        ],
+        "beforeReceipt": {
+          "path": "next-scope-probe/receipt.json",
+          "sha256": "7063deb1b7643a763fd8cede66e46c083fa82deb2de480fac51e25656adb0cf7"
+        },
+        "afterReceipt": {
+          "path": "runtime-scope-probe/receipt.json",
+          "sha256": "84cb76c80fa1dcaad36936507f7d51672dea52fcbb24818f589a00624a57e513"
+        },
+        "extraCallArgumentPlaceholderProbes": [
+          {
+            "name": "generic",
+            "inputSha256": "20d821cd5acb9e6421905bee6a8a06e3ca83ef5d451663dac3906b82bbb331d2",
+            "beforeStage": "type-check",
+            "beforeCode": "sema.final_analysis",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.final_analysis"
+          },
+          {
+            "name": "monomorphic",
+            "inputSha256": "6d16e98779944bb416a9a86cd1e982d9e0d75c85a0f1269f0e7f0a368c804bf9",
+            "beforeStage": "type-check",
+            "beforeCode": "sema.final_analysis",
+            "exit": 1,
+            "stage": "type-check",
+            "code": "sema.final_analysis"
+          }
+        ]
+      },
+      "harnessCorrections": [
+        "A dead Ok tail was replaced with Unit to preserve the control without requiring an unrelated error type.",
+        "The executable implicit test uses a project call inside a Try operand block. Placing the placeholder directly in keep(_) fails to produce an operand type on both recorded sources.",
+        "The real CLI run names entry.main and checks the actual JSON done Return status. The initial missing entry and label mismatch reports are retained."
+      ]
+    },
+    "testScope": "The resolved default and all-feature graphs contain the same 22 packages. Executed the Sema owner, Compiler carrier and shared-prefix execution suites, LSP diagnostics, and the real CLI fixtures. Workspace all-target/all-feature check and Clippy cover the remaining build graph. The default-feature reverse-dependency matrix uses the previously recorded 22-package slices and the same CLI surfaces. It reuses the exact final Sema and Compiler carrier runs without counting their tests twice.",
+    "remaining": [
+      "Promotion ownership transfer, destination custody, lifetime relations and proof discharge.",
+      "Origins of unresolved dynamic calls, implicit callable result captures, and attached content/default.",
+      "Direct call-argument placeholder inside Try (try keep(_)) remains untyped in both generic and monomorphic probes."
+    ],
+    "raw": {
+      "path": "task-lifetime-promotion-callable-residual.raw.zip",
+      "sha256": "b4722a07af3d1ad1300ed65405c191934171308ea271bd62a3b04119c1debd46",
+      "memberCount": 169
+    }
   }
 }
