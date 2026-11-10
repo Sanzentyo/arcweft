@@ -298,10 +298,10 @@ impl CanonicalEncoder {
     fn generic_first_use(&mut self, first_use: CallableGenericFirstUse) {
         // The parameter's exact coordinate and type are already part of the
         // signature. The derived inventory keeps the group projection in v1.
-        match first_use.group() {
-            Some(group) => {
+        match first_use.position() {
+            Some(position) => {
                 self.tag(0);
-                self.usize(group.get());
+                self.usize(position.group().get());
             }
             None => self.tag(1),
         }

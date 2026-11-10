@@ -33,25 +33,29 @@ pub(crate) enum CallableFunctionTypeProjectionError<E> {
 /// retain a positional prefix within its arrow, without a declared next group.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CallableGroupTransition {
-    current: CallableGroupIndex,
+    current: CallableParameterCoordinate,
     outcome: CallableGroupOutcome,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CallableGroupOutcome {
     Invoke,
-    NextGroup(CallableGroupIndex),
+    DeclaredContinuation(CallableParameterCoordinate),
     ValuePartial(CallableParameterIndex),
 }
 
 impl CallableGroupTransition {
     pub(crate) const fn current(self) -> CallableGroupIndex {
+        self.current.group()
+    }
+
+    pub(crate) const fn position(self) -> CallableParameterCoordinate {
         self.current
     }
 
-    pub(crate) const fn next(self) -> Option<CallableGroupIndex> {
+    pub(crate) const fn continuation_position(self) -> Option<CallableParameterCoordinate> {
         match self.outcome {
-            CallableGroupOutcome::NextGroup(group) => Some(group),
+            CallableGroupOutcome::DeclaredContinuation(position) => Some(position),
             _ => None,
         }
     }
@@ -67,11 +71,14 @@ impl CallableGroupTransition {
         !matches!(self.outcome, CallableGroupOutcome::Invoke)
     }
 
-    pub(crate) const fn remaining_group(self) -> Option<CallableGroupIndex> {
+    pub(crate) const fn remaining_position(self) -> Option<CallableParameterCoordinate> {
         match self.outcome {
             CallableGroupOutcome::Invoke => None,
-            CallableGroupOutcome::NextGroup(group) => Some(group),
-            CallableGroupOutcome::ValuePartial(_) => Some(self.current),
+            CallableGroupOutcome::DeclaredContinuation(position) => Some(position),
+            CallableGroupOutcome::ValuePartial(first) => Some(CallableParameterCoordinate::new(
+                self.current.group(),
+                first,
+            )),
         }
     }
 
@@ -83,13 +90,7 @@ impl CallableGroupTransition {
         let CallableGenericFirstUse::Parameter(coordinate) = first_use else {
             return None;
         };
-        let first_remaining_group = self.remaining_group()?;
-        (coordinate.group() >= first_remaining_group
-            && (coordinate.group() > first_remaining_group
-                || self
-                    .first_unbound()
-                    .is_none_or(|first| coordinate.parameter() >= first))
-            && Some(coordinate.group()) != implicit_receiver)
+        (coordinate >= self.remaining_position()? && Some(coordinate.group()) != implicit_receiver)
             .then_some(coordinate)
     }
 }
@@ -109,46 +110,51 @@ impl CallableParameterPassing {
 impl CallableSignatureSchema {
     pub(crate) fn complete_group(
         &self,
-        current: CallableGroupIndex,
+        current: CallableParameterCoordinate,
         implicit_receiver: Option<CallableGroupIndex>,
     ) -> Option<CallableGroupTransition> {
-        self.group(current)?;
+        let group = self.group(current.group())?;
+        if current.parameter().get() > 0 && group.parameter(current.parameter()).is_none() {
+            return None;
+        }
         let next = current
+            .group()
             .get()
             .checked_add(1)
             .and_then(|index| CallableGroupIndex::try_from_usize(index).ok())
             .filter(|next| Some(*next) != implicit_receiver && self.group(*next).is_some());
         Some(CallableGroupTransition {
             current,
-            outcome: next.map_or(
-                CallableGroupOutcome::Invoke,
-                CallableGroupOutcome::NextGroup,
-            ),
+            outcome: next.map_or(CallableGroupOutcome::Invoke, |group| {
+                CallableGroupOutcome::DeclaredContinuation(
+                    CallableParameterCoordinate::group_start(group),
+                )
+            }),
         })
     }
 
     pub(crate) fn partial_value_group(
         &self,
         candidate: &crate::callable::CallableCandidateId,
-        group: CallableGroupIndex,
+        current: CallableParameterCoordinate,
         first_unbound: CallableParameterIndex,
     ) -> Option<CallableGroupTransition> {
-        let parameters = self.group(group)?.parameters();
+        let parameters = self.group(current.group())?.parameters();
         (matches!(
             candidate,
             crate::callable::CallableCandidateId::Local(_)
                 | crate::callable::CallableCandidateId::FunctionValue(_)
         ) && self.groups().len() == 1
-            && self.attached_content_for_group(group).is_none()
+            && self.attached_content_for_group(current.group()).is_none()
             && self.generic_inventory().template_binder().is_empty()
-            && first_unbound.get() > 0
+            && first_unbound > current.parameter()
             && first_unbound.get() < parameters.len()
             && parameters.iter().all(|parameter| {
                 parameter.passing() == CallableParameterPassing::PositionalOnly
                     && parameter.presence() == CallableParameterPresence::Required
             }))
         .then_some(CallableGroupTransition {
-            current: group,
+            current,
             outcome: CallableGroupOutcome::ValuePartial(first_unbound),
         })
     }
@@ -208,18 +214,19 @@ impl CallableSignatureSchema {
         first_group: CallableGroupIndex,
         terminal_effects: &EffectRow,
     ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
-        self.declared_function_type_from_position(first_group, None, terminal_effects)
+        self.declared_function_type_from_position(
+            CallableParameterCoordinate::group_start(first_group),
+            terminal_effects,
+        )
     }
 
     pub(crate) fn declared_function_type_from_position(
         &self,
-        first_group: CallableGroupIndex,
-        first_unbound: Option<CallableParameterIndex>,
+        position: CallableParameterCoordinate,
         terminal_effects: &EffectRow,
     ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
         self.project_function_type_from_position(
-            first_group,
-            first_unbound,
+            position,
             terminal_effects,
             || {
                 self.value_type()
@@ -247,8 +254,7 @@ impl CallableSignatureSchema {
         parameter: impl FnMut(CallableParameterCoordinate, &CallableParameter) -> Result<TypeKind, E>,
     ) -> Result<TypeKind, CallableFunctionTypeProjectionError<E>> {
         self.project_function_type_from_position(
-            first_group,
-            None,
+            CallableParameterCoordinate::group_start(first_group),
             terminal_effects,
             result,
             parameter,
@@ -257,8 +263,7 @@ impl CallableSignatureSchema {
 
     fn project_function_type_from_position<E>(
         &self,
-        first_group: CallableGroupIndex,
-        first_unbound: Option<CallableParameterIndex>,
+        position: CallableParameterCoordinate,
         terminal_effects: &EffectRow,
         result: impl FnOnce() -> Result<TypeKind, E>,
         mut parameter: impl FnMut(
@@ -266,6 +271,7 @@ impl CallableSignatureSchema {
             &CallableParameter,
         ) -> Result<TypeKind, E>,
     ) -> Result<TypeKind, CallableFunctionTypeProjectionError<E>> {
+        let first_group = position.group();
         let groups = self
             .groups()
             .get(first_group.get()..)
@@ -277,7 +283,7 @@ impl CallableSignatureSchema {
                 .parameters()
                 .iter()
                 .skip(if group.index() == first_group {
-                    first_unbound.map_or(0, CallableParameterIndex::get)
+                    position.parameter().get()
                 } else {
                     0
                 })

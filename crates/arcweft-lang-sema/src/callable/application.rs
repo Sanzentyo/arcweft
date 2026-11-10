@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    CallConstraintInvariant, CallableGroupIndex, CallableResultSchema,
+    CallConstraintInvariant, CallableGroupIndex, CallableParameterCoordinate, CallableResultSchema,
     CallableSignatureSchemaDigest, CallableTerminalEffectProjection,
     DetachedPreparedResolvedCallable, PreparedResolvedCallable,
     PreparedResolvedCallableDetachArena, schema::CallableGroupTransition,
@@ -100,9 +100,10 @@ impl PreparedCallableApplication {
         solution: Arc<TypeConstraintSolution>,
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<Self, CallConstraintInvariant> {
-        let (transition, declared) =
-            selected.project_application_result(mapping, terminal_effects)?;
-        let declared = declared.into_ready()?;
+        let transition = selected.application_transition(mapping)?;
+        let declared = selected
+            .project_application_result(transition, terminal_effects)?
+            .into_ready()?;
         let result = match declared {
             CallableResultSchema::Value(value) => {
                 CallableResultSchema::Value(solution.apply_result_template(&value)?)
@@ -131,8 +132,12 @@ impl PreparedCallableApplication {
         self.transition.current()
     }
 
-    pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
-        self.transition.next()
+    pub(crate) const fn position(&self) -> CallableParameterCoordinate {
+        self.transition.position()
+    }
+
+    pub(crate) const fn continuation_position(&self) -> Option<CallableParameterCoordinate> {
+        self.transition.continuation_position()
     }
 
     pub(crate) const fn retains_inputs(&self) -> bool {

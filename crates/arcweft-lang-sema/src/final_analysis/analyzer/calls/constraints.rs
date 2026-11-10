@@ -4472,6 +4472,11 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 CallConstraintInvariant::CheckedCallableAuthorityMismatch,
             ))
         })?;
+    let transition = candidate
+        .application_transition(inputs.mapping())
+        .map_err(|error| {
+            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+        })?;
     let initialization = match parent_source {
         Some(parent_source) => PreparedCallConstraintInitialization::Child(
             parent_source
@@ -4480,6 +4485,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     CallableConstraintApplication::Call(result_source),
                     site,
                     &candidate,
+                    transition,
                     enclosing,
                 )
                 .map_err(|error| {
@@ -4488,7 +4494,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
         ),
         None => PreparedCallConstraintInitialization::Root(
             graph
-                .validate_and_issue_constraint_initialization(&candidate, enclosing)
+                .validate_and_issue_constraint_initialization(&candidate, transition, enclosing)
                 .map_err(|error| {
                     CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
                 })?,
@@ -5256,9 +5262,9 @@ pub(crate) fn validate_and_prepare_call_constraints(
         }
     }
 
-    let (transition, result_schema) = candidate
-        .project_application_result(inputs.mapping(), terminal_effects)
-        .and_then(|(transition, result)| Ok((transition, result.into_ready()?)))
+    let result_schema = candidate
+        .project_application_result(transition, terminal_effects)
+        .and_then(|result| result.into_ready())
         .map_err(|error| {
             CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
         })?;
@@ -5337,7 +5343,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
     } else {
         None
     };
-    let result_closure = if candidate.permits_residual_result(group) {
+    let result_closure = if candidate.permits_residual_result(transition) {
         crate::types::constraints::TypeConstraintProjectionClosure::AllowFutureEligible
     } else {
         crate::types::constraints::TypeConstraintProjectionClosure::Closed

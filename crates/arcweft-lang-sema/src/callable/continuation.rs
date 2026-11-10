@@ -27,7 +27,10 @@ use crate::types::{
     },
 };
 
-use super::{CallableGroupIndex, CallableResultSchema};
+use super::{
+    CallableGroupIndex, CallableParameterCoordinate, CallableResultSchema,
+    schema::CallableGroupTransition,
+};
 
 mod application_owner;
 pub(crate) use application_owner::CallableConstraintApplication;
@@ -438,7 +441,7 @@ impl PreparedCallContinuationSeed {
 pub(crate) struct PreparedContinuationCandidateSeed {
     base: Arc<super::PreparedResolvedCallableDefinition>,
     reference: PreparedCallContinuationRef,
-    current_group: CallableGroupIndex,
+    position: CallableParameterCoordinate,
     function_type: TypeKind,
 }
 
@@ -448,16 +451,16 @@ impl PreparedContinuationCandidateSeed {
     ) -> (
         Arc<super::PreparedResolvedCallableDefinition>,
         PreparedCallContinuationRef,
-        CallableGroupIndex,
+        CallableParameterCoordinate,
         TypeKind,
     ) {
         let Self {
             base,
             reference,
-            current_group,
+            position,
             function_type,
         } = self;
-        (base, reference, current_group, function_type)
+        (base, reference, position, function_type)
     }
 }
 
@@ -1003,7 +1006,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 self.graph.validate_prefix(prefix)?;
                 let application = prefix.application();
                 let sealed_result = application.result_schema()?;
-                if *result != sealed_result || application.next_group().is_some() {
+                if *result != sealed_result || application.continuation_position().is_some() {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 }
                 let Some(sealed_result) = sealed_result.value_type() else {
@@ -1698,8 +1701,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         let selected = application.selected();
         self.validate_prepared_candidate_ancestry(selected)?;
         let result = application.result_schema()?;
-        let next_group = application.next_group();
-        let function_type = if next_group.is_some() {
+        let function_type = if application.continuation_position().is_some() {
             Some(application.function_type()?)
         } else {
             None
@@ -1857,7 +1859,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         if application.schema() != application.selected().schema().semantic_digest() {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch);
         }
-        if application.completed_group() != application.selected().call_group() {
+        if application.position() != application.selected().position() {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         Ok(())
@@ -1877,7 +1879,9 @@ impl<P, U> PreparedCallGraph<P, U> {
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
         let Some(parent_reference) = selected.prepared_continuation() else {
-            return if selected.call_group() == CallableGroupIndex::ZERO {
+            return if selected.position()
+                == CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO)
+            {
                 Ok(())
             } else {
                 Err(CallConstraintInvariant::PreparedGroupMismatch)
@@ -1898,9 +1902,9 @@ impl<P, U> PreparedCallGraph<P, U> {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
         let parent_next = parent_application
-            .next_group()
+            .continuation_position()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
-        if selected.call_group() != parent_next {
+        if selected.position() != parent_next {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         let parent_function_type = parent_application.function_type()?;
@@ -1943,16 +1947,17 @@ impl<P, U> PreparedCallGraph<P, U> {
                 return Err(CallConstraintInvariant::PreparedBaseMismatch);
             }
         } else if !node.dependencies.is_empty()
-            || application.completed_group() != CallableGroupIndex::ZERO
+            || application.position()
+                != CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO)
         {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         let result = application.result_schema()?;
-        let next_group = application.next_group();
+        let continuation_position = application.continuation_position();
         match &node.payload {
             PreparedCallNodePayload::SelectedContinuation(_) => {
                 let function_type = application.function_type()?;
-                if next_group.is_none()
+                if continuation_position.is_none()
                     || !matches!(&result, CallableResultSchema::Value(value) if function_type == *value)
                     || !matches!(function_type, TypeKind::Function { .. })
                 {
@@ -1960,7 +1965,7 @@ impl<P, U> PreparedCallGraph<P, U> {
                 }
             }
             PreparedCallNodePayload::SelectedValue { result: stored, .. } => {
-                if next_group.is_some()
+                if continuation_position.is_some()
                     || *stored != result
                     || matches!(
                         result,
@@ -2024,9 +2029,9 @@ impl<P, U> PreparedCallGraph<P, U> {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
         let expected_next = application
-            .next_group()
+            .continuation_position()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
-        if candidate.call_group() != expected_next {
+        if candidate.position() != expected_next {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         let function_type = application.function_type()?;
@@ -2041,8 +2046,8 @@ impl<P, U> PreparedCallGraph<P, U> {
 
     /// Issue a prepared continuation candidate directly from the graph node.
     /// This is the only path used by a function-value resolver.  It validates
-    /// issuer, node state, site payload, dependency order, and the exact next
-    /// group before transferring the selected callable base into the prepared
+    /// issuer, node state, site payload, dependency order, and the next
+    /// parameter coordinate before transferring the selected callable base into the prepared
     /// carrier.
     pub(crate) fn continuation_candidate_seed(
         &self,
@@ -2062,24 +2067,24 @@ impl<P, U> PreparedCallGraph<P, U> {
         debug_assert_eq!(continuation.coordinate.node, reference.0.node);
         let application = continuation.prefix.application();
         let selected = application.selected();
-        let current_group = application
-            .next_group()
+        let position = application
+            .continuation_position()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
         let function_type = application.function_type()?;
         Ok(PreparedContinuationCandidateSeed {
             base: selected.definition(),
             reference: PreparedCallContinuationRef(continuation.coordinate.clone()),
-            current_group,
+            position,
             function_type,
         })
     }
 
-    /// Derive the exact lower parameter scope and pair it with the one affine
-    /// seed.  `candidate.current_group()` is the only group authority; no
-    /// terminal flag or caller override is accepted.
+    /// Derive the lower parameter scope from the mapped application and pair
+    /// it with the graph's inherited solution.
     pub(crate) fn validate_and_issue_constraint_initialization(
         &self,
         candidate: &super::PreparedResolvedCallable,
+        transition: CallableGroupTransition,
         enclosing: &EnclosingGenericParameterScope,
     ) -> Result<PreparedConstraintInitialization, CallConstraintInvariant>
     where
@@ -2088,6 +2093,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         issue_constraint_initialization(
             Arc::clone(&self.issuer),
             candidate,
+            transition,
             enclosing,
             |reference| self.resolve_continuation(reference, candidate),
         )
@@ -2100,6 +2106,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         application: D::Application,
         site: CheckedCallSite,
         candidate: &super::PreparedResolvedCallable,
+        transition: CallableGroupTransition,
         enclosing: &EnclosingGenericParameterScope,
     ) -> Result<PreparedChildConstraintInitialization<D>, CallConstraintInvariant>
     where
@@ -2108,7 +2115,7 @@ impl<P, U> PreparedCallGraph<P, U> {
     {
         self.validate_constraint_authority(parent_authority)?;
         let initialization =
-            self.validate_and_issue_constraint_initialization(candidate, enclosing)?;
+            self.validate_and_issue_constraint_initialization(candidate, transition, enclosing)?;
         Ok(PreparedChildConstraintInitialization {
             initialization,
             receipt,
@@ -2125,9 +2132,13 @@ impl<P, U> PreparedCallGraph<P, U> {
         candidate: &super::PreparedResolvedCallable,
         enclosing: &EnclosingGenericParameterScope,
     ) -> Result<PreparedConstraintInitialization, CallConstraintInvariant> {
-        issue_constraint_initialization(Arc::clone(&self.issuer), candidate, enclosing, |_| {
-            Err(CallConstraintInvariant::MissingOrStalePreparedNode)
-        })
+        issue_constraint_initialization(
+            Arc::clone(&self.issuer),
+            candidate,
+            candidate.complete_application()?,
+            enclosing,
+            |_| Err(CallConstraintInvariant::MissingOrStalePreparedNode),
+        )
     }
 }
 
@@ -2147,6 +2158,7 @@ where
 fn issue_constraint_initialization<F>(
     issuer: Arc<PreparedCallGraphIssuer>,
     candidate: &super::PreparedResolvedCallable,
+    transition: CallableGroupTransition,
     enclosing: &EnclosingGenericParameterScope,
     mut resolve_continuation: F,
 ) -> Result<PreparedConstraintInitialization, CallConstraintInvariant>
@@ -2163,7 +2175,10 @@ where
     };
     issue_scope_initialization(
         issuer,
-        ConstraintScopeUse::Call(candidate),
+        ConstraintScopeUse::Call {
+            candidate,
+            transition,
+        },
         enclosing,
         continuation_seed,
     )
@@ -2172,7 +2187,10 @@ where
 /// A source scheme use opens its whole arrow without applying a parameter
 /// group. Both forms derive eligibility from the same schema inventory.
 enum ConstraintScopeUse<'a> {
-    Call(&'a super::PreparedResolvedCallable),
+    Call {
+        candidate: &'a super::PreparedResolvedCallable,
+        transition: CallableGroupTransition,
+    },
     Specialization(&'a super::CallableSignatureSchema),
 }
 
@@ -2182,34 +2200,49 @@ fn issue_scope_initialization(
     enclosing: &EnclosingGenericParameterScope,
     continuation_seed: Option<PreparedCallContinuationSeed>,
 ) -> Result<PreparedConstraintInitialization, CallConstraintInvariant> {
-    let (schema, current_group, terminal, retain_result_binder, implicit_extension_group) =
-        match usage {
-            ConstraintScopeUse::Call(candidate) => {
-                let current_group = candidate.call_group();
-                let implicit_extension_group = match candidate.instantiation() {
-                    super::CallableInstantiation::Extension { group, .. }
-                        if *group > current_group =>
-                    {
-                        Some(*group)
-                    }
-                    _ => None,
-                };
-                (
-                    candidate.schema(),
-                    current_group,
-                    candidate.next_group_for(current_group).is_none(),
-                    candidate.permits_residual_result(current_group),
-                    implicit_extension_group,
-                )
+    let (schema, position, remaining, retain_result_binder, implicit_extension_group) = match usage
+    {
+        ConstraintScopeUse::Call {
+            candidate,
+            transition,
+        } => {
+            let position = candidate.position();
+            if transition.position() != position {
+                return Err(CallConstraintInvariant::PreparedGroupMismatch);
             }
-            ConstraintScopeUse::Specialization(schema) => {
-                (schema, CallableGroupIndex::ZERO, true, false, None)
-            }
-        };
+            let implicit_extension_group = match candidate.instantiation() {
+                super::CallableInstantiation::Extension { group, .. }
+                    if *group > position.group() =>
+                {
+                    Some(*group)
+                }
+                _ => None,
+            };
+            (
+                candidate.schema(),
+                position,
+                transition.remaining_position(),
+                candidate.permits_residual_result(transition),
+                implicit_extension_group,
+            )
+        }
+        ConstraintScopeUse::Specialization(schema) => (
+            schema,
+            CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
+            None,
+            false,
+            None,
+        ),
+    };
     let inventory = schema.generic_inventory();
-    if schema.group(current_group).is_none() {
+    if schema.group(position.group()).is_none() {
         return Err(CallConstraintInvariant::MalformedSchemaInventory);
     }
+    let binds_in_application = |first_use: CallableParameterCoordinate| {
+        Some(first_use.group()) == implicit_extension_group
+            || (first_use.group() == position.group()
+                && remaining.is_none_or(|next| first_use < next))
+    };
     let mut types = BTreeMap::<GenericTypeReference, TypeConstraintParameterEligibility>::new();
     let mut consts = BTreeMap::<GenericConstReference, TypeConstraintConstEligibility>::new();
     let mut free_types = BTreeSet::new();
@@ -2248,7 +2281,7 @@ fn issue_scope_initialization(
         .unwrap_or_default();
     let mut required = Vec::new();
     for entry in inventory.types() {
-        let eligibility = match (entry.role(), entry.first_use().group()) {
+        let eligibility = match (entry.role(), entry.first_use().position()) {
             (super::CallableSchemaGenericRole::RigidReference, _) => {
                 TypeConstraintParameterEligibility::Rigid
             }
@@ -2258,16 +2291,16 @@ fn issue_scope_initialization(
                 required.push(entry.parameter().clone());
                 TypeConstraintParameterEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, Some(group)) if group < current_group => {
+            (super::CallableSchemaGenericRole::Candidate, Some(first)) if first < position => {
                 required.push(entry.parameter().clone());
                 TypeConstraintParameterEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, Some(group))
-                if group == current_group || Some(group) == implicit_extension_group =>
+            (super::CallableSchemaGenericRole::Candidate, Some(first))
+                if binds_in_application(first) =>
             {
                 TypeConstraintParameterEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, Some(_)) if !terminal => {
+            (super::CallableSchemaGenericRole::Candidate, Some(_)) if remaining.is_some() => {
                 TypeConstraintParameterEligibility::FutureEligible
             }
             (super::CallableSchemaGenericRole::Candidate, None) if retain_result_binder => {
@@ -2291,7 +2324,7 @@ fn issue_scope_initialization(
     }
     let mut required_consts = Vec::new();
     for entry in inventory.consts() {
-        let eligibility = match (entry.role(), entry.first_use().group()) {
+        let eligibility = match (entry.role(), entry.first_use().position()) {
             (super::CallableSchemaGenericRole::RigidReference, _) => {
                 TypeConstraintConstEligibility::Rigid
             }
@@ -2301,16 +2334,16 @@ fn issue_scope_initialization(
                 required_consts.push(entry.parameter().clone());
                 TypeConstraintConstEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, Some(group)) if group < current_group => {
+            (super::CallableSchemaGenericRole::Candidate, Some(first)) if first < position => {
                 required_consts.push(entry.parameter().clone());
                 TypeConstraintConstEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, Some(group))
-                if group == current_group || Some(group) == implicit_extension_group =>
+            (super::CallableSchemaGenericRole::Candidate, Some(first))
+                if binds_in_application(first) =>
             {
                 TypeConstraintConstEligibility::Bindable
             }
-            (super::CallableSchemaGenericRole::Candidate, Some(_)) if !terminal => {
+            (super::CallableSchemaGenericRole::Candidate, Some(_)) if remaining.is_some() => {
                 TypeConstraintConstEligibility::FutureEligible
             }
             (super::CallableSchemaGenericRole::Candidate, None) if retain_result_binder => {
@@ -2389,17 +2422,15 @@ fn issue_scope_initialization(
                 required_effects.push(variable.clone());
                 EffectConstraintEligibility::Bindable
             } else {
-                match row.first_use().group() {
-                    Some(group) if group < current_group => {
+                match row.first_use().position() {
+                    Some(first) if first < position => {
                         required_effects.push(variable.clone());
                         EffectConstraintEligibility::Bindable
                     }
-                    Some(group)
-                        if group == current_group || Some(group) == implicit_extension_group =>
-                    {
+                    Some(first) if binds_in_application(first) => {
                         EffectConstraintEligibility::Bindable
                     }
-                    Some(_) if !terminal => EffectConstraintEligibility::FutureEligible,
+                    Some(_) if remaining.is_some() => EffectConstraintEligibility::FutureEligible,
                     None if retain_result_binder => EffectConstraintEligibility::FutureEligible,
                     None => EffectConstraintEligibility::Bindable,
                     Some(_) => {

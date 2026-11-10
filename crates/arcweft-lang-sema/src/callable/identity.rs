@@ -176,6 +176,8 @@ impl CallableGroupIndex {
     }
 }
 impl CallableParameterIndex {
+    pub(crate) const ZERO: Self = Self(0);
+
     pub fn try_from_usize(value: usize) -> Result<Self, CallableScalarError> {
         u16::try_from(value)
             .map(Self)

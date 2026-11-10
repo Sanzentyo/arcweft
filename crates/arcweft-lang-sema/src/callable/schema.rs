@@ -843,10 +843,12 @@ pub(crate) enum CallableGenericFirstUse {
 }
 
 impl CallableGenericFirstUse {
-    pub(crate) const fn group(self) -> Option<CallableGroupIndex> {
+    pub(crate) const fn position(self) -> Option<CallableParameterCoordinate> {
         match self {
-            Self::Entry => Some(CallableGroupIndex::ZERO),
-            Self::Parameter(coordinate) => Some(coordinate.group()),
+            Self::Entry => Some(CallableParameterCoordinate::group_start(
+                CallableGroupIndex::ZERO,
+            )),
+            Self::Parameter(coordinate) => Some(coordinate),
             Self::Result => None,
         }
     }

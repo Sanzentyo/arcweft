@@ -512,7 +512,7 @@ impl Analyzer<'_, '_, '_> {
         let Some(call_owner) = self.prepared_terminal_call_owner(module, expression)? else {
             return Ok(None);
         };
-        let (schema, disposition, has_remaining_group) =
+        let (schema, disposition, retains_inputs) =
             if let Ok(prepared_calls) = self.facts.prepared_calls() {
                 let Some(node) = prepared_calls
                     .selected_nodes()
@@ -528,7 +528,7 @@ impl Analyzer<'_, '_, '_> {
                 (
                     selected.schema().semantic_digest(),
                     disposition,
-                    application.next_group().is_some(),
+                    application.retains_inputs(),
                 )
             } else {
                 let Some(application) = self
@@ -549,10 +549,10 @@ impl Analyzer<'_, '_, '_> {
                 (
                     selected.schema().semantic_digest(),
                     disposition,
-                    application.core().next_group().is_some(),
+                    application.core().retains_inputs(),
                 )
             };
-        if has_remaining_group {
+        if retains_inputs {
             // A partially applied effect schema still denotes a callable
             // value. Only its completed terminal application owns an
             // operation fact.
@@ -1638,7 +1638,7 @@ impl Analyzer<'_, '_, '_> {
                 if application.core().site() != site
                     || selected.schema().evaluated_effect().is_some()
                     || selected.call_group() != application.core().current_group()
-                    || application.core().next_group().is_some()
+                    || application.core().retains_inputs()
                     || !matches!(
                         application.result(),
                         CheckedCallResult::Value(TypeKind::Unit)
@@ -1890,7 +1890,7 @@ impl Analyzer<'_, '_, '_> {
             || selected.schema().semantic_digest() != schema
             || selected.schema().evaluated_effect() != Some(disposition)
             || selected.call_group() != core.current_group()
-            || core.next_group().is_some()
+            || core.retains_inputs()
             || !matches!(application.result(), CheckedCallResult::Value(_))
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -2072,21 +2072,21 @@ impl Analyzer<'_, '_, '_> {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
 
-        if terminal_core.current_group() != continuation.next_group()
-            || terminal_selected.call_group() != continuation.next_group()
+        if terminal_core.position() != continuation.next_position()
+            || terminal_selected.position() != continuation.next_position()
             || !Arc::ptr_eq(terminal_selected.base(), continuation.base())
             || prefix_core.site() != continuation.prefix_call_site()
             || prefix_core.stable_site() != continuation.prefix_application_site()
             || prefix_core.digest() != continuation.prefix_application_core()
             || !Arc::ptr_eq(prefix_selected.base(), continuation.base())
             || !Arc::ptr_eq(prefix_core.solution(), continuation.inherited_solution())
-            || prefix_core.current_group() != continuation.inherited_solution().completed_group()
-            || prefix_core.next_group() != Some(continuation.next_group())
+            || prefix_core.position() != continuation.inherited_solution().position()
+            || prefix_core.continuation_position() != Some(continuation.next_position())
             || continuation.inherited_solution().base() != continuation.base().digest()
             || continuation.inherited_solution().schema() != schema
             || terminal_core.solution().base() != continuation.base().digest()
             || terminal_core.solution().schema() != schema
-            || terminal_core.solution().completed_group() != continuation.next_group()
+            || terminal_core.solution().position() != continuation.next_position()
             || !Arc::ptr_eq(prefix_continuation, continuation)
             || prefix_selected.schema().semantic_digest() != schema
             || prefix_selected.schema().evaluated_effect() != Some(disposition)
@@ -2174,7 +2174,7 @@ impl Analyzer<'_, '_, '_> {
             || *constructor_owner != source.ty().semantic_identity_digest()?
             || !matches!(selected.state(), ResolvedCallableState::Base)
             || selected.call_group() != core.current_group()
-            || core.next_group().is_some()
+            || core.retains_inputs()
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }

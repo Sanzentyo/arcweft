@@ -9,8 +9,8 @@ use super::{
     LanguageCallableFamily, LocalCallableId, ProjectCallablePath, PromotionCallableId,
     ResolveCallError, ResolvedAssociatedTypeReceiver, TypeKind,
 };
-use crate::callable::CallableResultSchema;
 use crate::callable::schema::CallableGroupTransition;
+use crate::callable::{CallableParameterCoordinate, CallableResultSchema};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignatureOrigin {
@@ -70,7 +70,7 @@ enum PreparedResolvedCallableState {
     Base,
     PreparedContinuation {
         reference: super::super::PreparedCallContinuationRef,
-        current_group: CallableGroupIndex,
+        position: CallableParameterCoordinate,
         function_type: TypeKind,
     },
 }
@@ -106,7 +106,10 @@ impl PreparedResolvedCallableDefinition {
             .declared_function_type_from_group(start, effects)
     }
 
-    fn complete_group(&self, current: CallableGroupIndex) -> Option<CallableGroupTransition> {
+    fn complete_group(
+        &self,
+        current: CallableParameterCoordinate,
+    ) -> Option<CallableGroupTransition> {
         let receiver = match self.instantiation {
             CallableInstantiation::Extension { group, .. } => Some(group),
             _ => None,
@@ -120,7 +123,7 @@ impl PreparedResolvedCallableDefinition {
         terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
     {
-        let Some(next) = transition.remaining_group() else {
+        let Some(next) = transition.remaining_position() else {
             return Ok(CallableProjection::Ready(
                 terminal_effects
                     .inferred_result_schema()
@@ -131,13 +134,13 @@ impl PreparedResolvedCallableDefinition {
         match terminal_effects {
             CallableTerminalEffectProjection::Known { effects, .. } => self
                 .schema()
-                .declared_function_type_from_position(next, transition.first_unbound(), effects)
+                .declared_function_type_from_position(next, effects)
                 .map(CallableResultSchema::Value)
                 .map(CallableProjection::Ready),
             CallableTerminalEffectProjection::Pending(checked) => {
                 Ok(CallableProjection::Pending(CallableProjectionPending {
                     checked: checked.clone(),
-                    group: next,
+                    group: next.group(),
                 }))
             }
         }
@@ -212,17 +215,17 @@ impl PreparedResolvedCallable {
             (
                 PreparedResolvedCallableState::PreparedContinuation {
                     reference: left_reference,
-                    current_group: left_group,
+                    position: left_position,
                     function_type: left_type,
                 },
                 PreparedResolvedCallableState::PreparedContinuation {
                     reference: right_reference,
-                    current_group: right_group,
+                    position: right_position,
                     function_type: right_type,
                 },
             ) => {
                 left_reference == right_reference
-                    && left_group == right_group
+                    && left_position == right_position
                     && left_type == right_type
             }
             _ => false,
@@ -288,7 +291,7 @@ pub(crate) enum DetachedPreparedResolvedCallable {
     PreparedContinuation {
         definition: PreparedCallableDefinitionKey,
         reference: super::super::PreparedCallContinuationRef,
-        current_group: CallableGroupIndex,
+        position: CallableParameterCoordinate,
         function_type: TypeKind,
     },
 }
@@ -331,12 +334,12 @@ impl PreparedResolvedCallableDetachArena {
             }
             PreparedResolvedCallableState::PreparedContinuation {
                 reference,
-                current_group,
+                position,
                 function_type,
             } => DetachedPreparedResolvedCallable::PreparedContinuation {
                 definition: key,
                 reference,
-                current_group,
+                position,
                 function_type,
             },
         })
@@ -470,11 +473,15 @@ impl PreparedResolvedCallable {
     }
 
     pub(crate) fn call_group(&self) -> CallableGroupIndex {
+        self.position().group()
+    }
+
+    pub(crate) fn position(&self) -> CallableParameterCoordinate {
         match &self.state {
-            PreparedResolvedCallableState::Base => self.base_call_group(),
-            PreparedResolvedCallableState::PreparedContinuation { current_group, .. } => {
-                *current_group
+            PreparedResolvedCallableState::Base => {
+                CallableParameterCoordinate::group_start(self.base_call_group())
             }
+            PreparedResolvedCallableState::PreparedContinuation { position, .. } => *position,
         }
     }
 
@@ -523,7 +530,7 @@ impl PreparedResolvedCallable {
         P: super::super::PreparedCallPrefixPayload<Unselected = U>,
     {
         let seed = graph.continuation_candidate_seed(reference)?;
-        let (definition, reference, current_group, function_type) = seed.into_candidate_parts();
+        let (definition, reference, position, function_type) = seed.into_candidate_parts();
         if &function_type != actual {
             return Err(super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
@@ -531,7 +538,7 @@ impl PreparedResolvedCallable {
             definition,
             state: PreparedResolvedCallableState::PreparedContinuation {
                 reference,
-                current_group,
+                position,
                 function_type,
             },
         })
@@ -1046,13 +1053,16 @@ impl PreparedResolvedCallable {
         &self,
         current_group: CallableGroupIndex,
     ) -> Option<CallableGroupIndex> {
-        self.definition.complete_group(current_group)?.next()
+        self.definition
+            .complete_group(CallableParameterCoordinate::group_start(current_group))?
+            .continuation_position()
+            .map(CallableParameterCoordinate::group)
     }
 
-    /// A checked next group or a first-class function result can own scheme
+    /// A declared continuation or a first-class function result can own scheme
     /// parameters unused by the current invocation.
-    pub(crate) fn permits_residual_result(&self, group: CallableGroupIndex) -> bool {
-        self.next_group_for(group).is_some()
+    pub(crate) fn permits_residual_result(&self, transition: CallableGroupTransition) -> bool {
+        transition.continuation_position().is_some()
             || (matches!(
                 self.id(),
                 CallableCandidateId::Local(_) | CallableCandidateId::FunctionValue(_)
@@ -1072,39 +1082,51 @@ impl PreparedResolvedCallable {
     {
         let transition = self
             .definition
-            .complete_group(current_group)
+            .complete_group(CallableParameterCoordinate::group_start(current_group))
             .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
         self.definition
             .projected_result_after_group(transition, terminal_effects)
     }
 
-    pub(crate) fn project_application_result(
+    pub(crate) fn complete_application(
+        &self,
+    ) -> Result<CallableGroupTransition, super::super::CallConstraintInvariant> {
+        self.definition
+            .complete_group(self.position())
+            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
+    }
+
+    pub(crate) fn application_transition(
         &self,
         mapping: &super::super::PreparedCallArgumentMapping,
-        terminal_effects: CallableTerminalEffectProjection<'_>,
-    ) -> Result<
-        (
-            CallableGroupTransition,
-            CallableProjection<CallableResultSchema>,
-        ),
-        super::super::CallConstraintInvariant,
-    > {
-        let group = self.call_group();
-        if mapping.group() != group
+    ) -> Result<CallableGroupTransition, super::super::CallConstraintInvariant> {
+        let position = self.position();
+        if mapping.position() != position
             || mapping.candidate() != Some(self.id())
             || mapping.schema() != self.schema().semantic_digest()
         {
             return Err(super::super::CallConstraintInvariant::MalformedMapperSeal);
         }
-        let transition = match mapping.first_unbound() {
-            Some(first) => self.schema().partial_value_group(self.id(), group, first),
-            None => self.definition.complete_group(group),
+        match mapping.first_unbound() {
+            Some(first) => self
+                .schema()
+                .partial_value_group(self.id(), position, first)
+                .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory),
+            None => self.complete_application(),
         }
-        .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-        let result = self
-            .definition
-            .projected_result_after_group(transition, terminal_effects)?;
-        Ok((transition, result))
+    }
+
+    pub(crate) fn project_application_result(
+        &self,
+        transition: CallableGroupTransition,
+        terminal_effects: CallableTerminalEffectProjection<'_>,
+    ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
+    {
+        if transition.position() != self.position() {
+            return Err(super::super::CallConstraintInvariant::PreparedGroupMismatch);
+        }
+        self.definition
+            .projected_result_after_group(transition, terminal_effects)
     }
 }
 

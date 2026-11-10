@@ -112,6 +112,7 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
         application: D::Application,
         site: crate::callable::CheckedCallSite,
         candidate: &crate::callable::PreparedResolvedCallable,
+        transition: super::schema::CallableGroupTransition,
         enclosing: &crate::callable::EnclosingGenericParameterScope,
     ) -> Result<PreparedChildConstraintInitialization<D>, CallConstraintInvariant>
     where
@@ -123,6 +124,7 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
             application,
             site,
             candidate,
+            transition,
             enclosing,
         )
     }

@@ -182,7 +182,7 @@ fn seal_resolved_callable(
         }
         crate::callable::DetachedPreparedResolvedCallable::PreparedContinuation {
             reference,
-            current_group,
+            position,
             function_type,
             ..
         } => {
@@ -210,13 +210,8 @@ fn seal_resolved_callable(
                         CallConstraintInvariant::MissingOrStalePreparedNode,
                     )
                 })?;
-            ResolvedCallable::try_from_continuation(
-                base,
-                continuation,
-                current_group,
-                &function_type,
-            )
-            .map_err(|error| final_call_seal_error(location, error))
+            ResolvedCallable::try_from_continuation(base, continuation, position, &function_type)
+                .map_err(|error| final_call_seal_error(location, error))
         }
     }
 }

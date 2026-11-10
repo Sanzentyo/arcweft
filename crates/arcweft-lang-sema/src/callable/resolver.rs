@@ -525,7 +525,7 @@ impl PreparedCallInputs {
     pub(crate) fn validates(&self, candidate: &PreparedResolvedCallable) -> bool {
         self.mapping.candidate() == Some(candidate.id())
             && self.mapping.schema() == candidate.schema().semantic_digest()
-            && self.mapping.group() == candidate.call_group()
+            && self.mapping.position() == candidate.position()
             && match (
                 candidate
                     .schema()

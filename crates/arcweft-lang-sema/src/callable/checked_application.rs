@@ -721,7 +721,10 @@ impl ResolvedCallableBase {
         self.instantiation.visit_types(visitor)
     }
 
-    fn complete_group(&self, current: CallableGroupIndex) -> Option<CallableGroupTransition> {
+    fn complete_group(
+        &self,
+        current: CallableParameterCoordinate,
+    ) -> Option<CallableGroupTransition> {
         let receiver = match self.instantiation() {
             ResolvedCallableBaseInstantiation::Extension { group, .. } => Some(*group),
             _ => None,
@@ -764,7 +767,7 @@ impl ResolvedCallableBase {
         terminal_effects: &EffectRow,
         inferred_result_schema: Option<&CallableResultSchema>,
     ) -> Result<CallableResultSchema, CallConstraintInvariant> {
-        match transition.remaining_group() {
+        match transition.remaining_position() {
             None => match inferred_result_schema.unwrap_or_else(|| self.schema().result_schema()) {
                 CallableResultSchema::Value(result) => solution
                     .instantiate_result(result)
@@ -775,11 +778,7 @@ impl ResolvedCallableBase {
             },
             Some(next) => self
                 .schema()
-                .declared_function_type_from_position(
-                    next,
-                    transition.first_unbound(),
-                    terminal_effects,
-                )
+                .declared_function_type_from_position(next, terminal_effects)
                 .and_then(|result| solution.instantiate_result(&result))
                 .map(CallableResultSchema::Value),
         }
@@ -812,11 +811,11 @@ impl ResolvedCallable {
     pub(crate) fn try_from_continuation(
         base: Arc<ResolvedCallableBase>,
         continuation: Arc<CheckedCallContinuation>,
-        prepared_group: CallableGroupIndex,
+        prepared_position: CallableParameterCoordinate,
         prepared_function_type: &TypeKind,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
         if !Arc::ptr_eq(&base, continuation.base())
-            || continuation.next_group() != prepared_group
+            || continuation.next_position() != prepared_position
             || continuation.function_type() != prepared_function_type
         {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
@@ -880,9 +879,15 @@ impl ResolvedCallable {
         self.digest
     }
     pub(crate) fn call_group(&self) -> CallableGroupIndex {
+        self.position().group()
+    }
+
+    pub(crate) fn position(&self) -> CallableParameterCoordinate {
         match &self.state {
-            ResolvedCallableState::Base => self.base.base_call_group(),
-            ResolvedCallableState::Continuation(continuation) => continuation.next_group(),
+            ResolvedCallableState::Base => {
+                CallableParameterCoordinate::group_start(self.base.base_call_group())
+            }
+            ResolvedCallableState::Continuation(continuation) => continuation.next_position(),
         }
     }
     fn semantic_authority_eq(&self, other: &Self) -> bool {
@@ -1065,10 +1070,10 @@ impl FrozenCallTypeSolution {
         let admitted = match transition.first_unbound() {
             Some(first) => base.schema().partial_value_group(
                 base.authority().issuer().id(),
-                transition.current(),
+                transition.position(),
                 first,
             ),
-            None => base.complete_group(transition.current()),
+            None => base.complete_group(transition.position()),
         };
         if admitted != Some(transition) {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
@@ -1148,7 +1153,7 @@ impl FrozenCallTypeSolution {
         let mut encoder = CheckedCallCanonicalEncoder::new(FROZEN_SOLUTION_DOMAIN);
         encoder.digest(base.digest().as_bytes());
         encoder.digest(seed.schema.as_bytes());
-        encoder.index(transition.current().get())?;
+        encoder.parameter_position(transition.position())?;
         if let Some(first) = transition.first_unbound() {
             encoder.tag(4);
             encoder.index(first.get())?;
@@ -1217,6 +1222,9 @@ impl FrozenCallTypeSolution {
     }
     pub const fn completed_group(&self) -> CallableGroupIndex {
         self.transition.current()
+    }
+    pub(crate) const fn position(&self) -> CallableParameterCoordinate {
+        self.transition.position()
     }
     pub fn effect_bindings(
         &self,
@@ -2504,7 +2512,7 @@ impl CheckedCallApplicationCore {
         let current = transition.current();
         if input.solution.base() != selected.base().digest()
             || input.solution.schema() != selected.schema().semantic_digest()
-            || selected.call_group() != current
+            || selected.position() != transition.position()
         {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
@@ -2525,7 +2533,7 @@ impl CheckedCallApplicationCore {
                         ) if coordinate.group() == current => Some(coordinate.parameter().get()),
                         _ => None,
                     })
-                    .eq((0..first_unbound.get()).map(Some)))
+                    .eq((transition.position().parameter().get()..first_unbound.get()).map(Some)))
         {
             return Err(CallConstraintInvariant::MalformedMapperSeal);
         }
@@ -2622,8 +2630,11 @@ impl CheckedCallApplicationCore {
     pub fn current_group(&self) -> CallableGroupIndex {
         self.solution.transition.current()
     }
-    pub(crate) fn next_group(&self) -> Option<CallableGroupIndex> {
-        self.solution.transition.next()
+    pub(crate) fn position(&self) -> CallableParameterCoordinate {
+        self.solution.position()
+    }
+    pub(crate) fn continuation_position(&self) -> Option<CallableParameterCoordinate> {
+        self.solution.transition.continuation_position()
     }
 
     /// A retained application constructs a function value without entering its body.
@@ -2701,7 +2712,7 @@ impl CheckedCallApplicationCore {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCallContinuation {
     base: Arc<ResolvedCallableBase>,
-    next_group: CallableGroupIndex,
+    next_position: CallableParameterCoordinate,
     inherited_solution: Arc<FrozenCallTypeSolution>,
     prefix_call_site: super::CheckedCallSite,
     prefix_application_site: StableCheckedValueCoordinate,
@@ -2716,15 +2727,15 @@ impl CheckedCallContinuation {
         function_type: TypeKind,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
         let base = Arc::clone(core.candidates().selected().base());
-        let next_group = core
-            .next_group()
+        let position = core
+            .continuation_position()
             .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)?;
         if !matches!(function_type, TypeKind::Function { .. }) {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
         let mut encoder = CheckedCallCanonicalEncoder::new(CONTINUATION_DOMAIN);
         encoder.digest(base.digest().as_bytes());
-        encoder.index(next_group.get())?;
+        encoder.parameter_position(position)?;
         encoder.digest(core.solution().digest().as_bytes());
         encoder.bytes(
             &core
@@ -2737,7 +2748,7 @@ impl CheckedCallContinuation {
         let digest = CheckedCallContinuationDigest(encoder.finish());
         Ok(Arc::new(Self {
             base,
-            next_group,
+            next_position: position,
             inherited_solution: Arc::clone(core.solution()),
             prefix_call_site: core.site(),
             prefix_application_site: core.stable_site().clone(),
@@ -2751,7 +2762,11 @@ impl CheckedCallContinuation {
         &self.base
     }
     pub const fn next_group(&self) -> CallableGroupIndex {
-        self.next_group
+        self.next_position().group()
+    }
+    /// First formal parameter of the next application of this continuation.
+    pub const fn next_position(&self) -> CallableParameterCoordinate {
+        self.next_position
     }
     pub const fn inherited_solution(&self) -> &Arc<FrozenCallTypeSolution> {
         &self.inherited_solution
@@ -3048,7 +3063,7 @@ impl CheckedCallApplication {
             terminal_effects,
             inferred_result_schema,
         )?;
-        let result = match (core.next_group(), expected) {
+        let result = match (core.continuation_position(), expected) {
             (None, CheckedCallResultSeal::Value { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {
                 if !core.solution().deferred().is_empty()
@@ -4045,6 +4060,19 @@ impl CheckedCallCanonicalEncoder {
         self.u32(
             u32::try_from(value).map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
         );
+        Ok(())
+    }
+
+    fn parameter_position(
+        &mut self,
+        position: CallableParameterCoordinate,
+    ) -> Result<(), CallConstraintInvariant> {
+        // The group remains in the low half of the existing v1 index word.
+        let group = u16::try_from(position.group().get())
+            .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?;
+        let parameter = u16::try_from(position.parameter().get())
+            .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?;
+        self.u32(u32::from(group) | (u32::from(parameter) << u16::BITS));
         Ok(())
     }
     fn bytes(&mut self, value: &[u8]) -> Result<(), CallConstraintInvariant> {

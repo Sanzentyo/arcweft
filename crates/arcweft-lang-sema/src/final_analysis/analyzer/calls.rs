@@ -1580,7 +1580,7 @@ impl Analyzer<'_, '_, '_> {
             source.module,
             candidate.schema(),
             candidate.id(),
-            candidate.call_group(),
+            candidate.position(),
             source.call.arguments(),
             None,
         )
@@ -4993,7 +4993,7 @@ impl Analyzer<'_, '_, '_> {
                 module,
                 candidate.schema(),
                 candidate.id(),
-                current_group,
+                candidate.position(),
                 authored_arguments,
                 implicit,
             ) else {
@@ -5037,7 +5037,7 @@ impl Analyzer<'_, '_, '_> {
                 module,
                 candidate.schema(),
                 candidate.id(),
-                current_group,
+                candidate.position(),
                 authored_arguments,
                 None,
             ) else {

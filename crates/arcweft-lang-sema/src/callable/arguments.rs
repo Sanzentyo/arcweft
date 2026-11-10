@@ -43,6 +43,10 @@ pub(crate) enum CallableRestContainerPolicy {
 }
 
 impl CallableParameterCoordinate {
+    pub(crate) const fn group_start(group: CallableGroupIndex) -> Self {
+        Self::new(group, CallableParameterIndex::ZERO)
+    }
+
     pub const fn new(group: CallableGroupIndex, parameter: CallableParameterIndex) -> Self {
         Self { group, parameter }
     }
@@ -87,7 +91,7 @@ pub(crate) struct MappedCallArgumentSlot {
 pub(crate) struct PreparedCallArgumentMapping {
     candidate: Option<CallableCandidateId>,
     schema: super::CallableSignatureSchemaDigest,
-    group: CallableGroupIndex,
+    position: CallableParameterCoordinate,
     first_unbound: Option<CallableParameterIndex>,
     arguments: Vec<MappedCallArgument>,
     dialogue_application: Option<ExprId>,
@@ -204,7 +208,7 @@ impl PreparedCallArgumentMapping {
         Self {
             candidate: Some(candidate),
             schema,
-            group,
+            position: CallableParameterCoordinate::group_start(group),
             first_unbound: None,
             arguments: Vec::new(),
             dialogue_application: None,
@@ -223,7 +227,11 @@ impl PreparedCallArgumentMapping {
     }
 
     pub(crate) const fn group(&self) -> CallableGroupIndex {
-        self.group
+        self.position.group()
+    }
+
+    pub(crate) const fn position(&self) -> CallableParameterCoordinate {
+        self.position
     }
 
     pub(crate) const fn first_unbound(&self) -> Option<CallableParameterIndex> {
@@ -329,7 +337,7 @@ impl PreparedCallArgumentMapping {
             return Err(super::CallConstraintInvariant::MalformedMapperSeal);
         }
         let group = schema
-            .group(self.group)
+            .group(self.group())
             .ok_or(super::CallConstraintInvariant::MalformedSchemaInventory)?;
         let mut consumed = vec![false; supplied.len()];
         let mut metadata = Vec::new();
@@ -509,18 +517,26 @@ pub(crate) fn map_call_arguments(
     module: &HirModule,
     schema: &CallableSignatureSchema,
     candidate: &CallableCandidateId,
-    group: CallableGroupIndex,
+    position: CallableParameterCoordinate,
     arguments: &[HirCallArgument],
     implicit: Option<CallableParameterIndex>,
 ) -> Option<PreparedCallArgumentMapping> {
-    let group = schema.group(group)?;
+    let group = schema.group(position.group())?;
     let schema_digest = schema.semantic_digest();
     let parameters = group.parameters();
     let mut provided = vec![false; parameters.len()];
-    if let Some(implicit) = implicit {
-        *provided.get_mut(implicit.get())? = true;
+    let mut positional = position.parameter().get();
+    if positional > 0 && positional >= parameters.len() {
+        return None;
     }
-    let mut positional = 0usize;
+    provided[..positional].fill(true);
+    if let Some(implicit) = implicit {
+        let slot = provided.get_mut(implicit.get())?;
+        if *slot {
+            return None;
+        }
+        *slot = true;
+    }
     let mut unchecked_or_open_slots = 0usize;
     let mut mapped_arguments = Vec::with_capacity(arguments.len());
 
@@ -698,7 +714,7 @@ pub(crate) fn map_call_arguments(
             return None;
         }
         let first = CallableParameterIndex::try_from_usize(first).ok()?;
-        schema.partial_value_group(candidate, group.index(), first)?;
+        schema.partial_value_group(candidate, position, first)?;
         Some(first)
     } else {
         None
@@ -716,7 +732,7 @@ pub(crate) fn map_call_arguments(
     Some(PreparedCallArgumentMapping {
         candidate: Some(candidate.clone()),
         schema: schema_digest,
-        group: group.index(),
+        position,
         first_unbound,
         arguments: mapped_arguments,
         dialogue_application: None,
