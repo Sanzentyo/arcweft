@@ -16518,3 +16518,19 @@ Sema のジェネリック使用一覧は引数の初出を正式なグループ
 Cargo tree の既定と全 feature、および Windows の Cargo metadata は Sema と Core の推移的逆依存52パッケージで一致した。全ターゲットのグラフには `arcweft-render-web` が加わった。nextest は7,697件成功、0件失敗、18件スキップ。Core の単体2,350件、Sema の1,471件、CLI の226件を含む。GPU の全件スキップの組は一覧で既定の `ignore` 3件を確認した。一覧の最初の読み込みは Cargo の警告と JSON を同じログに書いたため停止した。標準出力と標準エラーを分けてその組から再開し、完了済みの結果を照合して保持した。全ターゲット・全 feature の workspace check／Clippy、Wasm check、doctest 82件、整形、構造ゲートが通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
 
 [ソース照合、実入力、修正前の受理、全コマンドの原本](acceptance-evidence/task-callable-partial-contract.raw.zip)は150件、2061511 bytes、SHA-256 `6eb35b2b3fad80340904a7519ed31020e19e211be0dc377e60891464f547ea90`。
+
+### Positional partial application of evaluated function values
+
+2026-11-11に基点 `4c73ce3a4d16926442819fe4d18300155f37e36a`、公開 Source `c7a4d36dff782610e939e3b7c35353dfd006939c`、tree `220c5003bc627008ff16d7304dd94c396e1574da` を照合した。公開先の変更22 blobを確認した。追跡対象の差分は0件で、既存の未追跡 `%SystemDrive%/` があった。
+
+基点の CLI は、単一グループの関数値で固定長 spread、効果を含む先頭引数、同じ継続の再利用を型検査で拒否した。即時連鎖は共有の呼び出し解決で失敗した。[先行検証の8入力の拒否](#callable-partial-invocation-contract)は当時の履歴として保持し、現状一覧は今回検証した関数値の範囲を分けた。Sema は固定位置引数が途切れる正式な仮引数座標を封印し、残りの関数型に本体の効果を保持する。先頭引数を評価して保持する段階では本体に入らない。
+
+中間ビルドでは、純粋なクロージャを広い効果行の仮引数へ渡す例が Sema を通過した後、AWBC の型検証で継続状態の不足を報告した。RuntimePlan は静的な矢印に適合する実際の呼び出し状態から、残りの仮引数と元の型スコープ・効果契約を持つ継続を封印する。AWBC は同じ適合関係で対象の状態ごとに遷移を検査する。中間ビルドで確認した14実行と最初の Rust ビルド失敗は、公開 Source の結果と分けて保持した。
+
+ユーザー指定の `cargo clean` が `D:\git\arcweft\target` を全体削除した。Cargo の報告は35,673ファイル、106.0 GiBで、直後の D: の空きは419.56 GiBだった。再検証は `CARGO_INCREMENTAL=0` で行った。Compiler の呼び出しと待機の358件が通過した。追加した待機入力では先頭引数と捕捉値を保持して100 ms待ち、40 ms経過時に追加操作もログも発生せず、残り60 msで再開した。Native とデコード済み AWBC は各ステップ最大1操作で `suffix`、`body` の順にログを出し、42を返した。AWBC は各ステップを公開JSONで保存・復元した。
+
+公開 Source から再ビルドした CLI の SHA-256 は `33d6caed847199a9707040d806f8d263bdf6742012d1853d3e21e9fa303c1bbf`。新しい関数値7入力と対照3入力を Bytecode VM／AWBC Product で計20回実行し、各ステップ最大1操作で42を返した。効果の入力では `prefix`、`between`、`suffix`、`body` の順にログが出た。宣言への直接適用と、同じグループの `keep<T>` の後段を `String` と `Bool` で共有する入力は、どちらも `no admissible final type` を返した。別グループに分けた対照は両実行器で通過した。効果行を広げるローカル型注釈は完全適用と短い適用の両方で `prepared callable base does not match continuation` を返した。変数からの spread は仕様どおり型検査で拒否した。
+
+Cargo tree の既定・全 feature と Windows の Cargo metadata で、Core と Sema の推移的逆依存52パッケージが一致した。全ターゲットでは `arcweft-render-web` が加わった。nextest は7,702件成功、0件失敗、18件スキップ。Core の単体2,350件、Sema の1,471件、RuntimePlan の165件、Compiler の対象358件、CLI の226件を含む。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、Web Player／Render Web の Wasm check、doctest 82件が通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
+
+[ソース照合、実入力、変更前と中間の結果、全コマンドの原本](acceptance-evidence/task-callable-value-positional-partial.raw.zip)は270件、2131877 bytes、SHA-256 `345a1011e0f8e20a801cd2092282761e40b217583d304a868d52e796c746ef57`。
