@@ -2088,6 +2088,85 @@ fn safe_lifetime_promotion_follows_selected_variant_formal_payloads() {
 }
 
 #[test]
+fn safe_lifetime_promotion_follows_immutable_pattern_inputs() {
+    let callback = "(i64 -> i64 effects {})";
+    for (item, body, borrowed) in [
+        (
+            "borrowed",
+            "let (packed, _) = (borrowed, owned); let _ = packed.promote('flow);",
+            true,
+        ),
+        (
+            "owned",
+            "let (packed, _) = (owned, borrowed); let _ = packed.promote('flow);",
+            false,
+        ),
+        (
+            "borrowed",
+            "let Pair { drop: _, keep } = Pair { keep = borrowed, drop = owned }; let packed = keep; let _ = packed.promote('flow);",
+            true,
+        ),
+        (
+            "owned",
+            "let Pair { drop: _, keep } = Pair { keep = owned, drop = borrowed }; let packed = keep; let _ = packed.promote('flow);",
+            false,
+        ),
+        (
+            "borrowed",
+            "let .Some(packed) = input else { return 0i64 }; let _ = packed.promote('flow);",
+            true,
+        ),
+        (
+            "owned",
+            "let .Some(packed) = input else { return 0i64 }; let _ = packed.promote('flow);",
+            false,
+        ),
+        (
+            "borrowed",
+            "if let .Some(packed) = input { let _ = packed.promote('flow); }",
+            true,
+        ),
+        (
+            "borrowed",
+            "let packed = if let .Some(selected) = input { selected } else { owned }; let _ = packed.promote('flow);",
+            true,
+        ),
+        (
+            "borrowed",
+            "let packed = match input { .Some(selected) => selected, .None => owned }; let _ = packed.promote('flow);",
+            true,
+        ),
+        (
+            "owned",
+            "let packed = match input { .Some(selected) => selected, .None => owned }; let _ = packed.promote('flow);",
+            false,
+        ),
+        (
+            "borrowed",
+            "match input { .Some(packed) => { let _ = packed.promote('flow); }, .None => {} };",
+            true,
+        ),
+        (
+            "borrowed",
+            "while let .Some(packed) = input { let _ = packed.promote('flow); break; }",
+            true,
+        ),
+    ] {
+        let source = format!(
+            "struct Pair {{ keep: {callback}, drop: {callback} }}
+             flow main(loan: &i64) -> i64 {{
+                 let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                 let owned = |n: i64| -> i64 {{ n }};
+                 let input: Option<{callback}> = .Some({item});
+                 {body}
+                 return 42i64;
+             }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "packed", borrowed);
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload() {
     let callback = "(i64 -> i64 effects {})";
     let carrier = format!("Result<{callback}, {callback}>");

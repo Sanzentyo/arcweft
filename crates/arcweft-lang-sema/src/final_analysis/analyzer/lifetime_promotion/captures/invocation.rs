@@ -444,7 +444,7 @@ impl Analyzer<'_, '_, '_> {
         else {
             return Ok(None);
         };
-        let Some(observation) = self.parameter_storage_observation(
+        let Some(observation) = self.binding_storage_observation(
             module,
             (pattern, local),
             origin.observation,
@@ -540,7 +540,7 @@ impl Analyzer<'_, '_, '_> {
         )))
     }
 
-    fn parameter_storage_observation(
+    pub(super) fn binding_storage_observation(
         &self,
         module: &HirModule,
         (root, local): (PatternId, LocalId),

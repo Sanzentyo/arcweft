@@ -1,15 +1,11 @@
 //! Borrowed callable captures evidenced by checked value origins.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_lang_hir::{
     identity::{ExprId, ItemId, LocalId},
     item::{HirFunctionBody, HirItemKind},
     module::HirModule,
-    project::HirLocalValueOrigin,
     source_index::HirCallableSourceOwner,
     symbol::{CallableDeclarationKey, CallableDeclarationOwner},
 };
@@ -21,8 +17,8 @@ use crate::{
         CheckedCallSite, PreparedCallGraphIngress, PreparedCallSiteDelivery,
         PreparedCaptureIdentityRow, PreparedFunctionValueOriginEvidence,
         PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-        PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
-        PreparedResolvedCallable, prepare_function_value_origin_query_with_pending_captures,
+        PreparedFunctionValueOriginPurpose, PreparedResolvedCallable,
+        prepare_function_value_origin_query_with_pending_captures,
     },
     final_analysis::{
         FinalCallConstraintFailure, PreparedExpressionFact,
@@ -38,6 +34,9 @@ use crate::{
 
 #[path = "captures/invocation.rs"]
 mod invocation;
+
+#[path = "captures/bindings.rs"]
+mod bindings;
 
 #[path = "captures/continuation.rs"]
 mod continuation;
@@ -180,21 +179,13 @@ impl Analyzer<'_, '_, '_> {
         }
         let producer = match evidence.producer() {
             PreparedFunctionValueOriginProducer::Lexical { local } => {
-                let mut parameters = BTreeSet::new();
-                if let Some(parameter) = self.parameter_demand(
+                return self.stored_binding_dependencies(
                     module,
-                    *local,
-                    ValueOrigin {
-                        observation,
-                        ..origin
-                    },
+                    (*local, observation),
+                    origin,
                     &mut query.work,
                     receiver,
-                )? {
-                    receiver.charge(1)?;
-                    parameters.insert(parameter);
-                }
-                return Ok(BorrowDependencies::Parameters(parameters));
+                );
             }
             PreparedFunctionValueOriginProducer::Call(site)
             | PreparedFunctionValueOriginProducer::PreparedContinuation(site) => site.expression(),
@@ -407,39 +398,13 @@ impl Analyzer<'_, '_, '_> {
         match storage {
             TypeStorage::Borrowed => Ok(BorrowDependencies::Borrowed),
             TypeStorage::Ordinary => Ok(BorrowDependencies::default()),
-            TypeStorage::Callable => {
-                let local_origins = self
-                    .topology
-                    .module(module.module_id())
-                    .ok_or(FinalSemanticAnalysisError::InvalidOwner)?
-                    .local_origins();
-                if let Some(HirLocalValueOrigin::DirectInitializer(expression)) =
-                    local_origins.origin(local)
-                {
-                    return work.demand(
-                        ValueOrigin {
-                            expression,
-                            observation,
-                            ..origin
-                        },
-                        origin,
-                        receiver,
-                    );
-                }
-                let parameter = self.parameter_demand(
-                    module,
-                    local,
-                    ValueOrigin {
-                        observation,
-                        ..origin
-                    },
-                    work,
-                    receiver,
-                )?;
-                Ok(BorrowDependencies::Parameters(
-                    parameter.into_iter().collect(),
-                ))
-            }
+            TypeStorage::Callable => self.stored_binding_dependencies(
+                module,
+                (local, observation),
+                origin,
+                work,
+                receiver,
+            ),
         }
     }
 
@@ -491,9 +456,6 @@ impl Analyzer<'_, '_, '_> {
                         TypeStorage::Callable => {}
                     }
                     progress = need.resume(requested, fact, module);
-                }
-                Err(PreparedFunctionValueOriginQueryError::Composite) => {
-                    return Ok(StorageOrigin::Unavailable);
                 }
                 Err(error) => {
                     return Err(self

@@ -1440,11 +1440,15 @@ impl PreparedFunctionValueOriginQuery {
                     },
                 ))
             }
-            HirLocalValueOrigin::Independent => Ok(self.ready(
+            HirLocalValueOrigin::Composite
+                if self.purpose == PreparedFunctionValueOriginPurpose::Selection =>
+            {
+                Err(PreparedFunctionValueOriginQueryError::Composite)
+            }
+            HirLocalValueOrigin::Independent | HirLocalValueOrigin::Composite => Ok(self.ready(
                 PreparedFunctionValueOriginProducer::Lexical { local: *local },
                 Vec::new(),
             )),
-            HirLocalValueOrigin::Composite => Err(PreparedFunctionValueOriginQueryError::Composite),
         }
     }
 }
