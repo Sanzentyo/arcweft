@@ -19535,7 +19535,7 @@
     ],
     "raw": {
       "path": "docs/implementation/acceptance-evidence/task-retained-result-binder-integration.raw.zip",
-      "sha256": "9a2abed570951116d52eeab4287ba7c472c7e46af761de8472243c24195a778e",
+      "sha256": "51aa1130791acb04aa05e26ec598865588db3c088949b00bc1bc494cbc901602",
       "entries": [
         {
           "path": "cli/build.log",
@@ -19856,8 +19856,784 @@
         {
           "path": "source.reviewed.patch",
           "sha256": "4aa6ca6db4ecaf3bc3cdbfc5cb725204d61a7ebe6c782395cc5931c71eb5d74d"
+        },
+        {
+          "path": "quality/fmt.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "quality/structure.log",
+          "sha256": "2cac3abf7937538e5dd8666e7604f93d8e9bfa04a28723bd88bf8dc52f3d8cee"
+        },
+        {
+          "path": "quality/workspace-check.log",
+          "sha256": "4c881db35cdd366eb015e31f3e6bba8a058c2c244a82bb244963f338d50398af"
+        },
+        {
+          "path": "quality/workspace-clippy.log",
+          "sha256": "3dc0681468b089e47ecd2544b38a998b70b25513f87c0785df68d4506efe3eec"
+        },
+        {
+          "path": "quality/doctests.log",
+          "sha256": "ec934145281565ce64493f07dca046928bd8fe830860f13d7f1f74f22ca90cdd"
+        },
+        {
+          "path": "quality/sema.log",
+          "sha256": "b1767f3a41b788a4860e2eb3453301b8ce2197e5986f2a7e91e69aa43c0b3c81"
+        },
+        {
+          "path": "quality/runtime-plan.log",
+          "sha256": "8781856850c020de09b281a9dcbd722c0a08ffff27222d7bc63cea5867bd9010"
+        },
+        {
+          "path": "quality/runtime-host.log",
+          "sha256": "54bd31b0c06d88bb5f9bd12f78abd2a90d67593f465dd6a9509886ffeeac629d"
+        },
+        {
+          "path": "quality/driver-scene.log",
+          "sha256": "c3e3fe2c29fc4d2b911db70b9b2ed973c6658e3c4f371cf2fcb7554a7ff30c49"
+        },
+        {
+          "path": "quality/player-native.log",
+          "sha256": "7e21b408a70caa3a75a850820942f83768f42c2c543d9b51a169f352d2b23a32"
+        },
+        {
+          "path": "quality/player-web.log",
+          "sha256": "70628366c1e01e30d7412480d9c9de2d19b621c3690dd766249eea12304fd0d1"
+        },
+        {
+          "path": "quality/agent-execution.log",
+          "sha256": "a6b5598c1f23a48596717d065e7cbd85e383999cdcd2d148643bd07d9659b8bb"
+        },
+        {
+          "path": "quality/agent-transport.log",
+          "sha256": "5aee1a23a593aae9b8707141221a1da9ee80f7edbf2d03d871ad9cfe76287097"
+        },
+        {
+          "path": "quality/tools-lsp.log",
+          "sha256": "8f08f400fbff4b510d82f7aa7374c1f3b747029d9f5634630c5c5f8924434a1e"
+        },
+        {
+          "path": "quality/verify.log",
+          "sha256": "8298f8083ee96253c7bd064801d955bded257772472fe81d555ac70adba91e21"
+        },
+        {
+          "path": "quality/compiler-lib.log",
+          "sha256": "c03cf2e55bf097cbb3b4bdfe8417a8ba265fc7de7ce7ca69977f430519f3174e"
+        },
+        {
+          "path": "quality/compiler-tests-1.log",
+          "sha256": "f01350d8daa876056d871c29567761f5b4d538f92aac350f2c6a1c813615a03c"
+        },
+        {
+          "path": "quality/compiler-tests-6.log",
+          "sha256": "8580e46d2029de364db0cda483ba8a288c0f6ba39abff39119a9c5fe785b6543"
+        },
+        {
+          "path": "quality/compiler-tests-11.log",
+          "sha256": "acf347a95eef1449f9af99d628d3cd2b019f579bd0f4daf824ecb7d61735c71e"
+        },
+        {
+          "path": "quality/compiler-tests-16.log",
+          "sha256": "cc8424adcee9bf59e57c14663064409a05d903ef49066899aaf1de2e336a02e3"
+        },
+        {
+          "path": "quality/compiler-tests-21.log",
+          "sha256": "59b6233e36a2b925b7358e757448e4590b0c5e3e58c604b718d056fcab683caf"
+        },
+        {
+          "path": "quality/compiler-tests-26.log",
+          "sha256": "7753f41d63a3fa5aa5a598c421b45bd63cacb67cfd780b682313f69f30429358"
+        },
+        {
+          "path": "quality/cli-library-binaries.log",
+          "sha256": "bf7bdc8c0d3065033a82efb0b408d65a126c02e3b3a6814d7e40d56a8999539a"
+        },
+        {
+          "path": "quality/cli-integration.log",
+          "sha256": "3de7df3fa0ab7eca0bc6f9d3829228745f99d36ecaee235ee42fb637ff1659d4"
+        },
+        {
+          "path": "quality/terminal.receipt.json",
+          "sha256": "e8604b185e01eb8ced99a9ae41c4bdc5fe6b6a634206fd6465e56ba42d83703e"
+        },
+        {
+          "path": "quality/workspace-metadata.json",
+          "sha256": "ee92f9e2f6bfa1738d6767ea4e3ac725a6dd43d2ef606a87339afe866ef5abf6"
         }
       ]
+    },
+    "terminalQuality": {
+      "recordedAtUtc": "2026-11-10T03:52:11.2257361Z",
+      "source": "c64fc78b1f2d8050e8b7bc776dc0f084e242f67f",
+      "target": "x86_64-pc-windows-msvc",
+      "receipt": "quality/terminal.receipt.json",
+      "reversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "nextest": {
+        "run": 3898,
+        "pass": 3898,
+        "fail": 0,
+        "skip": 1
+      },
+      "doctests": {
+        "pass": 2,
+        "fail": 0,
+        "ignore": 0
+      },
+      "stages": {
+        "fmt": {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exitCode": 0,
+          "log": "quality/fmt.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "seconds": 24.58
+        },
+        "structure": {
+          "command": [
+            "just",
+            "structure-audit-gate"
+          ],
+          "exitCode": 0,
+          "log": "quality/structure.log",
+          "sha256": "2cac3abf7937538e5dd8666e7604f93d8e9bfa04a28723bd88bf8dc52f3d8cee",
+          "seconds": 9.99
+        },
+        "workspace-check": {
+          "command": [
+            "cargo",
+            "check",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "log": "quality/workspace-check.log",
+          "sha256": "4c881db35cdd366eb015e31f3e6bba8a058c2c244a82bb244963f338d50398af",
+          "seconds": 205.84
+        },
+        "workspace-clippy": {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "log": "quality/workspace-clippy.log",
+          "sha256": "3dc0681468b089e47ecd2544b38a998b70b25513f87c0785df68d4506efe3eec",
+          "seconds": 128.99
+        },
+        "doctests": {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--doc",
+            "-p",
+            "arcweft-lang-sema",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-compiler"
+          ],
+          "exitCode": 0,
+          "log": "quality/doctests.log",
+          "sha256": "ec934145281565ce64493f07dca046928bd8fe830860f13d7f1f74f22ca90cdd",
+          "seconds": 46.81
+        },
+        "sema": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-lang-sema"
+          ],
+          "exitCode": 0,
+          "log": "quality/sema.log",
+          "sha256": "b1767f3a41b788a4860e2eb3453301b8ce2197e5986f2a7e91e69aa43c0b3c81",
+          "seconds": 245.47,
+          "nextest": {
+            "run": 1456,
+            "pass": 1456,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "runtime-plan": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-runtime-plan"
+          ],
+          "exitCode": 0,
+          "log": "quality/runtime-plan.log",
+          "sha256": "8781856850c020de09b281a9dcbd722c0a08ffff27222d7bc63cea5867bd9010",
+          "seconds": 86.71,
+          "nextest": {
+            "run": 165,
+            "pass": 165,
+            "fail": 0,
+            "skip": 1
+          }
+        },
+        "runtime-host": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-runtime-host"
+          ],
+          "exitCode": 0,
+          "log": "quality/runtime-host.log",
+          "sha256": "54bd31b0c06d88bb5f9bd12f78abd2a90d67593f465dd6a9509886ffeeac629d",
+          "seconds": 204.72,
+          "nextest": {
+            "run": 72,
+            "pass": 72,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "driver-scene": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-runtime-driver",
+            "-p",
+            "arcweft-player-scene"
+          ],
+          "exitCode": 0,
+          "log": "quality/driver-scene.log",
+          "sha256": "c3e3fe2c29fc4d2b911db70b9b2ed973c6658e3c4f371cf2fcb7554a7ff30c49",
+          "seconds": 188.34,
+          "nextest": {
+            "run": 278,
+            "pass": 278,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "player-native": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-player-native"
+          ],
+          "exitCode": 0,
+          "log": "quality/player-native.log",
+          "sha256": "7e21b408a70caa3a75a850820942f83768f42c2c543d9b51a169f352d2b23a32",
+          "seconds": 228.15,
+          "nextest": {
+            "run": 59,
+            "pass": 59,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "player-web": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-player-web"
+          ],
+          "exitCode": 0,
+          "log": "quality/player-web.log",
+          "sha256": "70628366c1e01e30d7412480d9c9de2d19b621c3690dd766249eea12304fd0d1",
+          "seconds": 180.44,
+          "nextest": {
+            "run": 37,
+            "pass": 37,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "agent-execution": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-agent-repl",
+            "-p",
+            "arcweft-agent-runner"
+          ],
+          "exitCode": 0,
+          "log": "quality/agent-execution.log",
+          "sha256": "a6b5598c1f23a48596717d065e7cbd85e383999cdcd2d148643bd07d9659b8bb",
+          "seconds": 223.01,
+          "nextest": {
+            "run": 106,
+            "pass": 106,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "agent-transport": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-agent-mcp",
+            "-p",
+            "arcweft-agent-mcp-client",
+            "-p",
+            "arcweft-adapter-sema"
+          ],
+          "exitCode": 0,
+          "log": "quality/agent-transport.log",
+          "sha256": "5aee1a23a593aae9b8707141221a1da9ee80f7edbf2d03d871ad9cfe76287097",
+          "seconds": 22.06,
+          "nextest": {
+            "run": 46,
+            "pass": 46,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "tools-lsp": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-project-loader",
+            "-p",
+            "arcweft-tooling",
+            "-p",
+            "arcweft-lsp",
+            "-p",
+            "arcweft-test"
+          ],
+          "exitCode": 0,
+          "log": "quality/tools-lsp.log",
+          "sha256": "8f08f400fbff4b510d82f7aa7374c1f3b747029d9f5634630c5c5f8924434a1e",
+          "seconds": 330.36,
+          "nextest": {
+            "run": 412,
+            "pass": 412,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "verify": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-verify",
+            "-p",
+            "arcweft-verify-oxiz",
+            "-p",
+            "arcweft-verify-z3",
+            "-p",
+            "arcweft-verify-lsp"
+          ],
+          "exitCode": 0,
+          "log": "quality/verify.log",
+          "sha256": "8298f8083ee96253c7bd064801d955bded257772472fe81d555ac70adba91e21",
+          "seconds": 188.36,
+          "nextest": {
+            "run": 31,
+            "pass": 31,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "compiler-lib": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--lib"
+          ],
+          "exitCode": 0,
+          "log": "quality/compiler-lib.log",
+          "sha256": "c03cf2e55bf097cbb3b4bdfe8417a8ba265fc7de7ce7ca69977f430519f3174e",
+          "seconds": 31.25,
+          "nextest": {
+            "run": 191,
+            "pass": 191,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "compiler-tests-1": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "action_channel",
+            "--test",
+            "agent_enum_execution",
+            "--test",
+            "agent_project_summary",
+            "--test",
+            "api_compile",
+            "--test",
+            "assertions"
+          ],
+          "exitCode": 0,
+          "log": "quality/compiler-tests-1.log",
+          "sha256": "f01350d8daa876056d871c29567761f5b4d538f92aac350f2c6a1c813615a03c",
+          "seconds": 38.92,
+          "nextest": {
+            "run": 28,
+            "pass": 28,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "compiler-tests-6": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "callable_execution",
+            "--test",
+            "catalog_asset_execution",
+            "--test",
+            "choice_static",
+            "--test",
+            "data_format_nominal",
+            "--test",
+            "diagnostic_ownership"
+          ],
+          "exitCode": 0,
+          "log": "quality/compiler-tests-6.log",
+          "sha256": "8580e46d2029de364db0cda483ba8a288c0f6ba39abff39119a9c5fe785b6543",
+          "seconds": 63.35,
+          "nextest": {
+            "run": 336,
+            "pass": 336,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "compiler-tests-11": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "dialogue_profile_admission",
+            "--test",
+            "evaluated_effects",
+            "--test",
+            "flow_effects",
+            "--test",
+            "flow_include",
+            "--test",
+            "flow_transfer"
+          ],
+          "exitCode": 0,
+          "log": "quality/compiler-tests-11.log",
+          "sha256": "acf347a95eef1449f9af99d628d3cd2b019f579bd0f4daf824ecb7d61735c71e",
+          "seconds": 55.04,
+          "nextest": {
+            "run": 178,
+            "pass": 178,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "compiler-tests-16": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "flow_wait",
+            "--test",
+            "generic_continuation_snapshot",
+            "--test",
+            "inline_failure_policy",
+            "--test",
+            "iterator_witness_source",
+            "--test",
+            "local_declaration_source"
+          ],
+          "exitCode": 0,
+          "log": "quality/compiler-tests-16.log",
+          "sha256": "cc8424adcee9bf59e57c14663064409a05d903ef49066899aaf1de2e336a02e3",
+          "seconds": 45.13,
+          "nextest": {
+            "run": 39,
+            "pass": 39,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "compiler-tests-21": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "named_scopes",
+            "--test",
+            "parser_diagnostic",
+            "--test",
+            "project_cache_transaction",
+            "--test",
+            "project_function_instances",
+            "--test",
+            "runtime_color"
+          ],
+          "exitCode": 0,
+          "log": "quality/compiler-tests-21.log",
+          "sha256": "59b6233e36a2b925b7358e757448e4590b0c5e3e58c604b718d056fcab683caf",
+          "seconds": 49.44,
+          "nextest": {
+            "run": 63,
+            "pass": 63,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "compiler-tests-26": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scope_propagation",
+            "--test",
+            "scoped_defer",
+            "--test",
+            "source_presentation_driver",
+            "--test",
+            "try_pipe",
+            "--test",
+            "view_product"
+          ],
+          "exitCode": 0,
+          "log": "quality/compiler-tests-26.log",
+          "sha256": "7753f41d63a3fa5aa5a598c421b45bd63cacb67cfd780b682313f69f30429358",
+          "seconds": 129.29,
+          "nextest": {
+            "run": 175,
+            "pass": 175,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "cli-library-binaries": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-cli",
+            "--lib",
+            "--bins"
+          ],
+          "exitCode": 0,
+          "log": "quality/cli-library-binaries.log",
+          "sha256": "bf7bdc8c0d3065033a82efb0b408d65a126c02e3b3a6814d7e40d56a8999539a",
+          "seconds": 264.32,
+          "nextest": {
+            "run": 196,
+            "pass": 196,
+            "fail": 0,
+            "skip": 0
+          }
+        },
+        "cli-integration": {
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-cli",
+            "--test",
+            "runtime_native_options",
+            "--test",
+            "check_core_cli",
+            "--test",
+            "native_style_parity_sample",
+            "--test",
+            "release_trust_json",
+            "--test",
+            "arcw_fixtures_check_run",
+            "--test",
+            "seq04_8_4_persistent_cache_build_cli_goldens"
+          ],
+          "exitCode": 0,
+          "log": "quality/cli-integration.log",
+          "sha256": "3de7df3fa0ab7eca0bc6f9d3829228745f99d36ecaee235ee42fb637ff1659d4",
+          "seconds": 39.53,
+          "nextest": {
+            "run": 30,
+            "pass": 30,
+            "fail": 0,
+            "skip": 0
+          }
+        }
+      },
+      "unresolvedStages": [],
+      "reverseGraph": {
+        "log": "rdeps.log",
+        "defaultSha256": "f5401e254adb70e3dbba9fbed1cbc89b1a5058ebe96643f9a2a5617b42fb00de",
+        "allFeaturesSha256": "f5401e254adb70e3dbba9fbed1cbc89b1a5058ebe96643f9a2a5617b42fb00de"
+      },
+      "cliScope": "CLI libraries, binaries, and the six prescribed integration targets.",
+      "workspaceClippyWarnings": "Clippy emitted warnings and returned exit code 0."
     }
   }
 }
