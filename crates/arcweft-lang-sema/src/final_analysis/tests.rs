@@ -1905,6 +1905,110 @@ fn safe_lifetime_promotion_follows_selected_positional_formal_bindings() {
 }
 
 #[test]
+fn safe_lifetime_promotion_follows_record_and_rest_formal_storage() {
+    let callback = "(i64 -> i64 effects {})";
+    let vector = format!("Vec<{callback}>");
+    for (declaration, argument, expected_borrow) in [
+        (
+            format!("fn keep(Pair {{ right: _, left }}: Pair) -> {callback} {{ left }}"),
+            "keep(Pair { right = owned, left = borrowed })",
+            true,
+        ),
+        (
+            format!("fn keep(Pair {{ right: _, left: picked }}: Pair) -> {callback} {{ picked }}"),
+            "keep(Pair { right = borrowed, left = owned })",
+            false,
+        ),
+        (
+            "fn keep(Pair { left: _, ..whole }: Pair) -> Pair { whole }".to_owned(),
+            "keep(Pair { left = borrowed, right = owned })",
+            true,
+        ),
+        (
+            format!("fn keep([_, ..tail]: Array<{callback}, 2>) -> {vector} {{ tail }}"),
+            "keep([owned, borrowed])",
+            true,
+        ),
+        (
+            format!("fn keep([_, ..tail]: Array<{callback}, 2>) -> {vector} {{ tail }}"),
+            "keep([borrowed, owned])",
+            false,
+        ),
+        (
+            format!("fn keep([_, ..tail]: Array<{callback}, 1>) -> {vector} {{ tail }}"),
+            "keep([borrowed])",
+            false,
+        ),
+        (
+            format!("fn keep(rest: ...{callback}) -> {vector} {{ rest }}"),
+            "keep(owned, borrowed)",
+            true,
+        ),
+        (
+            format!("fn keep(rest: ...{callback}) -> {vector} {{ rest }}"),
+            "keep(owned, owned)",
+            false,
+        ),
+        (
+            format!("fn keep(rest: ...{callback}) -> {vector} {{ rest }}"),
+            "keep()",
+            false,
+        ),
+        (
+            format!("fn keep(rest: ...{callback}) -> {vector} {{ rest }}"),
+            "keep(owned, values...)",
+            true,
+        ),
+        (
+            format!(
+                "fn tail([_, ..rest]: {vector}) -> {vector} {{ rest }}\nfn keep(rest: ...{callback}) -> {vector} {{ tail(rest) }}"
+            ),
+            "keep(borrowed, owned)",
+            false,
+        ),
+        (
+            format!(
+                "fn tail([_, ..rest]: {vector}) -> {vector} {{ rest }}\nfn keep(rest: ...{callback}) -> {vector} {{ tail(rest) }}"
+            ),
+            "keep(owned, values...)",
+            true,
+        ),
+        (
+            format!(
+                "fn pick([_, selected, ..]: {vector}) -> {callback} {{ selected }}\nfn keep(rest: ...{callback}) -> {callback} {{ pick(rest) }}"
+            ),
+            "keep(owned, values...)",
+            true,
+        ),
+        (
+            format!(
+                "fn pick([_, selected, ..]: {vector}) -> {callback} {{ selected }}\nfn keep(rest: ...{callback}) -> {callback} {{ pick(rest) }}"
+            ),
+            "keep(owned, owned, values...)",
+            false,
+        ),
+    ] {
+        let spread = if argument.contains("values...") {
+            format!("let values: {vector} = [borrowed, owned];")
+        } else {
+            String::new()
+        };
+        let source = format!(
+            "struct Pair {{ left: {callback}, right: {callback} }}
+             {declaration}
+             flow main(loan: &i64) {{
+                 let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                 let owned = |n: i64| -> i64 {{ n }};
+                 {spread}
+                 let packed = {argument};
+                 let _ = packed.promote('flow);
+             }}"
+        );
+        assert_promotion_capture_diagnostic(&source, "packed", expected_borrow);
+    }
+}
+
+#[test]
 fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload() {
     let callback = "(i64 -> i64 effects {})";
     let carrier = format!("Result<{callback}, {callback}>");

@@ -173,11 +173,14 @@ For a direct call to a source function, the ownership check follows its
 reachable return values and normal result under
 the selected call's type arguments. When the result uses a function value
 from a whole parameter binding, the check follows the expression supplied to
-that parameter in the selected argument group. A binding inside a tuple or
-sequence parameter pattern follows its selected element through that same
-argument group. Discarded siblings contribute no capture. For recursive calls, the check
-propagates capture dependencies until they stop growing, using the storage
-properties of the selected type arguments and the supplied value parameters.
+that parameter in the selected argument group. A binding inside a tuple,
+record, or sequence parameter pattern follows its selected component through
+that group. Discarded siblings contribute no capture. A sequence rest binding
+retains the suffix, and a record rest binding retains the complete record.
+A positional rest parameter follows the supplied elements and spreads in
+argument order. For recursive calls, the check propagates capture dependencies
+until they stop growing, using the storage properties of the selected type
+arguments and the supplied value parameters.
 A call through a known function value follows the returned callable's
 storage. The closure's creation scope supplies captured values, and the
 selected invocation supplies its parameters, including an implicit callable's

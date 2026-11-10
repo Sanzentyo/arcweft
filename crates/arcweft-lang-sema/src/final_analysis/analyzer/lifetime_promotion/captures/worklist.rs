@@ -88,6 +88,7 @@ pub(super) enum StorageProjection {
         family: PositionalStorage,
         ordinal: u32,
     },
+    SequenceTail(u32),
     Field {
         nominal: ProjectNominalDeclarationId,
         ordinal: u32,
@@ -396,6 +397,41 @@ impl CaptureWorklist {
         Ok(self
             .projection(observation)?
             .map(|row| (&row.selection, row.remaining)))
+    }
+
+    pub(super) fn project_sequence_tail(
+        &mut self,
+        from: u32,
+        observation: Observation,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<Observation>, FinalSemanticAnalysisError> {
+        let offset = |ordinal: u32| {
+            from.checked_add(ordinal)
+                .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
+        };
+        let (selection, remaining) = match self.selected_storage(observation)? {
+            Some((
+                StorageProjection::Element {
+                    family: PositionalStorage::Sequence,
+                    ordinal,
+                },
+                remaining,
+            )) => (
+                StorageProjection::Element {
+                    family: PositionalStorage::Sequence,
+                    ordinal: offset(*ordinal)?,
+                },
+                remaining,
+            ),
+            Some((StorageProjection::SequenceTail(start), remaining)) => {
+                (StorageProjection::SequenceTail(offset(*start)?), remaining)
+            }
+            None if observation == Observation::Stored => {
+                (StorageProjection::SequenceTail(from), observation)
+            }
+            _ => return Ok(None),
+        };
+        self.project(selection, remaining, receiver).map(Some)
     }
 
     pub(super) fn carrier_payload(

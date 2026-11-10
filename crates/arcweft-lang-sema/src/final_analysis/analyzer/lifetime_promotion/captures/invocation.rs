@@ -5,9 +5,12 @@ use std::{collections::BTreeSet, rc::Rc};
 use arcweft_lang_hir::{
     expr::HirExprKind,
     identity::{ExprId, LocalId, PatternId},
-    item::{HirItemKind, HirParameterKind},
+    item::HirItemKind,
     module::HirModule,
-    pattern::{HirPatternBinding, HirPatternChildRole, HirPatternKind},
+    pattern::{
+        HirPatternBinding, HirPatternChildRole, HirPatternField, HirPatternKind,
+        HirPatternSequenceRest,
+    },
     project::{HirBindingSite, HirExpressionBindingRole, HirSemanticPathStep},
     scope::{HirScopeKind, HirScopeOwner},
     source_index::HirCallableSourceOwner,
@@ -18,7 +21,7 @@ use crate::{
     callable::{CallableGroupIndex, CallableParameterCoordinate, CallableParameterIndex},
     final_analysis::{
         CheckedExpressionResolution, CheckedValueResolution, PreparedExpressionFact,
-        model::CallableResultSource,
+        model::CallableResultSource, prepared::PreparedRecordPatternSource,
     },
 };
 
@@ -499,9 +502,6 @@ impl Analyzer<'_, '_, '_> {
                     .get(group as usize)
                     .and_then(|group| group.parameters().get(parameter as usize))
                     .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-                if source.kind() == HirParameterKind::RestPositional {
-                    return Ok(None);
-                }
                 (group, parameter, source.pattern())
             }
             (
@@ -578,7 +578,8 @@ impl Analyzer<'_, '_, '_> {
         let mut selected = Vec::new();
         let mut pattern = root;
         for step in path {
-            match (resolve(pattern)?.kind(), step) {
+            let kind = resolve(pattern)?.kind();
+            match (kind, step) {
                 (
                     HirPatternKind::Tuple { elements },
                     HirSemanticPathStep::Pattern(HirPatternChildRole::Element { ordinal }),
@@ -587,8 +588,7 @@ impl Analyzer<'_, '_, '_> {
                     HirPatternKind::BracketSequence { elements, .. },
                     HirSemanticPathStep::Pattern(HirPatternChildRole::Element { ordinal }),
                 ) => {
-                    let family = if matches!(resolve(pattern)?.kind(), HirPatternKind::Tuple { .. })
-                    {
+                    let family = if matches!(kind, HirPatternKind::Tuple { .. }) {
                         PositionalStorage::Tuple
                     } else {
                         PositionalStorage::Sequence
@@ -609,24 +609,109 @@ impl Analyzer<'_, '_, '_> {
                 ) => {
                     pattern = *nested;
                 }
+                (
+                    HirPatternKind::Record { .. },
+                    HirSemanticPathStep::Pattern(HirPatternChildRole::RecordField { field }),
+                ) => {
+                    let Some((selection, PreparedRecordPatternSource::Pattern(child))) =
+                        self.formal_record_field(module, pattern, *field, receiver)?
+                    else {
+                        return Ok(None);
+                    };
+                    selected.push(selection);
+                    pattern = child;
+                }
                 _ => return Ok(None),
             }
         }
-        if !matches!(
-            last,
-            HirSemanticPathStep::Pattern(
-                HirPatternChildRole::BindingLocal
+        let kind = resolve(pattern)?.kind();
+        match (kind, last) {
+            (
+                _,
+                HirSemanticPathStep::Pattern(
+                    HirPatternChildRole::BindingLocal
                     | HirPatternChildRole::TypedBindingLocal
-                    | HirPatternChildRole::WholeBindingLocal
-            )
-        ) || !pattern_binds_whole_value(resolve(pattern)?.kind(), local)
-        {
-            return Ok(None);
+                    | HirPatternChildRole::WholeBindingLocal,
+                ),
+            ) if pattern_binds_whole_value(kind, local) => {}
+            (
+                HirPatternKind::Record { .. },
+                HirSemanticPathStep::Pattern(HirPatternChildRole::RecordShorthandLocal { field }),
+            ) => {
+                let Some((selection, PreparedRecordPatternSource::Binding(bound))) =
+                    self.formal_record_field(module, pattern, *field, receiver)?
+                else {
+                    return Ok(None);
+                };
+                if bound != local {
+                    return Err(FinalSemanticAnalysisError::InvalidOwner);
+                }
+                selected.push(selection);
+            }
+            (
+                HirPatternKind::Record { fields, .. },
+                HirSemanticPathStep::Pattern(HirPatternChildRole::RecordRestLocal { field }),
+            ) if matches!(fields.get(*field as usize), Some(HirPatternField::Rest { binding: Some(bound) }) if *bound == local) =>
+                {}
+            (
+                HirPatternKind::BracketSequence {
+                    elements,
+                    rest: HirPatternSequenceRest::Bound(bound),
+                },
+                HirSemanticPathStep::Pattern(HirPatternChildRole::SequenceRestLocal),
+            ) if *bound == local => {
+                let from = u32::try_from(elements.len())
+                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                let Some(tail) = work.project_sequence_tail(from, observation, receiver)? else {
+                    return Ok(None);
+                };
+                observation = tail;
+            }
+            _ => return Ok(None),
         }
         for projection in selected.into_iter().rev() {
             observation = work.project(projection, observation, receiver)?;
         }
         Ok(Some(observation))
+    }
+
+    fn formal_record_field(
+        &self,
+        module: &HirModule,
+        pattern: PatternId,
+        source_ordinal: u32,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<(StorageProjection, PreparedRecordPatternSource)>, FinalSemanticAnalysisError>
+    {
+        let HirPatternKind::Record { path, fields } = module
+            .resolve_pattern(pattern)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            .kind()
+        else {
+            return Err(FinalSemanticAnalysisError::InvalidOwner);
+        };
+        let ty = self
+            .facts
+            .patterns()
+            .get(&pattern)
+            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
+        let crate::types::TypeKind::ProjectNominal(nominal) = ty else {
+            return Ok(None);
+        };
+        receiver.charge(fields.len() as u64)?;
+        let prepared = self.prepare_record_pattern(module, pattern, path, fields, ty)?;
+        let field = prepared
+            .fields()
+            .iter()
+            .find(|field| field.source_ordinal() == source_ordinal)
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        Ok(Some((
+            StorageProjection::Field {
+                nominal: nominal.declaration().clone(),
+                ordinal: field.coordinate().declaration_ordinal(),
+            },
+            field.source(),
+        )))
     }
 }
 

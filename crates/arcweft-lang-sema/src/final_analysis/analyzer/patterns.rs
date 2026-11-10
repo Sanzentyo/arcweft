@@ -52,18 +52,8 @@ impl Analyzer<'_, '_, '_> {
                         CheckedPatternResolution::Literal(literal.clone())
                     }
                     HirPatternKind::Record { path, fields } => {
-                        let schema = resolve_record_pattern_schema(
-                            PatternSeedContext {
-                                module,
-                                types: &self.types,
-                                symbols: self.symbols,
-                                environment: self.catalogs.world.environment().typecheck_env(),
-                            },
-                            owner,
-                            path,
-                            &ty,
-                        )?;
-                        let prepared = self.prepare_record_pattern(owner, &schema, fields, &ty)?;
+                        let prepared =
+                            self.prepare_record_pattern(module, owner, path, fields, &ty)?;
                         input.push_prepared_pattern(
                             owner,
                             super::PreparedPatternFact::Record(prepared),
@@ -136,13 +126,25 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn prepare_record_pattern(
+    pub(super) fn prepare_record_pattern(
         &self,
+        module: &HirModule,
         owner: PatternId,
-        schema: &ResolvedRecordPatternSchema<'_>,
+        path: &HirPatternRecordPath,
         authored: &[HirPatternField],
         ty: &TypeKind,
     ) -> Result<PreparedRecordPattern, FinalSemanticAnalysisError> {
+        let schema = resolve_record_pattern_schema(
+            PatternSeedContext {
+                module,
+                types: &self.types,
+                symbols: self.symbols,
+                environment: self.catalogs.world.environment().typecheck_env(),
+            },
+            owner,
+            path,
+            ty,
+        )?;
         let mut fields = Vec::with_capacity(authored.len());
         let mut seen = BTreeSet::new();
         let mut rest = PreparedRecordPatternRest::Absent;

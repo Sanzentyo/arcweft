@@ -4,14 +4,14 @@ use std::collections::BTreeSet;
 
 use crate::{
     callable::{CallableGroupIndex, CallableParameterCoordinate},
-    final_analysis::analyzer::calls::AnalyzerPreparedCallPrefix,
+    final_analysis::analyzer::calls::{AnalyzerPreparedCallPrefix, PreparedPositionalRestSource},
 };
 
 use super::{
     Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery, call_storage_error,
     worklist::{
-        BorrowDependencies, CaptureWorklist, Invocation, InvocationId, ParameterDemand,
-        StorageFrameId, ValueOrigin,
+        BorrowDependencies, CaptureWorklist, Invocation, InvocationId, Observation,
+        ParameterDemand, PositionalStorage, StorageFrameId, StorageProjection, ValueOrigin,
     },
 };
 
@@ -141,8 +141,16 @@ impl Analyzer<'_, '_, '_> {
             }
             let coordinate =
                 CallableParameterCoordinate::new(supplied_group, demand.coordinate.parameter());
-            if let Some(expression) = input.parameter_value_source(coordinate) {
-                let mut supplied = work.demand(
+            let mut supplied = if let Some(sources) = input.positional_rest_sources(coordinate) {
+                rest_storage_dependencies(
+                    sources,
+                    (caller, demand.observation),
+                    origin,
+                    work,
+                    receiver,
+                )?
+            } else if let Some(expression) = input.parameter_value_source(coordinate) {
+                work.demand(
                     ValueOrigin {
                         expression,
                         frame: caller,
@@ -150,21 +158,103 @@ impl Analyzer<'_, '_, '_> {
                     },
                     origin,
                     receiver,
-                )?;
-                if let Some(requester) = requester {
-                    supplied = supplied.map_parameters(|mut demand| {
-                        if demand.invocation_caller.is_none() {
-                            demand.invocation_caller = Some(requester);
-                        }
-                        demand
-                    });
-                }
-                dependencies.include(supplied);
-                if dependencies.is_borrowed() {
-                    break;
-                }
+                )?
+            } else {
+                continue;
+            };
+            if let Some(requester) = requester {
+                supplied = supplied.map_parameters(|mut demand| {
+                    if demand.invocation_caller.is_none() {
+                        demand.invocation_caller = Some(requester);
+                    }
+                    demand
+                });
+            }
+            dependencies.include(supplied);
+            if dependencies.is_borrowed() {
+                break;
             }
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Copy)]
+enum RestSelection {
+    All,
+    Element(u32, Observation),
+    Tail(u32),
+}
+
+fn rest_storage_dependencies(
+    sources: impl Iterator<Item = PreparedPositionalRestSource>,
+    (frame, observation): (StorageFrameId, Observation),
+    origin: ValueOrigin,
+    work: &mut CaptureWorklist,
+    receiver: &mut ReceiverBorrowQuery<'_>,
+) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
+    let selection = match work.selected_storage(observation)? {
+        Some((
+            StorageProjection::Element {
+                family: PositionalStorage::Sequence,
+                ordinal,
+            },
+            remaining,
+        )) => RestSelection::Element(*ordinal, remaining),
+        Some((StorageProjection::SequenceTail(start), _)) => RestSelection::Tail(*start),
+        None if observation == Observation::Stored => RestSelection::All,
+        _ => return Ok(BorrowDependencies::default()),
+    };
+    let mut dependencies = BorrowDependencies::default();
+    for (ordinal, source) in sources.enumerate() {
+        receiver.charge(1)?;
+        let ordinal =
+            u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        let (expression, observation) = match source {
+            PreparedPositionalRestSource::Element(expression) => match selection {
+                RestSelection::All => (expression, Observation::Stored),
+                RestSelection::Element(selected, remaining) if selected == ordinal => {
+                    (expression, remaining)
+                }
+                RestSelection::Tail(start) if start <= ordinal => (expression, Observation::Stored),
+                _ => continue,
+            },
+            PreparedPositionalRestSource::Spread(expression) => match selection {
+                RestSelection::All => (expression, Observation::Stored),
+                RestSelection::Element(selected, remaining) if selected >= ordinal => (
+                    expression,
+                    work.project(
+                        StorageProjection::Element {
+                            family: PositionalStorage::Sequence,
+                            ordinal: selected - ordinal,
+                        },
+                        remaining,
+                        receiver,
+                    )?,
+                ),
+                RestSelection::Tail(start) => (
+                    expression,
+                    work.project(
+                        StorageProjection::SequenceTail(start.saturating_sub(ordinal)),
+                        Observation::Stored,
+                        receiver,
+                    )?,
+                ),
+                _ => continue,
+            },
+        };
+        dependencies.include(work.demand(
+            ValueOrigin {
+                expression,
+                frame,
+                observation,
+            },
+            origin,
+            receiver,
+        )?);
+        if dependencies.is_borrowed() {
+            break;
+        }
+    }
+    Ok(dependencies)
 }

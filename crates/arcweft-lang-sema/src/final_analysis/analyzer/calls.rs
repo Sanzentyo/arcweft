@@ -9,7 +9,7 @@ mod semantics;
 
 pub(crate) use constraints::CallAnalysisFailure;
 pub(in crate::final_analysis::analyzer) use constraints::{
-    AnalyzerCallConstraintDomain, AnalyzerCallProjection,
+    AnalyzerCallConstraintDomain, AnalyzerCallProjection, PreparedPositionalRestSource,
 };
 pub(crate) use constraints::{
     AnalyzerCallConstraintSource, AnalyzerDetachedCandidateRecord,

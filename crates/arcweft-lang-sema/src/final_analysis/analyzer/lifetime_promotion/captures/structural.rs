@@ -11,6 +11,7 @@ use crate::final_analysis::{
     CheckedExpression, CheckedFieldReceiver, CheckedMatchArmFact, PreparedExpressionFact,
     prepared::{PreparedProjectRecordExpression, PreparedRecordValueSource},
 };
+use crate::types::{ArrayLength, TypeKind};
 
 use super::{
     Analyzer, BorrowDependencies, CaptureWorklist, CarrierStorage, FinalSemanticAnalysisError,
@@ -118,17 +119,24 @@ impl Analyzer<'_, '_, '_> {
                 );
             }
             HirExprKind::ArrayRepeat(repeat) => {
-                let observation = match work.selected_storage(origin.observation)? {
+                let (ordinal, observation) = match work.selected_storage(origin.observation)? {
                     Some((
                         StorageProjection::Element {
                             family: PositionalStorage::Sequence,
-                            ..
+                            ordinal,
                         },
                         remaining,
-                    )) => remaining,
-                    None if origin.observation == Observation::Stored => Observation::Stored,
+                    ))
+                    | Some((StorageProjection::SequenceTail(ordinal), remaining)) => {
+                        (*ordinal, remaining)
+                    }
+                    None if origin.observation == Observation::Stored => (0, Observation::Stored),
                     _ => return Ok(BorrowDependencies::default()),
                 };
+                if matches!(fact.value_type(), Some(TypeKind::Array { len: ArrayLength::Const(len), .. }) if ordinal as usize >= *len)
+                {
+                    return Ok(BorrowDependencies::default());
+                }
                 return work.demand(
                     ValueOrigin {
                         expression: repeat.value(),
@@ -347,6 +355,11 @@ fn positional_storage_dependencies(
                 .map_or(&[][..], std::slice::from_ref),
             remaining,
         ),
+        Some((StorageProjection::SequenceTail(start), remaining))
+            if family == PositionalStorage::Sequence =>
+        {
+            (elements.get(*start as usize..).unwrap_or(&[]), remaining)
+        }
         None if origin.observation == Observation::Stored => (elements, Observation::Stored),
         _ => return Ok(BorrowDependencies::default()),
     };

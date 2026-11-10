@@ -3669,6 +3669,12 @@ pub(crate) struct AnalyzerPreparedCallPrefix {
     record: AnalyzerPreparedCandidateRecord,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum PreparedPositionalRestSource {
+    Element(ExprId),
+    Spread(ExprId),
+}
+
 impl AnalyzerPreparedCallPrefix {
     pub(crate) fn new(
         site: CheckedCallSite,
@@ -3739,6 +3745,45 @@ impl AnalyzerPreparedCallPrefix {
                 }
                 _ => None,
             })
+    }
+
+    /// The selected sources supplying the rest vector, in call evaluation order.
+    pub(crate) fn positional_rest_sources(
+        &self,
+        coordinate: CallableParameterCoordinate,
+    ) -> Option<impl Iterator<Item = PreparedPositionalRestSource> + '_> {
+        let group = self
+            .application
+            .selected()
+            .schema()
+            .group(coordinate.group())?;
+        let formal = group.parameters().get(coordinate.parameter().get())?;
+        if formal.passing() != crate::callable::CallableParameterPassing::RestPositional {
+            return None;
+        }
+        Some(
+            self.record
+                .inputs()
+                .mapping()
+                .arguments()
+                .iter()
+                .flat_map(|argument| argument.slots())
+                .filter(move |slot| slot.coordinate() == Some(coordinate))
+                .filter_map(|slot| {
+                    let CheckedCallArgumentSlotSource::Expression(source) = slot.source() else {
+                        return None;
+                    };
+                    match slot.source_projection() {
+                        PreparedArgumentSourceProjection::Scalar => {
+                            Some(PreparedPositionalRestSource::Element(source))
+                        }
+                        PreparedArgumentSourceProjection::InferSpreadContainer {
+                            policy: crate::callable::CallableRestContainerPolicy::Positional,
+                        } => Some(PreparedPositionalRestSource::Spread(source)),
+                        PreparedArgumentSourceProjection::InferSpreadContainer { .. } => None,
+                    }
+                }),
+        )
     }
 
     pub(crate) fn receiver_evaluation(
