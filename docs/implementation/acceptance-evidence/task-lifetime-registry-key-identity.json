@@ -24487,5 +24487,1225 @@
       "sha256": "381f1064a9251094769d7d24376259700168e74c377fa1dd7ffe2ad37fa5dfa6",
       "memberCount": 162
     }
+  },
+  "lifetimePromotionImplicitCallableResults": {
+    "version": 1,
+    "date": "2026-11-10",
+    "observedBaseline": {
+      "version": 1,
+      "source": "e58f658fbdea9ab4d6b05d007e869058d9d0b10f",
+      "exeSha256": "8483b4401a9592232cfa8f519b4bf9dfc7e8445c75c99904cee3a8180e1a770c",
+      "cases": [
+        {
+          "name": "explicit-residual",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "inputSha256": "c7a0692b6657dc8c1433d0f23924ee832e39de6faea87bac391f2770380337e5",
+          "reportSha256": "5a3ad4b65963c22ffc4d9ffd32eff9022be87cf9d6659dd4b5e90f2d14112e76"
+        },
+        {
+          "name": "implicit-call-identity",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "eefcd5cb51907b3dab185a130a4b575419f1f41693151a9590540ea425035eb6",
+          "reportSha256": "cd0e9c9194639be0c71084a5ae1bd7fa920118610c286b447aa4f0b6e3fc64fb"
+        },
+        {
+          "name": "implicit-discarded-capture",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "46b2c774683d97ca82fd972ff4b8ea5991810ef4969c89c254dee6dd62719fa0",
+          "reportSha256": "a5d6eed9fc5252c3897b473d39187ae8fb0eeba6657804627bbb73b35db68442"
+        },
+        {
+          "name": "implicit-forward-into-dynamic",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "semantic fact references a foreign or missing HIR owner",
+          "inputSha256": "2cab75448890904eb77fc9744735d64317e401f69427fb1ed12730cec1b45e20",
+          "reportSha256": "df85777f7906fcf3661670bde71b5141bde3d98773feff6558d8e8ee71c2e2a5"
+        },
+        {
+          "name": "implicit-identity",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "c7f885065dcba04564b68335a954c4177af1d9bb58be9520f6fdd49e74022bee",
+          "reportSha256": "de0be5171af84e5a84b3bf90bc947458296e1adc138c11e92dffed8ea92a107f"
+        },
+        {
+          "name": "implicit-lexical",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "dc1dbd7a55ca117230f9db5491ab50e3de7e01ea83d628b40376dd837f0b783f",
+          "reportSha256": "0964c025d138234b5db5d78475210b3a43fa9e3e3f70b38a1cbb14f776d92aad"
+        },
+        {
+          "name": "implicit-owned",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "19b32da012278d4fb0ca3078be86fdc049055aaaa8180c8f8011ce2c6003ebf9",
+          "reportSha256": "97e13e1a357831a91f75ca8406dd88f0b8cc52051a5bd640c12b1122cc462a94"
+        },
+        {
+          "name": "implicit-residual",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "39e9f9c60fb773817357505991cd2132c6f3c85b9ce75f1d0dc1cf13877b70f9",
+          "reportSha256": "3c3e06847b5b72c7efcdfffa83fc27cd830a26641d5aec097c3e6aaab189974e"
+        },
+        {
+          "name": "implicit-success",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "inputSha256": "738ddb335de7a97574edd58a46bf5d75083c3e6b24223d7e6279c349ca020273",
+          "reportSha256": "2bb38112fa60b73d2b3a7118dcae8ad8598920715ffb24cdd050b35ed05d7161"
+        }
+      ]
+    },
+    "sourcePublication": {
+      "version": 1,
+      "source": "aca18a840f9279d23a84522c439b74e94c997147",
+      "base": "e58f658fbdea9ab4d6b05d007e869058d9d0b10f",
+      "remote": "aca18a840f9279d23a84522c439b74e94c997147",
+      "tree": "97af7607df6072e6c5ebfbd5961d962046dcb30f",
+      "blobs": [
+        {
+          "path": "crates/arcweft-compiler/tests/try_pipe.rs",
+          "sha256": "2e0840f7146474c9e5c9f2924e3218feb84edbd2f7b4e784f6b727898eccc307",
+          "blob": "912b5b9d8a19b49c5f930ebae3cb0eecd2fd10ed"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths.rs",
+          "sha256": "7baab483e8d97f62cc2de4654facc894acf8a2bf2c37565b27d518c1c76c0246",
+          "blob": "0fab4c82c08e386ebfc039b0f97ed1fb7653a405"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_project/tests.rs",
+          "sha256": "f9300865c4f5a52a5b34e58572f1e3522123833eae0181c84845e071a3d7fd79",
+          "blob": "45301ea53d8229fdf2e66e297c2238710fa548ee"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+          "sha256": "d9c3ff592ed65a61bb5741ee28200c39aaca87c556799ebf0cbf92ab8eb89d16",
+          "blob": "95ad48db43673ae9268bc6906de18b04a9ad668f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/resolver/preparation.rs",
+          "sha256": "49a71cd1899cb595bbc480ecbe90cc108e646cc3f2ee69dec7327f7e9d003ec0",
+          "blob": "2e370c16f33c506aa3a3b6ba276e67342f2fe1d1"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "sha256": "16510fdf1da91ca9f75f814c7290a608dd6e8bc2bbc40ebeb5e5deff65eba187",
+          "blob": "72d193397c816906e10d3a8ee292cae49356f81d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "sha256": "240b42c881f919908036845a5f1b19147d7af91e7b18cb403b3e97edb3e06d7d",
+          "blob": "da9cfee8755bbd671f991f4c28b7434cee1e8f3b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/completion.rs",
+          "sha256": "6e430501b14276d4cbc812bd2dbac49736dfff5c7d17f9e36bf5ee7d78f3db6e",
+          "blob": "5706519a2375db5674c2c4fcc502c0ec044caa4b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures.rs",
+          "sha256": "a274876ca9fe019fe636733e3c4e96a640ff8ae1fe5b42cb386852303fbd07e5",
+          "blob": "ce4db79751381ee5ade9cbd38b2b3efca1d541ce"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/invocation.rs",
+          "sha256": "6af5702ce8071f00b958e9ea83cac202bc57c9f4bd48b600c8efc70265aae361",
+          "blob": "7f6449a94a0510ea7bb7f18f80bb3bf66304835b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/structural.rs",
+          "sha256": "8267edf005d8566c7936afdfd45d3eab344515141f3663f5f6dd1c4dabc824d2",
+          "blob": "ca731bfc5bd5a7decbe76f3ac27fc7f3eea094ee"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/lifetime_promotion/captures/worklist.rs",
+          "sha256": "dc71108f66da6b87ecb43c2f634306e567239c0fc760e57520bf749464834a17",
+          "blob": "4be61ec017435fdbe798088816d715baa7b11e5a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/tests.rs",
+          "sha256": "1260b3d2164f87361f906aa92d0b91610f45ad8c1b7a987f07202601f3eb2ed2",
+          "blob": "22bc2e781b943a5e4ba0425edfc77beae815106a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/owner_bound_resolution.rs",
+          "sha256": "3843c6b8f6e28c5eb7f113e327b69ad9588151acc589ad519aec6b815131c95f",
+          "blob": "8970206703a9cc15d3419625709c1a5ac3b85f7f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/prepared.rs",
+          "sha256": "5103904119a2139ffe18ac430da5e6cc2fbf5f0f1f6fe43e5506cecff73089bf",
+          "blob": "6f9f2de6c08e86172a96b6d726fd419ce4fa1aca"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "sha256": "947cb5dffe9b38cf209a78383b296eb320f5c2fc438c9ff6388a6d137381273b",
+          "blob": "356a195a5e04c1b07d400db80091b8e9d606c194"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "sha256": "a80ecb831c7797710b92c5647fe3e599b69bdc4a1e2c0e1907150fba2f88e077",
+          "blob": "39a92964667ceac85dc382ac72eb16b449a0902a"
+        }
+      ],
+      "focused": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0,
+        "logSha256": "c1a755bcf179ebabda23e4168d71c0d4d727ad94d79be7c5ec52e452486c5b7d"
+      }
+    },
+    "verificationPublication": {
+      "version": 1,
+      "source": "29996b3f2475a6107819446a7d4935b95bb48295",
+      "base": "aca18a840f9279d23a84522c439b74e94c997147",
+      "remote": "29996b3f2475a6107819446a7d4935b95bb48295",
+      "tree": "af362387f678aa71d17493af19b4be7338092721",
+      "blobs": [
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/prepared.rs",
+          "blob": "fe5806f8c0ab0fa9279385618ab3482fddb76f61",
+          "sha256": "f2ae1bd6cd100e302234f2e7a1f940a6e6b04333a4db948f3e053e5a6942df3d"
+        }
+      ],
+      "equivalence": "PreparedOwnerBoundExpression::effects delegates directly to self.shell.effects() in both revisions."
+    },
+    "correction": "The prior CLI missed receiver diagnostics for five implicit results and reported a missing semantic owner when a nested closure called the forwarded function parameter. The selected implicit body now uses the same reachable result rules as an explicit function site. The creation frame supplies captures. The checked invocation supplies the synthetic formal and the selected carrier projection preserves success or residual storage. Parent inspection is charged to the existing receiver budget.",
+    "cli": {
+      "version": 1,
+      "source": "aca18a840f9279d23a84522c439b74e94c997147",
+      "exeSha256": "0e7f7025bf2a19e63998b52305310649b4afa799228fcc62a5e7ae72015443a3",
+      "cases": [
+        {
+          "name": "explicit-residual",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "expected": "sema.lifetime.promotion_receiver",
+          "matchesExpected": true,
+          "inputSha256": "c7a0692b6657dc8c1433d0f23924ee832e39de6faea87bac391f2770380337e5",
+          "reportSha256": "5a3ad4b65963c22ffc4d9ffd32eff9022be87cf9d6659dd4b5e90f2d14112e76"
+        },
+        {
+          "name": "implicit-call-identity",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "expected": "sema.lifetime.promotion_receiver",
+          "matchesExpected": true,
+          "inputSha256": "eefcd5cb51907b3dab185a130a4b575419f1f41693151a9590540ea425035eb6",
+          "reportSha256": "fa569b5601ae3ec66bd8d61bd67fd6c0c8e85faf0d1ddad65325118dc360a20c"
+        },
+        {
+          "name": "implicit-discarded-capture",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "expected": "sema.lifetime.promotion_execution",
+          "matchesExpected": true,
+          "inputSha256": "46b2c774683d97ca82fd972ff4b8ea5991810ef4969c89c254dee6dd62719fa0",
+          "reportSha256": "a5d6eed9fc5252c3897b473d39187ae8fb0eeba6657804627bbb73b35db68442"
+        },
+        {
+          "name": "implicit-forward-into-dynamic",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "expected": "sema.lifetime.promotion_receiver",
+          "matchesExpected": true,
+          "inputSha256": "2cab75448890904eb77fc9744735d64317e401f69427fb1ed12730cec1b45e20",
+          "reportSha256": "ac0534df51f0fb118a9505ff9052f5ef9de21b0202adfb11e3ebd04910d6fb59"
+        },
+        {
+          "name": "implicit-identity",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "expected": "sema.lifetime.promotion_receiver",
+          "matchesExpected": true,
+          "inputSha256": "c7f885065dcba04564b68335a954c4177af1d9bb58be9520f6fdd49e74022bee",
+          "reportSha256": "aae3907449ab17002db26fd7787e563e1395e7cdd23d00171e8ce82509fb6101"
+        },
+        {
+          "name": "implicit-lexical",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "expected": "sema.lifetime.promotion_receiver",
+          "matchesExpected": true,
+          "inputSha256": "dc1dbd7a55ca117230f9db5491ab50e3de7e01ea83d628b40376dd837f0b783f",
+          "reportSha256": "b8bda28bb700f327d980d023968851111da0aae8b7d3ec6d4bd6fb203cc4659a"
+        },
+        {
+          "name": "implicit-owned",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_execution",
+          "message": "lifetime promotion has no executable ownership transfer",
+          "expected": "sema.lifetime.promotion_execution",
+          "matchesExpected": true,
+          "inputSha256": "19b32da012278d4fb0ca3078be86fdc049055aaaa8180c8f8011ce2c6003ebf9",
+          "reportSha256": "97e13e1a357831a91f75ca8406dd88f0b8cc52051a5bd640c12b1122cc462a94"
+        },
+        {
+          "name": "implicit-residual",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "expected": "sema.lifetime.promotion_receiver",
+          "matchesExpected": true,
+          "inputSha256": "39e9f9c60fb773817357505991cd2132c6f3c85b9ce75f1d0dc1cf13877b70f9",
+          "reportSha256": "72768c14bb21735edadc3f33e00ddabde0d0171151fca87c5b33675bbef1d9e1"
+        },
+        {
+          "name": "implicit-success",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.lifetime.promotion_receiver",
+          "message": "safe lifetime promotion requires an owned receiver",
+          "expected": "sema.lifetime.promotion_receiver",
+          "matchesExpected": true,
+          "inputSha256": "738ddb335de7a97574edd58a46bf5d75083c3e6b24223d7e6279c349ca020273",
+          "reportSha256": "e937c110d338b42886bb741b6d294b7f9a519753d55c07bf7f679a9513a83567"
+        }
+      ],
+      "runtime": [
+        {
+          "executor": "bytecode-vm",
+          "exit": 0,
+          "status": "done Return(\"42\")",
+          "inputSha256": "b0dfb49ee342e4161d1ca3ed10429904ddcfc4e1ec3816412cd9a253e7f20639",
+          "reportSha256": "3c0e2f25656922ea94efb019544e314429e1fb269c95b43d64b9daef9d96139e"
+        },
+        {
+          "executor": "awbc-product",
+          "exit": 0,
+          "status": "done Return(\"42\")",
+          "inputSha256": "b0dfb49ee342e4161d1ca3ed10429904ddcfc4e1ec3816412cd9a253e7f20639",
+          "reportSha256": "cbbc0bcb738a3fa43d90da8d9450b251bce7815635789bec5d7da92b51eb6d5b"
+        }
+      ]
+    },
+    "oneOp": {
+      "version": 1,
+      "source": "aca18a840f9279d23a84522c439b74e94c997147",
+      "results": [
+        {
+          "executor": "bytecode-vm",
+          "steps": 11,
+          "maxOps": 1.0,
+          "diagnostics": 0,
+          "reportSha256": "3c0e2f25656922ea94efb019544e314429e1fb269c95b43d64b9daef9d96139e"
+        },
+        {
+          "executor": "awbc-product",
+          "steps": 50,
+          "maxOps": 1.0,
+          "diagnostics": 0,
+          "reportSha256": "cbbc0bcb738a3fa43d90da8d9450b251bce7815635789bec5d7da92b51eb6d5b"
+        }
+      ]
+    },
+    "quality": {
+      "version": 1,
+      "source": "29996b3f2475a6107819446a7d4935b95bb48295",
+      "packages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "active": null,
+      "results": [
+        {
+          "name": "compiler-try-pipe",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "try_pipe"
+          ],
+          "exit": 0,
+          "seconds": null,
+          "summary": [
+            "Summary [   3.463s] 18 tests run: 18 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 18,
+            "pass": 18,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": "compiler-carriers.log",
+          "logSha256": "c1a755bcf179ebabda23e4168d71c0d4d727ad94d79be7c5ec52e452486c5b7d"
+        },
+        {
+          "name": "sema",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-lang-sema"
+          ],
+          "exit": 0,
+          "seconds": 245.32,
+          "summary": [
+            "Summary [  83.932s] 1463 tests run: 1463 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 1463,
+            "pass": 1463,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": "quality/sema.log",
+          "logSha256": "929d21cc3af28a6b2bfeb6b710c9a79c563ec10a6709e4be9ede040f18697cd8"
+        },
+        {
+          "name": "hir",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-lang-hir"
+          ],
+          "exit": 0,
+          "seconds": 196.74,
+          "summary": [
+            "Summary [ 159.788s] 980 tests run: 980 passed (1 slow), 8 skipped"
+          ],
+          "totals": {
+            "run": 980,
+            "pass": 980,
+            "fail": 0,
+            "skip": 8
+          },
+          "reusedSourceReceipt": "quality/hir.log",
+          "logSha256": "1d405168b295c3296c3de03a22ccbcd0a449617eb97c19ca79f4eccd230fff0e"
+        },
+        {
+          "name": "runtime-plan",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-runtime-plan"
+          ],
+          "exit": 0,
+          "seconds": 87.04,
+          "summary": [
+            "Summary [  44.739s] 165 tests run: 165 passed, 1 skipped"
+          ],
+          "totals": {
+            "run": 165,
+            "pass": 165,
+            "fail": 0,
+            "skip": 1
+          },
+          "reusedSourceReceipt": "quality/runtime-plan.log",
+          "logSha256": "2bb195f2adcfe8647613c968049997743141cbb7a5fc5bd9b701695645c69e6f"
+        },
+        {
+          "name": "fmt",
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exit": 0,
+          "seconds": 15.75,
+          "summary": [],
+          "totals": null,
+          "reusedSourceReceipt": null,
+          "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "structure",
+          "command": [
+            "just",
+            "structure-audit-gate"
+          ],
+          "exit": 0,
+          "seconds": 4.35,
+          "summary": [],
+          "totals": null,
+          "reusedSourceReceipt": null,
+          "logSha256": "49c1564212cf33465c1f47c26c5c7a5a57652d544d9a5b97d8cdda258728ca33"
+        },
+        {
+          "name": "workspace-check",
+          "command": [
+            "cargo",
+            "check",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exit": 0,
+          "seconds": 60.21,
+          "summary": [],
+          "totals": null,
+          "reusedSourceReceipt": null,
+          "logSha256": "b7ff194d2197a252bc0f1f9574cde35963809531abe19a4313e88e8ba75e9e47"
+        },
+        {
+          "name": "workspace-clippy",
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exit": 0,
+          "seconds": 65.88,
+          "summary": [],
+          "totals": null,
+          "reusedSourceReceipt": null,
+          "logSha256": "e5cda568ac8d47c82e32b164cccaf1ae4f96a90edeaf18b9672869f9ed43317d"
+        },
+        {
+          "name": "doctests",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--doc",
+            "-p",
+            "arcweft-lang-sema",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-compiler",
+            "-p",
+            "arcweft-lang-hir"
+          ],
+          "exit": 0,
+          "seconds": 47.8,
+          "summary": [
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+          ],
+          "totals": null,
+          "reusedSourceReceipt": null,
+          "logSha256": "1453df97d64a46f6c873792b20dd787360ba2da7ab8acb85faec10fa8a581261"
+        },
+        {
+          "name": "runtime-host",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-runtime-host"
+          ],
+          "exit": 0,
+          "seconds": 85.0,
+          "summary": [
+            "Summary [   2.694s] 72 tests run: 72 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 72,
+            "pass": 72,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "1548f71391ff89eedef6143022497be30b25d1b39594fcf0fb133dc647a983ab"
+        },
+        {
+          "name": "driver-scene",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-runtime-driver",
+            "-p",
+            "arcweft-player-scene"
+          ],
+          "exit": 0,
+          "seconds": 77.47,
+          "summary": [
+            "Summary [   2.912s] 278 tests run: 278 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 278,
+            "pass": 278,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "15edbfb390f9a4c4b7ee42926a79f8bdf75943ad46db1a6143369d2baf8e21ac"
+        },
+        {
+          "name": "player-native",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-player-native"
+          ],
+          "exit": 0,
+          "seconds": 80.37,
+          "summary": [
+            "Summary [   1.100s] 59 tests run: 59 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 59,
+            "pass": 59,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "912c50ea95f42d772a597076192cfee4a5e7f3b4eaba841db64f9c741c252962"
+        },
+        {
+          "name": "player-web",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-player-web"
+          ],
+          "exit": 0,
+          "seconds": 81.01,
+          "summary": [
+            "Summary [   0.397s] 37 tests run: 37 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 37,
+            "pass": 37,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "4ecc1798c21824d8e823f32e9d70e40836366b8907c0afd80cafb4a12e7e3328"
+        },
+        {
+          "name": "agent-execution",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-agent-repl",
+            "-p",
+            "arcweft-agent-runner"
+          ],
+          "exit": 0,
+          "seconds": 115.45,
+          "summary": [
+            "Summary [  62.485s] 106 tests run: 106 passed (1 slow), 0 skipped"
+          ],
+          "totals": {
+            "run": 106,
+            "pass": 106,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "8c1442654b3737154482867c5384cbd7385571ee4f48417962cc0d5efd5cd257"
+        },
+        {
+          "name": "agent-transport",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-agent-mcp",
+            "-p",
+            "arcweft-agent-mcp-client",
+            "-p",
+            "arcweft-adapter-sema"
+          ],
+          "exit": 0,
+          "seconds": 20.02,
+          "summary": [
+            "Summary [   0.421s] 46 tests run: 46 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 46,
+            "pass": 46,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "b6aea2c14713c22a7e6357c94b6e0622aedb5a78fdeb9fb1670c726a75ab538d"
+        },
+        {
+          "name": "tools-lsp",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-project-loader",
+            "-p",
+            "arcweft-tooling",
+            "-p",
+            "arcweft-lsp",
+            "-p",
+            "arcweft-test"
+          ],
+          "exit": 0,
+          "seconds": 183.34,
+          "summary": [
+            "Summary [ 125.217s] 412 tests run: 412 passed (1 slow), 0 skipped"
+          ],
+          "totals": {
+            "run": 412,
+            "pass": 412,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "3b755670509bac38ad83307c4bc0eb77a9a1a1338e5651a2119eb953c4f048ed"
+        },
+        {
+          "name": "verify",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "--lib",
+            "--tests",
+            "-p",
+            "arcweft-verify",
+            "-p",
+            "arcweft-verify-oxiz",
+            "-p",
+            "arcweft-verify-z3",
+            "-p",
+            "arcweft-verify-lsp"
+          ],
+          "exit": 0,
+          "seconds": 62.25,
+          "summary": [
+            "Summary [   0.266s] 31 tests run: 31 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 31,
+            "pass": 31,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "d7d77affe391c06bdf3810b8c501dab7b3e3d6bee97663de06dbe488e5fac726"
+        },
+        {
+          "name": "compiler-lib",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--lib"
+          ],
+          "exit": 0,
+          "seconds": 30.52,
+          "summary": [
+            "Summary [   4.778s] 191 tests run: 191 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 191,
+            "pass": 191,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "c3213f330926bf6142debb90409bff72dab557a63268c3dd5702596a37c6ab02"
+        },
+        {
+          "name": "compiler-tests-1",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "action_channel",
+            "--test",
+            "agent_enum_execution",
+            "--test",
+            "agent_project_summary",
+            "--test",
+            "api_compile",
+            "--test",
+            "assertions"
+          ],
+          "exit": 0,
+          "seconds": 36.91,
+          "summary": [
+            "Summary [   3.350s] 28 tests run: 28 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 28,
+            "pass": 28,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "2c8e9ad66f99f1281b5a34d7ceb831760167d8058c247b1885c3991571053658"
+        },
+        {
+          "name": "compiler-tests-6",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "callable_execution",
+            "--test",
+            "catalog_asset_execution",
+            "--test",
+            "choice_static",
+            "--test",
+            "data_format_nominal",
+            "--test",
+            "diagnostic_ownership"
+          ],
+          "exit": 0,
+          "seconds": 64.22,
+          "summary": [
+            "Summary [  27.259s] 336 tests run: 336 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 336,
+            "pass": 336,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "3ae083f6f61e90ad1a20651ca2cbc90cc2a3baab8ac4b6591afbdb9749f780e4"
+        },
+        {
+          "name": "compiler-tests-11",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "dialogue_profile_admission",
+            "--test",
+            "evaluated_effects",
+            "--test",
+            "flow_effects",
+            "--test",
+            "flow_include",
+            "--test",
+            "flow_transfer"
+          ],
+          "exit": 0,
+          "seconds": 56.04,
+          "summary": [
+            "Summary [  10.451s] 178 tests run: 178 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 178,
+            "pass": 178,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "b474de748eed4ec7c0906e3aa05bea89d40c666dd0cec1d87ef39fe43011ce4e"
+        },
+        {
+          "name": "compiler-tests-16",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "flow_wait",
+            "--test",
+            "generic_continuation_snapshot",
+            "--test",
+            "inline_failure_policy",
+            "--test",
+            "iterator_witness_source",
+            "--test",
+            "local_declaration_source"
+          ],
+          "exit": 0,
+          "seconds": 45.7,
+          "summary": [
+            "Summary [   1.840s] 39 tests run: 39 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 39,
+            "pass": 39,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "5ba785b1427c2081f52ce350acbe654e93314618b6f7c1c09e489107f77c4235"
+        },
+        {
+          "name": "compiler-tests-21",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "named_scopes",
+            "--test",
+            "parser_diagnostic",
+            "--test",
+            "project_cache_transaction",
+            "--test",
+            "project_function_instances",
+            "--test",
+            "runtime_color"
+          ],
+          "exit": 0,
+          "seconds": 48.93,
+          "summary": [
+            "Summary [   2.266s] 63 tests run: 63 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 63,
+            "pass": 63,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "0b0ef54c6a03cbc26fc0b76c3e3894ec5a28e9e9091ecbe7c600c8ab817c2f65"
+        },
+        {
+          "name": "compiler-tests-26",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-compiler",
+            "--test",
+            "scope_propagation",
+            "--test",
+            "scoped_defer",
+            "--test",
+            "source_presentation_driver",
+            "--test",
+            "view_product"
+          ],
+          "exit": 0,
+          "seconds": 118.19,
+          "summary": [
+            "Summary [  74.211s] 162 tests run: 162 passed (1 slow), 0 skipped"
+          ],
+          "totals": {
+            "run": 162,
+            "pass": 162,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "a90c1e36dc67199a25a70fc138f383ea24c7c08ce4df9c0ea5097b897d3be346"
+        },
+        {
+          "name": "cli-library-binaries",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-cli",
+            "--lib",
+            "--bins"
+          ],
+          "exit": 0,
+          "seconds": 119.53,
+          "summary": [
+            "Summary [  31.380s] 196 tests run: 196 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 196,
+            "pass": 196,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "fa001b15a29f2de21518df339e22f0adace607f1a791b26ba48755fd434b00df"
+        },
+        {
+          "name": "cli-integration",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-p",
+            "arcweft-cli",
+            "--test",
+            "runtime_native_options",
+            "--test",
+            "check_core_cli",
+            "--test",
+            "native_style_parity_sample",
+            "--test",
+            "release_trust_json",
+            "--test",
+            "arcw_fixtures_check_run",
+            "--test",
+            "seq04_8_4_persistent_cache_build_cli_goldens"
+          ],
+          "exit": 0,
+          "seconds": 40.18,
+          "summary": [
+            "Summary [   8.896s] 30 tests run: 30 passed, 0 skipped"
+          ],
+          "totals": {
+            "run": 30,
+            "pass": 30,
+            "fail": 0,
+            "skip": 0
+          },
+          "reusedSourceReceipt": null,
+          "logSha256": "23117204f9783095cc31de92ccaad5766e47c69a64f1b798770bdb48ca260cb9"
+        }
+      ],
+      "nextestTotals": {
+        "run": 4890,
+        "pass": 4890,
+        "fail": 0,
+        "skip": 9
+      },
+      "reusedBehaviorSource": "aca18a840f9279d23a84522c439b74e94c997147"
+    },
+    "nextScopeProbes": {
+      "version": 1,
+      "source": "aca18a840f9279d23a84522c439b74e94c997147",
+      "exeSha256": "0e7f7025bf2a19e63998b52305310649b4afa799228fcc62a5e7ae72015443a3",
+      "cases": [
+        {
+          "name": "record-body",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "semantic fact does not match its final-HIR payload family",
+          "inputSha256": "0425827ecb4cf06916a81be577703037e1a928d3e84570472af19fdf0128dfe2"
+        },
+        {
+          "name": "field-body",
+          "exit": 1,
+          "stage": "type-check",
+          "code": "sema.final_analysis",
+          "message": "semantic fact does not match its final-HIR payload family",
+          "inputSha256": "df901c61ab08da828cc6ca8c1b376c161462ebdec51d864a2275f924759dc8e3"
+        },
+        {
+          "name": "parameter-callee",
+          "exit": 0,
+          "stage": null,
+          "code": null,
+          "message": null,
+          "inputSha256": "8b3dfb4c92589a315bdc39b30bc5798a03f922ba3476c2ffa33a617659fa71de"
+        }
+      ],
+      "runtime": [
+        {
+          "executor": "bytecode-vm",
+          "exit": 0,
+          "status": "done Return(\"42\")",
+          "steps": 5,
+          "maxOps": 1.0,
+          "reportSha256": "69934a623d75dce3eb571c524c37545b35b01555990c0c6b4f4c3125aabfa89e"
+        },
+        {
+          "executor": "awbc-product",
+          "exit": 0,
+          "status": "done Return(\"42\")",
+          "steps": 22,
+          "maxOps": 1.0,
+          "reportSha256": "a6bbdf04a30ca1b16eef560c25341c62569ea40e5df16762c1df4bec30e58a4e"
+        }
+      ]
+    },
+    "verificationNote": "The follow-up calls the existing owner-bound effects accessor, which returns the identical shell effects. HIR, Sema, RuntimePlan, Compiler try_pipe, and CLI results keep the earlier implementation SHA. Workspace checks and remaining reverse tests use the follow-up SHA. The earlier matrix stopped at its source guard when the follow-up changed HEAD.",
+    "scope": "The baseline records the executable hash actually observed at the inspected Git head. The current coverage covers known implicit callable results, including a returned nested callback that retains borrowed storage through its callee. Owned and discarded-capture controls still reach the execution diagnostic.",
+    "raw": {
+      "path": "task-lifetime-promotion-implicit-callable.raw.zip",
+      "sha256": "ef126a67a2286f28262400865b42062693a44059e821ac6c3134b13ed0319582",
+      "memberCount": 81
+    }
   }
 }
