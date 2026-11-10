@@ -6983,6 +6983,20 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
         self.facts.checked_copy_requirement(local)
     }
 
+    pub(crate) fn checked_copy_evidence(
+        self,
+        local: LocalId,
+    ) -> Option<arcweft_lang_sema::final_analysis::CheckedLocalCopyEvidence> {
+        match self.facts {
+            RuntimeExecutableSemanticFactView::Global(facts) => {
+                facts.checked_local_uses.as_ref()?.copy_evidence(local)
+            }
+            RuntimeExecutableSemanticFactView::ProjectInstance(facts) => {
+                facts.local_uses().copy_evidence(local)
+            }
+        }
+    }
+
     pub fn checked_synthetic_copy_requirement(
         self,
         callable: arcweft_lang_sema::final_analysis::CheckedImplicitCallableIdentity,

@@ -9,6 +9,73 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn returned_callable_copy_uses_the_actual_formal_carrier() {
+    let fixture = fixture(
+        r#"
+fn reuse() -> (i64, i64) {
+    let create = |input: (i64) -> i64 effects {}| -> ((i64) -> i64 effects {}) {
+        return input
+    }
+    let callback = create(|value: i64| value)
+    (callback(1i64), callback(2i64))
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("the returned actual has an unrestricted carrier");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
+    let (_, module) = executable.modules().next().expect("root HIR module");
+    let callback = report
+        .locals()
+        .map(|(local, _)| local)
+        .find(|&local| {
+            module
+                .resolve_local(local)
+                .is_ok_and(|binding| binding.name().as_str() == "callback")
+        })
+        .expect("result local");
+    let uses = report.checked_local_uses();
+    assert!(matches!(
+        uses.copy_evidence(callback),
+        Some(CheckedLocalCopyEvidence::InvocationInitializer { .. })
+    ));
+    assert_eq!(
+        uses.value_transfers()
+            .filter(|(_, row)| row.local() == callback && row.mode() == CheckedLocalReadMode::Copy)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn returned_callable_copy_requires_every_live_closure_result_to_be_copy() {
+    let fixture = fixture(
+        r#"
+fn consume(voice: VoiceHandle) {}
+fn reuse(flag: bool, voice: VoiceHandle) -> (i64, i64) {
+    let create = |pick: bool, input: (i64) -> i64 effects {}| -> ((i64) -> i64 effects {}) {
+        if pick { return input } else { () }
+        |value: i64| value
+    }
+    let callback = create(flag, |value: i64| { consume(voice); value })
+    (callback(1i64), callback(2i64))
+}
+"#,
+        None,
+    );
+    let actual = analyze(&fixture).err();
+    assert!(
+        matches!(
+            actual,
+            Some(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::Unavailable { .. }
+            ))
+        ),
+        "the explicit return can deliver an affine callable: {actual:?}"
+    );
+}
+
+#[test]
 fn registered_dialogue_observations_preserve_the_same_input_owner() {
     use crate::final_analysis::{CheckedExpressionResolution, CheckedSelectResolution};
     let source = "view Main(dialogue: DialogueView) {\n\

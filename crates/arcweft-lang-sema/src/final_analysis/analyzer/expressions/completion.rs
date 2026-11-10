@@ -218,24 +218,16 @@ impl Analyzer<'_, '_, '_> {
                 current_expression: None,
             },
         )?;
-        self.completion_value_sources(module, tail, completion, receives, include_normal)
+        self.completion_value_sources(module, tail, &completion, receives, include_normal)
     }
 
-    pub(in crate::final_analysis::analyzer) fn checked_closure_value_sources(
+    pub(super) fn checked_closure_value_sources(
         &self,
         module: &HirModule,
         closure: ExprId,
         body: ExprId,
+        completion: &BodyCompletion,
     ) -> Result<Vec<ExprId>, AnalyzerExpressionError> {
-        let completion = self.expression_body_completion_in(
-            module,
-            body,
-            CompletionQuery {
-                purpose: CompletionQueryPurpose::CheckedResults,
-                callable: Some(closure),
-                current_expression: None,
-            },
-        )?;
         self.completion_value_sources(
             module,
             body,
@@ -253,7 +245,7 @@ impl Analyzer<'_, '_, '_> {
         &self,
         module: &HirModule,
         tail: ExprId,
-        completion: BodyCompletion,
+        completion: &BodyCompletion,
         receives: impl Fn(&HirControlTransferTarget) -> bool,
         include_normal: bool,
     ) -> Result<Vec<ExprId>, AnalyzerExpressionError> {
@@ -261,7 +253,7 @@ impl Analyzer<'_, '_, '_> {
         if include_normal && completion.continues() {
             values.push(tail);
         }
-        for owner in completion.escaping {
+        for &owner in &completion.escaping {
             let statement = module.resolve_stmt(owner).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;

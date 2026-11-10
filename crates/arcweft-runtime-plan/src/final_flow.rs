@@ -113,7 +113,10 @@ use crate::assertion_identity::{
     RuntimeAssertionMode, RuntimeAssertionSite,
 };
 use crate::errors::RuntimePlanLowerError;
-use crate::final_expr::{FinalExprLowerer, FinalExprSourceSites, RuntimeExpressionOverrides};
+use crate::final_expr::{
+    FinalExprLowerer, FinalExprSourceSites, RuntimeExpressionOverrides,
+    require_unrestricted_initializer,
+};
 use crate::final_pattern::FinalPatternLowerer;
 use crate::final_variant::{
     normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
@@ -5905,6 +5908,9 @@ enum RuntimeFlowValueContinuation {
         owner: ExprId,
         outer: Box<Self>,
     },
+    CheckInitializerCopy {
+        outer: Box<Self>,
+    },
     Bind {
         pattern: RuntimePatternSeed,
         tail: RuntimeFlowTail,
@@ -6670,10 +6676,12 @@ impl<'a> FinalFlowLowerer<'a> {
                     .pattern_lowerer()
                     .lower(*owner)
                     .map_err(RuntimePlanLowerError::new)?;
-                self.lower_flow_value(
+                let continuation = self.initializer_continuation(
+                    *owner,
                     *initializer,
                     RuntimeFlowValueContinuation::Bind { pattern, tail },
-                )
+                )?;
+                self.lower_flow_value(*initializer, continuation)
             }
             HirStmtKind::Expression { expression }
                 if self.contains_flow_value_expression(*expression)? =>
@@ -6791,23 +6799,34 @@ impl<'a> FinalFlowLowerer<'a> {
                     .lower(*owner)
                     .map_err(RuntimePlanLowerError::new)?;
                 if self.contains_flow_value_expression(*initializer)? {
-                    return self.lower_flow_value(
+                    let continuation = self.initializer_continuation(
+                        *owner,
                         *initializer,
                         RuntimeFlowValueContinuation::Bind {
                             pattern: binding,
                             tail: RuntimeFlowTail::None,
                         },
-                    );
+                    )?;
+                    return self.lower_flow_value(*initializer, continuation);
                 }
                 if let Some(host) = self.lower_host_call(*initializer, Some(binding.clone()))? {
                     Ok(vec![host])
                 } else {
+                    let lowerer = self.expr_lowerer();
+                    let expr = lowerer
+                        .lower(*initializer)
+                        .map_err(RuntimePlanLowerError::new)?;
+                    let expr = if lowerer
+                        .requires_initializer_copy_check(*owner, *initializer)
+                        .map_err(RuntimePlanLowerError::new)?
+                    {
+                        require_unrestricted_initializer(expr)
+                    } else {
+                        expr
+                    };
                     Ok(vec![RuntimeFlowOpSeed::Let {
                         pattern: binding,
-                        expr: self
-                            .expr_lowerer()
-                            .lower(*initializer)
-                            .map_err(RuntimePlanLowerError::new)?,
+                        expr,
                     }])
                 }
             }
@@ -7436,6 +7455,25 @@ impl<'a> FinalFlowLowerer<'a> {
             copy_locals,
             ops,
         })
+    }
+
+    fn initializer_continuation(
+        &self,
+        pattern: arcweft_lang_hir::identity::PatternId,
+        initializer: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<RuntimeFlowValueContinuation, RuntimePlanLowerError> {
+        if self
+            .expr_lowerer()
+            .requires_initializer_copy_check(pattern, initializer)
+            .map_err(RuntimePlanLowerError::new)?
+        {
+            Ok(RuntimeFlowValueContinuation::CheckInitializerCopy {
+                outer: Box::new(continuation),
+            })
+        } else {
+            Ok(continuation)
+        }
     }
 
     fn lower_flow_value(
@@ -8917,6 +8955,10 @@ impl<'a> FinalFlowLowerer<'a> {
                     .specialize_result(owner, value)
                     .map_err(RuntimePlanLowerError::new)?;
                 return self.apply_value_continuation(value, *outer);
+            }
+            RuntimeFlowValueContinuation::CheckInitializerCopy { outer } => {
+                return self
+                    .apply_value_continuation(require_unrestricted_initializer(value), *outer);
             }
             RuntimeFlowValueContinuation::Bind { pattern, tail } => {
                 let mut ops = vec![RuntimeFlowOpSeed::Let {

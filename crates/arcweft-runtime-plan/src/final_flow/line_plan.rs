@@ -6,6 +6,7 @@
 
 use crate::assertion_identity::RuntimeAssertionSite;
 use crate::errors::RuntimePlanLowerError;
+use crate::final_expr::require_unrestricted_initializer;
 use crate::semantic_facts::{
     RuntimeCheckedTypeProjectionError, RuntimeLineCallable, RuntimeNormalizedType,
     RuntimePlanSemanticFacts, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
@@ -513,13 +514,19 @@ impl LinePlanLowerer<'_, '_> {
                 let action = if self.line_call(input)?.is_some() {
                     self.lower_line_call(input, Some(binding))?
                 } else {
+                    let lowerer = self.flow.expr_lowerer();
+                    let expr = lowerer.lower(input).map_err(RuntimePlanLowerError::new)?;
+                    let expr = if lowerer
+                        .requires_initializer_copy_check(pattern, input)
+                        .map_err(RuntimePlanLowerError::new)?
+                    {
+                        require_unrestricted_initializer(expr)
+                    } else {
+                        expr
+                    };
                     FlowDraft::Flow(RuntimeFlowOpSeed::Let {
                         pattern: binding,
-                        expr: self
-                            .flow
-                            .expr_lowerer()
-                            .lower(input)
-                            .map_err(RuntimePlanLowerError::new)?,
+                        expr,
                     })
                 };
                 Ok(NodeDraft::Action(vec![action]))

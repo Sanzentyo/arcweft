@@ -1,8 +1,8 @@
 //! Shared, sealed ownership certificates for global and closed executable scopes.
 
 use super::{
-    CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog, CheckedLocalUseSite,
-    CheckedLocalValueTransfer, CheckedSyntheticUse,
+    CheckedLocalCopyEvidence, CheckedLocalUseCatalog, CheckedLocalUseInstanceCatalog,
+    CheckedLocalUseSite, CheckedLocalValueTransfer, CheckedSyntheticUse,
 };
 use arcweft_lang_hir::identity::{ExprId, LocalId};
 use std::sync::Arc;
@@ -77,6 +77,13 @@ impl CheckedLocalUseAuthority {
         match self {
             Self::Global(catalog) => catalog.copy_requirement(local),
             Self::Instance(catalog) => catalog.copy_requirement(local),
+        }
+    }
+
+    pub fn copy_evidence(&self, local: LocalId) -> Option<CheckedLocalCopyEvidence> {
+        match self {
+            Self::Global(catalog) => catalog.copy_evidence(local),
+            Self::Instance(catalog) => catalog.copy_evidence(local),
         }
     }
 

@@ -1237,6 +1237,108 @@ flow main() -> i64 {
     "42"
 );
 
+mod returned_shared_prefix_with_distinct_later_types {
+    use super::*;
+    use arcweft_core::awbc::{
+        codec::AwbcDecodeBudget,
+        product_step::AwbcProductExecutorSaveSnapshot,
+        schema::{AwbcEntryId, AwbcProgram},
+    };
+    use arcweft_core::engine::{FlowExit, FlowFiberStatus};
+    use arcweft_core::executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot};
+    use arcweft_core::plan::FlowEvent;
+    use arcweft_core::pure::VmRuntimePureCallBackend;
+    use arcweft_core::step::{
+        RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+        RuntimeStepStopReason,
+    };
+
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+fn stage<A, B>(seed: A)(late: B) -> ((i64) -> i64 effects {}) {
+    |amount: i64| -> i64 { let _ = seed; let _ = late; amount + 2i64 }
+}
+flow main() -> i64 {
+    let create = |seed: i64| { stage(seed) }
+    let shared = create(7i64)
+    let first = shared("left")
+    let second = shared(2i64)
+    return first(19i64) + second(19i64)
+}
+"#;
+
+    #[test]
+    fn native() {
+        assert_native_return(SOURCE, "42");
+    }
+
+    #[test]
+    fn awbc() {
+        assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+    }
+
+    #[test]
+    fn awbc_product_restores_each_stopped_step_from_public_json() {
+        let compiled = compile_source(SOURCE).unwrap();
+        let program = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "shared.arcw")
+            .lower()
+            .unwrap()
+            .program;
+        let encoded = program.encode_canonical().unwrap();
+        let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+        assert_eq!(decoded, program);
+        let mut executor =
+            ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+        let mut backend = VmRuntimePureCallBackend::default();
+        let options = RuntimeStepOptions {
+            mode: RuntimeStepMode::OneOp,
+            budget: RuntimeStepBudget { max_ops: 1 },
+            ..Default::default()
+        };
+        let mut returns = 0;
+        for restored in 0..256 {
+            let step =
+                executor.step_with_pure_backend(RuntimeStepInput::default(), options, &mut backend);
+            assert!(step.stats.executed_ops <= 1);
+            assert!(
+                step.output.diagnostics.is_empty(),
+                "{:?}",
+                step.output.diagnostics
+            );
+            assert!(step.output.requests.tasks.is_empty());
+            for event in step.output.flow_events {
+                if let FlowEvent::Return { value } = event {
+                    assert_eq!(value, "42");
+                    returns += 1;
+                }
+            }
+            if step.stop_reason == RuntimeStepStopReason::Done {
+                assert_eq!(
+                    step.fiber_status,
+                    FlowFiberStatus::Done(FlowExit::Return("42".into()))
+                );
+                assert_eq!(returns, 1);
+                assert!(restored > 2);
+                return;
+            }
+            let image = executor.product_inert_rollback_image().unwrap();
+            let snapshot = AwbcProductExecutorSaveSnapshot::from_live(
+                &image,
+                executor.admitted_product_awbc_program().unwrap(),
+            )
+            .unwrap();
+            let json = serde_json::to_vec(&snapshot).unwrap();
+            let snapshot = executor
+                .bind_product_save_snapshot(serde_json::from_slice(&json).unwrap())
+                .unwrap();
+            executor = executor
+                .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot))
+                .unwrap();
+        }
+        panic!("restored product never returned");
+    }
+}
+
 callable_case!(
     contextual_prefix_keeps_its_fixed_later_type_through_the_middle_group,
     r#"

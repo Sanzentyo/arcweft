@@ -5,6 +5,7 @@
 //! carrier from a value which must transfer its one owner.
 
 mod authority;
+mod copy;
 mod type_capability;
 pub use authority::CheckedLocalUseAuthority;
 
@@ -217,12 +218,20 @@ pub enum CheckedLocalCopyEvidence {
         ty: crate::types::SemanticTypeDigest,
         expression: ExprId,
     },
+    /// The initializer's result crosses a callable boundary. Lowering checks
+    /// the resulting value graph before binding it as unrestricted.
+    InvocationInitializer {
+        ty: crate::types::SemanticTypeDigest,
+        expression: ExprId,
+    },
 }
 
 impl CheckedLocalCopyEvidence {
     pub const fn ty(self) -> crate::types::SemanticTypeDigest {
         match self {
-            Self::StructuralType { ty } | Self::ImmutableInitializer { ty, .. } => ty,
+            Self::StructuralType { ty }
+            | Self::ImmutableInitializer { ty, .. }
+            | Self::InvocationInitializer { ty, .. } => ty,
         }
     }
 }
@@ -261,6 +270,8 @@ impl CheckedLocalValueTransfer {
 pub enum CheckedLocalUseError {
     #[error("local-use type ownership exceeded its bounded traversal allowance")]
     TypeOwnershipWorkLimit,
+    #[error("value Copy evidence exceeds its ownership work limit")]
+    ValueOwnershipWorkLimit,
     #[error("local-use closed instance is not bound to this declaration/generation")]
     ForeignInstance,
     #[error(transparent)]
@@ -425,6 +436,10 @@ impl CheckedLocalUseInstanceCatalog {
         &self,
     ) -> impl ExactSizeIterator<Item = (LocalId, CheckedLocalCopyEvidence)> + '_ {
         self.catalog.copy_bindings()
+    }
+
+    pub fn copy_evidence(&self, local: LocalId) -> Option<CheckedLocalCopyEvidence> {
+        self.catalog.copy_evidence(local)
     }
 
     pub fn copy_requirements(
@@ -1358,18 +1373,6 @@ impl<'a> LocalUseChecker<'a> {
         Ok(())
     }
 
-    fn binding_is_copy(
-        &self,
-        local: LocalId,
-        visiting: &mut BTreeSet<LocalId>,
-    ) -> Result<bool, CheckedLocalUseError> {
-        if self.copy_requirements.contains_key(&local) {
-            return Ok(true);
-        }
-        self.binding_copy_evidence(local, visiting)
-            .map(|evidence| evidence.is_some())
-    }
-
     fn ingress_copy_requirement(
         &self,
         local: LocalId,
@@ -1481,155 +1484,6 @@ impl<'a> LocalUseChecker<'a> {
             .semantic_identity_digest()
             .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
         Ok(Some(CheckedLocalCopyRequirement { owner, local, ty }))
-    }
-
-    fn binding_copy_evidence(
-        &self,
-        local: LocalId,
-        visiting: &mut BTreeSet<LocalId>,
-    ) -> Result<Option<CheckedLocalCopyEvidence>, CheckedLocalUseError> {
-        let binding = self
-            .analysis
-            .local(local)
-            .ok_or(CheckedLocalUseError::InvalidTopology)?;
-        let ty = self
-            .closed_type(binding.ty())?
-            .semantic_identity_digest()
-            .ok();
-        if self.type_is_copy(binding.ty())? {
-            return Ok(ty.map(|ty| CheckedLocalCopyEvidence::StructuralType { ty }));
-        }
-        if !matches!(
-            self.closed_type(binding.ty())?,
-            TypeKind::Function { .. } | TypeKind::CharacterDialogue(_)
-        ) || !visiting.insert(local)
-        {
-            return Ok(None);
-        }
-        if self
-            .module
-            .resolve_local(local)
-            .map_err(|_| CheckedLocalUseError::InvalidTopology)?
-            .is_mutable_binding()
-        {
-            visiting.remove(&local);
-            return Ok(None);
-        }
-        let origin = self
-            .analysis
-            .hir_topology()
-            .module(local.module())
-            .and_then(|module| module.local_origins().binding(local));
-        let result = match (ty, origin.and_then(|origin| origin.value())) {
-            (Some(ty), Some(expression)) if self.expression_is_copy(expression, visiting)? => {
-                Some(CheckedLocalCopyEvidence::ImmutableInitializer { ty, expression })
-            }
-            _ => None,
-        };
-        visiting.remove(&local);
-        Ok(result)
-    }
-
-    fn expression_is_copy(
-        &self,
-        owner: ExprId,
-        visiting: &mut BTreeSet<LocalId>,
-    ) -> Result<bool, CheckedLocalUseError> {
-        let expression = self
-            .analysis
-            .expression(owner)
-            .ok_or(CheckedLocalUseError::InvalidTopology)?;
-        if let Some(ty) = expression.value_type() {
-            if self.type_is_copy(ty)? {
-                return Ok(true);
-            }
-        }
-        match expression.resolution() {
-            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
-                return self.binding_is_copy(*local, visiting);
-            }
-            CheckedExpressionResolution::Value(
-                CheckedValueResolution::ProjectCallable(_)
-                | CheckedValueResolution::EnvironmentCallable(_),
-            ) => {
-                return Ok(true);
-            }
-            CheckedExpressionResolution::Closure(closure) => {
-                return closure.captures().iter().try_fold(true, |copy, capture| {
-                    self.binding_is_copy(capture.local(), visiting)
-                        .map(|next| copy && next)
-                });
-            }
-            CheckedExpressionResolution::CharacterDialogueFactory(_)
-            | CheckedExpressionResolution::CharacterDialogueReconfigure(_) => {}
-            _ => {
-                if !self
-                    .analysis
-                    .call(owner)
-                    .and_then(|facts| facts.selected_application())
-                    .is_some_and(|application| {
-                        matches!(
-                            application.result(),
-                            crate::callable::CheckedCallResult::Continuation(_)
-                        )
-                    })
-                {
-                    let hir = self
-                        .module
-                        .resolve_expr(owner)
-                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-                    return match hir.kind() {
-                        HirExprKind::If(branch) => Ok(self
-                            .expression_is_copy(branch.then_branch(), visiting)?
-                            && self.expression_is_copy(branch.else_branch(), visiting)?),
-                        HirExprKind::Block(block) => {
-                            self.expression_is_copy(block.tail(), visiting)
-                        }
-                        HirExprKind::NamedBlock(block) => {
-                            self.expression_is_copy(block.tail(), visiting)
-                        }
-                        _ => Ok(false),
-                    };
-                }
-            }
-        }
-        // A direct continuation retains its evaluated inputs. Its static
-        // callee reference is not a captured runtime value. Value callees
-        // remain part of the footprint and must prove their own deep Copy.
-        let static_continuation = self
-            .analysis
-            .call(owner)
-            .and_then(|facts| facts.selected_application())
-            .is_some_and(|application| {
-                matches!(
-                    application.result(),
-                    crate::callable::CheckedCallResult::Continuation(_)
-                ) && matches!(
-                    application.core().callee(),
-                    crate::callable::CheckedCallCalleeExecution::Direct
-                )
-            });
-        let children = self
-            .analysis
-            .checked_expression_edge_fact(owner)
-            .map_err(|_| CheckedLocalUseError::InvalidTopology)?
-            .edges()
-            .iter()
-            .filter(|edge| {
-                !static_continuation
-                    || !matches!(
-                        edge.role(),
-                        crate::semantic_coordinate::CheckedExpressionChildRole::Callee
-                    )
-            })
-            .map(|edge| edge.child())
-            .collect::<Vec<_>>();
-        for child in children {
-            if !self.expression_is_copy(child, visiting)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
     }
 
     fn bind(&mut self, locals: &[LocalId], state: &mut Availability) {

@@ -3307,14 +3307,13 @@ impl Analyzer<'_, '_, '_> {
                         )
                     })?
                 };
-                let result = self.callable_body_result(
-                    module,
-                    owner,
-                    closure.body(),
-                    result,
-                    &body,
-                    body_expected,
-                )?;
+                let completion = self.expression_body_completion(module, closure.body(), owner, &body)?;
+                let value_results = self.checked_closure_value_sources(module, owner, closure.body(), &completion)?;
+                let result = if let Some(expected) = body_expected {
+                    if result == TypeKind::Never { expected.clone() } else { result }
+                } else {
+                    self.completed_body_result(module, closure.body(), result, completion)?
+                };
                 let ty = TypeKind::function_with_effects(
                     parameters,
                     result,
@@ -3328,7 +3327,7 @@ impl Analyzer<'_, '_, '_> {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
                 let checked_closure =
-                    CheckedClosure::seal(Arc::clone(&self.topology), owner, |selector| {
+                    CheckedClosure::seal(Arc::clone(&self.topology), owner, value_results.into_boxed_slice(), |selector| {
                         self.facts
                             .expressions()
                             .get(&selector)?

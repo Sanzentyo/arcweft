@@ -22,14 +22,15 @@ use arcweft_core::value::{
 };
 use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
-use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
+use arcweft_lang_hir::identity::{ExprId, LocalId, PatternId, StmtId};
 use arcweft_lang_hir::item::HirFunctionBody;
 use arcweft_lang_hir::module::HirModule;
+use arcweft_lang_hir::pattern::{HirPatternBinding, HirPatternKind};
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_sema::callable::{CheckedFmtFailurePolicy, FmtParameterId};
 use arcweft_lang_sema::final_analysis::{
-    CheckedFieldReceiver, CheckedLocalPlaceMode, CheckedLocalReadMode, CheckedLocalUseSite,
-    CheckedSyntheticUseOwner,
+    CheckedFieldReceiver, CheckedLocalCopyEvidence, CheckedLocalPlaceMode, CheckedLocalReadMode,
+    CheckedLocalUseSite, CheckedSyntheticUseOwner,
 };
 
 use crate::agent::RuntimeAgentIntrinsic;
@@ -194,7 +195,8 @@ enum PureTryContinuation {
         outer: Box<Self>,
     },
     LetBlock {
-        pattern: arcweft_lang_hir::identity::PatternId,
+        pattern: PatternId,
+        initializer: ExprId,
         statements: Box<[StmtId]>,
         tail: ExprId,
         outer: Box<Self>,
@@ -1246,6 +1248,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 *initializer,
                 PureTryContinuation::LetBlock {
                     pattern: *pattern,
+                    initializer: *initializer,
                     statements: remaining.into(),
                     tail,
                     outer: Box::new(continuation),
@@ -1543,10 +1546,16 @@ impl<'hir> FinalExprLowerer<'hir> {
             }
             PureTryContinuation::LetBlock {
                 pattern,
+                initializer,
                 statements,
                 tail,
                 outer,
             } => {
+                let value = if self.requires_initializer_copy_check(pattern, initializer)? {
+                    require_unrestricted_initializer(value)
+                } else {
+                    value
+                };
                 let body = self.lower_function_block(&statements, tail, *outer)?;
                 let result_type = body.ty();
                 let kind = if let Some(binding) = self.simple_binding(pattern)? {
@@ -3918,6 +3927,32 @@ impl<'hir> FinalExprLowerer<'hir> {
         self.local(local).map(Some)
     }
 
+    pub(crate) fn requires_initializer_copy_check(
+        &self,
+        pattern: PatternId,
+        initializer: ExprId,
+    ) -> Result<bool, String> {
+        let pattern = self.module.resolve_pattern(pattern).map_err(|error| {
+            format!("cannot resolve initializer binding pattern {pattern:?}: {error}")
+        })?;
+        let (HirPatternKind::Binding(HirPatternBinding::Bound { local, .. })
+        | HirPatternKind::TypedBinding {
+            binding: HirPatternBinding::Bound { local, .. },
+            ..
+        }
+        | HirPatternKind::WholeBinding {
+            binding: HirPatternBinding::Bound { local, .. },
+            ..
+        }) = pattern.kind()
+        else {
+            return Ok(false);
+        };
+        Ok(matches!(
+            self.semantic_facts.checked_copy_evidence(*local),
+            Some(CheckedLocalCopyEvidence::InvocationInitializer { expression, .. }) if expression == initializer
+        ))
+    }
+
     fn expression_type(
         &self,
         id: ExprId,
@@ -4013,6 +4048,20 @@ fn variant_payload_accepts_argument_types(
         ),
     }
 }
+pub(crate) fn require_unrestricted_initializer(value: RuntimeExprSeed) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        value.ty(),
+        RuntimeExprSeedKind::Call {
+            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::CoreRequireUnrestricted),
+            args: Box::new([RuntimeCallArgumentSeed::new(
+                value,
+                RuntimeCallArgumentMode::Value,
+                0,
+            )]),
+        },
+    )
+}
+
 fn runtime_binary(operator: HirBinaryOp) -> Option<RuntimeBinaryOp> {
     Some(match operator {
         HirBinaryOp::Or => RuntimeBinaryOp::Or,

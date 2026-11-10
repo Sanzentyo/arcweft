@@ -123,22 +123,28 @@ fn selected_graph_rejects_an_internally_valid_capture_receipt_for_another_interp
         fx_body_expressions: BTreeSet::new(),
     };
     closure.validate_selection(&selected).unwrap();
-    let other = CheckedClosure::seal(Arc::clone(&topology), closure.owner(), |owner| {
-        let module = project
-            .modules()
-            .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module))?;
-        let HirExprKind::PostfixBracket(postfix) = module.resolve_expr(owner).ok()?.kind() else {
-            return None;
-        };
-        let arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
-            dialogue,
-            ..
-        } = postfix.candidates()
-        else {
-            return None;
-        };
-        Some(*dialogue)
-    })
+    let other = CheckedClosure::seal(
+        Arc::clone(&topology),
+        closure.owner(),
+        closure.value_results().into(),
+        |owner| {
+            let module = project
+                .modules()
+                .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module))?;
+            let HirExprKind::PostfixBracket(postfix) = module.resolve_expr(owner).ok()?.kind()
+            else {
+                return None;
+            };
+            let arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+                dialogue,
+                ..
+            } = postfix.candidates()
+            else {
+                return None;
+            };
+            Some(*dialogue)
+        },
+    )
     .expect("the alternate capture projection is internally valid in its assumed context");
     assert_eq!(
         other.validate_selection(&selected),

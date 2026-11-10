@@ -68,7 +68,6 @@ struct CaptureEvaluation {
     root: ExprId,
     captures: PendingCaptures,
     results: BTreeMap<CallableDeclarationKey, (ItemId, Rc<[ExprId]>)>,
-    closure_results: BTreeMap<ExprId, Rc<[ExprId]>>,
     work: CaptureWorklist,
 }
 
@@ -95,7 +94,6 @@ impl Analyzer<'_, '_, '_> {
                 .pending_capture_identity_rows()
                 .map_err(|error| error.into_public(root))?,
             results: BTreeMap::new(),
-            closure_results: BTreeMap::new(),
             work: CaptureWorklist::new(root),
         };
         while let Some(origin) = query.work.next()? {
@@ -275,7 +273,6 @@ impl Analyzer<'_, '_, '_> {
                     evidence.producer()
                     && let Some(dependencies) = self.invoke_producer(
                         context,
-                        module,
                         origin,
                         (*producer, invoked),
                         query,

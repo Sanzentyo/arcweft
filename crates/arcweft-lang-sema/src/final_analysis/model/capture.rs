@@ -433,12 +433,14 @@ pub struct CheckedClosure {
     owner: ExprId,
     choices: BTreeMap<ExprId, ExprId>,
     captures: Box<[HirSelectedCapture]>,
+    value_results: Box<[ExprId]>,
 }
 
 impl CheckedClosure {
     pub(crate) fn seal(
         topology: Arc<HirProjectEvaluationTopology>,
         owner: ExprId,
+        value_results: Box<[ExprId]>,
         mut selected: impl FnMut(ExprId) -> Option<ExprId>,
     ) -> Result<Self, CheckedCaptureAuthorityViolation> {
         let mut choices = BTreeMap::new();
@@ -452,6 +454,7 @@ impl CheckedClosure {
             owner,
             choices,
             captures,
+            value_results,
         };
         checked.validate_evidence()?;
         Ok(checked)
@@ -468,6 +471,10 @@ impl CheckedClosure {
 
     pub const fn captures(&self) -> &[HirSelectedCapture] {
         &self.captures
+    }
+
+    pub(in crate::final_analysis) const fn value_results(&self) -> &[ExprId] {
+        &self.value_results
     }
 
     pub(crate) fn validate_authority(
@@ -507,6 +514,10 @@ impl CheckedClosure {
     ) -> Result<(), CheckedCaptureAuthorityViolation> {
         self.validate_authority(selected.topology(), self.owner)?;
         if !selected.contains_owner(SyntheticOwner::Expr(self.owner))
+            || self
+                .value_results
+                .iter()
+                .any(|result| !selected.contains_owner(SyntheticOwner::Expr(*result)))
             || self.choices.iter().any(|(selector, candidate)| {
                 !selected
                     .expression_edges(*selector)
@@ -541,6 +552,7 @@ impl fmt::Debug for CheckedClosure {
             .field("owner", &self.owner)
             .field("choices", &self.choices)
             .field("captures", &self.captures)
+            .field("value_results", &self.value_results)
             .finish()
     }
 }
@@ -551,6 +563,7 @@ impl PartialEq for CheckedClosure {
             && self.owner == other.owner
             && self.choices == other.choices
             && self.captures == other.captures
+            && self.value_results == other.value_results
     }
 }
 
@@ -993,10 +1006,11 @@ mod tests {
             .expect("second accepted generation")
             .into_evaluation_topology()
             .expect("foreign topology allocation");
-        let checked =
-            CheckedClosure::seal(Arc::clone(&topology), owner, |_| None).expect("sealed closure");
-        let foreign_checked = CheckedClosure::seal(Arc::clone(&foreign), owner, |_| None)
-            .expect("foreign sealed closure");
+        let checked = CheckedClosure::seal(Arc::clone(&topology), owner, Box::new([]), |_| None)
+            .expect("sealed closure");
+        let foreign_checked =
+            CheckedClosure::seal(Arc::clone(&foreign), owner, Box::new([]), |_| None)
+                .expect("foreign sealed closure");
 
         assert_eq!(checked, checked.clone());
         assert_ne!(checked, foreign_checked);

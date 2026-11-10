@@ -80,29 +80,21 @@ impl Analyzer<'_, '_, '_> {
     pub(super) fn invoke_producer(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
-        module: &HirModule,
         origin: ValueOrigin,
         (producer, invoked): (ExprId, InvokedValue),
         query: &mut CaptureEvaluation,
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<Option<BorrowDependencies>, FinalSemanticAnalysisError> {
         let call = query.work.invocation(invoked.id)?;
-        let source = module
-            .resolve_expr(producer)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        if let HirExprKind::Closure(closure) = source.kind() {
-            if let std::collections::btree_map::Entry::Vacant(entry) =
-                query.closure_results.entry(producer)
-            {
-                let values = self
-                    .checked_closure_value_sources(module, producer, closure.body())
-                    .map_err(|error| error.into_public(closure.body()))?;
-                receiver.charge(
-                    u64::try_from(values.len())
-                        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
-                )?;
-                entry.insert(Rc::from(values));
-            }
+        let Some(fact) = self
+            .facts
+            .expressions()
+            .get(&producer)
+            .and_then(PreparedExpressionFact::complete)
+        else {
+            return Ok(None);
+        };
+        if let CheckedExpressionResolution::Closure(closure) = fact.resolution() {
             let frame = query
                 .work
                 .intern_closure(producer, origin.frame, receiver)?;
@@ -114,20 +106,14 @@ impl Analyzer<'_, '_, '_> {
                         frame,
                         inputs: InvocationInputs::selected(call, Some(invoked.id)),
                     },
-                    &query.closure_results[&producer],
+                    closure.value_results(),
                     &mut query.work,
                     receiver,
                 )
                 .map(Some);
         }
-        if let Some(fact) = self
-            .facts
-            .expressions()
-            .get(&producer)
-            .and_then(PreparedExpressionFact::complete)
-            && let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
-                callable,
-            )) = fact.resolution()
+        if let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(callable)) =
+            fact.resolution()
             && callable.declaration().owner() == CallableDeclarationOwner::Function
         {
             let item = self
