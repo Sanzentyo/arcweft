@@ -3193,10 +3193,36 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
         selected: &RuntimeResolvedCall,
     ) -> Result<(RuntimeExprSeed, Box<[RuntimeCallArgumentSeed]>), String> {
-        let RuntimeResolvedCallDispatch::Value { callee } = selected.dispatch() else {
-            return Err(format!("call {id:?} has no checked value callee"));
+        let callee = match selected.dispatch() {
+            RuntimeResolvedCallDispatch::Value { callee } => self.lower(*callee)?,
+            RuntimeResolvedCallDispatch::Static(_) => {
+                let plan = selected
+                    .project_function()
+                    .ok_or_else(|| format!("call {id:?} has no checked value callee"))?;
+                let crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Partial {
+                    instance,
+                    ..
+                } = plan.outcome()
+                else {
+                    return Err(format!("call {id:?} has no checked partial application"));
+                };
+                let state = self
+                    .project_callable_states
+                    .and_then(|states| states.get(instance))
+                    .and_then(|states| states.first())
+                    .cloned()
+                    .ok_or_else(|| {
+                        format!("partial call {id:?} has no admitted declaration state")
+                    })?;
+                RuntimeExprSeed::new(
+                    plan.application_type().identity(),
+                    RuntimeExprSeedKind::MakeCallable {
+                        state,
+                        captures: Box::new([]),
+                    },
+                )
+            }
         };
-        let callee = self.lower(*callee)?;
         let values = self.lower_call_operands(id, selected)?;
         let arguments = self.lower_function_arguments(id, selected, &values)?;
         Ok((callee, arguments.into_boxed_slice()))

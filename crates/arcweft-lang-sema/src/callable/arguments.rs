@@ -710,7 +710,12 @@ pub(crate) fn map_call_arguments(
 
     let first_unbound = if required_fixed_parameter_is_missing(parameters, &provided) {
         let first = provided.iter().position(|supplied| !supplied)?;
-        if provided[first..].iter().any(|supplied| *supplied) || implicit.is_some() {
+        if provided[first..].iter().any(|supplied| *supplied)
+            || implicit.is_some()
+            || mapped_arguments
+                .iter()
+                .any(|argument| argument.passing == MappedCallArgumentPassing::Named)
+        {
             return None;
         }
         let first = CallableParameterIndex::try_from_usize(first).ok()?;

@@ -5109,6 +5109,10 @@ impl Analyzer<'_, '_, '_> {
                 branch: constraints::AnalyzerCallSealedBranch::Empty,
             });
         }
+        if inputs.mapping().first_unbound().is_some() {
+            self.prepare_callable_body_effects(site.into(), &candidate)
+                .map_err(AnalyzerExpressionError::fatal)?;
+        }
         let mut rank = AcceptedCandidateRank {
             exact_matches: 0,
             declared_exact_matches: 0,

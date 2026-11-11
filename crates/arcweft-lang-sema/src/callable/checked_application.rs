@@ -2518,8 +2518,10 @@ impl CheckedCallApplicationCore {
         }
         validate_callee(&input.callee, selected)?;
         if let Some(first_unbound) = transition.first_unbound()
-            && (!matches!(input.callee, CheckedCallCalleeExecution::Value { .. })
-                || !input.execution.semantic_operands.is_empty()
+            && (matches!(
+                input.callee,
+                CheckedCallCalleeExecution::SemanticValue { .. }
+            ) || !input.execution.semantic_operands.is_empty()
                 || input.execution.attached_content.is_some()
                 || !input
                     .execution
@@ -2640,6 +2642,9 @@ impl CheckedCallApplicationCore {
     /// A retained application constructs a function value without entering its body.
     pub fn retains_inputs(&self) -> bool {
         self.solution.transition.retains_inputs()
+    }
+    pub(crate) fn positional_partial_end(&self) -> Option<CallableParameterIndex> {
+        self.solution.transition.first_unbound()
     }
     pub const fn candidates(&self) -> &CheckedCandidateInventory {
         &self.candidates

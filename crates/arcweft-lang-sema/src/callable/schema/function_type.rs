@@ -140,18 +140,41 @@ impl CallableSignatureSchema {
         first_unbound: CallableParameterIndex,
     ) -> Option<CallableGroupTransition> {
         let parameters = self.group(current.group())?.parameters();
+        use crate::callable::CallableCandidateId;
+        let declared_function = matches!(candidate, CallableCandidateId::Project(declaration)
+            if declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function);
         (matches!(
             candidate,
-            crate::callable::CallableCandidateId::Local(_)
-                | crate::callable::CallableCandidateId::FunctionValue(_)
-        ) && self.groups().len() == 1
+            CallableCandidateId::Local(_) | CallableCandidateId::FunctionValue(_)
+        ) || declared_function)
+            .then_some(())?;
+        let inventory = self.generic_inventory();
+        let candidate_parameter = |role| role == super::CallableSchemaGenericRole::Candidate;
+        let declaration_has_generics = declared_function
+            && (inventory
+                .types()
+                .iter()
+                .any(|row| candidate_parameter(row.role()))
+                || inventory
+                    .consts()
+                    .iter()
+                    .any(|row| candidate_parameter(row.role()))
+                || inventory
+                    .effects()
+                    .iter()
+                    .any(|row| candidate_parameter(row.role())));
+        (self.groups().len() == 1
             && self.attached_content_for_group(current.group()).is_none()
-            && self.generic_inventory().template_binder().is_empty()
+            && inventory.template_binder().is_empty()
+            && !declaration_has_generics
             && first_unbound > current.parameter()
             && first_unbound.get() < parameters.len()
             && parameters.iter().all(|parameter| {
-                parameter.passing() == CallableParameterPassing::PositionalOnly
+                (parameter.passing() == CallableParameterPassing::PositionalOnly
+                    || (declared_function
+                        && parameter.passing() == CallableParameterPassing::PositionalOrNamed))
                     && parameter.presence() == CallableParameterPresence::Required
+                    && parameter.consumer() == &super::CallableParameterConsumer::Value
             }))
         .then_some(CallableGroupTransition {
             current,

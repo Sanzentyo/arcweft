@@ -4198,7 +4198,8 @@ impl RuntimeResolvedCall {
             !matches!(
                 (plan.outcome(), result),
                 (
-                    RuntimeProjectFunctionCallOutcome::Continue { .. },
+                    RuntimeProjectFunctionCallOutcome::Continue { .. }
+                        | RuntimeProjectFunctionCallOutcome::Partial { .. },
                     RuntimeCallResultShape::PartialFunction
                 ) | (
                     RuntimeProjectFunctionCallOutcome::Invoke { .. },
@@ -15564,15 +15565,17 @@ fn validate_project_function_call_materialization(
         .parameter_groups()
         .get(call.completed_group().get())
         .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
-    if group.parameters().len() != plan.current_group_materialization().len() {
-        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    let materialized = plan.current_group_materialization();
+    let parameters = if matches!(
+        plan.outcome(),
+        RuntimeProjectFunctionCallOutcome::Partial { .. }
+    ) {
+        group.parameters().get(..materialized.len())
+    } else {
+        (group.parameters().len() == materialized.len()).then_some(group.parameters())
     }
-    for (parameter_index, (hir, runtime)) in group
-        .parameters()
-        .iter()
-        .zip(plan.current_group_materialization())
-        .enumerate()
-    {
+    .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    for (parameter_index, (hir, runtime)) in parameters.iter().zip(materialized).enumerate() {
         if runtime.group() != call.completed_group()
             || u32::try_from(parameter_index).ok() != Some(runtime.parameter())
             || runtime.kind() != hir.kind()
@@ -15673,11 +15676,17 @@ fn validate_project_function_instance_reference(
                 .then_some(parameter.binding_ty())
         })
         .collect::<Vec<_>>();
-    let instance_current_group_parameters = fact
+    let mut instance_current_group_parameters = fact
         .parameters()
         .iter()
         .filter_map(|parameter| (parameter.group() == call.completed_group()).then_some(parameter))
         .collect::<Vec<_>>();
+    if matches!(
+        plan.outcome(),
+        RuntimeProjectFunctionCallOutcome::Partial { .. }
+    ) {
+        instance_current_group_parameters.truncate(plan.current_group_materialization().len());
+    }
     if input_prefix_types.len() != instance_prefix_types.len()
         || input_prefix_types
             .iter()
@@ -15701,7 +15710,11 @@ fn validate_project_function_instance_reference(
     let RuntimeTypeShape::Function { result, .. } = function_type.shape() else {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     };
-    if expression_type != Some(result.as_ref()) {
+    let result = match plan.outcome() {
+        RuntimeProjectFunctionCallOutcome::Partial { result, .. } => result,
+        _ => result.as_ref(),
+    };
+    if expression_type != Some(result) {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
     Ok(Some(instance.clone()))

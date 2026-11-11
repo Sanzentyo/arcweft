@@ -1579,6 +1579,20 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    declared_partial_retains_a_fixed_positional_prefix,
+    r#"
+fn add(a: i64, b: i64, c: i64) -> i64 { a + b + c }
+fn bind(a: i64) -> ((i64, i64) -> i64 effects {}) { add([a]...) }
+flow main() -> i64 {
+    let tail = bind(39i64)
+    return tail(1i64)(2i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     closure_partial_retains_a_fixed_spread_and_copyable_capture,
     r#"
 flow main() -> i64 {

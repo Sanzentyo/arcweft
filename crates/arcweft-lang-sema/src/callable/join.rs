@@ -195,6 +195,10 @@ pub enum CheckedProjectFunctionRuntimeOutcome {
         abi: CheckedProjectContinuationRuntimeAbi,
         next_group: CallableGroupIndex,
     },
+    /// Retains a positional prefix of a closed declaration's arrow.
+    Partial {
+        result: TypeKind,
+    },
     Invoke {
         result: TypeKind,
     },
@@ -440,8 +444,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         self.instantiation
     }
 
-    /// Closes this terminal selection's caller-owned binding values once,
-    /// producing the flat environment used by the selected declaration body.
+    /// Closes the environment of the selected declaration body.
     pub fn close_instance(
         &self,
         enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
@@ -456,7 +459,7 @@ impl CheckedProjectFunctionRuntimeSelection {
             })
     }
 
-    /// Closes the same invocation under a consumer-owned type projection budget.
+    /// Closes the same body under a consumer-owned type projection budget.
     pub fn close_instance_with_control<C: crate::types::TypeProjectionControl>(
         &self,
         enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
@@ -471,6 +474,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         if !matches!(
             self.outcome,
             CheckedProjectFunctionRuntimeOutcome::Invoke { .. }
+                | CheckedProjectFunctionRuntimeOutcome::Partial { .. }
         ) {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
         }
@@ -822,8 +826,14 @@ pub(crate) fn select_project_function_runtime(
             if !solution.is_fully_instantiated() {
                 return Err(CheckedProjectFunctionRuntimeSelectionError::OpenTerminalInstantiation);
             }
-            CheckedProjectFunctionRuntimeOutcome::Invoke {
-                result: result.clone(),
+            if application.core().positional_partial_end().is_some() {
+                CheckedProjectFunctionRuntimeOutcome::Partial {
+                    result: result.clone(),
+                }
+            } else {
+                CheckedProjectFunctionRuntimeOutcome::Invoke {
+                    result: result.clone(),
+                }
             }
         }
         CheckedCallResult::ContentEmission(_)
@@ -840,17 +850,25 @@ pub(crate) fn select_project_function_runtime(
     )?;
     let result_type = match &outcome {
         CheckedProjectFunctionRuntimeOutcome::Continue { abi, .. } => abi.function_type(),
-        CheckedProjectFunctionRuntimeOutcome::Invoke { result } => result,
+        CheckedProjectFunctionRuntimeOutcome::Invoke { result }
+        | CheckedProjectFunctionRuntimeOutcome::Partial { result } => result,
     };
     // The incoming continuation owns its residual binder. The checked
     // application already specializes the invocation row for this group.
-    let application_type = TypeKind::function_with_effects(
-        current_group_materialization
-            .iter()
-            .map(|parameter| parameter.abi_type().clone()),
-        result_type.clone(),
-        join.effects().clone(),
-    );
+    let application_type = if matches!(
+        outcome,
+        CheckedProjectFunctionRuntimeOutcome::Partial { .. }
+    ) {
+        callable_type.clone()
+    } else {
+        TypeKind::function_with_effects(
+            current_group_materialization
+                .iter()
+                .map(|parameter| parameter.abi_type().clone()),
+            result_type.clone(),
+            join.effects().clone(),
+        )
+    };
     Ok(Some(CheckedProjectFunctionRuntimeSelection {
         authority: catalog.authority_lease(),
         caller,
@@ -951,8 +969,16 @@ fn checked_project_function_parameter_materialization(
         }
         physical.entry(coordinate).or_default().push(source_index);
     }
-    let mut rows = Vec::with_capacity(schema_group.parameters().len());
-    for parameter in schema_group.parameters() {
+    let end = application.core().positional_partial_end().map_or(
+        schema_group.parameters().len(),
+        super::CallableParameterIndex::get,
+    );
+    let parameters = schema_group
+        .parameters()
+        .get(..end)
+        .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+    let mut rows = Vec::with_capacity(parameters.len());
+    for parameter in parameters {
         if parameter.consumer() != &CallableParameterConsumer::Value {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
         }

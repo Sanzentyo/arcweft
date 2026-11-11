@@ -121,7 +121,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn prepare_callable_body_effects(
+    pub(super) fn prepare_callable_body_effects(
         &mut self,
         site: PreparedCallableEffectProjectionSite,
         candidate: &PreparedResolvedCallable,

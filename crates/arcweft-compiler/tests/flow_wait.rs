@@ -681,6 +681,27 @@ flow main() -> i64 {
     );
 }
 
+#[test]
+fn declared_positional_partial_resumes_with_its_prefix() {
+    let body = r#"
+fn add(a: i64, b: i64) -> i64 {
+    log.info("body")
+    a + b
+}
+flow main() -> i64 {
+    let tail = add([{ log.info("prefix"); 40i64 }]...)
+    wait(0.1s)
+    let first = tail({ log.info("first"); 1i64 })
+    return tail({ log.info("second"); 1i64 }) + first - 40i64
+}
+"#;
+    assert_shared_prefix_wait_in_both_executors(
+        native(body),
+        product(body, true),
+        &["first", "body", "second", "body"],
+    );
+}
+
 fn assert_shared_prefix_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,

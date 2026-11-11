@@ -7510,7 +7510,8 @@ fn runtime_project_function_projection(
                 target,
             }
         }
-        CheckedProjectFunctionRuntimeOutcome::Invoke { .. } => {
+        CheckedProjectFunctionRuntimeOutcome::Invoke { .. }
+        | CheckedProjectFunctionRuntimeOutcome::Partial { .. } => {
             let instance_solution = project_function_instances.close_instance(
                 ProjectInstantiationOrigin::Call(owner),
                 selection,
@@ -7528,7 +7529,14 @@ fn runtime_project_function_projection(
                 instance_solution,
                 project_function_instances,
             )?;
-            RuntimeProjectFunctionCallOutcome::Invoke { instance: key }
+            if let CheckedProjectFunctionRuntimeOutcome::Partial { result } = selection.outcome() {
+                RuntimeProjectFunctionCallOutcome::Partial {
+                    instance: key,
+                    result: runtime_type_under(result, enclosing, symbols, world, analysis)?,
+                }
+            } else {
+                RuntimeProjectFunctionCallOutcome::Invoke { instance: key }
+            }
         }
     };
     let current_group_materialization = runtime_project_function_materialization(
@@ -7611,15 +7619,21 @@ fn runtime_project_function_materialization(
         .get(selection.group().get())
         .ok_or_else(|| error("project-function materialization group is absent"))?;
     let checked = selection.current_group_materialization();
-    if group.parameters().len() != checked.len() {
+    let parameters = if matches!(
+        selection.outcome(),
+        CheckedProjectFunctionRuntimeOutcome::Partial { .. }
+    ) {
+        group.parameters().get(..checked.len())
+    } else {
+        (group.parameters().len() == checked.len()).then_some(group.parameters())
+    };
+    let Some(parameters) = parameters else {
         return Err(error(
-            "project-function materialization row does not cover its HIR group",
+            "project-function materialization row disagrees with its HIR parameter range",
         ));
-    }
+    };
     let mut result = Vec::with_capacity(checked.len());
-    for (parameter_index, (parameter, checked)) in
-        group.parameters().iter().zip(checked).enumerate()
-    {
+    for (parameter_index, (parameter, checked)) in parameters.iter().zip(checked).enumerate() {
         let kind = parameter.kind();
         if checked.coordinate().group() != selection.group()
             || checked.coordinate().parameter().get() != parameter_index
@@ -7844,7 +7858,8 @@ fn discover_runtime_project_executable_dependencies(
                         solution,
                         instances,
                     )?;
-                    if let CheckedCallCalleeExecution::Value { source } = application.core().callee()
+                    if matches!(selection.outcome(), CheckedProjectFunctionRuntimeOutcome::Invoke { .. })
+                        && let CheckedCallCalleeExecution::Value { source } = application.core().callee()
                         && let arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(callee) = source.raw() {
                         instances.call_input_specialization(owner, callee, &selection, enclosing, symbols, world, analysis)?;
                     }

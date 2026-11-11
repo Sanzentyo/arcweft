@@ -294,6 +294,12 @@ pub enum RuntimeProjectFunctionCallOutcome {
         next_group: CallableGroupIndex,
         target: super::RuntimeProjectCallableValueTarget,
     },
+    /// The selected instance supplies the original arrow. A positional
+    /// application retains its operands and produces the remaining arrow.
+    Partial {
+        instance: RuntimeProjectFunctionInstanceKey,
+        result: RuntimeNormalizedType,
+    },
     /// The current group closes the call and invokes this exact compiler-
     /// produced function instance.
     Invoke {
@@ -305,33 +311,34 @@ impl RuntimeProjectFunctionCallOutcome {
     pub const fn callable_instance(&self) -> Option<&RuntimeProjectFunctionInstanceKey> {
         match self {
             Self::Continue { target, .. } => target.instance(),
-            Self::Invoke { instance } => Some(instance),
+            Self::Invoke { instance } | Self::Partial { instance, .. } => Some(instance),
         }
     }
     pub const fn lineage(&self) -> Option<RuntimeProjectContinuationLineageId> {
         match self {
             Self::Continue { abi, .. } => Some(abi.lineage()),
-            Self::Invoke { .. } => None,
+            Self::Invoke { .. } | Self::Partial { .. } => None,
         }
     }
 
     pub const fn next_group(&self) -> Option<CallableGroupIndex> {
         match self {
             Self::Continue { next_group, .. } => Some(*next_group),
-            Self::Invoke { .. } => None,
+            Self::Invoke { .. } | Self::Partial { .. } => None,
         }
     }
 
     pub const fn function_type(&self) -> Option<&RuntimeNormalizedType> {
         match self {
             Self::Continue { abi, .. } => Some(abi.function_type()),
+            Self::Partial { result, .. } => Some(result),
             Self::Invoke { .. } => None,
         }
     }
 
     pub const fn instance(&self) -> Option<&RuntimeProjectFunctionInstanceKey> {
         match self {
-            Self::Continue { .. } => None,
+            Self::Continue { .. } | Self::Partial { .. } => None,
             Self::Invoke { instance } => Some(instance),
         }
     }
@@ -339,7 +346,7 @@ impl RuntimeProjectFunctionCallOutcome {
     pub const fn continuation_abi(&self) -> Option<&RuntimeProjectContinuationAbi> {
         match self {
             Self::Continue { abi, .. } => Some(abi),
-            Self::Invoke { .. } => None,
+            Self::Invoke { .. } | Self::Partial { .. } => None,
         }
     }
 }
@@ -467,6 +474,38 @@ impl RuntimeProjectFunctionCallPlan {
                     || instance.group() != completed_group =>
             {
                 return Err(RuntimeProjectFunctionFactError::InstanceKeyMismatch);
+            }
+            RuntimeProjectFunctionCallOutcome::Partial { instance, result } => {
+                let RuntimeTypeShape::Function {
+                    contract,
+                    parameters,
+                    result: body_result,
+                } = application_type.shape()
+                else {
+                    return Err(RuntimeProjectFunctionFactError::InvalidFunctionType);
+                };
+                let retained = current_group_materialization.len();
+                if instance.callable() != callable.runtime()
+                    || instance.group() != completed_group
+                    || completed_group.get() != 0
+                    || callable.attached_content_abi().is_some()
+                    || input_specialization.is_some()
+                    || !contract.binder().is_empty()
+                    || retained == 0
+                    || retained >= parameters.len()
+                    || current_group_materialization
+                        .iter()
+                        .any(|row| row.kind() != HirParameterKind::Fixed)
+                    || !matches!(result.shape(), RuntimeTypeShape::Function {
+                        contract: remaining_contract,
+                        parameters: remaining,
+                        result: remaining_result,
+                    } if remaining_contract == contract
+                        && remaining.as_ref() == &parameters[retained..]
+                        && remaining_result == body_result)
+                {
+                    return Err(RuntimeProjectFunctionFactError::InvalidContinuationAbi);
+                }
             }
             RuntimeProjectFunctionCallOutcome::Continue { .. }
             | RuntimeProjectFunctionCallOutcome::Invoke { .. } => {}
