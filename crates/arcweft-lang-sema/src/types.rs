@@ -39,8 +39,8 @@ pub(crate) use constraints::NoConstraintClient;
 pub use constraints::TypeInstantiationError;
 pub use constraints::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub use digest::SemanticTypeDigest;
-pub(crate) use effect_domain::PreparedEffects;
 pub use effect_domain::{CanonicalEffects, TypeEffectDomain};
+pub(crate) use effect_domain::{PreparedEffects, PreparedTypeEffectProjectionFailure};
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;
 pub(crate) use generic_use::{

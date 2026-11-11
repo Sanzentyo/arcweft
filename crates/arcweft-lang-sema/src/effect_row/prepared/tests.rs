@@ -849,3 +849,40 @@ fn failed_substitution_removes_all_partial_rows_and_predicates() {
         .substitute_predicate(&predicate, &arguments, &mut Budget(cost))
         .unwrap();
 }
+
+#[test]
+fn failed_term_edit_cannot_commit_or_reuse_its_successful_prefix() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let a = parameter(&scope, 0);
+    let source = open(&a);
+    let before = graph.retained_terms();
+    let mut edit = graph.edit_terms();
+    let output = edit
+        .map_row_parameters(&source, &mut control, &mut |_, _| {
+            Ok(Some(literal(&["fs.read"])))
+        })
+        .unwrap();
+    assert!(matches!(
+        edit.map_row_parameters(&source, &mut Budget(0), &mut |_, _| Ok(None)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    assert!(matches!(
+        edit.map_row_parameters(&source, &mut control, &mut |_, _| Ok(None)),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::TermEditState
+        ))
+    ));
+    assert_eq!(
+        edit.commit().unwrap_err(),
+        PreparedEffectInvariant::TermEditState
+    );
+    assert_eq!(graph.retained_terms(), before);
+    assert!(matches!(
+        graph.union(vec![output], &mut control),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::StaleReference
+        ))
+    ));
+}

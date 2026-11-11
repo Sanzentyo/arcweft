@@ -18,6 +18,7 @@ use crate::types::GenericEffectReference;
 mod closure;
 pub(crate) use closure::ClosedEffectComponent;
 mod substitution;
+pub(crate) use substitution::PreparedEffectTermEdit;
 #[cfg(test)]
 mod tests;
 
@@ -96,6 +97,8 @@ pub(crate) enum PreparedEffectInvariant {
     CheckpointOrder,
     #[error("a solved effect cell retained an unbound Boolean reference")]
     UnclosedCell,
+    #[error("a failed effect-term edit cannot be resumed or committed")]
+    TermEditState,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -243,6 +246,11 @@ impl Default for PreparedEffectGraph {
 }
 
 impl PreparedEffectGraph {
+    #[cfg(test)]
+    pub(crate) fn retained_terms(&self) -> (usize, usize) {
+        (self.rows.len(), self.predicates.len())
+    }
+
     fn reference(&self, ordinal: u64) -> PreparedEffectReference {
         PreparedEffectReference {
             issuer: Arc::clone(&self.issuer),

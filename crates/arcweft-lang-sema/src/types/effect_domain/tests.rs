@@ -4,7 +4,8 @@ use crate::{
     effects::EffectSet,
     types::{
         AcceptedNominalType, ArrayLength, EntityKind, EntityType, FixedVectorType, GenericBinder,
-        TypePoisonId, VariantPayloadOwnerFamily, VariantPayloadType, VariantPayloadTypeShape,
+        GenericEffectReference, TypePoisonId, VariantPayloadOwnerFamily, VariantPayloadType,
+        VariantPayloadTypeShape,
     },
 };
 use std::convert::Infallible;
@@ -369,4 +370,305 @@ fn preparation_domain_charges_effect_graph_copying_before_publication() {
         Err(TypeProjectionError::Control(Stopped))
     ));
     assert_eq!(source.semantic_identity_digest().unwrap(), digest);
+}
+
+#[test]
+fn prepared_parameter_projection_keeps_inner_binders_and_projects_pending_predicates() {
+    use crate::effect_row::prepared::{
+        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,
+    };
+
+    let incoming = GenericScope::default().with_binder(GenericBinder::new(0, 0, 2));
+    let inner_binder = GenericBinder::new(0, 0, 1);
+    let occurrence = incoming.with_binder(inner_binder);
+    let a = incoming.bound_effect(0, 0).unwrap();
+    let b = incoming.bound_effect(0, 1).unwrap();
+    let outer_a = occurrence.bound_effect(1, 0).unwrap();
+    let outer_b = occurrence.bound_effect(1, 1).unwrap();
+    let inner = occurrence.bound_effect(0, 0).unwrap();
+    let row = |reference: &GenericEffectReference| {
+        PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), reference.clone()))
+    };
+    let mut graph = PreparedEffectGraph::default();
+    let f = graph
+        .declare(
+            vec![a.clone(), b.clone()],
+            EffectPredicate::unconstrained(),
+            &mut Decisions,
+        )
+        .unwrap();
+    let body = graph.union(vec![row(&a), row(&b)], &mut Decisions).unwrap();
+    graph
+        .prepare_body(&f, body, vec![], &mut Decisions)
+        .unwrap();
+    let source_row = graph
+        .application(&f, vec![row(&outer_a), row(&inner)], &mut Decisions)
+        .unwrap();
+    let permitted = graph
+        .union(
+            vec![
+                PreparedEffectRow::Canonical(EffectRow::closed(
+                    EffectSet::from_labels(["fs.read"]).unwrap(),
+                )),
+                row(&inner),
+            ],
+            &mut Decisions,
+        )
+        .unwrap();
+    let source_predicate = graph
+        .relate(
+            PreparedEffectRelation::AdmittedSubset,
+            source_row.clone(),
+            permitted,
+            &mut Decisions,
+        )
+        .unwrap();
+    let source = TypeKind::<PreparedEffects>::Function {
+        binder: inner_binder,
+        predicate: source_predicate,
+        params: vec![TypeKind::I64],
+        return_type: Box::new(TypeKind::I64),
+        effects: source_row.clone(),
+    };
+    let before = source.clone();
+    let mut occurrences = Vec::new();
+    let projected = source
+        .project_effect_parameters(
+            &incoming,
+            &mut graph,
+            &mut Projection::new(),
+            &mut |reference, scope, control| {
+                occurrences.push((reference.clone(), scope.binders().len()));
+                let Some(GenericEffectReference::Bound(parameter)) =
+                    reference.template_key(&incoming, scope)?
+                else {
+                    return Ok(None);
+                };
+                control
+                    .visit_node(TypeProjectionNodeKind::Effect, 1)
+                    .map_err(TypeProjectionError::Control)?;
+                Ok(Some(row(&scope.bound_effect(1, 1 - parameter.slot())?)))
+            },
+        )
+        .unwrap();
+    assert_eq!(source, before);
+    assert!(occurrences.iter().all(|(_, depth)| *depth == 2));
+    assert!(occurrences.iter().any(|(reference, _)| reference == &inner));
+    let TypeKind::Function {
+        binder,
+        predicate,
+        effects,
+        ..
+    } = projected
+    else {
+        panic!("expected prepared arrow")
+    };
+    assert_eq!(binder, inner_binder);
+    let expected_row = EffectFormula::variable(outer_b.clone(), &mut Decisions)
+        .unwrap()
+        .union(
+            &EffectFormula::variable(inner.clone(), &mut Decisions).unwrap(),
+            &mut Decisions,
+        )
+        .unwrap();
+    let expected_permitted = EffectFormula::from_set(
+        &EffectSet::from_labels(["fs.read"]).unwrap(),
+        &mut Decisions,
+    )
+    .unwrap()
+    .union(
+        &EffectFormula::variable(inner.clone(), &mut Decisions).unwrap(),
+        &mut Decisions,
+    )
+    .unwrap();
+    let expected_predicate = PreparedEffectPredicate::Canonical(
+        expected_row
+            .subset(&expected_permitted, &mut Decisions)
+            .unwrap(),
+    );
+    let yes = graph
+        .and(
+            vec![predicate.clone(), expected_predicate.clone()],
+            &mut Decisions,
+        )
+        .unwrap();
+    let not_actual = graph.not(predicate, &mut Decisions).unwrap();
+    let not_expected = graph.not(expected_predicate, &mut Decisions).unwrap();
+    let no = graph
+        .and(vec![not_actual, not_expected], &mut Decisions)
+        .unwrap();
+    let equal = graph.or(vec![yes, no], &mut Decisions).unwrap();
+    let proof = graph
+        .declare(
+            vec![outer_a, outer_b, inner],
+            EffectPredicate::unconstrained(),
+            &mut Decisions,
+        )
+        .unwrap();
+    graph
+        .prepare_body(
+            &proof,
+            PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
+            vec![equal],
+            &mut Decisions,
+        )
+        .unwrap();
+    let closed = graph.close(&mut Decisions).unwrap();
+    assert_eq!(
+        closed
+            .resolve_row(&effects, &mut Decisions)
+            .unwrap()
+            .formula()
+            .unwrap(),
+        &expected_row
+    );
+    let original = EffectFormula::variable(a, &mut Decisions)
+        .unwrap()
+        .union(
+            &EffectFormula::variable(b, &mut Decisions).unwrap(),
+            &mut Decisions,
+        )
+        .unwrap();
+    assert_eq!(closed.scheme(&f).unwrap().formula().unwrap(), &original);
+}
+
+#[test]
+fn prepared_type_projection_rolls_back_earlier_rows_and_keeps_scope_errors_typed() {
+    use crate::effect_row::prepared::{
+        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    };
+
+    let incoming = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let a = incoming.bound_effect(0, 0).unwrap();
+    let mut graph = PreparedEffectGraph::default();
+    let f = graph
+        .declare(
+            vec![a.clone()],
+            EffectPredicate::unconstrained(),
+            &mut Decisions,
+        )
+        .unwrap();
+    graph
+        .prepare_body(
+            &f,
+            PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), a.clone())),
+            vec![],
+            &mut Decisions,
+        )
+        .unwrap();
+    let source_row = graph
+        .application(
+            &f,
+            vec![PreparedEffectRow::Canonical(EffectRow::open(
+                EffectSet::new(),
+                a.clone(),
+            ))],
+            &mut Decisions,
+        )
+        .unwrap();
+    let arrow = TypeKind::<PreparedEffects>::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![],
+        return_type: Box::new(TypeKind::I64),
+        effects: source_row.clone(),
+    };
+    let source = TypeKind::Tuple(vec![arrow.clone(), arrow]);
+    let before = graph.retained_terms();
+    let mut calls = 0;
+    let failed = source.project_effect_parameters(
+        &incoming,
+        &mut graph,
+        &mut Projection::new(),
+        &mut |reference, scope, control| {
+            reference.template_key(&incoming, scope)?;
+            calls += 1;
+            if calls == 2 {
+                return Err(crate::types::GenericScopeError::UnknownDepth { depth: 9 }.into());
+            }
+            control
+                .visit_node(TypeProjectionNodeKind::Effect, 1)
+                .map_err(TypeProjectionError::Control)?;
+            Ok(Some(PreparedEffectRow::Canonical(EffectRow::closed(
+                EffectSet::from_labels(["fs.read"]).unwrap(),
+            ))))
+        },
+    );
+    assert!(matches!(
+        failed,
+        Err(TypeProjectionError::Instantiation(
+            TypeInstantiationError::Scope(crate::types::GenericScopeError::UnknownDepth {
+                depth: 9
+            })
+        ))
+    ));
+    assert_eq!(calls, 2);
+    assert_eq!(graph.retained_terms(), before);
+    assert_eq!(
+        graph
+            .close(&mut Decisions)
+            .unwrap()
+            .resolve_row(&source_row, &mut Decisions)
+            .unwrap(),
+        EffectRow::open(EffectSet::new(), a)
+    );
+}
+
+#[test]
+fn prepared_type_projection_preserves_unknown_rows_and_the_control_failure() {
+    use crate::effect_row::prepared::{
+        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    };
+
+    let source = TypeKind::<PreparedEffects>::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![],
+        return_type: Box::new(TypeKind::I64),
+        effects: PreparedEffectRow::Canonical(EffectRow::unknown()),
+    };
+    let mut graph = PreparedEffectGraph::default();
+    let mut calls = 0;
+    let mut projection = Projection::new();
+    let before = projection.remaining;
+    let projected = source
+        .project_effect_parameters(
+            &GenericScope::default(),
+            &mut graph,
+            &mut projection,
+            &mut |_, _, _| {
+                calls += 1;
+                Ok(None)
+            },
+        )
+        .unwrap();
+    assert_eq!(projected, source);
+    assert_eq!(calls, 0);
+    let consumed = before - projection.remaining;
+    let mut short = Projection::new();
+    short.remaining = consumed - 1;
+    assert!(matches!(
+        source.project_effect_parameters(
+            &GenericScope::default(),
+            &mut graph,
+            &mut short,
+            &mut |_, _, _| Ok(None)
+        ),
+        Err(TypeProjectionError::Control(
+            PreparedTypeEffectProjectionFailure::Control(Stopped)
+        ))
+    ));
+    let mut cancelled = Projection::new();
+    cancelled.cancelled = true;
+    assert!(matches!(
+        source.project_effect_parameters(
+            &GenericScope::default(),
+            &mut graph,
+            &mut cancelled,
+            &mut |_, _, _| Ok(None)
+        ),
+        Err(TypeProjectionError::Control(
+            PreparedTypeEffectProjectionFailure::Control(Stopped)
+        ))
+    ));
 }

@@ -6,15 +6,38 @@
 use super::*;
 use crate::effect_row::EffectEqualityControl;
 
-struct Substitution<'a, C> {
+struct Substitution<'a, C, P> {
     graph: &'a mut PreparedEffectGraph,
-    arguments: &'a BTreeMap<GenericEffectReference, PreparedEffectRow>,
+    project: &'a mut P,
     control: &'a mut C,
+    parameters: BTreeMap<GenericEffectReference, Option<PreparedEffectRow>>,
     rows: BTreeMap<u64, PreparedEffectRow>,
     predicates: BTreeMap<u64, PreparedEffectPredicate>,
 }
 
-impl<C: DecisionControl> Substitution<'_, C> {
+fn copy_annotation<C: DecisionControl>(
+    row: &PreparedEffectRow,
+    control: &mut C,
+) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+    match row {
+        PreparedEffectRow::Canonical(row) => row
+            .encode(&mut EffectEqualityControl(control))
+            .map_err(PreparedEffectFailure::Control)?,
+        PreparedEffectRow::Term(_) => control
+            .charge(DecisionWork::Visit)
+            .map_err(PreparedEffectFailure::Control)?,
+    }
+    Ok(row.clone())
+}
+
+impl<C, P> Substitution<'_, C, P>
+where
+    C: DecisionControl,
+    P: FnMut(
+        &GenericEffectReference,
+        &mut C,
+    ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
+{
     fn charge(&mut self, work: DecisionWork) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.control
             .charge(work)
@@ -25,16 +48,10 @@ impl<C: DecisionControl> Substitution<'_, C> {
         &mut self,
         row: &PreparedEffectRow,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
-        match row {
-            PreparedEffectRow::Canonical(row) => row
-                .encode(&mut EffectEqualityControl(self.control))
-                .map_err(PreparedEffectFailure::Control)?,
-            PreparedEffectRow::Term(reference) => {
-                self.graph.row(reference)?;
-                self.charge(DecisionWork::Visit)?;
-            }
+        if let PreparedEffectRow::Term(reference) = row {
+            self.graph.row(reference)?;
         }
-        Ok(row.clone())
+        copy_annotation(row, self.control)
     }
 
     fn bindings<'a>(
@@ -45,10 +62,19 @@ impl<C: DecisionControl> Substitution<'_, C> {
     {
         for variable in variables {
             self.charge(DecisionWork::Visit)?;
-            if !mapped.contains_key(variable)
-                && let Some(replacement) = self.arguments.get(variable)
-            {
-                let replacement = self.copy_row(replacement)?;
+            if mapped.contains_key(variable) {
+                continue;
+            }
+            if !self.parameters.contains_key(variable) {
+                self.charge(DecisionWork::Node)?;
+                let replacement = (self.project)(variable, self.control)?;
+                if let Some(row) = &replacement {
+                    self.graph.validate_row(row)?;
+                }
+                self.parameters.insert(variable.clone(), replacement);
+            }
+            if let Some(Some(replacement)) = self.parameters.get(variable) {
+                let replacement = copy_annotation(replacement, self.control)?;
                 self.charge(DecisionWork::Node)?;
                 mapped.insert(variable.clone(), replacement);
             }
@@ -63,7 +89,9 @@ impl<C: DecisionControl> Substitution<'_, C> {
         match row {
             PreparedEffectRow::Canonical(row) => {
                 let Some(formula) = row.formula() else {
-                    return self.copy_row(&PreparedEffectRow::Canonical(row.clone()));
+                    row.encode(&mut EffectEqualityControl(self.control))
+                        .map_err(PreparedEffectFailure::Control)?;
+                    return Ok(PreparedEffectRow::Canonical(row.clone()));
                 };
                 let arguments = self.bindings(formula.variables(), BTreeMap::new())?;
                 formula
@@ -294,28 +322,145 @@ impl<C: DecisionControl> Substitution<'_, C> {
     }
 }
 
+/// An affine edit of terms only. Scheme/body state cannot change through this
+/// borrow. Dropping an uncommitted edit removes every term it issued, including
+/// earlier rows of a later-failed whole-type projection.
+pub(crate) struct PreparedEffectTermEdit<'a> {
+    graph: &'a mut PreparedEffectGraph,
+    row_limit: u64,
+    predicate_limit: u64,
+    state: TermEditState,
+}
+
+enum TermEditState {
+    Open,
+    Failed,
+    Committed,
+}
+
+impl Drop for PreparedEffectTermEdit<'_> {
+    fn drop(&mut self) {
+        if !matches!(self.state, TermEditState::Committed) {
+            while self
+                .graph
+                .rows
+                .last_key_value()
+                .is_some_and(|(id, _)| *id >= self.row_limit)
+            {
+                self.graph.rows.pop_last();
+            }
+            while self
+                .graph
+                .predicates
+                .last_key_value()
+                .is_some_and(|(id, _)| *id >= self.predicate_limit)
+            {
+                self.graph.predicates.pop_last();
+            }
+        }
+    }
+}
+
+impl PreparedEffectTermEdit<'_> {
+    pub(crate) fn commit(mut self) -> Result<(), PreparedEffectInvariant> {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState);
+        }
+        self.state = TermEditState::Committed;
+        Ok(())
+    }
+
+    /// The projection owns admission of any new replacement value. This edit
+    /// admits the parameter request first, then validates and memoizes it.
+    pub(crate) fn map_row_parameters<C, P>(
+        &mut self,
+        row: &PreparedEffectRow,
+        control: &mut C,
+        project: &mut P,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut C,
+        ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
+    {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = Substitution {
+            graph: self.graph,
+            project,
+            control,
+            parameters: BTreeMap::new(),
+            rows: BTreeMap::new(),
+            predicates: BTreeMap::new(),
+        }
+        .row(row);
+        if result.is_err() {
+            self.state = TermEditState::Failed;
+        }
+        result
+    }
+
+    pub(crate) fn map_predicate_parameters<C, P>(
+        &mut self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+        project: &mut P,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut C,
+        ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
+    {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = Substitution {
+            graph: self.graph,
+            project,
+            control,
+            parameters: BTreeMap::new(),
+            rows: BTreeMap::new(),
+            predicates: BTreeMap::new(),
+        }
+        .predicate(predicate);
+        if result.is_err() {
+            self.state = TermEditState::Failed;
+        }
+        result
+    }
+}
+
 impl PreparedEffectGraph {
+    pub(crate) fn edit_terms(&mut self) -> PreparedEffectTermEdit<'_> {
+        PreparedEffectTermEdit {
+            row_limit: self.next_row,
+            predicate_limit: self.next_predicate,
+            graph: self,
+            state: TermEditState::Open,
+        }
+    }
+
     /// Bounded simultaneous substitution, including unfinished applications.
-    /// On failure, newly built terms are removed without reusing their IDs.
     pub(crate) fn substitute<C: DecisionControl>(
         &mut self,
         row: &PreparedEffectRow,
         arguments: &BTreeMap<GenericEffectReference, PreparedEffectRow>,
         control: &mut C,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
-        let row_limit = self.next_row;
-        let result = Substitution {
-            graph: self,
-            arguments,
-            control,
-            rows: BTreeMap::new(),
-            predicates: BTreeMap::new(),
-        }
-        .row(row);
-        if result.is_err() {
-            self.rows.retain(|id, _| *id < row_limit);
-        }
-        result
+        let mut edit = self.edit_terms();
+        let result = edit.map_row_parameters(row, control, &mut |parameter, control| {
+            arguments
+                .get(parameter)
+                .map(|row| copy_annotation(row, control))
+                .transpose()
+        })?;
+        edit.commit()?;
+        Ok(result)
     }
 
     pub(crate) fn substitute_predicate<C: DecisionControl>(
@@ -324,20 +469,15 @@ impl PreparedEffectGraph {
         arguments: &BTreeMap<GenericEffectReference, PreparedEffectRow>,
         control: &mut C,
     ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
-        let row_limit = self.next_row;
-        let predicate_limit = self.next_predicate;
-        let result = Substitution {
-            graph: self,
-            arguments,
-            control,
-            rows: BTreeMap::new(),
-            predicates: BTreeMap::new(),
-        }
-        .predicate(predicate);
-        if result.is_err() {
-            self.rows.retain(|id, _| *id < row_limit);
-            self.predicates.retain(|id, _| *id < predicate_limit);
-        }
-        result
+        let mut edit = self.edit_terms();
+        let result =
+            edit.map_predicate_parameters(predicate, control, &mut |parameter, control| {
+                arguments
+                    .get(parameter)
+                    .map(|row| copy_annotation(row, control))
+                    .transpose()
+            })?;
+        edit.commit()?;
+        Ok(result)
     }
 }
