@@ -16641,3 +16641,19 @@ Wasm の player-web library check は同じ公開 Source を固定して実行�
 ユーザーの追加指示に従い `dc2c3b111c785c9ed71a163f2619520e2b372ac5` のステージ済み入力上で `cargo clean` を全体実行し、38,539 files／110.7 GiB を削除した。Cargo metadata の target の絶対パスを workspace 内と照合し、実行前後の head・staged tree・Git status は一致、ソースと証拠は保持した。Cargo はその後も CARGO_INCREMENTAL=0 で再ビルドし、artifact の移動・コピー・退避は行っていない。既存の未追跡 `%SystemDrive%/` を保持した。上記3 Source は通常の fast-forward push と fetch を行い、公開 full SHA・tree・変更 blob を照合した。途中 commit の動作保証を不要とするユーザー方針に従い、既知の未達を隠さず各 cut を公開した。
 
 入力、初回失敗、fixture／診断の訂正、途中の compile error、差分、公開 receipt、Cargo graph、全107 target の選択・実行・log hash、品質検証と clean receipt を原本へ保持した。未実装 solver の相談メモは検証済み実装の原本に混ぜていない。原本は400件、展開時56,704,350 bytes、ZIP 6,263,129 bytes、SHA-256 `bca56978214d6fcd08183447bb918760daba132cb2ef0b6802ebc5e0c70a5448`。全entryの長さとhashを再照合した。 [検証原本](acceptance-evidence/task-recursive-body-effect-domain.raw.zip)。現状は current-status.md の一か所にまとめる。
+
+### Boolean decisions for recursive effect closure
+
+2026-11-11、Source `964886ca6cc5c66ffdcd9cb44f9eee13cd4456d8` の tracked clean な main から継続し、Core 実装 `85ee6574f0d910b78b5a08f0e122c5cde5eb8869`、tree `ac750bc41fd1f4ef82b2658a1a83cfcb2a9dbfcf` を通常の fast-forward push で公開した。fetch 後の main／origin/main／広告ref、変更6 blob と tree を照合した。既存の未追跡 `%SystemDrive%/` は保持する。
+
+既存の EffectDecision／DecisionBuilder を一つの Boolean 計算 owner として公開し、node／root／interner の表現は private のままにした。通常の有限行と、再帰 scheme の真理値表に必要な Boolean 中間値を区別する。default class の cell が true でも、入力 e に対する mux の結果が e なら有限である。一方、空の入力から無限の出力になる default は、EffectFormula の新しい制御付き構築で拒否する。Formula／Predicate の借用 membership view は default と全 override を持ち、constant_effects だけで条件付き label を見落とさない。
+
+条件付き completion は、解が存在する条件 S、各座標の全解の meet m、m が実際に解となる条件 P を別々に保持する。m の利用は P の成立が前提で、satisfiable だけから最小解を発行しない。既存 completion と同じ lower-envelope builder を共有し、従来の全domain判定の計算順・課金を維持した。新しい並列の BDD、有限行を装う cell、caller の generic slot、固定回数の近似反復は導入していない。
+
+Core library 2,356件と外部 API integration 2件の計2,358件はすべて成功、失敗・skipは0。3変数の全256関係と8量化集合について、各 rigid valuation の全モデルから求めた satisfiable／principal／meet と比較する既存 property を拡張した。parameter によって最小解の有無が変わる場合、XOR の no-least と unsatisfiable の区別、全予算境界での中断、変数を読む前の課金、conditional support の往復、無限行の拒否を確認した。外部 API の反例では、label ごとの row-reference 推論では選べる値でも、同一の discrete choice が両 label を満たせない joint relation を拒否する。
+
+workspace の locked・全target・全feature check／Clippy、整形、構造gate は終了0。Clippy は警告を含む。Core doctest は81件成功し、EffectDecision の内部 node を直接取得できない compile-fail を加えた。owner run 後の変更は非実行の Rust doc 1文だけで、compile-fail 例は同一。品質入力treeと各コマンド・log hashを原本へ記録した。推移的逆依存52 host packageはCargo入力不変のgraphから照合したが、この計算基盤段階ではその全件を再実行していない。先行のSema22パッケージmatrixやCore52パッケージmatrixをこのSourceの実行へ読み替えない。再帰 feature の active carrier／scheme 接続と、最終のconsumer検証は継続する。
+
+責務は、immutable Boolean graph、二つの completion policy が共有する lower-envelope、membership の借用と有限行 admission に閉じる。decision owner は25,956 bytes／712行（基点604行）、membership は22,330 bytes／660行（基点580行）、責任moduleの公開部は1,715 bytes／49行。testsは別の同owner moduleと外部API境界に置き、全モデル検証の108行は一つの独立した model oracle を保つ。新しいcrate依存、I/O、unsafe、codec／wire／digest version、互換readerはない。構造gateはblocking 0件で、行数のみの分割やlintの抑制は行わない。
+
+Source差分、owner選択・全実行、品質検証、52逆依存、実測、公開receiptを21件、展開時10,689,903 bytes、ZIP 992,171 bytes、SHA-256 `52628135fee6ada2e9185600ef9faa52f2ef93ed5193a646a6088e6823799402` の原本へ保持した。全entryの長さとhashを再照合した。[検証原本](acceptance-evidence/task-recursive-effect-boolean-foundation.raw.zip)。この計算基盤の成功は、再帰本体8件や全体goalの完了を示さない。
