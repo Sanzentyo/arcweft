@@ -29,6 +29,7 @@ pub enum RuntimeProjectCallableSourceOrigin {
     Root,
     Continuation(RuntimeProjectContinuationLineageId),
     Retained(CheckedProjectFunctionCallableSourceDigest),
+    PositionalPrefix(CheckedProjectFunctionCallableSourceDigest),
 }
 
 /// A closed producing context is part of source identity, including retained
@@ -188,7 +189,8 @@ impl RuntimeProjectCallableSourceFact {
             (RuntimeProjectCallableSourceOrigin::Root, None) => key.clone(),
             (
                 RuntimeProjectCallableSourceOrigin::Continuation(_)
-                | RuntimeProjectCallableSourceOrigin::Retained(_),
+                | RuntimeProjectCallableSourceOrigin::Retained(_)
+                | RuntimeProjectCallableSourceOrigin::PositionalPrefix(_),
                 Some(root),
             ) if root.origin() == RuntimeProjectCallableSourceOrigin::Root
                 && root.callable() == key.callable() =>
@@ -575,12 +577,22 @@ pub(super) fn admit_specializations(
                         else {
                             return false;
                         };
-                        next.key().origin()
-                            == RuntimeProjectCallableSourceOrigin::Retained(source.key().digest())
-                            && next.root() == source.root()
-                            && next.group().get() == source.group().get() + 1
-                            && next.function_type() == result.as_ref()
-                            && matches!(source.attached(), RuntimeCallableAttachedContract::None)
+                        next.root() == source.root()
+                            && ((next.key() == source.key()
+                                && next.function_type() == fact.target())
+                                || (next.key().origin()
+                                    == RuntimeProjectCallableSourceOrigin::Retained(
+                                        source.key().digest(),
+                                    )
+                                    && ((next.position() == source.position()
+                                        && next.function_type() == fact.target())
+                                        || (next.group().get() == source.group().get() + 1
+                                            && next.position().parameter().get() == 0
+                                            && next.function_type() == result.as_ref()
+                                            && matches!(
+                                                source.attached(),
+                                                RuntimeCallableAttachedContract::None
+                                            )))))
                     })
                 }
             };

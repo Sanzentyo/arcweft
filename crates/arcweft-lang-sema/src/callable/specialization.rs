@@ -190,6 +190,7 @@ impl CheckedFunctionSpecialization {
         owner: ExprId,
         source: &TypeKind,
         solution: &Arc<TypeConstraintSolution>,
+        transition: super::schema::CallableGroupTransition,
         control: &mut C,
     ) -> Result<Arc<Self>, FunctionSpecializationSealFailure<C::Error>> {
         let TypeKind::Function {
@@ -212,7 +213,11 @@ impl CheckedFunctionSpecialization {
             return_type.as_ref().clone(),
             effects.clone(),
         );
-        let specialized = solution.apply_call_input_template_with_control(&template, control)?;
+        let specialized = if transition.first_unbound().is_some() {
+            solution.apply_result_template_with_control(&template, control)?
+        } else {
+            solution.apply_call_input_template_with_control(&template, control)?
+        };
         let source_digest = source
             .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), control)?;
         let target_digest = specialized

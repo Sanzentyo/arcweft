@@ -62,6 +62,9 @@ pub(super) fn source(
         CheckedProjectFunctionCallableOrigin::Retained { predecessor } => {
             RuntimeProjectCallableSourceOrigin::Retained(predecessor)
         }
+        CheckedProjectFunctionCallableOrigin::PositionalPrefix { predecessor } => {
+            RuntimeProjectCallableSourceOrigin::PositionalPrefix(predecessor)
+        }
     };
     let retained = checked
         .retained_parameters()

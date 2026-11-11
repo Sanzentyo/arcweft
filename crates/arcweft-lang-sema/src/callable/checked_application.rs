@@ -1009,6 +1009,7 @@ impl FrozenCallTypeSolution {
             owner,
             source,
             &self.solution,
+            self.transition,
             control,
         )
     }
@@ -1273,6 +1274,9 @@ impl FrozenCallTypeSolution {
         &self,
         ty: &TypeKind,
     ) -> Result<TypeKind, CallConstraintInvariant> {
+        if self.transition.first_unbound().is_some() {
+            return Ok(self.solution.apply_result_template(ty)?);
+        }
         self.solution
             .apply_call_input_template_with_control(ty, &mut crate::types::UnmeteredTypeProjection)
             .map_err(|error| error.into_instantiation().into())
@@ -2632,7 +2636,7 @@ impl CheckedCallApplicationCore {
     pub fn current_group(&self) -> CallableGroupIndex {
         self.solution.transition.current()
     }
-    pub(crate) fn position(&self) -> CallableParameterCoordinate {
+    pub fn position(&self) -> CallableParameterCoordinate {
         self.solution.position()
     }
     pub(crate) fn continuation_position(&self) -> Option<CallableParameterCoordinate> {
@@ -2643,7 +2647,7 @@ impl CheckedCallApplicationCore {
     pub fn retains_inputs(&self) -> bool {
         self.solution.transition.retains_inputs()
     }
-    pub(crate) fn positional_partial_end(&self) -> Option<CallableParameterIndex> {
+    pub fn positional_partial_end(&self) -> Option<CallableParameterIndex> {
         self.solution.transition.first_unbound()
     }
     pub const fn candidates(&self) -> &CheckedCandidateInventory {
@@ -3071,8 +3075,10 @@ impl CheckedCallApplication {
         let result = match (core.continuation_position(), expected) {
             (None, CheckedCallResultSeal::Value { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {
-                if !core.solution().deferred().is_empty()
-                    || !core.solution().deferred_consts().is_empty()
+                if (!core.solution().deferred().is_empty()
+                    || !core.solution().deferred_consts().is_empty())
+                    && !(core.positional_partial_end().is_some()
+                        && matches!(&projected, CallableResultSchema::Value(TypeKind::Function { binder, .. }) if !binder.is_empty()))
                 {
                     return Err(CallConstraintInvariant::PreparedDeferredMismatch);
                 }

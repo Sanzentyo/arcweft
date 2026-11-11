@@ -440,20 +440,29 @@ fn materialize_specialization(
                 let next_state = sources
                     .get(next_key)
                     .ok_or_else(|| error("retained source state is absent"))?;
-                let definition = retained_specialization_state(
-                    source,
-                    next,
-                    specialization.target(),
-                    origin.clone(),
-                    next_state.clone(),
-                )?;
-                let state = builder
-                    .reserve_callable_state_seed()
-                    .map_err(|failure| error(&failure.to_string()))?;
-                builder
-                    .define_callable_state_seed(&state, definition)
-                    .map_err(|failure| error(&failure.to_string()))?;
-                state
+                if next.position() == source.position() {
+                    if next.function_type() != specialization.target() {
+                        return Err(error(
+                            "same-position specialization changed its target type",
+                        ));
+                    }
+                    next_state.clone()
+                } else {
+                    let definition = retained_specialization_state(
+                        source,
+                        next,
+                        specialization.target(),
+                        origin.clone(),
+                        next_state.clone(),
+                    )?;
+                    let state = builder
+                        .reserve_callable_state_seed()
+                        .map_err(|failure| error(&failure.to_string()))?;
+                    builder
+                        .define_callable_state_seed(&state, definition)
+                        .map_err(|failure| error(&failure.to_string()))?;
+                    state
+                }
             }
         };
         targets.push((source_key.digest(), target.clone()));

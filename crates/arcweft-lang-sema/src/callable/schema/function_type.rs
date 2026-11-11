@@ -168,8 +168,7 @@ impl CallableSignatureSchema {
                     .effects()
                     .iter()
                     .any(|row| candidate_parameter(row.role())));
-        ((declared_function || inventory.template_binder().is_empty())
-            && first_unbound > current.parameter()
+        (first_unbound > current.parameter()
             && first_unbound.get() < parameters.len()
             && parameters.iter().all(|parameter| {
                 (parameter.passing() == CallableParameterPassing::PositionalOnly

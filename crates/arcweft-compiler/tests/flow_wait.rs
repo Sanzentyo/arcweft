@@ -723,6 +723,29 @@ flow main() -> i64 {
     );
 }
 
+#[test]
+fn function_value_generic_prefix_repeats_after_wait_and_public_restore() {
+    let body = r#"
+fn keep<T>(first: i64, second: i64, third: T) -> i64 {
+    log.info("body")
+    first + second
+}
+flow main() -> i64 {
+    let function = keep
+    let middle = function({ log.info("prefix"); 20i64 })
+    wait(0.1s)
+    let tail = middle({ log.info("middle"); 1i64 })
+    let first = tail({ log.info("first"); "later" })
+    return tail({ log.info("second"); true }) + first
+}
+"#;
+    assert_shared_prefix_wait_in_both_executors(
+        native(body),
+        product(body, true),
+        &["middle", "first", "body", "second", "body"],
+    );
+}
+
 fn assert_shared_prefix_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,

@@ -1,4 +1,4 @@
-//! Program-callable source authority for declaration values and saved groups.
+//! Program-callable source authority for declaration values and retained prefixes.
 
 use std::sync::Arc;
 
@@ -34,6 +34,9 @@ pub enum CheckedProjectFunctionCallableOrigin {
         lineage: CheckedCallContinuationDigest,
     },
     Retained {
+        predecessor: CheckedProjectFunctionCallableSourceDigest,
+    },
+    PositionalPrefix {
         predecessor: CheckedProjectFunctionCallableSourceDigest,
     },
 }
@@ -109,6 +112,9 @@ enum SourceProjection {
         witness: Arc<CheckedFunctionSpecialization>,
         enclosing: Option<CheckedProjectFunctionInstanceSolution>,
     },
+    PositionalPrefix {
+        previous: Arc<CheckedProjectFunctionCallableSource>,
+    },
 }
 
 /// A checked source's function scheme, formal layout and producing environment.
@@ -132,6 +138,74 @@ pub struct CheckedProjectFunctionCallableSource {
 }
 
 impl CheckedProjectFunctionCallableSource {
+    /// Retains a proper fixed positional prefix without invoking the body or
+    /// changing the source binder. Bound input types must already be closed
+    /// in the producing environment; `finish` proves that retained ABI.
+    pub fn retain_positional_prefix_with_control<C: TypeProjectionControl>(
+        &self,
+        count: usize,
+        control: &mut C,
+    ) -> Result<Self, CheckedProjectFunctionInstanceProjectionError<C::Error>> {
+        if count == 0
+            || count >= self.parameters.len()
+            || self.parameters.iter().any(|parameter| {
+                parameter.presence() != CallableParameterPresence::Required
+                    || !matches!(
+                        parameter.passing(),
+                        CallableParameterPassing::PositionalOnly
+                            | CallableParameterPassing::PositionalOrNamed
+                    )
+            })
+        {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
+        }
+        let TypeKind::Function {
+            binder,
+            predicate,
+            params,
+            return_type,
+            effects,
+        } = &self.function_type
+        else {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
+        };
+        let next = self
+            .position
+            .parameter()
+            .get()
+            .checked_add(count)
+            .and_then(|index| super::super::CallableParameterIndex::try_from_usize(index).ok())
+            .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+        let function_type = TypeKind::function_with_contract(
+            *binder,
+            predicate.clone(),
+            params.iter().skip(count).cloned(),
+            return_type.as_ref().clone(),
+            effects.clone(),
+        );
+        Self {
+            authority: self.authority.clone(),
+            digest: CheckedProjectFunctionCallableSourceDigest::UNSEALED,
+            declaration: self.declaration.clone(),
+            checked: self.checked.clone(),
+            origin: CheckedProjectFunctionCallableOrigin::PositionalPrefix {
+                predecessor: self.digest,
+            },
+            position: CallableParameterCoordinate::new(self.position.group(), next),
+            function_type,
+            parameters: Box::new([]),
+            retained_parameters: Box::new([]),
+            attached: None,
+            projection: SourceProjection::PositionalPrefix {
+                previous: Arc::new(self.clone()),
+            },
+            base_instantiation: self.base_instantiation.clone(),
+            source_enclosing: self.source_enclosing.clone(),
+            closed_selection: None,
+        }
+        .finish(control)
+    }
+
     pub const fn source_digest(&self) -> CheckedProjectFunctionCallableSourceDigest {
         self.digest
     }
@@ -176,24 +250,36 @@ impl CheckedProjectFunctionCallableSource {
     ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
         let mut steps = Vec::new();
         let mut source = self;
-        while let SourceProjection::Retained {
-            previous,
-            witness,
-            enclosing,
-        } = &source.projection
-        {
-            control
-                .visit_binding()
-                .map_err(TypeProjectionError::Control)?;
-            steps.push((witness, enclosing));
-            source = previous;
+        loop {
+            match &source.projection {
+                SourceProjection::Retained {
+                    previous,
+                    witness,
+                    enclosing,
+                } => {
+                    control
+                        .visit_binding()
+                        .map_err(TypeProjectionError::Control)?;
+                    steps.push((witness, enclosing));
+                    source = previous;
+                }
+                SourceProjection::PositionalPrefix { previous } => {
+                    control
+                        .visit_binding()
+                        .map_err(TypeProjectionError::Control)?;
+                    source = previous;
+                }
+                _ => break,
+            }
         }
         let projected = match &source.projection {
             SourceProjection::Declaration(binder) => binder.project_with_control(ty, control)?,
             SourceProjection::Continuation(solution) => {
                 solution.project_template_with_control(ty, control)?
             }
-            SourceProjection::Retained { .. } => unreachable!("walk stopped at a source producer"),
+            SourceProjection::Retained { .. } | SourceProjection::PositionalPrefix { .. } => {
+                unreachable!("walk stopped at a source producer")
+            }
         };
         let empty = ClosedTypeInstantiation::default();
         let mut projected = source
@@ -310,11 +396,16 @@ impl CheckedProjectFunctionCallableSource {
             }
             SourceProjection::Declaration(_)
             | SourceProjection::Continuation(_)
-            | SourceProjection::Retained { .. } => None,
+            | SourceProjection::Retained { .. }
+            | SourceProjection::PositionalPrefix { .. } => None,
         };
-        self.closed_selection = body
-            .map(|body| self.close_body(body, control))
-            .transpose()?;
+        self.closed_selection =
+            if let SourceProjection::PositionalPrefix { previous } = &self.projection {
+                previous.closed_selection.clone()
+            } else {
+                body.map(|body| self.close_body(body, control))
+                    .transpose()?
+            };
         self.digest = self.compute_digest(control)?;
         Ok(self)
     }
@@ -344,8 +435,16 @@ impl CheckedProjectFunctionCallableSource {
         }
         let expected = caller.instantiate_type_with_control(witness.specialized_type(), control)?;
         if !witness.solution().residual_scope().binders().is_empty() {
-            let next_group = CallableGroupIndex::try_from_usize(self.position.group().get() + 1)
-                .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+            if super::specialization::same_type(&self.function_type, &expected, control)? {
+                return CheckedProjectFunctionSpecialization::seal_retained(
+                    self,
+                    expected,
+                    self.clone(),
+                    witness.solution(),
+                    caller,
+                    control,
+                );
+            }
             let TypeKind::Function {
                 binder,
                 return_type,
@@ -357,16 +456,30 @@ impl CheckedProjectFunctionCallableSource {
                         .into(),
                 );
             };
-            if !binder.is_empty()
-                || self.attached.is_some()
-                || self.checked.signature().group(next_group).is_none()
-                || !matches!(return_type.as_ref(), TypeKind::Function { binder, .. }
-                    if witness.solution().residual_scope().binders() == [*binder])
+            let (position, function_type) = if !binder.is_empty()
+                && witness.solution().residual_scope().binders() == [*binder]
             {
-                return Err(
-                    CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into(),
-                );
-            }
+                (self.position, expected.clone())
+            } else {
+                let next_group = CallableGroupIndex::try_from_usize(
+                    self.position.group().get() + 1,
+                )
+                .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+                if !binder.is_empty()
+                    || self.attached.is_some()
+                    || self.checked.signature().group(next_group).is_none()
+                    || !matches!(return_type.as_ref(), TypeKind::Function { binder, .. }
+                        if witness.solution().residual_scope().binders() == [*binder])
+                {
+                    return Err(
+                        CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into(),
+                    );
+                }
+                (
+                    CallableParameterCoordinate::group_start(next_group),
+                    return_type.as_ref().clone(),
+                )
+            };
             let next = Self {
                 authority: self.authority.clone(),
                 digest: CheckedProjectFunctionCallableSourceDigest::UNSEALED,
@@ -375,8 +488,8 @@ impl CheckedProjectFunctionCallableSource {
                 origin: CheckedProjectFunctionCallableOrigin::Retained {
                     predecessor: self.digest,
                 },
-                position: CallableParameterCoordinate::group_start(next_group),
-                function_type: return_type.as_ref().clone(),
+                position,
+                function_type,
                 parameters: Box::new([]),
                 retained_parameters: Box::new([]),
                 attached: None,
@@ -422,21 +535,31 @@ impl CheckedProjectFunctionCallableSource {
     ) -> Result<ClosedTypeInstantiation, TypeProjectionError<C::Error>> {
         let mut composed = None;
         let mut source = self;
-        while let SourceProjection::Retained {
-            previous,
-            witness,
-            enclosing,
-        } = &source.projection
-        {
-            control
-                .visit_binding()
-                .map_err(TypeProjectionError::Control)?;
-            composed = Some(witness.solution().close_residual_with_control(
-                composed.as_ref().unwrap_or(arguments),
-                enclosing.as_ref().map(|row| row.solution.as_ref()),
-                control,
-            )?);
-            source = previous;
+        loop {
+            match &source.projection {
+                SourceProjection::Retained {
+                    previous,
+                    witness,
+                    enclosing,
+                } => {
+                    control
+                        .visit_binding()
+                        .map_err(TypeProjectionError::Control)?;
+                    composed = Some(witness.solution().close_residual_with_control(
+                        composed.as_ref().unwrap_or(arguments),
+                        enclosing.as_ref().map(|row| row.solution.as_ref()),
+                        control,
+                    )?);
+                    source = previous;
+                }
+                SourceProjection::PositionalPrefix { previous } => {
+                    control
+                        .visit_binding()
+                        .map_err(TypeProjectionError::Control)?;
+                    source = previous;
+                }
+                _ => break,
+            }
         }
         let arguments = composed.as_ref().unwrap_or(arguments);
         match &source.projection {
@@ -446,7 +569,9 @@ impl CheckedProjectFunctionCallableSource {
             SourceProjection::Continuation(solution) => {
                 solution.close_residual_with_control(arguments, source.caller(), control)
             }
-            SourceProjection::Retained { .. } => unreachable!("walk stopped at a source producer"),
+            SourceProjection::Retained { .. } | SourceProjection::PositionalPrefix { .. } => {
+                unreachable!("walk stopped at a source producer")
+            }
         }
     }
 
@@ -465,7 +590,7 @@ impl CheckedProjectFunctionCallableSource {
             SourceProjection::Continuation(solution) => {
                 solution.residual_arguments_with_control(&body, self.caller(), control)?
             }
-            SourceProjection::Retained { .. } => {
+            SourceProjection::Retained { .. } | SourceProjection::PositionalPrefix { .. } => {
                 return Err(
                     CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into(),
                 );

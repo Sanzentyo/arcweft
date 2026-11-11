@@ -36,6 +36,7 @@ pub(super) struct ProjectCallableValueUse {
 pub(super) enum ProjectCallableUseKind {
     Value,
     CallInput,
+    PositionalPrefix,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -46,6 +47,9 @@ pub(super) struct ProjectCallableSourceNode {
 
 #[derive(Clone, Eq, PartialEq)]
 pub(super) enum ProjectCallableDemandProof {
+    PositionalPrefix {
+        count: usize,
+    },
     Value {
         witness: Arc<CheckedFunctionSpecialization>,
         enclosing: Option<CheckedProjectFunctionInstanceSolution>,
@@ -54,6 +58,12 @@ pub(super) enum ProjectCallableDemandProof {
         source: CheckedProjectFunctionCallableSourceDigest,
         checked: CheckedProjectFunctionSpecialization,
     },
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub(super) enum ProjectCallableUseResolution {
+    Specialization(RuntimeCallableSpecializationKey),
+    PositionalPrefix,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -74,13 +84,14 @@ pub(super) struct ProjectCallableDiscovery {
     pub(super) pending: BTreeSet<(RuntimeProjectCallableSourceKey, ProjectCallableValueUse)>,
     pub(super) specializations:
         BTreeMap<RuntimeCallableSpecializationKey, RuntimeCallableSpecializationFact>,
-    pub(super) uses: BTreeMap<ProjectCallableValueUse, RuntimeCallableSpecializationKey>,
+    pub(super) uses: BTreeMap<ProjectCallableValueUse, ProjectCallableUseResolution>,
 }
 
 impl ProjectCallableDemandNode {
     pub(super) fn matches(&self, source: &RuntimeProjectCallableSourceKey) -> bool {
         match &self.proof {
-            ProjectCallableDemandProof::Value { .. } => {
+            ProjectCallableDemandProof::Value { .. }
+            | ProjectCallableDemandProof::PositionalPrefix { .. } => {
                 source.function_type() == self.source.identity()
             }
             ProjectCallableDemandProof::Input {
@@ -357,7 +368,7 @@ impl ProjectInstanceProjection<'_> {
             .map_err(|error| projection_error(origin, error))
     }
 
-    pub(in crate::lower) fn discover_value_specialization(
+    pub(in crate::lower) fn discover_callable_uses(
         &mut self,
         owner: ExprId,
         enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
@@ -365,12 +376,6 @@ impl ProjectInstanceProjection<'_> {
         world: &RegisteredSemanticWorld,
         analysis: &FinalSemanticAnalysis,
     ) -> Result<(), RuntimeSemanticProjectionError> {
-        let Some(witness) = analysis
-            .expression(owner)
-            .and_then(|expression| expression.function_specialization())
-        else {
-            return Ok(());
-        };
         let origin = ProjectInstantiationOrigin::CallableValue(owner);
         let normalize = |ty: &TypeKind| {
             let closed = enclosing
@@ -384,17 +389,68 @@ impl ProjectInstanceProjection<'_> {
                 .map_err(|error| projection_error(origin, error.into()))?;
             runtime_type(closed.as_ref().unwrap_or(ty), symbols, world, analysis)
         };
-        let demand = ProjectCallableDemandNode {
-            origin,
-            source: normalize(witness.source_type())?,
-            target: normalize(witness.specialized_type())?,
-            proof: ProjectCallableDemandProof::Value {
-                witness: Arc::new(witness.clone()),
-                enclosing: enclosing.cloned(),
-            },
-        };
-        let use_key = self.callable_use(owner, ProjectCallableUseKind::Value);
-        self.insert_demand(use_key, demand)
+        let mut prefix = None;
+        if let Some(application) = analysis
+            .call(owner)
+            .and_then(|call| call.selected_application())
+            && let Some(end) = application.core().positional_partial_end()
+            && matches!(
+                application.result(),
+                arcweft_lang_sema::callable::CheckedCallResult::Value(_)
+            )
+            && let arcweft_lang_sema::callable::CheckedCallCalleeExecution::Value { source } =
+                application.core().callee()
+            && let arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(callee) =
+                source.raw()
+            && let Some(source) = analysis
+                .expression(callee)
+                .and_then(|expression| expression.value_type())
+            && matches!(source, TypeKind::Function { binder, .. } if !binder.is_empty())
+        {
+            let target = application
+                .result()
+                .value_type()
+                .ok_or_else(|| origin.error("positional prefix has no function result"))?;
+            let count = end
+                .get()
+                .checked_sub(application.core().position().parameter().get())
+                .ok_or_else(|| origin.error("positional prefix has invalid formal coordinates"))?;
+            let demand = ProjectCallableDemandNode {
+                origin,
+                source: normalize(source)?,
+                target: normalize(target)?,
+                proof: ProjectCallableDemandProof::PositionalPrefix { count },
+            };
+            prefix = Some(demand);
+        }
+        let value = analysis
+            .expression(owner)
+            .and_then(|expression| expression.function_specialization())
+            .map(|witness| {
+                Ok::<_, RuntimeSemanticProjectionError>(ProjectCallableDemandNode {
+                    origin,
+                    source: normalize(witness.source_type())?,
+                    target: normalize(witness.specialized_type())?,
+                    proof: ProjectCallableDemandProof::Value {
+                        witness: Arc::new(witness.clone()),
+                        enclosing: enclosing.cloned(),
+                    },
+                })
+            })
+            .transpose()?;
+        if let Some(demand) = prefix {
+            self.insert_demand(
+                self.callable_use(owner, ProjectCallableUseKind::PositionalPrefix),
+                demand,
+            )?;
+        }
+        if let Some(demand) = value {
+            self.insert_demand(
+                self.callable_use(owner, ProjectCallableUseKind::Value),
+                demand,
+            )?;
+        }
+        Ok(())
     }
 
     pub(in crate::lower) fn call_input_specialization(
@@ -551,7 +607,51 @@ impl ProjectInstantiationSession {
                 .cloned()
                 .ok_or(ProjectInstantiationError::InvalidQueue)?;
             self.charge(demand.origin, 1, false, false)?;
+            if let ProjectCallableDemandProof::PositionalPrefix { count } = &demand.proof {
+                let checked = source
+                    .checked
+                    .retain_positional_prefix_with_control(
+                        *count,
+                        &mut self.work.type_control(demand.origin),
+                    )
+                    .map_err(|error| projection_error(demand.origin, error))?;
+                let fact = callable_sources::source(
+                    &checked,
+                    Some(source.fact.root().clone()),
+                    symbols,
+                    world,
+                    analysis,
+                )?;
+                if fact.function_type() != &demand.target {
+                    return Err(demand
+                        .origin
+                        .error("positional source prefix disagrees with its checked result"));
+                }
+                let work = &self.work;
+                let instances = self.nodes.len() as u64;
+                let edges = self.edges.len() as u64;
+                self.callables
+                    .insert_source(ProjectCallableSourceNode { checked, fact }, || {
+                        work.charge_graph(demand.origin, 1, instances, edges)
+                    })?;
+                let resolution = ProjectCallableUseResolution::PositionalPrefix;
+                if self
+                    .callables
+                    .uses
+                    .get(&use_key)
+                    .is_some_and(|existing| existing != &resolution)
+                {
+                    return Err(demand
+                        .origin
+                        .error("positional prefix has a conflicting use resolution"));
+                }
+                self.callables.uses.insert(use_key, resolution);
+                continue;
+            }
             let checked = match &demand.proof {
+                ProjectCallableDemandProof::PositionalPrefix { .. } => {
+                    unreachable!("prefix demand was consumed above")
+                }
                 ProjectCallableDemandProof::Value { witness, enclosing } => source
                     .checked
                     .specialize_callable_value_with_control(
@@ -586,13 +686,10 @@ impl ProjectInstantiationSession {
                     }
                 }
                 CheckedProjectFunctionSpecializationTarget::Retain(next) => {
-                    let fact = callable_sources::source(
-                        next,
-                        Some(source.fact.root().clone()),
-                        symbols,
-                        world,
-                        analysis,
-                    )?;
+                    let root = (next.origin()
+                        != arcweft_lang_sema::callable::CheckedProjectFunctionCallableOrigin::Root)
+                        .then(|| source.fact.root().clone());
+                    let fact = callable_sources::source(next, root, symbols, world, analysis)?;
                     let work = &self.work;
                     let instances = self.nodes.len() as u64;
                     let edges = self.edges.len() as u64;
@@ -620,14 +717,15 @@ impl ProjectInstantiationSession {
                     .error("checked specialization disagrees with source/use type evidence"));
             }
             let key = fact.key().clone();
+            let resolution = ProjectCallableUseResolution::Specialization(key.clone());
             if let Some(existing) = self.callables.uses.get(&use_key)
-                && existing != &key
+                && existing != &resolution
             {
                 return Err(demand
                     .origin
                     .error("one checked use produced conflicting substitutions"));
             }
-            self.callables.uses.insert(use_key, key.clone());
+            self.callables.uses.insert(use_key, resolution);
             if let Some(existing) = self.callables.specializations.remove(&key) {
                 self.callables.specializations.insert(
                     key,
@@ -648,8 +746,11 @@ impl DiscoveredProjectInstances {
         &self,
         use_key: &ProjectCallableValueUse,
     ) -> Result<Option<RuntimeCallableValueSpecialization>, RuntimeSemanticProjectionError> {
-        let Some(key) = self.callables.uses.get(use_key) else {
+        let Some(resolution) = self.callables.uses.get(use_key) else {
             return Ok(None);
+        };
+        let ProjectCallableUseResolution::Specialization(key) = resolution else {
+            return Err(ProjectInstantiationError::InvalidQueue.into());
         };
         let fact = self
             .callables

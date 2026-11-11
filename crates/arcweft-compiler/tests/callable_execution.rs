@@ -1649,6 +1649,97 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    function_value_prefix_returns_independently_selected_result_types,
+    r#"
+fn second<A, B>(first: A, second: B) -> B { second }
+flow main() -> i64 {
+    let function = second
+    let tail = function(40i64)
+    let text = tail("later")
+    return tail(2i64) + 40i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    function_value_prefix_retains_independent_callback_effects,
+    r#"
+fn run(first: i64, callback: i64 -> i64) -> i64 { callback(first) }
+flow main() -> i64 {
+    let function = run
+    let tail = function(21i64)
+    let first = tail(|value| { log.info("effectful"); value })
+    return tail(|value| value) + first
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    function_value_prefix_closes_the_first_argument_type,
+    r#"
+fn first<T>(first: T, second: i64) -> T { first }
+flow main() -> i64 {
+    let function = first
+    let tail = function(40i64)
+    return tail(2i64) + 2i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    function_value_prefix_can_be_applied_repeatedly,
+    r#"
+fn keep<T>(first: i64, second: i64, third: T) -> i64 { first + second }
+flow main() -> i64 {
+    let function = keep
+    let middle = function(20i64)
+    let tail = middle(1i64)
+    return tail("later") + tail(true)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    function_value_prefix_preserves_independent_erased_type_contexts,
+    r#"
+fn keep<T, U>(first: T, second: i64, third: U) -> i64 { second }
+flow main() -> i64 {
+    let function = keep
+    let text = function("first")
+    let flag = function(true)
+    let text_tail = text(21i64)
+    let flag_tail = flag(21i64)
+    return text_tail(false) + flag_tail("last")
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    function_value_prefix_preserves_later_declared_groups,
+    r#"
+fn keep<T>(first: i64, second: T)(third: i64) -> i64 { first + third }
+flow main() -> i64 {
+    let function = keep
+    let middle = function(20i64)
+    let tail = middle("later")
+    return tail(22i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     same_group_generic_prefix_from_a_function_value,
     r#"
 fn keep<T>(first: i64, second: T) -> i64 { first }

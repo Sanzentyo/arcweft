@@ -669,8 +669,7 @@ fn project_runtime_semantic_fact_inventories(
             || program_owners.is_some_and(|owners| owners.contains_expression(owner)))
             && !instance_owned_expression_owners.contains(&owner)
         {
-            instance_projection
-                .discover_value_specialization(owner, None, symbols, world, analysis)?;
+            instance_projection.discover_callable_uses(owner, None, symbols, world, analysis)?;
         }
     }
     let mut runtime_callable_values = callable_values::discover_roots(
@@ -7798,13 +7797,7 @@ fn discover_runtime_project_executable_dependencies(
             .execution_projection()
             .runtime_fact_partition(runtime_owners, &executable)?;
         for row in partition.expressions() {
-            instances.discover_value_specialization(
-                row.owner(),
-                enclosing,
-                symbols,
-                world,
-                analysis,
-            )?;
+            instances.discover_callable_uses(row.owner(), enclosing, symbols, world, analysis)?;
             let family = if row.family()
                 == CheckedExecutableRuntimeExpressionFactFamily::ImplicitCallable
                 && analysis.call(row.owner()).is_some()

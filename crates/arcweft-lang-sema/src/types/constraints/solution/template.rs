@@ -34,9 +34,18 @@ impl TypeConstraintSolution {
         &self,
         ty: &TypeKind,
     ) -> Result<TypeKind, TypeInstantiationError> {
-        self.apply_template(ty)?
+        self.apply_result_template_with_control(ty, &mut UnmeteredTypeProjection)
+            .map_err(TypeProjectionError::into_instantiation)
+    }
+
+    pub(crate) fn apply_result_template_with_control<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+        self.apply_template_with_control(ty, control)?
             .view()
-            .to_quantified_type_with_predicate(&self.effect_predicate)
+            .quantify_with_predicate_and_control(&self.effect_predicate, control)
     }
 
     /// Template references name this solution's formal parameters. Replacement

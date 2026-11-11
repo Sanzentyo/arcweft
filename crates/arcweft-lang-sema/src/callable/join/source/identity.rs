@@ -42,6 +42,10 @@ impl CheckedProjectFunctionCallableSource {
                 hasher.update(&[2]);
                 hasher.update(predecessor.as_bytes());
             }
+            CheckedProjectFunctionCallableOrigin::PositionalPrefix { predecessor } => {
+                hasher.update(&[3]);
+                hasher.update(predecessor.as_bytes());
+            }
         }
         super::super::write_group(&mut hasher, self.position.group());
         hasher.update(

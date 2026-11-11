@@ -1062,7 +1062,7 @@ impl PreparedResolvedCallable {
     /// A declared continuation or a first-class function result can own scheme
     /// parameters unused by the current invocation.
     pub(crate) fn permits_residual_result(&self, transition: CallableGroupTransition) -> bool {
-        transition.continuation_position().is_some()
+        transition.retains_inputs()
             || (matches!(
                 self.id(),
                 CallableCandidateId::Local(_) | CallableCandidateId::FunctionValue(_)
