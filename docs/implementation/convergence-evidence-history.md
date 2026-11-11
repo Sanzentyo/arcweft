@@ -16548,3 +16548,23 @@ Sema は候補と引数マッピングの開始位置を `CallableParameterCoord
 Semaの推移的逆依存22パッケージを、Cargo treeの既定・全 feature・全ターゲットと Windows の Cargo metadata で照合した。公開 Source の nextest は3,931件成功、失敗0件、スキップ1件。Compilerの呼び出しと待機358件、Semaの1,471件、RuntimePlanの165件、CLIの226件を含む。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、Web Player のWasm check、doctest 2件が通過した。構造ゲートのブロッキング違反は0件。Clippyには警告がある。作業中のコンパイル診断と、最終ダイジェストの修正前に通過したSemaの実行ログを原本に保持した。
 
 [公開ソースの照合、実行計画のハッシュ、再現入力、全検証の原本](acceptance-evidence/task-callable-constraint-positions.raw.zip)は151件、1677469 bytes、SHA-256 `7f6d0c6a5f97029969b7b68e352f66e67bd6dfcf8d7192c142ba227c607c386e`。
+
+### Positional partial application of closed declarations
+
+2026-11-11に基点 `8c7e7c76480d9c52669da5270f616714f4e067a4`、宣言の部分適用 Source `988c09e9a59a9295a3f01f68c45c49500d87f732`、評価順の修復 Source `7a3dbb5d8017c64a0a6afd8cf4b8099a0f349b40` を公開した。最終 tree は `7d4068b3131b1448ad2d89e82fcb47f644c836cf`。前者の変更13 blobと後者の変更1 blobを公開先と照合した。追跡対象の差分は0件で、既存の未追跡 `%SystemDrive%/` があった。
+
+単相・単一グループで必須の固定引数を持つ宣言は、検査済みの先頭位置引数と、その位置からの残りの関数型を保持する。引数マッピング後に本体の遅延効果を確定し、Compilerが閉じた宣言の同じインスタンスを登録する。RuntimePlanは既存の呼び出し状態を作り、`WithinGroup` の遷移と `ApplyFunction` へ接続する。既存の型付き状態とAWBCの検証・保存を使う。Sema、Compiler、RuntimePlanの所有境界、変更13ファイルのbyte数・物理LOC・テスト部分、Cargo依存を原本に記録した。
+
+初回の新規テストは `PendingCallableEffectProjection` で2件失敗した。遅延効果の準備を接続した後、効果行を省略した戻り値で `UnknownRow` を確認し、明示効果行の回帰と省略時の診断を両方記録した。
+
+効果を持つ固定長 spread は、Semaが選んだ要素の式がFlowの事前評価に含まれず、RuntimePlanで検査済みcallがないと失敗していた。宣言とクロージャの双方で再現した。要素の実行元を引数順に評価へ渡す初回修正は、既存の `recursive_generic_closure_in_attached_default_reaches_verified_awbc` をスタックオーバーフローで停止させた。Source `988c09e9a59a9295a3f01f68c45c49500d87f732` の同じ実行ファイルで再現した。calleeとreceiverを扱う既存の走査を保ち、spreadのコンテナを検査済みの要素へ展開する処理へ改めた。修復 Source の同テストと新しい待機テストは2件とも通過し、続くCompilerの呼び出し・待機361件も通過した。
+
+公開 Source のCLIはSHA-256 `b2687ede3b5d366f022220b73a3af48750a501c4efe1c5484afbdda37710f972`。18入力をBytecode VM／AWBC Productで計36回実行し、各ステップ最大1操作で42を返した。宣言の即時連鎖、関数から返した継続、スカラーと固定長 spread の混在、同じ継続の2回利用を含む。効果を持つspreadは `prefix`、`first`、`body`、`second`、`body`、混在入力は `first`、`second`、`third`、`fourth`、`body` の順だった。待機の回帰は100 msを40 msと60 msに分け、40 ms時点の無操作と、保持した先頭引数での再開を検証した。Nativeとデコード済みAWBCで実行し、AWBCは各ステップで公開JSONを保存・復元した。
+
+先行検証で確認した単相宣言への直接適用の拒否は、今回の同じ入力が通過したため現状一覧を訂正した。当時の拒否とSHAは履歴に保持する。同一グループの `keep<T>` の継続を `String` と `Bool` で共有する入力、および効果行を広げるローカル型注釈の2入力は、型検査で従来と同じ診断を返した。別グループの共有、広い効果行の仮引数、attached defaultの対照は両実行器で通過した。関数型の戻り値の `effects {}` を明示すると継続を返せる。効果行を省略した直接呼び出しと変数経由の対照は型検査に失敗した。変数のspreadと短い名前付き適用の探索入力も型検査で拒否された。これら7入力の実診断を原本に含めた。Generic Matchの受入行は同じ内容で保持した。[先行検証](#formal-parameter-positions-in-callable-constraints)。
+
+実行中のCLIビルドを停止し、ユーザー指定の `cargo clean` で `D:\git\arcweft\target` を全体削除した。Cargoの報告は36,163ファイル、106.1 GiB、終了0。直後に `target` が消え、D:の空きは約419.6 GiBになった。通過済み7段階のコマンド・Source・ログのSHA-256を照合し、中断したCLIビルドから空の出力先で再開した。再検証は `CARGO_INCREMENTAL=0` で実行した。
+
+Cargo treeの既定・全feature・全ターゲットとWindowsのCargo metadataは、Sema／RuntimePlan／Compilerの推移的逆依存22パッケージで一致した。nextestは3,934件成功、0件失敗、1件スキップ。Semaの1,471件はSource `988c09e9a59a9295a3f01f68c45c49500d87f732` の実行を再利用した。Sema・Cargo入力の差分0件と原ログのSHA-256を確認した。修復 Source で実行した2,463件には、クリーン前のCompiler 361件とRuntimePlan 165件を含む。全ターゲット・全featureのworkspace check／Clippy、整形、構造ゲート、Web PlayerのWasm check、doctest 2件は終了0。構造ゲートのブロッキング違反は0件。Clippyには警告がある。
+
+ソース照合、クリーンの記録、初回の失敗、再現入力、全コマンドの原本は407件、3095673 bytes、SHA-256 `a8832b222915b5c8d100f19565d7435d2e2f2a230f218759e7cb4f1b005b340c`。[検証原本](acceptance-evidence/task-closed-declaration-positional-partial.raw.zip)。
