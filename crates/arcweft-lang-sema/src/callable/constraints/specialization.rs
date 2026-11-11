@@ -161,7 +161,8 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
         })?;
         lower.request_value_use_projection(self.context, result.clone(), source, &template);
         lower
-            .defer_child_result(result)
+            .suspend_result(self.context, result)
+            .and_then(|frontier| frontier.into_child(self.context))
             .map_err(FunctionSpecializationFailure::Constraint)
     }
 }

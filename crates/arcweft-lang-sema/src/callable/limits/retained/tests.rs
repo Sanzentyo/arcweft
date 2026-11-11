@@ -115,3 +115,45 @@ fn resumed_constraint_sessions_keep_original_work_and_physical_source_counts() {
     }
     assert_eq!(retained.report().unwrap(), observed);
 }
+
+#[test]
+fn a_root_frontier_outlives_its_driver_and_publication_reads_the_live_original_ledger() {
+    let cancellation = AtomicBool::new(false);
+    let retained = RetainedResolverWork::retain(ResolverWork::new(128)).unwrap();
+    let equivalent_observation = RetainedResolverWork::retain(ResolverWork::new(128)).unwrap();
+    let observed = retained.report().unwrap();
+    let frontier = {
+        let mut work = retained.borrow_work().unwrap();
+        let session = work
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        session
+            .with_driver::<crate::types::NoConstraintClient, _, _>(
+                (),
+                crate::callable::constraints::tests::no_constraint_initialization(),
+                crate::types::NoConstraintClient,
+                |mut driver| {
+                    driver.request_projection(
+                        (),
+                        &TypeKind::I32,
+                        crate::types::constraints::TypeConstraintProjectionClosure::Closed,
+                    );
+                    driver.suspend_result(()).unwrap()
+                },
+            )
+            .unwrap()
+    };
+    // The result has no borrow of the released driver or accounting session.
+    assert_eq!(frontier.result().key(), &());
+    assert!(retained.borrow_work().unwrap().remaining_budget().unwrap() < 127);
+    assert_eq!(retained.report().unwrap(), observed);
+    retained
+        .borrow_work()
+        .unwrap()
+        .record_retained_argument_fact_publications(1)
+        .unwrap();
+    assert_ne!(retained.report().unwrap(), observed);
+    // Semantic replay observes preparation, while publication reads the live
+    // ledger. Neither comparison creates or replenishes an allowance.
+    assert_eq!(retained, equivalent_observation);
+}

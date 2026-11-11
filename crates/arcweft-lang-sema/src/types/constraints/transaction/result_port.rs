@@ -111,7 +111,9 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
         for path in &mut transaction.frontier {
             path.projections.push(Arc::clone(&request));
         }
-        let mut pending = transaction.defer_child_result(key)?;
+        let mut pending = transaction
+            .suspend_result(context, key)?
+            .into_child(context)?;
         for alternative in &mut pending.alternatives {
             alternative.branch.clone_from(&self.alternative.branch);
         }

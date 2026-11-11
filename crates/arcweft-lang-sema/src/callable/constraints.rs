@@ -12,7 +12,7 @@ pub(crate) use super::limits::CandidateConstraintWorkSession;
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, MaterializationCallbackBinding, MaterializationTicket, ProbeStart,
-    ProbeSubmission, ProbeTicket, TypeConstraintTransaction,
+    ProbeSubmission, ProbeTicket, SuspendedConstraintFrontier, TypeConstraintTransaction,
 };
 use crate::types::constraints::{
     ClosedMaterializationSubmission, CompletedCandidateAlternatives, ConstraintDomain,
@@ -360,6 +360,14 @@ pub(crate) struct CandidateConstraintDriver<
     ticket_issuer: Arc<SourceCallbackTicketIssuer>,
     next_ticket_ordinal: u64,
     active_ticket: Option<SourceCallbackTicketIdentity>,
+}
+
+/// Callback completion keeps the original lower frontier beside its borrowed
+/// work context until it is exported as a root or submitted to its parent.
+struct SuspendedCandidateConstraint<'driver, 'control, D: ConstraintDomain> {
+    frontier: SuspendedConstraintFrontier<D>,
+    context:
+        &'driver mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
 }
 
 #[derive(Debug)]
@@ -1027,9 +1035,26 @@ where
     }
 
     pub(crate) fn defer_child_result(
-        mut self,
+        self,
         key: D::Projection,
     ) -> Result<PendingChildConstraint<D>, TypeConstraintFailure<D>> {
+        let suspended = self.pause_result(key)?;
+        suspended.frontier.into_child(suspended.context)
+    }
+
+    /// Export an unresolved root after the source client closes its callbacks.
+    /// The component receives the real frontier, not a completed call or type.
+    pub(crate) fn suspend_result(
+        self,
+        key: D::Projection,
+    ) -> Result<SuspendedConstraintFrontier<D>, TypeConstraintFailure<D>> {
+        self.pause_result(key).map(|suspended| suspended.frontier)
+    }
+
+    fn pause_result(
+        mut self,
+        key: D::Projection,
+    ) -> Result<SuspendedCandidateConstraint<'driver, 'control, D>, TypeConstraintFailure<D>> {
         if self.active_ticket.is_some() {
             self.lower.record_failure(Self::protocol_failure(
                 TypeConstraintSourceProtocolInvariant::Ticket,
@@ -1038,7 +1063,11 @@ where
         if let Err(failure) = self.client.finish() {
             self.lower.record_failure(Self::checkpoint_failure(failure));
         }
-        self.lower.defer_child_result(key)
+        let frontier = self.lower.suspend_result(self.context, key)?;
+        Ok(SuspendedCandidateConstraint {
+            frontier,
+            context: self.context,
+        })
     }
 }
 

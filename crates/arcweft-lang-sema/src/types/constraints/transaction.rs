@@ -1679,68 +1679,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
     }
 
-    pub(crate) fn defer_child_result(
-        self,
-        key: D::Projection,
-    ) -> Result<PendingChildConstraint<D>, TypeConstraintFailure<D>> {
-        let Some(receipt) = self.parent_receipt else {
-            return Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::SourceProtocol(
-                        TypeConstraintSourceProtocolInvariant::WrongPhase,
-                    ),
-                ),
-            ));
-        };
-        if self.probe.is_some() || self.probe_group.is_some() || self.closed {
-            return Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::SourceProtocol(
-                        TypeConstraintSourceProtocolInvariant::WrongPhase,
-                    ),
-                ),
-            ));
-        }
-        if let Some(failure) = self.first_failure {
-            return Err(failure);
-        }
-        if self.frontier.is_empty() {
-            return Err(TypeConstraintFailure::Rejected(
-                TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::UnresolvedType),
-            ));
-        }
-        for path in &self.frontier {
-            let mut requests = path.projections.iter().filter(|request| {
-                request.application == self.application && request.key.as_ref() == &key
-            });
-            if requests.next().is_none() || requests.next().is_some() {
-                return Err(TypeConstraintFailure::Invariant(
-                    TypeConstraintFailureInvariant::Constraint(
-                        TypeConstraintInvariant::Projection(
-                            TypeConstraintProjectionInvariant::MissingKey,
-                        ),
-                    ),
-                ));
-            }
-        }
-        let key = Arc::new(key);
-        Ok(PendingChildConstraint {
-            receipt,
-            alternatives: self
-                .frontier
-                .into_iter()
-                .map(|path| PendingChildAlternative {
-                    path,
-                    result: ConstraintResultProjection {
-                        application: self.application,
-                        key: Arc::clone(&key),
-                    },
-                    branch: None,
-                })
-                .collect(),
-        })
-    }
-
     fn close<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -2307,6 +2245,8 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
 }
 
 mod result_port;
+mod suspension;
+pub(crate) use suspension::SuspendedConstraintFrontier;
 
 fn validate_source_selection<D: ConstraintDomain>(
     prepared: &PreparedSourceConstraint<D>,

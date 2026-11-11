@@ -143,7 +143,12 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                             &template,
                             crate::types::constraints::TypeConstraintProjectionClosure::Closed,
                         );
-                        let pending = child.defer_child_result(0).unwrap().with_probe_branch(9);
+                        let pending = child
+                            .suspend_result(probe.context, 0)
+                            .unwrap()
+                            .into_child(probe.context)
+                            .unwrap()
+                            .with_probe_branch(9);
                         probe.specialize_pending_function_value(
                             self.graph,
                             CallableConstraintApplication::Specialize(owner),
