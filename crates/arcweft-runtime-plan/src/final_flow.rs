@@ -6413,33 +6413,11 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         expression: ExprId,
     ) -> Result<Vec<ExprId>, RuntimePlanLowerError> {
-        if let Some(call) = self.call(expression)
-            && (call.project_function().is_some()
-                || matches!(call.dispatch(), RuntimeResolvedCallDispatch::Value { .. }))
-        {
-            let callee = match call.dispatch() {
-                RuntimeResolvedCallDispatch::Value { callee } => Some(*callee),
-                RuntimeResolvedCallDispatch::Static(_) => None,
-            };
-            // A fixed spread contributes its checked element sources. The
-            // literal container itself does not run or supply a value.
-            return Ok(callee
-                .into_iter()
-                .chain(
-                    call.operands()
-                        .iter()
-                        .filter_map(|operand| match operand.source() {
-                            RuntimeResolvedCallOperandSource::Expression(source) => Some(source),
-                            RuntimeResolvedCallOperandSource::CompactNumericElement { .. } => None,
-                        }),
-                )
-                .chain(call.attached_content().and_then(|content| content.source()))
-                .collect());
-        }
         let place_receiver = self
             .call(expression)
             .and_then(RuntimeResolvedCall::mutation)
             .map(crate::semantic_facts::RuntimeResolvedCallMutation::source);
+        let mut expanded_spreads = BTreeMap::<ExprId, Vec<ExprId>>::new();
         let (call_selector, evaluated_call_target) = if let Some(call) = self.call(expression) {
             let hir = self
                 .module
@@ -6453,6 +6431,31 @@ impl<'a> FinalFlowLowerer<'a> {
                 _ => None,
             };
             if let Some(invocation) = invocation {
+                for operand in call.operands() {
+                    let (
+                        RuntimeResolvedCallOperandOrigin::Argument { argument, .. },
+                        RuntimeResolvedCallOperandSource::Expression(source),
+                    ) = (operand.origin(), operand.source())
+                    else {
+                        continue;
+                    };
+                    let Some(argument) = usize::try_from(*argument)
+                        .ok()
+                        .and_then(|index| invocation.arguments().get(index))
+                    else {
+                        continue;
+                    };
+                    if matches!(
+                        argument,
+                        arcweft_lang_hir::expr::HirCallArgument::Spread { .. }
+                    ) && argument.value() != source
+                    {
+                        expanded_spreads
+                            .entry(argument.value())
+                            .or_default()
+                            .push(source);
+                    }
+                }
                 let callee = invocation.callee().value_expression();
                 let receiver = self
                     .module
@@ -6505,11 +6508,17 @@ impl<'a> FinalFlowLowerer<'a> {
                 evaluated.push(target);
             }
         }
-        evaluated.extend(children.iter().copied().filter(|child| {
+        for child in children.iter().copied().filter(|child| {
             Some(*child) != call_selector
                 && Some(*child) != evaluated_call_target
                 && Some(*child) != place_receiver
-        }));
+        }) {
+            if let Some(sources) = expanded_spreads.get(&child) {
+                evaluated.extend(sources.iter().copied());
+            } else {
+                evaluated.push(child);
+            }
+        }
         Ok(evaluated)
     }
 
