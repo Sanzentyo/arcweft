@@ -120,6 +120,163 @@ fn rejects() { pure(left); }
     }
 }
 
+fn assert_recursive_body_effect_rows(
+    declarations: &str,
+    invocation: &str,
+    name: &str,
+    expected: &[&str],
+) {
+    let caller = format!("flow main() -> i64 {{ return {invocation} }}");
+    let expected = expected
+        .iter()
+        .map(|effect| effect.to_string())
+        .collect::<Vec<_>>();
+    for source in [
+        format!("{declarations}\n{caller}"),
+        format!("{caller}\n{declarations}"),
+    ] {
+        let fixture = fixture(&source, None);
+        let analysis =
+            analyze(&fixture).expect("recursive body values retain inferred effect authority");
+        assert!(analysis.call_diagnostics().next().is_none());
+        let rows = application_rows(&analysis, name);
+        assert!(
+            rows.contains(&expected),
+            "terminal application owns the complete row: {rows:?}"
+        );
+        assert!(rows.iter().all(|row| row.is_empty() || row == &expected));
+    }
+}
+
+#[test]
+fn recursive_body_value_infers_its_annotated_local_interface() {
+    assert_recursive_body_effect_rows(
+        r#"
+fn descend(value: i64, remaining: i64) -> i64 {
+    log.info("visit")
+    if remaining == 0i64 { value } else {
+        let recur: (i64, i64) -> i64 effects { log.write } = descend
+        recur(value, remaining - 1i64)
+    }
+}
+"#,
+        "descend(42i64, 2i64)",
+        "descend",
+        &["log.write"],
+    );
+}
+
+#[test]
+fn recursive_body_generic_value_keeps_the_callers_fixed_type() {
+    assert_recursive_body_effect_rows(
+        r#"
+fn descend<T>(value: T, remaining: i64) -> T {
+    log.info("visit")
+    if remaining == 0i64 { value } else {
+        let recur = descend
+        recur(value, remaining - 1i64)
+    }
+}
+"#,
+        "descend(42i64, 2i64)",
+        "descend",
+        &["log.write"],
+    );
+}
+
+#[test]
+fn recursive_body_mutual_values_close_all_reachable_rows() {
+    assert_recursive_body_effect_rows(
+        r#"
+fn marker() -> Unit effects { fs.read } { () }
+fn left<T>(value: T, remaining: i64) -> T {
+    log.info("left")
+    if remaining == 0i64 { value } else {
+        let recur = right
+        recur(value, remaining - 1i64)
+    }
+}
+fn right<T>(value: T, remaining: i64) -> T {
+    marker()
+    if remaining == 0i64 { value } else {
+        let recur = left
+        recur(value, remaining - 1i64)
+    }
+}
+"#,
+        "left(42i64, 2i64)",
+        "left",
+        &["fs.read", "log.write"],
+    );
+}
+
+#[test]
+fn recursive_body_staged_prefix_retains_the_inferred_terminal_row() {
+    assert_recursive_body_effect_rows(
+        r#"
+fn descend<T>(value: T)(remaining: i64) -> T {
+    log.info("visit")
+    if remaining == 0i64 { value } else {
+        let recur = descend(value)
+        recur(remaining - 1i64)
+    }
+}
+"#,
+        "descend(42i64)(2i64)",
+        "descend",
+        &["log.write"],
+    );
+}
+
+#[test]
+fn recursive_body_attached_default_closes_its_own_staged_application() {
+    assert_recursive_body_effect_rows(
+        r#"
+fn descend<T>(value: T)(remaining: i64)[answer: i64 = {
+    log.info("visit")
+    if remaining == 0i64 { 42i64 } else { descend(value)(remaining - 1i64) }
+}] -> i64 { answer }
+"#,
+        "descend(true)(2i64)",
+        "descend",
+        &["log.write"],
+    );
+}
+
+#[test]
+fn recursive_body_value_cannot_satisfy_a_pure_callback_contract() {
+    let fixture = fixture(
+        r#"
+fn pure(handler: (i64, i64) -> i64 effects {}) -> Unit { () }
+fn descend(value: i64, remaining: i64) -> i64 {
+    log.info("visit")
+    if remaining > 0i64 {
+        let recur = descend
+        pure(recur);
+    }
+    value
+}
+flow main() -> i64 { return descend(42i64, 1i64) }
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("effect mismatch remains a typed call rejection");
+    let rejected = analysis
+        .calls()
+        .filter_map(|(owner, call)| {
+            matches!(
+                call.outcome(),
+                crate::callable::CallAnalysisOutcome::Rejected(_)
+            )
+            .then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    let [owner] = rejected.as_slice() else {
+        panic!("the pure callback invocation is the only rejection: {rejected:?}");
+    };
+    super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
+}
+
 #[test]
 fn recursive_callback_rows_close_in_the_callers_instance() {
     let fixture = fixture(
