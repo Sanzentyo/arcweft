@@ -51,6 +51,26 @@ enum ConstraintEquationTiming {
     InferredEffectResult,
 }
 
+impl ConstraintEquationTiming {
+    fn for_actual<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        self,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        Ok(
+            if self == Self::ResultContext
+                && acceptance == ConstraintAcceptance::ActualAcceptsPattern
+                && actual.has_omitted_function_effect_rows_with_control(context)?
+            {
+                Self::InferredEffectResult
+            } else {
+                self
+            },
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ChoiceForkRole {
     ExpectedAlternative,
@@ -904,14 +924,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.first_failure.is_some() || self.closed {
             return Ok(());
         }
-        let timing = if timing == ConstraintEquationTiming::ResultContext
-            && acceptance == ConstraintAcceptance::ActualAcceptsPattern
-            && actual.has_omitted_function_effect_rows_with_control(context)?
-        {
-            ConstraintEquationTiming::InferredEffectResult
-        } else {
-            timing
-        };
+        let timing = timing.for_actual(actual, acceptance, context)?;
         let ordinal = self.next_equation;
         self.next_equation = ordinal.checked_add(1).ok_or(TypeConstraintError::Abort(
             TypeConstraintAbort::ArithmeticOverflow,

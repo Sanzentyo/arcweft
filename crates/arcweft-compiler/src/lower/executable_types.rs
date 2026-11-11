@@ -48,9 +48,9 @@ impl RuntimeExecutableInstantiation<'_> {
         world: &RegisteredSemanticWorld,
         analysis: &FinalSemanticAnalysis,
     ) -> Result<Box<[RuntimeExecutableTypeProjection]>, RuntimeSemanticProjectionError> {
-        // A checked parameter ABI can close an inferred callback effect row
-        // which remains omitted at its authored TypeId. Preserve that exact
-        // owner substitution rather than normalizing the annotation again.
+        // Checked input and result ABIs close inferred function effect rows
+        // which remain omitted at their authored TypeId. Preserve the exact
+        // owner's interface rather than normalizing the annotation again.
         let source_type_abis = source_type_abis.into_iter().collect::<BTreeMap<_, _>>();
         let mut projection = Vec::new();
         for expected in partition.expressions() {

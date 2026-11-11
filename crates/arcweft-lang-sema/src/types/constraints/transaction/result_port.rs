@@ -187,6 +187,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 }
                 None => opened,
             };
+            let timing = super::ConstraintEquationTiming::ResultContext.for_actual(
+                expected,
+                crate::types::ConstraintAcceptance::ActualAcceptsPattern,
+                context,
+            )?;
             path.equations.push(super::PendingEquation {
                 ordinal: super::ConstraintEquationId {
                     application: self.application,
@@ -197,8 +202,12 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 actual: expected.clone(),
                 source_ordinal: None,
                 final_expected: None,
-                timing: super::ConstraintEquationTiming::Immediate,
+                timing,
             });
+            if timing == super::ConstraintEquationTiming::InferredEffectResult {
+                advanced.push(path);
+                continue;
+            }
             advanced.extend(super::relate_selected_call(
                 &pattern,
                 expected,

@@ -737,7 +737,7 @@ pub(crate) fn select_project_function_root_runtime(
         .collect::<Option<Vec<_>>>()
         .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidResult)?;
     let result = checked
-        .signature()
+        .result_schema()
         .value_type()
         .cloned()
         .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidResult)?;
@@ -803,11 +803,13 @@ pub(crate) fn select_project_function_runtime(
     }
 
     let solution = Arc::clone(application.core().solution());
-    let callable_type = solution.instantiate_result(
-        &selected
-            .base()
-            .callable_type_with_terminal_effects(checked.exposed_row())?,
-    )?;
+    let callable_type =
+        solution.instantiate_result(&selected.base().callable_type_with_terminal_interface(
+            super::CallableTerminalEffectProjection::Known {
+                effects: checked.exposed_row(),
+                result_schema: checked.inferred_result_schema(),
+            },
+        )?)?;
     if !matches!(callable_type, TypeKind::Function { .. }) {
         return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
     }

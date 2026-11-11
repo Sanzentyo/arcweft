@@ -1790,9 +1790,24 @@ fn selected_callable_type(
         return Ok(continuation.function_type().clone());
     }
     let effects = final_callable_effects(selected, checked_callables)?;
+    let result_schema = selected
+        .checked()
+        .map(|checked| {
+            checked_callables
+                .callable(checked)
+                .map(crate::callable::CheckedCallableFacts::inferred_result_schema)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
+        })
+        .transpose()?
+        .flatten();
     let declared = selected
         .base()
-        .callable_type_with_terminal_effects(&effects)
+        .callable_type_with_terminal_interface(
+            crate::callable::CallableTerminalEffectProjection::Known {
+                effects: &effects,
+                result_schema,
+            },
+        )
         .map_err(|error| {
             final_call_seal_error(
                 FinalCallSealLocation::Site(application.core().site()),

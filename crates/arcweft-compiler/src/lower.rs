@@ -8127,13 +8127,19 @@ fn build_runtime_project_function_instance(
         world,
         analysis,
     )?;
+    let result_type = checked_callable
+        .result_schema()
+        .value_type()
+        .ok_or_else(|| error("project-function owner has no checked result type"))?;
+    let result_type = lexical.runtime_type(result_type, symbols, world, analysis)?;
     let semantics = runtime_executable_semantic_facts(
         origin,
         lexical,
         fact_partition,
         parameters
             .iter()
-            .map(|parameter| (parameter.source_type(), parameter.abi_ty())),
+            .map(|parameter| (parameter.source_type(), parameter.abi_ty()))
+            .chain(function.return_type().map(|source| (source, &result_type))),
         project,
         symbols,
         world,

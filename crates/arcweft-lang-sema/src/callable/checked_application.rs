@@ -728,18 +728,43 @@ impl ResolvedCallableBase {
     }
 
     /// Builds the canonical projected callable type from this checked base.
-    /// Nested rows come only from the checked instantiation; the supplied row
-    /// controls the invocation boundary and is never used to reconstruct raw
-    /// schema children.
-    pub(crate) fn callable_type_with_terminal_effects(
+    /// The checked terminal interface owns both invocation effects and the
+    /// inferred result. Source annotations never replace that result.
+    pub(crate) fn callable_type_with_terminal_interface(
         &self,
-        invocation: &EffectRow,
+        terminal: super::CallableTerminalEffectProjection<'_>,
     ) -> Result<TypeKind, CallConstraintInvariant> {
-        projected_function_type_with_terminal_effects(
-            self.schema(),
-            self.base_call_group(),
-            invocation,
-        )
+        let (effects, result_schema) = match terminal {
+            super::CallableTerminalEffectProjection::Known {
+                effects,
+                result_schema,
+            } => (effects, result_schema),
+            super::CallableTerminalEffectProjection::Pending(checked) => {
+                return Err(CallConstraintInvariant::PendingCallableEffectProjection {
+                    checked: Box::new(checked.clone()),
+                    group: self.base_call_group(),
+                });
+            }
+        };
+        self.schema()
+            .project_function_type_from_group(
+                self.base_call_group(),
+                effects,
+                || {
+                    result_schema
+                        .unwrap_or_else(|| self.schema().result_schema())
+                        .value_type()
+                        .cloned()
+                        .ok_or(CallConstraintInvariant::PreparedSchemaMismatch)
+                },
+                |_, parameter| {
+                    parameter
+                        .declared_type()
+                        .cloned()
+                        .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
+                },
+            )
+            .map_err(CallConstraintInvariant::from)
     }
 
     /// Formal parameter type projected by this exact checked callable owner.
@@ -3989,14 +4014,6 @@ fn expected_for_alternative(
     let value_expected =
         solution.instantiate_template(&alternative.expected().apply_to(declared))?;
     Ok(source_projection.compose_expected(&value_expected))
-}
-
-fn projected_function_type_with_terminal_effects(
-    schema: &CallableSignatureSchema,
-    first_group: CallableGroupIndex,
-    invocation: &EffectRow,
-) -> Result<TypeKind, CallConstraintInvariant> {
-    schema.declared_function_type_from_group(first_group, invocation)
 }
 
 fn schema_function_type(
