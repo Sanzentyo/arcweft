@@ -304,7 +304,7 @@ pub(super) struct PreparedCorrelatedCallRecipe {
     considered: Box<[Arc<PreparedResolvedCallable>]>,
     function_value_origin: Option<Arc<PreparedFunctionValueOriginEvidence>>,
     dialogue_context: CharacterDialoguePatchContext,
-    accounting: crate::callable::CallResolverAccountingReport,
+    accounting: crate::callable::RetainedResolverWork,
     attempt: PhysicalCallAttemptId,
     descendants: Vec<PreparedCorrelatedCallRecipe>,
 }
@@ -1219,7 +1219,7 @@ impl Analyzer<'_, '_, '_> {
             context,
             parent_application,
             source,
-            &mut resolution,
+            resolution,
             parent_source,
         )
     }
@@ -1229,7 +1229,7 @@ impl Analyzer<'_, '_, '_> {
         source_context: &AnalyzerExpressionContext<'_>,
         parent_application: Option<ExprId>,
         source: CallSource<'_>,
-        resolution: &mut ResolvedCallQuery,
+        mut resolution: ResolvedCallQuery,
         parent_source: &mut crate::callable::CandidateConstraintSourceContext<
             '_,
             '_,
@@ -1357,8 +1357,15 @@ impl Analyzer<'_, '_, '_> {
                 candidates.push((selected, candidate_pending, rank_seed, recipe, descendants));
             }
         }
+        if candidates.is_empty() {
+            return Ok((None, Vec::new()));
+        }
+        self.control
+            .check()
+            .map_err(AnalyzerExpressionError::fatal)?;
         let function_value_origin = resolution.function_value_origin.take().map(Arc::new);
-        let accounting = resolution.work.call_accounting();
+        let accounting = crate::callable::RetainedResolverWork::retain(resolution.work)
+            .map_err(AnalyzerExpressionError::Abort)?;
         let mut pending: Option<
             crate::types::constraints::PendingChildConstraint<
                 constraints::AnalyzerCallConstraintDomain,
@@ -3612,7 +3619,14 @@ impl Analyzer<'_, '_, '_> {
                 })?,
             inventory,
             function_value_origin,
-            recipe.accounting,
+            recipe.accounting.report().map_err(|error| {
+                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        error,
+                    )),
+                })
+            })?,
         );
         let (application, consumer, callee_inputs, inputs, sealed_branch, component_evidence) =
             transaction.into_parts();

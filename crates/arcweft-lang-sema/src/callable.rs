@@ -191,7 +191,8 @@ pub use limits::{
     SignatureQueryWorkReport, SignatureWorkReport,
 };
 pub(crate) use limits::{
-    CandidateConstraintSessionStartFailure, ResolverWork, SignatureQueryWorkMeter,
+    CandidateConstraintSessionStartFailure, ResolverWork, RetainedResolverWork,
+    SignatureQueryWorkMeter,
 };
 pub(crate) use nominal_signature::associated_scope_for;
 pub(crate) use presentation::PresentationArgumentValuePolicy;

@@ -133,6 +133,8 @@ pub(crate) enum CallConstraintInvariant {
     CheckedCallableAuthorityMismatch,
     #[error("prepared callable record does not match its checked call site")]
     PreparedCallSiteMismatch,
+    #[error("retained call-work ledger is already exclusively borrowed")]
+    RetainedCallWorkBorrowed,
     #[error("checked expression coordinate is absent for call source {owner:?}")]
     MissingCheckedExpressionCoordinate { owner: ExprId },
     #[error("checked binding coordinate is absent for call source {owner:?}")]

@@ -11,6 +11,9 @@ use crate::types::constraints::context::{
 };
 use crate::types::constraints::{TypeConstraintAbort, TypeConstraintError};
 
+mod retained;
+pub(crate) use retained::RetainedResolverWork;
+
 /// Fixed resource limits shared by callable registration and semantic queries.
 #[allow(
     clippy::struct_field_names,
@@ -306,7 +309,7 @@ impl CatalogBuildWork {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) struct ResolverWork {
     consumed: u64,
     limit: u64,
@@ -744,6 +747,7 @@ impl ResolverWork {
 
     pub(crate) fn charge(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
         self.charge_component(units, ResolverWorkComponent::Resolver)
+            .map_err(Into::into)
     }
 
     pub(crate) fn charge_argument_mapping(
@@ -751,6 +755,7 @@ impl ResolverWork {
         units: u64,
     ) -> Result<(), CallableQueryLimitError> {
         self.charge_component(units, ResolverWorkComponent::ArgumentMapping)
+            .map_err(Into::into)
     }
 
     /// Returns the exact unconsumed query-work budget for one projected
@@ -848,13 +853,13 @@ impl ResolverWork {
         &mut self,
         units: u64,
         component: ResolverWorkComponent,
-    ) -> Result<(), CallableQueryLimitError> {
+    ) -> Result<(), ResolverWorkChargeError> {
         let next = self
             .consumed
             .checked_add(units)
-            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+            .ok_or(ResolverWorkChargeError::ArithmeticOverflow)?;
         if next > self.limit {
-            return Err(CallableQueryLimitError::Work {
+            return Err(ResolverWorkChargeError::Work {
                 requested: units,
                 consumed: self.consumed,
                 limit: self.limit,
@@ -864,7 +869,7 @@ impl ResolverWork {
             ResolverWorkComponent::Resolver => self.resolver.checked_add(units),
             ResolverWorkComponent::ArgumentMapping => self.argument_mapping.checked_add(units),
         }
-        .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+        .ok_or(ResolverWorkChargeError::ArithmeticOverflow)?;
         self.consumed = next;
         match component {
             ResolverWorkComponent::Resolver => self.resolver = next_component,
@@ -878,6 +883,52 @@ impl ResolverWork {
 enum ResolverWorkComponent {
     Resolver,
     ArgumentMapping,
+}
+
+/// The work ledger has only arithmetic and work-admission failures. Public
+/// query limits and lower continuation accounting preserve those same fields.
+#[derive(Debug)]
+enum ResolverWorkChargeError {
+    ArithmeticOverflow,
+    Work {
+        requested: u64,
+        consumed: u64,
+        limit: u64,
+    },
+}
+
+impl From<ResolverWorkChargeError> for CallableQueryLimitError {
+    fn from(error: ResolverWorkChargeError) -> Self {
+        match error {
+            ResolverWorkChargeError::ArithmeticOverflow => Self::ArithmeticOverflow,
+            ResolverWorkChargeError::Work {
+                requested,
+                consumed,
+                limit,
+            } => Self::Work {
+                requested,
+                consumed,
+                limit,
+            },
+        }
+    }
+}
+
+impl From<ResolverWorkChargeError> for TypeConstraintAbort {
+    fn from(error: ResolverWorkChargeError) -> Self {
+        match error {
+            ResolverWorkChargeError::ArithmeticOverflow => Self::ArithmeticOverflow,
+            ResolverWorkChargeError::Work {
+                requested,
+                consumed,
+                limit,
+            } => Self::WorkLimit {
+                requested,
+                consumed,
+                limit,
+            },
+        }
+    }
 }
 
 /// Work performed while resolving and projecting one semantic signature query.
