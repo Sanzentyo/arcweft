@@ -601,6 +601,7 @@ fn shared_prefix_restores_independent_callback_effects_in_an_attached_default() 
 fn repeat<T>(callback: T -> i64, value: T, remaining: i64) -> i64 {
     if remaining == 0i64 { callback(value) } else { repeat(callback, value, remaining - 1i64) }
 }
+
 fn staged<A, B>(prefix: A)(later: B, callback: B -> i64, remaining: i64)[body: DialogueContent = {
     let _ = prefix
     let value = repeat(callback, later, remaining)
@@ -628,6 +629,69 @@ flow main() -> i64 {
     );
 }
 
+#[test]
+fn recursive_body_function_values_resume_with_a_shared_generic_prefix() {
+    let body = r#"
+fn left<T>(value: T, count: i64) -> T {
+    log.info("left")
+    if count == 0i64 { value } else {
+        let recur = right
+        recur(value, count - 1i64)
+    }
+}
+fn right<T>(value: T, count: i64) -> T {
+    log.info("right")
+    if count == 0i64 { value } else {
+        let recur = left
+        recur(value, count - 1i64)
+    }
+}
+fn stage<A, B>(prefix: A)(value: B, count: i64) -> B {
+    let _ = prefix
+    left(value, count)
+}
+flow main() -> i64 {
+    let callback = right
+    let shared = stage({ log.info("prefix"); 7i64 })
+    wait(0.1s)
+    let text = shared("retained", 1i64)
+    if text == "retained" {
+        return callback(shared(42i64, 2i64), 1i64)
+    }
+    return 0i64
+}
+"#;
+    assert_shared_prefix_wait_in_both_executors(
+        native(body),
+        product(body, true),
+        &["left", "right", "left", "right", "left", "right", "left"],
+    );
+}
+
+#[test]
+fn recursive_body_attached_prefix_restores_before_inferred_default_execution() {
+    let body = r#"
+fn fallback<T>(value: T)(seed: DialogueContent, depth: i64)[body: DialogueContent = {
+    log.info("default")
+    if depth == 0i64 { seed } else {
+        let recur = fallback(value)
+        recur(seed, depth - 1i64)
+    }
+}] -> DialogueContent { body }
+flow main() -> i64 {
+    let shared = fallback({ log.info("prefix"); "captured" })
+    wait(0.1s)
+    let _ = shared(fmt("first"), 1i64)
+    let _ = shared(fmt("second"), 2i64)
+    return 42i64
+}
+"#;
+    assert_shared_prefix_wait_in_both_executors(
+        native(body),
+        product(body, true),
+        &["default", "default", "default", "default", "default"],
+    );
+}
 #[test]
 fn project_calls_accept_callbacks_with_fewer_effects_than_the_parameter() {
     let body = r#"

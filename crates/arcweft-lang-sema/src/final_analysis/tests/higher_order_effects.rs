@@ -232,12 +232,16 @@ fn descend<T>(value: T)(remaining: i64) -> T {
 fn recursive_body_attached_default_closes_its_own_staged_application() {
     assert_recursive_body_effect_rows(
         r#"
-fn descend<T>(value: T)(remaining: i64)[answer: i64 = {
+fn descend<T>(value: T)(seed: DialogueContent, remaining: i64)[body: DialogueContent = {
     log.info("visit")
-    if remaining == 0i64 { 42i64 } else { descend(value)(remaining - 1i64) }
-}] -> i64 { answer }
+    if remaining == 0i64 { seed } else { descend(value)(seed, remaining - 1i64) }
+}] -> DialogueContent { body }
+fn answer() -> i64 {
+    let _ = descend(true)(fmt("seed"), 2i64)
+    42i64
+}
 "#,
-        "descend(true)(2i64)",
+        "answer()",
         "descend",
         &["log.write"],
     );
