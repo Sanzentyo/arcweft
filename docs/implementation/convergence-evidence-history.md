@@ -16657,3 +16657,19 @@ workspace の locked・全target・全feature check／Clippy、整形、構造ga
 責務は、immutable Boolean graph、二つの completion policy が共有する lower-envelope、membership の借用と有限行 admission に閉じる。decision owner は25,956 bytes／712行（基点604行）、membership は22,330 bytes／660行（基点580行）、責任moduleの公開部は1,715 bytes／49行。testsは別の同owner moduleと外部API境界に置き、全モデル検証の108行は一つの独立した model oracle を保つ。新しいcrate依存、I/O、unsafe、codec／wire／digest version、互換readerはない。構造gateはblocking 0件で、行数のみの分割やlintの抑制は行わない。
 
 Source差分、owner選択・全実行、品質検証、52逆依存、実測、公開receiptを21件、展開時10,689,903 bytes、ZIP 992,171 bytes、SHA-256 `52628135fee6ada2e9185600ef9faa52f2ef93ed5193a646a6088e6823799402` の原本へ保持した。全entryの長さとhashを再照合した。[検証原本](acceptance-evidence/task-recursive-effect-boolean-foundation.raw.zip)。この計算基盤の成功は、再帰本体8件や全体goalの完了を示さない。
+
+### Prepared effect scheme closure
+
+2026-11-11、基点 `1210c5e647fde13c1dcb1928b20f6d9be897120e` から既存mainで継続し、Source `0024a06e57750942c52ef96e6cea667d864cfae3`、tree `afe065898c157b058f13fd04ac0d4da64c54e84e` を通常のfast-forward pushで公開した。remote mainのfull SHA、tree、変更6pathのblobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。今回の私有graphはcallable宣言やactive type factへまだ接続しておらず、再帰本体6件とCompiler 2件の受入ではない。
+
+下位graphはissuer付きのscheme、行application／同時置換／union、predicate、共有された離散choiceを保持する。schemeはdeclaredからbody-preparedへ一度だけ進み、再帰applicationはcallee本体へ再入しない。checkpointはstack順を検査し、rollbackしてもordinalを再利用せず、foreign issuerと失効参照を拒否する。Boolean cellは型付きの別identityであり、有限行やcallerのgeneric parameterを装わない。全保持alternativeのoverrideと一つのdefault classからsupportを作り、指数的tableの全量をchecked arithmeticと既存controlで構築前にadmitする。
+
+全schemeのequation、宣言domain、application admission、保持predicateを一つの関係で閉じる。choiceは全label・全formal valuationで共通とし、formalの全称量化より外で固定する。scheme cellだけのpointwise leastを選び、choice自体を最小化しない。最小cellを代入してchoiceが一意にならない場合は曖昧として拒否する。closednessがcellに依存するときも、既存EffectIdのcoverageとopen rowのexact membershipの分岐を関係の中に保持する。確定後は元termをcanonical rowへ投影し、Coreの行代数とSemaのcoverage規則で元equation／domain／obligationを独立に再確認する。これはcandidateの順位・active carrierを移行したとの主張ではない。
+
+全featureのSema owner nextestは1,500件実行、1,494 PASS／6 FAIL／skip 0、終了100。新規15件はすべてPASS。再帰identityのparametric default、相互参照と引数置換、2schemeの全16組のBoolean equationを独立truth-table oracleと比較し、解なし／最小解なし、離散choiceのlabel／formal間相関、一意choice、cell依存closedness、domain付きapplication、rollback／失効、指数的事前admission、exact／one-under予算を検証した。失敗6 IDは先行 `518d63e31dd2be9750158004b171a6174b2725a7` の再帰本体と一致し、既受入Generic Matchや呼出し側再帰・同一グループprefixを戻す根拠ではない。初回13件の12 PASS／1 FAILは、効果名 `fs` がoperationを持たないfixture誤りだった。既存契約の `fs.read(save)` に訂正した。テストhelperのslot型u16／u32不一致による初回compile失敗も原本へ保持する。
+
+ownerのlocked・全target・全feature check／Clippy、workspace整形、構造gateは終了0、blocking 0件。Clippyは未接続の私有owner、未使用mut、既存のものを含む警告あり。公開API・manifest・共有言語動作を変更しない私有graphの段階なので、今回はownerを全件実行し、workspace check／Clippy・consumer全件・Wasm・Compiler実行を再実行していない。Cargo入力は先行graphから差分0で、Sema22 packageの依存集合を維持する。過去の22／52 consumerの結果を今回のSourceへ転記しない。active carrier／宣言scheme接続後の横断検証は継続する。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+新規ownerの実測はprepared graph 21,499 bytes／654行、joint closure 13,168 bytes／331行、term compilation 20,019 bytes／521行、canonical reification 14,614 bytes／363行、別test 21,425 bytes／633行。既存effect_rowはmodule登録1行のみ増え55,316 bytes／1,581行（基点1,580行）。issuer／checkpointの状態、joint Boolean閉包、pending termの反復compile、確定後のcanonical再確認を責務で分け、公開範囲を物理分割のために広げない。新しいcrate依存、I/O、unsafe、codec／wire／digest version、並列の完成型、互換reader、予算の緩和はない。
+
+Source差分、初回失敗、owner全実行、品質receipt、実測、公開照合を14 entry、展開時7,640,888 bytes、ZIP 675,806 bytes、SHA-256 `ed163318ac6224844c8a356790c92930045d44f900f727deaa79f86b7a605f88` の原本へ保持し、全entryの長さ・hashを再照合した。[検証原本](acceptance-evidence/task-recursive-effect-scheme-closure.raw.zip)。古い「prepared schemeは未実装」という一括記述は、下位graphの実装とcallable側の未接続を分けるため現状一覧で置換した。以前の検証結果・full SHA・凍結原本は変更していない。
