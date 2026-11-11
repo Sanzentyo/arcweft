@@ -218,7 +218,7 @@ impl Reification<'_> {
                                 no
                             });
                         }
-                        PredicateTerm::Relation { .. } => {}
+                        PredicateTerm::Relation { .. } | PredicateTerm::Substitution { .. } => {}
                     }
                 }
             }
@@ -226,6 +226,21 @@ impl Reification<'_> {
         for id in reachable {
             let term = self.component.graph.predicates[&id].as_ref();
             let value = match term {
+                PredicateTerm::Substitution {
+                    predicate,
+                    arguments,
+                } => {
+                    let mut substitutions = BTreeMap::new();
+                    let mut admitted = CanonicalDecision::constant(true);
+                    for (parameter, argument) in arguments {
+                        let argument = self.row(argument, work)?;
+                        admitted = admitted.and(&argument.admitted, work)?;
+                        work.charge(DecisionWork::Node)?;
+                        substitutions.insert(parameter.clone(), argument.row.known()?.clone());
+                    }
+                    let substituted = predicate.substitute(&substitutions, work)?;
+                    self.membership(&substituted, work)?.and(&admitted, work)?
+                }
                 PredicateTerm::Relation {
                     relation,
                     actual,

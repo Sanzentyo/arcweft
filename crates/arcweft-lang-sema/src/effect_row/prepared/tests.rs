@@ -212,7 +212,7 @@ fn least_cell_closure_distinguishes_unsatisfiable_and_nonprincipal_equations() {
         .unwrap();
     let self_call = impossible.application(&f, vec![], &mut control).unwrap();
     let body = impossible
-        .substitute(
+        .apply_formula(
             complement.clone(),
             BTreeMap::from([(e.clone(), self_call)]),
             &mut control,
@@ -236,14 +236,14 @@ fn least_cell_closure_distinguishes_unsatisfiable_and_nonprincipal_equations() {
     let f_call = incomparable.application(&f, vec![], &mut control).unwrap();
     let g_call = incomparable.application(&g, vec![], &mut control).unwrap();
     let f_body = incomparable
-        .substitute(
+        .apply_formula(
             complement.clone(),
             BTreeMap::from([(e.clone(), g_call)]),
             &mut control,
         )
         .unwrap();
     let g_body = incomparable
-        .substitute(complement, BTreeMap::from([(e, f_call)]), &mut control)
+        .apply_formula(complement, BTreeMap::from([(e, f_call)]), &mut control)
         .unwrap();
     incomparable
         .prepare_body(&f, f_body, vec![], &mut control)
@@ -500,7 +500,7 @@ fn mutual_boolean_equations_match_exhaustive_truth_tables() {
                     _ => unreachable!(),
                 };
                 graph
-                    .substitute(
+                    .apply_formula(
                         formula,
                         BTreeMap::from([(e.clone(), argument)]),
                         &mut control,
@@ -630,4 +630,222 @@ fn closure_budget_boundary_preserves_the_original_graph_on_failure() {
     );
     assert_eq!(graph.schemes.len(), 1);
     assert_eq!(graph.rows.len(), 2);
+}
+
+#[test]
+fn row_substitution_composes_pending_applications_and_existing_formula_bindings() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 2));
+    let a = parameter(&scope, 0);
+    let b = parameter(&scope, 1);
+    let f = graph
+        .declare(
+            vec![a.clone()],
+            EffectPredicate::unconstrained(),
+            &mut control,
+        )
+        .unwrap();
+    let f_body = graph
+        .union(vec![open(&a), literal(&["fs.read"])], &mut control)
+        .unwrap();
+    graph
+        .prepare_body(&f, f_body, vec![], &mut control)
+        .unwrap();
+    let applied = graph.application(&f, vec![open(&b)], &mut control).unwrap();
+    let formula = EffectFormula::variable(a.clone(), &mut control)
+        .unwrap()
+        .difference(
+            &EffectFormula::variable(b.clone(), &mut control).unwrap(),
+            &mut control,
+        )
+        .unwrap();
+    let inner = graph
+        .apply_formula(
+            formula,
+            BTreeMap::from([(a.clone(), applied)]),
+            &mut control,
+        )
+        .unwrap();
+    let source = graph
+        .union(vec![inner, literal(&["event.emit"])], &mut control)
+        .unwrap();
+    let arguments = BTreeMap::from([
+        (a, literal(&["metric.write"])),
+        (b, literal(&["log.write"])),
+    ]);
+    let substituted = graph.substitute(&source, &arguments, &mut control).unwrap();
+    let result = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut control)
+        .unwrap();
+    graph
+        .prepare_body(&result, substituted, vec![], &mut control)
+        .unwrap();
+    let closed = graph.close(&mut control).unwrap();
+    assert_eq!(
+        closed.scheme(&result).unwrap().closed_value().unwrap(),
+        EffectSet::from_labels(["fs.read", "event.emit"]).unwrap()
+    );
+}
+
+#[test]
+fn row_substitution_is_simultaneous_and_does_not_rewrite_replacement_rows() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 2));
+    let a = parameter(&scope, 0);
+    let b = parameter(&scope, 1);
+    let source = graph.union(vec![open(&a), open(&b)], &mut control).unwrap();
+    let arguments = BTreeMap::from([(a, open(&b)), (b.clone(), literal(&["log.write"]))]);
+    let substituted = graph.substitute(&source, &arguments, &mut control).unwrap();
+    let result = graph
+        .declare(
+            vec![b.clone()],
+            EffectPredicate::unconstrained(),
+            &mut control,
+        )
+        .unwrap();
+    graph
+        .prepare_body(&result, substituted, vec![], &mut control)
+        .unwrap();
+    let closed = graph.close(&mut control).unwrap();
+    assert_eq!(
+        closed.scheme(&result).unwrap(),
+        &EffectRow::open(EffectSet::from_labels(["log.write"]).unwrap(), b)
+    );
+}
+
+#[test]
+fn shared_deep_row_substitution_is_iterative_and_preserves_dag_sharing() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let a = parameter(&scope, 0);
+    let mut source = open(&a);
+    for _ in 0..512 {
+        source = graph
+            .union(vec![source.clone(), source], &mut control)
+            .unwrap();
+    }
+    let before = graph.rows.len();
+    let arguments = BTreeMap::from([(a, literal(&["fs.read"]))]);
+    let substituted = graph
+        .substitute(&source, &arguments, &mut Budget(20_000))
+        .unwrap();
+    // Growth follows unique terms, not the exponentially many DAG paths.
+    assert!(graph.rows.len() - before <= 2 * before + 2);
+    let result = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut control)
+        .unwrap();
+    graph
+        .prepare_body(&result, substituted, vec![], &mut control)
+        .unwrap();
+    assert_eq!(
+        graph
+            .close(&mut control)
+            .unwrap()
+            .scheme(&result)
+            .unwrap()
+            .closed_value()
+            .unwrap(),
+        EffectSet::from_labels(["fs.read"]).unwrap()
+    );
+}
+
+#[test]
+fn predicate_substitution_keeps_pending_rows_and_outer_binder_substitution() {
+    for (labels, expected) in [(&[][..], true), (&["log.write"][..], false)] {
+        let mut graph = PreparedEffectGraph::default();
+        let mut control = budget();
+        let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 2));
+        let a = parameter(&scope, 0);
+        let b = parameter(&scope, 1);
+        let f = graph
+            .declare(
+                vec![a.clone()],
+                EffectPredicate::unconstrained(),
+                &mut control,
+            )
+            .unwrap();
+        let body = graph
+            .union(vec![open(&a), literal(&["fs.read"])], &mut control)
+            .unwrap();
+        graph.prepare_body(&f, body, vec![], &mut control).unwrap();
+        let applied = graph.application(&f, vec![open(&b)], &mut control).unwrap();
+        let permitted =
+            EffectFormula::from_set(&EffectSet::from_labels(["fs.read"]).unwrap(), &mut control)
+                .unwrap();
+        let predicate = EffectFormula::variable(a.clone(), &mut control)
+            .unwrap()
+            .subset(&permitted, &mut control)
+            .unwrap();
+        let inner = graph
+            .substitute_predicate(
+                &PreparedEffectPredicate::Canonical(predicate),
+                &BTreeMap::from([(a.clone(), applied)]),
+                &mut control,
+            )
+            .unwrap();
+        let projected = graph
+            .substitute_predicate(
+                &inner,
+                &BTreeMap::from([(a, literal(&["metric.write"])), (b, literal(labels))]),
+                &mut control,
+            )
+            .unwrap();
+        let result = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut control)
+            .unwrap();
+        graph
+            .prepare_body(&result, literal(&[]), vec![projected], &mut control)
+            .unwrap();
+        match graph.close(&mut control) {
+            Ok(_) => assert!(expected),
+            Err(PreparedEffectFailure::Unsatisfiable) => assert!(!expected),
+            Err(error) => panic!("unexpected result: {error}"),
+        }
+    }
+}
+
+#[test]
+fn failed_substitution_removes_all_partial_rows_and_predicates() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let a = parameter(&scope, 0);
+    let row = graph
+        .union(vec![open(&a), literal(&["log.write"])], &mut control)
+        .unwrap();
+    let predicate = graph
+        .relate(
+            PreparedEffectRelation::AdmittedSubset,
+            row,
+            literal(&["fs.read", "log.write"]),
+            &mut control,
+        )
+        .unwrap();
+    let arguments = BTreeMap::from([(a, literal(&["fs.read"]))]);
+    let before = control.0;
+    graph
+        .substitute_predicate(&predicate, &arguments, &mut control)
+        .unwrap();
+    let cost = before - control.0;
+    let rows: Vec<_> = graph.rows.keys().copied().collect();
+    let predicates: Vec<_> = graph.predicates.keys().copied().collect();
+    let next_row = graph.next_row;
+    let next_predicate = graph.next_predicate;
+    assert!(matches!(
+        graph.substitute_predicate(&predicate, &arguments, &mut Budget(cost - 1)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    assert_eq!(graph.rows.keys().copied().collect::<Vec<_>>(), rows);
+    assert_eq!(
+        graph.predicates.keys().copied().collect::<Vec<_>>(),
+        predicates
+    );
+    assert!(graph.next_row > next_row);
+    assert!(graph.next_predicate > next_predicate);
+    graph
+        .substitute_predicate(&predicate, &arguments, &mut Budget(cost))
+        .unwrap();
 }

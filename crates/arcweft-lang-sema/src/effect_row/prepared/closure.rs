@@ -96,6 +96,17 @@ impl Layout {
         }
         for predicate in graph.predicates.values() {
             match predicate.as_ref() {
+                PredicateTerm::Substitution {
+                    predicate,
+                    arguments,
+                } => {
+                    support(predicate.membership())?;
+                    for row in arguments.values() {
+                        if let PreparedEffectRow::Canonical(row) = row {
+                            support(row.known()?.membership())?;
+                        }
+                    }
+                }
                 PredicateTerm::Relation {
                     actual, permitted, ..
                 } => {
@@ -285,7 +296,7 @@ impl PreparedEffectGraph {
         }
         let mut schemes = BTreeMap::new();
         for (&id, scheme) in &self.schemes {
-            let mut compilation = Compilation::new(self, &layout, id, &scheme.header.parameters);
+            let compilation = Compilation::new(self, &layout, id, &scheme.header.parameters);
             let parameters = compilation.parameters(&mut work)?;
             let function = compilation.application(id, &parameters, &mut work)?;
             let mut output = Vec::new();

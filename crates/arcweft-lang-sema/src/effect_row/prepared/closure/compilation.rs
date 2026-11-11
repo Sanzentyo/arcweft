@@ -477,7 +477,7 @@ impl<'a> Compilation<'a> {
                             work.charge(DecisionWork::Node)?;
                             todo.push(no);
                         }
-                        PredicateTerm::Relation { .. } => {}
+                        PredicateTerm::Relation { .. } | PredicateTerm::Substitution { .. } => {}
                     }
                 }
             }
@@ -485,6 +485,29 @@ impl<'a> Compilation<'a> {
         for id in reachable {
             let term = self.graph.predicates[&id].as_ref();
             let value = match term {
+                PredicateTerm::Substitution {
+                    predicate,
+                    arguments,
+                } => {
+                    let mut substitutions = BTreeMap::new();
+                    let mut result = Decision::constant(true);
+                    for (parameter, row) in arguments {
+                        let row = self.row(row, work)?;
+                        result = result.and(&row.admitted, work)?;
+                        work.charge(DecisionWork::Node)?;
+                        substitutions.insert(parameter.clone(), row);
+                    }
+                    for class in 0..self.layout.classes() {
+                        let decision = self.member(
+                            self.layout.at(predicate.membership(), class),
+                            class,
+                            &substitutions,
+                            work,
+                        )?;
+                        result = result.and(&decision, work)?;
+                    }
+                    result
+                }
                 PredicateTerm::Relation {
                     relation,
                     actual,

@@ -17,6 +17,7 @@ use crate::types::GenericEffectReference;
 
 mod closure;
 pub(crate) use closure::ClosedEffectComponent;
+mod substitution;
 #[cfg(test)]
 mod tests;
 
@@ -180,6 +181,10 @@ impl RowTerm {
 
 #[derive(Debug)]
 enum PredicateTerm {
+    Substitution {
+        predicate: EffectPredicate,
+        arguments: BTreeMap<GenericEffectReference, PreparedEffectRow>,
+    },
     Relation {
         relation: PreparedEffectRelation,
         actual: PreparedEffectRow,
@@ -388,7 +393,7 @@ impl PreparedEffectGraph {
         self.insert_row(RowTerm::Union(rows.into_boxed_slice()), control)
     }
 
-    pub(crate) fn substitute<C: DecisionControl>(
+    fn apply_formula<C: DecisionControl>(
         &mut self,
         formula: EffectFormula<GenericEffectReference>,
         arguments: BTreeMap<GenericEffectReference, PreparedEffectRow>,
@@ -401,6 +406,27 @@ impl PreparedEffectGraph {
             self.validate_row(row)?;
         }
         self.insert_row(RowTerm::Substitution { formula, arguments }, control)
+    }
+
+    fn apply_predicate<C: DecisionControl>(
+        &mut self,
+        predicate: EffectPredicate,
+        arguments: BTreeMap<GenericEffectReference, PreparedEffectRow>,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        for row in arguments.values() {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            self.validate_row(row)?;
+        }
+        self.insert_predicate(
+            PredicateTerm::Substitution {
+                predicate,
+                arguments,
+            },
+            control,
+        )
     }
 
     pub(crate) fn prepare_body<C: DecisionControl>(
