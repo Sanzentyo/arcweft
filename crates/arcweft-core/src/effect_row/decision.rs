@@ -1,9 +1,9 @@
 //! Canonical membership decisions shared by symbolic effect rows and predicates.
 //!
-//! An atom is a typed row reference, not a concrete effect label. Owners apply
-//! this algebra independently to their default label class and each concrete
-//! override. Construction is private and all exported graphs are reduced,
-//! ordered and numbered by reachable low-before-high postorder.
+//! An atom is a caller-owned Boolean identity, not a concrete effect label.
+//! Rows and predicates use this algebra for their default class and overrides;
+//! inference owners can also relate several classes in one decision. All graphs
+//! are reduced, ordered and numbered by reachable low-before-high postorder.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,10 +46,16 @@ pub(super) struct Node<V> {
     pub(super) high: Root,
 }
 
-/// A closed, immutable Boolean membership function over typed row references.
+/// A canonical, immutable Boolean function over caller-owned typed identities.
 /// Local node indices are never accepted from another graph or from a consumer.
+///
+/// ```compile_fail
+/// use arcweft_core::effect_row::EffectDecision;
+/// let decision = EffectDecision::<u8>::constant(false);
+/// let _ = decision.nodes;
+/// ```
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct EffectDecision<V> {
+pub struct EffectDecision<V> {
     pub(super) nodes: Box<[Node<V>]>,
     pub(super) root: Root,
 }
@@ -60,6 +66,41 @@ pub(super) struct EffectDecision<V> {
 pub(super) struct DecisionCompletion<V> {
     pub(super) admissibility: EffectDecision<V>,
     pub(super) least: Option<BTreeMap<V, EffectDecision<V>>>,
+}
+
+/// A relation's satisfiable domain and the domain with pointwise least witnesses.
+///
+/// The lower envelope is a witness only where `principal()` holds. A satisfiable
+/// valuation can have several incomparable witnesses, so satisfiability alone
+/// never authorizes using these values as a completed solution.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ConditionalDecisionCompletion<V> {
+    satisfiable: EffectDecision<V>,
+    principal: EffectDecision<V>,
+    lower_envelope: BTreeMap<V, EffectDecision<V>>,
+}
+
+impl<V> ConditionalDecisionCompletion<V> {
+    /// Valuations admitting at least one tuple of quantified values.
+    pub const fn satisfiable(&self) -> &EffectDecision<V> {
+        &self.satisfiable
+    }
+
+    /// Valuations where the coordinatewise lower envelope satisfies the relation.
+    pub const fn principal(&self) -> &EffectDecision<V> {
+        &self.principal
+    }
+
+    /// Coordinatewise meets of all witnesses, valid as a tuple only under `principal`.
+    pub const fn lower_envelope(&self) -> &BTreeMap<V, EffectDecision<V>> {
+        &self.lower_envelope
+    }
+}
+
+struct CompletionRoots<V> {
+    admissibility: Root,
+    replacements: BTreeMap<V, Root>,
+    instantiated: Root,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -137,7 +178,8 @@ struct DecisionBuilder<'c, V, C> {
 }
 
 impl<V: Clone + Ord> EffectDecision<V> {
-    pub(super) fn node_count(&self) -> usize {
+    /// Number of immutable decision nodes available for owning admission checks.
+    pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
 
@@ -190,32 +232,51 @@ impl<V: Clone + Ord> EffectDecision<V> {
             _ => None,
         }
     }
-    pub(super) fn constant(value: bool) -> Self {
+    /// Constructs a Boolean constant without allocating decision nodes.
+    pub fn constant(value: bool) -> Self {
         Self {
             nodes: Box::new([]),
             root: if value { Root::True } else { Root::False },
         }
     }
 
-    pub(super) fn variable<C: DecisionControl>(
-        variable: V,
-        control: &mut C,
-    ) -> Result<Self, C::Error> {
+    /// Admits one caller-owned Boolean variable through the supplied work control.
+    pub fn variable<C: DecisionControl>(variable: V, control: &mut C) -> Result<Self, C::Error> {
         let mut builder = DecisionBuilder::new(control);
         let root = builder.branch(variable, Root::False, Root::True)?;
         builder.finish(root)
     }
 
-    pub(super) fn is_constant(&self, value: bool) -> bool {
+    /// Tests whether the whole reduced function is the requested constant.
+    pub fn is_constant(&self, value: bool) -> bool {
         self.root == if value { Root::True } else { Root::False }
     }
 
     pub(super) fn evaluate(&self, mut value: impl FnMut(&V) -> bool) -> bool {
+        self.try_evaluate(&mut value, || Ok::<_, std::convert::Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    /// Evaluates one valuation, charging before each visited node or terminal.
+    pub fn evaluate_with_control<C: DecisionControl>(
+        &self,
+        mut value: impl FnMut(&V) -> bool,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        self.try_evaluate(&mut value, || control.charge(DecisionWork::Visit))
+    }
+
+    fn try_evaluate<E>(
+        &self,
+        value: &mut impl FnMut(&V) -> bool,
+        mut visit: impl FnMut() -> Result<(), E>,
+    ) -> Result<bool, E> {
         let mut root = self.root;
         loop {
+            visit()?;
             match root {
-                Root::False => return false,
-                Root::True => return true,
+                Root::False => return Ok(false),
+                Root::True => return Ok(true),
                 Root::Branch(index) => {
                     let node = &self.nodes[index];
                     root = if value(&node.variable) {
@@ -228,14 +289,15 @@ impl<V: Clone + Ord> EffectDecision<V> {
         }
     }
 
-    pub(super) fn variables(&self) -> impl ExactSizeIterator<Item = &V> {
+    /// Node references in canonical order; a variable may occur in several nodes.
+    pub fn variables(&self) -> impl ExactSizeIterator<Item = &V> {
         self.nodes.iter().map(|node| &node.variable)
     }
 
     /// Maps references through their owning scope operation. Rebuild through
     /// conditional construction because opening or reification may change the
     /// reference order or merge previously distinct references.
-    pub(super) fn map_references<U: Clone + Ord, C: DecisionControl>(
+    pub fn map_references<U: Clone + Ord, C: DecisionControl>(
         &self,
         control: &mut C,
         mapping: &mut impl FnMut(&V, &mut C) -> Result<U, C::Error>,
@@ -256,7 +318,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
     }
 
     /// `self ? yes : no` is the only Boolean construction primitive.
-    pub(super) fn conditional<C: DecisionControl>(
+    pub fn conditional<C: DecisionControl>(
         &self,
         yes: &Self,
         no: &Self,
@@ -270,27 +332,23 @@ impl<V: Clone + Ord> EffectDecision<V> {
         builder.finish(root)
     }
 
-    pub(super) fn and<C: DecisionControl>(
-        &self,
-        other: &Self,
-        control: &mut C,
-    ) -> Result<Self, C::Error> {
+    /// Conjoins two functions using the shared controlled decision builder.
+    pub fn and<C: DecisionControl>(&self, other: &Self, control: &mut C) -> Result<Self, C::Error> {
         self.conditional(other, &Self::constant(false), control)
     }
 
-    pub(super) fn or<C: DecisionControl>(
-        &self,
-        other: &Self,
-        control: &mut C,
-    ) -> Result<Self, C::Error> {
+    /// Disjoins two functions using the shared controlled decision builder.
+    pub fn or<C: DecisionControl>(&self, other: &Self, control: &mut C) -> Result<Self, C::Error> {
         self.conditional(&Self::constant(true), other, control)
     }
 
-    pub(super) fn not<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
+    /// Complements a Boolean function without interpreting it as a finite row.
+    pub fn not<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
         self.conditional(&Self::constant(false), &Self::constant(true), control)
     }
 
-    pub(super) fn exists<C: DecisionControl>(
+    /// Existentially eliminates the supplied caller-owned variables.
+    pub fn exists<C: DecisionControl>(
         &self,
         quantified: &BTreeSet<V>,
         control: &mut C,
@@ -301,7 +359,8 @@ impl<V: Clone + Ord> EffectDecision<V> {
         builder.finish(root)
     }
 
-    pub(super) fn forall<C: DecisionControl>(
+    /// Universally eliminates the supplied caller-owned variables.
+    pub fn forall<C: DecisionControl>(
         &self,
         quantified: &BTreeSet<V>,
         control: &mut C,
@@ -311,7 +370,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
 
     /// Simultaneous substitution: references inside a replacement are not
     /// recursively processed by the same substitution.
-    pub(super) fn substitute<C: DecisionControl>(
+    pub fn substitute<C: DecisionControl>(
         &self,
         replacements: &BTreeMap<V, Self>,
         control: &mut C,
@@ -341,21 +400,11 @@ impl<V: Clone + Ord> EffectDecision<V> {
     ) -> Result<DecisionCompletion<V>, C::Error> {
         let mut builder = DecisionBuilder::new(control);
         let relation = builder.import(self)?;
-        let admissibility = builder.exists(relation, quantified)?;
-        let mut replacements = BTreeMap::new();
-        for variable in quantified {
-            builder.control.charge(DecisionWork::Visit)?;
-            let atom = builder.branch(variable.clone(), Root::False, Root::True)?;
-            let without = builder.conditional(Conditional::new(atom, Root::False, relation))?;
-            let possible_without = builder.exists(without, quantified)?;
-            let required = builder.conditional(Conditional::new(
-                possible_without,
-                Root::False,
-                admissibility,
-            ))?;
-            replacements.insert(variable.clone(), required);
-        }
-        let instantiated = builder.substitute(relation, &replacements)?;
+        let CompletionRoots {
+            admissibility,
+            replacements,
+            instantiated,
+        } = builder.completion_roots(relation, quantified)?;
         let check =
             builder.conditional(Conditional::new(admissibility, instantiated, Root::True))?;
         let least = if check == Root::True {
@@ -373,9 +422,68 @@ impl<V: Clone + Ord> EffectDecision<V> {
             least,
         })
     }
+
+    /// Retains exactly where a quantified relation has its pointwise least tuple.
+    ///
+    /// No finite-effect-set meaning is assigned to these Boolean values. The
+    /// surrounding owner keeps `principal` with the envelope until its remaining
+    /// variables are resolved; unsatisfiable and non-principal domains stay distinct.
+    pub fn complete_conditionally<C: DecisionControl>(
+        &self,
+        quantified: &BTreeSet<V>,
+        control: &mut C,
+    ) -> Result<ConditionalDecisionCompletion<V>, C::Error> {
+        let mut builder = DecisionBuilder::new(control);
+        let relation = builder.import(self)?;
+        let CompletionRoots {
+            admissibility,
+            replacements,
+            instantiated,
+        } = builder.completion_roots(relation, quantified)?;
+        let principal =
+            builder.conditional(Conditional::new(admissibility, instantiated, Root::False))?;
+        let mut lower_envelope = BTreeMap::new();
+        for (variable, root) in replacements {
+            builder.control.charge(DecisionWork::Visit)?;
+            lower_envelope.insert(variable, builder.finish(root)?);
+        }
+        Ok(ConditionalDecisionCompletion {
+            satisfiable: builder.finish(admissibility)?,
+            principal: builder.finish(principal)?,
+            lower_envelope,
+        })
+    }
 }
 
 impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
+    /// The one lower-envelope calculation shared by both completion policies.
+    fn completion_roots(
+        &mut self,
+        relation: Root,
+        quantified: &BTreeSet<V>,
+    ) -> Result<CompletionRoots<V>, C::Error> {
+        let admissibility = self.exists(relation, quantified)?;
+        let mut replacements = BTreeMap::new();
+        for variable in quantified {
+            self.control.charge(DecisionWork::Visit)?;
+            let atom = self.branch(variable.clone(), Root::False, Root::True)?;
+            let without = self.conditional(Conditional::new(atom, Root::False, relation))?;
+            let possible_without = self.exists(without, quantified)?;
+            let required = self.conditional(Conditional::new(
+                possible_without,
+                Root::False,
+                admissibility,
+            ))?;
+            replacements.insert(variable.clone(), required);
+        }
+        let instantiated = self.substitute(relation, &replacements)?;
+        Ok(CompletionRoots {
+            admissibility,
+            replacements,
+            instantiated,
+        })
+    }
+
     fn new(control: &'c mut C) -> Self {
         Self {
             nodes: Vec::new(),

@@ -7,8 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::EffectSet;
 use super::decision::{DecisionControl, DecisionEncoding, DecisionWork, EffectDecision};
+use super::{EffectDeclarationError, EffectSet};
 use arcweft_id::EffectId;
 
 #[cfg(test)]
@@ -31,6 +31,39 @@ pub struct EffectFormula<V>(pub(super) Membership<V>);
 /// A relation that must hold for every effect label under finite row valuations.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectPredicate<V>(pub(super) Membership<V>);
+
+/// Borrowed Boolean decisions of one canonical membership function.
+///
+/// This view issues no row, predicate or source authority. Its owner retains
+/// whether membership denotes a finite set or a universally interpreted relation.
+pub struct EffectMembershipView<'a, V> {
+    membership: &'a Membership<V>,
+}
+
+impl<V> Copy for EffectMembershipView<'_, V> {}
+
+impl<V> Clone for EffectMembershipView<'_, V> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, V: Clone + Ord> EffectMembershipView<'a, V> {
+    /// Decision shared by every label without an explicit override.
+    pub const fn default_decision(self) -> &'a EffectDecision<V> {
+        &self.membership.default
+    }
+
+    /// Explicit labels and their decisions in canonical label order.
+    pub fn overrides(self) -> impl ExactSizeIterator<Item = (&'a EffectId, &'a EffectDecision<V>)> {
+        self.membership.overrides.iter()
+    }
+
+    /// Exact membership at a label, falling through to the same default class.
+    pub fn at(self, label: &EffectId) -> &'a EffectDecision<V> {
+        self.membership.at(label)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectCompletion<V> {
@@ -182,6 +215,46 @@ impl<V: Clone + Ord> Membership<V> {
 }
 
 impl<V: Clone + Ord> EffectFormula<V> {
+    /// Borrows the canonical decisions without copying their graphs.
+    pub const fn membership(&self) -> EffectMembershipView<'_, V> {
+        EffectMembershipView {
+            membership: &self.0,
+        }
+    }
+
+    /// Assembles a finite row from already canonical Boolean decisions.
+    ///
+    /// A default that is true when all surviving input rows are empty denotes
+    /// an infinite output and is rejected. Redundant overrides are normalized
+    /// by the existing membership owner; its decision visits remain controlled.
+    pub fn try_from_decisions<C: DecisionControl>(
+        default: EffectDecision<V>,
+        overrides: BTreeMap<EffectId, EffectDecision<V>>,
+        control: &mut C,
+    ) -> Result<Self, C::Error>
+    where
+        C::Error: From<EffectDeclarationError>,
+    {
+        control.charge(DecisionWork::Visit)?;
+        if default.evaluate_with_control(|_| false, control)? {
+            return Err(EffectDeclarationError::InfiniteRow.into());
+        }
+        let mut membership = Membership {
+            default,
+            overrides: BTreeMap::new(),
+        };
+        for (label, decision) in overrides {
+            // Admission covers the immutable graphs before equality inspection
+            // and map growth, including redundant overrides.
+            decision.encode(&mut super::EffectEqualityControl(control))?;
+            membership
+                .default
+                .encode(&mut super::EffectEqualityControl(control))?;
+            membership.insert_override(label, decision, control)?;
+        }
+        Ok(Self(membership))
+    }
+
     pub(crate) fn try_visit_semantic_child_counts<E>(
         &self,
         visitor: &mut impl FnMut(usize) -> Result<(), E>,
@@ -334,6 +407,13 @@ impl<V: Clone + Ord> EffectFormula<V> {
 }
 
 impl<V: Clone + Ord> EffectPredicate<V> {
+    /// Borrows the same decisions while retaining this predicate's relation role.
+    pub const fn membership(&self) -> EffectMembershipView<'_, V> {
+        EffectMembershipView {
+            membership: &self.0,
+        }
+    }
+
     pub(crate) fn try_visit_semantic_child_counts<E>(
         &self,
         visitor: &mut impl FnMut(usize) -> Result<(), E>,

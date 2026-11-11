@@ -10,12 +10,16 @@ mod declaration;
 mod membership;
 mod set;
 
-pub use decision::{DecisionControl, DecisionEncoding, DecisionWork};
+pub use decision::{
+    ConditionalDecisionCompletion, DecisionControl, DecisionEncoding, DecisionWork, EffectDecision,
+};
 pub use declaration::{
     EffectDecisionDeclaration, EffectDecisionNodeDeclaration, EffectDecisionTarget,
     EffectDeclarationError, EffectMembershipDeclaration,
 };
-pub use membership::{EffectCompletion, EffectFormula, EffectPredicate, MembershipEncoding};
+pub use membership::{
+    EffectCompletion, EffectFormula, EffectMembershipView, EffectPredicate, MembershipEncoding,
+};
 pub use set::{EffectSet, EffectSetParseError};
 
 /// Equality charges the same canonical graph traversal as construction and
