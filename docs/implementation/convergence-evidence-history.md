@@ -16673,3 +16673,13 @@ ownerのlocked・全target・全feature check／Clippy、workspace整形、構�
 新規ownerの実測はprepared graph 21,499 bytes／654行、joint closure 13,168 bytes／331行、term compilation 20,019 bytes／521行、canonical reification 14,614 bytes／363行、別test 21,425 bytes／633行。既存effect_rowはmodule登録1行のみ増え55,316 bytes／1,581行（基点1,580行）。issuer／checkpointの状態、joint Boolean閉包、pending termの反復compile、確定後のcanonical再確認を責務で分け、公開範囲を物理分割のために広げない。新しいcrate依存、I/O、unsafe、codec／wire／digest version、並列の完成型、互換reader、予算の緩和はない。
 
 Source差分、初回失敗、owner全実行、品質receipt、実測、公開照合を14 entry、展開時7,640,888 bytes、ZIP 675,806 bytes、SHA-256 `ed163318ac6224844c8a356790c92930045d44f900f727deaa79f86b7a605f88` の原本へ保持し、全entryの長さ・hashを再照合した。[検証原本](acceptance-evidence/task-recursive-effect-scheme-closure.raw.zip)。古い「prepared schemeは未実装」という一括記述は、下位graphの実装とcallable側の未接続を分けるため現状一覧で置換した。以前の検証結果・full SHA・凍結原本は変更していない。
+
+### Prepared effect type domain entry
+
+2026-11-11、基点 `8dcb1bc3f19e2746d30cbe822d055a18ee0f5e06` の既存mainから、Source `c6fa766cce26b35e30ba3b8ff28d7f8d3e465023`、tree `db377180b20fc08876e1157a390672373859adc1` を通常pushし、remote ref／tree／変更4pathのblobを照合した。privateなPreparedEffects領域は同じTypeKind文法を使い、行とpredicateにissuer付きのprepared evidenceを保持できる。既存のscope付き反復foldにより、canonical annotationから全nested arrowを入れ替える。scope・node・行・predicateはcallerのcontrolへ複製前に課金し、省略annotationをunknownとして保持する。prepared型からcanonical型への無条件変換やSemanticTypeDigest、checked specialization、完成solutionの発行経路は追加しない。
+
+全featureのSema libraryから効果graphと型領域を選択し、nextest 21件が全PASS、失敗0、選択外1,458件、終了0。新規3件では実際のprepare_effects APIを使い、4 nested arrowのbinder／predicate／行、未注釈とlive termの区別、exact／one-under予算、取消し、元の型identityの保全を検証した。残り18件は既存の型文法fold 3件とscheme graph 15件の再実行である。先行Source `0024a06e57750942c52ef96e6cea667d864cfae3` の全owner 1,500件へ加算したり、新Sourceの全owner再実行と読み替えたりしない。ownerのlocked・全target・全feature Clippyとworkspace整形は終了0、Clippyは未使用の私有APIや既存の警告あり。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。依存・公開API・共有言語動作の変更はなく、直前graphの構造reviewを再利用し、新しい全workspace／逆依存／Wasm／Compiler実行を通過したとはしない。
+
+新しいphase entryは2,540 bytes／76行。既存のeffect_domainは6,501 bytes／190行（module登録3行増）、typesは70,642 bytes／2,062行（private reexport1行増）、別testは12,497 bytes／372行（137行増）。一つの型文法と既存のbounded fold／graph encoderを共有し、独自の型walker、並列の完成型、I/O、unsafe、契約version、互換reader、予算緩和は追加しない。activeな式・local・pattern・呼出し制約への移行と、callable宣言scheme／確定sealへの接続は未実装であり、この型保持の成功を再帰本体8件の完了へ昇格しない。
+
+選択全ID／結果、品質log、Source差分、実測、公開照合を9 entry、展開時6,357,153 bytes、ZIP 510,275 bytes、SHA-256 `5c4d1a3a967ed44c743c1d30174aaddf707debf596edad1d53895a695255a6c2` の[原本](acceptance-evidence/task-prepared-effect-type-domain.raw.zip)へ保持し、全entryの長さとhashを再照合した。既存の履歴・凍結原本・受入済み機能の判定は変更しない。
