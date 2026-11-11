@@ -16568,3 +16568,18 @@ Semaの推移的逆依存22パッケージを、Cargo treeの既定・全 featur
 Cargo treeの既定・全feature・全ターゲットとWindowsのCargo metadataは、Sema／RuntimePlan／Compilerの推移的逆依存22パッケージで一致した。nextestは3,934件成功、0件失敗、1件スキップ。Semaの1,471件はSource `988c09e9a59a9295a3f01f68c45c49500d87f732` の実行を再利用した。Sema・Cargo入力の差分0件と原ログのSHA-256を確認した。修復 Source で実行した2,463件には、クリーン前のCompiler 361件とRuntimePlan 165件を含む。全ターゲット・全featureのworkspace check／Clippy、整形、構造ゲート、Web PlayerのWasm check、doctest 2件は終了0。構造ゲートのブロッキング違反は0件。Clippyには警告がある。
 
 ソース照合、クリーンの記録、初回の失敗、再現入力、全コマンドの原本は407件、3095673 bytes、SHA-256 `a8832b222915b5c8d100f19565d7435d2e2f2a230f218759e7cb4f1b005b340c`。[検証原本](acceptance-evidence/task-closed-declaration-positional-partial.raw.zip)。
+
+
+### Within group generic prefix composition
+
+2026-11-11、基点 `9eb4d0e7426a73f4ab914c4bf4f8ce8fe86ed2c3` から既存の `main` で継続した。Generic Matchの受入は変更していない。既存の未追跡 `%SystemDrive%/` を保持した。クリーンは前節に記録したとおり全体を実施済みで、今回のCargo実行も `CARGO_INCREMENTAL=0` とした。
+
+Source `f3b67393f9ee19fb09a21c2f9b66d9b7078b3e04`、tree `faf734ec181bb2e57993ece374c8ab727559cd7e` で、継続の引数座標をSemaからRuntimePlan・Coreへ渡した。保持済みの同一グループの引数は本体の引数へ、完了した前グループの引数はcaptureへ渡す。attached defaultの参照も同じ座標で配置する。Compilerの既存対象16件と再帰generic defaultの1件が成功した。これは座標投影の検証であり、同一グループの多相継続全体の完了判定ではない。
+
+Source `1c842a0b726e602998c505bf5e32f2319ed297db` で、ジェネリック宣言の固定位置prefixを宣言継続として扱い、引数の保持位置から残りの型とmaterializationを照合した。初回の対象6件はRuntimePlanの本体照合で失敗し、修復後に6件成功した。新しい `keep<T>(first: i64, second: T)` の共有をNative／AWBCで実行し、同じ継続へStringとBoolを渡して42を返した。待機を挟む回帰はprefixを一度だけ評価し、100 msの再開と、AWBCの各ステップの公開JSON保存・復元を確認した。既存の単相部分適用も同じ6件に含む。先行節の同一入力の型検査失敗は当時の履歴として保持し、現状一覧の拒否記述を訂正した。
+
+Source `71159b93bd456902f02d5db4c080ef63e23dd01d` は組合せの回帰入力を追加する途中コミットで、14件中2件成功・12件失敗という実結果のまま公開した。ユーザーの途中commit方針に従い、全件が正常に動くことをこのcommitの条件にしなかった。失敗は先頭・途中での型確定、同一グループの反復適用、次の宣言グループへの移行、関数値経由、単相宣言の後続グループの6種類をNative／AWBCで各1件ずつ検出した。関数値経由は型検査の `no admissible final type`、反復適用はcalleeの型と実行状態の不一致、単相の後続グループは本体の結果型不一致、残りはRuntimePlanの本体照合で失敗した。これらは追加した組合せの未達であり、既受入の単相・共有継続の対象を未完了へ戻す根拠には使わない。
+
+全3コミットは通常のfast-forward pushとfetchを行い、remote mainのfull SHAを確認した。Cargo metadataとtreeの逆依存を取り直し、ホスト52パッケージ、全ターゲットのグラフ53パッケージを得た。全逆依存・workspace品質検証は後続の最終修復Sourceで実行する。Source `167d612de8326931959e449fea0fec7034c68374` では、型が閉じたsourceも生成元と保持引数の文脈を保持する。完全な本体の置換と元source、引数座標をキーにした一つの実行状態対応を構築し、特殊化と閉じた継続が共有する。先頭引数で型が確定する場合もNative／AWBCで通過した。既存のインスタンス12件を含む対象17件が成功し、所有3クレートの全target check／Clippyは終了0だった。警告がある。組合せ14件の再実行は4件成功・10件失敗で、17件と重複するため合算しない。途中の型確定はFunction ABIの不一致、次の宣言グループは実行状態のレイアウト不一致、反復適用はparameter rowの不一致へ診断が進んだ。関数値経由と単相の後続グループの拒否は継続した。途中のRust E0583、E0308、E0716も原本へ保持する。公開後のfull SHA・親・tree・変更13 blobを照合した。
+
+この段階の基点、全公開SHA、途中の失敗、入力、Cargoグラフ、パッチとコマンド原本は72件、1225991 bytes、SHA-256 `dba1e81393b54149518c297ff48990c414a41269ef6de2f0744fa6dd22c2b481`。[基盤段階の原本](acceptance-evidence/task-within-group-generic-prefix-foundation.raw.zip)。全組合せの完了を示す原本ではない。
