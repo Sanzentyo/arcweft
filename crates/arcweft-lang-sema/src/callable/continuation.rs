@@ -2421,6 +2421,12 @@ fn issue_scope_initialization(
             } else if inherited {
                 required_effects.push(variable.clone());
                 EffectConstraintEligibility::Bindable
+            } else if row.first_use() == super::CallableGenericFirstUse::Invocation {
+                if remaining.is_some() {
+                    EffectConstraintEligibility::FutureEligible
+                } else {
+                    EffectConstraintEligibility::Bindable
+                }
             } else {
                 match row.first_use().position() {
                     Some(first) if first < position => {

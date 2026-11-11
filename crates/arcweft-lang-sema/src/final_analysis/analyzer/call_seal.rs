@@ -2122,14 +2122,6 @@ fn stable_identity_seal(
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
     locals: &BTreeMap<LocalId, TypeKind>,
 ) -> Result<ResolvedCallableStableIdentitySeal, FinalSemanticAnalysisError> {
-    let effects = || {
-        definition
-            .schema()
-            .effects()
-            .fixed_row()
-            .cloned()
-            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
-    };
     match definition.identity() {
         PreparedResolvedCallableIdentity::Catalog { .. } => {
             Ok(ResolvedCallableStableIdentitySeal::Catalog)
@@ -2146,7 +2138,11 @@ fn stable_identity_seal(
             })?;
             Ok(ResolvedCallableStableIdentitySeal::Lexical {
                 binding,
-                effects: effects()?,
+                function_type: locals
+                    .get(local)
+                    .filter(|ty| matches!(ty, TypeKind::Function { .. }))
+                    .cloned()
+                    .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local })?,
             })
         }
         PreparedResolvedCallableIdentity::FunctionValue {
@@ -2197,7 +2193,6 @@ fn stable_identity_seal(
                 expression,
                 ordinal: *ordinal,
                 function_type,
-                effects: effects()?,
                 captures,
             })
         }

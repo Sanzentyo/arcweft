@@ -545,6 +545,45 @@ macro_rules! callable_case {
     };
 }
 
+#[test]
+fn callback_effect_inference_works_for_complete_and_partial_function_values() {
+    let ordinary = "fn invoke(seed: i64, callback: i64 -> i64) -> i64 { callback(seed) }";
+    let curried = "fn invoke(seed: i64)(callback: i64 -> i64) -> i64 { callback(seed) }";
+    let explicit = "fn invoke(seed: i64, callback: i64 -> i64 effects { log.write }) -> i64 { callback(seed) }";
+    let generic = "fn invoke<T>(seed: T, callback: T -> i64) -> i64 { callback(seed) }";
+    let partial = "let tail = invoke(21i64); return tail(|value| { log.info(\"effectful\"); value }) + tail(|value| value)";
+    let value_partial = "let function = invoke; let tail = function(21i64); return tail(|value| { log.info(\"effectful\"); value }) + tail(|value| value)";
+    let cases = [
+        (
+            "direct-complete",
+            ordinary,
+            "return invoke(42i64, |value| { log.info(\"effectful\"); value })",
+        ),
+        (
+            "value-complete",
+            ordinary,
+            "let function = invoke; return function(42i64, |value| { log.info(\"effectful\"); value })",
+        ),
+        ("direct-partial", ordinary, partial),
+        ("value-partial", ordinary, value_partial),
+        ("curried-value", curried, value_partial),
+        ("explicit-value", explicit, value_partial),
+        (
+            "generic-value",
+            generic,
+            "let function = invoke; let tail = function(21i64); return tail(|value| { log.info(\"effectful\"); 21i64 }) + tail(|value| 21i64)",
+        ),
+    ];
+    let failures = cases.into_iter().filter_map(|(label, declaration, body)| {
+        let source = format!("entry cli @entry.main {{ goto @flow.main }}\n{declaration}\nflow main() -> i64 {{ {body} }}\n");
+        arcweft_compiler::source::compile_source(&source).err().map(|error| {
+            (label, error.project().stage().to_owned(), error.project().diagnostics().iter()
+                .map(|diagnostic| diagnostic.diagnostic().message().to_owned()).collect::<Vec<_>>())
+        })
+    }).collect::<Vec<_>>();
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
 #[path = "callable_cases/control_results.rs"]
 mod control_results;
 #[path = "callable_cases/presentation_slot_refs.rs"]

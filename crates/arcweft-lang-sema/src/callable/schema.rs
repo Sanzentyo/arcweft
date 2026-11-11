@@ -836,20 +836,18 @@ pub(crate) enum CallableSchemaGenericRole {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CallableGenericFirstUse {
-    /// An exposed invocation row belongs to the callable from its entry.
-    Entry,
     Parameter(CallableParameterCoordinate),
+    /// The invocation row is consumed only when the body is entered. A
+    /// parameter occurrence can determine the same slot before that boundary.
+    Invocation,
     Result,
 }
 
 impl CallableGenericFirstUse {
     pub(crate) const fn position(self) -> Option<CallableParameterCoordinate> {
         match self {
-            Self::Entry => Some(CallableParameterCoordinate::group_start(
-                CallableGroupIndex::ZERO,
-            )),
             Self::Parameter(coordinate) => Some(coordinate),
-            Self::Result => None,
+            Self::Invocation | Self::Result => None,
         }
     }
 }
@@ -3098,7 +3096,7 @@ fn seal_generic_inventory(
         collector.visit_at(result, CallableGenericFirstUse::Result)?;
     }
     if let Some(row) = effects.fixed_row() {
-        collector.visit_effect_row_at(row, CallableGenericFirstUse::Entry)?;
+        collector.visit_effect_row_at(row, CallableGenericFirstUse::Invocation)?;
     }
     collector.visit_effect_predicate_at(&issuer.predicate, CallableGenericFirstUse::Result)?;
     let collected = collector.finish();
@@ -3731,6 +3729,49 @@ mod evaluated_effect_schema_tests {
 #[cfg(test)]
 mod generic_inventory_tests {
     use super::*;
+
+    #[test]
+    fn function_value_effect_slots_follow_parameters_before_invocation() {
+        use crate::types::{GenericBinder, GenericScope};
+        let binder = GenericBinder::new(0, 0, 1);
+        let scope = GenericScope::default().with_binder(binder);
+        let effect = scope.bound_effect(0, 0).expect("effect slot");
+        let row = EffectRow::open(crate::effects::EffectSet::new(), effect.clone());
+        for callback in [false, true] {
+            let second = if callback {
+                TypeKind::function_with_effects([TypeKind::I64], TypeKind::I64, row.clone())
+            } else {
+                TypeKind::I64
+            };
+            let ty = TypeKind::function_with_binder(
+                binder,
+                [TypeKind::I64, second],
+                TypeKind::I64,
+                row.clone(),
+            );
+            let schema = CallableSignatureSchema::for_function_value(
+                &ty,
+                &super::super::PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("effect scheme has an admitted signature");
+            let [slot] = schema.generic_inventory().effects() else {
+                panic!("one owned effect slot")
+            };
+            assert_eq!(slot.parameter(), &effect);
+            assert_eq!(slot.role(), CallableSchemaGenericRole::Candidate);
+            assert_eq!(
+                slot.first_use(),
+                if callback {
+                    CallableGenericFirstUse::Parameter(CallableParameterCoordinate::new(
+                        CallableGroupIndex::ZERO,
+                        CallableParameterIndex::try_from_usize(1).unwrap(),
+                    ))
+                } else {
+                    CallableGenericFirstUse::Invocation
+                }
+            );
+        }
+    }
 
     #[test]
     fn function_value_schema_owns_anonymous_type_and_const_slots() {

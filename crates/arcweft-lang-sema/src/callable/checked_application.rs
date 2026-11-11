@@ -206,15 +206,15 @@ impl CheckedCaptureSignatureRow {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedLexicalCallableIdentity {
     binding: StableCheckedBindingCoordinate,
-    effects: EffectRow,
+    function_type: SemanticTypeDigest,
 }
 
 impl CheckedLexicalCallableIdentity {
     pub const fn binding(&self) -> &StableCheckedBindingCoordinate {
         &self.binding
     }
-    pub const fn effects(&self) -> &EffectRow {
-        &self.effects
+    pub const fn function_type(&self) -> SemanticTypeDigest {
+        self.function_type
     }
 }
 
@@ -223,7 +223,6 @@ pub struct CheckedFunctionValueIdentity {
     expression: CheckedSemanticPath,
     ordinal: FunctionValueOrdinal,
     function_type: SemanticTypeDigest,
-    effects: EffectRow,
     captures: Box<[CheckedCaptureSignatureRow]>,
 }
 
@@ -236,9 +235,6 @@ impl CheckedFunctionValueIdentity {
     }
     pub const fn function_type(&self) -> SemanticTypeDigest {
         self.function_type
-    }
-    pub const fn effects(&self) -> &EffectRow {
-        &self.effects
     }
     pub fn captures(&self) -> &[CheckedCaptureSignatureRow] {
         &self.captures
@@ -636,13 +632,12 @@ pub(crate) enum ResolvedCallableStableIdentitySeal {
     Language,
     Lexical {
         binding: CheckedBindingCoordinateEvidence,
-        effects: EffectRow,
+        function_type: TypeKind,
     },
     FunctionValue {
         expression: CheckedExpressionCoordinateEvidence,
         ordinal: FunctionValueOrdinal,
         function_type: TypeKind,
-        effects: EffectRow,
         captures: Box<[CheckedCaptureSignatureSeal]>,
     },
 }
@@ -3221,19 +3216,25 @@ impl ResolvedCallableStableIdentity {
             }
             (
                 PreparedResolvedCallableIdentity::Lexical { local: prepared },
-                ResolvedCallableStableIdentitySeal::Lexical { binding, effects },
+                ResolvedCallableStableIdentitySeal::Lexical {
+                    binding,
+                    function_type,
+                },
             ) => {
                 let local = binding.owner();
                 if prepared != local
                     || !matches!(candidate, CallableCandidateId::Local(id) if id.local() == local)
                     || family != CallableFamily::Lexical
-                    || checked.schema().effects().fixed_row() != Some(&effects)
+                    || checked
+                        .schema()
+                        .quantify_function_value(&schema_function_type(checked.schema())?)?
+                        != function_type
                 {
                     return Err(CallConstraintInvariant::PreparedBaseMismatch);
                 }
                 Ok(Self::Lexical(CheckedLexicalCallableIdentity {
                     binding: binding.into_coordinate(),
-                    effects,
+                    function_type: function_type.semantic_identity_digest()?,
                 }))
             }
             (
@@ -3249,7 +3250,6 @@ impl ResolvedCallableStableIdentity {
                     expression,
                     ordinal,
                     function_type,
-                    effects,
                     captures,
                 },
             ) => {
@@ -3259,7 +3259,6 @@ impl ResolvedCallableStableIdentity {
                     || family != CallableFamily::FunctionValue
                     || !matches!(candidate, CallableCandidateId::FunctionValue(id)
                         if id.expression() == producer && id.ordinal() == ordinal)
-                    || checked.schema().effects().fixed_row() != Some(&effects)
                     || checked
                         .schema()
                         .quantify_function_value(&schema_function_type(checked.schema())?)?
@@ -3271,7 +3270,6 @@ impl ResolvedCallableStableIdentity {
                     expression: expression.into_coordinate(),
                     ordinal,
                     function_type: function_type.semantic_identity_digest()?,
-                    effects,
                     captures: seal_captures(prepared_captures, captures)?,
                 }))
             }
@@ -4166,7 +4164,7 @@ impl CheckedCallCanonicalEncoder {
                         .canonical_bytes()
                         .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
                 )?;
-                self.effect_row(identity.effects())?;
+                self.digest(identity.function_type().as_bytes());
             }
             ResolvedCallableStableIdentity::FunctionValue(identity) => {
                 self.tag(3);
@@ -4178,7 +4176,6 @@ impl CheckedCallCanonicalEncoder {
                 )?;
                 self.index(identity.ordinal().get())?;
                 self.digest(identity.function_type().as_bytes());
-                self.effect_row(identity.effects())?;
                 self.count(identity.captures().len())?;
                 for capture in identity.captures() {
                     self.bytes(
