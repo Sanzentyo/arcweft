@@ -16683,3 +16683,17 @@ Source差分、初回失敗、owner全実行、品質receipt、実測、公開�
 新しいphase entryは2,540 bytes／76行。既存のeffect_domainは6,501 bytes／190行（module登録3行増）、typesは70,642 bytes／2,062行（private reexport1行増）、別testは12,497 bytes／372行（137行増）。一つの型文法と既存のbounded fold／graph encoderを共有し、独自の型walker、並列の完成型、I/O、unsafe、契約version、互換reader、予算緩和は追加しない。activeな式・local・pattern・呼出し制約への移行と、callable宣言scheme／確定sealへの接続は未実装であり、この型保持の成功を再帰本体8件の完了へ昇格しない。
 
 選択全ID／結果、品質log、Source差分、実測、公開照合を9 entry、展開時6,357,153 bytes、ZIP 510,275 bytes、SHA-256 `5c4d1a3a967ed44c743c1d30174aaddf707debf596edad1d53895a695255a6c2` の[原本](acceptance-evidence/task-prepared-effect-type-domain.raw.zip)へ保持し、全entryの長さとhashを再照合した。既存の履歴・凍結原本・受入済み機能の判定は変更しない。
+
+### Prepared effect term substitution
+
+2026-11-11、基点 `70a42a8a8571cc45cdf1a5b2efa10d4ef7a9a12f` の既存mainで継続し、Source `8b18c02537494144272959fc43da3131cab2073a`、tree `7e324bc0ae7e0fc680239022dbb60656cd661353` を通常pushした。remote mainのfull SHA・tree・変更6pathのblobを照合し、既存未追跡 `%SystemDrive%/` を保持した。activeなlocal／式／呼出し制約へprepared型を移す前提として、確定formulaだけでなく未確定termの全体にもgeneric効果を置換できる所有操作を実装した。
+
+graph所有の反復foldはapplication、union、既存formula置換、choice、predicateの各typed termを再構築し、宣言本体やsourceを走査しない。callee schemeとchoiceのidentityを保持し、destinationの置換値を同じ置換で再展開しない。既存のformula置換では、そのbinding済みkeyを外側の同名parameterから保護し、実際の置換値の自由parameterだけを移す。canonical predicateにpending行を代入するtermも同じgraphへ保持し、support／一括Boolean閉包／独立canonical再確認の全consumerを移行した。確定formulaを扱うconstructorはprivateに限定し、公開crate内の置換は行termを受け取る。
+
+元term、置換値、memo、出力を既存controlでadmitする。失敗時は当該操作が追加したrow／predicateを除去し、元のmapとschemeを保持する。ordinalは戻さない。scope metadataのunknown annotationはknown emptyへ置き換えず、そのまま保持する。final型、checked solution、specialization、SemanticTypeDigestを未確定から発行する経路は追加していない。
+
+全featureのSema libraryからgraph／型領域を選択したnextestは26 PASS／0 FAIL、選択外1,458件、終了0。新規5件はpending applicationと既存bindingの合成、同時置換の非再帰性、512段でchildを共有するDAGの反復処理と線形成長、pending行を持つpredicateの外側置換と受理／拒否、失敗後の全追加row／predicate除去とexact予算を確認した。既存21件の再実行を含むので先行の全owner 1,500件へ合算しない。初回owner全target checkは追加test前のproductionで終了0、その後の最終staged treeでowner locked・全target・全feature Clippy、整形、構造gateが終了0、blocking 0件。Clippyは未接続私有APIと既存を含む警告あり。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。私有graphの段階なので、全workspace／逆依存／Wasm／Compiler実行や再帰本体6件を今回再実行したとはしない。
+
+新しいsubstitution ownerは14,072 bytes／343行。状態はborrowしたgraph／control／置換入力と操作内のrow／predicate memoだけで、失敗原子性も同じownerが担う。graphは22,306 bytes／680行、closure 13,605 bytes／342行、compile 21,098 bytes／544行、canonical reification 15,476 bytes／378行、別test 29,399 bytes／851行。独立の型文法、別BDD、source再構築、crate依存、I/O、unsafe、互換reader、versionや予算の緩和はない。既存のcohesive graph／canonical再確認の責務を維持し、scope操作とactive frontierへの接続を継続する。
+
+差分、選択ID／全結果、品質log／receipt、実測、公開照合を11 entry、展開時6,558,437 bytes、ZIP 534,735 bytes、SHA-256 `8b871ef8c9d26ed0a192d7a8a7c9f1ffab62b6ee420820cf0008aaccf2431af7` の[原本](acceptance-evidence/task-prepared-effect-term-substitution.raw.zip)へ保持し、全entryの長さとhashを再照合した。現状行の古い基盤段階の列挙は現在の操作と検証へまとめ、詳細とfull SHAはこの履歴へ保持した。Generic Match・呼出し側再帰・同一グループprefix等の受入判定は変更しない。
