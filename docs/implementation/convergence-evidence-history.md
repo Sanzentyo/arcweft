@@ -16737,3 +16737,19 @@ Cargo入力の差分0と、既存のhost default／host all-features／all-targe
 新しいsuspension ownerは5,158 bytes／127行、別testは8,486 bytes／219行。既存transactionは91,656 bytes／2,411行で、旧lower APIを62行削除した。callable driverの停止境界は同じfrontierと元の借用contextを一つの短命ownerに保持する。新しい依存、I/O、unsafe、並列の完成型、互換reader、contract version、予算緩和は追加していない。このSourceではactive value portと宣言schemeの一括確定は未接続であり、再帰本体の未達やGeneric Match等の受入判定は変更していない。古いowner段階の現状説明は今回の実測へ置換し、以前の実行結果・full SHA・凍結原本は保持した。
 
 初回の型検査・test build診断、最終全ID／結果、途中選択run、品質log／receipt、差分・実測・公開照合を16 entry、展開時7,921,182 bytes、ZIP 708,476 bytes、SHA-256 `84fdb69ae7b7cf6a4baa0e4b41f04b3ffe95d8e8227cfea3ab4aa54b53b12123` の[原本](acceptance-evidence/task-open-constraint-frontier.raw.zip)へ保持し、全entryの長さとhashを再照合した。
+
+### Correlated component value ports
+
+2026-11-12、基点 `78000b6212cd4d2b6a99f0ee69c86dd3c4448fbe` の既存mainから、Source `e612f8754d177e5adc2c301de874087430161277`、tree `86ed79e7f8aa20f03c0ed377ec8856049030a07d` を通常pushし、remote mainのfull SHA・tree・変更9pathのblobを照合した。元の停止frontierをmoveで保有する私有OpenConstraintComponentへ、型を含まないissuer付きvalue参照と、利用ごとのaffine ticketを追加した。同じ参照の複数roleは一つの候補座標を共有し、独立producerは積を作る。派生値も元のoriginを保持し、共通originが食い違う組合せは列挙しない。元候補と利用結果のmetadataにCloneを要求せず、利用側へmutableなproducerや完成型の証明を渡さない。
+
+Rejected／Blocked／Deferredは元producerを削らずに保持する。条件付き利用は入力guardとFits／Not(Fits)の両側を残し、成功側をschemeの全体制約へ追加しない。利用保持はgraph checkpointと値の公開を一つにまとめ、途中失敗で追加effect termを除去し、値・ordinalを公開しない。進行やsubmitに失敗したticketは再開できない。独立rootとして親receipt付きfrontierを登録することと、一つのproducerへ異なるsemantic applicationを混在させることを拒否する。prepared型の保持は既存TypeKindのscope付き反復foldを使い、unknown annotationを保持しつつforeign／rollback済みeffect参照を拒否する。このSourceは私有ownerの段階で、実際の解析経路の接続や再帰本体の受入を達成したとはしない。
+
+固定入力は上記baseとstaged treeで、公開Sourceのtreeと一致する。全featureのSemaは5 binary・全1,532件、1,526 PASS／6 FAIL／0 SKIP、nextest終了100、実行時間196.948秒。選択IDと終端IDは一致し、重複0、失敗6件のIDは前回Source `4f2b60eab096c187134d17adfc3e3bf74d4775e4` と一致した。新規10件は全PASSで、反復参照と派生値の相関、独立rootの積、元frontier保全、条件付き利用によってS = Sの最小効果へfs.readを捏造しないこと、後段失敗の全追加term取消し、foreign／stale参照とunknown行、空入力、Failed ticket、inclusiveな固定割当予算と取消し、Cloneできない準備metadata、親相関とsemantic application境界を検証した。
+
+途中のowner checkはbinder数のE0599とエラー変換のE0308で終了101、実行テスト0件だった。修正途中の選択3件は成功し、後の追加と固定入力より前の結果として保持する。最終入力のlocked・全target・全feature owner Clippy、workspace整形、構造gateは終了0、blocking 0件。Clippyには未接続APIと既存を含む警告がある。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。Cargo入力はgraph基点 `518d63e31dd2be9750158004b171a6174b2725a7` と差分0で、今回のresolved metadataと逆依存treeも22パッケージを確認した。外部公開API・実行経路・Cargo契約へ未接続のためownerを選択し、全workspace／consumer／Wasm／doctest／Compiler実行をこのSourceで再実行したとはしない。以前の横断結果は元Sourceの証拠として保持する。
+
+ユーザー指定に従い、実行中のCargo／rustcがないことを確認後、workspace rootでcargo cleanを実行し終了0。33,051ファイル／表示88.4 GiBを削除した。D:の空きは218,065,027,072 bytesから309,425,610,752 bytesとなった。ソース・既存の検証記録・未追跡 `%SystemDrive%/` を保持し、その後の上記検証は再ビルドした。
+
+新規componentは31,231 bytes／865行、別test 23,036 bytes／668行、prepared型の保持validationは3,465 bytes／107行。300行超の増加について、componentは同じissuer・不変producer inventory・origin product・affine use状態を一つで所有し、ticketと値の公開責務を分散させていないことを確認した。型の走査は共有foldへ委譲し、同じowner境界にテストを置く。新たな依存、I/O、unsafe、並列の型文法、互換reader、versionや予算の緩和はない。
+
+初回診断、途中選択結果、最終全ID／結果、品質log／receipt、Cargo graph、clean receipt、Source差分・実測・公開照合を28 entry、展開時12,618,271 bytes、ZIP 1,112,551 bytes、SHA-256 `d5a5def679519d1cbedff9ecab7fd301768f0305d40736f66718a8125c6598dd` の[原本](acceptance-evidence/task-correlated-component-value-ports.raw.zip)へ保持し、manifestを含む全entryの長さ・hashを照合した。現状欄の前段ownerの説明を今回の実測へ置換し、重複した残作業はcurrent-status.mdの一か所へ集約した。以前の実行結果・full SHA・凍結原本、Generic Match・呼出し側再帰・同一グループprefix等の受入判定は保持した。
