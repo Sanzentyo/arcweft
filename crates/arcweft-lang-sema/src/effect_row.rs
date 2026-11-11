@@ -11,6 +11,7 @@ pub(crate) use arcweft_core::effect_row::{
 /// The canonical shared predicate instantiated with semantic references.
 pub type EffectPredicate<V = GenericEffectReference> = arcweft_core::effect_row::EffectPredicate<V>;
 
+pub(crate) mod prepared;
 #[cfg(test)]
 mod scope_tests;
 
