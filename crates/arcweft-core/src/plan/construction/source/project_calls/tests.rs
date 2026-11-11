@@ -150,6 +150,15 @@ fn fixture() -> RuntimePlan {
     };
     plan.binding = RuntimeCallableGroupBinding::Declared;
     ops.push(declared);
+    ops.push(call(
+        &states[1],
+        122,
+        &[true],
+        0,
+        vec![operand(boolean(false), Mode::Value)],
+        vec![fixed(1, 0)],
+        None,
+    ));
     ops.push(RuntimeFlowOpSeed::ReturnExpr(boolean(true)));
     builder
         .define_function_site_seed(
@@ -422,7 +431,7 @@ fn declared_project_call_admits_pending_partial_arrows_and_rejects_missing_requi
 fn project_call_sources_restore_original_order_rest_all_attached_forms_defaults_captures_and_semantics()
  {
     let plan = fixture();
-    assert_eq!(plan.project_call_sites().len(), 11);
+    assert_eq!(plan.project_call_sites().len(), 12);
     let (mut source, functions, states) = source(&plan, meter());
     replay(&plan, &mut source, &functions, &states, false).unwrap();
     let restored = finish(source).unwrap();
@@ -557,7 +566,6 @@ fn project_call_sources_reject_every_truncated_prefix_bad_tags_refs_source_order
     let ordinary = row.ordinary.as_ptr() as usize - bytes.as_ptr() as usize;
     for (at, value) in [
         (operand, 2),
-        (ordinary, 1),
         (ordinary + 4, 0),
         (ordinary + 12, 2),
         (ordinary + 17, 2),
@@ -574,6 +582,64 @@ fn project_call_sources_reject_every_truncated_prefix_bad_tags_refs_source_order
             )
             .is_err(),
             "offset {at}"
+        );
+    }
+}
+
+#[test]
+fn project_call_source_coordinates_are_checked_against_the_actual_callee_state() {
+    let plan = fixture();
+    let row = plan.project_call_sites().iter().nth(3).unwrap();
+    let mut bytes = encode(row, &plan);
+    let ordinary = {
+        let mut cursor = cursor::Cursor::new(&bytes, limits(&plan));
+        cursor.row().unwrap().ordinary.as_ptr() as usize - bytes.as_ptr() as usize
+    };
+    // A nonzero first coordinate is valid syntax for a remaining group. This
+    // original rest state, however, still requires formal zero.
+    bytes[ordinary] = 1;
+    let (mut source, functions, states) = source(&plan, meter());
+    let prepared = PreparedRuntimeProjectCallSource::preflight(
+        &bytes,
+        limits(&plan),
+        &resources(),
+        &mut source.meter,
+    )
+    .expect("nonzero formal coordinates have a valid source encoding");
+    let decoded = prepared
+        .materialize(&mut source, &handles(&states), &mut resources())
+        .unwrap();
+    assert!(matches!(
+        source.builder.define_function_site_seed(
+            functions.last().unwrap(),
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: vec![decoded, RuntimeFlowOpSeed::ReturnExpr(boolean(true))].into_boxed_slice(),
+            })
+        ),
+        Err(RuntimePlanBuildError::InvalidProjectCallAbi { .. })
+    ));
+    assert!(
+        finish(source).is_err(),
+        "an unaligned call cannot publish a plan"
+    );
+
+    let bytes = encode(plan.project_call_sites().iter().next().unwrap(), &plan);
+    let mut cursor = cursor::Cursor::new(&bytes, limits(&plan));
+    let row = cursor.row().unwrap();
+    let ordinary = row.ordinary.as_ptr() as usize - bytes.as_ptr() as usize;
+    for second in [0, 2] {
+        let mut bad = bytes.clone();
+        bad[ordinary + 17] = second;
+        assert!(
+            PreparedRuntimeProjectCallSource::preflight(
+                &bad,
+                limits(&plan),
+                &resources(),
+                &mut meter(),
+            )
+            .is_err(),
+            "materialized formals must remain contiguous and unique"
         );
     }
 }

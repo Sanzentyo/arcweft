@@ -2471,9 +2471,9 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
 
         match &state.transition {
             RuntimeCallableTransition::RequiresSpecialization => {
-                if contract.binder().is_empty() || !state.partials.is_empty() {
+                if contract.binder().is_empty() {
                     return Err(invalid(
-                        "callable specialization state requires a generic function type and no partial rows",
+                        "callable specialization state requires a generic function type",
                     ));
                 }
             }

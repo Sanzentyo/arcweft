@@ -185,6 +185,9 @@ fn collect_application(
         RuntimeCallableStateSeed,
     >,
 ) -> Result<(), RuntimePlanLowerError> {
+    if plan.applies_value_prefix() {
+        return Ok(());
+    }
     let crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Continue {
         abi,
         target: crate::semantic_facts::RuntimeProjectCallableValueTarget::Source(key),

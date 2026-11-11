@@ -401,6 +401,17 @@ pub struct RuntimeProjectFunctionCallPlan {
 }
 
 impl RuntimeProjectFunctionCallPlan {
+    /// A same-group continuation of an evaluated callee uses the ordinary
+    /// partial-arrow transition. Direct declaration prefixes own their
+    /// checked retaining application state.
+    pub const fn applies_value_prefix(&self) -> bool {
+        matches!(
+            self.input,
+            RuntimeProjectFunctionCallInput::Continuation { .. }
+        ) && matches!(&self.outcome, RuntimeProjectFunctionCallOutcome::Continue { abi, .. }
+                if abi.position().group().get() == self.position.group().get())
+    }
+
     pub fn try_new(
         callable: RuntimeProjectCallable,
         application_type: RuntimeNormalizedType,

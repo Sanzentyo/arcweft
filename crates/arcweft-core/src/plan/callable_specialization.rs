@@ -660,7 +660,7 @@ impl<T: Copy + Eq + Ord> RuntimeCallableSpecializationDefinition<T, RuntimeCalla
                     RuntimeCallableTransition::RequiresSpecialization
                     | RuntimeCallableTransition::Retain { .. }
                     | RuntimeCallableTransition::Invoke { .. },
-                ) if source.partials.is_empty() => {}
+                ) => {}
                 (
                     RuntimeCallableTransition::Retain {
                         state: source_next,

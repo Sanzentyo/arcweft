@@ -460,6 +460,19 @@ impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
 }
 
 impl<T: Eq + Clone, F: Eq + Clone, S: Eq + Clone> RuntimeCallableStateDefinition<T, F, S> {
+    /// Partial demands can add outgoing edges later. The input layout and
+    /// exact executable/default transition identify their common target.
+    pub(crate) fn same_application_layout(&self, other: &Self) -> bool {
+        self.function_type == other.function_type
+            && self.origin == other.origin
+            && self.position == other.position
+            && self.retained == other.retained
+            && self.parameters == other.parameters
+            && self.result == other.result
+            && self.attached == other.attached
+            && self.transition == other.transition
+    }
+
     /// Verifies that a partial row preserves the source's exact code/default
     /// target and all input roles. Both native admission and AWBC verification
     /// use this projection law; matching function types alone is insufficient.
@@ -764,7 +777,7 @@ impl RuntimeCallableState {
         };
         match &self.transition {
             RuntimeCallableTransition::RequiresSpecialization => {
-                if contract.binder().is_empty() || !self.partials.is_empty() {
+                if contract.binder().is_empty() {
                     return Err(invalid_layout());
                 }
             }

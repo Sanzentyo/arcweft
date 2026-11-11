@@ -3193,7 +3193,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
         selected: &RuntimeResolvedCall,
     ) -> Result<(RuntimeExprSeed, Box<[RuntimeCallArgumentSeed]>), String> {
-        let callee = match selected.dispatch() {
+        let mut callee = match selected.dispatch() {
             RuntimeResolvedCallDispatch::Value { callee } => self.lower(*callee)?,
             RuntimeResolvedCallDispatch::Static(_) => {
                 let plan = selected
@@ -3223,6 +3223,22 @@ impl<'hir> FinalExprLowerer<'hir> {
                 )
             }
         };
+        if let Some(plan) = selected.project_function()
+            && let Some(specialization) = plan.input_specialization()
+        {
+            let seed = self
+                .callable_specializations
+                .and_then(|specializations| specializations.get(specialization.key()))
+                .cloned()
+                .ok_or_else(|| format!("partial call {id:?} input specialization is absent"))?;
+            callee = RuntimeExprSeed::new(
+                plan.application_type().identity(),
+                RuntimeExprSeedKind::SpecializeCallable {
+                    value: Box::new(callee),
+                    specialization: seed,
+                },
+            );
+        }
         let values = self.lower_call_operands(id, selected)?;
         let arguments = self.lower_function_arguments(id, selected, &values)?;
         Ok((callee, arguments.into_boxed_slice()))

@@ -1592,6 +1592,21 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    same_group_generic_prefix_preserves_erased_middle_type_contexts,
+    r#"
+fn keep<T>(first: i64, second: T, third: i64) -> i64 { first + third }
+flow main() -> i64 {
+    let middle = keep(10i64)
+    let text = middle("later")
+    let flag = middle(true)
+    return text(11i64) + flag(11i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     same_group_generic_prefix_can_be_applied_repeatedly,
     r#"
 fn keep<T>(first: i64, second: i64, third: T) -> i64 { first + second }

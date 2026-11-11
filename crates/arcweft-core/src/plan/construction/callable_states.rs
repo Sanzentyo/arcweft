@@ -320,69 +320,66 @@ impl RuntimeCallableStateBuilder {
                     group,
                     bound: bound.into_boxed_slice(),
                 };
+                let mut retained = source.retained.to_vec();
+                retained.extend(source.parameters[..count].iter().map(|input| {
+                    RuntimeCallableRetainedInput {
+                        role: RuntimeCallableRetainedRole::Parameter(input.coordinate),
+                        ty: input.binding_ty,
+                    }
+                }));
+                let attached = match source.attached.clone() {
+                    RuntimeCallableAttachedContract::Defaulted { ty, mut default } => {
+                        if let crate::plan::RuntimeCallableDefault::Body { captures, .. } =
+                            &mut default
+                        {
+                            *captures = map_sources(captures);
+                        }
+                        RuntimeCallableAttachedContract::Defaulted { ty, default }
+                    }
+                    attached => attached,
+                };
+                let transition = match &source.transition {
+                    RuntimeCallableTransition::RequiresSpecialization => {
+                        RuntimeCallableTransition::RequiresSpecialization
+                    }
+                    RuntimeCallableTransition::Retain { state, values } => {
+                        RuntimeCallableTransition::Retain {
+                            state: *state,
+                            values: map_sources(values),
+                        }
+                    }
+                    RuntimeCallableTransition::Invoke {
+                        function,
+                        captures,
+                        arguments,
+                    } => RuntimeCallableTransition::Invoke {
+                        function: *function,
+                        captures: map_sources(captures),
+                        arguments: map_sources(arguments),
+                    },
+                };
+                let definition = RuntimeCallableStateDefinition {
+                    function_type,
+                    origin: source.origin,
+                    position,
+                    retained: retained.into_boxed_slice(),
+                    parameters: source.parameters[count..].into(),
+                    result: source.result,
+                    attached,
+                    transition,
+                    partials: Box::new([]),
+                };
                 let target = self.states.iter().enumerate().find_map(|(index, state)| {
                     state
                         .as_ref()
-                        .filter(|state| {
-                            state.origin == source.origin
-                                && state.position == position
-                                && state.function_type == function_type
-                        })
+                        .filter(|state| state.same_application_layout(&definition))
                         .and_then(|_| RuntimeCallableStateId::for_index(index))
                 });
                 let target = if let Some(target) = target {
                     target
                 } else {
                     let target = self.reserve()?;
-                    let mut retained = source.retained.to_vec();
-                    retained.extend(source.parameters[..count].iter().map(|input| {
-                        RuntimeCallableRetainedInput {
-                            role: RuntimeCallableRetainedRole::Parameter(input.coordinate),
-                            ty: input.binding_ty,
-                        }
-                    }));
-                    let attached = match source.attached.clone() {
-                        RuntimeCallableAttachedContract::Defaulted { ty, mut default } => {
-                            if let crate::plan::RuntimeCallableDefault::Body { captures, .. } =
-                                &mut default
-                            {
-                                *captures = map_sources(captures);
-                            }
-                            RuntimeCallableAttachedContract::Defaulted { ty, default }
-                        }
-                        attached => attached,
-                    };
-                    let transition = match &source.transition {
-                        RuntimeCallableTransition::RequiresSpecialization => {
-                            RuntimeCallableTransition::RequiresSpecialization
-                        }
-                        RuntimeCallableTransition::Retain { state, values } => {
-                            RuntimeCallableTransition::Retain {
-                                state: *state,
-                                values: map_sources(values),
-                            }
-                        }
-                        RuntimeCallableTransition::Invoke {
-                            function,
-                            captures,
-                            arguments,
-                        } => RuntimeCallableTransition::Invoke {
-                            function: *function,
-                            captures: map_sources(captures),
-                            arguments: map_sources(arguments),
-                        },
-                    };
-                    self.states[target.index()] = Some(Arc::new(RuntimeCallableStateDefinition {
-                        function_type,
-                        origin: source.origin,
-                        position,
-                        retained: retained.into_boxed_slice(),
-                        parameters: source.parameters[count..].into(),
-                        result: source.result,
-                        attached,
-                        transition,
-                        partials: Box::new([]),
-                    }));
+                    self.states[target.index()] = Some(Arc::new(definition));
                     target
                 };
                 let values = (0..source.retained.len())

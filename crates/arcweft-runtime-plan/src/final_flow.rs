@@ -8002,10 +8002,11 @@ impl<'a> FinalFlowLowerer<'a> {
                 result,
             }
         } else if call.project_function().is_some_and(|plan| {
-            !matches!(
-                plan.outcome(),
-                crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Partial { .. }
-            )
+            !plan.applies_value_prefix()
+                && !matches!(
+                    plan.outcome(),
+                    crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Partial { .. }
+                )
         }) {
             RuntimeFlowOpSeed::ProjectCall {
                 plan: self.lower_project_call_plan(expression, call, &overrides)?,

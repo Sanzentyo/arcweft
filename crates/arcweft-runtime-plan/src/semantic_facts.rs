@@ -15690,10 +15690,18 @@ fn validate_project_function_instance_reference(
         let RuntimeTypeShape::Function { result, .. } = plan.application_type().shape() else {
             return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
         };
+        let result_matches = if plan.applies_value_prefix() {
+            abi.function_type().is_function_suffix_of(
+                plan.application_type(),
+                plan.current_group_materialization().len(),
+            )
+        } else {
+            result.as_ref() == abi.function_type()
+        };
         if source.callable() != plan.callable()
             || source.function_type() != abi.function_type()
-            || result.as_ref() != abi.function_type()
-            || expression_type != Some(result.as_ref())
+            || !result_matches
+            || expression_type != Some(abi.function_type())
             || source.retained().len() != abi.prefix_types().len()
             || source
                 .retained()

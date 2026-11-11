@@ -879,6 +879,33 @@ pub(crate) fn select_project_function_runtime(
         CheckedProjectFunctionRuntimeOutcome::Partial { .. }
     ) {
         callable_type.clone()
+    } else if let CheckedProjectFunctionRuntimeOutcome::Continue { abi } = &outcome
+        && abi.position().group() == join.current_group()
+        && matches!(
+            input,
+            CheckedProjectFunctionRuntimeInput::Continuation { .. }
+        )
+    {
+        let TypeKind::Function {
+            binder,
+            predicate,
+            params,
+            return_type,
+            effects,
+        } = abi.function_type()
+        else {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
+        };
+        TypeKind::function_with_contract(
+            *binder,
+            predicate.clone(),
+            current_group_materialization
+                .iter()
+                .map(|parameter| parameter.abi_type().clone())
+                .chain(params.iter().cloned()),
+            return_type.as_ref().clone(),
+            effects.clone(),
+        )
     } else {
         TypeKind::function_with_effects(
             current_group_materialization
