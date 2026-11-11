@@ -16697,3 +16697,19 @@ graph所有の反復foldはapplication、union、既存formula置換、choice、
 新しいsubstitution ownerは14,072 bytes／343行。状態はborrowしたgraph／control／置換入力と操作内のrow／predicate memoだけで、失敗原子性も同じownerが担う。graphは22,306 bytes／680行、closure 13,605 bytes／342行、compile 21,098 bytes／544行、canonical reification 15,476 bytes／378行、別test 29,399 bytes／851行。独立の型文法、別BDD、source再構築、crate依存、I/O、unsafe、互換reader、versionや予算の緩和はない。既存のcohesive graph／canonical再確認の責務を維持し、scope操作とactive frontierへの接続を継続する。
 
 差分、選択ID／全結果、品質log／receipt、実測、公開照合を11 entry、展開時6,558,437 bytes、ZIP 534,735 bytes、SHA-256 `8b871ef8c9d26ed0a192d7a8a7c9f1ffab62b6ee420820cf0008aaccf2431af7` の[原本](acceptance-evidence/task-prepared-effect-term-substitution.raw.zip)へ保持し、全entryの長さとhashを再照合した。現状行の古い基盤段階の列挙は現在の操作と検証へまとめ、詳細とfull SHAはこの履歴へ保持した。Generic Match・呼出し側再帰・同一グループprefix等の受入判定は変更しない。
+
+### Scoped prepared type effect projection
+
+2026-11-11、基点 `1fbed1f91010fd695c359ead12b444396d92f04d` の既存mainから、Source `8a0b6bea56a7eb804618136d3fb64b0f8ad420e7`、tree `f3bbaf7aa740152834d53f8cc63a3f2acc3a02ed` を通常pushし、remote mainのfull SHA・tree・変更7pathのblobを照合した。privateなprepared型へ、既存のscope付き反復foldとgraphのparameter投影を接続した。callee scheme本体は再入・再構築せず、型の各arrowの正確なincoming／inner scopeに従って自由効果parameterを移す。canonical rowとpending application／predicateを同じ所有経路で扱い、unknown annotationをemptyへ変換しない。
+
+一つのaffine term editが型全体の投影を所有する。editはOpen／Failed／Committedの閉じた状態を持ち、途中で失敗したeditの再利用・commitを拒否する。後段の型やpredicateで失敗しても、それまでに作った全row／predicateをDrop中に追加割当なしで除去し、元のgraph／scheme／型を保持する。ordinalは戻さず、失効した成功prefixの参照も再利用できない。graphはparameter要求を構築前にadmitし、投影contextは置換値の構築を同じcaller controlへ課金する。元のscope／instantiationエラーと制御失敗は区別して運び、canonical完成型を未確定から発行する変換は追加しない。
+
+最終staged treeで、全featureのSema libraryのgraph／型領域nextestは30 PASS／0 FAIL、選択外1,458件、終了0。新規4件は、内側binderを保った外側parameterの入替え、pendingなpredicateと期待したcanonical predicateの全入力での同値、callee schemeの保全、後段のscope失敗による型全体の取消し、unknown／取消し／one-under制御失敗の保全、Failed editの再利用・commit拒否を確認した。既存26件を含むので以前の選択runや全ownerへ合算しない。段階入力のowner checkは終了0だったが、初回test buildはhelperのGenericEffectReference import欠落で終了101、実行テスト0件。この診断を保持し、修正後の固定入力で上記30件を実行した。
+
+最終入力のowner locked・全target・全feature Clippy、workspace整形、構造gateは終了0、blocking 0件。Clippyには未接続の私有APIと既存を含む警告がある。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。全workspace check／逆依存／Wasm／Compiler実行、再帰本体6件の再実行はこの私有投影cutに含めない。Source `0024a06e57750942c52ef96e6cea667d864cfae3` のSema全件1,500件／1,494 PASS・6 FAILと、以前のCompiler 2件の失敗は元Sourceの証拠として保持する。
+
+実測はterm projection owner 18,545 bytes／483行（基点343行）、prepared type owner 7,753 bytes／227行（基点76行）、graph 22,584 bytes／688行、graph test 30,670 bytes／888行、type-domain test 22,557 bytes／674行（基点372行）。300行超増えた後者は同じphaseのnested scope、canonical同値、失敗原子性とエラー境界を直接検証し、source spellingや別ownerの動作へ依存しない。既存TypeKindの単一文法、scope fold、graphのimmutable termを共有し、private error exportも同じphase境界に限る。crate依存、I/O、unsafe、runtime／wire／digest、version、互換reader、予算の緩和はない。
+
+次のactive接続では、現在のPendingChildConstraint／SourceProbeTerm::Resultが一つの親receiptに束縛され、独立したletを跨げないことを所有境界として扱う。componentがexportしたvalue／projection参照をactiveな式・local・patternに共通して持たせ、PreparedTypeとscope・source／rankの証拠は各frontier alternativeが所有する方針を採用する。member／pattern／joinは相関を保ったalternativeごとに検査し、同じinitializerの複数利用が別の候補を選ばない。initializerの元の適合・期待型・順位条件は固定し、後の利用で曖昧さを消したり任意のlet多相化を追加したりしない。ResolverWorkの残余ledgerとaffineなcandidate factsを保持し、宣言bodyの一括効果／選択を閉じてからcanonical solution・application・factを一度に発行し、selected-expression graphを封印する。graphのbranch抽出／join、choice activation、通常の効果推論のprincipal guard、Rejected／Ambiguousの診断付きoutcomeもこの接続で移す。これらのactive carrier／component sealは本cutでは未実装であり、投影の成功を再帰本体8件の受入へ昇格しない。
+
+初回診断、最終選択ID／全結果、品質log／receipt、Source差分、実測、公開照合を13 entry、展開時6,648,472 bytes、ZIP 549,661 bytes、SHA-256 `64f7ad5de0d6143bbb5866832821199543611cf00a1f1558f9a43859dfe9e267` の[原本](acceptance-evidence/task-prepared-effect-scope-projection.raw.zip)へ保持し、全entryの長さとhashを再照合した。現状は一か所の一覧に更新し、以前の履歴・凍結原本・Generic Match等の受入判定は保持する。
