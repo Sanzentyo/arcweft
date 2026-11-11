@@ -238,6 +238,31 @@ impl ProjectInstanceProjection<'_> {
         self.callable_source(origin, source, enclosing, symbols, world, analysis)
     }
 
+    pub(in crate::lower) fn callable_input(
+        &mut self,
+        owner: ExprId,
+        selection: &CheckedProjectFunctionRuntimeSelection,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+        symbols: &ProjectSymbolTable,
+        world: &RegisteredSemanticWorld,
+        analysis: &FinalSemanticAnalysis,
+    ) -> Result<RuntimeProjectCallableSourceKey, RuntimeSemanticProjectionError> {
+        let origin = ProjectInstantiationOrigin::Call(owner);
+        let checked = selection
+            .input_callable_source(
+                analysis.checked_callables(),
+                enclosing,
+                &mut self.callable_work().type_control(origin),
+            )
+            .map_err(|error| projection_error(origin, error))?;
+        let RuntimeProjectCallableValueTarget::Source(source) =
+            self.callable_source(origin, checked, enclosing, symbols, world, analysis)?
+        else {
+            return Err(origin.error("callable input must retain its source context"));
+        };
+        Ok(source)
+    }
+
     fn insert_source(
         &mut self,
         origin: ProjectInstantiationOrigin,
@@ -248,6 +273,19 @@ impl ProjectInstanceProjection<'_> {
         analysis: &FinalSemanticAnalysis,
     ) -> Result<RuntimeProjectCallableSourceKey, RuntimeSemanticProjectionError> {
         let fact = callable_sources::source(&checked, root, symbols, world, analysis)?;
+        if let Some(closed) = checked.closed_selection() {
+            let key = fact
+                .body()
+                .ok_or_else(|| origin.error("closed callable source has no body"))?;
+            self.request(
+                key.clone(),
+                ProjectInstanceNode {
+                    origin,
+                    callable: fact.callable().clone(),
+                    solution: closed.solution().clone(),
+                },
+            )?;
+        }
         let key = fact.key().clone();
         match self {
             Self::Discover(session) => {
@@ -283,29 +321,6 @@ impl ProjectInstanceProjection<'_> {
         world: &RegisteredSemanticWorld,
         analysis: &FinalSemanticAnalysis,
     ) -> Result<RuntimeProjectCallableValueTarget, RuntimeSemanticProjectionError> {
-        if let Some(closed) = checked.closed_selection() {
-            let callable =
-                runtime_project_callable(checked.declaration(), symbols, world, analysis)
-                    .map_err(|reason| origin.error(reason))?;
-            let solution = closed.solution().clone();
-            let key = RuntimeProjectFunctionInstanceKey::new(
-                callable.runtime().clone(),
-                solution.instantiation(),
-                closed.group(),
-            );
-            self.request(
-                key.clone(),
-                ProjectInstanceNode {
-                    origin,
-                    callable,
-                    solution,
-                },
-            )?;
-            return Ok(RuntimeProjectCallableValueTarget::Closed {
-                instance: key,
-                position: checked.position(),
-            });
-        }
         let root = if checked.origin()
             == arcweft_lang_sema::callable::CheckedProjectFunctionCallableOrigin::Root
         {
@@ -417,6 +432,9 @@ impl ProjectInstanceProjection<'_> {
             return Err(origin.error("call input is not a Function"));
         };
         if binder.is_empty() {
+            return Ok(None);
+        }
+        if !selection.solution().is_fully_instantiated() {
             return Ok(None);
         }
         let checked = selection

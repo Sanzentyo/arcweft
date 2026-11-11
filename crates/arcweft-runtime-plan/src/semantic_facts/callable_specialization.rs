@@ -118,6 +118,7 @@ pub struct RuntimeProjectCallableSourceFact {
     retained: Box<[RuntimeCallableRetainedInput<RuntimeNormalizedType>]>,
     parameters: Box<[RuntimeCallableParameterInput<RuntimeNormalizedType>]>,
     attached: RuntimeCallableAttachedContract<RuntimeNormalizedType, Infallible>,
+    body: Option<RuntimeProjectFunctionInstanceKey>,
 }
 
 impl RuntimeProjectCallableSourceFact {
@@ -131,6 +132,7 @@ impl RuntimeProjectCallableSourceFact {
         retained: Box<[RuntimeCallableRetainedInput<RuntimeNormalizedType>]>,
         parameters: Box<[RuntimeCallableParameterInput<RuntimeNormalizedType>]>,
         attached: RuntimeCallableAttachedContract<RuntimeNormalizedType, Infallible>,
+        body: Option<RuntimeProjectFunctionInstanceKey>,
     ) -> Result<Self, RuntimeCallableSpecializationFactError> {
         let group = u32::try_from(position.group().get())
             .map_err(|_| RuntimeCallableSpecializationFactError::Source)?;
@@ -169,6 +171,11 @@ impl RuntimeProjectCallableSourceFact {
         {
             return Err(RuntimeCallableSpecializationFactError::Source);
         }
+        if body.as_ref().is_some_and(|body| {
+            body.callable() != callable.runtime() || body.group().get() < position.group().get()
+        }) {
+            return Err(RuntimeCallableSpecializationFactError::Source);
+        }
         let key = RuntimeProjectCallableSourceKey {
             digest,
             callable: callable.runtime().clone(),
@@ -198,6 +205,7 @@ impl RuntimeProjectCallableSourceFact {
             retained,
             parameters,
             attached,
+            body,
         })
     }
     pub const fn key(&self) -> &RuntimeProjectCallableSourceKey {
@@ -217,6 +225,9 @@ impl RuntimeProjectCallableSourceFact {
     }
     pub const fn function_type(&self) -> &RuntimeNormalizedType {
         &self.function_type
+    }
+    pub const fn body(&self) -> Option<&RuntimeProjectFunctionInstanceKey> {
+        self.body.as_ref()
     }
     pub const fn retained(&self) -> &[RuntimeCallableRetainedInput<RuntimeNormalizedType>] {
         &self.retained

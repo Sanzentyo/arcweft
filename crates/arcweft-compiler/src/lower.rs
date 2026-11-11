@@ -7486,6 +7486,14 @@ fn runtime_project_function_projection(
             };
             RuntimeProjectFunctionCallInput::Continuation {
                 callee,
+                source: project_function_instances.callable_input(
+                    owner,
+                    selection,
+                    enclosing.and_then(ProjectInstanceTypes::function_solution),
+                    symbols,
+                    world,
+                    analysis,
+                )?,
                 abi: runtime_project_continuation_abi(
                     owner, abi, enclosing, symbols, world, analysis,
                 )?,
@@ -7547,26 +7555,29 @@ fn runtime_project_function_projection(
         enclosing.and_then(ProjectInstanceTypes::function_solution),
         analysis,
     )?;
-    let input_specialization =
-        if matches!(outcome, RuntimeProjectFunctionCallOutcome::Invoke { .. }) {
-            input
-                .callee()
-                .map(|callee| {
-                    project_function_instances.call_input_specialization(
-                        owner,
-                        callee,
-                        selection,
-                        enclosing.and_then(ProjectInstanceTypes::function_solution),
-                        symbols,
-                        world,
-                        analysis,
-                    )
-                })
-                .transpose()?
-                .flatten()
-        } else {
-            None
-        };
+    let input_specialization = if matches!(
+        outcome,
+        RuntimeProjectFunctionCallOutcome::Invoke { .. }
+            | RuntimeProjectFunctionCallOutcome::Continue { .. }
+    ) {
+        input
+            .callee()
+            .map(|callee| {
+                project_function_instances.call_input_specialization(
+                    owner,
+                    callee,
+                    selection,
+                    enclosing.and_then(ProjectInstanceTypes::function_solution),
+                    symbols,
+                    world,
+                    analysis,
+                )
+            })
+            .transpose()?
+            .flatten()
+    } else {
+        None
+    };
     let plan = RuntimeProjectFunctionCallPlan::try_new(
         callable,
         runtime_type(&application_type, symbols, world, analysis)?,

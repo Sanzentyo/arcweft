@@ -133,6 +133,13 @@ pub(super) fn source(
         })
         .transpose()?
         .unwrap_or(RuntimeCallableAttachedContract::None);
+    let body = checked.closed_selection().map(|closed| {
+        RuntimeProjectFunctionInstanceKey::new(
+            callable.runtime().clone(),
+            closed.solution().instantiation(),
+            closed.group(),
+        )
+    });
     RuntimeProjectCallableSourceFact::try_new(
         callable,
         checked.source_digest(),
@@ -143,6 +150,7 @@ pub(super) fn source(
         retained,
         parameters,
         attached,
+        body,
     )
     .map_err(|error| RuntimeSemanticProjectionError::Type {
         reason: error.to_string(),

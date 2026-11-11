@@ -234,10 +234,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         CheckedProjectFunctionInstanceProjectionError<C::Error>,
     > {
         control.check().map_err(TypeProjectionError::Control)?;
-        if !matches!(
-            self.outcome,
-            CheckedProjectFunctionRuntimeOutcome::Invoke { .. }
-        ) {
+        if !self.solution.is_fully_instantiated() {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
         }
         let source = self.input_callable_source(catalog, enclosing, control)?;

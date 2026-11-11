@@ -1,5 +1,7 @@
 //! Materialization of checked callable sources and selected group chains.
 
+#[path = "callable_states/closed_sources.rs"]
+mod closed_sources;
 #[path = "callable_states/group_chain.rs"]
 mod group_chain;
 pub(super) use group_chain::CallableGroupChain;
@@ -64,6 +66,19 @@ pub(super) fn materialize(
     }
     let mut sources = BTreeMap::new();
     for source in facts.callable_sources() {
+        if source.body().is_some() && source.key() != source.root() {
+            continue;
+        }
+        if source.position().group().get() == 0
+            && source.position().parameter().get() == 0
+            && let Some(state) = source
+                .body()
+                .and_then(|body| states.get(body))
+                .and_then(|states| states.first())
+        {
+            sources.insert(source.key().clone(), state.clone());
+            continue;
+        }
         match builder.reserve_callable_state_seed() {
             Ok(state) => {
                 sources.insert(source.key().clone(), state);
@@ -74,6 +89,14 @@ pub(super) fn materialize(
             ))),
         }
     }
+    let closed =
+        match closed_sources::materialize(facts, &states, &mut sources, sites, defaults, builder) {
+            Ok(closed) => closed,
+            Err(error) => {
+                errors.push(error);
+                BTreeMap::new()
+            }
+        };
     for source in facts.callable_sources() {
         if let Err(error) = materialize_source(source, &sources, builder) {
             errors.push(error);
@@ -82,8 +105,7 @@ pub(super) fn materialize(
     let mut specializations = BTreeMap::new();
     let mut targets = BTreeMap::new();
     for specialization in facts.callable_specializations() {
-        match materialize_specialization(specialization, facts, &sources, sites, defaults, builder)
-        {
+        match materialize_specialization(specialization, facts, &sources, &closed, builder) {
             Ok((seed, rows)) => {
                 for (digest, target) in rows {
                     if targets
@@ -298,6 +320,9 @@ fn materialize_source(
     let origin = sources
         .get(source.root())
         .ok_or_else(|| error("root state is absent"))?;
+    if source.body().is_some() {
+        return Ok(());
+    }
     let group = source.group().get();
     let group = u32::try_from(group).map_err(|_| error("group exceeds state coordinate"))?;
     let RuntimeTypeShape::Function { result, .. } = source.function_type().shape() else {
@@ -361,8 +386,7 @@ fn materialize_specialization(
     specialization: &RuntimeCallableSpecializationFact,
     facts: &RuntimePlanSemanticFacts,
     sources: &ProjectCallableSourceStates,
-    sites: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
-    defaults: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
+    closed: &closed_sources::ClosedCallableStates,
     builder: &mut RuntimePlanBuilder,
 ) -> Result<
     (
@@ -396,28 +420,10 @@ fn materialize_specialization(
             RuntimeProjectCallableValueTarget::Closed {
                 instance: instance_key,
                 position,
-            } => {
-                let instance = facts
-                    .project_function_instance(instance_key)
-                    .ok_or_else(|| error("selected instance is absent"))?;
-                materialize_instance_from(
-                    instance,
-                    RuntimeCallableParameterCoordinate {
-                        group: u32::try_from(position.group().get())
-                            .map_err(|_| error("source group exceeds its coordinate"))?,
-                        parameter: u32::try_from(position.parameter().get())
-                            .map_err(|_| error("source parameter exceeds its coordinate"))?,
-                    },
-                    specialization.target(),
-                    Some(origin.clone()),
-                    sites,
-                    defaults,
-                    builder,
-                )?
-                .first()
+            } => closed
+                .get(&(source.root().clone(), instance_key.clone(), *position))
                 .cloned()
-                .ok_or_else(|| error("target chain is empty"))?
-            }
+                .ok_or_else(|| error("closed source layout is absent"))?,
             RuntimeProjectCallableValueTarget::Source(next_key) => {
                 let next = facts
                     .callable_source(next_key)
@@ -546,6 +552,8 @@ fn materialize_instance(
         },
         instance.callable_type(),
         None,
+        None,
+        None,
         sites,
         defaults,
         builder,
@@ -557,6 +565,8 @@ fn materialize_instance_from(
     start: RuntimeCallableParameterCoordinate,
     initial_type: &RuntimeNormalizedType,
     origin: Option<RuntimeCallableStateSeedId>,
+    initial_state: Option<RuntimeCallableStateSeedId>,
+    following_groups: Option<&[RuntimeCallableStateSeedId]>,
     sites: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
     defaults: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
     builder: &mut RuntimePlanBuilder,
@@ -640,6 +650,13 @@ fn materialize_instance_from(
         function,
         attached,
     )
-    .materialize_from(start, initial_type, origin, builder)
+    .materialize_from(
+        start,
+        initial_type,
+        origin,
+        initial_state,
+        following_groups,
+        builder,
+    )
     .map_err(|failure| error(&failure.to_string()))
 }

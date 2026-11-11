@@ -8229,6 +8229,25 @@ impl RuntimePlanSemanticFacts {
         )?;
         for source in callable_sources.values() {
             validate_callable(&modules, source.callable())?;
+            if let Some(key) = source.body() {
+                let body = project_function_instances
+                    .get(key)
+                    .ok_or(RuntimeCallableSpecializationFactError::Inventory)?;
+                let mut ty = body.callable_type();
+                for _ in 0..source.group().get() {
+                    let RuntimeTypeShape::Function { result, .. } = ty.shape() else {
+                        return Err(RuntimeCallableSpecializationFactError::Source.into());
+                    };
+                    ty = result;
+                }
+                if body.callable() != source.callable()
+                    || !source
+                        .function_type()
+                        .is_function_suffix_of(ty, source.position().parameter().get())
+                {
+                    return Err(RuntimeCallableSpecializationFactError::Source.into());
+                }
+            }
             let mut types = Vec::new();
             source.append_normalized_types(&mut types);
             for ty in types {
@@ -8938,6 +8957,11 @@ impl RuntimePlanSemanticFacts {
             .values()
             .map(|root| root.instance().clone())
             .collect::<BTreeSet<_>>();
+        referenced_project_function_instances.extend(
+            callable_sources
+                .values()
+                .filter_map(|source| source.body().cloned()),
+        );
         for specialization in callable_specializations.values() {
             referenced_project_function_instances.extend(
                 specialization
@@ -15637,6 +15661,24 @@ fn validate_project_function_instance_reference(
     let Some(plan) = call.project_function() else {
         return Ok(None);
     };
+    if let RuntimeProjectFunctionCallInput::Continuation { source, abi, .. } = plan.input() {
+        let source = sources
+            .get(source)
+            .ok_or(RuntimeCallableSpecializationFactError::Inventory)?;
+        if source.function_type() != abi.function_type()
+            || source.position() != abi.position()
+            || source.key().origin()
+                != RuntimeProjectCallableSourceOrigin::Continuation(abi.lineage())
+            || source.retained().len() != abi.prefix_types().len()
+            || source
+                .retained()
+                .iter()
+                .zip(abi.prefix_types())
+                .any(|(row, ty)| &row.ty != ty)
+        {
+            return Err(RuntimeCallableSpecializationFactError::Source.into());
+        }
+    }
     if let Some(spec) = plan.input_specialization()
         && specializations.get(spec.key()).is_none_or(|definition| {
             definition.source() != spec.source() || definition.target() != plan.application_type()

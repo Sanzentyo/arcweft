@@ -262,6 +262,7 @@ pub enum RuntimeProjectFunctionCallInput {
     Continuation {
         callee: ExprId,
         abi: RuntimeProjectContinuationAbi,
+        source: super::RuntimeProjectCallableSourceKey,
     },
 }
 

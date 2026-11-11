@@ -8133,6 +8133,12 @@ impl<'a> FinalFlowLowerer<'a> {
             self.callable_specialization_targets
                 .get(&(specialization.key().clone(), specialization.source_digest()))
                 .cloned()
+        } else if let crate::semantic_facts::RuntimeProjectFunctionCallInput::Continuation {
+            source,
+            ..
+        } = checked.input()
+        {
+            self.callable_sources.get(source).cloned()
         } else if let Some(instance) = checked.outcome().callable_instance() {
             self.project_callable_states
                 .get(instance)

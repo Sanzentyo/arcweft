@@ -45,6 +45,8 @@ impl<'a> CallableGroupChain<'a> {
         start: RuntimeCallableParameterCoordinate,
         initial_type: &RuntimeNormalizedType,
         origin: Option<RuntimeCallableStateSeedId>,
+        initial_state: Option<RuntimeCallableStateSeedId>,
+        following_groups: Option<&[RuntimeCallableStateSeedId]>,
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Box<[RuntimeCallableStateSeedId]>, RuntimePlanLowerError> {
         let error = |message: &str| RuntimePlanLowerError::new(message);
@@ -58,6 +60,7 @@ impl<'a> CallableGroupChain<'a> {
             .filter(|row| row.coordinate.group == start.group)
             .count();
         if start_group > self.terminal
+            || following_groups.is_some_and(|states| states.len() != self.terminal - start_group)
             || (first_parameter > 0 && first_parameter >= first_group_arity)
             || ((start_group > 0 || first_parameter > 0) && origin.is_none())
             || u32::try_from(self.parameters.len()).is_err()
@@ -93,32 +96,23 @@ impl<'a> CallableGroupChain<'a> {
             };
             ty = result;
         }
-        let RuntimeTypeShape::Function {
-            contract,
-            parameters,
-            result,
-        } = ty.shape()
-        else {
-            unreachable!("the complete declaration chain was checked")
-        };
-        let RuntimeTypeShape::Function {
-            contract: current_contract,
-            parameters: current_parameters,
-            result: current_result,
-        } = initial_type.shape()
-        else {
-            return Err(error("callable remaining type is not a function"));
-        };
-        if contract != current_contract
-            || result != current_result
-            || parameters.get(first_parameter..) != Some(current_parameters.as_ref())
-        {
+        if !initial_type.is_function_suffix_of(ty, first_parameter) {
             return Err(error(
                 "callable remaining type differs from its declaration position",
             ));
         }
         let states = (start_group..=self.terminal)
-            .map(|_| {
+            .map(|group| {
+                if group > start_group
+                    && let Some(states) = following_groups
+                {
+                    return Ok(states[group - start_group - 1].clone());
+                }
+                if group == start_group
+                    && let Some(state) = &initial_state
+                {
+                    return Ok(state.clone());
+                }
                 builder
                     .reserve_callable_state_seed()
                     .map_err(|failure| error(&failure.to_string()))
@@ -130,6 +124,10 @@ impl<'a> CallableGroupChain<'a> {
             let RuntimeTypeShape::Function { result, .. } = ty.shape() else {
                 unreachable!("the complete declaration chain was checked")
             };
+            if group > start_group && following_groups.is_some() {
+                ty = result;
+                continue;
+            }
             let position = if group == start_group {
                 start
             } else {

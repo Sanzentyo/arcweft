@@ -621,7 +621,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         self.continuation_source(catalog, abi, Arc::clone(&self.solution), enclosing, control)
     }
 
-    pub(super) fn input_callable_source<C: TypeProjectionControl>(
+    pub fn input_callable_source<C: TypeProjectionControl>(
         &self,
         catalog: &CheckedCallableCatalog,
         enclosing: Option<&CheckedProjectFunctionInstanceSolution>,

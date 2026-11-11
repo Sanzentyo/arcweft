@@ -792,6 +792,8 @@ impl<'a> ExternalDefinition<'a> {
             },
             self.ty,
             None,
+            None,
+            None,
             builder,
         )
     }
