@@ -16593,3 +16593,29 @@ Source `a34296c81ba26c456592f60a8fb2b35e3b75e61b` で、関数値の固定位置
 最終の関連3バイナリーは403件中401件成功・2件失敗。元の関数値経由、反復適用、2種類の既知型を保持して残りの型を独立に決める入力、次の宣言グループ、独立した結果型、100 msの待機後の反復適用とAWBC毎ステップの公開JSON保存・復元が通過した。残る2件は新しく追加した、効果行を省略したcallbackの入力のNative／AWBCで、型検査の `no admissible final type`。失敗を全体完了や既受入機能の未完了へ読み替えない。全targetのCompiler checkと所有3クレートの全target Clippyは終了0。警告がある。両Sourceのfull SHA・親・tree・変更blob・remote mainを照合し、通常のfast-forward pushで公開した。全逆依存・workspace品質検証と効果の修復は継続する。
 
 追加段階の原本は37件、1151942 bytes、SHA-256 `caf389563bf4272345a2980d46dfc278a3fc3b83e06fec423069122887247bf1`。[組合せ段階の原本](acceptance-evidence/task-within-group-generic-prefix-composition.raw.zip)。基盤段階の72件との重複を除き、上記2回のCore拒否検証の修復前後と全403件runを保持する。
+
+
+
+### Function value prefix effects and result annotations
+
+2026-11-11、基点 `e5b23e01e3ddae8ffe1cdd78b63dfb3030cf8f84` から既存の `main` で継続した。最終検証Sourceは `f8d4c5144d7196f4e4cafa2483cf84cdf32801d3`、tree `c481e15906835b7a312ddbbc38e5d2dcfa02700a`。検証前後のtracked差分は0件で、既存の未追跡 `%SystemDrive%/` を保持した。全体の `cargo clean` は前節の実行を再利用し、繰り返していない。Cargoは `CARGO_INCREMENTAL=0`、jobsやprofileの上書きなしで実行した。実行バイナリー生成には既存の `--profile test` を用いた。
+
+Supersedes: 現状一覧の「403件中401件成功・callback効果2件失敗」と、広いローカル効果型・戻り値効果省略の再検証待ちという現在形を、以下の同一入力の成功に基づき置換した。先行節の実結果とfull SHAは当時の履歴として保持する。Generic Matchの受入行は同じ内容を維持し、別境界や全体goalの未達による再開は行わない。
+
+Source `8c6b5ec5c5ee5ca473b5231c6d98ce216f6090c7` では、lexical callable identityが単独の非scoped効果行でなく、binderを含む関数型全体を保持する。generic slotの最初の使用を引数座標・呼出し・結果で区別し、呼出しでしか使わない効果をprefix生成時に確定しない。直接／関数値、全／部分適用、curried、明示効果、genericの7種類の行列を追加した。対象4件は3件成功・1件失敗。Sema、Compilerの関連3バイナリーとライブラリの2,043件は2,042件成功・1件失敗で、残りはcurried関数値のCopy判定だった。Compilerの全target checkと所有3クレートの全target Clippyは終了0、警告あり。対象が重複するため両runを合算しない。
+
+Source `fa43eafae48e2ee83b71061c26cf334fde70418a` では、Copy判定が検査済みproducerと宣言groupの位置をたどり、途中groupの保持値を無視して関数型だけからCopyとしない。VoiceHandleを保持したprefixの再使用を拒否する回帰も加えた。Coreの特殊化codecは、検証と同じ残存結果binderの規則で引数の効果frameを保持する。広いローカル型の選択はbindingの検査済みinterfaceを使い、元の実行値を保持する。仕様のgenericと効果の説明を同一groupの残り引数へ広げた。初回対象9件は6件成功・3件失敗で、行列の宣言間改行漏れはfixtureの誤りとして訂正した。codecの旧test helper参照によるcompile失敗も修復した。後続対象23件は18件成功・5件失敗。curriedのNative／AWBCとcodecは成功し、広いローカル型と戻り値注釈は下流の拒否が残った。このSourceのCoreライブラリ2,351件は全件成功したが、最終Sourceでは下記の全件を別に再実行した。
+
+Source `1be007cb97ae930fdf954efa9f53f24fe9b8a71a` では、Coreの代入とAWBCのbinding patternで既存の関数引数と同じ型適合を使い、AWBC検査は既存の累積step予算を共有する。Semaは省略効果行を持つ期待結果型だけを遅延するequationとして区別し、実際の戻り値の推論を待ってから効果行を埋め、厳密に照合する。未知のsource効果を受け入れない。純粋／log効果、source型の推論待ち、未知のsource行と型・効果・配列長不一致の拒否を回帰で確認した。対象18件は12件成功・6件失敗。広いローカル型の全／部分適用、callback行列、curried、待機prefixは成功した。残る6件は関数値専用の結果経路が通常のequationを通らず、型検査の `UnknownRow` が残った。入力patch SHA-256は `59b419c94ca1ee923eb067e69facc9090abd8880cefd570953dfc39566932861`。
+
+Source `f8d4c5144d7196f4e4cafa2483cf84cdf32801d3` では、関数値専用の結果制約にも同じ遅延分類を適用した。型検査後の未知行は、元の宣言signatureでなく検査済みresult schemaを使い、終端の効果と推論済み戻り値を一つのtyped interfaceとして投影することで解消した。Compilerの元関数インスタンスも検査済み戻り値ABIを登録し、pendingな投影は構造化エラーで拒否する。終端interfaceの投影修復直後の対象9件は全件成功した。その後、pending分岐を明示的なmatchへ整えた公開Sourceで、所有4クレートの全target Clippyは終了0、警告あり。最終Sourceの全体runにも同じ9 IDが含まれ、全件成功した。全4 Sourceは通常のfast-forward pushとfetchを行い、remote mainのfull SHAとtreeを照合した。ユーザーの途中commit方針に従い、修復途中の失敗を隠さず各cutを公開した。
+
+初回76段階の `light-42` は、Player Native／Player Text Input／Projectのテスト開始前に終了101となった。原因はWindowsのページング領域不足（OS error 1455）によるrlibのmmap失敗で、ソース不具合とは区別する。初回receiptとログは改変せず保持し、同じSourceで対象のlib・bin・統合テストを10段階へ細分して再実行した。jobs・profileの上書き、OS設定変更、artifactの退避は行っていない。以下の集計は初回の成功75段階と再実行の成功10段階で、コンパイル停止した初回に実行テストはない。
+
+最終Sourceを固定して85段階を終端まで実行した。Cargo metadataとtreeによるホスト52パッケージの推移的逆依存を、既定featureで7755件成功・0件失敗・18件skipまで検証した。先行Sourceの成功を混ぜた合算ではない。全ターゲットのグラフはrender-webを加えた53パッケージで、別途Web PlayerをWasm checkした。Cargo入力の差分0を照合し、グラフのSource `f3b67393f9ee19fb09a21c2f9b66d9b7078b3e04` を再利用した。Coreライブラリ2,351件、Sema 1,476件、RuntimePlan 165件とskip 1件、Compiler関連3バイナリー417件は最終Sourceの直接再実行で、上の全体件数に含む。CLIはlib／binと規定の統合6対象を実行した。全target・全featureのworkspace check／Clippy、整形、構造ゲート、Wasm、所有4クレートのdoctest 82件は終了0。Clippyには警告がある。ignored対象の実行や実ブラウザー描画を今回の通過に含めない。
+
+初回の実CLIも同じ6入力・18実行が成功し、実行ファイルSHA-256 `69c0f8087fcffd96185cb12b0477781ac8f75802869179166130303a2f73e79e` の結果を保持した。規定CLI統合ビルド後に実行ファイルのhashが変わったため、同じ入力を最終バイナリーで再実行した。重複する18実行を合算しない。最終Sourceの実CLIはSHA-256 `96501a118ef42a528ea02dcfa4d254c9aa1fb376b927a60be1154db8f9281205`。6入力をBytecode VM／AOT／AWBC Productで18回実行し、すべて戻り値42、最大1操作、期待ログ、診断とassertion違反0を確認した。同一groupのcallback効果、3段宣言の途中prefix、広いローカル型、関数型の戻り値の効果省略、共有継続の独立型、戻り値の期待型で後段genericを確定する直接／変数経由を含む。保持prefixは再評価されず、純粋／効果付きcallbackの反復も期待順だった。Native／AWBCの待機回帰では100 msを40 msと60 msに分け、AWBCは各stepで公開JSON保存・復元を行う。
+
+構造ゲートはブロッキング違反0件。既存ownerの検査済み適用の封印とidentity、generic引数inventory、結果制約frontier、累積予算付きAWBC検証、Compiler投影contextを維持した。新しいcrate依存、unsafe、I/O、互換reader、並列の型authorityはない。大きいownerの実測はchecked_application 185,846 bytes／4,958行、schema 182,733 bytes／4,925行（内test 1,250行）、constraint transaction 94,007 bytes／2,471行、AWBC verifier 286,736 bytes／7,324行、Compiler lower 460,878 bytes／10,794行。Cargoのdev／buildを含むworkspace直接fan-in／outはCore 34／13、Sema 12／15、Compiler 5／35で、依存edgeの追加はない。行数だけで分割せず、上記typed責務でcohesionを判断した。
+
+初回失敗、fixture誤り、compileエラー、診断trace、パッチ、公開receipt、最終コマンド・Source・ログhashとCLI入力／出力を原本へ保持した。一時instrumentationは最終Sourceから除去した。広い型の探索中に入力変更が重なったrunは診断資料であり、確定Sourceの受入に数えない。前2原本と同じ内容のファイルを除き、今回の原本は239件、展開時40669970 bytes、ZIP 4270411 bytes、SHA-256 `7d3fc7df0ba807d59121c02fa5fe9a7a69a055b86ac53608f7a634f8ac6e766b`。[検証原本](acceptance-evidence/task-function-value-prefix-effects.raw.zip)。既存の履歴本文と前2原本は変更せず、現状は一か所の一覧に集約した。
