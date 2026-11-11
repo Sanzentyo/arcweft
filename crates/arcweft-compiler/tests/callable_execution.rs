@@ -1579,6 +1579,21 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    same_group_generic_prefix_is_shared_across_distinct_later_types,
+    r#"
+fn keep<T>(first: i64, second: T) -> i64 { first }
+flow main() -> i64 {
+    let tail = keep(40i64)
+    let first = tail("later")
+    let second = tail(true)
+    return first + second - 38i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     declared_partial_retains_a_fixed_positional_prefix,
     r#"
 fn add(a: i64, b: i64, c: i64) -> i64 { a + b + c }

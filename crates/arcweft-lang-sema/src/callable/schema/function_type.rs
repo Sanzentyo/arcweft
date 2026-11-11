@@ -63,6 +63,11 @@ impl CallableGroupTransition {
     pub(crate) const fn first_unbound(self) -> Option<CallableParameterIndex> {
         match self.outcome {
             CallableGroupOutcome::ValuePartial(parameter) => Some(parameter),
+            CallableGroupOutcome::DeclaredContinuation(position)
+                if position.group().get() == self.current.group().get() =>
+            {
+                Some(position.parameter())
+            }
             _ => None,
         }
     }
@@ -150,7 +155,7 @@ impl CallableSignatureSchema {
             .then_some(())?;
         let inventory = self.generic_inventory();
         let candidate_parameter = |role| role == super::CallableSchemaGenericRole::Candidate;
-        let declaration_has_generics = declared_function
+        let declared_scheme = declared_function
             && (inventory
                 .types()
                 .iter()
@@ -163,10 +168,7 @@ impl CallableSignatureSchema {
                     .effects()
                     .iter()
                     .any(|row| candidate_parameter(row.role())));
-        (self.groups().len() == 1
-            && self.attached_content_for_group(current.group()).is_none()
-            && inventory.template_binder().is_empty()
-            && !declaration_has_generics
+        ((declared_function || inventory.template_binder().is_empty())
             && first_unbound > current.parameter()
             && first_unbound.get() < parameters.len()
             && parameters.iter().all(|parameter| {
@@ -178,7 +180,14 @@ impl CallableSignatureSchema {
             }))
         .then_some(CallableGroupTransition {
             current,
-            outcome: CallableGroupOutcome::ValuePartial(first_unbound),
+            outcome: if declared_scheme {
+                CallableGroupOutcome::DeclaredContinuation(CallableParameterCoordinate::new(
+                    current.group(),
+                    first_unbound,
+                ))
+            } else {
+                CallableGroupOutcome::ValuePartial(first_unbound)
+            },
         })
     }
 

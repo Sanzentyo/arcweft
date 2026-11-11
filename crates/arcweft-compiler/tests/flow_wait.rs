@@ -702,6 +702,27 @@ flow main() -> i64 {
     );
 }
 
+#[test]
+fn same_group_generic_prefix_resumes_with_independent_later_types() {
+    let body = r#"
+fn keep<T>(first: i64, second: T) -> i64 {
+    log.info("body")
+    first
+}
+flow main() -> i64 {
+    let tail = keep({ log.info("prefix"); 40i64 })
+    wait(0.1s)
+    let first = tail({ log.info("first"); "later" })
+    return tail({ log.info("second"); true }) + first - 38i64
+}
+"#;
+    assert_shared_prefix_wait_in_both_executors(
+        native(body),
+        product(body, true),
+        &["first", "body", "second", "body"],
+    );
+}
+
 fn assert_shared_prefix_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,

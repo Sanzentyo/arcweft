@@ -48,7 +48,10 @@ impl RuntimeCallableGroupBinding {
         parameter: u32,
     ) -> bool {
         match self {
-            Self::Materialized => u32::try_from(ordinal).ok() == Some(parameter),
+            Self::Materialized => {
+                ordinal == 0
+                    || previous.and_then(|previous| previous.checked_add(1)) == Some(parameter)
+            }
             Self::Declared => previous.is_none_or(|previous| previous < parameter),
         }
     }

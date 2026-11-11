@@ -645,7 +645,7 @@ impl CheckedProjectFunctionRuntimeSelection {
                 Some(continuation),
             ) if abi.lineage() == continuation.digest()
                 && abi.position() == continuation.next_position()
-                && self.group == continuation.next_group() =>
+                && self.position == continuation.next_position() =>
             {
                 self.continuation_source(
                     catalog,

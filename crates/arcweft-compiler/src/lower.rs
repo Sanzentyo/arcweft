@@ -7618,14 +7618,11 @@ fn runtime_project_function_materialization(
         .get(selection.group().get())
         .ok_or_else(|| error("project-function materialization group is absent"))?;
     let checked = selection.current_group_materialization();
-    let parameters = if matches!(
-        selection.outcome(),
-        CheckedProjectFunctionRuntimeOutcome::Partial { .. }
-    ) {
-        group.parameters().get(..checked.len())
-    } else {
-        (group.parameters().len() == checked.len()).then_some(group.parameters())
-    };
+    let start = selection.position().parameter().get();
+    let end = start
+        .checked_add(checked.len())
+        .ok_or_else(|| error("project-function materialization range overflows"))?;
+    let parameters = group.parameters().get(start..end);
     let Some(parameters) = parameters else {
         return Err(error(
             "project-function materialization row disagrees with its HIR parameter range",
@@ -7635,7 +7632,7 @@ fn runtime_project_function_materialization(
     for (parameter_index, (parameter, checked)) in parameters.iter().zip(checked).enumerate() {
         let kind = parameter.kind();
         if checked.coordinate().group() != selection.group()
-            || checked.coordinate().parameter().get() != parameter_index
+            || checked.coordinate().parameter().get() != start + parameter_index
             || (parameter.kind() == HirParameterKind::RestPositional)
                 != (checked.passing()
                     == arcweft_lang_sema::callable::CallableParameterPassing::RestPositional)
@@ -7650,7 +7647,7 @@ fn runtime_project_function_materialization(
             ));
         }
         let source = checked.operand_indices().to_vec().into_boxed_slice();
-        let parameter = u32::try_from(parameter_index)
+        let parameter = u32::try_from(start + parameter_index)
             .map_err(|_| error("project-function materialization parameter exceeds u32"))?;
         result.push(
             RuntimeProjectFunctionParameterMaterialization::try_new(

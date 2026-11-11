@@ -218,7 +218,7 @@ pub struct CheckedProjectFunctionRuntimeSelection {
     authority: CheckedCallableAuthorityLease,
     caller: Option<CallableDeclarationKey>,
     declaration: CallableDeclarationKey,
-    group: CallableGroupIndex,
+    position: CallableParameterCoordinate,
     instantiation: CallableInstantiationDigest,
     base_instantiation: ResolvedCallableBaseInstantiation,
     solution: Arc<FrozenCallTypeSolution>,
@@ -441,7 +441,11 @@ impl CheckedProjectFunctionRuntimeSelection {
     }
 
     pub const fn group(&self) -> CallableGroupIndex {
-        self.group
+        self.position.group()
+    }
+
+    pub const fn position(&self) -> CallableParameterCoordinate {
+        self.position
     }
 
     pub const fn instantiation(&self) -> CallableInstantiationDigest {
@@ -482,7 +486,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         ) {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
         }
-        self.close_environment_with_control(self.group, enclosing, control)
+        self.close_environment_with_control(self.position.group(), enclosing, control)
     }
 
     /// Selects the latent body of a closed callable value without fabricating
@@ -874,7 +878,7 @@ pub(crate) fn select_project_function_runtime(
         authority: catalog.authority_lease(),
         caller,
         declaration: declaration.clone(),
-        group: join.current_group(),
+        position: application.core().position(),
         instantiation: join.instantiation(),
         base_instantiation: selected.instantiation().clone(),
         solution,
@@ -983,7 +987,7 @@ fn checked_project_function_parameter_materialization(
     );
     let parameters = schema_group
         .parameters()
-        .get(..end)
+        .get(application.core().position().parameter().get()..end)
         .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
     let mut rows = Vec::with_capacity(parameters.len());
     for parameter in parameters {

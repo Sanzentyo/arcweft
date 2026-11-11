@@ -553,6 +553,28 @@ impl RuntimeNormalizedType {
         &self.shape
     }
 
+    pub(crate) fn is_function_suffix_of(&self, declaration: &Self, first_parameter: usize) -> bool {
+        match (self.shape(), declaration.shape()) {
+            (
+                RuntimeTypeShape::Function {
+                    contract,
+                    parameters,
+                    result,
+                },
+                RuntimeTypeShape::Function {
+                    contract: declared_contract,
+                    parameters: declared_parameters,
+                    result: declared_result,
+                },
+            ) => {
+                contract == declared_contract
+                    && result == declared_result
+                    && declared_parameters.get(first_parameter..) == Some(parameters.as_ref())
+            }
+            _ => false,
+        }
+    }
+
     fn matches_entity_type(&self, expected: &arcweft_lang_sema::types::TypeKind) -> bool {
         let RuntimeTypeShape::EntityReference(actual) = self.shape() else {
             return false;
@@ -15566,18 +15588,26 @@ fn validate_project_function_call_materialization(
         .get(call.completed_group().get())
         .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
     let materialized = plan.current_group_materialization();
-    let parameters = if matches!(
-        plan.outcome(),
-        RuntimeProjectFunctionCallOutcome::Partial { .. }
-    ) {
-        group.parameters().get(..materialized.len())
-    } else {
-        (group.parameters().len() == materialized.len()).then_some(group.parameters())
-    }
-    .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    let start = plan.position().parameter().get();
+    let end = match plan.outcome() {
+        RuntimeProjectFunctionCallOutcome::Continue { abi, .. }
+            if abi.position().group() == call.completed_group() =>
+        {
+            abi.position().parameter().get()
+        }
+        RuntimeProjectFunctionCallOutcome::Partial { .. } => start
+            .checked_add(materialized.len())
+            .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?,
+        _ => group.parameters().len(),
+    };
+    let parameters = group
+        .parameters()
+        .get(start..end)
+        .filter(|parameters| parameters.len() == materialized.len())
+        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
     for (parameter_index, (hir, runtime)) in parameters.iter().zip(materialized).enumerate() {
         if runtime.group() != call.completed_group()
-            || u32::try_from(parameter_index).ok() != Some(runtime.parameter())
+            || u32::try_from(start + parameter_index).ok() != Some(runtime.parameter())
             || runtime.kind() != hir.kind()
             || hir.default().is_some()
         {
@@ -15655,12 +15685,14 @@ fn validate_project_function_instance_reference(
         function_type = result;
     }
     if fact.callable() != plan.callable()
-        || function_type != plan.application_type()
+        || !plan
+            .application_type()
+            .is_function_suffix_of(function_type, plan.position().parameter().get())
         || (plan.input_specialization().is_none()
             && plan
                 .input()
                 .function_type()
-                .is_some_and(|input_type| input_type != function_type))
+                .is_some_and(|input_type| input_type != plan.application_type()))
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
@@ -15672,14 +15704,22 @@ fn validate_project_function_instance_reference(
         .parameters()
         .iter()
         .filter_map(|parameter| {
-            (parameter.group().get() < call.completed_group().get())
+            ((parameter.group().get(), parameter.parameter() as usize)
+                < (
+                    plan.position().group().get(),
+                    plan.position().parameter().get(),
+                ))
                 .then_some(parameter.binding_ty())
         })
         .collect::<Vec<_>>();
     let mut instance_current_group_parameters = fact
         .parameters()
         .iter()
-        .filter_map(|parameter| (parameter.group() == call.completed_group()).then_some(parameter))
+        .filter_map(|parameter| {
+            (parameter.group() == call.completed_group()
+                && parameter.parameter() as usize >= plan.position().parameter().get())
+            .then_some(parameter)
+        })
         .collect::<Vec<_>>();
     if matches!(
         plan.outcome(),
