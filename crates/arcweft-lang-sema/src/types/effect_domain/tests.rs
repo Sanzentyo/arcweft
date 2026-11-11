@@ -233,3 +233,140 @@ fn effect_domain_projection_keeps_abort_ownership_before_partial_type_publicatio
         assert_eq!(original.semantic_identity_digest().unwrap(), before);
     }
 }
+
+#[test]
+fn preparation_domain_preserves_every_nested_arrow_contract() {
+    use crate::effect_row::prepared::{PreparedEffectPredicate, PreparedEffectRow};
+
+    let source = nested_type();
+    let digest = source.semantic_identity_digest().unwrap();
+    let prepared = source
+        .prepare_effects(&GenericScope::default(), &mut Projection::new())
+        .unwrap();
+    let mut pending = vec![(&source, &prepared)];
+    let mut arrows = 0;
+    while let Some((source, prepared)) = pending.pop() {
+        if let TypeKind::Function {
+            binder,
+            predicate,
+            params,
+            effects,
+            ..
+        } = source
+        {
+            let TypeKind::Function {
+                binder: prepared_binder,
+                predicate: prepared_predicate,
+                params: prepared_params,
+                effects: prepared_effects,
+                ..
+            } = prepared
+            else {
+                panic!("arrow grammar changed")
+            };
+            assert_eq!(prepared_binder, binder);
+            assert_eq!(prepared_params.len(), params.len());
+            assert_eq!(
+                prepared_predicate,
+                &PreparedEffectPredicate::Canonical(predicate.clone())
+            );
+            assert_eq!(
+                prepared_effects,
+                &PreparedEffectRow::Canonical(effects.clone())
+            );
+            arrows += 1;
+        }
+        let source_shape = source.constraint_shape();
+        let prepared_shape = prepared.constraint_shape();
+        let source_children: Vec<_> = source_shape.children().collect();
+        let prepared_children: Vec<_> = prepared_shape.children().collect();
+        assert_eq!(source_children.len(), prepared_children.len());
+        pending.extend(source_children.into_iter().zip(prepared_children));
+    }
+    assert_eq!(arrows, 4);
+    assert_eq!(source.semantic_identity_digest().unwrap(), digest);
+}
+
+#[test]
+fn preparation_domain_distinguishes_omitted_annotations_from_live_scheme_terms() {
+    use crate::effect_row::prepared::{
+        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    };
+
+    let source = TypeKind::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: EffectPredicate::unconstrained(),
+        params: vec![TypeKind::I64],
+        return_type: Box::new(TypeKind::I64),
+        effects: EffectRow::unknown(),
+    };
+    let mut prepared = source
+        .prepare_effects(&GenericScope::default(), &mut Projection::new())
+        .unwrap();
+    let TypeKind::Function { effects, .. } = &mut prepared else {
+        panic!("expected prepared arrow")
+    };
+    assert_eq!(*effects, PreparedEffectRow::Canonical(EffectRow::unknown()));
+    let mut graph = PreparedEffectGraph::default();
+    let scheme = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut Decisions)
+        .unwrap();
+    let term = graph.application(&scheme, vec![], &mut Decisions).unwrap();
+    *effects = term.clone();
+    assert_ne!(*effects, PreparedEffectRow::Canonical(EffectRow::unknown()));
+    assert!(matches!(effects, PreparedEffectRow::Term(_)));
+    graph
+        .prepare_body(
+            &scheme,
+            PreparedEffectRow::Canonical(EffectRow::closed(
+                EffectSet::from_labels(["log.write"]).unwrap(),
+            )),
+            vec![],
+            &mut Decisions,
+        )
+        .unwrap();
+    let closed = graph.close(&mut Decisions).unwrap();
+    let canonical = closed.resolve_row(&term, &mut Decisions).unwrap();
+    assert_eq!(
+        canonical.closed_value().unwrap(),
+        EffectSet::from_labels(["log.write"]).unwrap()
+    );
+    let TypeKind::Function { predicate, .. } = prepared else {
+        panic!("expected prepared arrow")
+    };
+    assert_eq!(
+        predicate,
+        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained())
+    );
+}
+
+#[test]
+fn preparation_domain_charges_effect_graph_copying_before_publication() {
+    let source = nested_type();
+    let digest = source.semantic_identity_digest().unwrap();
+    let mut control = Projection::new();
+    let before = control.remaining;
+    source
+        .prepare_effects(&GenericScope::default(), &mut control)
+        .unwrap();
+    let consumed = before - control.remaining;
+    assert!(consumed > 1);
+    let mut exact = Projection::new();
+    exact.remaining = consumed;
+    source
+        .prepare_effects(&GenericScope::default(), &mut exact)
+        .unwrap();
+    let mut short = Projection::new();
+    short.remaining = consumed - 1;
+    assert!(matches!(
+        source.prepare_effects(&GenericScope::default(), &mut short),
+        Err(TypeProjectionError::Control(Stopped))
+    ));
+    let mut cancelled = Projection::new();
+    cancelled.cancelled = true;
+    assert!(matches!(
+        source.prepare_effects(&GenericScope::default(), &mut cancelled),
+        Err(TypeProjectionError::Control(Stopped))
+    ));
+    assert_eq!(source.semantic_identity_digest().unwrap(), digest);
+}

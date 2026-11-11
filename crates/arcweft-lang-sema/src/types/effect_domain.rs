@@ -13,6 +13,9 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+mod prepared;
+pub(crate) use prepared::PreparedEffects;
+
 mod sealed {
     pub trait Sealed {}
 }
