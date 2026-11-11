@@ -1,15 +1,20 @@
 //! Checked source schemes and specialization demands, before state IDs exist.
 
-use std::{collections::BTreeMap, convert::Infallible};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    convert::Infallible,
+};
 
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableParameterInput, RuntimeCallableRetainedInput,
-    RuntimeFunctionSpecializationArguments,
+    RuntimeCallableRetainedRole, RuntimeFunctionSpecializationArguments,
 };
 use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 use arcweft_lang_hir::identity::ExprId;
-use arcweft_lang_sema::callable::{CallableGroupIndex, CheckedProjectFunctionCallableSourceDigest};
+use arcweft_lang_sema::callable::{
+    CallableGroupIndex, CallableParameterCoordinate, CheckedProjectFunctionCallableSourceDigest,
+};
 use thiserror::Error;
 
 use super::{
@@ -33,7 +38,7 @@ pub struct RuntimeProjectCallableSourceKey {
     digest: CheckedProjectFunctionCallableSourceDigest,
     callable: RuntimeCallableId,
     origin: RuntimeProjectCallableSourceOrigin,
-    group: CallableGroupIndex,
+    position: CallableParameterCoordinate,
     function_type: RuntimeSemanticTypeId,
     retained_types: Box<[RuntimeSemanticTypeId]>,
 }
@@ -43,7 +48,7 @@ impl RuntimeProjectCallableSourceKey {
         digest: CheckedProjectFunctionCallableSourceDigest,
         callable: RuntimeCallableId,
         origin: RuntimeProjectCallableSourceOrigin,
-        group: CallableGroupIndex,
+        position: CallableParameterCoordinate,
         function_type: RuntimeSemanticTypeId,
         retained_types: Box<[RuntimeSemanticTypeId]>,
     ) -> Self {
@@ -51,7 +56,7 @@ impl RuntimeProjectCallableSourceKey {
             digest,
             callable,
             origin,
-            group,
+            position,
             function_type,
             retained_types,
         }
@@ -69,7 +74,10 @@ impl RuntimeProjectCallableSourceKey {
         self.function_type
     }
     pub const fn group(&self) -> CallableGroupIndex {
-        self.group
+        self.position.group()
+    }
+    pub const fn position(&self) -> CallableParameterCoordinate {
+        self.position
     }
 }
 
@@ -77,20 +85,23 @@ impl RuntimeProjectCallableSourceKey {
 /// body is selected only by checked specialization.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeProjectCallableValueTarget {
-    Closed(RuntimeProjectFunctionInstanceKey),
+    Closed {
+        instance: RuntimeProjectFunctionInstanceKey,
+        position: CallableParameterCoordinate,
+    },
     Source(RuntimeProjectCallableSourceKey),
 }
 
 impl RuntimeProjectCallableValueTarget {
     pub const fn callable(&self) -> &RuntimeCallableId {
         match self {
-            Self::Closed(instance) => instance.callable(),
+            Self::Closed { instance, .. } => instance.callable(),
             Self::Source(source) => source.callable(),
         }
     }
     pub const fn instance(&self) -> Option<&RuntimeProjectFunctionInstanceKey> {
         match self {
-            Self::Closed(instance) => Some(instance),
+            Self::Closed { instance, .. } => Some(instance),
             Self::Source(_) => None,
         }
     }
@@ -115,18 +126,46 @@ impl RuntimeProjectCallableSourceFact {
         digest: CheckedProjectFunctionCallableSourceDigest,
         origin: RuntimeProjectCallableSourceOrigin,
         root: Option<RuntimeProjectCallableSourceKey>,
-        group: CallableGroupIndex,
+        position: CallableParameterCoordinate,
         function_type: RuntimeNormalizedType,
         retained: Box<[RuntimeCallableRetainedInput<RuntimeNormalizedType>]>,
         parameters: Box<[RuntimeCallableParameterInput<RuntimeNormalizedType>]>,
         attached: RuntimeCallableAttachedContract<RuntimeNormalizedType, Infallible>,
     ) -> Result<Self, RuntimeCallableSpecializationFactError> {
+        let group = u32::try_from(position.group().get())
+            .map_err(|_| RuntimeCallableSpecializationFactError::Source)?;
+        let first = u32::try_from(position.parameter().get())
+            .map_err(|_| RuntimeCallableSpecializationFactError::Source)?;
+        let mut roles = BTreeSet::new();
         if !function_type.scope().is_root()
             || !matches!(function_type.shape(), RuntimeTypeShape::Function { .. })
-            || (origin == RuntimeProjectCallableSourceOrigin::Root && group.get() != 0)
-            || parameters
+            || (origin == RuntimeProjectCallableSourceOrigin::Root
+                && (position.group().get() != 0 || position.parameter().get() != 0))
+            || parameters.iter().enumerate().any(|(ordinal, row)| {
+                row.coordinate.group != group
+                    || u32::try_from(ordinal)
+                        .ok()
+                        .and_then(|ordinal| first.checked_add(ordinal))
+                        != Some(row.coordinate.parameter)
+            })
+            || retained.iter().any(|row| {
+                !roles.insert(row.role)
+                    || matches!(row.role,
+                        RuntimeCallableRetainedRole::Parameter(coordinate)
+                            if coordinate.group > group
+                                || (coordinate.group == group && coordinate.parameter >= first))
+            })
+            || !retained
                 .iter()
-                .any(|row| row.coordinate.group as usize != group.get())
+                .filter_map(|row| match row.role {
+                    RuntimeCallableRetainedRole::Parameter(coordinate)
+                        if coordinate.group == group =>
+                    {
+                        Some(coordinate.parameter)
+                    }
+                    _ => None,
+                })
+                .eq(0..first)
         {
             return Err(RuntimeCallableSpecializationFactError::Source);
         }
@@ -134,7 +173,7 @@ impl RuntimeProjectCallableSourceFact {
             digest,
             callable: callable.runtime().clone(),
             origin,
-            group,
+            position,
             function_type: function_type.identity(),
             retained_types: retained.iter().map(|row| row.ty.identity()).collect(),
         };
@@ -171,7 +210,10 @@ impl RuntimeProjectCallableSourceFact {
         &self.callable
     }
     pub const fn group(&self) -> CallableGroupIndex {
-        self.key.group
+        self.key.group()
+    }
+    pub const fn position(&self) -> CallableParameterCoordinate {
+        self.key.position()
     }
     pub const fn function_type(&self) -> &RuntimeNormalizedType {
         &self.function_type
@@ -425,12 +467,14 @@ pub(super) fn admit_specializations(
                 return Err(RuntimeCallableSpecializationFactError::Inventory);
             }
             let valid = match target {
-                RuntimeProjectCallableValueTarget::Closed(key) => {
-                    instances.get(key).is_some_and(|target| {
-                        source.group().get() <= target.key().group().get()
-                            && source.callable().declaration() == target.callable().declaration()
-                    })
-                }
+                RuntimeProjectCallableValueTarget::Closed {
+                    instance: key,
+                    position,
+                } => instances.get(key).is_some_and(|target| {
+                    source.position() == *position
+                        && source.group().get() <= target.key().group().get()
+                        && source.callable().declaration() == target.callable().declaration()
+                }),
                 RuntimeProjectCallableValueTarget::Source(key) => {
                     sources.get(key).is_some_and(|next| {
                         let RuntimeTypeShape::Function { result, .. } = fact.target().shape()

@@ -8969,7 +8969,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, value, ty) in callable_values {
             if let RuntimeResolvedValue::ProjectCallable { callable, target } = value {
                 let (accepted_callable, accepted_type) = match target {
-                    RuntimeProjectCallableValueTarget::Closed(instance) => {
+                    RuntimeProjectCallableValueTarget::Closed { instance, .. } => {
                         let fact = project_function_instances.get(instance).ok_or(
                             RuntimeSemanticFactsError::MissingProjectFunctionInstance {
                                 expression,

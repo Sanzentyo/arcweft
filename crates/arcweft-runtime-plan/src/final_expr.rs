@@ -2072,7 +2072,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             )),
             RuntimeResolvedValue::ProjectCallable { target, .. } => {
                 let state = match target {
-                    RuntimeProjectCallableValueTarget::Closed(instance) => self
+                    RuntimeProjectCallableValueTarget::Closed { instance, .. } => self
                         .project_callable_states
                         .and_then(|states| states.get(instance))
                         .and_then(|states| states.first())

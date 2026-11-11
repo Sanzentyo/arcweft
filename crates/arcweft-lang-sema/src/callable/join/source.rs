@@ -120,7 +120,7 @@ pub struct CheckedProjectFunctionCallableSource {
     declaration: CallableDeclarationKey,
     checked: CheckedCallableFacts,
     origin: CheckedProjectFunctionCallableOrigin,
-    group: CallableGroupIndex,
+    position: CallableParameterCoordinate,
     function_type: TypeKind,
     parameters: Box<[CheckedProjectFunctionCallableParameter]>,
     retained_parameters: Box<[CheckedProjectFunctionCallableRetainedParameter]>,
@@ -142,7 +142,10 @@ impl CheckedProjectFunctionCallableSource {
         self.origin
     }
     pub const fn group(&self) -> CallableGroupIndex {
-        self.group
+        self.position.group()
+    }
+    pub const fn position(&self) -> CallableParameterCoordinate {
+        self.position
     }
     pub const fn function_type(&self) -> &TypeKind {
         &self.function_type
@@ -217,11 +220,17 @@ impl CheckedProjectFunctionCallableSource {
     ) -> Result<Self, CheckedProjectFunctionInstanceProjectionError<C::Error>> {
         let signature = self.checked.signature();
         let current = signature
-            .group(self.group)
+            .group(self.position.group())
             .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?;
+        if self.position.parameter().get() > 0
+            && self.position.parameter().get() >= current.parameters().len()
+        {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
+        }
         self.parameters = current
             .parameters()
             .iter()
+            .skip(self.position.parameter().get())
             .map(|parameter| {
                 if parameter.consumer() != &CallableParameterConsumer::Value {
                     return Err(
@@ -236,7 +245,10 @@ impl CheckedProjectFunctionCallableSource {
                     .value_binding_type(declared.clone())
                     .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
                 Ok(CheckedProjectFunctionCallableParameter {
-                    coordinate: CallableParameterCoordinate::new(self.group, parameter.index()),
+                    coordinate: CallableParameterCoordinate::new(
+                        self.position.group(),
+                        parameter.index(),
+                    ),
                     passing: parameter.passing(),
                     presence: parameter.presence(),
                     abi_type: self.project_template(declared, control)?,
@@ -245,8 +257,14 @@ impl CheckedProjectFunctionCallableSource {
             })
             .collect::<Result<_, CheckedProjectFunctionInstanceProjectionError<C::Error>>>()?;
         let mut retained = Vec::new();
-        for group in signature.groups().iter().take(self.group.get()) {
-            for parameter in group.parameters() {
+        for group in signature
+            .groups()
+            .iter()
+            .take(self.position.group().get() + 1)
+        {
+            for parameter in group.parameters().iter().take_while(|parameter| {
+                CallableParameterCoordinate::new(group.index(), parameter.index()) < self.position
+            }) {
                 if parameter.consumer() != &CallableParameterConsumer::Value {
                     return Err(
                         CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into(),
@@ -274,7 +292,7 @@ impl CheckedProjectFunctionCallableSource {
         self.attached = self
             .checked
             .attached_content()
-            .filter(|parameter| parameter.group() == self.group)
+            .filter(|parameter| parameter.group() == self.position.group())
             .map(|parameter| {
                 Ok::<_, TypeProjectionError<C::Error>>(CheckedProjectFunctionCallableAttached {
                     parameter: parameter.clone(),
@@ -326,7 +344,7 @@ impl CheckedProjectFunctionCallableSource {
         }
         let expected = caller.instantiate_type_with_control(witness.specialized_type(), control)?;
         if !witness.solution().residual_scope().binders().is_empty() {
-            let next_group = CallableGroupIndex::try_from_usize(self.group.get() + 1)
+            let next_group = CallableGroupIndex::try_from_usize(self.position.group().get() + 1)
                 .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
             let TypeKind::Function {
                 binder,
@@ -357,7 +375,7 @@ impl CheckedProjectFunctionCallableSource {
                 origin: CheckedProjectFunctionCallableOrigin::Retained {
                     predecessor: self.digest,
                 },
-                group: next_group,
+                position: CallableParameterCoordinate::group_start(next_group),
                 function_type: return_type.as_ref().clone(),
                 parameters: Box::new([]),
                 retained_parameters: Box::new([]),
@@ -558,7 +576,7 @@ pub(crate) fn select_project_function_value_runtime<C: TypeProjectionControl>(
         declaration: declaration.clone(),
         checked: checked.clone(),
         origin: CheckedProjectFunctionCallableOrigin::Root,
-        group: CallableGroupIndex::ZERO,
+        position: CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
         function_type,
         parameters: Box::new([]),
         retained_parameters: Box::new([]),
@@ -597,18 +615,10 @@ impl CheckedProjectFunctionRuntimeSelection {
         CheckedProjectFunctionCallableSource,
         CheckedProjectFunctionInstanceProjectionError<C::Error>,
     > {
-        let CheckedProjectFunctionRuntimeOutcome::Continue { abi, next_group } = &self.outcome
-        else {
+        let CheckedProjectFunctionRuntimeOutcome::Continue { abi } = &self.outcome else {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
         };
-        self.continuation_source(
-            catalog,
-            abi,
-            *next_group,
-            Arc::clone(&self.solution),
-            enclosing,
-            control,
-        )
+        self.continuation_source(catalog, abi, Arc::clone(&self.solution), enclosing, control)
     }
 
     pub(super) fn input_callable_source<C: TypeProjectionControl>(
@@ -634,12 +644,12 @@ impl CheckedProjectFunctionRuntimeSelection {
                 super::CheckedProjectFunctionRuntimeInput::Continuation { abi },
                 Some(continuation),
             ) if abi.lineage() == continuation.digest()
+                && abi.position() == continuation.next_position()
                 && self.group == continuation.next_group() =>
             {
                 self.continuation_source(
                     catalog,
                     abi,
-                    self.group,
                     Arc::clone(continuation.inherited_solution()),
                     enclosing,
                     control,
@@ -653,7 +663,6 @@ impl CheckedProjectFunctionRuntimeSelection {
         &self,
         catalog: &CheckedCallableCatalog,
         abi: &super::CheckedProjectContinuationRuntimeAbi,
-        group: CallableGroupIndex,
         solution: Arc<FrozenCallTypeSolution>,
         enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
         control: &mut C,
@@ -674,7 +683,7 @@ impl CheckedProjectFunctionRuntimeSelection {
             origin: CheckedProjectFunctionCallableOrigin::Continuation {
                 lineage: abi.lineage(),
             },
-            group,
+            position: abi.position(),
             function_type,
             parameters: Box::new([]),
             retained_parameters: Box::new([]),

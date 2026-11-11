@@ -125,6 +125,7 @@ pub enum CheckedCallableJoinError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectContinuationRuntimeAbi {
     lineage: CheckedCallContinuationDigest,
+    position: CallableParameterCoordinate,
     function_type: TypeKind,
     prefix_types: Box<[TypeKind]>,
 }
@@ -132,6 +133,10 @@ pub struct CheckedProjectContinuationRuntimeAbi {
 impl CheckedProjectContinuationRuntimeAbi {
     pub const fn lineage(&self) -> CheckedCallContinuationDigest {
         self.lineage
+    }
+
+    pub const fn position(&self) -> CallableParameterCoordinate {
+        self.position
     }
 
     pub const fn function_type(&self) -> &TypeKind {
@@ -193,7 +198,6 @@ pub enum CheckedProjectFunctionRuntimeInput {
 pub enum CheckedProjectFunctionRuntimeOutcome {
     Continue {
         abi: CheckedProjectContinuationRuntimeAbi,
-        next_group: CallableGroupIndex,
     },
     /// Retains a positional prefix of a closed declaration's arrow.
     Partial {
@@ -799,7 +803,7 @@ pub(crate) fn select_project_function_runtime(
                     checked,
                     selected,
                     &solution,
-                    join.current_group().get(),
+                    continuation.next_position(),
                 )?,
             }
         }
@@ -815,11 +819,8 @@ pub(crate) fn select_project_function_runtime(
                     checked,
                     selected,
                     &solution,
-                    join.current_group().get().checked_add(1).ok_or(
-                        CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi,
-                    )?,
+                    continuation.next_position(),
                 )?,
-                next_group: continuation.next_group(),
             }
         }
         CheckedCallResult::Value(result) if join.next_group().is_none() => {
@@ -895,11 +896,17 @@ fn checked_project_continuation_runtime_abi(
     checked: &CheckedCallableFacts,
     selected: &ResolvedCallable,
     solution: &FrozenCallTypeSolution,
-    completed_group_count: usize,
+    position: CallableParameterCoordinate,
 ) -> Result<CheckedProjectContinuationRuntimeAbi, CheckedProjectFunctionRuntimeSelectionError> {
     if !matches!(function_type, TypeKind::Function { .. })
-        || completed_group_count == 0
-        || completed_group_count >= checked.signature().groups().len()
+        || position == CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO)
+        || checked
+            .signature()
+            .group(position.group())
+            .is_none_or(|group| {
+                position.parameter().get() > 0
+                    && position.parameter().get() >= group.parameters().len()
+            })
     {
         return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
     }
@@ -908,14 +915,15 @@ fn checked_project_continuation_runtime_abi(
         .signature()
         .groups()
         .iter()
-        .take(completed_group_count)
+        .take(position.group().get() + 1)
     {
         prefix_types.extend(checked_project_function_parameter_binding_types(
-            selected, group, solution,
+            selected, group, solution, position,
         )?);
     }
     Ok(CheckedProjectContinuationRuntimeAbi {
         lineage,
+        position,
         function_type,
         prefix_types: prefix_types.into_boxed_slice(),
     })
@@ -1030,10 +1038,14 @@ fn checked_project_function_parameter_binding_types(
     selected: &ResolvedCallable,
     group: &super::CallableParameterGroup,
     solution: &FrozenCallTypeSolution,
+    position: CallableParameterCoordinate,
 ) -> Result<Vec<TypeKind>, CheckedProjectFunctionRuntimeSelectionError> {
     group
         .parameters()
         .iter()
+        .take_while(|parameter| {
+            CallableParameterCoordinate::new(group.index(), parameter.index()) < position
+        })
         .map(|parameter| {
             if parameter.consumer() != &CallableParameterConsumer::Value {
                 return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);

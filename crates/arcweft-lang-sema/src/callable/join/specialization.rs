@@ -85,11 +85,27 @@ impl CheckedProjectFunctionSpecialization {
     ) -> Result<Self, CheckedProjectFunctionInstanceProjectionError<C::Error>> {
         let specialized_type =
             arguments.specialize_function_with_control(source.function_type(), None, control)?;
-        if !same_type(
-            group_type(closed_selection.solution().callable_type(), source.group())?,
-            &specialized_type,
-            control,
-        )? {
+        let TypeKind::Function {
+            binder,
+            predicate,
+            params,
+            return_type,
+            effects,
+        } = group_type(closed_selection.solution().callable_type(), source.group())?
+        else {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
+        };
+        let parameters = params
+            .get(source.position().parameter().get()..)
+            .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+        let closed_type = TypeKind::function_with_contract(
+            *binder,
+            predicate.clone(),
+            parameters.iter().cloned(),
+            return_type.as_ref().clone(),
+            effects.clone(),
+        );
+        if !same_type(&closed_type, &specialized_type, control)? {
             return Err(
                 CheckedProjectFunctionRuntimeSelectionError::SpecializationResultMismatch.into(),
             );

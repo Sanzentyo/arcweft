@@ -301,7 +301,10 @@ impl ProjectInstanceProjection<'_> {
                     solution,
                 },
             )?;
-            return Ok(RuntimeProjectCallableValueTarget::Closed(key));
+            return Ok(RuntimeProjectCallableValueTarget::Closed {
+                instance: key,
+                position: checked.position(),
+            });
         }
         let root = if checked.origin()
             == arcweft_lang_sema::callable::CheckedProjectFunctionCallableOrigin::Root
@@ -559,7 +562,10 @@ impl ProjectInstantiationSession {
                             solution,
                         },
                     )?;
-                    RuntimeProjectCallableValueTarget::Closed(instance)
+                    RuntimeProjectCallableValueTarget::Closed {
+                        instance,
+                        position: source.fact.position(),
+                    }
                 }
                 CheckedProjectFunctionSpecializationTarget::Retain(next) => {
                     let fact = callable_sources::source(

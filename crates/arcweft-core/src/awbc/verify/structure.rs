@@ -2487,7 +2487,9 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
                 if attached_input_type.is_some()
                     || target.origin != state.origin
                     || target.function_type != state.result
-                    || target.position != (RuntimeCallablePosition::AfterGroup { completed: group })
+                    || !state
+                        .position
+                        .advances_over(&state.parameters, &target.position)
                     || values.len() != target.retained.len()
                 {
                     return Err(invalid(

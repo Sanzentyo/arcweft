@@ -32,6 +32,76 @@ pub enum RuntimeCallablePosition {
     },
 }
 
+impl RuntimeCallablePosition {
+    /// Derives the current position from the retained formal coordinates.
+    pub fn from_retained_parameters<T>(
+        group: u32,
+        retained: &[RuntimeCallableRetainedInput<T>],
+    ) -> Self {
+        let mut bound = retained
+            .iter()
+            .filter_map(|input| match input.role {
+                RuntimeCallableRetainedRole::Parameter(coordinate) if coordinate.group == group => {
+                    Some(coordinate)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        bound.sort_unstable();
+        if bound.is_empty() {
+            if group == 0 {
+                Self::Unapplied
+            } else {
+                Self::AfterGroup {
+                    completed: group - 1,
+                }
+            }
+        } else {
+            Self::WithinGroup {
+                group,
+                bound: bound.into_boxed_slice(),
+            }
+        }
+    }
+
+    pub(crate) const fn active_group(&self) -> Option<u32> {
+        match self {
+            Self::Unapplied => Some(0),
+            Self::WithinGroup { group, .. } => Some(*group),
+            Self::AfterGroup { completed } => completed.checked_add(1),
+        }
+    }
+
+    /// A retained transition consumes the current formals in their original group.
+    pub(crate) fn advances_over<T>(
+        &self,
+        parameters: &[RuntimeCallableParameterInput<T>],
+        next: &Self,
+    ) -> bool {
+        let Some(group) = self.active_group() else {
+            return false;
+        };
+        match next {
+            Self::AfterGroup { completed } => *completed == group,
+            Self::WithinGroup {
+                group: next_group,
+                bound,
+            } => {
+                let mut expected = match self {
+                    Self::WithinGroup { bound, .. } => bound.to_vec(),
+                    _ => Vec::new(),
+                };
+                expected.extend(parameters.iter().map(|input| input.coordinate));
+                expected.sort_unstable();
+                !parameters.is_empty()
+                    && *next_group == group
+                    && expected.as_slice() == bound.as_ref()
+            }
+            Self::Unapplied => false,
+        }
+    }
+}
+
 /// Semantic role of one immutable retained value.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -206,11 +276,7 @@ impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
     }
 
     pub(crate) const fn active_group(&self) -> Option<u32> {
-        match self.position {
-            RuntimeCallablePosition::Unapplied => Some(0),
-            RuntimeCallablePosition::WithinGroup { group, .. } => Some(group),
-            RuntimeCallablePosition::AfterGroup { completed } => completed.checked_add(1),
-        }
+        self.position.active_group()
     }
     pub(crate) fn admits_declared_parameters(&self, parameters: &[u32]) -> bool {
         parameters.iter().all(|parameter| {
@@ -715,7 +781,9 @@ impl RuntimeCallableState {
                 if attached.is_some()
                     || next.origin != self.origin
                     || next.function_type != self.result
-                    || next.position != (RuntimeCallablePosition::AfterGroup { completed: group })
+                    || !self
+                        .position
+                        .advances_over(&self.parameters, &next.position)
                     || values.len() != next.retained.len()
                 {
                     return Err(invalid_layout());

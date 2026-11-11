@@ -43,7 +43,7 @@ pub(crate) enum CallableRestContainerPolicy {
 }
 
 impl CallableParameterCoordinate {
-    pub(crate) const fn group_start(group: CallableGroupIndex) -> Self {
+    pub const fn group_start(group: CallableGroupIndex) -> Self {
         Self::new(group, CallableParameterIndex::ZERO)
     }
 

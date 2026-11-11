@@ -165,7 +165,6 @@ fn collect_application(
 ) -> Result<(), RuntimePlanLowerError> {
     let crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Continue {
         abi,
-        next_group,
         target: crate::semantic_facts::RuntimeProjectCallableValueTarget::Source(key),
     } = plan.outcome()
     else {
@@ -183,11 +182,8 @@ fn collect_application(
     let origin = sources
         .get(source.root())
         .ok_or_else(|| error("root source state is absent"))?;
-    let group = next_group
-        .get()
-        .checked_sub(1)
-        .and_then(|group| u32::try_from(group).ok())
-        .ok_or_else(|| error("current group exceeds state coordinate"))?;
+    let group = u32::try_from(plan.position().group().get())
+        .map_err(|_| error("current group exceeds state coordinate"))?;
     let RuntimeTypeShape::Function { result, .. } = plan.application_type().shape() else {
         return Err(error("application type is not a function"));
     };
@@ -275,13 +271,7 @@ fn retaining_state(
     Ok(RuntimeCallableStateDefinition {
         function_type,
         origin,
-        position: if group == 0 {
-            RuntimeCallablePosition::Unapplied
-        } else {
-            RuntimeCallablePosition::AfterGroup {
-                completed: group - 1,
-            }
-        },
+        position: RuntimeCallablePosition::from_retained_parameters(group, &retained),
         retained,
         parameters,
         result,
@@ -313,7 +303,7 @@ fn materialize_source(
     let RuntimeTypeShape::Function { result, .. } = source.function_type().shape() else {
         return Err(error("function type is absent"));
     };
-    let retained = source
+    let retained: Box<[_]> = source
         .retained()
         .iter()
         .map(|input| RuntimeCallableRetainedInput {
@@ -355,13 +345,7 @@ fn materialize_source(
             RuntimeCallableStateDefinition {
                 function_type: source.function_type().identity(),
                 origin: origin.clone(),
-                position: if group == 0 {
-                    RuntimeCallablePosition::Unapplied
-                } else {
-                    RuntimeCallablePosition::AfterGroup {
-                        completed: group - 1,
-                    }
-                },
+                position: RuntimeCallablePosition::from_retained_parameters(group, &retained),
                 retained,
                 parameters,
                 result: result.identity(),
@@ -409,13 +393,22 @@ fn materialize_specialization(
             .get(source.root())
             .ok_or_else(|| error("source root is absent"))?;
         let target = match selection {
-            RuntimeProjectCallableValueTarget::Closed(instance_key) => {
+            RuntimeProjectCallableValueTarget::Closed {
+                instance: instance_key,
+                position,
+            } => {
                 let instance = facts
                     .project_function_instance(instance_key)
                     .ok_or_else(|| error("selected instance is absent"))?;
                 materialize_instance_from(
                     instance,
-                    source.group().get(),
+                    RuntimeCallableParameterCoordinate {
+                        group: u32::try_from(position.group().get())
+                            .map_err(|_| error("source group exceeds its coordinate"))?,
+                        parameter: u32::try_from(position.parameter().get())
+                            .map_err(|_| error("source parameter exceeds its coordinate"))?,
+                    },
+                    specialization.target(),
                     Some(origin.clone()),
                     sites,
                     defaults,
@@ -545,12 +538,24 @@ fn materialize_instance(
     defaults: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
     builder: &mut RuntimePlanBuilder,
 ) -> Result<Box<[RuntimeCallableStateSeedId]>, RuntimePlanLowerError> {
-    materialize_instance_from(instance, 0, None, sites, defaults, builder)
+    materialize_instance_from(
+        instance,
+        RuntimeCallableParameterCoordinate {
+            group: 0,
+            parameter: 0,
+        },
+        instance.callable_type(),
+        None,
+        sites,
+        defaults,
+        builder,
+    )
 }
 
 fn materialize_instance_from(
     instance: &RuntimeProjectFunctionInstanceFact,
-    start_group: usize,
+    start: RuntimeCallableParameterCoordinate,
+    initial_type: &RuntimeNormalizedType,
     origin: Option<RuntimeCallableStateSeedId>,
     sites: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
     defaults: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
@@ -635,6 +640,6 @@ fn materialize_instance_from(
         function,
         attached,
     )
-    .materialize_from(start_group, origin, builder)
+    .materialize_from(start, initial_type, origin, builder)
     .map_err(|failure| error(&failure.to_string()))
 }

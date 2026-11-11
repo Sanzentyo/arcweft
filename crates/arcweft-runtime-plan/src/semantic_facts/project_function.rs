@@ -17,7 +17,8 @@ use arcweft_lang_hir::{
     item::HirParameterKind,
 };
 use arcweft_lang_sema::callable::{
-    CallableGroupIndex, CallableInstantiationDigest, CheckedCallApplicationDigest, CheckedClosureId,
+    CallableGroupIndex, CallableInstantiationDigest, CallableParameterCoordinate,
+    CheckedCallApplicationDigest, CheckedClosureId,
 };
 use arcweft_lang_sema::final_analysis::{
     CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimeFactPartition,
@@ -133,6 +134,7 @@ impl RuntimeProjectFunctionRootFact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectContinuationAbi {
     lineage: RuntimeProjectContinuationLineageId,
+    position: CallableParameterCoordinate,
     function_type: RuntimeNormalizedType,
     prefix_types: Box<[RuntimeNormalizedType]>,
 }
@@ -140,14 +142,19 @@ pub struct RuntimeProjectContinuationAbi {
 impl RuntimeProjectContinuationAbi {
     pub fn try_new(
         lineage: RuntimeProjectContinuationLineageId,
+        position: CallableParameterCoordinate,
         function_type: RuntimeNormalizedType,
         prefix_types: Box<[RuntimeNormalizedType]>,
     ) -> Result<Self, RuntimeProjectFunctionFactError> {
-        if !matches!(function_type.shape(), RuntimeTypeShape::Function { .. }) {
+        if !matches!(function_type.shape(), RuntimeTypeShape::Function { .. })
+            || (position.group().get() == 0 && position.parameter().get() == 0)
+            || prefix_types.len() < position.parameter().get()
+        {
             return Err(RuntimeProjectFunctionFactError::InvalidFunctionType);
         }
         Ok(Self {
             lineage,
+            position,
             function_type,
             prefix_types,
         })
@@ -155,6 +162,10 @@ impl RuntimeProjectContinuationAbi {
 
     pub const fn lineage(&self) -> RuntimeProjectContinuationLineageId {
         self.lineage
+    }
+
+    pub const fn position(&self) -> CallableParameterCoordinate {
+        self.position
     }
 
     pub const fn function_type(&self) -> &RuntimeNormalizedType {
@@ -291,7 +302,6 @@ pub enum RuntimeProjectFunctionCallOutcome {
     /// continuation. It does not allocate or invoke a function site.
     Continue {
         abi: RuntimeProjectContinuationAbi,
-        next_group: CallableGroupIndex,
         target: super::RuntimeProjectCallableValueTarget,
     },
     /// The selected instance supplies the original arrow. A positional
@@ -323,7 +333,7 @@ impl RuntimeProjectFunctionCallOutcome {
 
     pub const fn next_group(&self) -> Option<CallableGroupIndex> {
         match self {
-            Self::Continue { next_group, .. } => Some(*next_group),
+            Self::Continue { abi, .. } => Some(abi.position().group()),
             Self::Invoke { .. } | Self::Partial { .. } => None,
         }
     }
@@ -381,6 +391,7 @@ impl RuntimeProjectFunctionCallSpecialization {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectFunctionCallPlan {
     callable: RuntimeProjectCallable,
+    position: CallableParameterCoordinate,
     application_type: RuntimeNormalizedType,
     input_specialization: Option<RuntimeProjectFunctionCallSpecialization>,
     current_group_materialization: Box<[RuntimeProjectFunctionParameterMaterialization]>,
@@ -398,6 +409,10 @@ impl RuntimeProjectFunctionCallPlan {
         input: RuntimeProjectFunctionCallInput,
         outcome: RuntimeProjectFunctionCallOutcome,
     ) -> Result<Self, RuntimeProjectFunctionFactError> {
+        let position = input.continuation_abi().map_or_else(
+            || CallableParameterCoordinate::group_start(completed_group),
+            RuntimeProjectContinuationAbi::position,
+        );
         if callable.declaration().owner()
             != arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
         {
@@ -430,7 +445,12 @@ impl RuntimeProjectFunctionCallPlan {
         let mut physical_operands = BTreeSet::new();
         for (expected_parameter, parameter) in current_group_materialization.iter().enumerate() {
             if parameter.group() != completed_group
-                || u32::try_from(expected_parameter).ok() != Some(parameter.parameter())
+                || position
+                    .parameter()
+                    .get()
+                    .checked_add(expected_parameter)
+                    .and_then(|index| u32::try_from(index).ok())
+                    != Some(parameter.parameter())
                 || parameter
                     .operand_indices()
                     .iter()
@@ -439,33 +459,43 @@ impl RuntimeProjectFunctionCallPlan {
                 return Err(RuntimeProjectFunctionFactError::InvalidParameterMaterialization);
             }
         }
-        if !matches!(input, RuntimeProjectFunctionCallInput::Continuation { .. })
-            != (completed_group.get() == 0)
+        if position.group() != completed_group
+            || (!matches!(input, RuntimeProjectFunctionCallInput::Continuation { .. })
+                && completed_group.get() != 0)
         {
             return Err(RuntimeProjectFunctionFactError::InvalidContinuationAbi);
         }
         match &outcome {
-            RuntimeProjectFunctionCallOutcome::Continue {
-                abi,
-                next_group,
-                target,
-            } if completed_group.get().checked_add(1) != Some(next_group.get())
-                || target.callable() != callable.runtime()
-                || match target {
-                    super::RuntimeProjectCallableValueTarget::Closed(instance) => {
-                        instance.group().get() < next_group.get()
+            RuntimeProjectFunctionCallOutcome::Continue { abi, target }
+                if !((abi.position().group() == completed_group
+                    && position
+                        .parameter()
+                        .get()
+                        .checked_add(current_group_materialization.len())
+                        == Some(abi.position().parameter().get())
+                    && abi.position().parameter() > position.parameter())
+                    || (completed_group.get().checked_add(1)
+                        == Some(abi.position().group().get())
+                        && abi.position().parameter().get() == 0))
+                    || target.callable() != callable.runtime()
+                    || match target {
+                        super::RuntimeProjectCallableValueTarget::Closed { instance, position } => {
+                            *position != abi.position()
+                                || instance.group().get() < position.group().get()
+                        }
+                        super::RuntimeProjectCallableValueTarget::Source(source) => {
+                            source.position() != abi.position()
+                                || source.function_type() != abi.function_type().identity()
+                        }
                     }
-                    super::RuntimeProjectCallableValueTarget::Source(source) => {
-                        source.group() != *next_group
-                            || source.function_type() != abi.function_type().identity()
-                    }
-                }
-                || abi.prefix_types().len() != output_prefix_len
-                || !abi.prefix_types().starts_with(input_prefix_types)
-                || abi.prefix_types()[input_prefix_types.len()..]
-                    .iter()
-                    .zip(current_group_materialization.iter())
-                    .any(|(actual, materialization)| actual != materialization.binding_ty()) =>
+                    || abi.prefix_types().len() != output_prefix_len
+                    || !abi.prefix_types().starts_with(input_prefix_types)
+                    || abi.prefix_types()[input_prefix_types.len()..]
+                        .iter()
+                        .zip(current_group_materialization.iter())
+                        .any(|(actual, materialization)| {
+                            actual != materialization.binding_ty()
+                        }) =>
             {
                 return Err(RuntimeProjectFunctionFactError::InvalidContinuationAbi);
             }
@@ -512,6 +542,7 @@ impl RuntimeProjectFunctionCallPlan {
         }
         Ok(Self {
             callable,
+            position,
             application_type,
             input_specialization,
             current_group_materialization,
@@ -525,6 +556,10 @@ impl RuntimeProjectFunctionCallPlan {
     }
     pub const fn application_type(&self) -> &RuntimeNormalizedType {
         &self.application_type
+    }
+
+    pub const fn position(&self) -> CallableParameterCoordinate {
+        self.position
     }
     pub const fn input_specialization(&self) -> Option<&RuntimeProjectFunctionCallSpecialization> {
         self.input_specialization.as_ref()

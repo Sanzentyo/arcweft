@@ -7493,7 +7493,7 @@ fn runtime_project_function_projection(
         }
     };
     let outcome = match selection.outcome() {
-        CheckedProjectFunctionRuntimeOutcome::Continue { abi, next_group } => {
+        CheckedProjectFunctionRuntimeOutcome::Continue { abi } => {
             let target = project_function_instances.callable_result(
                 owner,
                 selection,
@@ -7506,7 +7506,6 @@ fn runtime_project_function_projection(
                 abi: runtime_project_continuation_abi(
                     owner, abi, enclosing, symbols, world, analysis,
                 )?,
-                next_group: *next_group,
                 target,
             }
         }
@@ -7689,6 +7688,7 @@ fn runtime_project_continuation_abi(
         .into_boxed_slice();
     RuntimeProjectContinuationAbi::try_new(
         checked.lineage().runtime_lineage_id(),
+        checked.position(),
         function_type,
         prefix_types,
     )

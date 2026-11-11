@@ -185,15 +185,14 @@ flow main() -> i64 {
         CheckedProjectFunctionRuntimeInput::Direct
     ));
     let CheckedProjectFunctionRuntimeOutcome::Continue {
-        abi: origin_abi,
-        next_group,
-        ..
+        abi: origin_abi, ..
     } = origin.outcome()
     else {
         unreachable!("selected origin continues")
     };
     let origin_lineage = origin_abi.lineage();
-    assert_eq!(next_group.get(), 1);
+    assert_eq!(origin_abi.position().group().get(), 1);
+    assert_eq!(origin_abi.position().parameter().get(), 0);
     let terminals = selections
         .iter()
         .filter(|selection| {

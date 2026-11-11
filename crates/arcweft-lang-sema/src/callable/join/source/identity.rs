@@ -43,7 +43,12 @@ impl CheckedProjectFunctionCallableSource {
                 hasher.update(predecessor.as_bytes());
             }
         }
-        super::super::write_group(&mut hasher, self.group);
+        super::super::write_group(&mut hasher, self.position.group());
+        hasher.update(
+            &u32::try_from(self.position.parameter().get())
+                .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?
+                .to_le_bytes(),
+        );
         // Schema admission requires every declared generic to occur in this
         // complete signature or its predicate. Projecting all groups therefore
         // seals earlier known bindings as well as the remaining scheme. Merely

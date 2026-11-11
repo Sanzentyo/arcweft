@@ -785,6 +785,14 @@ impl<'a> ExternalDefinition<'a> {
             &site,
             RuntimeCallableAttachedContract::None,
         )
-        .materialize_from(0, None, builder)
+        .materialize_from(
+            RuntimeCallableParameterCoordinate {
+                group: 0,
+                parameter: 0,
+            },
+            self.ty,
+            None,
+            builder,
+        )
     }
 }

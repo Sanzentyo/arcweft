@@ -138,7 +138,7 @@ pub(super) fn source(
         checked.source_digest(),
         origin,
         root,
-        checked.group(),
+        checked.position(),
         runtime_type(checked.function_type(), symbols, world, analysis)?,
         retained,
         parameters,
