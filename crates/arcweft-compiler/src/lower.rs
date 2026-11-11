@@ -7527,7 +7527,7 @@ fn runtime_project_function_projection(
             let key = RuntimeProjectFunctionInstanceKey::new(
                 callable.runtime().clone(),
                 instance_solution.instantiation(),
-                selection.group(),
+                instance_solution.group(),
             );
             ensure_runtime_project_function_instance(
                 ProjectInstantiationOrigin::Call(owner),

@@ -1,8 +1,8 @@
 //! Checked project-function continuation and closed-instance runtime facts.
 //!
-//! Curried project calls retain checked lineage until the terminal application
-//! closes every generic parameter. Only that terminal call may name a
-//! concrete runtime function instance. Runtime execution therefore never
+//! Project callables retain checked source context until a frozen solution
+//! closes every generic parameter and selects the latent body instance.
+//! Prefix applications keep the body latent. Runtime execution never
 //! selects an instantiation from a callee value or from the first observed
 //! call.
 
@@ -517,8 +517,7 @@ impl RuntimeProjectFunctionCallPlan {
                 };
                 let retained = current_group_materialization.len();
                 if instance.callable() != callable.runtime()
-                    || instance.group() != completed_group
-                    || completed_group.get() != 0
+                    || instance.group().get() < completed_group.get()
                     || callable.attached_content_abi().is_some()
                     || input_specialization.is_some()
                     || !contract.binder().is_empty()

@@ -219,7 +219,13 @@ fn collect_application(
         .iter()
         .filter(|input| match input.role {
             RuntimeCallableRetainedRole::Capture { .. } => true,
-            RuntimeCallableRetainedRole::Parameter(coordinate) => coordinate.group < group,
+            RuntimeCallableRetainedRole::Parameter(coordinate) => {
+                (coordinate.group as usize, coordinate.parameter as usize)
+                    < (
+                        plan.position().group().get(),
+                        plan.position().parameter().get(),
+                    )
+            }
         })
         .map(|input| RuntimeCallableRetainedInput {
             role: input.role,

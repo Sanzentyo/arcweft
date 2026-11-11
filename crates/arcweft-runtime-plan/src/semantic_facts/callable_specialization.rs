@@ -229,6 +229,89 @@ impl RuntimeProjectCallableSourceFact {
     pub const fn body(&self) -> Option<&RuntimeProjectFunctionInstanceKey> {
         self.body.as_ref()
     }
+    pub(super) fn admits_body(&self, body: &super::RuntimeProjectFunctionInstanceFact) -> bool {
+        let mut ty = body.callable_type();
+        for _ in 0..self.group().get() {
+            let RuntimeTypeShape::Function { result, .. } = ty.shape() else {
+                return false;
+            };
+            ty = result;
+        }
+        let coordinate = (
+            self.position().group().get(),
+            self.position().parameter().get(),
+        );
+        let prefix = body
+            .parameters()
+            .iter()
+            .filter(|row| (row.group().get(), row.parameter() as usize) < coordinate)
+            .collect::<Vec<_>>();
+        let parameters = body
+            .parameters()
+            .iter()
+            .filter(|row| row.group() == self.group() && row.parameter() as usize >= coordinate.1)
+            .collect::<Vec<_>>();
+        body.callable() == self.callable()
+            && self.function_type().is_function_suffix_of(ty, coordinate.1)
+            && prefix.len() == self.retained.len()
+            && prefix.iter().zip(&self.retained).all(|(parameter, input)| {
+                input.ty == *parameter.binding_ty()
+                    && matches!(input.role, RuntimeCallableRetainedRole::Parameter(coordinate)
+                        if coordinate.group as usize == parameter.group().get()
+                            && coordinate.parameter == parameter.parameter())
+            })
+            && parameters.len() == self.parameters.len()
+            && parameters
+                .iter()
+                .zip(&self.parameters)
+                .all(|(parameter, input)| {
+                    parameter.abi_ty() == &input.abi_ty
+                        && parameter.binding_ty() == &input.binding_ty
+                        && input.coordinate.group as usize == parameter.group().get()
+                        && input.coordinate.parameter == parameter.parameter()
+                        && input.kind
+                            == match parameter.kind() {
+                                arcweft_lang_hir::item::HirParameterKind::Fixed
+                                | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => {
+                                    arcweft_core::plan::RuntimeCallableParameterKind::Fixed
+                                }
+                                arcweft_lang_hir::item::HirParameterKind::RestPositional => {
+                                    arcweft_core::plan::RuntimeCallableParameterKind::Rest
+                                }
+                            }
+                })
+            && match (
+                body.callable()
+                    .attached_content_abi()
+                    .filter(|row| row.group() == self.group()),
+                &self.attached,
+            ) {
+                (None, RuntimeCallableAttachedContract::None) => true,
+                (Some(expected), RuntimeCallableAttachedContract::Required { ty }) => {
+                    expected.presence()
+                        == arcweft_lang_sema::callable::CallableParameterPresence::Required
+                        && ty == expected.binding_ty()
+                }
+                (
+                    Some(expected),
+                    RuntimeCallableAttachedContract::Defaulted {
+                        ty,
+                        default: arcweft_core::plan::RuntimeCallableDefault::RequiresSpecialization,
+                    },
+                ) => {
+                    expected.presence()
+                        == arcweft_lang_sema::callable::CallableParameterPresence::Defaulted
+                        && ty == expected.binding_ty()
+                }
+                (Some(expected), RuntimeCallableAttachedContract::Optional { value, binding }) => {
+                    expected.presence()
+                        == arcweft_lang_sema::callable::CallableParameterPresence::Optional
+                        && binding == expected.binding_ty()
+                        && matches!(binding.shape(), RuntimeTypeShape::Option { item, .. } if item.as_ref() == value)
+                }
+                _ => false,
+            }
+    }
     pub const fn retained(&self) -> &[RuntimeCallableRetainedInput<RuntimeNormalizedType>] {
         &self.retained
     }

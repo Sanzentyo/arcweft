@@ -8233,18 +8233,7 @@ impl RuntimePlanSemanticFacts {
                 let body = project_function_instances
                     .get(key)
                     .ok_or(RuntimeCallableSpecializationFactError::Inventory)?;
-                let mut ty = body.callable_type();
-                for _ in 0..source.group().get() {
-                    let RuntimeTypeShape::Function { result, .. } = ty.shape() else {
-                        return Err(RuntimeCallableSpecializationFactError::Source.into());
-                    };
-                    ty = result;
-                }
-                if body.callable() != source.callable()
-                    || !source
-                        .function_type()
-                        .is_function_suffix_of(ty, source.position().parameter().get())
-                {
+                if !source.admits_body(body) {
                     return Err(RuntimeCallableSpecializationFactError::Source.into());
                 }
             }

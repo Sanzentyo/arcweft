@@ -218,6 +218,7 @@ pub struct CheckedProjectFunctionRuntimeSelection {
     authority: CheckedCallableAuthorityLease,
     caller: Option<CallableDeclarationKey>,
     declaration: CallableDeclarationKey,
+    checked: CheckedCallableFacts,
     position: CallableParameterCoordinate,
     instantiation: CallableInstantiationDigest,
     base_instantiation: ResolvedCallableBaseInstantiation,
@@ -486,7 +487,20 @@ impl CheckedProjectFunctionRuntimeSelection {
         ) {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
         }
-        self.close_environment_with_control(self.position.group(), enclosing, control)
+        let group = if matches!(
+            self.outcome,
+            CheckedProjectFunctionRuntimeOutcome::Partial { .. }
+        ) {
+            self.checked
+                .signature()
+                .groups()
+                .last()
+                .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?
+                .index()
+        } else {
+            self.position.group()
+        };
+        self.close_environment_with_control(group, enclosing, control)
     }
 
     /// Selects the latent body of a closed callable value without fabricating
@@ -878,6 +892,7 @@ pub(crate) fn select_project_function_runtime(
         authority: catalog.authority_lease(),
         caller,
         declaration: declaration.clone(),
+        checked: checked.clone(),
         position: application.core().position(),
         instantiation: join.instantiation(),
         base_instantiation: selected.instantiation().clone(),
