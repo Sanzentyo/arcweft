@@ -14,7 +14,9 @@ use super::{
 mod tests;
 
 mod prepared;
-pub(crate) use prepared::{PreparedEffects, PreparedTypeEffectProjectionFailure};
+pub(crate) use prepared::{
+    PreparedEffects, PreparedTypeEffectProjectionFailure, PreparedTypeRetentionFailure,
+};
 
 mod sealed {
     pub trait Sealed {}

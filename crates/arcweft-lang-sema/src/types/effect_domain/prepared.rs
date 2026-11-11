@@ -10,6 +10,9 @@ use crate::types::projection_control::{
     EffectProjectionControl, visit_effect_predicate, visit_effect_row,
 };
 
+mod validation;
+pub(crate) use validation::PreparedTypeRetentionFailure;
+
 /// Prepared identity is operational. This domain cannot issue a checked type
 /// digest, specialization, runtime projection or completed constraint solution.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

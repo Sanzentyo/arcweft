@@ -15,8 +15,8 @@ mod tests;
 /// snapshot. A root result does not need a parent source in order to survive.
 #[must_use = "a suspended frontier must be resumed or retained by its component"]
 pub(crate) struct SuspendedConstraintFrontier<D: ConstraintDomain> {
-    transaction: TypeConstraintTransaction<D>,
-    result: ConstraintResultProjection<D>,
+    pub(super) transaction: TypeConstraintTransaction<D>,
+    pub(super) result: ConstraintResultProjection<D>,
 }
 
 impl<D: ConstraintDomain> TypeConstraintTransaction<D> {

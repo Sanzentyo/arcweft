@@ -2247,6 +2247,12 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
 mod result_port;
 mod suspension;
 pub(crate) use suspension::SuspendedConstraintFrontier;
+mod component;
+pub(crate) use component::{
+    OpenConstraintComponent, PreparedValueFailure, PreparedValueInput, PreparedValueOutcome,
+    PreparedValueOutput, PreparedValueRef, PreparedValueUnavailable, PreparedValueUse,
+    PreparedValueUseAlternative, PreparedValueUseTicket,
+};
 
 fn validate_source_selection<D: ConstraintDomain>(
     prepared: &PreparedSourceConstraint<D>,

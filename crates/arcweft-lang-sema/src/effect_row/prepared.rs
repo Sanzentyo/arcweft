@@ -246,6 +246,25 @@ impl Default for PreparedEffectGraph {
 }
 
 impl PreparedEffectGraph {
+    /// Retention permits omitted authored annotations. A live term must still
+    /// belong to this graph; retention is not algebraic completion.
+    pub(crate) fn validate_retained_row(
+        &self,
+        row: &PreparedEffectRow,
+    ) -> Result<(), PreparedEffectInvariant> {
+        if let PreparedEffectRow::Term(reference) = row {
+            self.row(reference)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_retained_predicate(
+        &self,
+        predicate: &PreparedEffectPredicate,
+    ) -> Result<(), PreparedEffectInvariant> {
+        self.validate_predicate(predicate)
+    }
+
     #[cfg(test)]
     pub(crate) fn retained_terms(&self) -> (usize, usize) {
         (self.rows.len(), self.predicates.len())

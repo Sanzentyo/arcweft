@@ -40,7 +40,9 @@ pub use constraints::TypeInstantiationError;
 pub use constraints::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub use digest::SemanticTypeDigest;
 pub use effect_domain::{CanonicalEffects, TypeEffectDomain};
-pub(crate) use effect_domain::{PreparedEffects, PreparedTypeEffectProjectionFailure};
+pub(crate) use effect_domain::{
+    PreparedEffects, PreparedTypeEffectProjectionFailure, PreparedTypeRetentionFailure,
+};
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;
 pub(crate) use generic_use::{
