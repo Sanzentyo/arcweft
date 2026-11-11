@@ -1579,6 +1579,89 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    same_group_generic_prefix_closes_its_type_in_the_first_argument,
+    r#"
+fn first<T>(first: T, second: i64) -> T { first }
+flow main() -> i64 {
+    let tail = first(40i64)
+    return tail(2i64) + 2i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    same_group_generic_prefix_can_be_applied_repeatedly,
+    r#"
+fn keep<T>(first: i64, second: i64, third: T) -> i64 { first + second }
+flow main() -> i64 {
+    let middle = keep(20i64)
+    let tail = middle(1i64)
+    return tail("later") + tail(true)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    same_group_generic_prefix_closes_its_type_in_an_intermediate_argument,
+    r#"
+fn keep<T>(first: i64, second: T, third: i64) -> i64 { first + third }
+flow main() -> i64 {
+    let middle = keep(20i64)
+    let tail = middle("later")
+    return tail(22i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    same_group_generic_prefix_advances_to_the_next_declared_group,
+    r#"
+fn keep<T>(first: i64, second: T)(third: i64) -> i64 { first + third }
+flow main() -> i64 {
+    let middle = keep(20i64)
+    let tail = middle("later")
+    return tail(22i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    same_group_generic_prefix_from_a_function_value,
+    r#"
+fn keep<T>(first: i64, second: T) -> i64 { first }
+flow main() -> i64 {
+    let function = keep
+    let tail = function(40i64)
+    return tail("later") + tail(true) - 38i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    declared_positional_prefix_preserves_later_groups,
+    r#"
+fn add(first: i64, second: i64)(third: i64) -> i64 { first + second + third }
+flow main() -> i64 {
+    let middle = add(20i64)
+    let tail = middle(1i64)
+    return tail(21i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     same_group_generic_prefix_is_shared_across_distinct_later_types,
     r#"
 fn keep<T>(first: i64, second: T) -> i64 { first }
