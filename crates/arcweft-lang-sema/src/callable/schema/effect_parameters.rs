@@ -114,7 +114,7 @@ impl CallableGenericParameterIssuer {
             match task {
                 Task::Enter(ty, scope) => {
                     let shape = ty.constraint_shape();
-                    if matches!(shape, TypeConstraintShape::Unresolved) {
+                    if matches!(shape, TypeConstraintShape::Unresolved(_)) {
                         // Preserve the diagnostic-bearing type. Declaring an
                         // effect parameter does not resolve a recovered type.
                         completed.push(ty.clone());

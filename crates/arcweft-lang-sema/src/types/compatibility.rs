@@ -183,7 +183,7 @@ impl TypeKind {
                     }
                     if matches!(
                         shape,
-                        TypeConstraintShape::Unresolved
+                        TypeConstraintShape::Unresolved(_)
                             | TypeConstraintShape::Leaf(_)
                             | TypeConstraintShape::Never
                             | TypeConstraintShape::Generic(_)

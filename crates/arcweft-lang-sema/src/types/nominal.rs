@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::env::nominal::{AcceptedNominalId, OpenNominalRuleId};
 
-use super::{StandardMapFamily, TypeKind};
+use super::{CanonicalEffects, StandardMapFamily, TypeEffectDomain, TypeKind};
 
 /// Resolver-local evidence that a semantic type node has already failed.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -197,24 +197,24 @@ pub struct GenericEffectParameterId(GenericParameterCoordinate<u32>);
 
 /// Instantiation of one source-backed project struct or enum declaration.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ProjectNominalType {
+pub struct ProjectNominalType<E: TypeEffectDomain = CanonicalEffects> {
     declaration: Arc<ProjectNominalDeclarationId>,
-    arguments: Box<[TypeKind]>,
+    arguments: Box<[TypeKind<E>]>,
 }
 
 /// Instantiation of one exact accepted environment nominal declaration.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct AcceptedNominalType {
+pub struct AcceptedNominalType<E: TypeEffectDomain = CanonicalEffects> {
     declaration: Arc<AcceptedNominalId>,
-    arguments: Box<[TypeKind]>,
+    arguments: Box<[TypeKind<E>]>,
 }
 
 /// Instantiation admitted by one explicit open-nominal rule.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct OpenNominalType {
+pub struct OpenNominalType<E: TypeEffectDomain = CanonicalEffects> {
     rule: Arc<OpenNominalRuleId>,
     path: Arc<HirPath>,
-    arguments: Box<[TypeKind]>,
+    arguments: Box<[TypeKind<E>]>,
 }
 
 impl TypePoisonId {
@@ -341,11 +341,11 @@ fn generic_source_label(
     format!("{prefix}<{owner}>#{ordinal}")
 }
 
-impl ProjectNominalType {
+impl<E: TypeEffectDomain> ProjectNominalType<E> {
     /// Creates a checked instantiation of a project nominal declaration.
     pub(crate) fn new(
         declaration: ProjectNominalDeclarationId,
-        arguments: impl Into<Box<[TypeKind]>>,
+        arguments: impl Into<Box<[TypeKind<E>]>>,
     ) -> Self {
         Self {
             declaration: Arc::new(declaration),
@@ -359,20 +359,22 @@ impl ProjectNominalType {
     }
 
     /// Checked type arguments in authored order.
-    pub fn arguments(&self) -> &[TypeKind] {
+    pub fn arguments(&self) -> &[TypeKind<E>] {
         &self.arguments
     }
+}
 
+impl ProjectNominalType {
     pub(super) fn source_label(&self) -> String {
         application_label(&self.declaration.qualified_name(), &self.arguments)
     }
 }
 
-impl AcceptedNominalType {
+impl<E: TypeEffectDomain> AcceptedNominalType<E> {
     /// Creates a checked instantiation of an accepted nominal declaration.
     pub(crate) fn new(
         declaration: AcceptedNominalId,
-        arguments: impl Into<Box<[TypeKind]>>,
+        arguments: impl Into<Box<[TypeKind<E>]>>,
     ) -> Self {
         Self {
             declaration: Arc::new(declaration),
@@ -386,10 +388,12 @@ impl AcceptedNominalType {
     }
 
     /// Checked type arguments in authored order.
-    pub fn arguments(&self) -> &[TypeKind] {
+    pub fn arguments(&self) -> &[TypeKind<E>] {
         &self.arguments
     }
+}
 
+impl AcceptedNominalType {
     pub(super) fn source_label(&self) -> String {
         application_label(
             &self.declaration.canonical_path().canonical_string(),
@@ -398,12 +402,12 @@ impl AcceptedNominalType {
     }
 }
 
-impl OpenNominalType {
+impl<E: TypeEffectDomain> OpenNominalType<E> {
     /// Creates a checked instantiation admitted by an explicit open rule.
     pub(crate) fn new(
         rule: OpenNominalRuleId,
         path: HirPath,
-        arguments: impl Into<Box<[TypeKind]>>,
+        arguments: impl Into<Box<[TypeKind<E>]>>,
     ) -> Self {
         Self {
             rule: Arc::new(rule),
@@ -423,10 +427,12 @@ impl OpenNominalType {
     }
 
     /// Checked type arguments in authored order.
-    pub fn arguments(&self) -> &[TypeKind] {
+    pub fn arguments(&self) -> &[TypeKind<E>] {
         &self.arguments
     }
+}
 
+impl OpenNominalType {
     pub(super) fn source_label(&self) -> String {
         application_label(&hir_path_label(&self.path), &self.arguments)
     }

@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
 use super::{
-    ArrayLength, GenericConstParameterId, GenericEffectParameterId, GenericTypeParameterId,
-    SemanticTypeDigest, TypeKind,
+    ArrayLength, CanonicalEffects, GenericConstParameterId, GenericEffectParameterId,
+    GenericTypeParameterId, SemanticTypeDigest, TypeEffectDomain, TypeKind,
 };
 
 #[cfg(test)]
@@ -23,28 +23,28 @@ pub(crate) use declaration::GenericDeclarationBinder;
 /// Owned lexical context for a projected type term. Consumers must explicitly
 /// close it at the root or transfer its incoming binders to a function scheme.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ScopedType {
-    value: TypeKind,
+pub(crate) struct ScopedType<D: TypeEffectDomain = CanonicalEffects> {
+    value: TypeKind<D>,
     scope: GenericScope,
 }
 
-impl ScopedType {
-    pub(crate) fn at_root(value: TypeKind) -> Self {
+impl<D: TypeEffectDomain> ScopedType<D> {
+    pub(crate) fn at_root(value: TypeKind<D>) -> Self {
         Self {
             value,
             scope: GenericScope::default(),
         }
     }
 
-    pub(in crate::types) const fn new(value: TypeKind, scope: GenericScope) -> Self {
+    pub(in crate::types) const fn new(value: TypeKind<D>, scope: GenericScope) -> Self {
         Self { value, scope }
     }
 
-    pub(crate) const fn view(&self) -> ScopedTypeView<'_> {
+    pub(crate) const fn view(&self) -> ScopedTypeView<'_, D> {
         ScopedTypeView::sealed(&self.value, &self.scope)
     }
 
-    pub(in crate::types) fn into_value(self) -> TypeKind {
+    pub(in crate::types) fn into_value(self) -> TypeKind<D> {
         self.value
     }
 }
@@ -65,7 +65,7 @@ impl<T> Clone for ScopedView<'_, T> {
 }
 
 /// A contextual semantic type term.
-pub type ScopedTypeView<'a> = ScopedView<'a, TypeKind>;
+pub type ScopedTypeView<'a, D = CanonicalEffects> = ScopedView<'a, TypeKind<D>>;
 /// A contextual array-length term.
 pub type ScopedArrayLengthView<'a> = ScopedView<'a, ArrayLength>;
 /// A template type-parameter key with its declaration/scheme scope.

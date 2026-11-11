@@ -53,6 +53,7 @@ pub(crate) use normalization::{
     TypeConstraintFailureInvariant,
 };
 pub(super) use normalization::{occurs_in_shape, seal_path, seal_type, validate_type};
+pub(in crate::types) use shape::TypeConstraintChildren;
 pub(crate) use shape::TypeConstraintShape;
 pub(crate) use solution::ClosedTypeInstantiation;
 pub(crate) use solution::TypeConstraintSolution;

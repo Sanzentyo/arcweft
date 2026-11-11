@@ -6480,7 +6480,7 @@ fn type_resolution_fact_union_rejects_disagreement() {
         .find_map(|(_, module)| module.types().next().map(|(owner, _)| owner))
         .expect("type owner");
     let mut facts = BTreeMap::new();
-    let resolved = Some(TypeKind::I32);
+    let resolved: Option<TypeKind> = Some(TypeKind::I32);
 
     super::report::merge_type_resolution_fact(&mut facts, owner, &resolved)
         .expect("first fact is accepted");

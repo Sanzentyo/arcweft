@@ -43,7 +43,7 @@ fn try_type_only_solution(
                     parameters.insert(parameter.clone());
                 }
             }
-            super::TypeConstraintShape::Unresolved | super::TypeConstraintShape::Never => {}
+            super::TypeConstraintShape::Unresolved(_) | super::TypeConstraintShape::Never => {}
             shape => {
                 for child in shape.children() {
                     collect(child, parameters);
@@ -107,7 +107,7 @@ fn bindable_scope(types: &[&TypeKind]) -> TypeConstraintParameterScope {
                     parameters.insert(parameter.clone());
                 }
             }
-            super::TypeConstraintShape::Unresolved | super::TypeConstraintShape::Never => {}
+            super::TypeConstraintShape::Unresolved(_) | super::TypeConstraintShape::Never => {}
             shape => {
                 for child in shape.children() {
                     collect(child, parameters);

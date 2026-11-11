@@ -494,8 +494,8 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    if matches!(pattern_shape, TypeConstraintShape::Unresolved)
-        || matches!(actual_shape, TypeConstraintShape::Unresolved)
+    if matches!(pattern_shape, TypeConstraintShape::Unresolved(_))
+        || matches!(actual_shape, TypeConstraintShape::Unresolved(_))
     {
         return Err(TypeConstraintError::Rejected(
             TypeConstraintRejection::UnresolvedType,

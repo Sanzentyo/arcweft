@@ -3,6 +3,8 @@
 use std::hash::{Hash, Hasher};
 use std::slice;
 
+use crate::types::{CanonicalEffects, TypeEffectDomain};
+
 use super::{
     AcceptedVariantCaseSemanticId, AcceptedVariantPayloadFieldSemanticId, CheckedVariantPayload,
     TypeKind, VariantPayloadOwnerFamily, VariantPayloadSealError, VariantPayloadShape,
@@ -10,31 +12,31 @@ use super::{
 
 /// One record field in a logical payload type, without a checked field identity.
 #[derive(Clone, Debug)]
-pub struct VariantPayloadRecordTypeField {
+pub struct VariantPayloadRecordTypeField<D: TypeEffectDomain = CanonicalEffects> {
     ordinal: u32,
     diagnostic_name: String,
-    ty: TypeKind,
+    ty: TypeKind<D>,
 }
 
-impl VariantPayloadRecordTypeField {
+impl<D: TypeEffectDomain> VariantPayloadRecordTypeField<D> {
     pub const fn ordinal(&self) -> u32 {
         self.ordinal
     }
     pub fn diagnostic_name(&self) -> &str {
         &self.diagnostic_name
     }
-    pub const fn ty(&self) -> &TypeKind {
+    pub const fn ty(&self) -> &TypeKind<D> {
         &self.ty
     }
 }
 
-impl PartialEq for VariantPayloadRecordTypeField {
+impl<D: TypeEffectDomain> PartialEq for VariantPayloadRecordTypeField<D> {
     fn eq(&self, other: &Self) -> bool {
         self.ordinal == other.ordinal && self.ty == other.ty
     }
 }
-impl Eq for VariantPayloadRecordTypeField {}
-impl Hash for VariantPayloadRecordTypeField {
+impl<D: TypeEffectDomain> Eq for VariantPayloadRecordTypeField<D> {}
+impl<D: TypeEffectDomain> Hash for VariantPayloadRecordTypeField<D> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ordinal.hash(state);
         self.ty.hash(state);
@@ -43,23 +45,23 @@ impl Hash for VariantPayloadRecordTypeField {
 
 /// Non-unit payload structure. Empty tuple and empty record remain distinct.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum VariantPayloadTypeShape {
-    Tuple(Box<[TypeKind]>),
-    Record(Box<[VariantPayloadRecordTypeField]>),
+pub enum VariantPayloadTypeShape<D: TypeEffectDomain = CanonicalEffects> {
+    Tuple(Box<[TypeKind<D>]>),
+    Record(Box<[VariantPayloadRecordTypeField<D>]>),
 }
 
-pub(crate) struct VariantPayloadTypeChildren<'a> {
-    owner: Option<&'a TypeKind>,
-    fields: PayloadFieldChildren<'a>,
+pub(crate) struct VariantPayloadTypeChildren<'a, D: TypeEffectDomain = CanonicalEffects> {
+    owner: Option<&'a TypeKind<D>>,
+    fields: PayloadFieldChildren<'a, D>,
 }
 
-enum PayloadFieldChildren<'a> {
-    Tuple(slice::Iter<'a, TypeKind>),
-    Record(slice::Iter<'a, VariantPayloadRecordTypeField>),
+enum PayloadFieldChildren<'a, D: TypeEffectDomain> {
+    Tuple(slice::Iter<'a, TypeKind<D>>),
+    Record(slice::Iter<'a, VariantPayloadRecordTypeField<D>>),
 }
 
-impl<'a> Iterator for VariantPayloadTypeChildren<'a> {
-    type Item = &'a TypeKind;
+impl<'a, D: TypeEffectDomain> Iterator for VariantPayloadTypeChildren<'a, D> {
+    type Item = &'a TypeKind<D>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.owner.take().or_else(|| match &mut self.fields {
@@ -68,6 +70,164 @@ impl<'a> Iterator for VariantPayloadTypeChildren<'a> {
                 fields.next().map(VariantPayloadRecordTypeField::ty)
             }
         })
+    }
+}
+
+impl<D: TypeEffectDomain> VariantPayloadTypeShape<D> {
+    pub const fn field_count(&self) -> usize {
+        match self {
+            Self::Tuple(fields) => fields.len(),
+            Self::Record(fields) => fields.len(),
+        }
+    }
+
+    pub const fn semantic_shape_tag(&self) -> u8 {
+        match self {
+            Self::Tuple(_) => 1,
+            Self::Record(_) => 2,
+        }
+    }
+
+    pub fn single_tuple_field(&self) -> Option<&TypeKind<D>> {
+        match self {
+            Self::Tuple(fields) if fields.len() == 1 => fields.first(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind<D>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Tuple(fields) => fields.iter().try_for_each(visitor),
+            Self::Record(fields) => fields.iter().try_for_each(|field| visitor(&field.ty)),
+        }
+    }
+
+    pub(crate) fn try_map<T: TypeEffectDomain, E>(
+        &self,
+        map: &mut impl FnMut(&TypeKind<D>) -> Result<TypeKind<T>, E>,
+    ) -> Result<VariantPayloadTypeShape<T>, E> {
+        Ok(match self {
+            Self::Tuple(fields) => {
+                VariantPayloadTypeShape::Tuple(fields.iter().map(map).collect::<Result<_, _>>()?)
+            }
+            Self::Record(fields) => VariantPayloadTypeShape::Record(
+                fields
+                    .iter()
+                    .map(|field| {
+                        Ok(VariantPayloadRecordTypeField {
+                            ordinal: field.ordinal,
+                            diagnostic_name: field.diagnostic_name.clone(),
+                            ty: map(&field.ty)?,
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+            ),
+        })
+    }
+}
+
+/// An exact case's logical type projection with a transformable typed owner.
+///
+/// Creation originates in an accepted case. A uniform type transformation must
+/// map both the owner and the fields; field/case hashes are never carried across
+/// that transition. This type may contain active inference terms and is not a
+/// certificate that stable semantic identities have already been issued.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct VariantPayloadType<D: TypeEffectDomain = CanonicalEffects> {
+    owner_family: VariantPayloadOwnerFamily,
+    owner_type: Box<TypeKind<D>>,
+    case_ordinal: u32,
+    shape: VariantPayloadTypeShape<D>,
+}
+
+impl<D: TypeEffectDomain> VariantPayloadType<D> {
+    /// Projects an admitted case schema before its owner type has completed
+    /// inference. Stable case/field identities are issued only by `try_seal`.
+    pub(crate) fn from_prepared_case(
+        owner_family: VariantPayloadOwnerFamily,
+        owner_type: TypeKind<D>,
+        case_ordinal: u32,
+        shape: VariantPayloadTypeShape<D>,
+    ) -> Self {
+        Self {
+            owner_family,
+            owner_type: Box::new(owner_type),
+            case_ordinal,
+            shape,
+        }
+    }
+    pub const fn owner_family(&self) -> VariantPayloadOwnerFamily {
+        self.owner_family
+    }
+    pub fn owner_type(&self) -> &TypeKind<D> {
+        &self.owner_type
+    }
+    pub const fn case_ordinal(&self) -> u32 {
+        self.case_ordinal
+    }
+    pub const fn shape(&self) -> &VariantPayloadTypeShape<D> {
+        &self.shape
+    }
+
+    pub(in crate::types) fn children(&self) -> VariantPayloadTypeChildren<'_, D> {
+        VariantPayloadTypeChildren {
+            owner: Some(&self.owner_type),
+            fields: match &self.shape {
+                VariantPayloadTypeShape::Tuple(fields) => {
+                    PayloadFieldChildren::Tuple(fields.iter())
+                }
+                VariantPayloadTypeShape::Record(fields) => {
+                    PayloadFieldChildren::Record(fields.iter())
+                }
+            },
+        }
+    }
+
+    /// Field types carried by this payload value, in declaration order.
+    pub(crate) fn stored_fields(&self) -> impl Iterator<Item = &TypeKind<D>> {
+        let mut children = self.children();
+        children.owner = None;
+        children
+    }
+
+    pub(in crate::types) fn has_same_header(&self, other: &Self) -> bool {
+        self.owner_family == other.owner_family
+            && self.case_ordinal == other.case_ordinal
+            && self.shape.semantic_shape_tag() == other.shape.semantic_shape_tag()
+            && self.shape.field_count() == other.shape.field_count()
+    }
+
+    pub(in crate::types) fn map<T: TypeEffectDomain>(
+        &self,
+        mut map: impl FnMut(&TypeKind<D>) -> TypeKind<T>,
+    ) -> VariantPayloadType<T> {
+        self.try_map(|ty| Ok::<_, std::convert::Infallible>(map(ty)))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    /// Maps the entire dependent type relation without issuing stable identities.
+    pub(in crate::types) fn try_map<T: TypeEffectDomain, E>(
+        &self,
+        mut map: impl FnMut(&TypeKind<D>) -> Result<TypeKind<T>, E>,
+    ) -> Result<VariantPayloadType<T>, E> {
+        let owner_type = map(&self.owner_type)?;
+        let shape = self.shape.try_map(&mut map)?;
+        Ok(VariantPayloadType {
+            owner_family: self.owner_family,
+            owner_type: Box::new(owner_type),
+            case_ordinal: self.case_ordinal,
+            shape,
+        })
+    }
+
+    pub(in crate::types) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind<D>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.children().try_for_each(visitor)
     }
 }
 
@@ -138,90 +298,9 @@ impl VariantPayloadTypeShape {
             Self::Tuple(_) => None,
         }
     }
-
-    pub const fn field_count(&self) -> usize {
-        match self {
-            Self::Tuple(fields) => fields.len(),
-            Self::Record(fields) => fields.len(),
-        }
-    }
-
-    pub const fn semantic_shape_tag(&self) -> u8 {
-        match self {
-            Self::Tuple(_) => 1,
-            Self::Record(_) => 2,
-        }
-    }
-
-    pub fn single_tuple_field(&self) -> Option<&TypeKind> {
-        match self {
-            Self::Tuple(fields) if fields.len() == 1 => fields.first(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
-    ) -> Result<(), E> {
-        match self {
-            Self::Tuple(fields) => fields.iter().try_for_each(visitor),
-            Self::Record(fields) => fields.iter().try_for_each(|field| visitor(&field.ty)),
-        }
-    }
-
-    pub(crate) fn try_map<E>(
-        &self,
-        map: &mut impl FnMut(&TypeKind) -> Result<TypeKind, E>,
-    ) -> Result<Self, E> {
-        Ok(match self {
-            Self::Tuple(fields) => Self::Tuple(fields.iter().map(map).collect::<Result<_, _>>()?),
-            Self::Record(fields) => Self::Record(
-                fields
-                    .iter()
-                    .map(|field| {
-                        Ok(VariantPayloadRecordTypeField {
-                            ordinal: field.ordinal,
-                            diagnostic_name: field.diagnostic_name.clone(),
-                            ty: map(&field.ty)?,
-                        })
-                    })
-                    .collect::<Result<_, E>>()?,
-            ),
-        })
-    }
-}
-
-/// An exact case's logical type projection with a transformable typed owner.
-///
-/// Creation originates in an accepted case. A uniform type transformation must
-/// map both the owner and the fields; field/case hashes are never carried across
-/// that transition. This type may contain active inference terms and is not a
-/// certificate that stable semantic identities have already been issued.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct VariantPayloadType {
-    owner_family: VariantPayloadOwnerFamily,
-    owner_type: Box<TypeKind>,
-    case_ordinal: u32,
-    shape: VariantPayloadTypeShape,
 }
 
 impl VariantPayloadType {
-    /// Projects an admitted case schema before its owner type has completed
-    /// inference. Stable case/field identities are issued only by `try_seal`.
-    pub(crate) fn from_prepared_case(
-        owner_family: VariantPayloadOwnerFamily,
-        owner_type: TypeKind,
-        case_ordinal: u32,
-        shape: VariantPayloadTypeShape,
-    ) -> Self {
-        Self {
-            owner_family,
-            owner_type: Box::new(owner_type),
-            case_ordinal,
-            shape,
-        }
-    }
     pub(crate) fn try_new(
         owner_family: VariantPayloadOwnerFamily,
         owner_type: TypeKind,
@@ -262,19 +341,6 @@ impl VariantPayloadType {
             case_ordinal: checked.case_ordinal,
             shape,
         }
-    }
-
-    pub const fn owner_family(&self) -> VariantPayloadOwnerFamily {
-        self.owner_family
-    }
-    pub fn owner_type(&self) -> &TypeKind {
-        &self.owner_type
-    }
-    pub const fn case_ordinal(&self) -> u32 {
-        self.case_ordinal
-    }
-    pub const fn shape(&self) -> &VariantPayloadTypeShape {
-        &self.shape
     }
 
     /// Joins independently encoded owner/field identities in the same order
@@ -329,61 +395,6 @@ impl VariantPayloadType {
             fields.len(),
             fields,
         )
-    }
-
-    pub(in crate::types) fn children(&self) -> VariantPayloadTypeChildren<'_> {
-        VariantPayloadTypeChildren {
-            owner: Some(&self.owner_type),
-            fields: match &self.shape {
-                VariantPayloadTypeShape::Tuple(fields) => {
-                    PayloadFieldChildren::Tuple(fields.iter())
-                }
-                VariantPayloadTypeShape::Record(fields) => {
-                    PayloadFieldChildren::Record(fields.iter())
-                }
-            },
-        }
-    }
-
-    /// Field types carried by this payload value, in declaration order.
-    pub(crate) fn stored_fields(&self) -> impl Iterator<Item = &TypeKind> {
-        let mut children = self.children();
-        children.owner = None;
-        children
-    }
-
-    pub(in crate::types) fn has_same_header(&self, other: &Self) -> bool {
-        self.owner_family == other.owner_family
-            && self.case_ordinal == other.case_ordinal
-            && self.shape.semantic_shape_tag() == other.shape.semantic_shape_tag()
-            && self.shape.field_count() == other.shape.field_count()
-    }
-
-    pub(in crate::types) fn map(&self, mut map: impl FnMut(&TypeKind) -> TypeKind) -> Self {
-        self.try_map(|ty| Ok::<_, std::convert::Infallible>(map(ty)))
-            .unwrap_or_else(|never| match never {})
-    }
-
-    /// Maps the entire dependent type relation without issuing stable identities.
-    pub(in crate::types) fn try_map<E>(
-        &self,
-        mut map: impl FnMut(&TypeKind) -> Result<TypeKind, E>,
-    ) -> Result<Self, E> {
-        let owner_type = map(&self.owner_type)?;
-        let shape = self.shape.try_map(&mut map)?;
-        Ok(Self {
-            owner_family: self.owner_family,
-            owner_type: Box::new(owner_type),
-            case_ordinal: self.case_ordinal,
-            shape,
-        })
-    }
-
-    pub(in crate::types) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
-    ) -> Result<(), E> {
-        self.children().try_for_each(visitor)
     }
 
     /// Issues stable identities for the transformed owner and its payload rows.

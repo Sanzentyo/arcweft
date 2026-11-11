@@ -13,6 +13,7 @@ mod agent_fields;
 mod compatibility;
 pub(crate) mod constraints;
 mod digest;
+mod effect_domain;
 mod generic_use;
 mod generics;
 mod match_domain;
@@ -38,6 +39,7 @@ pub(crate) use constraints::NoConstraintClient;
 pub use constraints::TypeInstantiationError;
 pub use constraints::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub use digest::SemanticTypeDigest;
+pub use effect_domain::{CanonicalEffects, TypeEffectDomain};
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;
 pub(crate) use generic_use::{
@@ -370,9 +372,9 @@ impl EntityKind {
 
 /// Entity reference type with optional payload type.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct EntityType {
+pub struct EntityType<E: TypeEffectDomain = CanonicalEffects> {
     kind: EntityKind,
-    value: Option<Box<TypeKind>>,
+    value: Option<Box<TypeKind<E>>>,
 }
 
 /// Closed semantic types owned by the Agent Prelude.
@@ -917,13 +919,13 @@ impl CompileTimeFxType {
 /// Fixed-dimensional compile-time vector type. The component type is kept in
 /// the type identity so a vector cannot silently become a nominal `Vec2` name.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct FixedVectorType {
+pub struct FixedVectorType<E: TypeEffectDomain = CanonicalEffects> {
     dimensions: crate::callable::VectorDimensions,
-    component: Box<TypeKind>,
+    component: Box<TypeKind<E>>,
 }
 
-impl FixedVectorType {
-    pub fn new(dimensions: crate::callable::VectorDimensions, component: TypeKind) -> Self {
+impl<E: TypeEffectDomain> FixedVectorType<E> {
+    pub fn new(dimensions: crate::callable::VectorDimensions, component: TypeKind<E>) -> Self {
         Self {
             dimensions,
             component: Box::new(component),
@@ -934,7 +936,7 @@ impl FixedVectorType {
         self.dimensions
     }
 
-    pub const fn component(&self) -> &TypeKind {
+    pub const fn component(&self) -> &TypeKind<E> {
         &self.component
     }
 }
@@ -1042,9 +1044,9 @@ impl StandardMapFamily {
     }
 }
 
-/// Minimal semantic type used by parser/HIR contract tests.
+/// One semantic type grammar with phase-specific effect evidence.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum TypeKind {
+pub enum TypeKind<E: TypeEffectDomain = CanonicalEffects> {
     Bool,
     I8,
     I16,
@@ -1079,10 +1081,10 @@ pub enum TypeKind {
     VoiceHandle,
     /// Closed standard atom used only by contextual statement ingress.
     StatementIngress(StandardStatementIngressTypeId),
-    Range(Box<TypeKind>),
+    Range(Box<TypeKind<E>>),
     IteratorState {
         family: IteratorStateKind,
-        item: Box<TypeKind>,
+        item: Box<TypeKind<E>>,
     },
     /// Formatter-owned, source-visible context passed to `DisplayText` methods.
     DisplayContext,
@@ -1090,8 +1092,8 @@ pub enum TypeKind {
     DisplayError,
     DebugStatePath,
     ObservationFieldPath,
-    Ref(EntityType),
-    Probe(Box<TypeKind>),
+    Ref(EntityType<E>),
+    Probe(Box<TypeKind<E>>),
     Predicate,
     Observation,
     ObservedObject,
@@ -1102,7 +1104,7 @@ pub enum TypeKind {
     AgentValue,
     DataFormat,
     /// Opaque data codec shape witness carrying the exact encoded value type.
-    DataShape(Box<TypeKind>),
+    DataShape(Box<TypeKind<E>>),
     DataValue,
     DataError,
     DataErrorKind,
@@ -1120,59 +1122,59 @@ pub enum TypeKind {
     AgentResourceBody,
     RagContextPack,
     AgentBuiltin(AgentBuiltinType),
-    Vec(Box<TypeKind>),
+    Vec(Box<TypeKind<E>>),
     Array {
-        item: Box<TypeKind>,
+        item: Box<TypeKind<E>>,
         len: ArrayLength,
     },
-    Slice(Box<TypeKind>),
-    Seq(Box<TypeKind>),
+    Slice(Box<TypeKind<E>>),
+    Seq(Box<TypeKind<E>>),
     Map {
         kind: MapKind,
-        key: Box<TypeKind>,
-        value: Box<TypeKind>,
+        key: Box<TypeKind<E>>,
+        value: Box<TypeKind<E>>,
     },
     BorrowRef {
         kind: BorrowKind,
         lifetime: Option<LifetimeScopeKind>,
-        inner: Box<TypeKind>,
+        inner: Box<TypeKind<E>>,
     },
-    Need(Box<TypeKind>),
+    Need(Box<TypeKind<E>>),
     /// An unstarted traversal retaining the complete source and callback type.
     /// Scheduling produces a unary Need; constructing this value invokes no callback.
     Traversal {
-        source: Box<TypeKind>,
-        mapping: Box<TypeKind>,
+        source: Box<TypeKind<E>>,
+        mapping: Box<TypeKind<E>>,
     },
     Stream {
-        item: Box<TypeKind>,
-        error: Box<TypeKind>,
+        item: Box<TypeKind<E>>,
+        error: Box<TypeKind<E>>,
     },
     Parser {
-        item: Box<TypeKind>,
-        error: Box<TypeKind>,
+        item: Box<TypeKind<E>>,
+        error: Box<TypeKind<E>>,
     },
     Result {
-        ok: Box<TypeKind>,
-        error: Box<TypeKind>,
+        ok: Box<TypeKind<E>>,
+        error: Box<TypeKind<E>>,
     },
-    Option(Box<TypeKind>),
+    Option(Box<TypeKind<E>>),
     PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
-    SlotRef(Box<TypeKind>),
+    SlotRef(Box<TypeKind<E>>),
     Handle {
-        item: Box<TypeKind>,
+        item: Box<TypeKind<E>>,
         lifetime: LifetimeScopeKind,
         state: HandleState,
         must_drop: bool,
     },
-    ThreadHandle(Box<TypeKind>),
-    Shared(Box<TypeKind>),
+    ThreadHandle(Box<TypeKind<E>>),
+    Shared(Box<TypeKind<E>>),
     Function {
         binder: GenericBinder,
-        predicate: EffectPredicate,
-        params: Vec<TypeKind>,
-        return_type: Box<TypeKind>,
-        effects: EffectRow,
+        predicate: E::Predicate,
+        params: Vec<TypeKind<E>>,
+        return_type: Box<TypeKind<E>>,
+        effects: E::Row,
     },
     /// Compile-time callable family selected by the semantic checker.
     CompileTimeCallable(CompileTimeCallableType),
@@ -1185,21 +1187,21 @@ pub enum TypeKind {
     /// Exact or contextually open compile-time Fx value.
     CompileTimeFx(CompileTimeFxType),
     /// Fixed-dimensional vector with an exact component type.
-    FixedVector(FixedVectorType),
+    FixedVector(FixedVectorType<E>),
     /// Compile-time value describing one semantic type.
-    MetaType(Box<TypeKind>),
+    MetaType(Box<TypeKind<E>>),
     /// Generic parameter selected by a declaration-owned typed identity.
     GenericParam(GenericTypeReference),
     /// Source-backed project struct or enum selected through the project table.
-    ProjectNominal(ProjectNominalType),
+    ProjectNominal(ProjectNominalType<E>),
     /// Exact opaque type selected through the accepted environment catalog.
-    AcceptedNominal(AcceptedNominalType),
+    AcceptedNominal(AcceptedNominalType<E>),
     /// Type admitted by one explicit open-nominal environment rule.
-    OpenNominal(OpenNominalType),
+    OpenNominal(OpenNominalType<E>),
     /// Recovery carrier for a previously recorded authoritative type failure.
     Error(TypePoisonId),
     Projection {
-        subject: Box<TypeKind>,
+        subject: Box<TypeKind<E>>,
         trait_name: Option<String>,
         assoc: String,
     },
@@ -1208,7 +1210,7 @@ pub enum TypeKind {
     /// Immutable first-class dialogue presentation value.
     CharacterDialogue(CharacterDialogueType),
     /// Non-escaping dialogue suspension operation and its line-plan result.
-    DialogueLine(Box<TypeKind>),
+    DialogueLine(Box<TypeKind<E>>),
     /// Retained View expression value owned by the checked View projection.
     ViewValue,
     /// Manifest-backed character enum with structural nominal identity.
@@ -1218,11 +1220,11 @@ pub enum TypeKind {
     /// Authored type resolution must use `crate::nominal::resolve_type_ref` and
     /// never constructs this variant as a path fallback.
     Named(String),
-    Tuple(Vec<TypeKind>),
-    Choice(Vec<TypeKind>),
+    Tuple(Vec<TypeKind<E>>),
+    Choice(Vec<TypeKind<E>>),
     /// Exact anonymous tuple/record payload of one accepted variant case.
     /// Authored type resolution never constructs this internal family.
-    VariantPayload(Box<VariantPayloadType>),
+    VariantPayload(Box<VariantPayloadType<E>>),
     Unit,
     Never,
 }
@@ -1278,8 +1280,10 @@ impl EntityType {
             .expect("the HIR Action identity has the Action public-ID family"),
         )
     }
+}
 
-    pub fn new(kind: EntityKind, value: Option<TypeKind>) -> Self {
+impl<E: TypeEffectDomain> EntityType<E> {
+    pub fn new(kind: EntityKind, value: Option<TypeKind<E>>) -> Self {
         Self {
             kind,
             value: value.map(Box::new),
@@ -1290,10 +1294,12 @@ impl EntityType {
         &self.kind
     }
 
-    pub fn value(&self) -> Option<&TypeKind> {
+    pub fn value(&self) -> Option<&TypeKind<E>> {
         self.value.as_deref()
     }
+}
 
+impl EntityType {
     /// Observable element from the exact accepted Signal/Metric carrier.
     /// A same-spelled foreign nominal cannot impersonate a standard carrier.
     pub fn observable_payload(&self) -> Option<&TypeKind> {

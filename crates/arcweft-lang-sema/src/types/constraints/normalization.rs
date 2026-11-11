@@ -588,7 +588,7 @@ where
 {
     context.validate_type_header(shape, view)?;
     match shape {
-        TypeConstraintShape::Unresolved => Err(TypeConstraintRejection::UnresolvedType.into()),
+        TypeConstraintShape::Unresolved(_) => Err(TypeConstraintRejection::UnresolvedType.into()),
         TypeConstraintShape::Generic(candidate) => {
             if candidate == parameter {
                 return Ok(true);
@@ -753,8 +753,8 @@ fn type_shapes_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
     right_shape: TypeConstraintShape<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError> {
-    if matches!(left_shape, TypeConstraintShape::Unresolved)
-        || matches!(right_shape, TypeConstraintShape::Unresolved)
+    if matches!(left_shape, TypeConstraintShape::Unresolved(_))
+        || matches!(right_shape, TypeConstraintShape::Unresolved(_))
     {
         return Err(TypeConstraintRejection::UnresolvedType.into());
     }

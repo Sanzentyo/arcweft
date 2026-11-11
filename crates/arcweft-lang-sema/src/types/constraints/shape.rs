@@ -4,97 +4,133 @@ use std::slice;
 
 use arcweft_lang_syntax::reference::BorrowKind;
 
-use crate::effect_row::{EffectPredicate, EffectRow};
-
 use super::super::{
-    AcceptedNominalType, ArrayLength, EntityType, GenericBinder, GenericTypeReference,
-    IteratorStateKind, LifetimeScopeKind, MapKind, OpenNominalType, ProjectNominalType, TypeKind,
+    AcceptedNominalType, ArrayLength, CanonicalEffects, EntityType, GenericBinder,
+    GenericTypeReference, IteratorStateKind, LifetimeScopeKind, MapKind, OpenNominalType,
+    ProjectNominalType, TypeEffectDomain, TypeKind,
 };
-use super::{TypeConstraintError, TypeConstraintRejection};
+use super::TypeConstraintError;
 
 pub(super) fn is_placeholder_name(name: &str) -> bool {
     name == "_"
 }
 
-impl TypeKind {
-    pub(crate) fn constraint_shape(&self) -> TypeConstraintShape<'_> {
+impl<D: TypeEffectDomain> TypeKind<D> {
+    pub(crate) fn constraint_shape(&self) -> TypeConstraintShape<'_, D> {
         match self {
-            ty @ (Self::Bool
-            | Self::I8
-            | Self::I16
-            | Self::I32
-            | Self::I64
-            | Self::I128
-            | Self::ISize
-            | Self::U8
-            | Self::U16
-            | Self::U32
-            | Self::U64
-            | Self::U128
-            | Self::USize
-            | Self::F32
-            | Self::F64
-            | Self::String
-            | Self::Char
-            | Self::Bytes
-            | Self::TextCluster
-            | Self::Duration
-            | Self::Progress
-            | Self::DenseNumeric(_)
-            | Self::StageApi(_)
-            | Self::LineContext
-            | Self::StageActorHandle(_)
-            | Self::CueHandle
-            | Self::VoiceHandle
-            | Self::StatementIngress(_)
-            | Self::DisplayContext
-            | Self::DisplayError
-            | Self::DebugStatePath
-            | Self::ObservationFieldPath
-            | Self::Predicate
-            | Self::Observation
-            | Self::ObservedObject
-            | Self::AgentBBox
-            | Self::ActionName
-            | Self::ActionTarget
-            | Self::ActionResult
-            | Self::AgentValue
-            | Self::DataFormat
-            | Self::DataValue
-            | Self::DataError
-            | Self::DataErrorKind
-            | Self::DataPath
-            | Self::DataPathSegment
-            | Self::DataMapKind
-            | Self::AgentEntityMetadata
-            | Self::AgentSourceAnchor
-            | Self::AgentProjectGraphNeighborhood
-            | Self::AgentProjectGraphSymbol
-            | Self::AgentProjectGraphEdge
-            | Self::CaptureTarget
-            | Self::CaptureRef
-            | Self::AgentResource
-            | Self::AgentResourceBody
-            | Self::RagContextPack
-            | Self::AgentBuiltin(_)
-            | Self::PresentationResource(_)
-            | Self::CharacterPatch(_)
-            | Self::FocusPatch
-            | Self::CharacterDialogue(_)
-            | Self::CompileTimeCallable(_)
-            | Self::CompileTimeScalar(_)
-            | Self::CompileTimeStyle(_)
-            | Self::CompileTimeEnum(_)
-            | Self::CompileTimeFx(_)
-            | Self::ViewValue
-            | Self::CharacterNominal(_)
-            | Self::Unit) => TypeConstraintShape::Leaf(ty),
+            Self::Bool => TypeConstraintShape::Leaf(TypeLeaf::Bool),
+            Self::I8 => TypeConstraintShape::Leaf(TypeLeaf::I8),
+            Self::I16 => TypeConstraintShape::Leaf(TypeLeaf::I16),
+            Self::I32 => TypeConstraintShape::Leaf(TypeLeaf::I32),
+            Self::I64 => TypeConstraintShape::Leaf(TypeLeaf::I64),
+            Self::I128 => TypeConstraintShape::Leaf(TypeLeaf::I128),
+            Self::ISize => TypeConstraintShape::Leaf(TypeLeaf::ISize),
+            Self::U8 => TypeConstraintShape::Leaf(TypeLeaf::U8),
+            Self::U16 => TypeConstraintShape::Leaf(TypeLeaf::U16),
+            Self::U32 => TypeConstraintShape::Leaf(TypeLeaf::U32),
+            Self::U64 => TypeConstraintShape::Leaf(TypeLeaf::U64),
+            Self::U128 => TypeConstraintShape::Leaf(TypeLeaf::U128),
+            Self::USize => TypeConstraintShape::Leaf(TypeLeaf::USize),
+            Self::F32 => TypeConstraintShape::Leaf(TypeLeaf::F32),
+            Self::F64 => TypeConstraintShape::Leaf(TypeLeaf::F64),
+            Self::String => TypeConstraintShape::Leaf(TypeLeaf::String),
+            Self::Char => TypeConstraintShape::Leaf(TypeLeaf::Char),
+            Self::Bytes => TypeConstraintShape::Leaf(TypeLeaf::Bytes),
+            Self::TextCluster => TypeConstraintShape::Leaf(TypeLeaf::TextCluster),
+            Self::Duration => TypeConstraintShape::Leaf(TypeLeaf::Duration),
+            Self::Progress => TypeConstraintShape::Leaf(TypeLeaf::Progress),
+            Self::DenseNumeric(value) => TypeConstraintShape::Leaf(TypeLeaf::DenseNumeric(value)),
+            Self::StageApi(value) => TypeConstraintShape::Leaf(TypeLeaf::StageApi(value)),
+            Self::LineContext => TypeConstraintShape::Leaf(TypeLeaf::LineContext),
+            Self::StageActorHandle(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::StageActorHandle(value))
+            }
+            Self::CueHandle => TypeConstraintShape::Leaf(TypeLeaf::CueHandle),
+            Self::VoiceHandle => TypeConstraintShape::Leaf(TypeLeaf::VoiceHandle),
+            Self::StatementIngress(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::StatementIngress(value))
+            }
+            Self::DisplayContext => TypeConstraintShape::Leaf(TypeLeaf::DisplayContext),
+            Self::DisplayError => TypeConstraintShape::Leaf(TypeLeaf::DisplayError),
+            Self::DebugStatePath => TypeConstraintShape::Leaf(TypeLeaf::DebugStatePath),
+            Self::ObservationFieldPath => TypeConstraintShape::Leaf(TypeLeaf::ObservationFieldPath),
+            Self::Predicate => TypeConstraintShape::Leaf(TypeLeaf::Predicate),
+            Self::Observation => TypeConstraintShape::Leaf(TypeLeaf::Observation),
+            Self::ObservedObject => TypeConstraintShape::Leaf(TypeLeaf::ObservedObject),
+            Self::AgentBBox => TypeConstraintShape::Leaf(TypeLeaf::AgentBBox),
+            Self::ActionName => TypeConstraintShape::Leaf(TypeLeaf::ActionName),
+            Self::ActionTarget => TypeConstraintShape::Leaf(TypeLeaf::ActionTarget),
+            Self::ActionResult => TypeConstraintShape::Leaf(TypeLeaf::ActionResult),
+            Self::AgentValue => TypeConstraintShape::Leaf(TypeLeaf::AgentValue),
+            Self::DataFormat => TypeConstraintShape::Leaf(TypeLeaf::DataFormat),
+            Self::DataValue => TypeConstraintShape::Leaf(TypeLeaf::DataValue),
+            Self::DataError => TypeConstraintShape::Leaf(TypeLeaf::DataError),
+            Self::DataErrorKind => TypeConstraintShape::Leaf(TypeLeaf::DataErrorKind),
+            Self::DataPath => TypeConstraintShape::Leaf(TypeLeaf::DataPath),
+            Self::DataPathSegment => TypeConstraintShape::Leaf(TypeLeaf::DataPathSegment),
+            Self::DataMapKind => TypeConstraintShape::Leaf(TypeLeaf::DataMapKind),
+            Self::AgentEntityMetadata => TypeConstraintShape::Leaf(TypeLeaf::AgentEntityMetadata),
+            Self::AgentSourceAnchor => TypeConstraintShape::Leaf(TypeLeaf::AgentSourceAnchor),
+            Self::AgentProjectGraphNeighborhood => {
+                TypeConstraintShape::Leaf(TypeLeaf::AgentProjectGraphNeighborhood)
+            }
+            Self::AgentProjectGraphSymbol => {
+                TypeConstraintShape::Leaf(TypeLeaf::AgentProjectGraphSymbol)
+            }
+            Self::AgentProjectGraphEdge => {
+                TypeConstraintShape::Leaf(TypeLeaf::AgentProjectGraphEdge)
+            }
+            Self::CaptureTarget => TypeConstraintShape::Leaf(TypeLeaf::CaptureTarget),
+            Self::CaptureRef => TypeConstraintShape::Leaf(TypeLeaf::CaptureRef),
+            Self::AgentResource => TypeConstraintShape::Leaf(TypeLeaf::AgentResource),
+            Self::AgentResourceBody => TypeConstraintShape::Leaf(TypeLeaf::AgentResourceBody),
+            Self::RagContextPack => TypeConstraintShape::Leaf(TypeLeaf::RagContextPack),
+            Self::AgentBuiltin(value) => TypeConstraintShape::Leaf(TypeLeaf::AgentBuiltin(value)),
+            Self::PresentationResource(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::PresentationResource(value))
+            }
+            Self::CharacterPatch(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::CharacterPatch(value))
+            }
+            Self::FocusPatch => TypeConstraintShape::Leaf(TypeLeaf::FocusPatch),
+            Self::CharacterDialogue(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::CharacterDialogue(value))
+            }
+            Self::CompileTimeCallable(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::CompileTimeCallable(value))
+            }
+            Self::CompileTimeScalar(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::CompileTimeScalar(value))
+            }
+            Self::CompileTimeStyle(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::CompileTimeStyle(value))
+            }
+            Self::CompileTimeEnum(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::CompileTimeEnum(value))
+            }
+            Self::CompileTimeFx(value) => TypeConstraintShape::Leaf(TypeLeaf::CompileTimeFx(value)),
+            Self::ViewValue => TypeConstraintShape::Leaf(TypeLeaf::ViewValue),
+            Self::CharacterNominal(value) => {
+                TypeConstraintShape::Leaf(TypeLeaf::CharacterNominal(value))
+            }
+            Self::Unit => TypeConstraintShape::Leaf(TypeLeaf::Unit),
             Self::Never => TypeConstraintShape::Never,
             Self::GenericParam(parameter) => TypeConstraintShape::Generic(parameter),
             Self::VariantPayload(payload) => TypeConstraintShape::Payload(payload),
-            Self::Error(_) | Self::Projection { .. } => TypeConstraintShape::Unresolved,
-            Self::Named(name) if is_placeholder_name(name) => TypeConstraintShape::Unresolved,
-            ty @ Self::Named(_) => TypeConstraintShape::Leaf(ty),
+            Self::Error(poison) => TypeConstraintShape::Unresolved(UnresolvedType::Poison(*poison)),
+            Self::Projection {
+                subject,
+                trait_name,
+                assoc,
+            } => TypeConstraintShape::Unresolved(UnresolvedType::Projection {
+                subject,
+                trait_name,
+                assoc,
+            }),
+            Self::Named(name) if is_placeholder_name(name) => {
+                TypeConstraintShape::Unresolved(UnresolvedType::Placeholder(name))
+            }
+            Self::Named(name) => TypeConstraintShape::Leaf(TypeLeaf::Named(name)),
             Self::MetaType(child) => TypeConstraintShape::Unary {
                 kind: UnaryShape::MetaType,
                 child,
@@ -228,57 +264,59 @@ impl TypeKind {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(crate) enum TypeConstraintShape<'a> {
-    Payload(&'a super::super::VariantPayloadType),
-    Leaf(&'a TypeKind),
+#[derive(Clone)]
+pub(crate) enum TypeConstraintShape<'a, D: TypeEffectDomain = CanonicalEffects> {
+    Payload(&'a super::super::VariantPayloadType<D>),
+    Leaf(TypeLeaf<'a>),
     Never,
     Generic(&'a GenericTypeReference),
-    Unresolved,
+    Unresolved(UnresolvedType<'a, D>),
     Unary {
         kind: UnaryShape<'a>,
-        child: &'a TypeKind,
+        child: &'a TypeKind<D>,
     },
     Iterator {
         family: &'a IteratorStateKind,
-        item: &'a TypeKind,
+        item: &'a TypeKind<D>,
     },
     Array {
-        item: &'a TypeKind,
+        item: &'a TypeKind<D>,
         len: &'a ArrayLength,
     },
-    Ref(&'a EntityType),
+    Ref(&'a EntityType<D>),
     Map {
         kind: &'a MapKind,
-        key: &'a TypeKind,
-        value: &'a TypeKind,
+        key: &'a TypeKind<D>,
+        value: &'a TypeKind<D>,
     },
     Borrow {
         kind: &'a BorrowKind,
         lifetime: &'a Option<LifetimeScopeKind>,
-        inner: &'a TypeKind,
+        inner: &'a TypeKind<D>,
     },
     Pair {
         kind: PairShape,
-        first: &'a TypeKind,
-        second: &'a TypeKind,
+        first: &'a TypeKind<D>,
+        second: &'a TypeKind<D>,
     },
     Function {
         binder: &'a GenericBinder,
-        predicate: &'a EffectPredicate,
-        params: &'a [TypeKind],
-        result: &'a TypeKind,
-        effects: &'a EffectRow,
+        predicate: &'a D::Predicate,
+        params: &'a [TypeKind<D>],
+        result: &'a TypeKind<D>,
+        effects: &'a D::Row,
     },
     Nominal {
-        nominal: NominalShape<'a>,
-        arguments: &'a [TypeKind],
+        nominal: NominalShape<'a, D>,
+        arguments: &'a [TypeKind<D>],
     },
-    Tuple(&'a [TypeKind]),
-    Choice(&'a [TypeKind]),
+    Tuple(&'a [TypeKind<D>]),
+    Choice(&'a [TypeKind<D>]),
 }
 
-impl<'a> TypeConstraintShape<'a> {
+impl<D: TypeEffectDomain> Copy for TypeConstraintShape<'_, D> {}
+
+impl<'a, D: TypeEffectDomain> TypeConstraintShape<'a, D> {
     pub(crate) const fn binder(self) -> GenericBinder {
         match self {
             Self::Function { binder, .. } => *binder,
@@ -286,12 +324,11 @@ impl<'a> TypeConstraintShape<'a> {
         }
     }
 
-    pub(crate) fn children(self) -> TypeConstraintChildren<'a> {
+    pub(crate) fn children(self) -> TypeConstraintChildren<'a, D> {
         match self {
             Self::Payload(payload) => TypeConstraintChildren::Payload(payload.children()),
-            Self::Leaf(_) | Self::Never | Self::Generic(_) | Self::Unresolved => {
-                TypeConstraintChildren::None
-            }
+            Self::Leaf(_) | Self::Never | Self::Generic(_) => TypeConstraintChildren::None,
+            Self::Unresolved(unresolved) => TypeConstraintChildren::One(unresolved.child()),
             Self::Unary { child, .. }
             | Self::Iterator { item: child, .. }
             | Self::Array { item: child, .. }
@@ -320,7 +357,7 @@ impl<'a> TypeConstraintShape<'a> {
         match (self, other) {
             (Self::Payload(left), Self::Payload(right)) => left.has_same_header(right),
             (Self::Leaf(left), Self::Leaf(right)) => left == right,
-            (Self::Never, Self::Never) | (Self::Unresolved, Self::Unresolved) => true,
+            (Self::Never, Self::Never) | (Self::Unresolved(_), Self::Unresolved(_)) => true,
             (Self::Generic(left), Self::Generic(right)) => left == right,
             (Self::Unary { kind: left, .. }, Self::Unary { kind: right, .. }) => left == right,
             (Self::Iterator { family: left, .. }, Self::Iterator { family: right, .. }) => {
@@ -373,7 +410,10 @@ impl<'a> TypeConstraintShape<'a> {
         }
     }
 
-    pub(crate) fn rebuild(self, children: Vec<TypeKind>) -> Result<TypeKind, TypeConstraintError> {
+    pub(crate) fn rebuild(
+        self,
+        children: Vec<TypeKind<D>>,
+    ) -> Result<TypeKind<D>, TypeConstraintError> {
         self.rebuild_with(
             children,
             &mut (),
@@ -385,27 +425,23 @@ impl<'a> TypeConstraintShape<'a> {
 
     /// Projects owned scalar children before constructing the result. Type
     /// and scalar projection share this exhaustive structural constructor.
-    pub(crate) fn rebuild_with<C, E: From<TypeConstraintError>>(
+    pub(crate) fn rebuild_with<C, E, T: TypeEffectDomain>(
         self,
-        children: Vec<TypeKind>,
+        children: Vec<TypeKind<T>>,
         context: &mut C,
         length: impl FnOnce(&mut C, &ArrayLength) -> Result<ArrayLength, E>,
-        effects_row: impl FnOnce(&mut C, &EffectRow) -> Result<EffectRow, E>,
-        effect_predicate: impl FnOnce(&mut C, &EffectPredicate) -> Result<EffectPredicate, E>,
-    ) -> Result<TypeKind, E> {
+        effects_row: impl FnOnce(&mut C, &D::Row) -> Result<T::Row, E>,
+        effect_predicate: impl FnOnce(&mut C, &D::Predicate) -> Result<T::Predicate, E>,
+    ) -> Result<TypeKind<T>, E> {
         let mut children = children.into_iter();
         let rebuilt = match self {
             Self::Payload(payload) => {
                 TypeKind::VariantPayload(Box::new(payload.map(|_| next_child(&mut children))))
             }
-            Self::Leaf(ty) => ty.clone(),
+            Self::Leaf(ty) => ty.rebuild(),
             Self::Never => TypeKind::Never,
             Self::Generic(parameter) => TypeKind::GenericParam(parameter.clone()),
-            Self::Unresolved => {
-                return Err(E::from(TypeConstraintError::from(
-                    TypeConstraintRejection::UnresolvedType,
-                )));
-            }
+            Self::Unresolved(unresolved) => unresolved.rebuild(&mut children),
             Self::Unary { kind, .. } => kind.rebuild(next_child(&mut children)),
             Self::Iterator { family, .. } => TypeKind::IteratorState {
                 family: *family,
@@ -458,29 +494,31 @@ impl<'a> TypeConstraintShape<'a> {
     }
 }
 
-fn next_child(children: &mut impl Iterator<Item = TypeKind>) -> TypeKind {
+fn next_child<D: TypeEffectDomain>(
+    children: &mut impl Iterator<Item = TypeKind<D>>,
+) -> TypeKind<D> {
     children
         .next()
         .expect("constraint shape child inventory and rebuild agree")
 }
 
-pub(crate) enum TypeConstraintChildren<'a> {
-    Payload(super::super::VariantPayloadTypeChildren<'a>),
+pub(crate) enum TypeConstraintChildren<'a, D: TypeEffectDomain = CanonicalEffects> {
+    Payload(super::super::VariantPayloadTypeChildren<'a, D>),
     None,
-    One(Option<&'a TypeKind>),
+    One(Option<&'a TypeKind<D>>),
     Two {
-        first: Option<&'a TypeKind>,
-        second: Option<&'a TypeKind>,
+        first: Option<&'a TypeKind<D>>,
+        second: Option<&'a TypeKind<D>>,
     },
-    Slice(slice::Iter<'a, TypeKind>),
+    Slice(slice::Iter<'a, TypeKind<D>>),
     Function {
-        params: slice::Iter<'a, TypeKind>,
-        result: Option<&'a TypeKind>,
+        params: slice::Iter<'a, TypeKind<D>>,
+        result: Option<&'a TypeKind<D>>,
     },
 }
 
-impl<'a> Iterator for TypeConstraintChildren<'a> {
-    type Item = &'a TypeKind;
+impl<'a, D: TypeEffectDomain> Iterator for TypeConstraintChildren<'a, D> {
+    type Item = &'a TypeKind<D>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -518,7 +556,7 @@ pub(crate) enum UnaryShape<'a> {
 }
 
 impl UnaryShape<'_> {
-    fn rebuild(self, child: TypeKind) -> TypeKind {
+    fn rebuild<D: TypeEffectDomain>(self, child: TypeKind<D>) -> TypeKind<D> {
         let child = Box::new(child);
         match self {
             Self::FixedVector(dimensions) => {
@@ -560,7 +598,7 @@ pub(crate) enum PairShape {
 }
 
 impl PairShape {
-    fn rebuild(self, first: TypeKind, second: TypeKind) -> TypeKind {
+    fn rebuild<D: TypeEffectDomain>(self, first: TypeKind<D>, second: TypeKind<D>) -> TypeKind<D> {
         match self {
             Self::Traversal => TypeKind::Traversal {
                 source: Box::new(first),
@@ -583,13 +621,13 @@ impl PairShape {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum NominalShape<'a> {
-    Project(&'a ProjectNominalType),
-    Accepted(&'a AcceptedNominalType),
-    Open(&'a OpenNominalType),
+pub(crate) enum NominalShape<'a, D: TypeEffectDomain = CanonicalEffects> {
+    Project(&'a ProjectNominalType<D>),
+    Accepted(&'a AcceptedNominalType<D>),
+    Open(&'a OpenNominalType<D>),
 }
 
-impl NominalShape<'_> {
+impl<D: TypeEffectDomain> NominalShape<'_, D> {
     pub(crate) fn same_owner(self, other: Self) -> bool {
         match (self, other) {
             (Self::Project(left), Self::Project(right)) => {
@@ -605,7 +643,7 @@ impl NominalShape<'_> {
         }
     }
 
-    pub(crate) fn rebuild(self, arguments: Vec<TypeKind>) -> TypeKind {
+    pub(crate) fn rebuild<T: TypeEffectDomain>(self, arguments: Vec<TypeKind<T>>) -> TypeKind<T> {
         match self {
             Self::Project(nominal) => TypeKind::ProjectNominal(ProjectNominalType::new(
                 nominal.declaration().clone(),
@@ -620,6 +658,197 @@ impl NominalShape<'_> {
                 nominal.path().clone(),
                 arguments,
             )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum TypeLeaf<'a> {
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    ISize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    F32,
+    F64,
+    String,
+    Char,
+    Bytes,
+    TextCluster,
+    Duration,
+    Progress,
+    DenseNumeric(&'a arcweft_core::math::RuntimeDenseNumericType),
+    StageApi(&'a super::super::CharacterId),
+    LineContext,
+    StageActorHandle(&'a super::super::StageActorHandleType),
+    CueHandle,
+    VoiceHandle,
+    StatementIngress(&'a super::super::StandardStatementIngressTypeId),
+    DisplayContext,
+    DisplayError,
+    DebugStatePath,
+    ObservationFieldPath,
+    Predicate,
+    Observation,
+    ObservedObject,
+    AgentBBox,
+    ActionName,
+    ActionTarget,
+    ActionResult,
+    AgentValue,
+    DataFormat,
+    DataValue,
+    DataError,
+    DataErrorKind,
+    DataPath,
+    DataPathSegment,
+    DataMapKind,
+    AgentEntityMetadata,
+    AgentSourceAnchor,
+    AgentProjectGraphNeighborhood,
+    AgentProjectGraphSymbol,
+    AgentProjectGraphEdge,
+    CaptureTarget,
+    CaptureRef,
+    AgentResource,
+    AgentResourceBody,
+    RagContextPack,
+    AgentBuiltin(&'a super::super::AgentBuiltinType),
+    PresentationResource(&'a arcweft_interaction_model::presentation::PresentationResourceKind),
+    CharacterPatch(&'a super::super::EntityKind),
+    FocusPatch,
+    CharacterDialogue(&'a super::super::CharacterDialogueType),
+    CompileTimeCallable(&'a super::super::CompileTimeCallableType),
+    CompileTimeScalar(&'a super::super::CompileTimeScalarType),
+    CompileTimeStyle(&'a super::super::CompileTimeStyleType),
+    CompileTimeEnum(&'a super::super::CompileTimeEnumType),
+    CompileTimeFx(&'a super::super::CompileTimeFxType),
+    ViewValue,
+    CharacterNominal(&'a super::super::CharacterNominalType),
+    Unit,
+    Named(&'a str),
+}
+
+impl TypeLeaf<'_> {
+    fn rebuild<D: TypeEffectDomain>(self) -> TypeKind<D> {
+        match self {
+            Self::Bool => TypeKind::Bool,
+            Self::I8 => TypeKind::I8,
+            Self::I16 => TypeKind::I16,
+            Self::I32 => TypeKind::I32,
+            Self::I64 => TypeKind::I64,
+            Self::I128 => TypeKind::I128,
+            Self::ISize => TypeKind::ISize,
+            Self::U8 => TypeKind::U8,
+            Self::U16 => TypeKind::U16,
+            Self::U32 => TypeKind::U32,
+            Self::U64 => TypeKind::U64,
+            Self::U128 => TypeKind::U128,
+            Self::USize => TypeKind::USize,
+            Self::F32 => TypeKind::F32,
+            Self::F64 => TypeKind::F64,
+            Self::String => TypeKind::String,
+            Self::Char => TypeKind::Char,
+            Self::Bytes => TypeKind::Bytes,
+            Self::TextCluster => TypeKind::TextCluster,
+            Self::Duration => TypeKind::Duration,
+            Self::Progress => TypeKind::Progress,
+            Self::DenseNumeric(value) => TypeKind::DenseNumeric(*value),
+            Self::StageApi(value) => TypeKind::StageApi((*value).clone()),
+            Self::LineContext => TypeKind::LineContext,
+            Self::StageActorHandle(value) => TypeKind::StageActorHandle((*value).clone()),
+            Self::CueHandle => TypeKind::CueHandle,
+            Self::VoiceHandle => TypeKind::VoiceHandle,
+            Self::StatementIngress(value) => TypeKind::StatementIngress(*value),
+            Self::DisplayContext => TypeKind::DisplayContext,
+            Self::DisplayError => TypeKind::DisplayError,
+            Self::DebugStatePath => TypeKind::DebugStatePath,
+            Self::ObservationFieldPath => TypeKind::ObservationFieldPath,
+            Self::Predicate => TypeKind::Predicate,
+            Self::Observation => TypeKind::Observation,
+            Self::ObservedObject => TypeKind::ObservedObject,
+            Self::AgentBBox => TypeKind::AgentBBox,
+            Self::ActionName => TypeKind::ActionName,
+            Self::ActionTarget => TypeKind::ActionTarget,
+            Self::ActionResult => TypeKind::ActionResult,
+            Self::AgentValue => TypeKind::AgentValue,
+            Self::DataFormat => TypeKind::DataFormat,
+            Self::DataValue => TypeKind::DataValue,
+            Self::DataError => TypeKind::DataError,
+            Self::DataErrorKind => TypeKind::DataErrorKind,
+            Self::DataPath => TypeKind::DataPath,
+            Self::DataPathSegment => TypeKind::DataPathSegment,
+            Self::DataMapKind => TypeKind::DataMapKind,
+            Self::AgentEntityMetadata => TypeKind::AgentEntityMetadata,
+            Self::AgentSourceAnchor => TypeKind::AgentSourceAnchor,
+            Self::AgentProjectGraphNeighborhood => TypeKind::AgentProjectGraphNeighborhood,
+            Self::AgentProjectGraphSymbol => TypeKind::AgentProjectGraphSymbol,
+            Self::AgentProjectGraphEdge => TypeKind::AgentProjectGraphEdge,
+            Self::CaptureTarget => TypeKind::CaptureTarget,
+            Self::CaptureRef => TypeKind::CaptureRef,
+            Self::AgentResource => TypeKind::AgentResource,
+            Self::AgentResourceBody => TypeKind::AgentResourceBody,
+            Self::RagContextPack => TypeKind::RagContextPack,
+            Self::AgentBuiltin(value) => TypeKind::AgentBuiltin(*value),
+            Self::PresentationResource(value) => TypeKind::PresentationResource(*value),
+            Self::CharacterPatch(value) => TypeKind::CharacterPatch((*value).clone()),
+            Self::FocusPatch => TypeKind::FocusPatch,
+            Self::CharacterDialogue(value) => TypeKind::CharacterDialogue((*value).clone()),
+            Self::CompileTimeCallable(value) => TypeKind::CompileTimeCallable((*value).clone()),
+            Self::CompileTimeScalar(value) => TypeKind::CompileTimeScalar((*value).clone()),
+            Self::CompileTimeStyle(value) => TypeKind::CompileTimeStyle(*value),
+            Self::CompileTimeEnum(value) => TypeKind::CompileTimeEnum(*value),
+            Self::CompileTimeFx(value) => TypeKind::CompileTimeFx((*value).clone()),
+            Self::ViewValue => TypeKind::ViewValue,
+            Self::CharacterNominal(value) => TypeKind::CharacterNominal((*value).clone()),
+            Self::Unit => TypeKind::Unit,
+            Self::Named(name) => TypeKind::Named(name.to_owned()),
+        }
+    }
+}
+
+/// Recovery evidence retained by structural folds, rejected by constraint policy.
+#[derive(Clone, Copy)]
+pub(crate) enum UnresolvedType<'a, D: TypeEffectDomain> {
+    Poison(super::super::TypePoisonId),
+    Placeholder(&'a str),
+    Projection {
+        subject: &'a TypeKind<D>,
+        trait_name: &'a Option<String>,
+        assoc: &'a str,
+    },
+}
+
+impl<'a, D: TypeEffectDomain> UnresolvedType<'a, D> {
+    fn child(self) -> Option<&'a TypeKind<D>> {
+        match self {
+            Self::Projection { subject, .. } => Some(subject),
+            Self::Poison(_) | Self::Placeholder(_) => None,
+        }
+    }
+
+    fn rebuild<T: TypeEffectDomain>(
+        self,
+        children: &mut impl Iterator<Item = TypeKind<T>>,
+    ) -> TypeKind<T> {
+        match self {
+            Self::Poison(poison) => TypeKind::Error(poison),
+            Self::Placeholder(name) => TypeKind::Named(name.to_owned()),
+            Self::Projection {
+                trait_name, assoc, ..
+            } => TypeKind::Projection {
+                subject: Box::new(next_child(children)),
+                trait_name: trait_name.clone(),
+                assoc: assoc.to_owned(),
+            },
         }
     }
 }

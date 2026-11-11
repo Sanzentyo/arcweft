@@ -1619,7 +1619,10 @@ fn checked_match_transcript_reaches_pending_progress_field_facts() {
         assert_eq!(field, &crate::types::ProgressField::Label);
         assert_eq!(ty, &TypeKind::Option(Box::new(TypeKind::String)));
     }
-    assert_ne!(TypeKind::F32, TypeKind::Option(Box::new(TypeKind::String)));
+    assert_ne!(
+        TypeKind::<crate::types::CanonicalEffects>::F32,
+        TypeKind::Option(Box::new(TypeKind::String))
+    );
     assert_ne!(ratio.semantic_digest, label.semantic_digest);
 }
 

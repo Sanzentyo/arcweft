@@ -71,7 +71,7 @@ where
             context.enter_node()?;
             let shape = current.constraint_shape();
             let mut value = match shape {
-                TypeConstraintShape::Unresolved => {
+                TypeConstraintShape::Unresolved(_) => {
                     return Err(TypeConstraintRejection::UnresolvedType.into());
                 }
                 TypeConstraintShape::Generic(parameter) => {
