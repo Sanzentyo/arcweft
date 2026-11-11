@@ -16534,3 +16534,17 @@ Cargo tree の既定と全 feature、および Windows の Cargo metadata は Se
 Cargo tree の既定・全 feature と Windows の Cargo metadata で、Core と Sema の推移的逆依存52パッケージが一致した。全ターゲットでは `arcweft-render-web` が加わった。nextest は7,702件成功、0件失敗、18件スキップ。Core の単体2,350件、Sema の1,471件、RuntimePlan の165件、Compiler の対象358件、CLI の226件を含む。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、Web Player／Render Web の Wasm check、doctest 82件が通過した。構造ゲートのブロッキング違反は0件。Clippy には警告がある。
 
 [ソース照合、実入力、変更前と中間の結果、全コマンドの原本](acceptance-evidence/task-callable-value-positional-partial.raw.zip)は270件、2131877 bytes、SHA-256 `345a1011e0f8e20a801cd2092282761e40b217583d304a868d52e796c746ef57`。
+
+### Formal parameter positions in callable constraints
+
+2026-11-11に基点 `f5cbe753c128790ed9b1fcefdd01f0155fd19b77`、公開 Source `6b03711f0a55e61cc6dda3e5d0edb54a737b7f67`、tree `bd10b1b2cc0b8ce94da34894f02f61cdad71f36a` を照合した。公開先の変更16 blobを確認した。追跡対象の差分は0件で、既存の未追跡 `%SystemDrive%/` があった。
+
+Sema は候補と引数マッピングの開始位置を `CallableParameterCoordinate` で照合する。型制約はマッピングで認めた遷移を使い、先に保持した仮引数、今回渡す仮引数、後段で初めて使う仮引数を座標の順序で扱う。継続候補の準備と最終封印は、前の適用が発行した次の座標と型解を照合する。version 1 のダイジェストは既存の固定幅を使い、グループ先頭の従来の符号化を保つ。効果の終端判定は、適用が引数を保持するかを読む。
+
+公開 Source の実CLIは Bytecode VM／AWBC Product の20実行で、各ステップ最大1操作で42を返した。固定長 spread、広い効果行の仮引数、別グループで異なる型を使う共有継続、attached default の4入力について、`compile --emit plan` が出力した実行計画のSHA-256は変更前と一致した。比較のCLIは Source `c7a4d36dff782610e939e3b7c35353dfd006939c` のCLI統合テストがビルドした `e4ed2e0651053d4da266f03254de3ab52d1c8db1a73622546f4a2a9e4bf623bf` と、公開 Source から再ビルドした `08766524b25720f1e6b3f843d041f160bc0d75a265326ce0717aab92e365bcd1` を使用した。
+
+宣言への直接適用と同一グループの多相継続は `no admissible final type` を返した。効果行を広げたローカル型注釈の2入力は `prepared callable base does not match continuation` を返した。宣言継続を実行計画へ渡す境界では、保持入力を完了したグループ数から投影している。同一グループに残る継続には、次の仮引数座標を使って保持入力を投影する処理が必要。
+
+Semaの推移的逆依存22パッケージを、Cargo treeの既定・全 feature・全ターゲットと Windows の Cargo metadata で照合した。公開 Source の nextest は3,931件成功、失敗0件、スキップ1件。Compilerの呼び出しと待機358件、Semaの1,471件、RuntimePlanの165件、CLIの226件を含む。全ターゲット・全 feature の workspace check／Clippy、整形、構造ゲート、Web Player のWasm check、doctest 2件が通過した。構造ゲートのブロッキング違反は0件。Clippyには警告がある。作業中のコンパイル診断と、最終ダイジェストの修正前に通過したSemaの実行ログを原本に保持した。
+
+[公開ソースの照合、実行計画のハッシュ、再現入力、全検証の原本](acceptance-evidence/task-callable-constraint-positions.raw.zip)は151件、1677469 bytes、SHA-256 `7f6d0c6a5f97029969b7b68e352f66e67bd6dfcf8d7192c142ba227c607c386e`。
