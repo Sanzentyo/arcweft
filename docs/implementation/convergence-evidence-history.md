@@ -16725,3 +16725,15 @@ Cargo入力の差分0と、既存のhost default／host all-features／all-targe
 現状欄の古い入力の件数と重複した品質説明は今回の実測へ置換し、以前の実行結果・失敗・full SHAは履歴と凍結原本に保持した。保持Viewの以前のCLI失敗への参照も元入力へ明示的に結び、今回の規定CLI結果と区別した。前節の「次のactive接続では」で始まる未実装の設計・次工程列挙は、検証履歴へ計画と残作業を重複させていたため削除し、現状の残作業はcurrent-status.mdへ集約した。実際の検証結果・commit SHA・既存ZIPの内容は削除・改変していない。
 
 全ID／結果、品質log／receipt、Source差分、実測と公開照合を343 entry、展開時35,219,541 bytes、ZIP 4,695,790 bytes、SHA-256 `7f6ed42b508097114f073b4fd0ea3d13a542c703caaff85c8c12e71f025ef2ea` の[原本](acceptance-evidence/task-retained-call-work-owner.raw.zip)へ保持し、全entryの長さとhashを再照合した。
+
+### Open constraint frontier ownership
+
+2026-11-12、基点 `742b74deef76b405135fcd23633ddb7eb7a79635` の既存mainから、Source `4f2b60eab096c187134d17adfc3e3bf74d4775e4`、tree `73b076c0d7069fc33e4d6620804aab593231acc4` を通常pushした。remote mainのfull SHA・tree・変更8pathのblobを照合した。親のConstraintSourceReceiptを必須としたlowerのdefer_child_resultを削除し、元のTypeConstraintTransaction全体をmove-onlyなSuspendedConstraintFrontierへ移す。独立rootは親sourceなしで停止でき、既存の子呼出し・関数値特殊化は同じ停止操作から正しい親receiptへpathを渡す。原transactionのscope、型・const binding、effect environment、equation、source trace、投影と全ordinalをそのまま保持し、既存の投影key割当を参照する。型snapshotや完成solutionは発行しない。再開APIはlowerの所有範囲に限定し、callable driverはcallback clientを閉じてからrootを外へ渡す。
+
+固定入力は上記baseとstaged tree `73b076c0d7069fc33e4d6620804aab593231acc4` で、公開Sourceのtreeと一致する。全featureのSema全1,522件は1,516 PASS／6 FAIL／0 SKIP、nextest終了100。失敗IDは前回の6件と一致した。新規6件では、generic未確定rootの停止と後の正常な閉包、元opening／source receipt／source順ordinal／scope／materialization issuerの保全、同じ結果型を持つ独立rootのidentity分離、誤った親接続と閉包後の停止の拒否、投影keyの欠落・重複、取消し、元のinclusive budgetを確認した。driverとwork sessionを解放後のroot保持、および元ledgerの更新を読む公開reportと不変なreplay観測の区別も検証した。停止・親転送の走査と割当は同じcontrolへ事前課金し、予算上限は変更していない。
+
+初回owner checkはエラー変換のE0277と旧test呼出しのE0599で終了101、初回test buildもfixtureの所有ID再使用によるE0382で終了101、実行テスト0件だった。修復途中の選択13件は全PASS、選択外1,484件で、後のdriver export test追加前の入力である。これを最終全1,522件へ加算しない。最終入力のSema locked・全target・全feature Clippy、整形、構造gateは終了0、blocking 0件。Clippyには未接続の私有entryと既存を含む警告がある。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。内部phaseの所有境界の段階で、全workspace／逆依存consumer／Wasm／doctest／Compiler実行を新Sourceで再実行したとはしない。前回Source `344a6f6f61359268c19ebee202b75cbb974f1799` の22パッケージ4,017 PASS／8 FAIL／1 SKIPは元の入力の証拠として保持する。
+
+新しいsuspension ownerは5,158 bytes／127行、別testは8,486 bytes／219行。既存transactionは91,656 bytes／2,411行で、旧lower APIを62行削除した。callable driverの停止境界は同じfrontierと元の借用contextを一つの短命ownerに保持する。新しい依存、I/O、unsafe、並列の完成型、互換reader、contract version、予算緩和は追加していない。このSourceではactive value portと宣言schemeの一括確定は未接続であり、再帰本体の未達やGeneric Match等の受入判定は変更していない。古いowner段階の現状説明は今回の実測へ置換し、以前の実行結果・full SHA・凍結原本は保持した。
+
+初回の型検査・test build診断、最終全ID／結果、途中選択run、品質log／receipt、差分・実測・公開照合を16 entry、展開時7,921,182 bytes、ZIP 708,476 bytes、SHA-256 `84fdb69ae7b7cf6a4baa0e4b41f04b3ffe95d8e8227cfea3ab4aa54b53b12123` の[原本](acceptance-evidence/task-open-constraint-frontier.raw.zip)へ保持し、全entryの長さとhashを再照合した。
