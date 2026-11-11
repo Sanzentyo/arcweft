@@ -41,12 +41,14 @@ pub(crate) struct PendingEquation {
     pub(crate) actual: TypeKind,
     pub(crate) source_ordinal: Option<PreparedSourceOrdinal>,
     pub(crate) final_expected: Option<TypeKind>,
+    timing: ConstraintEquationTiming,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum ConstraintEquationTiming {
     Immediate,
     ResultContext,
+    InferredEffectResult,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -902,6 +904,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.first_failure.is_some() || self.closed {
             return Ok(());
         }
+        let timing = if timing == ConstraintEquationTiming::ResultContext
+            && acceptance == ConstraintAcceptance::ActualAcceptsPattern
+            && actual.has_omitted_function_effect_rows_with_control(context)?
+        {
+            ConstraintEquationTiming::InferredEffectResult
+        } else {
+            timing
+        };
         let ordinal = self.next_equation;
         self.next_equation = ordinal.checked_add(1).ok_or(TypeConstraintError::Abort(
             TypeConstraintAbort::ArithmeticOverflow,
@@ -920,10 +930,19 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 actual: actual.clone(),
                 source_ordinal: None,
                 final_expected: None,
+                timing,
             });
+            if timing == ConstraintEquationTiming::InferredEffectResult {
+                // Omitted effect annotations are completed from this actual
+                // result at closure. They are not solver terms or evidence
+                // that an unknown source row has been checked.
+                advanced.push(path);
+                continue;
+            }
             let retained = match timing {
                 ConstraintEquationTiming::Immediate => None,
-                ConstraintEquationTiming::ResultContext => {
+                ConstraintEquationTiming::ResultContext
+                | ConstraintEquationTiming::InferredEffectResult => {
                     let pattern_hint = project_type(
                         &pattern,
                         path.projection_view(),
@@ -1431,6 +1450,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             actual: actual.clone(),
                             source_ordinal: Some(operation.source_ordinal),
                             final_expected: None,
+                            timing: ConstraintEquationTiming::Immediate,
                         });
                     }
                     let rejected_alternative = match &stored_selection {
@@ -2034,7 +2054,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .final_expected
                 .as_ref()
                 .unwrap_or(&equation.pattern);
-            let mut project = |value| {
+            let project = |value, context: &mut TypeConstraintContext<'_, A, D>| {
                 seal_type(value, path.projection_view(), &mut BTreeSet::new(), context)?
                     .substitute_effect_rows(effect_substitution)
                     .map_err(|_error| {
@@ -2044,8 +2064,22 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         )
                     })
             };
-            let pattern = project(pattern)?;
-            let actual = project(&equation.actual)?;
+            let pattern = project(pattern, context)?;
+            let actual = if equation.timing == ConstraintEquationTiming::InferredEffectResult {
+                let annotation = project_type(
+                    &equation.actual,
+                    path.projection_view(),
+                    ConstraintClosurePolicy::ResultAnnotation,
+                    context,
+                )?
+                .value;
+                let completed = annotation
+                    .binding_type_with_inferred_effects(&pattern)
+                    .ok_or(TypeConstraintRejection::Mismatch)?;
+                project(&completed, context)?
+            } else {
+                project(&equation.actual, context)?
+            };
             let (expected, actual) = match equation.direction {
                 ConstraintAcceptance::PatternAcceptsActual => (&pattern, &actual),
                 ConstraintAcceptance::ActualAcceptsPattern => (&actual, &pattern),

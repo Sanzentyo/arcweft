@@ -89,6 +89,31 @@ impl TypeCompatibilityControl for NoopTypeCompatibilityControl {
 }
 
 impl TypeKind {
+    /// Source annotations whose nested function effects must be inferred from
+    /// the checked value. Issued symbolic effect rows are already known rows.
+    pub(crate) fn has_omitted_function_effect_rows(&self) -> bool {
+        self.has_omitted_function_effect_rows_with_control(&mut NoopTypeCompatibilityControl)
+            .unwrap_or_else(|error| match error {})
+    }
+
+    pub(crate) fn has_omitted_function_effect_rows_with_control<C: TypeCompatibilityControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        let mut pending = vec![self];
+        while let Some(ty) = pending.pop() {
+            control.enter(ty, ty)?;
+            let shape = ty.constraint_shape();
+            if matches!(shape, super::constraints::TypeConstraintShape::Function { effects, .. }
+                if !effects.is_known())
+            {
+                return Ok(true);
+            }
+            pending.extend(shape.children());
+        }
+        Ok(false)
+    }
+
     /// Completes omitted effect annotations from an already checked initializer.
     /// Authored type structure and explicit effect bounds remain the binding's
     /// interface; only unknown rows at corresponding structural positions are

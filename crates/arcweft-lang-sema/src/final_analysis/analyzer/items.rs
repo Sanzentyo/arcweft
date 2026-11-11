@@ -197,23 +197,10 @@ pub(super) fn inferred_callable_result_schema(
 pub(super) fn result_schema_has_omitted_function_rows(
     schema: &crate::callable::CallableSignatureSchema,
 ) -> bool {
-    use crate::types::constraints::TypeConstraintShape;
-
-    let Some(ty) = schema.result_schema().value_type() else {
-        return false;
-    };
-    let mut pending = vec![ty];
-    while let Some(ty) = pending.pop() {
-        let shape = ty.constraint_shape();
-        if matches!(
-            shape,
-            TypeConstraintShape::Function { effects, .. } if !effects.is_known()
-        ) {
-            return true;
-        }
-        pending.extend(shape.children());
-    }
-    false
+    schema
+        .result_schema()
+        .value_type()
+        .is_some_and(TypeKind::has_omitted_function_effect_rows)
 }
 
 #[expect(

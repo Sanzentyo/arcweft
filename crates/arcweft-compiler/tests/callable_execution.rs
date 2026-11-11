@@ -681,6 +681,22 @@ flow main() -> i64 {
     "42"
 );
 
+callable_case!(
+    returned_partial_infers_a_latent_effect_without_executing_its_body_early,
+    r#"
+fn add(a: i64, b: i64) -> i64 { log.info("body"); a + b }
+fn direct(a: i64) -> i64 -> i64 { add(a) }
+fn indirect(a: i64) -> i64 -> i64 { let function = add; function(a) }
+flow main() -> i64 {
+    let first = direct(40i64)
+    let second = indirect(40i64)
+    return first(2i64) + second(2i64) - 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
 #[path = "callable_cases/control_results.rs"]
 mod control_results;
 #[path = "callable_cases/presentation_slot_refs.rs"]

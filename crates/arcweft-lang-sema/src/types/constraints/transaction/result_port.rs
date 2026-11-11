@@ -197,6 +197,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 actual: expected.clone(),
                 source_ordinal: None,
                 final_expected: None,
+                timing: super::ConstraintEquationTiming::Immediate,
             });
             advanced.extend(super::relate_selected_call(
                 &pattern,

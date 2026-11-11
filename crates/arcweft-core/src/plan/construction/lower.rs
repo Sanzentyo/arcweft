@@ -1382,8 +1382,8 @@ impl RuntimePlanBodyConstruction<'_> {
         seed.map(|seed| self.lower_expression(*seed)).transpose()
     }
 
-    /// An exact producer-owned opaque value may flow into that producer's
-    /// admitted top type. Its runtime value retains the exact identity.
+    /// Destination admission preserves the actual value's exact identity,
+    /// including a callable's narrower invocation contract.
     pub(super) fn require_expression_assignable(
         &self,
         context: &'static str,
@@ -1399,7 +1399,7 @@ impl RuntimePlanBodyConstruction<'_> {
         {
             Ok(())
         } else {
-            require_same(context, expected, actual)
+            self.require_callable_operand_type(context, expected, actual)
         }
     }
 

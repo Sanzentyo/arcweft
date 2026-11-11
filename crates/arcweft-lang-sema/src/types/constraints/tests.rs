@@ -888,6 +888,148 @@ fn solve_with(
 }
 
 #[test]
+fn result_context_infers_omitted_function_effects_from_closed_results() {
+    for effects in [
+        EffectSet::new(),
+        EffectSet::from_labels(["log.write"]).unwrap(),
+    ] {
+        let actual = TypeKind::function_with_effects(
+            [TypeKind::I64],
+            TypeKind::I64,
+            EffectRow::closed(effects),
+        );
+        let annotation =
+            TypeKind::function_with_effects([TypeKind::I64], TypeKind::I64, EffectRow::unknown());
+        let cancellation = AtomicBool::new(false);
+        let mut transaction = TestConstraintTransaction::begin(
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::new(
+                TypeConstraintLimits::new(1_024, 512, 128, 64),
+                &cancellation,
+            ),
+            None,
+        );
+        transaction.lower.constrain_result(
+            &mut transaction.context,
+            &actual,
+            &annotation,
+            ConstraintAcceptance::ActualAcceptsPattern,
+        );
+        transaction.request_projection((), &actual, TypeConstraintProjectionClosure::Closed);
+        let solved = transaction
+            .finish()
+            .expect("the actual result closes the annotation");
+        assert_eq!(
+            solved.component.selected().projections()[0].value().value(),
+            &actual
+        );
+    }
+}
+
+#[test]
+fn result_context_waits_for_source_type_inference_before_completing_effect_annotations() {
+    let parameter = parameter(0);
+    let pending = TypeKind::generic_parameter(parameter.clone());
+    let actual = TypeKind::function_with_effects(
+        [TypeKind::I64],
+        TypeKind::I64,
+        EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap()),
+    );
+    let annotation =
+        TypeKind::function_with_effects([TypeKind::I64], TypeKind::I64, EffectRow::unknown());
+    let cancellation = AtomicBool::new(false);
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(1_024, 512, 128, 64),
+            &cancellation,
+            TypeConstraintParameterScope::new([(
+                parameter,
+                TypeConstraintParameterEligibility::Bindable,
+            )])
+            .unwrap(),
+        ),
+        None,
+    );
+    transaction.lower.constrain_result(
+        &mut transaction.context,
+        &pending,
+        &annotation,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    );
+    transaction.constrain(
+        &pending,
+        &actual,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    transaction.request_projection((), &pending, TypeConstraintProjectionClosure::Closed);
+    let solved = transaction
+        .finish()
+        .expect("source inference supplies the complete result type");
+    assert_eq!(
+        solved.component.selected().projections()[0].value().value(),
+        &actual
+    );
+}
+
+#[test]
+fn result_context_keeps_unknown_source_rows_and_fixed_contract_mismatches_rejected() {
+    let function =
+        |parameter, effects| TypeKind::function_with_effects([parameter], TypeKind::I64, effects);
+    let pure = function(TypeKind::I64, EffectRow::closed(EffectSet::new()));
+    let effectful = function(
+        TypeKind::I64,
+        EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap()),
+    );
+    let omitted = function(TypeKind::I64, EffectRow::unknown());
+    for (actual, annotation, unknown_source) in [
+        (omitted.clone(), omitted.clone(), true),
+        (effectful, pure.clone(), false),
+        (pure, function(TypeKind::Bool, EffectRow::unknown()), false),
+        (
+            TypeKind::Array {
+                item: Box::new(function(TypeKind::I64, EffectRow::closed(EffectSet::new()))),
+                len: ArrayLength::Const(2),
+            },
+            TypeKind::Array {
+                item: Box::new(omitted),
+                len: ArrayLength::Const(1),
+            },
+            false,
+        ),
+    ] {
+        let cancellation = AtomicBool::new(false);
+        let mut transaction = TestConstraintTransaction::begin(
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::new(
+                TypeConstraintLimits::new(1_024, 512, 128, 64),
+                &cancellation,
+            ),
+            None,
+        );
+        transaction.lower.constrain_result(
+            &mut transaction.context,
+            &actual,
+            &annotation,
+            ConstraintAcceptance::ActualAcceptsPattern,
+        );
+        let outcome = transaction.finish();
+        if unknown_source {
+            assert!(matches!(
+                outcome,
+                Err(TypeConstraintFailure::Invariant(
+                    TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Effect(
+                        super::TypeConstraintEffectInvariant {
+                            kind: super::TypeConstraintEffectInvariantKind::UnknownRow,
+                            ..
+                        }
+                    ))
+                ))
+            ));
+        } else {
+            assert!(matches!(outcome, Err(TypeConstraintFailure::Rejected(_))));
+        }
+    }
+}
+
+#[test]
 fn function_relation_is_contravariant_in_parameters_and_covariant_in_effects() {
     let key: crate::types::GenericEffectReference = crate::types::GenericEffectParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(803)),

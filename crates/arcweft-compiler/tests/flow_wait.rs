@@ -772,6 +772,24 @@ flow main() -> i64 {{
     }
 }
 
+#[test]
+fn returned_partial_restores_its_inferred_latent_effect_after_wait() {
+    for bind in ["add(seed)", "let function = add; function(seed)"] {
+        let body = format!(
+            r#"
+fn add(first: i64, second: i64) -> i64 {{ log.info("body"); first + second }}
+fn bind(seed: i64) -> i64 -> i64 {{ {bind} }}
+flow main() -> i64 {{
+    let tail = bind({{ log.info("prefix"); 40i64 }})
+    wait(0.1s)
+    return tail(2i64)
+}}
+"#
+        );
+        assert_shared_prefix_wait_in_both_executors(native(&body), product(&body, true), &["body"]);
+    }
+}
+
 fn assert_shared_prefix_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,

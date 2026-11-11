@@ -1103,6 +1103,7 @@ fn apply_instruction(
                 Some(*mode),
                 state,
                 0,
+                steps,
             )?;
             assign_pattern_copy_proofs(
                 verifier,
@@ -1136,7 +1137,7 @@ fn apply_instruction(
         } => {
             let value_ty = read_register(verifier, function, block, *value, state)?;
             validate_pattern(
-                verifier, function, block, *pattern, value_ty, None, state, 0,
+                verifier, function, block, *pattern, value_ty, None, state, 0, steps,
             )?;
             require_type_kind(verifier, function, block, *dst, is_bool, "bool", &at)?;
             write_register(verifier, function, block, *dst, state)?;
@@ -3593,6 +3594,7 @@ fn apply_terminator(
                     None,
                     &mut state.clone(),
                     0,
+                    steps,
                 )?;
                 if let Some(guard) = arm.guard {
                     check_index(program.functions.len(), guard.0, "functions", &at)?;
@@ -3780,6 +3782,7 @@ fn apply_terminator(
                 Some(AwbcBindMode::Declare),
                 &mut next,
                 0,
+                steps,
             )?;
             let capture_types = program
                 .functions
@@ -3966,6 +3969,7 @@ fn apply_terminator(
                     Some(AwbcBindMode::Declare),
                     &mut next,
                     0,
+                    steps,
                 )?;
             }
             let ready_block =
@@ -4082,6 +4086,7 @@ fn apply_terminator(
                             Some(AwbcBindMode::Declare),
                             &mut next,
                             0,
+                            steps,
                         )?;
                     }
                     successors.push((
@@ -4175,6 +4180,7 @@ fn apply_terminator(
                             Some(AwbcBindMode::Declare),
                             &mut next,
                             0,
+                            steps,
                         )?;
                     }
                     successors.push((
@@ -4768,6 +4774,7 @@ fn verify_project_call(
         Some(AwbcBindMode::Declare),
         state,
         0,
+        steps,
     )?;
     assign_pattern_copy_proofs(
         verifier,
@@ -5317,6 +5324,7 @@ fn validate_pattern(
     mode: Option<AwbcBindMode>,
     state: &mut FlowState,
     depth: usize,
+    steps: &mut usize,
 ) -> Result<(), AwbcVerifyError> {
     if depth > verifier.budget.pattern_depth {
         return Err(AwbcVerifyError::PatternDepthExceeded {
@@ -5356,6 +5364,7 @@ fn validate_pattern(
                     mode,
                     &mut current,
                     depth + 1,
+                    steps,
                 )?;
                 if let Some(expected) = &shared {
                     if expected != &current {
@@ -5374,9 +5383,23 @@ fn validate_pattern(
             target, expected, ..
         } => {
             let target_ty = register_type(verifier, function, block, *target)?;
-            require_compatible(program, target_ty, value_ty, "pattern binding")?;
+            require_value_assignable(
+                verifier,
+                function,
+                target_ty,
+                value_ty,
+                "pattern binding",
+                steps,
+            )?;
             if let Some(expected) = expected {
-                require_compatible(program, *expected, value_ty, "typed pattern")?;
+                require_value_assignable(
+                    verifier,
+                    function,
+                    *expected,
+                    value_ty,
+                    "typed pattern",
+                    steps,
+                )?;
             }
             match mode {
                 Some(AwbcBindMode::Declare | AwbcBindMode::Guard) => {
@@ -5432,6 +5455,7 @@ fn validate_pattern(
                         mode,
                         state,
                         depth + 1,
+                        steps,
                     )?;
                 }
             }
@@ -5446,6 +5470,7 @@ fn validate_pattern(
                         mode,
                         state,
                         depth + 1,
+                        steps,
                     )?;
                 }
             }
@@ -5484,6 +5509,7 @@ fn validate_pattern(
                             mode,
                             state,
                             depth + 1,
+                            steps,
                         )?;
                     }
                 }
@@ -5498,6 +5524,7 @@ fn validate_pattern(
                             mode,
                             state,
                             depth + 1,
+                            steps,
                         )?;
                     }
                 }
@@ -5557,6 +5584,7 @@ fn validate_pattern(
                     mode,
                     state,
                     depth + 1,
+                    steps,
                 )?;
             }
             if let AwbcPatternRest::Bind(rest) = rest {
@@ -5603,6 +5631,7 @@ fn validate_pattern(
                             mode,
                             state,
                             depth + 1,
+                            steps,
                         )?,
                         (None, None) => {}
                         _ => {
@@ -5627,6 +5656,7 @@ fn validate_pattern(
                 mode,
                 state,
                 depth + 1,
+                steps,
             )?;
             match mode {
                 Some(AwbcBindMode::Declare | AwbcBindMode::Guard) => {
@@ -6306,6 +6336,27 @@ fn require_project_call_operand_type(
     steps: &mut usize,
 ) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
+    if matches!(
+        runtime_shape(program, expected),
+        Some(AwbcRuntimeTypeShape::Dynamic)
+    ) || matches!(
+        runtime_shape(program, actual),
+        Some(AwbcRuntimeTypeShape::Dynamic)
+    ) {
+        return invalid_type(at, "project-call ABI cannot use Dynamic types");
+    }
+    require_value_assignable(verifier, function, expected, actual, at, steps)
+}
+
+fn require_value_assignable(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    expected: AwbcTypeId,
+    actual: AwbcTypeId,
+    at: &str,
+    steps: &mut usize,
+) -> Result<(), AwbcVerifyError> {
+    let program = verifier.program;
     if !matches!(
         runtime_shape(program, expected),
         Some(AwbcRuntimeTypeShape::Function { .. })
@@ -6314,7 +6365,7 @@ fn require_project_call_operand_type(
         Some(AwbcRuntimeTypeShape::Function { .. })
     ) || expected == actual
     {
-        return require_project_call_compatible(program, expected, actual, at);
+        return require_compatible(program, expected, actual, at);
     }
     if callable_type_admitted(
         program,

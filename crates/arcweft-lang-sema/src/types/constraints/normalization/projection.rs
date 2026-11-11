@@ -93,7 +93,9 @@ where
                             continue;
                         }
                         match policy {
-                            ConstraintClosurePolicy::Validation | ConstraintClosurePolicy::Hint => {
+                            ConstraintClosurePolicy::Validation
+                            | ConstraintClosurePolicy::Hint
+                            | ConstraintClosurePolicy::ResultAnnotation => {
                                 remaining
                                     .insert(RemainingConstraintParameter(parameter.clone().into()));
                                 TypeKind::GenericParam(parameter.clone())
@@ -160,7 +162,11 @@ where
                                     ));
                                 }
                             }
-                        } else if policy != ConstraintClosurePolicy::ProjectionFuture {
+                        } else if !matches!(
+                            policy,
+                            ConstraintClosurePolicy::ProjectionFuture
+                                | ConstraintClosurePolicy::ResultAnnotation
+                        ) {
                             // A future projection may carry an unresolved source
                             // function row whose owner closes it later. Keep it
                             // unknown; only effect constraints may require a
@@ -248,7 +254,9 @@ fn allows_unbound_type(
     eligibility: TypeConstraintParameterEligibility,
 ) -> bool {
     match policy {
-        ConstraintClosurePolicy::Validation | ConstraintClosurePolicy::Hint => true,
+        ConstraintClosurePolicy::Validation
+        | ConstraintClosurePolicy::Hint
+        | ConstraintClosurePolicy::ResultAnnotation => true,
         ConstraintClosurePolicy::ProjectionClosed => {
             eligibility == TypeConstraintParameterEligibility::Rigid
         }
@@ -318,7 +326,8 @@ where
                         if !visiting.insert(parameter.clone()) {
                             return match policy {
                                 ConstraintClosurePolicy::Validation
-                                | ConstraintClosurePolicy::Hint => {
+                                | ConstraintClosurePolicy::Hint
+                                | ConstraintClosurePolicy::ResultAnnotation => {
                                     remaining.insert(RemainingConstraintParameter(
                                         parameter.clone().into(),
                                     ));
@@ -367,7 +376,9 @@ fn allows_unbound_const(
     eligibility: TypeConstraintConstEligibility,
 ) -> bool {
     match policy {
-        ConstraintClosurePolicy::Validation | ConstraintClosurePolicy::Hint => true,
+        ConstraintClosurePolicy::Validation
+        | ConstraintClosurePolicy::Hint
+        | ConstraintClosurePolicy::ResultAnnotation => true,
         ConstraintClosurePolicy::ProjectionClosed => {
             eligibility == TypeConstraintConstEligibility::Rigid
         }

@@ -26,6 +26,9 @@ pub(crate) enum ConstraintClosurePolicy {
     /// Admit source type structure and scope without following active bindings.
     Validation,
     Hint,
+    /// An owner-retained result annotation may omit function effects until
+    /// the actual result has completed inference. It is never a source term.
+    ResultAnnotation,
     ProjectionClosed,
     ProjectionFuture,
     /// Seal one constraint-group solution relative to its exact scope.
