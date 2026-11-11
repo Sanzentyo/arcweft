@@ -1167,6 +1167,7 @@ pub(crate) struct PreparedFunctionValueOriginQuery {
     pending_capture_rows: Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>,
     purpose: PreparedFunctionValueOriginPurpose,
     storage_specialization: Option<ExprId>,
+    selection_binding: Option<(LocalId, TypeKind)>,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -1280,6 +1281,7 @@ impl PreparedFunctionValueOriginQuery {
             pending_capture_rows,
             purpose,
             storage_specialization: None,
+            selection_binding: None,
         }
     }
 
@@ -1332,6 +1334,23 @@ impl PreparedFunctionValueOriginQuery {
         module: &HirModule,
         fact: &PreparedExpressionFact,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
+        if let Some((local, interface)) = self.selection_binding.take() {
+            let actual = fact
+                .value_type()
+                .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+            if actual != &interface {
+                if !interface.accepts(actual) {
+                    return Err(PreparedFunctionValueOriginQueryError::Invalid);
+                }
+                // An authored binding interface can widen the initializer's
+                // function contract. Selection uses that lexical interface;
+                // storage queries continue to retain the actual producer.
+                return Ok(self.ready(
+                    PreparedFunctionValueOriginProducer::Lexical { local },
+                    Vec::new(),
+                ));
+            }
+        }
         // Nominal fields can yield function values before the nominal schema
         // seals their projection. The field expression owns the produced value.
         if matches!(fact, PreparedExpressionFact::ProjectField(_))
@@ -1430,6 +1449,14 @@ impl PreparedFunctionValueOriginQuery {
             HirLocalValueOrigin::DirectInitializer(initializer) => {
                 if initializer.module() != module.module_id() {
                     return Err(PreparedFunctionValueOriginQueryError::Invalid);
+                }
+                if self.purpose == PreparedFunctionValueOriginPurpose::Selection {
+                    self.selection_binding = Some((
+                        *local,
+                        fact.value_type()
+                            .cloned()
+                            .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?,
+                    ));
                 }
                 self.current = initializer;
                 Ok(PreparedFunctionValueOriginProgress::Need(

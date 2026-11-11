@@ -584,6 +584,103 @@ fn callback_effect_inference_works_for_complete_and_partial_function_values() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
+callable_case!(
+    curried_function_value_retains_independent_callback_effects,
+    r#"
+fn invoke(seed: i64)(callback: i64 -> i64) -> i64 { callback(seed) }
+flow main() -> i64 {
+    let function = invoke
+    let tail = function(21i64)
+    let first = tail(|value| { log.info("effectful"); value })
+    return tail(|value| value) + first
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    curried_function_value_retains_a_prefix_between_later_groups,
+    r#"
+fn invoke(seed: i64)(left: i64, right: i64)(callback: i64 -> i64) -> i64 {
+    callback(seed + left + right)
+}
+flow main() -> i64 {
+    let function = invoke
+    let group = function(18i64)
+    let middle = group(1i64)
+    let tail = middle(2i64)
+    let first = tail(|value| { log.info("effectful"); value })
+    return tail(|value| value) + first
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+#[test]
+fn inferred_return_rows_and_widened_local_callable_contracts_compile() {
+    let cases = [
+        (
+            "widened-local-complete",
+            "",
+            "let add: (i64, i64) -> i64 effects { log.write } = |a: i64, b: i64| a + b; return add(40i64, 2i64)",
+        ),
+        (
+            "widened-local-partial",
+            "",
+            "let add: (i64, i64) -> i64 effects { log.write } = |a: i64, b: i64| a + b; let tail = add(40i64); return tail(2i64)",
+        ),
+        (
+            "direct-returned-omitted",
+            "fn add(a: i64, b: i64) -> i64 { a + b }\nfn bind(a: i64) -> i64 -> i64 { add(a) }",
+            "let tail = bind(40i64); return tail(2i64)",
+        ),
+        (
+            "value-returned-omitted",
+            "fn add(a: i64, b: i64) -> i64 { a + b }\nfn bind(a: i64) -> i64 -> i64 { let value = add; value(a) }",
+            "let tail = bind(40i64); return tail(2i64)",
+        ),
+    ];
+    let failures = cases.into_iter().filter_map(|(label, declaration, body)| {
+        let source = format!("entry cli @entry.main {{ goto @flow.main }}\n{declaration}\nflow main() -> i64 {{ {body} }}\n");
+        arcweft_compiler::source::compile_source(&source).err().map(|error| {
+            (label, error.project().stage().to_owned(), error.project().diagnostics().iter()
+                .map(|diagnostic| diagnostic.diagnostic().message().to_owned()).collect::<Vec<_>>())
+        })
+    }).collect::<Vec<_>>();
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+callable_case!(
+    widened_local_callable_contract_applies_in_full_and_partial_calls,
+    r#"
+flow main() -> i64 {
+    let add: (i64, i64) -> i64 effects { log.write } = |a: i64, b: i64| a + b
+    let tail = add(40i64)
+    return add(40i64, 2i64) + tail(2i64) - 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    returned_partial_infers_an_omitted_function_effect_row,
+    r#"
+fn add(a: i64, b: i64) -> i64 { a + b }
+fn direct(a: i64) -> i64 -> i64 { add(a) }
+fn indirect(a: i64) -> i64 -> i64 { let function = add; function(a) }
+flow main() -> i64 {
+    let first = direct(40i64)
+    let second = indirect(40i64)
+    return first(2i64) + second(2i64) - 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
 #[path = "callable_cases/control_results.rs"]
 mod control_results;
 #[path = "callable_cases/presentation_slot_refs.rs"]

@@ -8,6 +8,26 @@ use super::{
 };
 use crate::plan::RuntimeTypeBinder;
 
+impl RuntimeFunctionTypeContract {
+    /// A physical retaining group can move its residual binder to the result
+    /// arrow. Substitution arguments then use that result's frame in both
+    /// executable validation and original-source codecs.
+    pub(in crate::plan) fn retained_result_argument_contract<'a>(
+        &self,
+        source_result: Option<&Self>,
+        target: &Self,
+        target_result: Option<&'a Self>,
+    ) -> Option<&'a Self> {
+        let source_result = source_result?;
+        let target_result = target_result?;
+        (!self.binder().is_empty()
+            && target.binder().is_empty()
+            && source_result.binder().is_empty()
+            && !target_result.binder().is_empty())
+        .then_some(target_result)
+    }
+}
+
 pub(super) struct RetainedResultBinder<T> {
     binder: RuntimeTypeBinder,
     source_result: T,
@@ -30,21 +50,26 @@ impl<T: Copy + Eq + Ord> RetainedResultBinder<T> {
         let Some(Type::Function { contract, .. }) = context.type_projection(target_result) else {
             return Ok(None);
         };
-        let binder = contract.binder();
-        if binder.is_empty() {
-            return Ok(None);
-        }
         // Ordinary substitution preserves the binder of a literal result
         // arrow. A source result parameter, however, can be replaced with a
         // polymorphic function through ordinary substitution.
         work.visit()?;
-        if !matches!(context.type_projection(source_result),
-            Some(Type::Function { contract, .. }) if contract.binder().is_empty())
-        {
+        let Some(Type::Function {
+            contract: source_contract,
+            ..
+        }) = context.type_projection(source_result)
+        else {
             return Ok(None);
-        }
+        };
+        let Some(argument_contract) = source.retained_result_argument_contract(
+            Some(&source_contract),
+            target,
+            Some(&contract),
+        ) else {
+            return Ok(None);
+        };
         Ok(Some(Self {
-            binder,
+            binder: argument_contract.binder(),
             source_result,
             target_result,
         }))

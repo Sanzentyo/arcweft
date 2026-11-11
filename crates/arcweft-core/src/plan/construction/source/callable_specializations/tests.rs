@@ -431,7 +431,7 @@ fn late_effect_owner_failure_poisons_the_original_context_after_an_earlier_real_
     let mut bytes = encode(&plan);
     let row = &plan.callable_specializations()[1];
     let (target, scope) = Types::Program(plan.type_table())
-        .target(row.target_type)
+        .argument_frame(row.source_type, row.target_type)
         .unwrap();
     let prepared = target
         .prepare_argument_source_in_frame(

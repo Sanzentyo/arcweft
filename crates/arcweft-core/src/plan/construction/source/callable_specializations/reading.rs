@@ -112,7 +112,7 @@ impl<'a, 'types> Reader<'a, 'types> {
         }
         let source_type = self.ty()?;
         let target_type = self.ty()?;
-        let (target, scope) = self.types.target(target_type)?;
+        let (target, scope) = self.types.argument_frame(source_type, target_type)?;
         let retain = states.is_some();
         let count = self.count()?;
         self.counts.array(

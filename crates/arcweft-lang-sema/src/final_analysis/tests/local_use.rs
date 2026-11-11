@@ -9,6 +9,33 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn curried_function_value_continuations_retain_affine_inputs() {
+    let actual = analyze(&fixture(
+        r#"
+fn consume(voice: VoiceHandle) {}
+fn invoke(voice: VoiceHandle)(value: i64) -> i64 { consume(voice); value }
+fn reuse(voice: VoiceHandle) -> i64 {
+    let function = invoke
+    let tail = function(voice)
+    let first = tail(21i64)
+    tail(21i64) + first
+}
+"#,
+        None,
+    ))
+    .err();
+    assert!(
+        matches!(
+            actual,
+            Some(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::Unavailable { .. }
+            ))
+        ),
+        "the retained VoiceHandle makes the callable affine: {actual:?}"
+    );
+}
+
+#[test]
 fn returned_callable_copy_uses_the_actual_formal_carrier() {
     let fixture = fixture(
         r#"

@@ -109,8 +109,9 @@ impl<'a> Types<'a> {
         }
         .expect("source reference bounds use the actual immutable type namespace")
     }
-    fn target(
+    fn argument_frame(
         self,
+        source: RuntimePlanTypeId,
         ty: RuntimePlanTypeId,
     ) -> Result<
         (
@@ -119,13 +120,38 @@ impl<'a> Types<'a> {
         ),
         Error,
     > {
-        let row = self.get(ty);
-        match row.projection() {
-            RuntimePlanTypeProjection::Function { contract, .. } if row.scope().is_root() => {
-                Ok((contract, row.scope()))
-            }
-            _ => Err(Error::Target { ty }),
+        let source_row = self.get(source);
+        let target_row = self.get(ty);
+        let (
+            RuntimePlanTypeProjection::Function {
+                contract: source_contract,
+                result: source_result,
+                ..
+            },
+            RuntimePlanTypeProjection::Function {
+                contract: target_contract,
+                result: target_result,
+                ..
+            },
+        ) = (source_row.projection(), target_row.projection())
+        else {
+            return Err(Error::Target { ty });
+        };
+        if !source_row.scope().is_root() || !target_row.scope().is_root() {
+            return Err(Error::Target { ty });
         }
+        let result_contract = |result| match self.get(result).projection() {
+            RuntimePlanTypeProjection::Function { contract, .. } => Some(contract),
+            _ => None,
+        };
+        let argument_contract = source_contract
+            .retained_result_argument_contract(
+                result_contract(*source_result),
+                target_contract,
+                result_contract(*target_result),
+            )
+            .unwrap_or(target_contract);
+        Ok((argument_contract, target_row.scope()))
     }
 }
 

@@ -7,12 +7,15 @@ use arcweft_lang_hir::{
     identity::{ExprId, LocalId},
     pattern::{HirPatternBinding, HirPatternKind},
     project::{HirBindingSite, HirExpressionBindingRole},
+    symbol::CallableDeclarationKey,
 };
 
 use crate::{
     callable::{
-        CheckedCallApplication, CheckedCallArgumentSlotSource, CheckedCallCalleeExecution,
-        CheckedCallOperandDestination, CheckedCallResult, CheckedConstraintSourceProjection,
+        CallableCandidateId, CallableGroupIndex, CallableParameterCoordinate,
+        CallableParameterIndex, CheckedCallApplication, CheckedCallArgumentSlotSource,
+        CheckedCallCalleeExecution, CheckedCallOperandDestination, CheckedCallResult,
+        CheckedConstraintSourceProjection,
     },
     final_analysis::model::CallableResultSource,
     ownership::CheckedOwnershipLimits,
@@ -250,9 +253,15 @@ impl<'a, 'program> ValueCopy<'a, 'program> {
                         application.core().callee()
                     && let CheckedCallArgumentSlotSource::Expression(callee) = source.raw()
                 {
-                    return self.invoked_result(owner, callee, application, frame);
+                    // An abstract arrow can still be a known declaration's
+                    // nonterminal group. Its result retains the actual callee
+                    // and inputs, rather than an arbitrary body result.
+                    if self.project_value_position(owner, frame)?.is_none() {
+                        return self.invoked_result(owner, callee, application, frame);
+                    }
+                } else {
+                    return self.branches(owner, |query, branch| query.expression(branch, frame));
                 }
-                return self.branches(owner, |query, branch| query.expression(branch, frame));
             }
         }
         // A direct continuation retains evaluated inputs. Only a value
@@ -280,6 +289,112 @@ impl<'a, 'program> ValueCopy<'a, 'program> {
             }
         }
         Ok(true)
+    }
+
+    /// Follows checked producers only far enough to identify a declaration's
+    /// retained group/prefix. A terminal call returning another function has
+    /// no such position; its actual return producers need the separate query.
+    fn project_value_position(
+        &mut self,
+        owner: ExprId,
+        frame: Option<&Invocation<'_>>,
+    ) -> Result<Option<(CallableDeclarationKey, CallableParameterCoordinate)>, CheckedLocalUseError>
+    {
+        self.visit(|query| {
+            let checked = query
+                .checker
+                .analysis
+                .expression(owner)
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            match checked.resolution() {
+                CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                    value,
+                )) => {
+                    return Ok(Some((
+                        value.declaration().clone(),
+                        CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
+                    )));
+                }
+                CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
+                    let local = *local;
+                    if !query.visiting.insert(local) {
+                        return Ok(None);
+                    }
+                    let result = (|| {
+                        if let Some((invocation, parameter)) = query.formal(local, frame) {
+                            return match query.whole_argument(local, invocation, parameter)? {
+                                Some(source) => {
+                                    query.project_value_position(source, invocation.caller)
+                                }
+                                None => Ok(None),
+                            };
+                        }
+                        match query.immutable_initializer(local)? {
+                            Some(source) => query.project_value_position(source, frame),
+                            None => Ok(None),
+                        }
+                    })();
+                    query.visiting.remove(&local);
+                    return result;
+                }
+                _ => {}
+            }
+            let Some(application) = query
+                .checker
+                .analysis
+                .call(owner)
+                .and_then(|call| call.selected_application())
+            else {
+                return Ok(None);
+            };
+            let core = application.core();
+            let (declaration, position) = match core.callee() {
+                CheckedCallCalleeExecution::Direct
+                | CheckedCallCalleeExecution::SemanticValue { .. } => {
+                    let CallableCandidateId::Project(declaration) =
+                        core.candidates().selected().id()
+                    else {
+                        return Ok(None);
+                    };
+                    (declaration.clone(), core.position())
+                }
+                CheckedCallCalleeExecution::Value { source } => {
+                    let CheckedCallArgumentSlotSource::Expression(callee) = source.raw() else {
+                        return Ok(None);
+                    };
+                    let Some(position) = query.project_value_position(callee, frame)? else {
+                        return Ok(None);
+                    };
+                    position
+                }
+            };
+            let facts = query
+                .checker
+                .analysis
+                .checked_callables()
+                .project_callable(&declaration)
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+            let transition = if let Some(end) = core.positional_partial_end() {
+                let count = end
+                    .get()
+                    .checked_sub(core.position().parameter().get())
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                let next = position
+                    .parameter()
+                    .get()
+                    .checked_add(count)
+                    .and_then(|index| CallableParameterIndex::try_from_usize(index).ok())
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                facts
+                    .signature()
+                    .partial_value_group(facts.record().id(), position, next)
+            } else {
+                facts.signature().complete_group(position, None)
+            };
+            Ok(transition
+                .and_then(|transition| transition.remaining_position())
+                .map(|position| (declaration, position)))
+        })
     }
 
     fn invoked_result(

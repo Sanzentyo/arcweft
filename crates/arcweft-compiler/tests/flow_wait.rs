@@ -746,6 +746,32 @@ flow main() -> i64 {
     );
 }
 
+#[test]
+fn function_value_effect_prefix_repeats_after_wait_and_public_restore() {
+    for declaration in [
+        "fn invoke(seed: i64, callback: i64 -> i64) -> i64 { callback(seed) }",
+        "fn invoke(seed: i64)(callback: i64 -> i64) -> i64 { callback(seed) }",
+    ] {
+        let body = format!(
+            r#"
+{declaration}
+flow main() -> i64 {{
+    let function = invoke
+    let tail = function({{ log.info("prefix"); 21i64 }})
+    wait(0.1s)
+    let first = tail(|value| {{ log.info("effectful"); value }})
+    return tail(|value| value) + first
+}}
+"#
+        );
+        assert_shared_prefix_wait_in_both_executors(
+            native(&body),
+            product(&body, true),
+            &["effectful"],
+        );
+    }
+}
+
 fn assert_shared_prefix_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,

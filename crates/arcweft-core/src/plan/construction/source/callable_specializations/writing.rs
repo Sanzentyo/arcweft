@@ -137,7 +137,9 @@ impl<'a, 'types> Writer<'a, 'types> {
     fn row(&mut self, row: &Definition) -> Result<(), Error> {
         self.ty(row.source_type)?;
         self.ty(row.target_type)?;
-        let (target, scope) = self.types.target(row.target_type)?;
+        let (target, scope) = self
+            .types
+            .argument_frame(row.source_type, row.target_type)?;
         self.counts.array(
             row.arguments.types.len(),
             size_of::<RuntimeSemanticTypeId>() + size_of::<RuntimePlanTypeId>(),
