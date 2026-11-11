@@ -16710,6 +16710,18 @@ graph所有の反復foldはapplication、union、既存formula置換、choice、
 
 実測はterm projection owner 18,545 bytes／483行（基点343行）、prepared type owner 7,753 bytes／227行（基点76行）、graph 22,584 bytes／688行、graph test 30,670 bytes／888行、type-domain test 22,557 bytes／674行（基点372行）。300行超増えた後者は同じphaseのnested scope、canonical同値、失敗原子性とエラー境界を直接検証し、source spellingや別ownerの動作へ依存しない。既存TypeKindの単一文法、scope fold、graphのimmutable termを共有し、private error exportも同じphase境界に限る。crate依存、I/O、unsafe、runtime／wire／digest、version、互換reader、予算の緩和はない。
 
-次のactive接続では、現在のPendingChildConstraint／SourceProbeTerm::Resultが一つの親receiptに束縛され、独立したletを跨げないことを所有境界として扱う。componentがexportしたvalue／projection参照をactiveな式・local・patternに共通して持たせ、PreparedTypeとscope・source／rankの証拠は各frontier alternativeが所有する方針を採用する。member／pattern／joinは相関を保ったalternativeごとに検査し、同じinitializerの複数利用が別の候補を選ばない。initializerの元の適合・期待型・順位条件は固定し、後の利用で曖昧さを消したり任意のlet多相化を追加したりしない。ResolverWorkの残余ledgerとaffineなcandidate factsを保持し、宣言bodyの一括効果／選択を閉じてからcanonical solution・application・factを一度に発行し、selected-expression graphを封印する。graphのbranch抽出／join、choice activation、通常の効果推論のprincipal guard、Rejected／Ambiguousの診断付きoutcomeもこの接続で移す。これらのactive carrier／component sealは本cutでは未実装であり、投影の成功を再帰本体8件の受入へ昇格しない。
-
 初回診断、最終選択ID／全結果、品質log／receipt、Source差分、実測、公開照合を13 entry、展開時6,648,472 bytes、ZIP 549,661 bytes、SHA-256 `64f7ad5de0d6143bbb5866832821199543611cf00a1f1558f9a43859dfe9e267` の[原本](acceptance-evidence/task-prepared-effect-scope-projection.raw.zip)へ保持し、全entryの長さとhashを再照合した。現状は一か所の一覧に更新し、以前の履歴・凍結原本・Generic Match等の受入判定は保持する。
+
+### Retained call resolver work
+
+2026-11-11、基点 `2f5c8cf68019a0864bb7612081bfeb3fb110052d` の既存mainで継続し、Source `344a6f6f61359268c19ebee202b75cbb974f1799`、tree `8d5f905fbc6f5262219c6a8c664cbe8a82908c6a` を通常pushした。remote mainのfull SHA・tree・変更6pathのblobを照合し、既存の未追跡 `%SystemDrive%/` を保持した。保留したcorrelated-call recipeは、観測reportの代わりに元のResolverWorkを所有する。同じsourceの全候補は一つのRcを共有し、ResolverWork自体のCloneを削除した。固定ownerの割当を元の予算へ先に課金し、二重借用はtyped invariantで拒否する。recipeの意味的replay比較だけは準備時の不変な観測を使い、ledger identityや新しい予算の発行権限として使わない。公開するreportは保持中の元ledgerから読む。空の候補集合にはownerを作らない。
+
+全featureのSema全1,516件は1,510 PASS／6 FAIL／0 SKIP、nextest終了100。新規4件は、元の消費済み予算を共有先から引き継ぐこと、exact／one-over／zero admission、排他借用の拒否、replay比較の安定、実際のlower constraint sessionを2回再開しても引数の実評価回数を増やさないことを確認した。失敗6件のIDは以前と同じで、5件がExpressionCycle、1件がPendingCallableEffectProjectionだった。先行Sourceの選択runをこの全件へ加算していない。
+
+Cargo入力の差分0と、既存のhost default／host all-features／all-targets all-features metadataのhashを照合し、normal／dev／buildを含む22パッケージの集合を再利用した。残る21 consumerをhost・既定featureの107 targetで終端まで実行し、2,507 PASS／2 FAIL／1 SKIP。Semaと合わせて4,017 PASS／8 FAIL／1 SKIPで、選択IDの重複0、選択数と終端件数の一致、3 targetのrunnable test 0件を区別した。初回集計はRuntimePlanの選択外ignored 1件もterminal skipへ含む規則の差で停止し、選択JSONを照合して集計を訂正した。実テストの再実行やfilter変更はしていない。Compilerの失敗2件は既存のrecursive_body flow_waitで、callable_execution 376件とproject_function_instances 12件は全PASS。CLIはlibrary 196件と規定の統合6 target 30件がPASSし、binはコンパイル済み・実行テスト0件。全CLI check／全feature consumer／全workspace unit・integration／ignored／Tier 2や実ブラウザー画像parityの成功とはしない。
+
+上記の固定検証入力はbase `2f5c8cf68019a0864bb7612081bfeb3fb110052d` とstaged tree `8d5f905fbc6f5262219c6a8c664cbe8a82908c6a` で、公開Sourceのtreeと一致する。workspaceのlocked・全target・全feature check／Clippy、整形、構造gate、Sema doctest 2件、Wasm player-web library checkは終了0。Clippyは警告あり。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。新しいretained ownerは2,343 bytes／70行、別test 4,497 bytes／117行。既存のcallable workとlower sessionを共有し、新しい依存、I/O、unsafe、契約version、互換reader、予算緩和は追加していない。このSourceではactiveな値componentと宣言schemeの一括確定は未接続で、再帰本体8件の受入へ昇格していない。Generic Match・呼出し側再帰・同一グループprefix等の既受入は維持する。
+
+現状欄の古い入力の件数と重複した品質説明は今回の実測へ置換し、以前の実行結果・失敗・full SHAは履歴と凍結原本に保持した。保持Viewの以前のCLI失敗への参照も元入力へ明示的に結び、今回の規定CLI結果と区別した。前節の「次のactive接続では」で始まる未実装の設計・次工程列挙は、検証履歴へ計画と残作業を重複させていたため削除し、現状の残作業はcurrent-status.mdへ集約した。実際の検証結果・commit SHA・既存ZIPの内容は削除・改変していない。
+
+全ID／結果、品質log／receipt、Source差分、実測と公開照合を343 entry、展開時35,219,541 bytes、ZIP 4,695,790 bytes、SHA-256 `7f6ed42b508097114f073b4fd0ea3d13a542c703caaff85c8c12e71f025ef2ea` の[原本](acceptance-evidence/task-retained-call-work-owner.raw.zip)へ保持し、全entryの長さとhashを再照合した。
