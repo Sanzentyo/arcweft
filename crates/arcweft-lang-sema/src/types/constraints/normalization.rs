@@ -371,7 +371,7 @@ pub(crate) struct KeyedConstraintProjection<A, P> {
     key: Arc<P>,
     value: super::solution::CompletedConstraintType,
     source: Option<super::completion::CompletedProjectionAddress<A, P>>,
-    input: Option<TypeKind>,
+    input: Option<super::solution::CompletedConstraintType>,
 }
 
 impl<A, P> KeyedConstraintProjection<A, P> {
@@ -387,15 +387,17 @@ impl<A, P> KeyedConstraintProjection<A, P> {
     pub(super) fn with_source(
         mut self,
         source: Option<super::completion::CompletedProjectionAddress<A, P>>,
-        input: Option<TypeKind>,
+        input: Option<super::solution::CompletedConstraintType>,
     ) -> Self {
         self.source = source;
         self.input = input;
         self
     }
 
-    pub(crate) const fn input_type(&self) -> Option<&TypeKind> {
-        self.input.as_ref()
+    pub(crate) fn input_type(&self) -> Option<super::super::ScopedTypeView<'_>> {
+        self.input
+            .as_ref()
+            .map(super::solution::CompletedConstraintType::view)
     }
 
     pub(super) const fn source(

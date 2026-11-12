@@ -155,7 +155,13 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
                 }
                 match (left.input_type(), right.input_type()) {
                     (Some(left), Some(right)) => {
-                        if !super::normalization::completed_types_equal(left, right, context)? {
+                        if left.scope() != right.scope()
+                            || !super::normalization::completed_types_equal(
+                                left.value(),
+                                right.value(),
+                                context,
+                            )?
+                        {
                             return Ok(false);
                         }
                     }

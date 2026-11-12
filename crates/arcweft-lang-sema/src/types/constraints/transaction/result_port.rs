@@ -13,7 +13,7 @@ use super::{
 pub(crate) struct PendingResultConstraint<D: ConstraintDomain> {
     receipt: ConstraintSourceReceipt<D>,
     alternative: PendingChildAlternative<D>,
-    source: TypeKind,
+    source: Arc<super::ConstraintOperand<D>>,
 }
 
 impl<D: ConstraintDomain> PendingChildConstraint<D> {
@@ -31,7 +31,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
             .into_iter()
             .map(|alternative| {
                 context.enter_node()?;
-                let (opened, _) = resolve_probe_term(
+                let (opened, result) = resolve_probe_term(
                     SourceProbeTerm::Result(alternative.result.clone()),
                     &alternative.path,
                     context,
@@ -43,6 +43,13 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                     context,
                 )?
                 .value;
+                let source = Arc::new(super::ConstraintOperand::result(
+                    source,
+                    Arc::new(context.capture_lexical_scope()?),
+                    result.ok_or_else(|| {
+                        protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
+                    })?,
+                ));
                 Ok(PendingResultConstraint {
                     receipt: self.receipt.clone(),
                     alternative,
@@ -61,8 +68,8 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
         }
     }
 
-    pub(crate) const fn source_type(&self) -> &TypeKind {
-        &self.source
+    pub(crate) fn source_type(&self) -> &TypeKind {
+        self.source.value()
     }
 
     /// Only an already registered source result can be consumed. The new
@@ -174,7 +181,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 context,
             )?
             .value;
-            let (pattern, template_owner) = match prepare(&source, context)? {
+            let scope = Arc::new(context.capture_lexical_scope()?);
+            let source = Arc::new(super::ConstraintOperand::result(
+                source,
+                Arc::clone(&scope),
+                resolved,
+            ));
+            let (pattern, template_owner) = match prepare(source.value(), context)? {
                 Some((application, parameters, template)) => {
                     let scope = context.application_scope(
                         application,
@@ -190,7 +203,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         value: template.clone(),
                         closure: TypeConstraintProjectionClosure::Closed,
                         source: Some(origin.clone()),
-                        input: Some(source.clone()),
+                        input: Some(Arc::clone(&source)),
                     }));
                     (
                         context.open_template_type(&template, &path, application)?,
@@ -203,8 +216,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 }
                 None => (opened, None),
             };
-            let scope = Arc::new(context.capture_lexical_scope()?);
-            let source = super::ConstraintOperand::result(source, Arc::clone(&scope), resolved);
             let pattern = match template_owner {
                 Some(owner) => {
                     super::ConstraintOperand::template(pattern, Arc::clone(&scope), &owner)

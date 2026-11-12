@@ -252,6 +252,8 @@ impl CheckedFunctionSpecialization {
             .projection()
             .input_type()
             .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)?;
+        let source_view = source;
+        let source = source.value();
         let TypeKind::Function {
             binder,
             predicate,
@@ -269,8 +271,7 @@ impl CheckedFunctionSpecialization {
         {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch.into());
         }
-        let source_digest = source
-            .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), control)?;
+        let source_digest = source_view.semantic_identity_digest_with_control(control)?;
         if let Some(origin) = result.source()
             && (origin.application_id().expression() != owner
                 || origin

@@ -252,6 +252,23 @@ impl TypeConstraintSolution {
         ))
     }
 
+    /// An already evaluated input is closed in the same actual ambient
+    /// context as the projection. It introduces no result quantifiers.
+    pub(super) fn reify_projection_input<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        ty: &TypeKind,
+        path: &ConstraintPath<D>,
+        application: super::application::ConstraintApplicationId,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<CompletedConstraintType, TypeConstraintError> {
+        let owner = path.applications.require_application(application)?;
+        let value = self.context.reify_type(ty, path, owner, context)?;
+        Ok(CompletedConstraintType::new(
+            value,
+            Arc::clone(&self.context),
+        ))
+    }
+
     /// The result function owns the residual relation before a completed
     /// projection leaves this solution. Its local binder shifts only incoming
     /// predicate references; references already owned by that function stay put.

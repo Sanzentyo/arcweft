@@ -868,7 +868,7 @@ pub(super) struct ProjectionRequest<D: ConstraintDomain> {
     value: TypeKind,
     closure: TypeConstraintProjectionClosure,
     source: Option<ConstraintResultProjection<D>>,
-    input: Option<TypeKind>,
+    input: Option<Arc<ConstraintOperand<D>>>,
 }
 
 struct ProbeOperation<D: ConstraintDomain> {
@@ -1344,35 +1344,37 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn request_projection<A: TypeConstraintAccounting>(
         &mut self,
-        _context: &mut TypeConstraintContext<'_, A, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
         value: &TypeKind,
         closure: TypeConstraintProjectionClosure,
     ) {
-        self.request_projection_inner(key, value, closure, None);
+        self.request_projection_inner(context, key, value, closure, None);
     }
 
     pub(crate) fn request_value_use_projection<A: TypeConstraintAccounting>(
         &mut self,
-        _context: &mut TypeConstraintContext<'_, A, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
         input: &TypeKind,
         value: &TypeKind,
     ) {
         self.request_projection_inner(
+            context,
             key,
             value,
             TypeConstraintProjectionClosure::Closed,
-            Some(input.clone()),
+            Some(input),
         );
     }
 
-    fn request_projection_inner(
+    fn request_projection_inner<A: TypeConstraintAccounting>(
         &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
         value: &TypeKind,
         closure: TypeConstraintProjectionClosure,
-        input: Option<TypeKind>,
+        input: Option<&TypeKind>,
     ) {
         if self.first_failure.is_none() && !self.closed {
             if self.probe.is_some() || self.probe_group.is_some() {
@@ -1381,6 +1383,20 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 );
                 return;
             }
+            let input = match input {
+                Some(input) => match context.capture_lexical_scope() {
+                    Ok(scope) => Some(Arc::new(ConstraintOperand::original(
+                        input.clone(),
+                        Arc::new(scope),
+                        self.original.clone(),
+                    ))),
+                    Err(error) => {
+                        self.record_failure(error.into());
+                        return;
+                    }
+                },
+                None => None,
+            };
             let request = Arc::new(ProjectionRequest {
                 application: self.application,
                 key: Arc::new(key),
@@ -2369,14 +2385,18 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .input
                 .as_ref()
                 .map(|input| {
-                    project_type(
-                        input,
-                        path.projection_view(),
-                        ConstraintClosurePolicy::ProjectionClosed,
-                        context,
-                    )
-                    .map(|projected| projected.value)
-                    .map_err(projection_error)
+                    context.with_original_scope(input.scope().clone(), |context| {
+                        let projected = project_type(
+                            input.value(),
+                            path.projection_view(),
+                            ConstraintClosurePolicy::ProjectionClosed,
+                            context,
+                        )
+                        .map_err(projection_error)?;
+                        solution
+                            .reify_projection_input(&projected.value, path, application, context)
+                            .map_err(projection_error)
+                    })
                 })
                 .transpose()?;
             projections.push(

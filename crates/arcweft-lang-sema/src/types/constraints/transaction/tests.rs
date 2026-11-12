@@ -245,6 +245,69 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
 }
 
 #[test]
+fn a_completed_projection_input_keeps_its_type_const_and_effect_environment() {
+    let cancellation = AtomicBool::new(false);
+    let (mut context, parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, ApplicationSourceDomain>::new(
+            TypeConstraintLimits::new(4096, 2048, 128, 128),
+            &cancellation,
+        )
+        .into_parts();
+    let binder = crate::types::GenericBinder::new(1, 1, 1);
+    let outer = context.enter_binder_scope(binder);
+    let input = TypeKind::function_with_binder(
+        crate::types::GenericBinder::EMPTY,
+        [TypeKind::Array {
+            item: Box::new(TypeKind::GenericParam(
+                context.lexical_scope().bound_type(0, 0).unwrap(),
+            )),
+            len: ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap()),
+        }],
+        TypeKind::I64,
+        EffectRow::open(
+            EffectSet::new(),
+            context.lexical_scope().bound_effect(0, 0).unwrap(),
+        ),
+    );
+    let mut transaction =
+        TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None).unwrap();
+    transaction.request_value_use_projection(&mut context, (), &input, &TypeKind::I64);
+    context.restore_binder_scope(outer);
+    let unrelated = context.enter_binder_scope(binder);
+    let solved = transaction.finish(&mut context).unwrap();
+    let projection = solved.component.projection(0, &()).unwrap();
+    let actual = projection.projection().input_type().unwrap();
+    assert_eq!(actual.scope().binders(), &[binder, binder]);
+    assert_eq!(actual.scope(), projection.projection().value().scope());
+    assert!(actual.to_root_type().is_err());
+    actual
+        .semantic_identity_digest_with_control(&mut context)
+        .unwrap();
+    let TypeKind::Function {
+        params, effects, ..
+    } = actual.value()
+    else {
+        panic!("input function")
+    };
+    let TypeKind::Array { item, len } = &params[0] else {
+        panic!("input array")
+    };
+    assert_eq!(
+        item.as_ref(),
+        &TypeKind::GenericParam(actual.scope().bound_type(0, 0).unwrap())
+    );
+    assert_eq!(
+        len,
+        &ArrayLength::Generic(actual.scope().bound_const(0, 0).unwrap())
+    );
+    assert_eq!(
+        effects,
+        &EffectRow::open(EffectSet::new(), actual.scope().bound_effect(0, 0).unwrap())
+    );
+    context.restore_binder_scope(unrelated);
+}
+
+#[test]
 fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport() {
     let cancellation = AtomicBool::new(false);
     let (mut context, mut transaction) = repeated_source_component(&cancellation, 1);
