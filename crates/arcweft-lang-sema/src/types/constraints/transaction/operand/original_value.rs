@@ -82,7 +82,7 @@ impl OriginalOperandValue for TypeKind {
                     scope.bound_type(bound.depth(), bound.slot())?;
                 }
                 if reference.free_parameter().is_some()
-                    && !original.admits_free(&reference.clone().into())
+                    && !original.admits_parameter(&reference.clone().into())
                 {
                     return Err(TypeProjectionError::Control(references::type_out_of_scope(
                         reference,
@@ -102,7 +102,7 @@ impl OriginalOperandValue for TypeKind {
                         scope.bound_effect(bound.depth(), bound.slot())?;
                     }
                     if reference.free_parameter().is_some()
-                        && !original.admits_free(&reference.clone().into())
+                        && !original.admits_parameter(&reference.clone().into())
                     {
                         return Err(TypeProjectionError::Control(
                             references::effect_out_of_scope(reference),
@@ -135,7 +135,7 @@ impl ArrayLength {
                 scope.bound_const(bound.depth(), bound.slot())?;
             }
             if reference.free_parameter().is_some()
-                && !original.admits_free(&reference.clone().into())
+                && !original.admits_parameter(&reference.clone().into())
             {
                 return Err(references::const_out_of_scope(reference));
             }

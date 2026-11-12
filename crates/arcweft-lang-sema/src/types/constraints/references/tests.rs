@@ -1,4 +1,5 @@
 use crate::types::constraints::test_support::ConstraintTestSetup;
+mod template_authority;
 use std::{collections::BTreeMap, sync::atomic::AtomicBool};
 
 use crate::{

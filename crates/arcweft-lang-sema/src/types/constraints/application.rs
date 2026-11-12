@@ -246,6 +246,24 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         &self.original
     }
 
+    pub(super) fn admits_template_parameter(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> bool {
+        let own = match parameter {
+            super::ConstraintGenericParameterId::Type(reference) => {
+                self.parameters.eligibility(reference).is_some()
+            }
+            super::ConstraintGenericParameterId::Const(reference) => {
+                self.parameters.const_eligibility(reference).is_some()
+            }
+            super::ConstraintGenericParameterId::Effect(reference) => {
+                self.parameters.effect_eligibility(reference).is_some()
+            }
+        };
+        own || self.original.admits_parameter(parameter)
+    }
+
     #[cfg(test)]
     pub(super) fn with_fixture_original(
         mut self,

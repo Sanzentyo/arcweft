@@ -70,7 +70,7 @@ impl Debug for OriginalProducerContext {
 }
 
 impl OriginalProducerContext {
-    pub(super) fn admits_free(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
+    pub(super) fn admits_parameter(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
         let rigid = self.0.source.rigid_scope();
         let declared = match parameter {
             super::ConstraintGenericParameterId::Type(reference) => {
