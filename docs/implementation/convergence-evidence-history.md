@@ -17177,3 +17177,23 @@ sourceの期待型を保持する初回probe経路を、任意のtemplate operan
 今回完了したのは初回probeでのsource期待型合成とその所有境界である。source rowの閉鎖はまだrawなeffect置換値をprojectedで保持し、scheme特殊化はDerivedを使うため、これらやFree認可を完了とは扱わない。前の現状一覧でsource構造合成と特殊化を一括してDerivedの残作業としていた列挙を、今回のコードと実測に基づき訂正した。広い未達一覧はcurrent-statusだけに置き、Generic Match、caller-bound recursion、同group prefixの受入を維持する。
 
 [検証原本](acceptance-evidence/task-source-expectation.raw.zip)は29 entry、展開時9744680 bytes、ZIP 935349 bytes、SHA-256 `63d766b44b8038034b2a613731e56e1f695ce2174e3366ca556118832f938516`。manifestを含む全entryのsize／hashを読み戻し、portableなpath区切りを照合した。以前の履歴のbyte prefix・SHA・実測とGeneric Matchの受入行を保持した。
+
+## Closed source operands and scoped effect derivations
+
+2026-11-13。Source `ebfada3b8e04ee327e71af70f512355e829b28b2`、tree `1491640a42366948faeaf0dcfeb1cbf197b362a8`、親 `8974b3efcf5b8ac594975e964fea9ea9f5f937d5`。移行基点は `54fb6949a22d3a45faf882453d47fe0040338937`。既存mainで中間checkpoint `8974b3efcf5b8ac594975e964fea9ea9f5f937d5` と後続のformat／回帰をnon-forced pushし、origin/mainと全15 pathのblobを照合した。途中commitはユーザーの指示に従う未検証checkpointであり、最終結果には公開後の固定入力を使った。tracked差分0件から本記録・現状一覧・原本を更新し、未追跡 `%SystemDrive%/` を保持した。
+
+active／closed source probeのactualとvalue expectationをoperandへ移し、別に保持していたsource originを削除した。unchecked sourceも実scopeとreceiptを持つ。閉鎖はProjectionClosedの既存反復foldで行い、再構築した各function headerに完了rowの実使用keyとownerを保持する。ConstraintClosedEffectsは実pathのeffect完了、元のconstraint snapshot C、application inventory、実scopeとoriginal contextを所有し、別inventory・変更されたC・scope／contextを拒否する。Cのsnapshotを保存するfield名premisesは、元宣言のDを表すものではない。rowを完了元scopeから各functionの実contents frameへ転送してから代入するため、ambient Boundを局所binderへ取り違えない。predicateも同じ転送を使う。参照していない完了rowや環境全体からFree許可を作らない。source expectationは閉鎖済みactualとtemplate値をchecked projectionで合成し、equationは同じ閉鎖済みoperandをcloneする。任意の型を元originで包み直すprojected APIを削除した。
+
+source traceのresult associationもoperandから読むようにし、通常値とresultを区別した。通常値の型が別resultへのaliasをたどっても、元sourceのassociationをそのresultへ置き換えない。値の出所と観測sourceの関連付けを別の役割として保ち、重複side fieldを復活させていない。scheme特殊化のDerived、他consumerのraw effect置換、最終Free認可は今回の完了境界に含めない。前項まで残作業だったsource rowの閉鎖とprojectedの列挙は、今回のコードと検証に基づき現状一覧から除いた。広い未達一覧はcurrent-statusだけに置く。
+
+公開後の全feature Sema lib／testsは1,642件中1,636 PASS／6 FAIL／0 SKIP（70.799秒、slow 0）。選択と終端の全IDが一致し重複0、既存1,639 IDと追加3 IDを照合した。失敗ID・実診断は直前と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。追加3件は、row／predicateのambient Boundを実局所binder越しに転送し、使用keyだけを保持して元入力とeffect ownerを最後まで所有・解放すること、変更されたconstraintや別inventoryの完了拒否、観測値がalias先resultのassociationを借りないことを確認する。従来のsource receipt／子結果、関数header・局所frame、10,000 aliasと正確な10,001 node、分岐予算、256 probe／1 replay・4,096上限も同じ全件runでPASS。
+
+scope修正の意味的影響を確認するため、同じSourceで他21 packageの規定107 targetも実行した。20 package／76 targetを既存の同一package・selectorのgroupで、Compiler 31 targetを逐次実行した。今回のlist／実行の2,510 IDが一致し重複0、2,507 PASS／2 FAIL／1 SKIP。失敗は元入力でも失敗したCompiler flow_waitの同じ2 IDで、実診断はExpressionCycle（slot 17／19）だった。0 runnableの3 targetはcompileとして記録する。CLIのlibrary 196件と規定6 integration 30件は今回226 PASS。過去の同一target／case／ignored／filter signatureを現在のlistと照合し、過去の結果を今回の実行へ転用していない。owner全featureとconsumer既定featureは別sliceであり、1 commandの全件結果とは扱わない。
+
+workspace全target／全feature・locked check／Clippy、Sema全feature doctest 2件、owner全target／全feature Clippy、workspace fmt check、canonical構造gateは今回終了0。owner各stepの15 pathのbyte pinと公開blob、broad各step前後のcommit／tree／tracked差分0を照合した。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。warningsと開発時の失敗も原本へ保持する。最初の共通fold／effect ownerのlibrary checkは終了0（15.51秒）。source移行後にproduction readerのcfg／関連先とconst getterで15 error、次に残るconst expected getterの1 errorがあり、fixture listではraw actual代入も移行した。list2／list3のcompile成功後、associationと回帰・formatを確定した。最終結果はその後の別の固定入力によるものである。
+
+所有境界は、normalization/effectsが実pathの数学的effect完了、既存projection foldがadmission・alias・binder・構造の唯一の走査、operandが値と対応する導出、transactionがsource／closureの協調を所有する。新しいwalker、capture table、raw fallback、I/O、unsafe、外部public shape、Cargo edge、version・予算変更はない。transactionは既存の2,500 LOC超の協調責任を維持し、新規のeffect完了状態を独立した正当なownerへ置いた。全15 pathのphysical LOC・byte・分類・増分を原本へ保持する。構造gateは98 package・3,480 files・3,349 Rust files、review trigger 396、blocking 0。Semaのworkspace fan-in／outは8／15、devは4／0。
+
+22 packageの逆依存graphはSource `5012e0c6d26655fe005d150c321d47051a21096f` のnormal／dev／build・全feature・全target向け実測を、Cargo入力差分0を確認して再利用した。今回の全consumerの選択・終端・hash・実診断は今回のSourceへ固定した。以前のSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の件数・SHA・失敗記録は削除しない。Wasm・Tier 2・新しい再帰本体のNative／AWBCやNative／Web表示を今回のhost検証から受入とはしない。Generic Match、caller-bound recursion、同group prefixの受入を維持する。
+
+[検証原本](acceptance-evidence/task-closed-source-operands.raw.zip)は233 entry、展開時39967954 bytes、ZIP 4733492 bytes、SHA-256 `48bcb6f2ce324ef9f1a0f9870f2f15c384c2f3887844794fbf929eca7eef57e8`。manifestと全entryのsize／hash、portableなpath区切りを読み戻し照合した。以前の履歴のbyte prefix・SHA・実測とGeneric Matchの受入行を保持した。
