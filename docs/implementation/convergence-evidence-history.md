@@ -17235,3 +17235,23 @@ locked・Sema全target／全feature Clippy、workspace fmt checkは終了0。各
 現状一覧はcurrent-status.mdの一か所に保つ。前行を更新した理由は新しいport保持と実測の追加であり、旧件数・実診断・full SHAは本履歴と凍結原本に残す。Generic Match、caller-bound recursion、同group prefixの受入を変更しない。全体cargo cleanは同日02:01:53〜02:02:09 JSTの履行済み実行（終了0、32,652 files／87.5 GiB）を保持し、今回繰り返していない。
 
 [検証原本](acceptance-evidence/task-operand-port-authority.raw.zip)は35 entry、展開時9893458 bytes、ZIP 946816 bytes、SHA-256 `f21bf650e09435052ef8aad7bd67801ac43f265d48b7c50b3ac92bc73df46edf`。manifestと全entryの長さ・hash・portable pathを読み戻し照合した。
+
+## Original source value admission
+
+2026-11-13。最終Source `2b0d95bdc89402992e75790aaf5a7c0bcf6be409`、tree `cbd073d9c6c4828714afb35bd1a24d01ad9cc61b`、親 `c19c115ea571504e84c98a9143e322819bf97c21`、移行基点 `f476b561ea7ad2ffe07d5433dc8905a2fc02f963`。既存mainでcoreとfixture修復をそれぞれ通常commit／non-forced pushし、公開head・tree・全変更blobを照合した。全件前のcheckpoint公開は、途中commitの正常動作保証を不要とするユーザー指示による。既存の未追跡 `%SystemDrive%/` を保持した。
+
+ConstraintOperandのOriginal値は、実OriginalProducerContextの宣言rigid scopeと明示import leaseからFree（type／const／effect）を検査して保持する。candidate inventoryと数学的Cはこの許可に使わない。明示importはそのparameterと実owner／既保持captureの権限を検査する。source headerの順序と重複もsource admissionで検査する。コピーには既存のmap_term_with_controlを使い、局所Fnのbinder・predicate・rowと配列長も同じgrammarで検査し、コピー前に計上する。元式・期待型・projection input・original productのreferenceをこのfallible constructorへ揃え、raw production constructorを削除した。lower solverのraw fixtureだけをcfg(test)の明示factoryとし、source admissionの回帰はproduction constructorと実Sourceを使う。
+
+最終Sourceの全feature Sema lib／testsは1,655件中1,649 PASS／6 FAIL／0 SKIP、41.001秒、slow 0。5 binaryの選択と終端の全IDが一致・重複0。Source `c0539b52cbf6c6e1175a5ee94116e767d9f1ef19` の全1,651 IDを維持し、新4 IDがPASS。Sourceの型・配列長のconst・effect rowの受入と別ownerの拒否、内側Fnの局所形式引数を保つpredicate検査、candidateのrigid inventoryで見える外国参照の拒否、予算切れでの停止を検査した。拒否はtype／const／effectそれぞれの正確なout-of-scope errorを照合する。既存の局所frame・alias・scheme・source/result関連付けとprobe／replay／branch予算も通過した。既知6失敗のIDと実診断は直前Sourceと一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。
+
+checkpoint `c19c115ea571504e84c98a9143e322819bf97c21`（tree `4ca6c3287a5a77efad87389a69f3181d2f992601`）の全件結果は1,655件中1,648 PASS／7 FAIL／0 SKIP、78.974秒。追加1失敗はa_rigid_actual_is_not_bound_to_a_concrete_patternで、fixtureの元Sourceが空Γなのに固定参照をactualとしていた。fixtureへ元Sourceの権限を明示して、従来の「具体型との不一致として拒否する」assertionを保持した。新testの外国参照拒否assertionも正確なerrorへ強化し、Clippyのsemicolon指摘を修復した。productionのFree検査は緩めず、最終Sourceで全件を新たに実行した。開発時checkの2件のerrorはoriginal productでTypeConstraintErrorにTypeProjectionError用mapperを渡していたためで、既存の型付き伝播へ修復した。private boundの配置もAPIを広げず修復した。中間結果と最終結果を混ぜず原本へ保持する。
+
+同じ最終Sourceで、他21 package・既定feature・規定107 targetを今回実行した。2,510 IDの選択と終端が一致・重複0、2,507 PASS／2 FAIL／1 SKIP。20 package／76 targetはpackageごとのgroupで、Compilerの31 targetは逐次実行。Compilerの既知2失敗は同じflow_waitのIDとExpressionCycle（slot 17／19）で、0 runnableの3 targetはcompileとして記録する。CLI library 196件と統合6 target 30件は226 PASS。owner全featureとconsumer既定featureは別sliceであり、一つのcommandの合算runではない。過去の実行結果を転用せず、各selector／test／ignored／filter signatureは過去の同じinventoryと照合した。
+
+workspace全target／全feature・locked check／Clippy、Sema全feature doctest 2件、owner全target／全feature Clippy、workspace fmt check、canonical構造gateは終了0。各step前後のcommit／tree／tracked差分0、owner全11 pathのbyte pinと公開blob、出力hashを照合した。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。警告も原本に保持する。canonical gateは98 package・3,485 files・3,354 Rust files・1,893,339 Rust physical LOC、review trigger 396・blocking 0。構造gateはowner実行と独立したread-only監査として実行した。Sema fan-in／outは8／15、devは4／0。全11 pathのbyte・physical LOC・基点からの増分を原本へ保持する。
+
+ownerはOriginalProducerContextとoperand/original_valueであり、sourceは実header、operandは許可された値とその元context、既存foldは構造走査と計上を所有する。新しいproduction moduleは157 physical LOC、test moduleは241 LOC。型・定数・効果は同じsource規則で検査し、別のFree一覧やAST walker、candidateからのsource再構成、raw fallbackを作らない。既存transactionは2,741 LOCで、fallible admissionの協調以外のstateを増やしていない。root test moduleの既存5,014 LOCの責務もlower solverの型付き境界のままであり、1 fixtureのsource明示以外の移動や混在はない。公開API・layer方向・Cargo edge・I/O・unsafe・version・予算を変えていない。22 packageの逆依存graphはSource `5012e0c6d26655fe005d150c321d47051a21096f` の実測をCargo入力差分0の確認後に再利用し、テスト実行は今回のSourceへ固定した。
+
+現状行を置換した理由はOriginal値のFree admissionの実装と新しい同一Sourceの横断実測であり、残るtemplate／source／result／Completedやeffect置換の権限・実出力capture sealを完了とはしていない。旧件数・失敗・full SHAをこの履歴と凍結原本へ保持し、現状一覧はcurrent-status.mdの一か所とする。Generic Match、caller-bound recursion、同group prefixの受入を変更しない。Wasm・Tier 2・新しい再帰本体のNative／AWBC・Native／Web表示を今回のhost検証から受入とはしない。履行済みの全体cargo cleanは繰り返していない。
+
+[検証原本](acceptance-evidence/task-original-value-admission.raw.zip)は253 entry、展開時48072460 bytes、ZIP 5427016 bytes、SHA-256 `11399c3d61ea59cc47b2a0ffbf7b4a3254873806a0e6acb6bcc5e1daa704b18c`。manifestと全entryの長さ・hash・portable pathを読み戻し照合した。
