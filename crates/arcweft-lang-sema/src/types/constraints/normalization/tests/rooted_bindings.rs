@@ -12,6 +12,42 @@ fn escaping(parameter: impl Into<ConstraintGenericParameterId>) -> TypeConstrain
 }
 
 #[test]
+fn provenance_projection_releases_ten_thousand_aliases_with_the_exact_shared_node_budget() {
+    let cancellation = AtomicBool::new(false);
+    let (scope, parameters) = type_inventory(10_000);
+    let (mut context, mut path) = context(scope, &cancellation, 10_001).into_path();
+    path.bindings = context.fixture_bindings(
+        parameters.iter().cloned().zip(
+            parameters
+                .iter()
+                .skip(1)
+                .cloned()
+                .map(TypeKind::GenericParam)
+                .chain([TypeKind::I64]),
+        ),
+    );
+    let input = context.fixture_operand(TypeKind::GenericParam(parameters[0].clone()));
+    let projected = super::super::projection::seal_type_operand(
+        input.view(),
+        path.projection_view(),
+        &mut BTreeSet::new(),
+        &mut context,
+    )
+    .unwrap();
+    assert_eq!(projected.value(), &TypeKind::I64);
+    assert_eq!(
+        context.enter_node(),
+        Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
+            actual: 10_002,
+            limit: 10_001,
+        }))
+    );
+    drop(path);
+    drop(input);
+    drop(projected);
+}
+
+#[test]
 fn outer_type_and_const_bindings_reject_new_inner_formals() {
     let cancellation = AtomicBool::new(false);
     let (scope, types) = type_inventory(1);

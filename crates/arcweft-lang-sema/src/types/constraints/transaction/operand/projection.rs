@@ -3,6 +3,11 @@
 use super::*;
 use crate::types::constraints::shape::TypeConstraintChildren;
 
+mod rebuild;
+pub(in crate::types::constraints) use rebuild::{
+    ConstraintOperandDerivation, ConstraintOperandRebuild, ConstraintProjectedOperand,
+};
+
 #[cfg(test)]
 mod tests;
 
@@ -65,10 +70,9 @@ impl<D: ConstraintDomain> Clone for ConstraintOperandView<'_, D> {
 }
 
 pub(in crate::types) struct ConstraintOperandChildren<'a, D: ConstraintDomain> {
-    root: &'a ConstraintOperand<D>,
+    parent: ConstraintOperandView<'a, D>,
     children: std::iter::Enumerate<TypeConstraintChildren<'a>>,
     scope: Arc<ConstraintLexicalScope>,
-    parent: Option<Arc<ConstraintOperandProjection>>,
 }
 
 impl<'a, D: ConstraintDomain> Iterator for ConstraintOperandChildren<'a, D> {
@@ -77,11 +81,11 @@ impl<'a, D: ConstraintDomain> Iterator for ConstraintOperandChildren<'a, D> {
         self.children
             .next()
             .map(|(index, value)| ConstraintOperandView {
-                root: self.root,
+                root: self.parent.root,
                 value,
                 scope: Arc::clone(&self.scope),
                 address: Some(Arc::new(ConstraintOperandProjection::Child {
-                    parent: self.parent.clone(),
+                    parent: self.parent.address.clone(),
                     index,
                 })),
             })
@@ -166,10 +170,9 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
             Arc::new(context.capture_lexical_scope()?)
         };
         Ok(ConstraintOperandChildren {
-            root: self.root,
+            parent: self.clone(),
             children: shape.children().enumerate(),
             scope,
-            parent: self.address.clone(),
         })
     }
 
@@ -195,7 +198,7 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
             root_scope: Arc::clone(&self.root.scope),
             occurrence_scope: Arc::clone(&self.scope),
             producer: Arc::clone(&self.root.origin),
-            address,
+            address: Some(address),
         })
     }
 
@@ -226,7 +229,7 @@ impl<'a, D: ConstraintDomain> ConstraintConstOperandView<'a, D> {
         }
     }
 
-    pub(in crate::types) fn value(&self) -> &ArrayLength {
+    pub(in crate::types) fn value(&self) -> &'a ArrayLength {
         self.value
     }
 

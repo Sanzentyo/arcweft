@@ -16,7 +16,7 @@ type BindingSetup<'a> = (
     Vec<GenericConstReference>,
 );
 
-fn setup(cancellation: &AtomicBool, types: u16, lengths: u16) -> BindingSetup<'_> {
+pub(super) fn setup(cancellation: &AtomicBool, types: u16, lengths: u16) -> BindingSetup<'_> {
     setup_with_limits(
         cancellation,
         types,
@@ -25,7 +25,7 @@ fn setup(cancellation: &AtomicBool, types: u16, lengths: u16) -> BindingSetup<'_
     )
 }
 
-fn setup_with_limits(
+pub(super) fn setup_with_limits(
     cancellation: &AtomicBool,
     types: u16,
     lengths: u16,
@@ -248,7 +248,11 @@ fn a_transitive_type_alias_retains_every_occurrence_and_the_exact_replacement_ro
             );
         }
     }
-    assert_eq!(proof.value(), &TypeKind::I64);
+    assert_eq!(
+        derivation.last().unwrap().replacement.value(),
+        &TypeKind::I64
+    );
+    assert_eq!(proof.scope, terminal.scope);
     assert!(Arc::ptr_eq(&proof.origin, &terminal.origin));
     drop(input);
     drop(path);
@@ -358,7 +362,11 @@ fn ten_thousand_direct_aliases_retain_and_release_a_flat_proof_with_exact_node_a
         panic!("one flat proof owns the chain")
     };
     assert_eq!(steps.len(), 10_000);
-    assert_eq!(terminal.value(), &TypeKind::I64);
+    assert_eq!(steps.last().unwrap().replacement.value(), &TypeKind::I64);
+    assert!(Arc::ptr_eq(
+        &terminal.origin,
+        &steps.last().unwrap().replacement.origin
+    ));
     context.enter_node().unwrap();
     assert_eq!(
         context.enter_node(),

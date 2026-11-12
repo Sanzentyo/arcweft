@@ -618,22 +618,22 @@ where
     };
     for (parameter, value) in &source {
         let mut visiting = BTreeSet::new();
-        let owner = context.binding_scope(&sealed, &parameter.clone().into())?;
-        context.with_original_scope(owner, |context| {
-            let projected = seal_type(value.value(), source_view, &mut visiting, context)?;
-            context.add_sealed_binding(&mut sealed, parameter.clone(), value.projected(projected))
+        // Authenticate the stored root before entering its scope. The key
+        // establishes the binding owner, never the replacement's provenance.
+        source_view.binding(parameter)?;
+        context.with_original_scope(value.scope().clone(), |context| {
+            let projected =
+                projection::seal_type_operand(value.view(), source_view, &mut visiting, context)?;
+            context.add_sealed_binding(&mut sealed, parameter.clone(), projected)
         })?;
     }
     for (parameter, value) in &const_source {
         let mut visiting = BTreeSet::new();
-        let owner = context.binding_scope(&sealed, &parameter.clone().into())?;
-        context.with_original_scope(owner, |context| {
-            let projected = seal_const(value.value(), source_view, &mut visiting, context)?;
-            context.add_sealed_const_binding(
-                &mut sealed,
-                parameter.clone(),
-                value.projected(projected),
-            )
+        source_view.const_binding(parameter)?;
+        context.with_original_scope(value.scope().clone(), |context| {
+            let projected =
+                projection::seal_const_operand(value.view(), source_view, &mut visiting, context)?;
+            context.add_sealed_const_binding(&mut sealed, parameter.clone(), projected)
         })?;
     }
     Ok(sealed)

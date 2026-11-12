@@ -36,6 +36,9 @@ pub(in crate::types::constraints) use operand::ConstraintAliasStep;
 pub(in crate::types) use operand::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandView,
 };
+pub(in crate::types::constraints) use operand::{
+    ConstraintOperandChildren, ConstraintOperandRebuild, ConstraintProjectedOperand,
+};
 use operand::{ResolvedConstraintResult, ResolvedConstraintSource};
 
 /// One equation retained until candidate closure. Source ordinals connect to

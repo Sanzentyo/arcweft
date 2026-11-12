@@ -8,6 +8,7 @@ use crate::types::{GenericBinder, GenericTypeReference};
 use std::sync::atomic::AtomicBool;
 
 mod bindings;
+mod normalization;
 
 type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
@@ -23,10 +24,28 @@ fn context(cancellation: &AtomicBool) -> Context<'_> {
 fn steps<T>(
     value: &ConstraintOperand<NoConstraintClient, T>,
 ) -> Vec<ConstraintOperandProjectionStep> {
-    let ConstraintOperandOrigin::Projection { address, .. } = value.origin.as_ref() else {
-        panic!("retained projection")
-    };
-    address.steps()
+    source_steps(&value.origin)
+}
+
+fn source_steps(
+    origin: &ConstraintOperandOrigin<NoConstraintClient>,
+) -> Vec<ConstraintOperandProjectionStep> {
+    match origin {
+        ConstraintOperandOrigin::Projection {
+            address: Some(address),
+            ..
+        } => address.steps(),
+        ConstraintOperandOrigin::Projection {
+            address: None,
+            producer,
+            ..
+        }
+        | ConstraintOperandOrigin::Rebuilt {
+            source: producer, ..
+        } => source_steps(producer),
+        ConstraintOperandOrigin::ConstOccurrence(value) => source_steps(&value.origin),
+        _ => panic!("retained projection"),
+    }
 }
 
 #[test]
