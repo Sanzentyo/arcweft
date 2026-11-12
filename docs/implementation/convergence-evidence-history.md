@@ -16771,3 +16771,19 @@ Rejected／Blocked／Deferredは元producerを削らずに保持する。条件�
 構造実測はcallable driver 116,045 bytes／2,822行（基点2,759）、Analyzer call constraints 305,025 bytes／7,395行（基点7,266）、lower transaction 94,801 bytes／2,491行（基点2,417）、source owner 21,473 bytes／572行（基点490）。driverはclose一回とerror優先順位、Analyzerは元fact scopeの抽出、lower observationはopaque準備の一度の所有と共有をそれぞれ担当する。既存の大きなdriver／Analyzerを物理行数だけで分割せず、同じprotocolと所有状態の凝集を確認した。個別pathの増加は300行未満。依存、I/O、unsafe、並列の型文法・source authority、compatibility reader、version変更や予算緩和はない。
 
 初回と最終の入力・差分、check診断、全選択ID／結果、品質log、Cargo graph、実測、監査scriptと公開照合を371 entry、展開時49,905,351 bytes、ZIP 6,142,405 bytes、SHA-256 `412435c9c1315650bb8177d1e69135cc0612725177013e31b8b16b16fe2d7398` の[原本](acceptance-evidence/task-retained-source-probe-preparation.raw.zip)へ保持し、manifestを含む全entryの長さとhashを読み戻して照合した。現状一覧の前段ownerの説明と古い横断件数は今回の実測へ置換し、Compiler 2失敗を旧Sourceだけの記述から今回も再現した記述へ訂正した。以前の実行結果・full SHA・凍結ZIPと受入判定は保持し、残作業はcurrent-status.mdの一か所で扱う。
+
+### Prepared declaration-arrow schema projections
+
+2026-11-12、基点 `8bc0804acda0ffa306f5f8cd1be3177ebc99c4ca` の既存mainから、Source `cc4816e327b9a13728c38b21520f8546e82fd074`、tree `de5ff7402ffabe38cd72739c16f9c393ec912dcb` を通常pushし、remote mainのfull SHA・tree・変更6pathのblobを照合した。CallableSignatureSchemaの一つのgroup traversalへcanonical／preparedの投影contextを接続した。prepared側は元schemaの型・const・effect inventoryとnested arrowを保持し、提供されたissuer付き終端scheme applicationを本体の要求前に関数型へ保持できる。前段groupは保持だけの純粋な行、終端だけに呼出し行を置き、元predicateは投影した最初のgroupに保持する。型文法と型内の反復foldは既存TypeKindを共有する。結果は元template scopeに属する未量化の準備で、完成型・checked function-value・宣言とschemeの対応証明を発行しない。
+
+準備の走査・割当・canonical effect/predicateの複製は同じTypeProjectionControlへ課金し、型内の深さにgroup chainの深さを加算する。深さoverflowと元controlのabortを区別して保持する。graphは不変借用で、途中失敗は元termを変更しない。foreign／rollback済みscheme参照と、schemeの代わりに渡されたunknown終端行を拒否する。引数・結果にある未記載の注釈は準備のまま保持する。不正なprefix座標は同じgroup traversalでresult projection前に拒否し、空のgroupの座標0は維持した。既存のcanonical consumerの内部エラー変換も移行した。
+
+固定入力は上記baseとstaged treeで、公開Sourceのtreeと一致する。全featureのSemaは公開API compileを含む5 binary・全1,543件、1,537 PASS／6 FAIL／0 SKIP、nextest終了100、実行時間74.230秒。全選択IDと終端IDが一致し、重複0、元の256候補境界もPASS。新規6件は全PASSで、未解析schemeからの3-group／同group prefix、元のnested callback行、後の再帰scheme閉包、canonical投影との4座標の一致、元type／const／制約付きpredicateと未記載の結果行、foreign／stale／unknown終端拒否、各予算境界・inclusive成功・取消し・深さoverflow、不正座標と空groupを確認した。失敗6件のIDは直前Source `d20f11a7fa9762662df0cdbbe042670207b0177b` の再帰本体6件と一致した。
+
+初期の未固定入力のowner checkはテストのArray variant記法2か所で終了101、実行テスト0件。修復途中の選択6件は5 PASS／1 FAILで、不正な裸のeffect名timeを使ったfixtureがMissingOperationを返した。これを正しいfs.writeへ訂正し、generic testのpredicateも制約付きへ強化した後、上記の固定入力全件で追加6件を通過した。初期入力のSource snapshotは取得しておらず、途中logを最終treeの結果として扱わない。混在streamの初回list logから抽出したJSONも元logと区別して保持する。
+
+最終入力のlocked・Sema全target・全feature Clippy、workspace整形、構造gateは終了0、blocking 0件。Clippyには未接続API・複雑な戻り値型と既存を含む警告が残る。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。Cargo入力は変更せず、3 modeで22 packageを確認した前回Sourceのresolved graphを再利用した。新しいprepared入口は実解析へ未接続の私有準備APIで、canonicalの有効なgroup／契約を同じ構築手順へ保つowner変更として全Semaと公開API compileを選択した。全consumer、workspace check／Clippy、Wasm、doctest、Compiler実行の前回結果は前回Sourceのまま保持し、今回のowner件数と合算しない。
+
+構造実測はschema function type owner 25,903 bytes／703行（基点417、増加286）、別test 15,177 bytes／475行。schemaのgroup順序と各phaseの投影context・work admissionを同じ所有境界へ置き、型内の再帰は共有foldへ委譲した。testの300行超増加はこの投影・元term・abortの境界を検証するもので、別ownerや実行backendへ結合しない。既存continuation 103,010 bytes／2,653行は内部エラー変換の1行増加だけで、状態・依存・元graphの所有を変えていない。types.rsの1行は同じeffect visitorを実consumerへ内部再公開するもので、公開APIや依存を増やす物理分割ではない。新たな依存、I/O、unsafe、並列の型文法、互換reader、version変更や予算緩和はない。
+
+初回診断と途中失敗、固定入力・差分・全ID／結果、品質log、実測、graph再利用、監査と公開照合を27 entry、展開時8,930,118 bytes、ZIP 838,903 bytes、SHA-256 `2c3e9e44ca73855b67e4a76d6a18ba0f4cc3c3809283226368c908e5aa9fde16` の[原本](acceptance-evidence/task-prepared-declaration-arrows.raw.zip)へ保持し、manifestを含む全entryの長さとhashを読み戻して照合した。現状一覧の前段ownerの説明とowner件数を今回の実測へ置換し、前回の全consumer／品質結果は元Sourceへ明示的に区別した。以前の実行結果・full SHA・凍結ZIP、Generic Match・呼出し側再帰・同一グループprefixの受入を保持し、残作業の重複列挙は追加していない。
