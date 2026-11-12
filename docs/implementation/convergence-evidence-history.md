@@ -16923,3 +16923,15 @@ locked・全target・全feature workspace check／Clippy、workspace整形、構
 Supersedes: 前回の現状行に列挙した「完了解・residual・templateに元scopeとcapture権限を保持」は、このowner境界と10件の実測を根拠に置き換えた。残る具体的境界は、live ambientの実enclosing引数対応、元producerの形式域の認証、関数形式引数の局所量化、prepared効果の条件付きMGUと元候補の適格性／rank、式・local・patternのprepared値からの一括sealである。flatな閉じた型への不正な置換を拒否したことを、実enclosing引数対応の完了とはしない。再帰本体の既知失敗も未解消である。Generic Matchと呼出し側で束縛した再帰など、既受入の別境界は未完了へ戻していない。
 
 [検証原本](acceptance-evidence/task-completed-generic-context.raw.zip)は239 entry、展開時31166469 bytes、ZIP 3913374 bytes、SHA-256 `c4a09718cf51200f7b020c24c4cd559623f5be8a8e67b2c4c36d6e50a55ad7f1`。manifestを含む全entryを長さ・hashで読み戻し照合した。既存の結果・full SHA・凍結原本を保持し、現状はcurrent-status.mdの一か所に集約する。全体cargo cleanは履行済みの記録を維持し、この検証では繰り返していない。
+
+## Original effect declaration read authority
+
+2026-11-12。Source `2fba5fde824ac806569fa044a3a80221abbff6d3`、tree `5feb0e8bb72bbf0229a0cd4bca8c97d7ef5d42ac`、基点 `741c17ca897b52bf3bbfcd7924b5d2cc5af1dd9c`。既存mainでprivateな2 Rust pathを更新し、公開SHA・tree・2 blobを照合した。PreparedEffectDeclarationは実際に登録されたschemeの同じ不変headerを共有し、元の形式引数・宣言域を借りる。本体準備後もheaderは同一で、別graph・rollbackで消えた宣言・新しく発行した別ordinalへの流用を拒否する。header共有の前にworkを予約する。新しいschemeをこの参照のために作ったり、Dを呼び出し経路からコピーして保持したりしない。
+
+最初の新規3件と、effect／prepared declaration arrowの関連47件はそれぞれ全件成功した。明示的なbyte pinと公開Sourceの照合後にも、同じ47件が0.380秒で全件成功した。新規3件と既存44件（arrow 6件を含む）で、全選択IDと終端IDは一致し重複0。47件を2回の合計94件とはしない。filter外の1,531件は未実行であり、全Semaの成功へ読み替えない。Semaのlocked・全target・全feature Clippyは終了0、警告を保持した。2 pathの入力byte hash、staged patch、初回と最終のrun／Clippy原本と公開照合を保持する。
+
+既存solverの動作・公開API・Cargo入力・依存を変えず、privateな参照APIとそのtestだけを追加した。新moduleは159物理LOC（production 66、test 93）で、元headerのread authorityだけを所有する。推移的逆依存107 target、全Sema、workspace全体の品質・Wasm・新しいNative／AWBCは、このSourceでは再実行していない。直前の全件結果はSource `9fd25d236a0c1e38731b16bbc753c8a43b12da7a` の証拠として維持する。
+
+静的な契約照合では、OriginalProducerContextのD／rigid Fはinitializer／callを元々検査するcaller bodyに属し、callee schemaのpredicateはfresh application meta Xへのobligationだと確認した。既存SchemeHeaderのDはそのreal bodyの∀F方程式に既に使われており、原型の条件付きMGUに同じauthorityを接続する必要がある。元body ref・実Γのlease・宣言formalsからΓへの写像をtransaction開始時から保持し、登録時のcurrent scopeやpath predicateで後付けしない。Fn自身のBは局所∀として閉じる。これはSource `741c17ca897b52bf3bbfcd7924b5d2cc5af1dd9c` のread-only相談と実sourceの照合であり、Cargo／実行受入ではない。実body・Γとの認証、元rootへの必須保持、条件付きMGU、局所∀、rank、frontendの接続は未完了で、今回の参照APIだけでは完了としない。現行仕様にcallerの前提とcalleeのobligationの区別を明記した。
+
+[検証原本](acceptance-evidence/task-original-effect-declaration-authority.raw.zip)は20 entry、展開時13381066 bytes、ZIP 1106556 bytes、SHA-256 `156ea0598d7e0148c2c393b71c2b1da2ae73f4c0b63b6dfd1ec96e035adaf17e`。manifestを含む全entryを読み戻し照合した。現状一覧の再帰本体行にこのprivate APIの範囲だけを追記し、全件検証のSourceを差し替えていない。既存の受入・結果・full SHAと履歴の既存byte prefixを保持し、既存の未追跡 `%SystemDrive%/` は保持した。
