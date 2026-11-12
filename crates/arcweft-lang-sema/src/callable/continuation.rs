@@ -16,9 +16,10 @@ use thiserror::Error;
 
 use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable};
 
+#[cfg(test)]
+use crate::types::{GenericConstParameterId, GenericTypeParameterId};
 use crate::types::{
-    GenericConstParameterId, GenericConstReference, GenericEffectReference, GenericTypeParameterId,
-    GenericTypeReference, TypeKind,
+    GenericConstReference, GenericEffectReference, GenericTypeReference, TypeKind,
     constraints::{
         TypeConstraintConstEligibility, TypeConstraintEffectScope, TypeConstraintInvariant,
         TypeConstraintParameterEligibility, TypeConstraintParameterScope, TypeConstraintRejection,
@@ -263,13 +264,32 @@ impl std::error::Error for PreparedCallGraphInvariant {}
 /// The graph issuer consumes it and does not retain a parallel scope table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EnclosingGenericParameterScope {
+    source: EnclosingConstraintSource,
     types: Box<[GenericTypeReference]>,
     consts: Box<[GenericConstReference]>,
     effects: Box<[GenericEffectReference]>,
     imported_scope: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum EnclosingConstraintSource {
+    Checked(super::CheckedConstraintSourceOwner),
+    #[cfg(test)]
+    Fixture,
+}
+
+impl EnclosingConstraintSource {
+    fn admits(&self, expression: ExprId) -> bool {
+        match self {
+            Self::Checked(source) => source.admits(expression),
+            #[cfg(test)]
+            Self::Fixture => true,
+        }
+    }
+}
+
 impl EnclosingGenericParameterScope {
+    #[cfg(test)]
     pub(crate) fn sealed<T, C, E>(
         types: T,
         consts: C,
@@ -285,26 +305,51 @@ impl EnclosingGenericParameterScope {
             consts.into_iter().map(Into::into),
             effects.into_iter().map(Into::into),
             None,
+            EnclosingConstraintSource::Fixture,
         )
     }
 
-    pub(crate) fn sealed_with_imported_scope<T, C, E>(
-        types: T,
-        consts: C,
-        effects: E,
+    pub(crate) fn for_source(
+        source: super::CheckedConstraintSourceOwner,
         imported: Option<&crate::types::constraints::ImportedGenericParameterScopeLease>,
-    ) -> Result<Self, CallConstraintInvariant>
-    where
-        T: IntoIterator<Item = GenericTypeReference>,
-        C: IntoIterator<Item = GenericConstReference>,
-        E: IntoIterator<Item = crate::types::GenericEffectReference>,
-    {
+    ) -> Result<Self, CallConstraintInvariant> {
+        let inventory = source.signature().map(|schema| schema.generic_inventory());
+        let types = inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.types())
+            .map(|entry| entry.parameter().clone())
+            .collect::<BTreeSet<_>>();
+        let consts = inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.consts())
+            .map(|entry| entry.parameter().clone())
+            .collect::<BTreeSet<_>>();
+        let effects = inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.effects())
+            .map(|entry| entry.parameter().clone())
+            .collect::<BTreeSet<_>>();
+        if types
+            .iter()
+            .any(|parameter| parameter.free_parameter().is_none())
+            || consts
+                .iter()
+                .any(|parameter| parameter.free_parameter().is_none())
+            || effects
+                .iter()
+                .any(|parameter| parameter.free_parameter().is_none())
+        {
+            return Err(CallConstraintInvariant::MalformedSchemaInventory);
+        }
         // Imported variables retain their real owner's lease. They are not
         // declaration-authored rigid parameters of this independent call.
-        let types = types.into_iter().collect::<BTreeSet<_>>();
-        let consts = consts.into_iter().collect::<BTreeSet<_>>();
-        let effects = effects.into_iter().collect::<BTreeSet<_>>();
-        Self::sealed_references(types, consts, effects, imported.cloned())
+        Self::sealed_references(
+            types,
+            consts,
+            effects,
+            imported.cloned(),
+            EnclosingConstraintSource::Checked(source),
+        )
     }
 
     fn sealed_references<T, C, E>(
@@ -312,6 +357,7 @@ impl EnclosingGenericParameterScope {
         consts: C,
         effects: E,
         imported_scope: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
+        source: EnclosingConstraintSource,
     ) -> Result<Self, CallConstraintInvariant>
     where
         T: IntoIterator<Item = GenericTypeReference>,
@@ -325,6 +371,7 @@ impl EnclosingGenericParameterScope {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
         Ok(Self {
+            source,
             types: types.into_boxed_slice(),
             consts: consts.into_boxed_slice(),
             effects: effects.into_boxed_slice(),
@@ -2086,6 +2133,7 @@ impl<P, U> PreparedCallGraph<P, U> {
     /// it with the graph's inherited solution.
     pub(crate) fn validate_and_issue_constraint_initialization(
         &self,
+        site: CheckedCallSite,
         candidate: &super::PreparedResolvedCallable,
         transition: CallableGroupTransition,
         enclosing: &EnclosingGenericParameterScope,
@@ -2093,6 +2141,9 @@ impl<P, U> PreparedCallGraph<P, U> {
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
+        if !enclosing.source.admits(site.expression()) {
+            return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
         issue_constraint_initialization(
             Arc::clone(&self.issuer),
             candidate,
@@ -2117,8 +2168,13 @@ impl<P, U> PreparedCallGraph<P, U> {
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
         self.validate_constraint_authority(parent_authority)?;
-        let initialization =
-            self.validate_and_issue_constraint_initialization(candidate, transition, enclosing)?;
+        if parent_authority.source != enclosing.source
+            || !enclosing.source.admits(site.expression())
+        {
+            return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
+        let initialization = self
+            .validate_and_issue_constraint_initialization(site, candidate, transition, enclosing)?;
         Ok(PreparedChildConstraintInitialization {
             initialization,
             receipt,
@@ -2491,6 +2547,7 @@ fn issue_scope_initialization(
         future_parameters,
         continuation_seed: seed,
         imported_scope: enclosing.imported_scope().cloned(),
+        source: enclosing.source.clone(),
     })
 }
 
@@ -2502,6 +2559,7 @@ pub(crate) struct PreparedConstraintInitialization {
     future_parameters: Box<[GenericTypeReference]>,
     continuation_seed: PreparedCallConstraintSeed,
     imported_scope: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
+    source: EnclosingConstraintSource,
 }
 
 /// One child application authorized by the same prepared graph and an exact
@@ -2532,6 +2590,8 @@ impl<D: crate::types::constraints::ConstraintDomain> PreparedChildConstraintInit
         candidate: &super::PreparedResolvedCallable,
     ) -> bool {
         Arc::ptr_eq(&self.initialization.issuer, &authority.issuer)
+            && self.initialization.source == authority.source
+            && self.initialization.source.admits(site.expression())
             && self.receipt.matches(receipt)
             && self.application == application
             && self.site == site
@@ -2563,6 +2623,7 @@ impl<D: crate::types::constraints::ConstraintDomain> PreparedChildConstraintInit
 /// cannot recreate it from a graph ID, an application coordinate or a scope.
 pub(super) struct PreparedConstraintAuthority {
     issuer: Arc<PreparedCallGraphIssuer>,
+    source: EnclosingConstraintSource,
 }
 
 enum PreparedCallConstraintSeed {
@@ -2594,6 +2655,7 @@ impl PreparedConstraintInitialization {
             future_parameters: _,
             continuation_seed,
             imported_scope,
+            source,
         } = self;
         let solution = match continuation_seed {
             PreparedCallConstraintSeed::None {
@@ -2612,7 +2674,7 @@ impl PreparedConstraintInitialization {
             }
         };
         Ok((
-            PreparedConstraintAuthority { issuer },
+            PreparedConstraintAuthority { issuer, source },
             parameter_scope,
             solution,
             imported_scope,
@@ -2633,6 +2695,7 @@ mod initialization_tests {
             future_parameters,
             continuation_seed,
             imported_scope: _,
+            source,
         } = initialization;
         let foreign = PreparedConstraintInitialization {
             issuer: Arc::new(PreparedCallGraphIssuer),
@@ -2640,6 +2703,7 @@ mod initialization_tests {
             future_parameters,
             continuation_seed,
             imported_scope: None,
+            source,
         };
         assert!(matches!(
             foreign.into_lower_parts(),

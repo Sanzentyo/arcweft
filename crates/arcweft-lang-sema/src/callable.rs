@@ -98,6 +98,7 @@ pub use checked_catalog::{
 };
 pub(crate) use checked_catalog::{
     CheckedCallableAuthorityLease, CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder,
+    CheckedConstraintSourceOwner,
 };
 pub(crate) use constraints::{
     CandidateConstraintDriverStartFailure, CandidateConstraintSourceContext,

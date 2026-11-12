@@ -45,12 +45,17 @@ impl<P, U> PreparedCallGraph<P, U> {
 
     pub(in crate::callable) fn prepare_root_function_specialization(
         &self,
+        expression: ExprId,
         source: &TypeKind,
         enclosing: &EnclosingGenericParameterScope,
         limits: &crate::callable::CallableLimits,
     ) -> Result<PreparedFunctionSpecializationScope, CallConstraintInvariant> {
+        if !enclosing.source.admits(expression) {
+            return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
         PreparedConstraintAuthority {
             issuer: Arc::clone(&self.issuer),
+            source: enclosing.source.clone(),
         }
         .prepare_function_specialization(source, enclosing, limits)
     }
@@ -63,6 +68,9 @@ impl PreparedConstraintAuthority {
         enclosing: &EnclosingGenericParameterScope,
         limits: &crate::callable::CallableLimits,
     ) -> Result<PreparedFunctionSpecializationScope, CallConstraintInvariant> {
+        if self.source != enclosing.source {
+            return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
         let TypeKind::Function {
             binder,
             params,
@@ -110,7 +118,7 @@ impl<D: ConstraintDomain> PreparedFunctionSpecialization<D> {
         if !Arc::ptr_eq(&self.scope.initialization.issuer, &authority.issuer) {
             return Err(CallConstraintInvariant::ForeignPreparedIssuer);
         }
-        if !self.receipt.matches(receipt) {
+        if !self.receipt.matches(receipt) || self.scope.initialization.source != authority.source {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
         let (_, parameters, inherited, imported) = self.scope.initialization.into_lower_parts()?;

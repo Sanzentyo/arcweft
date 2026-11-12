@@ -4512,7 +4512,9 @@ pub(crate) fn validate_and_prepare_call_constraints(
         ),
         None => PreparedCallConstraintInitialization::Root(
             graph
-                .validate_and_issue_constraint_initialization(&candidate, transition, enclosing)
+                .validate_and_issue_constraint_initialization(
+                    site, &candidate, transition, enclosing,
+                )
                 .map_err(|error| {
                     CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
                 })?,

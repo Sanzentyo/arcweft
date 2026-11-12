@@ -197,7 +197,12 @@ impl CandidateConstraintWorkSession<'_> {
                 }
             })?;
         let (initialization, source, template) = graph
-            .prepare_root_function_specialization(source, enclosing, limits)
+            .prepare_root_function_specialization(
+                application.expression(),
+                source,
+                enclosing,
+                limits,
+            )
             .map_err(FunctionSpecializationFailure::Prepared)?
             .into_parts();
         let (_, parameters, inherited, imported) = initialization

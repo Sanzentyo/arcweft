@@ -4814,80 +4814,23 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         imported: Option<&crate::types::constraints::ImportedGenericParameterScopeLease>,
     ) -> Result<EnclosingGenericParameterScope, AnalyzerExpressionError> {
-        let enclosing_declaration = self
-            .enclosing_callable(module, owner)
-            .map_err(AnalyzerExpressionError::fatal)?;
-        let enclosing_inventory = enclosing_declaration
+        if module.module_id() != owner.module() || module.resolve_expr(owner).is_err() {
+            return Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::InvalidOwner,
+            ));
+        }
+        let source = self
+            .staged_callables
             .as_ref()
-            .map(|declaration| {
-                self.catalogs
-                    .world
-                    .environment()
-                    .callable_catalog()
-                    .project_record(declaration)
-                    .map(|record| record.schema().generic_inventory())
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CheckedCallableCatalog,
-                        )
-                    })
-            })
-            .transpose()?;
-        let enclosing_types = enclosing_inventory
-            .into_iter()
-            .flat_map(|inventory| inventory.types().iter())
-            .map(|entry| {
-                entry
-                    .parameter()
-                    .free_parameter()
-                    .cloned()
-                    .map(crate::types::GenericTypeReference::Free)
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })
-            })
-            .collect::<Result<BTreeSet<crate::types::GenericTypeReference>, _>>()?;
-        let enclosing_consts = enclosing_inventory
-            .into_iter()
-            .flat_map(|inventory| inventory.consts().iter())
-            .map(|entry| {
-                entry
-                    .parameter()
-                    .free_parameter()
-                    .cloned()
-                    .map(crate::types::GenericConstReference::Free)
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })
-            })
-            .collect::<Result<BTreeSet<crate::types::GenericConstReference>, _>>()?;
-        let enclosing_effects = enclosing_inventory
-            .into_iter()
-            .flat_map(|inventory| inventory.effects().iter())
-            .map(|entry| {
-                entry
-                    .parameter()
-                    .free_parameter()
-                    .cloned()
-                    .map(crate::types::GenericEffectReference::Free)
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })
-            })
-            .collect::<Result<BTreeSet<crate::types::GenericEffectReference>, _>>()?;
-        EnclosingGenericParameterScope::sealed_with_imported_scope(
-            enclosing_types,
-            enclosing_consts,
-            enclosing_effects,
-            imported,
-        )
-        .map_err(|_| {
+            .ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
+            })?
+            .builder
+            .constraint_source_owner(&self.topology, owner)
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
+            })?;
+        EnclosingGenericParameterScope::for_source(source, imported).map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
                 owner,
             })
