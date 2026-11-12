@@ -86,11 +86,10 @@ impl CheckedCallableCatalogBuilder {
                 let pending = self
                     .pending_by_candidate(&CallableCandidateId::Project(declaration.clone()))
                     .map_err(|_| CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
-                if pending.body_contract().is_none() {
-                    return Err(CheckedCallableCatalogBuildError::InvalidEffectAuthority);
-                }
                 // The sealed semantic path already identifies this actual
-                // declaration body; no second body traversal or source lookup.
+                // declaration's source. Defaults also belong to declarations
+                // with fixed or bodyless contracts; body inference is not the
+                // authority for source ownership.
                 SourceContract::Declaration {
                     id: pending.id().clone(),
                     record: Arc::clone(pending.record()),
@@ -124,14 +123,30 @@ mod tests {
         )
         .unwrap();
         for facts in checked.records() {
-            if let CheckedCallableEffects::Body { contract, .. } = &facts.effects {
-                builder
-                    .insert_body_shell(
-                        Arc::clone(facts.record()),
-                        contract.clone(),
-                        &contract.source.anchor,
-                    )
-                    .unwrap();
+            match &facts.effects {
+                CheckedCallableEffects::Body { contract, .. } => {
+                    builder
+                        .insert_body_shell(
+                            Arc::clone(facts.record()),
+                            contract.clone(),
+                            &contract.source.anchor,
+                        )
+                        .unwrap();
+                }
+                CheckedCallableEffects::BodylessTraitRequirement { contract } => {
+                    builder
+                        .insert_bodyless_trait_shell(
+                            Arc::clone(facts.record()),
+                            facts.execution.clone(),
+                            contract.clone(),
+                        )
+                        .unwrap();
+                }
+                CheckedCallableEffects::RecordFixed => {
+                    builder
+                        .insert_fixed_shell(Arc::clone(facts.record()), facts.execution.clone())
+                        .unwrap();
+                }
             }
         }
         builder.begin_inference().unwrap();
@@ -291,5 +306,33 @@ mod tests {
             source,
             builder.constraint_source_owner(topology, items[1]).unwrap()
         );
+    }
+
+    #[test]
+    fn original_source_owner_keeps_defaults_of_fixed_declarations() {
+        let world = fixture(
+            r##"#[fx]
+fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
+    Fx.text(color = accent)
+}"##,
+            None,
+        );
+        let analysis = analyze(&world).unwrap();
+        let builder = builder(&analysis);
+        let owner = expression(&analysis, "emphasis");
+        let source = builder
+            .constraint_source_owner(analysis.hir_topology(), owner)
+            .unwrap();
+        let SourceContract::Declaration { id, record } = &source.contract else {
+            panic!("actual fixed declaration")
+        };
+        let pending = builder.pending_by_id(id).unwrap();
+        assert!(matches!(
+            pending.contract,
+            PendingCallableEffectContract::RecordFixed
+        ));
+        assert!(Arc::ptr_eq(record, pending.record()));
+        assert!(source.admits(owner));
+        assert!(source.signature().is_some());
     }
 }
