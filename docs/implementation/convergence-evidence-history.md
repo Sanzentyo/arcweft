@@ -17039,3 +17039,19 @@ PendingEquationのpattern・actual・final_expectedをConstraintOperandへ移し
 記録の訂正: 前原本task-application-source-context.raw.zipのmanifestにあるrun commandには、実行していない `--no-tests fail` が余分に含まれていた。同梱のapplication-source-context.final-validation.jsonのArgumentsを実コマンドの正とする。実選択1,617件・全終端ID照合と実結果は変更しない。同原本のapplication/tests.rsのClassificationはtestが正しく、productionという記載を訂正する。byte・物理LOC・テスト結果はそのまま履歴として保持し、凍結原本を上書きしない。今回のmanifestは実Argumentsに合わせ、test fileの分類も修正した。
 
 [検証原本](acceptance-evidence/task-equation-operand-context.raw.zip)は23 entry、展開時9025099 bytes、ZIP 842155 bytes、SHA-256 `4ecb0865ba6ba48d87aff1b90c5f7b1021161e59b4486471cb7e0bc1ae3a644e`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusに集約し、既存履歴のbyte prefix・SHA・実測を保持した。
+
+## Scoped contexts on projection inputs
+
+2026-11-13。Source `02c0f37139e1015dc56ff93365df128b88a789e8`、tree `8d3eb6de55161a86a3a5c84b85711b47a3f050ca`、親 `156aa39122df98085f34aad45d94485bc3ed57a5` を既存mainへnon-forced pushし、origin/mainのcommit・tree・変更7 blobと固定入力を照合した。tracked差分0件から本記録を更新し、未追跡 `%SystemDrive%/` を保持した。
+
+PendingResultConstraintとProjectionRequestの入力をArc<ConstraintOperand>で共有し、入力の実scopeと選択済みresultのowner／requestを保持する。raw value-use入力も、実frameと元OriginalProducerContextを計量・保持してからcloneする。入力の完了は元scope内で行い、同じCompletedGenericContextへreifyする。KeyedConstraintProjectionのraw inputをCompletedConstraintTypeへ置換し、input_typeはScopedTypeViewを返す。特殊化sealのdigestとcompleted componentの比較を同時に移行し、空のGenericScopeで入力を読み直す経路を削除した。関数特殊化sealの既存のroot-only条件はこのcutで拡張していない。
+
+全featureのSema lib／testsは1,620件中1,614 PASS／6 FAIL／0 SKIP（79.724秒）。全選択IDと終端IDが一致、重複0。失敗IDと実診断は既知6件と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。追加1件はtype／const／effectを持つ入力を保持し、同形だが別frameの環境で完了しても正しい実Γを持つビューになること、root typeへ不当に平坦化できずscope付きdigestを計算できることを確認する。既存のoperand・capture・alias・256 probe／1 replay・4,096上限も通過した。Semaのlocked・全target・全feature Clippyとworkspace fmt checkは終了0、警告を保持した。7 pathのpinを全実行の前後と公開時に照合した。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+最初のproduction全target／全feature checkは終了0（24.76秒）。追加testがArray.lengthと書き、正しいArray.lenと異なっていたためE0559／E0026／E0027でコンパイル失敗した。fixtureのfield名だけを修正し、次の選択runは109 PASS／0 FAIL（0.897秒）、filter外1,487件は未実行。その後に上記の固定入力で全件・品質を確認した。失敗原本も保持する。
+
+solutionは1,203物理LOC（基点1,186、増加17）で新しい1,200 LOC review triggerに達した。completed binding・残余置換・projectionを一つのCompletedGenericContextで所有し、入力reifyも同じownerとreference foldを使う。入力専用のcontext・別traversal・無関係なstate clusterを作っていない。別所有境界のない物理分割のための公開拡張は採用しない。transactionは2,705（増加20）で同じsource／closure状態遷移を所有する。specialization 363（増加1）、completion 250（増加6）、normalization 915（増加2）、result_port 269（増加11）、責任test 1,513（増加63）。全byte・hash・分類は原本に保持する。Cargo edge、public export、unsafe、I/O、version、budgetの変更はない。crate-private input producerと具体的consumer 2か所を同時移行し、全Semaを検証した。22 packageのresolved closureとCargo入力は不変。21 consumerの直近2,507 PASS／2 FAIL／1 SKIPとworkspace全件の品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の実測を保持し、新入力の再実行や合算とはしない。Wasm・Tier 2・新しいbody Native／AWBC受入は主張しない。
+
+checked frontend valueからoperandを発行する境界、binding／alias・共有fold・capture sealとownerごとのFree検査、条件付きMGU・適格性／rank、Fnの局所∀、body一回準備は未完了として区別する。今回のscoped input保持を、それら全体の完了へ読み替えない。Generic Match、caller-bound recursion、同group prefixの既受入は維持する。
+
+[検証原本](acceptance-evidence/task-projection-input-context.raw.zip)は25 entry、展開時9179514 bytes、ZIP 864841 bytes、SHA-256 `7b9d2986c3aafd7ee7ab5f2cba6c05b6a195361594f60edd900231470c7176dd`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusへ集約し、既存履歴のbyte prefix・SHA・実測を保持した。
