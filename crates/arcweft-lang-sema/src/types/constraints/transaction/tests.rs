@@ -205,6 +205,149 @@ fn application_local_source_coordinates_materialize_without_collisions() {
 }
 
 #[test]
+fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
+    let cancellation = AtomicBool::new(false);
+    let (mut context, transaction) = repeated_source_component(&cancellation, 1);
+    let mut path = context.fork_path(transaction.test_single_path()).unwrap();
+    let before = path.equations[0].actual.clone();
+    let receipt = before.source_receipt().unwrap().clone();
+    let original = before.original_context().clone();
+    close_source_rows(&mut path, &EffectSubstitution::default(), &mut context).unwrap();
+    let equation = &path.equations[0];
+    assert!(equation.actual.source_receipt().unwrap().matches(&receipt));
+    assert_eq!(equation.actual.original_context(), &original);
+    assert_eq!(equation.actual.value(), &TypeKind::I64);
+    assert!(equation.actual.result_origin().is_none());
+    assert!(equation.final_expected.is_some());
+    assert_eq!(
+        equation.final_expected.as_ref().unwrap().original_context(),
+        equation.pattern.original_context()
+    );
+
+    let enclosing = context.enter_binder_scope(crate::types::GenericBinder::new(1, 0, 0));
+    let target = context.capture_lexical_scope().unwrap();
+    let transported = equation.transport(&target, &mut context).unwrap();
+    assert_ne!(before.scope(), transported.actual.scope());
+    assert_eq!(transported.actual.scope(), &target);
+    assert_eq!(transported.actual.original_context(), &original);
+    assert!(
+        transported
+            .actual
+            .source_receipt()
+            .unwrap()
+            .matches(&receipt)
+    );
+    assert_eq!(
+        transported.final_expected.as_ref().unwrap().scope(),
+        &target
+    );
+    context.restore_binder_scope(enclosing);
+}
+
+#[test]
+fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport() {
+    let cancellation = AtomicBool::new(false);
+    let (mut context, mut transaction) = repeated_source_component(&cancellation, 1);
+    transaction
+        .begin_prepared_probe(
+            &mut context,
+            PreparedSourceConstraint::checked(
+                8,
+                PreparedConstraintSourceProjection::Scalar,
+                [],
+                super::super::PreparedSourceAlternative::new(0, (), TypeKind::String),
+            )
+            .unwrap(),
+            ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+    let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+    let receipt = ticket.receipt();
+    let nested = ticket.fork_for_child(&mut context).unwrap();
+    let mut child = TypeConstraintTransaction::initialize_from_nested_path(
+        &mut context,
+        2,
+        TypeConstraintParameterScope::empty(),
+        None,
+        nested,
+    )
+    .unwrap();
+    let child_id = child.application;
+    child.request_projection(
+        &mut context,
+        (),
+        &TypeKind::String,
+        TypeConstraintProjectionClosure::Closed,
+    );
+    let pending = child
+        .suspend_result(&mut context, ())
+        .unwrap()
+        .into_child(&mut context)
+        .unwrap();
+    let contribution = ticket
+        .observe_child(
+            pending,
+            0,
+            SourceProbeSelection::Checked {
+                alternative: 0,
+                evidence: Arc::new(()),
+            },
+        )
+        .unwrap()
+        .close_preparation(());
+    transaction
+        .submit_probe(
+            &mut context,
+            ticket.input(),
+            ProbeSubmission::Accepted(contribution),
+        )
+        .unwrap();
+    assert!(transaction.next_probe(&mut context).unwrap().is_none());
+    let mut path = context.fork_path(transaction.test_single_path()).unwrap();
+    let before = path.equations.last().unwrap().actual.clone();
+    assert_eq!(before.value(), &TypeKind::String);
+    assert_eq!(before.result_origin().unwrap().application(), child_id);
+    assert!(before.source_receipt().unwrap().matches(&receipt));
+    close_source_rows(&mut path, &EffectSubstitution::default(), &mut context).unwrap();
+    let enclosing = context.enter_binder_scope(crate::types::GenericBinder::new(1, 0, 0));
+    let target = context.capture_lexical_scope().unwrap();
+    let transported = path
+        .equations
+        .last()
+        .unwrap()
+        .transport(&target, &mut context)
+        .unwrap();
+    assert_eq!(
+        transported.actual.result_origin().unwrap().application(),
+        child_id
+    );
+    assert!(
+        transported
+            .actual
+            .source_receipt()
+            .unwrap()
+            .matches(&receipt)
+    );
+    assert_eq!(
+        transported.actual.original_context(),
+        before.original_context()
+    );
+    assert_eq!(transported.actual.scope(), &target);
+    assert_eq!(
+        transported.pattern.result_origin().unwrap().application(),
+        child_id
+    );
+    assert!(
+        transported
+            .pattern
+            .source_receipt()
+            .unwrap()
+            .matches(&receipt)
+    );
+    context.restore_binder_scope(enclosing);
+}
+
+#[test]
 fn materialization_source_failures_keep_their_application() {
     for fatal in [false, true] {
         let cancellation = AtomicBool::new(false);

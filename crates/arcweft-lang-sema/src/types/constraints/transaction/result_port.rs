@@ -162,8 +162,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let mut advanced = Vec::new();
         for mut path in core::mem::take(&mut self.frontier) {
             context.enter_node()?;
-            let (opened, _) =
+            let (opened, resolved) =
                 resolve_probe_term(SourceProbeTerm::Result(origin.clone()), &path, context)?;
+            let resolved = resolved.ok_or_else(|| {
+                protocol_error(super::TypeConstraintSourceProtocolInvariant::Outcome)
+            })?;
             let source = project_type(
                 &opened,
                 path.projection_view(),
@@ -171,7 +174,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 context,
             )?
             .value;
-            let pattern = match prepare(&source, context)? {
+            let (pattern, template_owner) = match prepare(&source, context)? {
                 Some((application, parameters, template)) => {
                     let scope = context.application_scope(
                         application,
@@ -187,11 +190,27 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         value: template.clone(),
                         closure: TypeConstraintProjectionClosure::Closed,
                         source: Some(origin.clone()),
-                        input: Some(source),
+                        input: Some(source.clone()),
                     }));
-                    context.open_template_type(&template, &path, application)?
+                    (
+                        context.open_template_type(&template, &path, application)?,
+                        Some(Arc::clone(
+                            path.applications
+                                .require_application_owner(application)
+                                .map_err(TypeConstraintError::from)?,
+                        )),
+                    )
                 }
-                None => opened,
+                None => (opened, None),
+            };
+            let scope = Arc::new(context.capture_lexical_scope()?);
+            let source = super::ConstraintOperand::result(source, Arc::clone(&scope), resolved);
+            let pattern = match template_owner {
+                Some(owner) => {
+                    super::ConstraintOperand::template(pattern, Arc::clone(&scope), &owner)
+                        .derived_from(&source)
+                }
+                None => source.projected(pattern),
             };
             let timing = super::ConstraintEquationTiming::ResultContext.for_actual(
                 expected,
@@ -199,14 +218,17 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 context,
             )?;
             path.equations.push(super::PendingEquation {
-                scope: context.capture_lexical_scope()?,
                 ordinal: super::ConstraintEquationId {
                     application: self.application,
                     ordinal,
                 },
                 direction: crate::types::ConstraintAcceptance::ActualAcceptsPattern,
                 pattern: pattern.clone(),
-                actual: expected.clone(),
+                actual: super::ConstraintOperand::original(
+                    expected.clone(),
+                    scope,
+                    path.lineage.original.clone(),
+                ),
                 source_ordinal: None,
                 final_expected: None,
                 timing,
@@ -216,7 +238,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 continue;
             }
             advanced.extend(super::relate_selected_call(
-                &pattern,
+                pattern.value(),
                 expected,
                 path,
                 context,

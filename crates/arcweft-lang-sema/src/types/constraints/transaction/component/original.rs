@@ -123,7 +123,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     path.applications
                         .merge_lexical_scopes(&mut scope, context)?;
                     for equation in &path.equations {
-                        scope.merge(&equation.scope, context)?;
+                        scope.merge(equation.scope(), context)?;
                     }
                 }
                 for _ in scope.shape().binders() {

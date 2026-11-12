@@ -463,6 +463,17 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             ))
     }
 
+    pub(super) fn require_application_owner(
+        &self,
+        id: ConstraintApplicationId,
+    ) -> Result<&Arc<ConstraintApplicationScope<D>>, TypeConstraintInvariant> {
+        self.applications
+            .get(&id)
+            .ok_or(TypeConstraintInvariant::ParameterScope(
+                TypeConstraintParameterScopeInvariant::ApplicationOutOfScope,
+            ))
+    }
+
     pub(super) fn parameter_eligibility(
         &self,
         reference: &GenericTypeReference,

@@ -31,60 +31,83 @@ use super::{
 };
 use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
+mod operand;
+use operand::{ConstraintOperand, ResolvedConstraintResult};
+
 /// One equation retained until candidate closure. Source ordinals connect to
 /// the single source trace; selection and container evidence stay there.
-#[derive(Clone)]
-pub(crate) struct PendingEquation {
-    scope: super::lexical::ConstraintLexicalScope,
+pub(crate) struct PendingEquation<D: ConstraintDomain> {
     pub(crate) ordinal: ConstraintEquationId,
     pub(crate) direction: ConstraintAcceptance,
-    pub(crate) pattern: TypeKind,
-    pub(crate) actual: TypeKind,
+    pattern: ConstraintOperand<D>,
+    actual: ConstraintOperand<D>,
     pub(crate) source_ordinal: Option<PreparedSourceOrdinal>,
-    pub(crate) final_expected: Option<TypeKind>,
+    final_expected: Option<ConstraintOperand<D>>,
     timing: ConstraintEquationTiming,
 }
 
-impl PendingEquation {
-    pub(super) fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
+impl<D: ConstraintDomain> Clone for PendingEquation<D> {
+    fn clone(&self) -> Self {
+        Self {
+            ordinal: self.ordinal,
+            direction: self.direction,
+            pattern: self.pattern.clone(),
+            actual: self.actual.clone(),
+            source_ordinal: self.source_ordinal,
+            final_expected: self.final_expected.clone(),
+            timing: self.timing,
+        }
+    }
+}
+
+impl<D: ConstraintDomain> PendingEquation<D> {
+    pub(super) fn transport<A: TypeConstraintAccounting>(
         &self,
         target: &super::lexical::ConstraintLexicalScope,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
+        let target = Arc::new(target.clone());
         Ok(Self {
-            scope: target.clone(),
             ordinal: self.ordinal,
             direction: self.direction,
             source_ordinal: self.source_ordinal,
             timing: self.timing,
-            pattern: target.transport_type(&self.scope, &self.pattern, context)?,
-            actual: target.transport_type(&self.scope, &self.actual, context)?,
+            pattern: self.pattern.transport(&target, context)?,
+            actual: self.actual.transport(&target, context)?,
             final_expected: self
                 .final_expected
                 .as_ref()
-                .map(|ty| target.transport_type(&self.scope, ty, context))
+                .map(|ty| ty.transport(&target, context))
                 .transpose()?,
         })
     }
 
-    pub(super) fn validate_completed<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn validate_completed<A: TypeConstraintAccounting>(
         &self,
         view: super::normalization::ConstraintProjectionView<'_, D>,
         effect_substitution: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        context.with_original_scope(self.scope.clone(), |context| {
+        context.with_original_scope(self.scope().clone(), |context| {
             self.validate_in_scope(view, effect_substitution, context)
         })
     }
 
-    fn validate_in_scope<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn scope(&self) -> &super::lexical::ConstraintLexicalScope {
+        self.pattern.scope()
+    }
+
+    fn validate_in_scope<A: TypeConstraintAccounting>(
         &self,
         view: super::normalization::ConstraintProjectionView<'_, D>,
         effect_substitution: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        let pattern = self.final_expected.as_ref().unwrap_or(&self.pattern);
+        let pattern = self
+            .final_expected
+            .as_ref()
+            .unwrap_or(&self.pattern)
+            .value();
         let project = |value, context: &mut TypeConstraintContext<'_, A, D>| {
             seal_type(value, view, &mut BTreeSet::new(), context)?
                 .substitute_effect_rows(effect_substitution)
@@ -98,7 +121,7 @@ impl PendingEquation {
         let pattern = project(pattern, context)?;
         let actual = if self.timing == ConstraintEquationTiming::InferredEffectResult {
             let annotation = project_type(
-                &self.actual,
+                self.actual.value(),
                 view,
                 ConstraintClosurePolicy::ResultAnnotation,
                 context,
@@ -109,7 +132,7 @@ impl PendingEquation {
                 .ok_or(TypeConstraintRejection::Mismatch)?;
             project(&completed, context)?
         } else {
-            project(&self.actual, context)?
+            project(self.actual.value(), context)?
         };
         let (expected, actual) = match self.direction {
             ConstraintAcceptance::PatternAcceptsActual => (&pattern, &actual),
@@ -237,7 +260,7 @@ pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
     pub(super) bindings: BTreeMap<GenericTypeReference, TypeKind>,
     pub(super) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
     pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
-    pub(crate) equations: Vec<PendingEquation>,
+    pub(crate) equations: Vec<PendingEquation<D>>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
     pub(crate) deferred_cycles: DeferredCycleWitness,
 }
@@ -1191,15 +1214,24 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let mut advanced = Vec::new();
         for mut path in frontier {
             let pattern = context.open_template_type(pattern, &path, self.application)?;
+            let scope = Arc::new(context.capture_lexical_scope()?);
             path.equations.push(PendingEquation {
-                scope: context.capture_lexical_scope()?,
                 ordinal: ConstraintEquationId {
                     application: self.application,
                     ordinal,
                 },
                 direction: acceptance,
-                pattern: pattern.clone(),
-                actual: actual.clone(),
+                pattern: ConstraintOperand::template(
+                    pattern.clone(),
+                    Arc::clone(&scope),
+                    path.applications
+                        .require_application_owner(self.application)?,
+                ),
+                actual: ConstraintOperand::original(
+                    actual.clone(),
+                    scope,
+                    path.lineage.original.clone(),
+                ),
                 source_ordinal: None,
                 final_expected: None,
                 timing,
@@ -1718,14 +1750,30 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         };
 
                     if let Some(expected) = pattern.as_ref() {
+                        let scope = Arc::new(context.capture_lexical_scope()?);
+                        let actual = ConstraintOperand::source(
+                            actual.clone(),
+                            Arc::clone(&scope),
+                            path.lineage.original.clone(),
+                            ConstraintSourceReceipt {
+                                input: Arc::clone(&input),
+                            },
+                            result_origin.clone(),
+                        );
+                        let pattern = ConstraintOperand::template(
+                            expected.clone(),
+                            scope,
+                            path.applications
+                                .require_application_owner(self.application)?,
+                        )
+                        .derived_from(&actual);
                         path.equations.push(PendingEquation {
-                            scope: context.capture_lexical_scope()?,
                             ordinal: input.equation_ordinal.ok_or_else(|| {
                                 protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
                             })?,
                             direction: input.acceptance,
-                            pattern: expected.clone(),
-                            actual: actual.clone(),
+                            pattern,
+                            actual,
                             source_ordinal: Some(operation.source_ordinal),
                             final_expected: None,
                             timing: ConstraintEquationTiming::Immediate,
@@ -1752,7 +1800,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         selection: stored_selection,
                         prepared_source_projection: input.prepared.source_projection(),
                         value_expected,
-                        result_origin,
+                        result_origin: result_origin
+                            .as_ref()
+                            .map(ResolvedConstraintResult::projection),
                         actual: actual.clone(),
                     });
                     path.lineage.probe_trace.push(probe);
@@ -2443,25 +2493,11 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
     term: SourceProbeTerm<D>,
     path: &ConstraintPath<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<(TypeKind, Option<ConstraintResultProjection<D>>), TypeConstraintError> {
+) -> Result<(TypeKind, Option<ResolvedConstraintResult<D>>), TypeConstraintError> {
     match term {
         SourceProbeTerm::Type(value) => Ok((value, None)),
         SourceProbeTerm::Result(result) => {
-            path.applications.require_application(result.application)?;
-            let mut requests = path.lineage.projections.iter().filter(|request| {
-                request.application == result.application && request.key == result.key
-            });
-            let Some(request) = requests.next() else {
-                return Err(protocol_error(
-                    TypeConstraintSourceProtocolInvariant::WrongSource,
-                ));
-            };
-            if requests.next().is_some() {
-                return Err(protocol_error(
-                    TypeConstraintSourceProtocolInvariant::Outcome,
-                ));
-            }
-            let actual = context.open_template_type(&request.value, path, result.application)?;
+            let (actual, result) = ResolvedConstraintResult::resolve(result, path, context)?;
             Ok((actual, Some(result)))
         }
     }
@@ -2603,10 +2639,11 @@ where
         let probe = probe.close(path.projection_view(), effect_substitution, context)?;
         for equation in &mut path.equations {
             if equation.source_ordinal == Some(probe.ordinal()) {
-                equation.actual = probe.actual().clone();
+                equation.actual = equation.actual.projected(probe.actual().clone());
                 if let Some(expected) = probe.final_expected() {
+                    let expected = equation.pattern.projected(expected.clone());
                     equation.final_expected = Some(expected.clone());
-                    equation.pattern = expected.clone();
+                    equation.pattern = expected;
                 }
             }
         }
