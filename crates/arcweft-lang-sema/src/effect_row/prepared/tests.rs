@@ -1,36 +1,9 @@
+use super::test_support::*;
 use super::*;
 use crate::{
     effects::EffectSet,
     types::{GenericBinder, GenericScope},
 };
-
-#[derive(Debug, Eq, PartialEq, thiserror::Error)]
-#[error("effect decision budget exhausted")]
-struct Exhausted;
-
-struct Budget(usize);
-impl DecisionControl for Budget {
-    type Error = Exhausted;
-    fn charge(&mut self, _: DecisionWork) -> Result<(), Exhausted> {
-        self.0 = self.0.checked_sub(1).ok_or(Exhausted)?;
-        Ok(())
-    }
-}
-
-fn budget() -> Budget {
-    Budget(10_000_000)
-}
-fn literal(labels: &[&str]) -> PreparedEffectRow {
-    PreparedEffectRow::Canonical(EffectRow::closed(
-        EffectSet::from_labels(labels.iter().copied()).unwrap(),
-    ))
-}
-fn parameter(scope: &GenericScope, index: u32) -> GenericEffectReference {
-    scope.bound_effect(0, index).unwrap()
-}
-fn open(parameter: &GenericEffectReference) -> PreparedEffectRow {
-    PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), parameter.clone()))
-}
 
 #[test]
 fn recursive_identity_retains_a_parametric_default_class() {

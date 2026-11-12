@@ -23,6 +23,8 @@ pub(crate) use closure::{
 mod substitution;
 pub(crate) use substitution::PreparedEffectTermEdit;
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
 
 #[derive(Debug)]

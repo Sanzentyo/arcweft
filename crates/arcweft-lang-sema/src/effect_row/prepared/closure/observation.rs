@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Copy)]
 enum Root<'a> {
     Row(&'a PreparedEffectRow),
@@ -173,10 +176,11 @@ impl<'g> EffectRowObservation<'g> {
         &self,
         control: &mut C,
     ) -> Result<Option<GuardedEffectRow<'_, 'g>>, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        work.charge(DecisionWork::Visit)?;
         if self.region_is_empty(EffectRowRegion::Invariant) {
             return Ok(None);
         }
-        let mut work = Work(control);
         let mut members = Vec::new();
         for (class, (positive, negative)) in self.positive.iter().zip(&self.negative).enumerate() {
             let mut positive = self.regions.invariant.and(positive, &mut work)?;

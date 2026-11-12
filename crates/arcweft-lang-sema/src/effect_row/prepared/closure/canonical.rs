@@ -3,6 +3,9 @@
 use super::*;
 use crate::effects::EffectSet;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Variable {
     Parameter(GenericEffectReference),

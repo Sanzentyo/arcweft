@@ -19,6 +19,12 @@ impl PrincipalEffectClosure<'_> {
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         for (&id, scheme) in &self.graph.schemes {
             let row = self.schemes[&id].known()?;
+            for (label, _) in row.membership().overrides() {
+                work.charge(DecisionWork::Visit)?;
+                if self.layout.labels.binary_search(label).is_err() {
+                    return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+                }
+            }
             for reference in row.variables() {
                 work.charge(DecisionWork::Visit)?;
                 if !scheme.header.parameters.contains(reference) {
