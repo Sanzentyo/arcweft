@@ -326,7 +326,7 @@ fn preparation_domain_distinguishes_omitted_annotations_from_live_scheme_terms()
             &mut Decisions,
         )
         .unwrap();
-    let closed = graph.close(&mut Decisions).unwrap();
+    let closed = graph.solve_principal(&mut Decisions).unwrap();
     let canonical = closed.resolve_row(&term, &mut Decisions).unwrap();
     assert_eq!(
         canonical.closed_value().unwrap(),
@@ -513,7 +513,7 @@ fn prepared_parameter_projection_keeps_inner_binders_and_projects_pending_predic
             &mut Decisions,
         )
         .unwrap();
-    let closed = graph.close(&mut Decisions).unwrap();
+    let closed = graph.solve_principal(&mut Decisions).unwrap();
     assert_eq!(
         closed
             .resolve_row(&effects, &mut Decisions)
@@ -606,7 +606,7 @@ fn prepared_type_projection_rolls_back_earlier_rows_and_keeps_scope_errors_typed
     assert_eq!(graph.retained_terms(), before);
     assert_eq!(
         graph
-            .close(&mut Decisions)
+            .solve_principal(&mut Decisions)
             .unwrap()
             .resolve_row(&source_row, &mut Decisions)
             .unwrap(),

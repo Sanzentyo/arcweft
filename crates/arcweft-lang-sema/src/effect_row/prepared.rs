@@ -16,7 +16,10 @@ use super::{
 use crate::types::GenericEffectReference;
 
 mod closure;
-pub(crate) use closure::ClosedEffectComponent;
+pub(crate) use closure::{
+    EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
+    GuardedEffectRow, PrincipalEffectClosure,
+};
 mod substitution;
 pub(crate) use substitution::PreparedEffectTermEdit;
 #[cfg(test)]
@@ -97,6 +100,8 @@ pub(crate) enum PreparedEffectInvariant {
     CheckpointOrder,
     #[error("a solved effect cell retained an unbound Boolean reference")]
     UnclosedCell,
+    #[error("principal effect projection contradicts the original typed equations")]
+    PrincipalConfirmation,
     #[error("a failed effect-term edit cannot be resumed or committed")]
     TermEditState,
 }
@@ -115,8 +120,10 @@ pub(crate) enum PreparedEffectFailure<E> {
     Unsatisfiable,
     #[error("prepared effect equations have no pointwise least solution")]
     NonPrincipal,
-    #[error("prepared effect alternatives remain ambiguous")]
-    AmbiguousChoice,
+    #[error("the requested effect observation is not unconditionally admitted and invariant")]
+    ObservationNotTotal,
+    #[error("the guarded effect observation cannot be represented by pointwise effect rows")]
+    NonPointwiseObservation,
 }
 
 struct Work<'a, C>(&'a mut C);

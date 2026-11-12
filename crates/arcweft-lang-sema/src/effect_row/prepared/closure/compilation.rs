@@ -9,8 +9,8 @@ pub(super) struct CompiledRow {
 
 pub(super) struct Compilation<'a> {
     graph: &'a PreparedEffectGraph,
-    layout: &'a Layout,
-    scheme: u64,
+    layout: ClassLayout<'a>,
+    owner: FormalOwner,
     parameters: &'a [GenericEffectReference],
     rows: BTreeMap<u64, CompiledRow>,
     predicates: BTreeMap<u64, Decision>,
@@ -30,17 +30,25 @@ fn copy<C: DecisionControl>(
 impl<'a> Compilation<'a> {
     pub(super) fn new(
         graph: &'a PreparedEffectGraph,
-        layout: &'a Layout,
-        scheme: u64,
+        layout: ClassLayout<'a>,
+        owner: FormalOwner,
         parameters: &'a [GenericEffectReference],
     ) -> Self {
         Self {
             graph,
             layout,
-            scheme,
+            owner,
             parameters,
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn valuation(&self) -> FiniteRowValuation<'_> {
+        FiniteRowValuation {
+            layout: self.layout,
+            owner: self.owner,
+            parameters: self.parameters,
         }
     }
 
@@ -48,18 +56,15 @@ impl<'a> Compilation<'a> {
         &self,
         work: &mut Work<'_, C>,
     ) -> Result<BTreeSet<Atom>, PreparedEffectFailure<C::Error>> {
-        let mut result = BTreeSet::new();
-        for class in 0..self.layout.classes() {
-            for parameter in 0..self.parameters.len() {
-                work.charge(DecisionWork::Node)?;
-                result.insert(Atom::Formal {
-                    scheme: self.scheme,
-                    class,
-                    parameter,
-                });
-            }
-        }
-        Ok(result)
+        self.valuation().formals(work)
+    }
+
+    pub(super) fn whole<C: DecisionControl>(
+        &self,
+        members: &[Decision],
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        self.valuation().whole(members, work)
     }
 
     pub(super) fn parameters<C: DecisionControl>(
@@ -73,7 +78,7 @@ impl<'a> Compilation<'a> {
             for class in 0..self.layout.classes() {
                 membership.push(Decision::variable(
                     Atom::Formal {
-                        scheme: self.scheme,
+                        owner: self.owner,
                         class,
                         parameter,
                     },
@@ -113,7 +118,7 @@ impl<'a> Compilation<'a> {
                     })?;
                 Decision::variable(
                     Atom::Formal {
-                        scheme: self.scheme,
+                        owner: self.owner,
                         class,
                         parameter: slot,
                     },
@@ -129,7 +134,7 @@ impl<'a> Compilation<'a> {
             .substitute(&replacements, work)
     }
 
-    fn canonical_row<C: DecisionControl>(
+    pub(super) fn canonical_row<C: DecisionControl>(
         &self,
         row: &EffectRow,
         work: &mut Work<'_, C>,
@@ -250,6 +255,7 @@ impl<'a> Compilation<'a> {
                         work.charge(DecisionWork::Node)?;
                         substitutions.insert(parameter.clone(), argument);
                     }
+                    let mut domains = Vec::new();
                     for class in 0..self.layout.classes() {
                         let domain = self.member(
                             self.layout.at(header.domain.membership(), class),
@@ -257,8 +263,10 @@ impl<'a> Compilation<'a> {
                             &substitutions,
                             work,
                         )?;
-                        admitted = admitted.and(&domain, work)?;
+                        work.charge(DecisionWork::Node)?;
+                        domains.push(domain);
                     }
+                    admitted = admitted.and(&self.whole(&domains, work)?, work)?;
                     CompiledRow {
                         membership: self.application(scheme.0.ordinal, &compiled, work)?,
                         admitted,
@@ -332,19 +340,17 @@ impl<'a> Compilation<'a> {
         predicate: &EffectPredicate,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let mut result = Decision::constant(true);
+        let mut members = Vec::new();
         for class in 0..self.layout.classes() {
-            result = result.and(
-                &self.member(
-                    self.layout.at(predicate.membership(), class),
-                    class,
-                    &BTreeMap::new(),
-                    work,
-                )?,
+            work.charge(DecisionWork::Node)?;
+            members.push(self.member(
+                self.layout.at(predicate.membership(), class),
+                class,
+                &BTreeMap::new(),
                 work,
-            )?;
+            )?);
         }
-        Ok(result)
+        self.whole(&members, work)
     }
 
     fn closed<C: DecisionControl>(
@@ -356,7 +362,7 @@ impl<'a> Compilation<'a> {
         for (class, decision) in row.iter().enumerate() {
             for parameter in 0..self.parameters.len() {
                 let atom = Atom::Formal {
-                    scheme: self.scheme,
+                    owner: self.owner,
                     class,
                     parameter,
                 };
@@ -382,7 +388,7 @@ impl<'a> Compilation<'a> {
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         let actual = self.row(actual, work)?;
         let permitted = self.row(permitted, work)?;
-        let mut exact = Decision::constant(true);
+        let mut members = Vec::new();
         for (left, right) in actual.membership.iter().zip(&permitted.membership) {
             let test = match relation {
                 PreparedEffectRelation::Equal => {
@@ -392,13 +398,17 @@ impl<'a> Compilation<'a> {
                     left.conditional(right, &Decision::constant(true), work)?
                 }
             };
-            exact = exact.and(&test, work)?;
+            work.charge(DecisionWork::Node)?;
+            members.push(test);
         }
+        let exact = self.whole(&members, work)?;
         let result = if relation == PreparedEffectRelation::AdmittedSubset {
             let closed = self
                 .closed(&actual.membership, work)?
                 .and(&self.closed(&permitted.membership, work)?, work)?;
-            let mut covered = actual.membership[0].not(work)?;
+            let mut covered = self
+                .valuation()
+                .outside(&actual.membership[0].not(work)?, work)?;
             for (index, label) in self.layout.labels.iter().enumerate() {
                 let mut allowance = Decision::constant(false);
                 for (other, capability) in self.layout.labels.iter().enumerate() {
@@ -497,6 +507,7 @@ impl<'a> Compilation<'a> {
                         work.charge(DecisionWork::Node)?;
                         substitutions.insert(parameter.clone(), row);
                     }
+                    let mut members = Vec::new();
                     for class in 0..self.layout.classes() {
                         let decision = self.member(
                             self.layout.at(predicate.membership(), class),
@@ -504,9 +515,10 @@ impl<'a> Compilation<'a> {
                             &substitutions,
                             work,
                         )?;
-                        result = result.and(&decision, work)?;
+                        work.charge(DecisionWork::Node)?;
+                        members.push(decision);
                     }
-                    result
+                    result.and(&self.whole(&members, work)?, work)?
                 }
                 PredicateTerm::Relation {
                     relation,

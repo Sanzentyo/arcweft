@@ -1,12 +1,22 @@
 //! Joint closure of issuer-owned, parameterized effect schemes.
 
-use arcweft_core::effect_row::{EffectDecision, EffectMembershipView};
+use arcweft_core::effect_row::{
+    ConditionalDecisionCompletion, EffectDecision, EffectMembershipView,
+};
 
 use super::*;
 use crate::effects::EffectId;
 
+mod canonical;
 mod compilation;
+mod observation;
 mod reification;
+pub(crate) use observation::{
+    EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
+    GuardedEffectRow,
+};
+mod valuation;
+use valuation::FiniteRowValuation;
 
 use compilation::Compilation;
 
@@ -18,13 +28,25 @@ enum Atom {
         mask: usize,
     },
     Formal {
-        scheme: u64,
+        owner: FormalOwner,
         class: usize,
         parameter: usize,
+    },
+    /// Whether an outside-support label has this nonzero input membership
+    /// pattern. Pattern zero always occurs because each parameter row is finite.
+    Presence {
+        owner: FormalOwner,
+        mask: usize,
     },
     Choice(u64),
     /// Temporary substitution key, eliminated before any relation is retained.
     Reference(GenericEffectReference),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum FormalOwner {
+    Scheme(u64),
+    Observation,
 }
 
 type Decision = EffectDecision<Atom>;
@@ -33,6 +55,14 @@ struct Layout {
     labels: Box<[EffectId]>,
     tables: BTreeMap<u64, usize>,
     cells: BTreeSet<Atom>,
+}
+
+/// Compilation reads a class partition, not the solver's cell inventory. An
+/// observation can extend label support while retaining the same scheme tables.
+#[derive(Clone, Copy)]
+struct ClassLayout<'a> {
+    labels: &'a [EffectId],
+    tables: &'a BTreeMap<u64, usize>,
 }
 
 impl Layout {
@@ -183,15 +213,24 @@ impl Layout {
         })
     }
 
-    fn classes(&self) -> usize {
+    fn view(&self) -> ClassLayout<'_> {
+        ClassLayout {
+            labels: &self.labels,
+            tables: &self.tables,
+        }
+    }
+}
+
+impl ClassLayout<'_> {
+    fn classes(self) -> usize {
         self.labels.len() + 1
     }
 
-    fn at<'a>(
-        &self,
-        view: EffectMembershipView<'a, GenericEffectReference>,
+    fn at<'a, V: Clone + Ord>(
+        self,
+        view: EffectMembershipView<'a, V>,
         class: usize,
-    ) -> &'a EffectDecision<GenericEffectReference> {
+    ) -> &'a EffectDecision<V> {
         if class == 0 {
             view.default_decision()
         } else {
@@ -200,20 +239,22 @@ impl Layout {
     }
 }
 
-/// A closure borrows its immutable issuer. Pending handles can be projected only
-/// through this owner; no partially solved row is a canonical type certificate.
-pub(crate) struct ClosedEffectComponent<'a> {
+/// The least scheme tuple and all remaining discrete witnesses. This is a
+/// mathematical result, not a selected-call or semantic-equivalence certificate.
+pub(crate) struct PrincipalEffectClosure<'a> {
     graph: &'a PreparedEffectGraph,
     layout: Layout,
     schemes: BTreeMap<u64, EffectRow>,
-    choices: BTreeMap<u64, bool>,
+    completion: ConditionalDecisionCompletion<Atom>,
+    choices: BTreeSet<Atom>,
+    witnesses: Decision,
 }
 
 impl PreparedEffectGraph {
-    pub(crate) fn close<C: DecisionControl>(
+    pub(crate) fn solve_principal<C: DecisionControl>(
         &self,
         control: &mut C,
-    ) -> Result<ClosedEffectComponent<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         for scheme in self.schemes.values() {
             work.charge(DecisionWork::Visit)?;
@@ -227,17 +268,21 @@ impl PreparedEffectGraph {
             let SchemeState::BodyPrepared { body, obligations } = &scheme.state else {
                 return Err(PreparedEffectInvariant::SchemeState.into());
             };
-            let mut compilation = Compilation::new(self, &layout, id, &scheme.header.parameters);
+            let mut compilation = Compilation::new(
+                self,
+                layout.view(),
+                FormalOwner::Scheme(id),
+                &scheme.header.parameters,
+            );
             let body = compilation.row(body, &mut work)?;
             let parameters = compilation.parameters(&mut work)?;
             let own = compilation.application(id, &parameters, &mut work)?;
-            let mut equation = Decision::constant(true);
+            let mut members = Vec::new();
             for (left, right) in own.iter().zip(&body.membership) {
-                equation = equation.and(
-                    &left.conditional(right, &right.not(&mut work)?, &mut work)?,
-                    &mut work,
-                )?;
+                work.charge(DecisionWork::Node)?;
+                members.push(left.conditional(right, &right.not(&mut work)?, &mut work)?);
             }
+            let mut equation = compilation.whole(&members, &mut work)?;
             equation = equation.and(&body.admitted, &mut work)?;
             for predicate in obligations {
                 equation =
@@ -277,26 +322,26 @@ impl PreparedEffectGraph {
             return Err(PreparedEffectFailure::NonPrincipal);
         }
         let choice_relation = relation.substitute(completion.lower_envelope(), &mut work)?;
-        let mut selected = BTreeMap::new();
-        for &id in &self.choices {
-            let variable = Decision::variable(Atom::Choice(id), &mut work)?;
-            let yes = choice_relation
-                .and(&variable, &mut work)?
-                .exists(&choices, &mut work)?;
-            let no = choice_relation
-                .and(&variable.not(&mut work)?, &mut work)?
-                .exists(&choices, &mut work)?;
-            let value = match (yes.is_constant(true), no.is_constant(true)) {
-                (true, false) => true,
-                (false, true) => false,
-                (true, true) => return Err(PreparedEffectFailure::AmbiguousChoice),
-                (false, false) => return Err(PreparedEffectFailure::Unsatisfiable),
-            };
-            selected.insert(id, value);
+        for atom in choice_relation.variables() {
+            work.charge(DecisionWork::Visit)?;
+            if !choices.contains(atom) {
+                return Err(PreparedEffectInvariant::UnclosedCell.into());
+            }
+        }
+        if !choice_relation
+            .exists(&choices, &mut work)?
+            .is_constant(true)
+        {
+            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
         let mut schemes = BTreeMap::new();
         for (&id, scheme) in &self.schemes {
-            let compilation = Compilation::new(self, &layout, id, &scheme.header.parameters);
+            let compilation = Compilation::new(
+                self,
+                layout.view(),
+                FormalOwner::Scheme(id),
+                &scheme.header.parameters,
+            );
             let parameters = compilation.parameters(&mut work)?;
             let function = compilation.application(id, &parameters, &mut work)?;
             let mut output = Vec::new();
@@ -304,7 +349,7 @@ impl PreparedEffectGraph {
                 let decision = decision.substitute(completion.lower_envelope(), &mut work)?;
                 let mapped = decision.map_references(&mut work, &mut |atom, _| match atom {
                     Atom::Formal {
-                        scheme: owner,
+                        owner: FormalOwner::Scheme(owner),
                         parameter,
                         ..
                     } if *owner == id => Ok(scheme.header.parameters[*parameter].clone()),
@@ -328,15 +373,17 @@ impl PreparedEffectGraph {
                 },
             );
         }
-        let closed = ClosedEffectComponent {
+        let closed = PrincipalEffectClosure {
             graph: self,
             layout,
             schemes,
-            choices: selected,
+            completion,
+            choices,
+            witnesses: choice_relation,
         };
-        // Recheck the original typed grammar after cell elimination. This is an
-        // independent canonical check, never a substitute for joint constraints.
-        closed.confirm(&closed.layout, &mut work)?;
+        // Recheck original typed terms against the canonical scheme projection
+        // under every retained witness, without choosing a discrete alternative.
+        closed.confirm(&mut work)?;
         Ok(closed)
     }
 }

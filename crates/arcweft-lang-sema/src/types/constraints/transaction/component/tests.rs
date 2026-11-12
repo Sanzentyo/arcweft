@@ -285,7 +285,7 @@ fn conditional_use_keeps_rejection_without_constraining_the_producer_scheme() {
     ));
     // Requiring the successful member use would instead force fs.read into
     // S = S. Its least solution must remain empty, with the use rejected.
-    let closed = component.effects.close(&mut context).unwrap();
+    let closed = component.effects.solve_principal(&mut context).unwrap();
     assert!(closed.scheme(&scheme).unwrap().is_empty());
 }
 

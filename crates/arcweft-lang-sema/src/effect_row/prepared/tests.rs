@@ -57,7 +57,7 @@ fn recursive_identity_retains_a_parametric_default_class() {
     let call = graph
         .application(&scheme, vec![literal(&["fs.read"])], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
+    let closed = graph.solve_principal(&mut control).unwrap();
     assert_eq!(
         closed.scheme(&scheme).unwrap(),
         &EffectRow::open(EffectSet::new(), e)
@@ -104,7 +104,7 @@ fn mutual_schemes_compose_simultaneous_parameter_permutations() {
     graph
         .prepare_body(&g, g_body, vec![], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
+    let closed = graph.solve_principal(&mut control).unwrap();
     assert_eq!(
         closed.scheme(&f).unwrap(),
         &EffectRow::open(EffectSet::new(), a)
@@ -188,7 +188,7 @@ fn exponential_cell_admission_fails_before_building_a_truth_table() {
         .prepare_body(&scheme, literal(&[]), vec![], &mut control)
         .unwrap();
     assert!(matches!(
-        graph.close(&mut Budget(100)),
+        graph.solve_principal(&mut Budget(100)),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
     assert_eq!(graph.rows.len(), 0);
@@ -222,7 +222,7 @@ fn least_cell_closure_distinguishes_unsatisfiable_and_nonprincipal_equations() {
         .prepare_body(&f, body, vec![], &mut control)
         .unwrap();
     assert!(matches!(
-        impossible.close(&mut control),
+        impossible.solve_principal(&mut control),
         Err(PreparedEffectFailure::Unsatisfiable)
     ));
 
@@ -252,7 +252,7 @@ fn least_cell_closure_distinguishes_unsatisfiable_and_nonprincipal_equations() {
         .prepare_body(&g, g_body, vec![], &mut control)
         .unwrap();
     assert!(matches!(
-        incomparable.close(&mut control),
+        incomparable.solve_principal(&mut control),
         Err(PreparedEffectFailure::NonPrincipal)
     ));
 }
@@ -285,7 +285,7 @@ fn one_choice_cannot_select_different_candidates_for_different_labels() {
         .prepare_body(&f, body, vec![both], &mut control)
         .unwrap();
     assert!(matches!(
-        graph.close(&mut control),
+        graph.solve_principal(&mut control),
         Err(PreparedEffectFailure::Unsatisfiable)
     ));
 }
@@ -327,7 +327,7 @@ fn one_choice_must_work_for_every_formal_valuation() {
         .prepare_body(&f, literal(&[]), vec![chosen], &mut control)
         .unwrap();
     assert!(matches!(
-        graph.close(&mut control),
+        graph.solve_principal(&mut control),
         Err(PreparedEffectFailure::Unsatisfiable)
     ));
 }
@@ -343,11 +343,34 @@ fn closure_does_not_minimize_discrete_choices_or_issue_an_arbitrary_witness() {
     let body = graph
         .select_row(&choice, literal(&[]), literal(&[]), &mut control)
         .unwrap();
-    graph.prepare_body(&f, body, vec![], &mut control).unwrap();
-    assert!(matches!(
-        graph.close(&mut control),
-        Err(PreparedEffectFailure::AmbiguousChoice)
-    ));
+    let selected = graph
+        .select_predicate(
+            &choice,
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            PreparedEffectPredicate::Canonical(EffectPredicate::impossible()),
+            &mut control,
+        )
+        .unwrap();
+    graph
+        .prepare_body(&f, body.clone(), vec![], &mut control)
+        .unwrap();
+    let principal = graph.solve_principal(&mut control).unwrap();
+    assert!(principal.scheme(&f).unwrap().is_empty());
+    assert!(
+        principal
+            .resolve_row(&body, &mut control)
+            .unwrap()
+            .is_empty()
+    );
+    let observation = principal
+        .observe_predicate(
+            &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            &selected,
+            &mut control,
+        )
+        .unwrap();
+    assert!(observation.region_is_universal(EffectPredicateRegion::Ambiguous));
+    assert_eq!(observation.total_truth(), None);
 }
 
 #[test]
@@ -374,11 +397,29 @@ fn a_forced_choice_is_recovered_after_least_scheme_closure() {
             &mut control,
         )
         .unwrap();
+    let selected = graph
+        .select_predicate(
+            &choice,
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            PreparedEffectPredicate::Canonical(EffectPredicate::impossible()),
+            &mut control,
+        )
+        .unwrap();
     graph
         .prepare_body(&f, body.clone(), vec![required], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
-    assert!(closed.choice(&choice).unwrap());
+    let closed = graph.solve_principal(&mut control).unwrap();
+    assert_eq!(
+        closed
+            .observe_predicate(
+                &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+                &selected,
+                &mut control
+            )
+            .unwrap()
+            .total_truth(),
+        Some(true)
+    );
     assert_eq!(
         closed.resolve_row(&body, &mut control).unwrap(),
         EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap())
@@ -403,7 +444,7 @@ fn closed_capability_coverage_preserves_the_existing_symbolic_boundary() {
     closed
         .prepare_body(&f, literal(&[]), vec![admission], &mut control)
         .unwrap();
-    closed.close(&mut control).unwrap();
+    closed.solve_principal(&mut control).unwrap();
 
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let e = parameter(&scope, 0);
@@ -430,7 +471,7 @@ fn closed_capability_coverage_preserves_the_existing_symbolic_boundary() {
         .prepare_body(&f, literal(&[]), vec![admission], &mut control)
         .unwrap();
     assert!(matches!(
-        symbolic.close(&mut control),
+        symbolic.solve_principal(&mut control),
         Err(PreparedEffectFailure::Unsatisfiable)
     ));
 }
@@ -458,15 +499,25 @@ fn declared_domains_guard_body_equations_and_application_admission() {
     let invalid = graph
         .application(&f, vec![literal(&["log.write"])], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
+    let closed = graph.solve_principal(&mut control).unwrap();
     assert_eq!(
         closed.resolve_row(&valid, &mut control).unwrap(),
         EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap())
     );
     assert!(matches!(
         closed.resolve_row(&invalid, &mut control),
-        Err(PreparedEffectFailure::Unsatisfiable)
+        Err(PreparedEffectFailure::ObservationNotTotal)
     ));
+    assert!(
+        closed
+            .observe_row(
+                &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+                &invalid,
+                &mut control
+            )
+            .unwrap()
+            .region_is_universal(EffectRowRegion::Rejected)
+    );
 }
 
 #[test]
@@ -530,7 +581,7 @@ fn mutual_boolean_equations_match_exhaustive_truth_tables() {
             let least = witnesses
                 .iter()
                 .fold((true, true), |(x, y), (a, b)| (x && *a, y && *b));
-            match graph.close(&mut control) {
+            match graph.solve_principal(&mut control) {
                 Err(PreparedEffectFailure::Unsatisfiable) => {
                     assert!(witnesses.is_empty(), "{f_rule}/{g_rule}")
                 }
@@ -594,7 +645,7 @@ fn cell_dependent_closedness_is_decided_before_capability_admission() {
     graph
         .prepare_body(&f, literal(&[]), vec![admission], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
+    let closed = graph.solve_principal(&mut control).unwrap();
     assert!(closed.scheme(&f).unwrap().is_empty());
     assert!(closed.scheme(&g).unwrap().is_empty());
 }
@@ -613,7 +664,7 @@ fn closure_budget_boundary_preserves_the_original_graph_on_failure() {
     graph.prepare_body(&f, body, vec![], &mut control).unwrap();
     let before = control.0;
     let expected = graph
-        .close(&mut control)
+        .solve_principal(&mut control)
         .unwrap()
         .scheme(&f)
         .unwrap()
@@ -621,11 +672,15 @@ fn closure_budget_boundary_preserves_the_original_graph_on_failure() {
     let cost = before - control.0;
     assert!(cost > 1);
     assert!(matches!(
-        graph.close(&mut Budget(cost - 1)),
+        graph.solve_principal(&mut Budget(cost - 1)),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
     assert_eq!(
-        graph.close(&mut Budget(cost)).unwrap().scheme(&f).unwrap(),
+        graph
+            .solve_principal(&mut Budget(cost))
+            .unwrap()
+            .scheme(&f)
+            .unwrap(),
         &expected
     );
     assert_eq!(graph.schemes.len(), 1);
@@ -681,7 +736,7 @@ fn row_substitution_composes_pending_applications_and_existing_formula_bindings(
     graph
         .prepare_body(&result, substituted, vec![], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
+    let closed = graph.solve_principal(&mut control).unwrap();
     assert_eq!(
         closed.scheme(&result).unwrap().closed_value().unwrap(),
         EffectSet::from_labels(["fs.read", "event.emit"]).unwrap()
@@ -708,7 +763,7 @@ fn row_substitution_is_simultaneous_and_does_not_rewrite_replacement_rows() {
     graph
         .prepare_body(&result, substituted, vec![], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
+    let closed = graph.solve_principal(&mut control).unwrap();
     assert_eq!(
         closed.scheme(&result).unwrap(),
         &EffectRow::open(EffectSet::from_labels(["log.write"]).unwrap(), b)
@@ -742,7 +797,7 @@ fn shared_deep_row_substitution_is_iterative_and_preserves_dag_sharing() {
         .unwrap();
     assert_eq!(
         graph
-            .close(&mut control)
+            .solve_principal(&mut control)
             .unwrap()
             .scheme(&result)
             .unwrap()
@@ -799,7 +854,7 @@ fn predicate_substitution_keeps_pending_rows_and_outer_binder_substitution() {
         graph
             .prepare_body(&result, literal(&[]), vec![projected], &mut control)
             .unwrap();
-        match graph.close(&mut control) {
+        match graph.solve_principal(&mut control) {
             Ok(_) => assert!(expected),
             Err(PreparedEffectFailure::Unsatisfiable) => assert!(!expected),
             Err(error) => panic!("unexpected result: {error}"),

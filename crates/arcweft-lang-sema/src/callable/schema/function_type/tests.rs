@@ -197,7 +197,7 @@ fn a_declared_scheme_builds_the_original_group_chain_before_its_body_is_prepared
     graph
         .prepare_body(&scheme, body, vec![], &mut control)
         .unwrap();
-    let closed = graph.close(&mut control).unwrap();
+    let closed = graph.solve_principal(&mut control).unwrap();
     assert_eq!(
         closed.resolve_row(effects, &mut control).unwrap(),
         row(&["fs.write"])
