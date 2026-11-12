@@ -672,6 +672,60 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
 }
 
 #[test]
+fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root() {
+    use crate::types::constraints::application::ConstraintApplicationScope;
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = ConstraintTestSetup::<_, Applications>::new(
+        TypeConstraintLimits::new(65536, 65536, 1024, 1024),
+        &cancellation,
+    )
+    .into_parts()
+    .0;
+    let mut component = OpenConstraintComponent::<Applications, ()>::new(&mut context).unwrap();
+    let parent = ConstraintApplicationScope::new(0, TypeConstraintParameterScope::empty());
+    let parent_id = parent.id();
+    let path = context.start_path(parent).unwrap();
+    let child = ConstraintApplicationScope::new(1, TypeConstraintParameterScope::empty());
+    let child_id = child.id();
+    let path = context.admit_application(path, child).unwrap();
+    assert_eq!(path.root_id(), parent_id);
+    let mut child =
+        TypeConstraintTransaction::from_path(&mut context, child_id, path, None).unwrap();
+    assert!(child.parent_receipt.is_none());
+    child.request_projection(
+        &mut context,
+        (),
+        &TypeKind::I32,
+        TypeConstraintProjectionClosure::Closed,
+    );
+    let child = child.suspend_result(&mut context, ()).unwrap();
+    assert!(matches!(
+        component.admit_roots(&mut context, vec![child], ()),
+        Err(PreparedValueFailure::DependentRoot)
+    ));
+    assert!(component.values.is_empty());
+    assert_eq!(component.next_value, 0);
+    let mut root = TypeConstraintTransaction::initialize(
+        &mut context,
+        2,
+        TypeConstraintParameterScope::empty(),
+        None,
+    )
+    .unwrap();
+    root.request_projection(
+        &mut context,
+        (),
+        &TypeKind::Bool,
+        TypeConstraintProjectionClosure::Closed,
+    );
+    let root = root.suspend_result(&mut context, ()).unwrap();
+    let registered = component.admit_roots(&mut context, vec![root], ()).unwrap();
+    assert_eq!(registered.ordinal, 0);
+    assert_eq!(component.values.len(), 1);
+}
+
+#[test]
 fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() {
     use crate::types::{
         DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,

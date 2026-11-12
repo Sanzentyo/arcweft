@@ -381,7 +381,9 @@ impl TypeConstraintSolution {
         C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
     {
         let applications = Arc::clone(&path.applications);
-        let application = applications.root_scope();
+        let application = applications
+            .require_application(path.root_id())
+            .expect("the fixture path retains its actual root");
         let bindings = bindings
             .into_iter()
             .map(|(parameter, value)| {

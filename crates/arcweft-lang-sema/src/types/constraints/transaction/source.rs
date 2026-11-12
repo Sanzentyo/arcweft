@@ -6,7 +6,7 @@ use crate::{effect_row::EffectSubstitution, types::TypeKind};
 
 use super::super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::super::normalization::ConstraintProjectionView;
-use super::{ConstraintApplicationId, ConstraintApplicationScopes};
+use super::{ConstraintApplicationId, ConstraintApplicationInventory};
 
 #[cfg(test)]
 mod tests;
@@ -119,7 +119,7 @@ pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
 /// nested application evidence remains owned by the same trace.
 pub(crate) struct ClosedConstraintSourceTrace<D: ConstraintDomain> {
     application: ConstraintApplicationId,
-    applications: Arc<ConstraintApplicationScopes<D>>,
+    applications: Arc<ConstraintApplicationInventory<D>>,
     sources: Box<[ClosedConstraintProbe<D>]>,
 }
 
@@ -184,7 +184,7 @@ impl<D: ConstraintDomain> ClosedConstraintSourceTrace<D> {
 
     pub(in crate::types::constraints) fn new(
         application: ConstraintApplicationId,
-        applications: Arc<ConstraintApplicationScopes<D>>,
+        applications: Arc<ConstraintApplicationInventory<D>>,
         sources: Box<[ClosedConstraintProbe<D>]>,
     ) -> Self {
         Self {

@@ -342,6 +342,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             for path in &root.transaction.frontier {
                 context.enter_node()?;
+                if path.root_id() != root.transaction.application {
+                    return Err(PreparedValueFailure::DependentRoot);
+                }
                 let owner = path
                     .applications
                     .require_application(root.transaction.application)

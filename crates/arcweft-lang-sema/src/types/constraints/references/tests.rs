@@ -49,17 +49,15 @@ fn vector_components_open_and_complete_through_the_lower_constraint_authority() 
             .open_template_type(
                 &vector(dimensions, TypeKind::generic_parameter(parameter(1))),
                 &path,
-                path.applications.root_id(),
+                path.root_id(),
             )
             .expect("component opens in the same template scope");
         let value = path
-            .applications
             .root_scope()
             .parameters()
             .type_reference(&(parameter(0)).clone().into())
             .expect("value slot");
         let component = path
-            .applications
             .root_scope()
             .parameters()
             .type_reference(&(parameter(1)).clone().into())
@@ -71,11 +69,7 @@ fn vector_components_open_and_complete_through_the_lower_constraint_authority() 
         let solution = {
             path.bindings = BTreeMap::from([(value, opened_vector), (component, TypeKind::F32)]);
             path.const_bindings = BTreeMap::new();
-            TypeConstraintSolution::complete_application(
-                &path,
-                path.applications.root_id(),
-                &mut context,
-            )
+            TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
         }
         .expect("component alias is normalized before completion");
         let (_, value) = solution
@@ -103,7 +97,6 @@ fn cyclic_vector_component_is_rejected_before_a_solution_can_publish() {
         )
         .into_path();
     let reference = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(0)).clone().into())
@@ -114,11 +107,7 @@ fn cyclic_vector_component_is_rejected_before_a_solution_can_publish() {
             vector(VectorDimensions::Three, TypeKind::GenericParam(reference)),
         )]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect_err("a component cycle is not an opaque leaf");
     assert!(matches!(
@@ -208,7 +197,7 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
         .open_template_type(
             &error_payload(TypeKind::generic_parameter(parameter(0))),
             &path,
-            path.applications.root_id(),
+            path.root_id(),
         )
         .expect("open payload owner");
     let actual = error_payload(TypeKind::I64);
@@ -223,14 +212,9 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
     .expect("payload relation");
     assert_eq!(paths.len(), 1);
     let path = paths.pop().expect("selected path");
-    let solution = {
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
-    }
-    .expect("owner parameter is closed by the relation");
+    let solution =
+        { TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context) }
+            .expect("owner parameter is closed by the relation");
     let (bound, value) = solution.bindings().next().expect("inferred owner argument");
     assert_eq!(bound.value(), &parameter(0).into());
     assert_eq!(value.value(), &TypeKind::I64);
@@ -258,20 +242,18 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
     };
     let before = before.try_seal().expect("declaration payload");
     let opened = context
-        .open_template_type(&declared, &path, path.applications.root_id())
+        .open_template_type(&declared, &path, path.root_id())
         .expect("logical owner can contain inference");
     assert!(matches!(
         opened.semantic_identity_digest(),
         Err(crate::types::GenericScopeError::EscapedInference { .. })
     ));
     let root = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(0)).clone().into())
         .expect("result slot");
     let argument = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(1)).clone().into())
@@ -279,11 +261,7 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
     let solution = {
         path.bindings = BTreeMap::from([(root, opened), (argument, TypeKind::I64)]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("the owner and fields close together");
     let (_, value) = solution
@@ -332,11 +310,10 @@ fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
         .open_template_type(
             &error_payload(TypeKind::generic_parameter(parameter(0))),
             &path,
-            path.applications.root_id(),
+            path.root_id(),
         )
         .expect("logical payload owner");
     let reference = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(0)).clone().into())
@@ -344,11 +321,7 @@ fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
     let error = {
         path.bindings = BTreeMap::from([(reference, opened)]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect_err("a phantom owner parameter still participates in occurs checks");
     assert!(matches!(
@@ -392,10 +365,9 @@ fn residual_payload_owner_requires_its_retained_type_and_const_scope() {
         len: ArrayLength::generic_parameter(constant),
     });
     let opened = context
-        .open_template_type(&declared, &path, path.applications.root_id())
+        .open_template_type(&declared, &path, path.root_id())
         .expect("open owner arguments");
     let root = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(0)).clone().into())
@@ -403,11 +375,7 @@ fn residual_payload_owner_requires_its_retained_type_and_const_scope() {
     let solution = {
         path.bindings = BTreeMap::from([(root, opened)]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("future owner arguments become residual bound references");
     let (_, value) = solution.bindings().next().expect("payload binding");

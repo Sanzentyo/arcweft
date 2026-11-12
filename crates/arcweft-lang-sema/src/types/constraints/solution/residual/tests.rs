@@ -70,7 +70,6 @@ fn recursive_binding_to_the_same_declaration_is_free_and_issuer_independent() {
     let complete = || {
         let (mut context, mut path) = context(recursive_scope(), &cancellation).into_path();
         let callee = path
-            .applications
             .root_scope()
             .parameters()
             .type_reference(&(parameter(0)).clone().into())
@@ -80,11 +79,7 @@ fn recursive_binding_to_the_same_declaration_is_free_and_issuer_independent() {
         {
             path.bindings = BTreeMap::from([(callee, TypeKind::GenericParam(caller))]);
             path.const_bindings = BTreeMap::new();
-            TypeConstraintSolution::complete_application(
-                &path,
-                path.applications.root_id(),
-                &mut context,
-            )
+            TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
         }
         .expect("recursive binding is not an occurs cycle")
     };
@@ -146,13 +141,11 @@ fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
         .bound_type(0, 0)
         .expect("function-local bound parameter");
     let remaining = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(1)).clone().into())
         .expect("future type");
     let remaining_const = path
-        .applications
         .root_scope()
         .parameters()
         .const_reference(&(constant()).clone().into())
@@ -172,19 +165,14 @@ fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
     );
     {
         path.bindings = BTreeMap::from([(
-            path.applications
-                .root_scope()
+            path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("bound type"),
             value,
         )]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("future references become residual binders")
 }
@@ -234,19 +222,17 @@ fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
     let (mut first, first_path) = context(continuation_scope(true), &cancellation).into_path();
     let (mut second, second_path) = context(continuation_scope(true), &cancellation).into_path();
     let mut first_path = solution
-        .restore_inherited_path(first_path.applications.root_id(), first_path, &mut first)
+        .restore_inherited_path(first_path.root_id(), first_path, &mut first)
         .expect("first opening");
     let mut second_path = solution
-        .restore_inherited_path(second_path.applications.root_id(), second_path, &mut second)
+        .restore_inherited_path(second_path.root_id(), second_path, &mut second)
         .expect("second opening");
     let first_key = first_path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(1)).clone().into())
         .expect("first residual variable");
     let second_key = second_path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(1)).clone().into())
@@ -256,7 +242,6 @@ fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
     second_path.bindings.insert(second_key, TypeKind::String);
     first_path.const_bindings.insert(
         first_path
-            .applications
             .root_scope()
             .parameters()
             .const_reference(&(constant()).clone().into())
@@ -265,7 +250,6 @@ fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
     );
     second_path.const_bindings.insert(
         second_path
-            .applications
             .root_scope()
             .parameters()
             .const_reference(&(constant()).clone().into())
@@ -273,17 +257,13 @@ fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
         ArrayLength::Const(5),
     );
     let first = {
-        TypeConstraintSolution::complete_application(
-            &first_path,
-            first_path.applications.root_id(),
-            &mut first,
-        )
+        TypeConstraintSolution::complete_application(&first_path, first_path.root_id(), &mut first)
     }
     .expect("first application closes");
     let second = {
         TypeConstraintSolution::complete_application(
             &second_path,
-            second_path.applications.root_id(),
+            second_path.root_id(),
             &mut second,
         )
     }

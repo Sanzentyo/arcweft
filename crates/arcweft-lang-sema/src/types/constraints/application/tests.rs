@@ -747,6 +747,7 @@ fn a_child_scope_is_ineligible_on_an_unchosen_sibling_path() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 2048);
     let root = context.start_path(scope(0)).unwrap();
+    let root_id = root.root_id();
     let sibling = context.fork_path(&root).unwrap();
     let child = scope(1);
     let child_type = child
@@ -759,6 +760,11 @@ fn a_child_scope_is_ineligible_on_an_unchosen_sibling_path() {
         .unwrap();
     let child_effect = effect(&child);
     let chosen = context.admit_application(root, child).unwrap();
+    let chosen = seal_path(chosen, &mut context).unwrap();
+    assert_eq!(chosen.root_id(), root_id);
+    assert_eq!(sibling.root_id(), root_id);
+    assert_eq!(chosen.root_scope().application(), 0);
+    assert_eq!(sibling.root_scope().application(), 0);
     assert_eq!(
         context.parameter_eligibility(&child_type, chosen.projection_view()),
         Some(TypeConstraintParameterEligibility::Bindable)
@@ -961,7 +967,7 @@ fn equal_binding_values_do_not_erase_different_application_membership() {
     let complete = |path: ConstraintPath<Domain>, context: &mut Context<'_>| {
         crate::types::constraints::transaction::TypeConstraintTransaction::from_path(
             context,
-            path.applications.root_id(),
+            path.root_id(),
             path,
             None,
         )

@@ -12,7 +12,7 @@ use crate::effect_row::EffectSubstitution;
 
 use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
 use super::application::{
-    ConstraintApplicationId, ConstraintApplicationScope, ConstraintApplicationScopes,
+    ConstraintApplicationId, ConstraintApplicationInventory, ConstraintApplicationScope,
 };
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::hints::SourceProbeTerm;
@@ -142,7 +142,9 @@ impl<D: ConstraintDomain> PartialEq for StoredSourceSelection<D> {
 impl<D: ConstraintDomain> Eq for StoredSourceSelection<D> {}
 
 pub(crate) struct ConstraintPath<D: ConstraintDomain> {
-    pub(super) applications: Arc<ConstraintApplicationScopes<D>>,
+    /// Actual source lineage. Membership alone does not identify a root.
+    root: ConstraintApplicationId,
+    pub(super) applications: Arc<ConstraintApplicationInventory<D>>,
     pub(crate) bindings: BTreeMap<GenericTypeReference, TypeKind>,
     pub(crate) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
     pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
@@ -166,8 +168,13 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         effects: crate::effect_row::EffectConstraintEnvironment,
         imported: Option<super::ImportedGenericParameterScopeLease>,
     ) -> Self {
+        let root = application.id();
         Self {
-            applications: Arc::new(ConstraintApplicationScopes::root(application, imported)),
+            root,
+            applications: Arc::new(ConstraintApplicationInventory::single(
+                application,
+                imported,
+            )),
             bindings: BTreeMap::new(),
             const_bindings: BTreeMap::new(),
             effects,
@@ -178,11 +185,23 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             projections: Vec::new(),
         }
     }
+
+    pub(super) const fn root_id(&self) -> ConstraintApplicationId {
+        self.root
+    }
+
+    #[cfg(test)]
+    pub(super) fn root_scope(&self) -> &ConstraintApplicationScope<D> {
+        self.applications
+            .application(self.root)
+            .expect("a source path retains its original root application")
+    }
 }
 
 impl<D: ConstraintDomain> Clone for ConstraintPath<D> {
     fn clone(&self) -> Self {
         Self {
+            root: self.root,
             applications: Arc::clone(&self.applications),
             bindings: self.bindings.clone(),
             const_bindings: self.const_bindings.clone(),

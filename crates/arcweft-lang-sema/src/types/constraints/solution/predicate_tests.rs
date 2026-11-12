@@ -179,7 +179,6 @@ fn freshly_opened_scheme_predicates_reject_forbidden_effects_without_mutating_th
         );
         let mut path = context.start_path(application).unwrap();
         let opening = path
-            .applications
             .root_scope()
             .parameters()
             .effect_reference(&reference)
@@ -193,12 +192,9 @@ fn freshly_opened_scheme_predicates_reject_forbidden_effects_without_mutating_th
         );
         assert_eq!(admitted.is_ok(), accepted, "{labels:?}");
         if accepted {
-            let solution = TypeConstraintSolution::complete_application(
-                &path,
-                path.applications.root_id(),
-                &mut context,
-            )
-            .unwrap();
+            let solution =
+                TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+                    .unwrap();
             let value = solution
                 .apply_result_template(&TypeKind::function_with_effects(
                     [],
@@ -305,7 +301,7 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
             ),
         ))
         .unwrap();
-    let application = path.applications.root_id();
+    let application = path.root_id();
     let solution =
         TypeConstraintSolution::complete_application(&path, application, &mut context).unwrap();
     let own = GenericBinder::new(0, 0, 1);

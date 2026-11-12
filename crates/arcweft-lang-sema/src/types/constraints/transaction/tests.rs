@@ -378,7 +378,7 @@ fn closing_a_source_rejects_a_foreign_application_or_ordinal() {
         let cancellation = AtomicBool::new(false);
         let (mut context, mut transaction) = repeated_source_component(&cancellation, 1);
         let path = &mut transaction.frontier[0];
-        let parent = path.applications.root_id();
+        let parent = path.root_id();
         let source::ConstraintProbe::Active(probe) = path.probe_trace.last_mut().unwrap() else {
             panic!("unclosed child source");
         };
@@ -508,7 +508,6 @@ fn forked_probe(cancellation: &AtomicBool) -> ForkedProbe<'_> {
     let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
     let variable = ticket
         .test_path()
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&parameter().into())
@@ -922,7 +921,6 @@ fn source_frontier<A: TypeConstraintAccounting>(
     path: &ConstraintPath<NoConstraintClient>,
 ) -> TypeConstraintTransaction<NoConstraintClient> {
     let parameter = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&parameter().into())
@@ -932,9 +930,9 @@ fn source_frontier<A: TypeConstraintAccounting>(
         path.bindings.insert(parameter.clone(), TypeKind::I64);
         path.probe_trace.push(source::ConstraintProbe::Active(
             source::ActiveConstraintProbe {
-                source: ConstraintSourceId::new(path.applications.root_id(), ()),
+                source: ConstraintSourceId::new(path.root_id(), ()),
                 source_ordinal: PreparedSourceOrdinal {
-                    application: path.applications.root_id(),
+                    application: path.root_id(),
                     ordinal: 0,
                 },
                 branch: SourceProbeObservation::closed_for_test((), ()),
@@ -948,8 +946,7 @@ fn source_frontier<A: TypeConstraintAccounting>(
         path
     });
     let mut transaction =
-        TypeConstraintTransaction::from_path(context, path.applications.root_id(), first, None)
-            .unwrap();
+        TypeConstraintTransaction::from_path(context, path.root_id(), first, None).unwrap();
     transaction.frontier.push(second);
     transaction
 }

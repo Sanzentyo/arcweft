@@ -242,33 +242,26 @@ fn active_const_alias_chain_closes_before_solution_publication() {
         path.bindings = BTreeMap::new();
         path.const_bindings = BTreeMap::from([
             (
-                path.applications
-                    .root_scope()
+                path.root_scope()
                     .parameters()
                     .const_reference(&(first).clone().into())
                     .expect("first inference slot"),
                 ArrayLength::Generic(
-                    path.applications
-                        .root_scope()
+                    path.root_scope()
                         .parameters()
                         .const_reference(&(second).clone().into())
                         .expect("second inference slot"),
                 ),
             ),
             (
-                path.applications
-                    .root_scope()
+                path.root_scope()
                     .parameters()
                     .const_reference(&(second).clone().into())
                     .expect("second inference slot"),
                 ArrayLength::Const(7),
             ),
         ]);
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("active aliases close to one canonical constant");
     assert_eq!(
@@ -338,7 +331,7 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
                 kind: InheritedSolutionInvariantKind::NonCanonical,
                 parameter: Some(found),
             })
-        )) if found == path.applications.root_scope().parameters().const_reference(&first.into()).expect("claimed first slot").into()
+        )) if found == path.root_scope().parameters().const_reference(&first.into()).expect("claimed first slot").into()
     ));
 }
 
@@ -479,7 +472,7 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
         .into_path();
     let path = solution
         .restore_inherited_path(
-            next_context_path.applications.root_id(),
+            next_context_path.root_id(),
             next_context_path,
             &mut next_context,
         )
@@ -487,8 +480,7 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
     assert_eq!(
         path.const_bindings,
         BTreeMap::from([(
-            path.applications
-                .root_scope()
+            path.root_scope()
                 .parameters()
                 .const_reference(&(parameter).clone().into())
                 .expect("reopened const slot"),
@@ -560,7 +552,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         )
         .into_path();
     assert!(matches!(
-        solution.restore_inherited_path(next_context_path.applications.root_id(), next_context_path, &mut next_context),
+        solution.restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
@@ -621,7 +613,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         )
         .into_path();
     assert!(matches!(
-        solution.restore_inherited_path(next_context_path.applications.root_id(), next_context_path, &mut next_context),
+        solution.restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::Unclosed,
@@ -1140,7 +1132,7 @@ fn transitive_bindings_are_sealed_and_move_only() {
             .open_template_type(
                 &actual,
                 transaction.lower.test_single_path(),
-                transaction.lower.test_single_path().applications.root_id(),
+                transaction.lower.test_single_path().root_id(),
             )
             .expect("equation RHS uses the same active parameter namespace");
         transaction.constrain(
@@ -1764,7 +1756,7 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
         .open_template_type(
             &actual,
             transaction.lower.test_single_path(),
-            transaction.lower.test_single_path().applications.root_id(),
+            transaction.lower.test_single_path().root_id(),
         )
         .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain(
@@ -1850,7 +1842,6 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
         )
         .into_path();
     let expected_key = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&t.into())
@@ -3896,7 +3887,7 @@ fn deferred_cycle_is_reported_only_after_close() {
         .open_template_type(
             &actual,
             transaction.lower.test_single_path(),
-            transaction.lower.test_single_path().applications.root_id(),
+            transaction.lower.test_single_path().root_id(),
         )
         .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain(
@@ -4535,7 +4526,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
                 len: super::super::ArrayLength::Const(5),
             },
             ticket.test_path(),
-            ticket.test_path().applications.root_id(),
+            ticket.test_path().root_id(),
         )
         .expect("source observation carries an owned active reference");
     transaction
@@ -4673,7 +4664,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
                 value: Box::new(TypeKind::I32),
             },
             ticket.test_path(),
-            ticket.test_path().applications.root_id(),
+            ticket.test_path().root_id(),
         )
         .expect("source observation carries an owned active reference");
     transaction

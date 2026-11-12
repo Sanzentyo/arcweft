@@ -136,26 +136,20 @@ pub(super) fn complete(
     let (mut context, mut path) = context(scope, &cancellation).into_path();
     {
         path.bindings = BTreeMap::from([(
-            path.applications
-                .root_scope()
+            path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("callee type"),
             ty,
         )]);
         path.const_bindings = BTreeMap::from([(
-            path.applications
-                .root_scope()
+            path.root_scope()
                 .parameters()
                 .const_reference(&(constant()).clone().into())
                 .expect("callee constant"),
             length,
         )]);
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("completed application")
 }
@@ -555,7 +549,6 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
         let (mut context, mut path) = context(scope, &cancellation).into_path();
         if let Some(ty) = ty {
             let key = path
-                .applications
                 .root_scope()
                 .parameters()
                 .type_reference(&parameter(0).into())
@@ -563,7 +556,6 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
             path.bindings.insert(key, ty);
         }
         let effect_key = path
-            .applications
             .root_scope()
             .parameters()
             .effect_reference(&reference)
@@ -577,12 +569,8 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
         path.effects
             .constrain_subset(&bound, &opened, &mut context)
             .expect("effect lower bound");
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
-        .expect("simultaneous effect solution")
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+            .expect("simultaneous effect solution")
     };
     let solution = complete_effect(Some(actual.clone()), "log.write");
     let projected = solution
@@ -653,7 +641,7 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
     .expect("parameter scope");
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path) = context(scope, &cancellation).into_path();
-    let opening = path.applications.root_scope().parameters();
+    let opening = path.root_scope().parameters();
     let effect_key = opening.effect_reference(&effect).expect("effect opening");
     let type_key = opening
         .type_reference(&parameter(0).into())
@@ -666,12 +654,9 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
             EffectRow::open(crate::effects::EffectSet::new(), effect_key),
         ),
     );
-    let solution = TypeConstraintSolution::complete_application(
-        &path,
-        path.applications.root_id(),
-        &mut context,
-    )
-    .expect("residual function binding");
+    let solution =
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+            .expect("residual function binding");
     let own = GenericBinder::new(0, 0, 1);
     let local = GenericScope::default().with_binder(own);
     let template = TypeKind::function_with_binder(
@@ -750,8 +735,7 @@ fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
         let variable = if role == Role::Rigid {
             reference.clone()
         } else {
-            path.applications
-                .root_scope()
+            path.root_scope()
                 .parameters()
                 .effect_reference(&reference)
                 .expect("opened effect")
@@ -768,12 +752,8 @@ fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
                 .constrain_subset(&permitted, &row, &mut context)
                 .expect("exact binding");
         }
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
-        .expect("retained predicate")
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+            .expect("retained predicate")
     };
     let restricted = solve(Role::Rigid, &["fs.read"]);
     assert!(matches!(
@@ -821,21 +801,18 @@ fn residual_replacement_is_lifted_beneath_existing_template_binders() {
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path) = context(scope(false, true), &cancellation).into_path();
     let future = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter(1)).clone().into())
         .expect("future type");
     let length = path
-        .applications
         .root_scope()
         .parameters()
         .const_reference(&(constant()).clone().into())
         .expect("future const");
     let solution = {
         path.bindings = BTreeMap::from([(
-            path.applications
-                .root_scope()
+            path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("bound type"),
@@ -845,11 +822,7 @@ fn residual_replacement_is_lifted_beneath_existing_template_binders() {
             },
         )]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("residual solution");
     assert!(matches!(
@@ -960,7 +933,7 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
         EffectRow::closed(crate::effects::EffectSet::new()),
     );
     let opened = context
-        .open_template_type(&template, &path, path.applications.root_id())
+        .open_template_type(&template, &path, path.root_id())
         .expect("opened template");
     let TypeKind::Function {
         params,
@@ -977,13 +950,11 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
         )]
     );
     let inferred_type = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&type_key)
         .expect("own type opening");
     let inferred_const = path
-        .applications
         .root_scope()
         .parameters()
         .const_reference(&const_key)
@@ -1002,11 +973,7 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
     let solution = {
         path.bindings = BTreeMap::from([(inferred_type, TypeKind::I64)]);
         path.const_bindings = BTreeMap::from([(inferred_const, ArrayLength::Const(4))]);
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("completed scheme instance");
     let (key, value) = solution.bindings().next().expect("type binding");
@@ -1064,19 +1031,14 @@ fn caller_scheme_keys_do_not_capture_quantifiers_inside_an_operand() {
     let (mut context, mut path) = context(parameter_scope, &cancellation).into_path();
     let caller = {
         path.bindings = BTreeMap::from([(
-            path.applications
-                .root_scope()
+            path.root_scope()
                 .parameters()
                 .type_reference(&key)
                 .expect("opened slot"),
             TypeKind::I64,
         )]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(
-            &path,
-            path.applications.root_id(),
-            &mut context,
-        )
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("caller solution")
     .close_instantiation(None)

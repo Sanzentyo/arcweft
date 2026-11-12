@@ -215,40 +215,34 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
     }
 }
 
-/// Scope membership follows a path when alternatives fork. Work accounting
-/// is shared by the run and deliberately does not live in this inventory.
-pub(super) struct ConstraintApplicationScopes<D: ConstraintDomain> {
-    root: ConstraintApplicationId,
+/// Admitted application membership, independent of source-path lineage.
+/// A path or a joint original-constraint owner supplies its own roots; this
+/// inventory cannot manufacture a parent by selecting one admitted member.
+pub(super) struct ConstraintApplicationInventory<D: ConstraintDomain> {
     applications: BTreeMap<ConstraintApplicationId, Arc<ConstraintApplicationScope<D>>>,
     imported: Box<[ImportedApplicationScopeLease]>,
 }
 
-impl<D: ConstraintDomain> Clone for ConstraintApplicationScopes<D> {
+impl<D: ConstraintDomain> Clone for ConstraintApplicationInventory<D> {
     fn clone(&self) -> Self {
         Self {
-            root: self.root,
             applications: self.applications.clone(),
             imported: self.imported.clone(),
         }
     }
 }
 
-impl<D: ConstraintDomain> ConstraintApplicationScopes<D> {
-    pub(super) fn root(
+impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
+    pub(super) fn single(
         scope: ConstraintApplicationScope<D>,
         imported: Option<ImportedGenericParameterScopeLease>,
     ) -> Self {
-        let root = scope.id();
+        let application = scope.id();
         let imported = imported.map_or_else(Vec::new, |lease| lease.applications.into_vec());
         Self {
-            root,
-            applications: BTreeMap::from([(root, Arc::new(scope))]),
+            applications: BTreeMap::from([(application, Arc::new(scope))]),
             imported: imported.into_boxed_slice(),
         }
-    }
-
-    pub(super) const fn root_id(&self) -> ConstraintApplicationId {
-        self.root
     }
 
     pub(super) fn len(&self) -> usize {
@@ -298,11 +292,6 @@ impl<D: ConstraintDomain> ConstraintApplicationScopes<D> {
             .ok_or(TypeConstraintInvariant::ParameterScope(
                 TypeConstraintParameterScopeInvariant::ApplicationOutOfScope,
             ))
-    }
-
-    pub(super) fn root_scope(&self) -> &ConstraintApplicationScope<D> {
-        self.application(self.root)
-            .expect("the application inventory owns its root")
     }
 
     pub(super) fn parameter_eligibility(

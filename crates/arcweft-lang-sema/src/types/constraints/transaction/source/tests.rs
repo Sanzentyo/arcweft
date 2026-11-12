@@ -228,7 +228,7 @@ fn source(
 fn an_unclosed_probe_preparation_cannot_issue_a_completed_source() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path();
-    let mut probe = source(path.applications.root_id(), TypeKind::I32);
+    let mut probe = source(path.root_id(), TypeKind::I32);
     let ConstraintProbe::Active(active) = &mut probe else {
         unreachable!()
     };
@@ -252,15 +252,11 @@ fn source_operand_cannot_retain_an_unowned_future_type_reference() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path();
     let future = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(future_parameter()).clone().into())
         .expect("future slot");
-    let probe = source(
-        path.applications.root_id(),
-        TypeKind::GenericParam(future.clone()),
-    );
+    let probe = source(path.root_id(), TypeKind::GenericParam(future.clone()));
     assert_eq!(
         probe
             .close(
@@ -292,7 +288,7 @@ fn source_function_value_retains_its_own_type_and_constant_binder() {
     );
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path();
-    let closed = source(path.applications.root_id(), function.clone())
+    let closed = source(path.root_id(), function.clone())
         .close(
             path.projection_view(),
             &EffectSubstitution::new(),
@@ -315,16 +311,15 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path) = context(&cancellation).into_path();
     let parameter = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(future_parameter()).clone().into())
         .expect("template slot");
     let item = TypeKind::GenericParam(parameter.clone());
     let probe = ConstraintProbe::Active(ActiveConstraintProbe {
-        source: ConstraintSourceId::new(path.applications.root_id(), ()),
+        source: ConstraintSourceId::new(path.root_id(), ()),
         source_ordinal: PreparedSourceOrdinal {
-            application: path.applications.root_id(),
+            application: path.root_id(),
             ordinal: 3,
         },
         branch: SourceProbeObservation::closed_for_test((), ()),
@@ -366,7 +361,7 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
 fn source_trace_cannot_skip_or_repeat_completion() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path();
-    let active = source(path.applications.root_id(), TypeKind::I64);
+    let active = source(path.root_id(), TypeKind::I64);
     let expected = protocol_error(TypeConstraintSourceProtocolInvariant::Outcome);
     assert_eq!(active.clone().into_closed().err(), Some(expected.clone()));
     let closed = active
@@ -469,9 +464,9 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
     };
     assert!(observed.owner.semantic_identity_digest().is_err());
     let probe = ConstraintProbe::Active(ActiveConstraintProbe {
-        source: ConstraintSourceId::new(path.applications.root_id(), 2),
+        source: ConstraintSourceId::new(path.root_id(), 2),
         source_ordinal: PreparedSourceOrdinal {
-            application: path.applications.root_id(),
+            application: path.root_id(),
             ordinal: 0,
         },
         branch: SourceProbeObservation::closed_for_test((), ()),

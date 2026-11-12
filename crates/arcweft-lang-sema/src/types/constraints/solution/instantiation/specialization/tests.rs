@@ -178,7 +178,7 @@ fn project_specialization_composes_residual_rows_and_recursive_caller_values_sim
         .unwrap();
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path) = context(scope(true, true), &cancellation).into_path();
-    let opening = path.applications.root_scope().parameters();
+    let opening = path.root_scope().parameters();
     let first = opening.type_reference(&parameter(0).into()).unwrap();
     let future = opening.type_reference(&parameter(1).into()).unwrap();
     let length = opening.const_reference(&constant().into()).unwrap();
@@ -193,12 +193,8 @@ fn project_specialization_composes_residual_rows_and_recursive_caller_values_sim
             },
         ]),
     );
-    let prefix = TypeConstraintSolution::complete_application(
-        &path,
-        path.applications.root_id(),
-        &mut context,
-    )
-    .unwrap();
+    let prefix =
+        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context).unwrap();
     let supplied = arguments(GenericBinder::new(1, 1, 0), &[]);
     let mut completed = prefix
         .close_residual_with_control(&supplied, Some(&caller), &mut UnmeteredTypeProjection)

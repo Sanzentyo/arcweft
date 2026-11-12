@@ -9,7 +9,7 @@ use std::{
 };
 
 use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
-use super::application::ConstraintApplicationScopes;
+use super::application::ConstraintApplicationInventory;
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::{
     CheckedConstraintSourceProjection, ConstraintAcceptance, ConstraintDomain, ConstraintPath,
@@ -56,7 +56,7 @@ pub(crate) struct ProjectedConstraintType {
 /// Read-only state of one path's scoped type/constant projection. Only the
 /// path and its consuming normalization operation construct this view.
 pub(crate) struct ConstraintProjectionView<'a, D: ConstraintDomain> {
-    applications: &'a ConstraintApplicationScopes<D>,
+    applications: &'a ConstraintApplicationInventory<D>,
     bindings: &'a BTreeMap<GenericTypeReference, TypeKind>,
     const_bindings: &'a BTreeMap<GenericConstReference, ArrayLength>,
 }
@@ -70,7 +70,7 @@ impl<D: ConstraintDomain> Clone for ConstraintProjectionView<'_, D> {
 }
 
 impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
-    pub(super) const fn applications(self) -> &'a ConstraintApplicationScopes<D> {
+    pub(super) const fn applications(self) -> &'a ConstraintApplicationInventory<D> {
         self.applications
     }
 
@@ -654,33 +654,16 @@ where
     if path.bindings.is_empty() && path.const_bindings.is_empty() {
         return Ok(path);
     }
-    let source_applications = Arc::clone(&path.applications);
-    let ConstraintPath {
-        applications,
-        bindings: source,
-        const_bindings: const_source,
-        effects,
-        equations,
-        choice_key,
-        deferred_cycles,
-        probe_trace,
-        projections,
-    } = path;
+    let mut sealed = path;
+    let source_applications = Arc::clone(&sealed.applications);
+    // Rewrite only bindings. The original source lineage, projections and
+    // probe ownership stay in their consumed path, including on failure.
+    let source = std::mem::take(&mut sealed.bindings);
+    let const_source = std::mem::take(&mut sealed.const_bindings);
     let source_view = ConstraintProjectionView {
         applications: &source_applications,
         bindings: &source,
         const_bindings: &const_source,
-    };
-    let mut sealed = ConstraintPath {
-        applications,
-        bindings: BTreeMap::new(),
-        const_bindings: BTreeMap::new(),
-        effects,
-        equations,
-        choice_key,
-        deferred_cycles,
-        probe_trace,
-        projections,
     };
     for (parameter, value) in &source {
         let mut visiting = BTreeSet::new();

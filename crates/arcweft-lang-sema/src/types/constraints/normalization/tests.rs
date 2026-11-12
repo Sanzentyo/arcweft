@@ -143,7 +143,6 @@ fn occurs_check_visits_nested_binders_and_restores_the_enclosing_scope() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(scope, &cancellation, 256).into_path();
     let target = path
-        .applications
         .root_scope()
         .parameters()
         .type_reference(&(parameter).clone().into())
