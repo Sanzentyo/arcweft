@@ -16787,3 +16787,21 @@ Rejected／Blocked／Deferredは元producerを削らずに保持する。条件�
 構造実測はschema function type owner 25,903 bytes／703行（基点417、増加286）、別test 15,177 bytes／475行。schemaのgroup順序と各phaseの投影context・work admissionを同じ所有境界へ置き、型内の再帰は共有foldへ委譲した。testの300行超増加はこの投影・元term・abortの境界を検証するもので、別ownerや実行backendへ結合しない。既存continuation 103,010 bytes／2,653行は内部エラー変換の1行増加だけで、状態・依存・元graphの所有を変えていない。types.rsの1行は同じeffect visitorを実consumerへ内部再公開するもので、公開APIや依存を増やす物理分割ではない。新たな依存、I/O、unsafe、並列の型文法、互換reader、version変更や予算緩和はない。
 
 初回診断と途中失敗、固定入力・差分・全ID／結果、品質log、実測、graph再利用、監査と公開照合を27 entry、展開時8,930,118 bytes、ZIP 838,903 bytes、SHA-256 `2c3e9e44ca73855b67e4a76d6a18ba0f4cc3c3809283226368c908e5aa9fde16` の[原本](acceptance-evidence/task-prepared-declaration-arrows.raw.zip)へ保持し、manifestを含む全entryの長さとhashを読み戻して照合した。現状一覧の前段ownerの説明とowner件数を今回の実測へ置換し、前回の全consumer／品質結果は元Sourceへ明示的に区別した。以前の実行結果・full SHA・凍結ZIP、Generic Match・呼出し側再帰・同一グループprefixの受入を保持し、残作業の重複列挙は追加していない。
+
+### Principal effect solutions and guarded observations
+
+2026-11-12、基点 `ce3bd15ea3b011d0950334de9a292d52f26a9eb8` の既存mainで、私有prepared-effect solverの中間checkpoint `c7c942f689d7b5940383b9c7a316a0c8001e4333`、tree `0967f6a89fe96a742a2463c75aff72869038b2be` を通常pushした。この時点の証拠はSema全target・全feature check終了0に限ると区別し、その後の固定Sourceで関連46件を46 PASS、終了0と確認した。追加の検査・回帰テストを含む最終Source `ed5c15c3a7cb80a500cbcb3b15a4416adf404807`、tree `a1bde9b8cfc0277c2b4045f76a1951c3ad282aea` も通常pushし、remote mainのfull SHA・treeと、このphaseの全14pathのblobを照合した。
+
+最小のscheme効果行と、残る候補の選択を一つの成功証明としていた私有境界を置換した。solve_principalは元の宣言方程式だけから最小scheme tupleと残余Choice関係を保持し、Choiceの非一意性だけでは数学的な解を失敗にしない。行の観測は元の観測文脈とquery supportを凍結し、Vacuous／Rejected／MixedAdmission／Ambiguous／Invariantの全体評価域を分ける。後続利用の成功条件は最小化する関係へ追加しない。canonical行の局所拡張は正負のsupportの非重複を確認し、元のInvariant guardを借用する型に保持する。空の文脈や拒否を純粋な成功行に変えず、他ラベルへの依存でpointwise行に表せない観測も区別して拒否する。
+
+元の単一default probeでは、複数の名前のないラベルを持つ有限集合上のglobal OR／NOTを正しく区別できなかった。名前付きのmembershipに加えて、support外の各非zero入力patternが実在するかを保持し、各atomic relationを同じ有限集合全体へ畳んでからglobal Boolean演算を適用するようにした。常に存在するzero pattern、呼出し引数置換後のcaller profile、観測で追加されるラベルも保持する。確認側はscheme cellを使わないcore formulaの再評価で元方程式を全残余witnessについて照合し、出力表が保持した最小cellに一致すること、出力ラベルのsupport、Choiceを有限行変数と取り違えない強い有限性を別途確認する。固定点であるだけの大きなS=S解では通過しない。
+
+新規12テストは全PASS。実際の3個の異なる未命名ラベルから作った64組の有限集合を直接BTreeSetで比較し、包含のOR／NOT／ANDと全体guardを照合した。互いに異なるsingletonは誤った全称比較可能性の反例になり、その条件を宣言obligationへ課す場合はUnsatisfiableとなる。適用拒否・混在・空文脈・値の曖昧さの区別、後続利用による大きい解への変更拒否、別ラベル依存、default行全体の曖昧さ、f(e,e)のdomain、観測supportの拡張、最小表の改変、uniform Choiceの有限性、foreign／stale参照、inclusive予算・取消しとgraph不変性を検査した。既存のChoice相関・宣言arrow・component consumerも含む関連58件は58 PASS、終了0で、これを全件結果へ加算しない。
+
+最終固定入力の全feature Semaは公開API compileを含む5 binary・全1,555件、1,549 PASS／6 FAIL／0 SKIP、nextest終了100、実行時間67.205秒。選択IDと終端IDは一致し重複0、新規12件と256候補境界はPASS。失敗6件のIDは前回Source `cc4816e327b9a13728c38b21520f8546e82fd074` の再帰本体6件と一致した。追加テスト初回のcheckは存在しないEffectRow::pureの呼出し6か所と、controlのerror変換1か所で終了101、実行0件だった。修復前の差分・新規source snapshot・診断と、修復後の固定入力を分けて保持する。
+
+最終入力のlocked・Sema全target・全feature Clippy、workspace整形、構造gateは終了0、blocking 0件。警告は残る。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。Cargo入力はgraph基点 `518d63e31dd2be9750158004b171a6174b2725a7` と差分0で、Source `d20f11a7fa9762662df0cdbbe042670207b0177b` でnormal／dev／buildを含む3 mode・22 packageを確認したresolved graphを再利用した。変更したclosure／観測の呼出し元は同じcrateの私有準備とtestに限られ、実frontend・公開型・Cargo・runtime・codec境界を変えないためowner全体を検証した。前回の全consumer・workspace check／Clippy・Wasm・doctest・Compilerの証拠は元Sourceのまま保持し、今回と合算していない。
+
+構造実測はcanonical replay 20,788 bytes／519行、観測owner 21,575 bytes／580行、共通finite valuation kernel 5,157 bytes／150行、cell compilation 21,622 bytes／556行。選択済みwitnessへの旧reificationを削除し、最小表の確認は3,403 bytes／81行（旧378行）へ置換した。観測と独立replayは各状態・依存・役割を分け、child test 501／69行はそれぞれの私有状態の境界を検証する。fixture共有はcfg(test)内だけで、物理分割のためのproduction公開拡大はない。新依存、I/O、unsafe、別の型文法、互換reader、version変更や予算緩和は追加していない。
+
+初回check・中間公開・途中の診断、固定入力・差分・全ID／結果、品質log、graph再利用、実測・監査と公開照合を46 entry、展開時9,256,663 bytes、ZIP 912,140 bytes、SHA-256 `75d5954a13cbaabcf02b018479c6a7441469c1974007f72e082cda38b65c529e` の[原本](acceptance-evidence/task-principal-effect-observations.raw.zip)へ保持し、manifestを含む全entryの長さとhashを読み戻して照合した。前段schema投影だけを示していた現状行を今回のowner結果へ置換した理由は、私有solverの契約と最新の実測が進んだためであり、実frontendの完成を示すためではない。古い実行結果・full SHA・凍結原本は削除せず、Generic Match・呼出し側再帰・同一グループprefix等の受入と他の現状行は変更していない。現在の未接続範囲はcurrent-status.mdの一か所に維持する。
