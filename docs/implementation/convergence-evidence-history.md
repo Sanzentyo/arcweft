@@ -17073,3 +17073,21 @@ ResolvedConstraintSourceをoperandとactive／closed source traceで共有し、
 このcutは通常source入口のowner保持とexact receiptの認証を完了したもので、value依存証拠のbinding／alias・共有fold・capture sealへの接続とownerごとのFree検査は未完了。frontend全体のPreparedValueRef／prepared effect接続、条件付きMGU・適格性／rank、Fnの局所∀、body一回準備も未完了として区別する。元Γへ全child captureを一括追加することや、単なるFree scanで認可を発行することは行わない。Generic Match、caller-bound recursion、同group prefixの既受入は維持する。
 
 [検証原本](acceptance-evidence/task-source-value-owner.raw.zip)は29 entry、展開時9707506 bytes、ZIP 934035 bytes、SHA-256 `3ee4bc2ee9061abf283a12ba8837c1eee1399a3f7836ca8a2f832140466b2e62`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusへ集約し、既存履歴のbyte prefix・SHA・実測を保持した。
+
+## Exact borrowed operand projections
+
+2026-11-13。Source `f371115f236b4177f49033416330971270b53172`、tree `ed82f7bfaa518184a85803cc9a72f0f3711cad77`、親 `e09a356236c987c85a3d0d6e242f51bba0bc9f86` を既存mainへnon-forced pushし、origin/mainのcommit・tree・変更5 blobを固定入力と照合した。tracked差分0件から本記録を更新し、未追跡 `%SystemDrive%/` を保持した。
+
+ConstraintOperandの値をArcで共有し、型と定数の両方を実scope・出所と一緒に保持できるようにした。借用ビューは既存のexhaustiveなTypeConstraintShape.childrenを使い、実ノードを複製せずにたどる。保持する時だけ共通の計量付きscope foldで選択値を転送し、元root・root scope・実occurrence scope・正確な永続投影位置を保存する。型の子と配列長を別portにし、保存済み定数には合成Array型を作らない直接ビューを用意した。関数の子は実parent frameのprefixと宣言binderを要求し、同形の別frameによる転送を拒否する。PendingEquationの転送をrootビューへ移した。
+
+全featureのSema lib／testsは1,625件中1,619 PASS／6 FAIL／0 SKIP（75.664秒）。全選択IDと終端IDが一致し重複0。失敗IDと実診断は前回の既知6件と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。追加4件はtupleの実ノード借用・別位置・root解放後の共有保持、型／配列長の別投影、const単独ビュー、関数の局所binderとambient frameの保持・同形の別frameの拒否を確認する。既存の256 probe／1 replay・4,096上限も通過した。Semaのlocked・全target・全feature Clippyとworkspace fmt checkは終了0、警告を保持した。5 pathのbyte pinを実行前後と公開時に照合した。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+開発中の初回checkはshapeの誤ったreexport参照でE0433、新testの最初のbuildは存在しないEffectRow::pure呼出しでE0599になった。実際のconstraints facadeとclosedな空row constructorへ修正した。次の選択29件は29 PASS（0.269秒）、filter外1,571件は未実行。その後const単独ビューと4件目のtestを追加し、template／source／result発行を型operandに限定してから、上記の最終固定入力を検証した。途中の失敗原本も保持する。
+
+所有測定はlexical 310物理LOC（増加15）、transaction 2,712（増加3）、operand 315（増加41）、新projection 217、対応test 197。投影の状態と借用traversalはprivateな責任moduleに置き、既存transactionはsource／closureの協調を維持する。共有shapeから別の型grammarを作らず、sourceのFree inventoryを認可へ変換しない。Cargo edge、外部public export、unsafe、I/O、version、budgetの変更はない。crate-privateな基盤で全Sema・API compileを検証した。resolvedな3 mode・22 package reverse closureとCargo入力は不変。21 consumerの2,507 PASS／2 FAIL／1 SKIPとworkspace全件の品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の実測を保持し、新入力での再実行や合算とはしない。Wasm・Tier 2・新body Native／AWBCの受入は主張しない。
+
+readonlyのAstra Max相談は投影とeffect置換の所有契約に限定し、実装・Cargo実行として数えない。今回は投影位置と実frameを保持する基盤の完了であり、planner／binding map・alias・正規化fold・certified effect・capture sealの移行は未完了。既存の任意値projectedと広いDerived edgeはFree認可の証明に使わず、対応する構造・alias・特殊化・effect derivationへ置き換える必要がある。tupleの一方の値が兄弟のFreeを借用しない検査、条件付きMGU・適格性／rank、Fnの局所∀、frontendのprepared value／effect接続とbody一回準備も完了とはしない。Generic Match、caller-bound recursion、同group prefixの既受入は維持する。
+
+同日02:01:53〜02:02:09 JST、ユーザーの最新指示に従いworkspace rootとtargetが `D:\git\arcweft`／`D:\git\arcweft\target` であることをmetadataで照合し、`cargo clean` を実行した（終了0、32,652 files／87.5 GiB）。D:空き容量は57,662,197,760から148,014,735,360 bytesへ回復した。独立したCargo scriptはユーザーホーム内の別targetで実行中のため対象外。上記のテストと品質はclean前の同一固定sourceに対する結果であり、clean後の再実行はしていない。ソースと検証ログは保持した。
+
+[検証原本](acceptance-evidence/task-binding-operand-projection.raw.zip)は28 entry、展開時9106185 bytes、ZIP 856285 bytes、SHA-256 `ca61d0641e5996d1272b8e39d6571c32af5a387dbe680699876c8a44a6111f6b`。manifestを含む全entryを読み戻し照合した。clean実行ログも同梱し、現状はcurrent-statusだけに集約した。以前のbyte prefix・SHA・実測は保持する。
