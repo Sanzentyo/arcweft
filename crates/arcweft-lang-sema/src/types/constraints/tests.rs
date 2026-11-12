@@ -1396,23 +1396,28 @@ fn a_rigid_actual_is_not_bound_to_a_concrete_pattern() {
     .expect("the parameter is rigid");
     let actual = TypeKind::generic_parameter(rigid.clone());
     let cancellation = AtomicBool::new(false);
-    let mut transaction = TestConstraintTransaction::begin(
+    let (mut context, scope) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             scope,
-        ),
-        None,
-    );
+        )
+        .into_parts();
+    let source = crate::callable::EnclosingGenericParameterScope::sealed([rigid], [], [])
+        .expect("the original source owns this fixed reference");
+    let original = source.original_context(&mut context).unwrap();
+    let mut transaction =
+        TypeConstraintTransaction::initialize(&mut context, original, (), scope, None).unwrap();
 
     transaction.constrain(
+        &mut context,
         &TypeKind::I64,
         &actual,
         ConstraintAcceptance::ActualAcceptsPattern,
     );
 
     assert!(matches!(
-        transaction.finish(),
+        transaction.finish(&mut context),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Constraint(_)
         ))

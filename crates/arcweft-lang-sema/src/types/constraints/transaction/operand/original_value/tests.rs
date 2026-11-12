@@ -95,7 +95,7 @@ fn original_values_admit_only_their_actual_sources_free_type_const_and_effect() 
                 EffectRow::open(EffectSet::new(), owner.effects[0].clone()),
             ),
         ];
-        for value in values {
+        for (index, value) in values.into_iter().enumerate() {
             let admitted = ConstraintOperand::<NoConstraintClient>::original(
                 &value,
                 Arc::clone(&scope),
@@ -103,9 +103,15 @@ fn original_values_admit_only_their_actual_sources_free_type_const_and_effect() 
                 &mut context,
             );
             if Arc::ptr_eq(owner, &source) {
-                assert_eq!(admitted.unwrap().value(), &value)
+                assert_eq!(admitted.unwrap().value(), &value);
             } else {
-                assert!(admitted.is_err())
+                let expected = match index {
+                    0 => references::type_out_of_scope(&foreign.types[0]),
+                    1 => references::const_out_of_scope(&foreign.consts[0]),
+                    2 => references::effect_out_of_scope(&foreign.effects[0]),
+                    _ => unreachable!(),
+                };
+                assert_eq!(admitted.err(), Some(expected));
             }
         }
         let length = ArrayLength::Generic(owner.consts[0].clone());
@@ -115,7 +121,14 @@ fn original_values_admit_only_their_actual_sources_free_type_const_and_effect() 
             original.clone(),
             &mut context,
         );
-        assert_eq!(admitted.is_ok(), Arc::ptr_eq(owner, &source));
+        if Arc::ptr_eq(owner, &source) {
+            assert_eq!(admitted.unwrap().value(), &length);
+        } else {
+            assert_eq!(
+                admitted.err(),
+                Some(references::const_out_of_scope(&foreign.consts[0]))
+            );
+        }
     }
 }
 
@@ -152,9 +165,12 @@ fn a_nested_function_keeps_local_quantifiers_and_checks_free_predicate_variables
             &mut context,
         );
         if Arc::ptr_eq(owner, &source) {
-            assert_eq!(admitted.unwrap().value(), &value)
+            assert_eq!(admitted.unwrap().value(), &value);
         } else {
-            assert!(admitted.is_err())
+            assert_eq!(
+                admitted.err(),
+                Some(references::effect_out_of_scope(&foreign.effects[0]))
+            );
         }
     }
 }
@@ -195,9 +211,10 @@ fn a_candidates_rigid_inventory_cannot_admit_a_foreign_original_value() {
         Some(TypeConstraintParameterEligibility::Rigid)
     );
     let value = TypeKind::GenericParam(candidate.types[0].clone());
-    assert!(
+    assert_eq!(
         ConstraintOperand::<NoConstraintClient>::original(&value, scope, original, &mut context)
-            .is_err()
+            .err(),
+        Some(references::type_out_of_scope(&candidate.types[0]))
     );
 }
 
