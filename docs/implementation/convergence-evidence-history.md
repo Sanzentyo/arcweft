@@ -17143,3 +17143,19 @@ binding sealはrawな値を元originで包み直す経路からこの保持用fo
 normal／normal+dev／normal+dev+build、全feature・全target向けのcargo treeでowner込み22 packageの逆依存を再確認した。変更はSema内部の保持用derivationとprivateなseal経路で、公開の型意味・Cargo入力は不変のため、frontendとAPI compileを含むowner全件を実行した。他21 packageの実行は再実行せず、Source `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の2,507 PASS／2 FAIL／1 SKIPとworkspace品質を元入力の履歴として保持し、今回のSema実測と合算しない。Free認可、再帰本体6失敗の修復、新body Native／AWBC・Wasm・Tier 2の受入を今回の保持移行から主張しない。Generic Match、caller-bound recursion、同group prefixの受入を維持する。
 
 [検証原本](acceptance-evidence/task-retained-normalization.raw.zip)は37 entry、展開時10198134 bytes、ZIP 998181 bytes、SHA-256 `52cb54931f4c4bcdf8102749537da1263b8ccfd893c2a6b4d5560f108f18f7da`。manifestを含む全entryのsize／hashを読み戻し照合し、portableなpath区切りを確認した。以前の履歴のbyte prefix・SHA・実測を保持し、重複する現状は増やしていない。
+
+## Normalized provenance on pending result uses
+
+2026-11-13。Source `eafbdeedc45e029a24572b246294b29ecd3dc3fd`、tree `cd93b3a8e29dffc4441b84ddd92ebc2433c6eb2c`、親 `87d04a8142986557691bb5fc70c17ac01f6d32d4` を既存mainへnon-forced pushし、origin/mainと変更6 blobを照合した。ユーザーの途中commit方針に従いcheckpointを先に公開し、その同一sourceを各検証の前後にbyte pinで照合した。tracked差分0件から本記録・一覧・原本を更新し、既存の未追跡 `%SystemDrive%/` を保持した。
+
+保留中の子結果と結果利用の2経路を、実際に開いた型・scope・選択requestを持つoperandから共有正規化foldへ渡すようにした。正規化した値へ結果ownerを後付けする経路を削除し、利用入力が各置換元と対応する子の導出を保持する。特殊化しない場合は、従来の開いたpatternを持つ元operandをそのまま使い、projectedで値を包み直さない。特殊化する場合のDerived edgeは今回の置換対象に含めず、認可完了とは扱わない。前項の完了した共通foldを結果の入力へ接続したもので、別のwalkerやcapture authorityを作っていない。
+
+最終固定入力の全feature Sema lib／testsは1,636件中1,630 PASS／6 FAIL／0 SKIP（69.345秒、slow 0）。選択IDと終端IDは一致し重複0、既存1,635 IDすべてと新1 IDを照合した。失敗IDと実診断は直前と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。新testは実transactionの結果利用APIを通し、選択requestとbindingの正確なArc identity、全path／root解放後の利用入力による置換元保持と最終解放を確認した。既存の構造／alias／array lengthの証拠、局所frameとheader、10,000 aliasと正確な10,001 node、分岐予算、256 probe／1 replay・4,096上限も同じ全件runで通過した。Semaのlocked・全target・全feature Clippy、workspace fmt check、canonical構造gateは終了0。警告を保持し、全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+開発時のlibrary checkは終了0（15.79秒）。追加testを確定した後のnextest listも終了0で、公開後の別の固定入力で最終list／run／Clippy／fmtを終端まで実行した。途中commitの状態を受入と扱わず、公開後の6 pathを照合した。test用domainは既存fixtureをcfg(test)の同じtransaction内部で共有し、production contractを広げていない。
+
+所有測定はnormalization 746物理LOC（+1）、共通projection 510（差0）、result_port 261（-9）、testの親module 219（+1）、新result-use test 94、既存transaction test 1,658（差0）。全pathのbyte・hash・分類を原本へ保持した。result_portは結果を生んだpathとrequestを一体で消費する責任を維持し、新しい可変stateや型grammarを追加しない。構造gateは98 package・3,476 files・3,345 Rust files、review trigger 396、blocking 0。Semaのworkspace fan-in／outは8／15、devは4／0。Cargo・外部public shape・unsafe・I/O・version・予算は不変。
+
+逆依存はSource `5012e0c6d26655fe005d150c321d47051a21096f` のnormal／dev／build・全feature・全target向け22 package graphを、Cargo.toml／Cargo.lock／設定／toolchainの差分0を確認して再利用した。原本のreuse receiptはNewExecution=falseを明記する。今回はprivateな結果入力保持の接続であり、全owner/frontend/APIは再実行した。他21 packageの2,507 PASS／2 FAIL／1 SKIPとworkspace品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の歴史的な実測を保持し、今回の件数へ合算しない。再帰本体6失敗、Free認可や新bodyのNative／AWBC受入を完了としない。現状の未達範囲はcurrent-statusだけに置き、Generic Match、caller-bound recursion、同group prefixの既受入を維持する。
+
+[検証原本](acceptance-evidence/task-result-port-provenance.raw.zip)は29 entry、展開時9735616 bytes、ZIP 934476 bytes、SHA-256 `f9219ac70d23531158424cdefa622eb26899217fcfdc447b358eb46dc715ff12`。manifestを含む全entryのsize／hashを読み戻し、portableなpath区切りを照合した。以前の履歴のbyte prefix・SHA・実測とGeneric Matchの受入行を保持し、今回移行した経路を未完了一覧から除いた。
