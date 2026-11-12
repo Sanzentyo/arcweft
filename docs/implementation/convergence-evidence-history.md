@@ -17219,3 +17219,19 @@ workspace全target／全feature・locked check／Clippy、Sema全feature doctest
 22 packageの逆依存graphはSource `5012e0c6d26655fe005d150c321d47051a21096f` のnormal／dev／build・全feature・全target向け実測をCargo入力差分0の確認後に再利用した。今回の全consumerは今回のSourceへ固定して選択・実行・hash・実診断を照合した。以前のSourceの件数・SHA・失敗は削除しない。Wasm・Tier 2・新しい再帰本体のNative／AWBC・Native／Web表示を今回のhost検証から受入とはしない。前の現状列挙にあった他effect consumerとschemeのDerivedは、今回の実コードと実測に基づき残作業から除いた。広い未達一覧はcurrent-statusだけに置き、Generic Match、caller-bound recursion、同group prefixの受入を維持する。
 
 [検証原本](acceptance-evidence/task-scheme-instantiation.raw.zip)は251 entry、展開時48075995 bytes、ZIP 5443186 bytes、SHA-256 `72e5a51e4592fa10a13cf59774a1e888ddc0f538802493bfe832be78d9fcbef8`。manifestと全entryのsize／hash、portableなpath区切りを読み戻し照合した。以前の履歴のbyte prefix・SHA・実測とGeneric Matchの受入行を保持した。
+
+## Corresponding operand port authorities
+
+2026-11-13。Source `c0539b52cbf6c6e1175a5ee94116e767d9f1ef19`、tree `5ad28a33eb962a008e0cfaafb728f6dbec4946e7`、親 `5b6a84fbb6bcd0703bad998e77670272445ebb92`。既存mainの11 source pathを明示してstageし、全差分を確認して通常commit／non-forced pushした。公開head・tree・全変更blobとbyte pinを照合した。tracked差分0件で最終owner検証を行い、既存の未追跡 `%SystemDrive%/` を保持した。途中commitに正常動作の保証を要求しないユーザー方針に従い、全件実行前にcheckpointを公開した。
+
+operandの子型・配列長を借用するとき、値に対応する導出を保持する。Projectionのproducerは元観測の結果関連付けを保ち、selectedは実際の子／alias終端を保持する。Rebuiltは対応する子とlengthの証明、TypeAliasはterminal、SourceExpectationはScalar／containerの型付きport規則を使う。MapのkeyとArrayのlengthはactual、Mapのvalueと他containerのitemはvalue_expectedを使い、actualのitemから期待値の許可を作らない。schemeのbinder開放は元の対応するportを保持する。child iteratorとarray_lengthは欠けた証明を型付きerrorとして返し、共通normalization fold・binding relation・fixtureを同じfallible APIへ移行した。元rootのsource/result観測をterminalへ付け替える変更はない。
+
+全feature Sema lib／testsは1,651件中1,645 PASS／6 FAIL／0 SKIP、74.044秒、slow 0。5 binaryの選択と終端IDは全件一致・重複0。Source `c1b93fa15254fd657a5564c291c6c5cf4f333753` の全1,648 IDを保持し、新3 IDがPASSした。再構築したtupleからaliasのarray／item／lengthを選ぶ場合、保持し直してから孫を選ぶ場合、Map key／valueとArray length／itemの由来の分離、証明の欠けた子の拒否を確認した。新テストは値と対応する証明のArcを検査し、別の同型の値での代用を認めない。既存の局所binder・10,000 alias・source／result関連付け・probe／replay／branch予算も同じrunでPASSした。失敗IDと実診断は直前Sourceと一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。このcutからownerごとのFree許可やcapture sealの完成は主張しない。
+
+locked・Sema全target／全feature Clippy、workspace fmt checkは終了0。各step前後のSource／tree／tracked差分0と全11 pathのbyte pinを照合し、全出力のhashを検査した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Clippy警告も原本へ保持する。開発時の全target／全feature owner checkは終了0、新3件を含むprojection 30 IDのlistもコンパイル成功した。これらは公開前の開発入力の証拠であり、最終Sourceへ固定した上記の全件runと区別する。結果集計scriptはfmt終了前の一度目の実行を拒否し、全4 stepが終端となってから再実行して照合した。
+
+所有者は既存operand/projectionであり、子の導出を値と同じ保持経路に置く。新しいproduction moduleは84 physical LOC、test moduleは164 LOC。全11 pathのbyte・physical LOC・基点からの増分を原本に保持する。新規stateは値に対応するoriginだけで、別capture tableやAST walker、source再構成、raw fallbackを作らない。既存normalization foldとtyped container grammarを使い、公開API・layer方向・Cargo edge・I/O・unsafe・version・予算を変えていない。既存binding_planの責務は型形状の照合のままであり、fallible portの伝播以外の新しいstateを持たない。privateなproof navigationで外部意味契約を変えないため、前cutのworkspace／逆依存実行を繰り返さず、今回はowner実行・Clippy・fmtを選んだ。22 packageのgraphはCargo入力差分0を照合して再利用するが、直前Sourceのconsumer結果を現在Sourceの再実行とはしない。
+
+現状一覧はcurrent-status.mdの一か所に保つ。前行を更新した理由は新しいport保持と実測の追加であり、旧件数・実診断・full SHAは本履歴と凍結原本に残す。Generic Match、caller-bound recursion、同group prefixの受入を変更しない。全体cargo cleanは同日02:01:53〜02:02:09 JSTの履行済み実行（終了0、32,652 files／87.5 GiB）を保持し、今回繰り返していない。
+
+[検証原本](acceptance-evidence/task-operand-port-authority.raw.zip)は35 entry、展開時9893458 bytes、ZIP 946816 bytes、SHA-256 `f21bf650e09435052ef8aad7bd67801ac43f265d48b7c50b3ac92bc73df46edf`。manifestと全entryの長さ・hash・portable pathを読み戻し照合した。
