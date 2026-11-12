@@ -3,6 +3,10 @@
 use super::*;
 use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexicalScope};
 
+mod projection;
+use projection::ConstraintOperandProjection;
+pub(in crate::types) use projection::{ConstraintConstOperandView, ConstraintOperandView};
+
 pub(super) enum ResolvedConstraintSource<D: ConstraintDomain> {
     Value(Arc<dyn super::super::ConstraintSourceValueOwner<D>>),
     Result(ResolvedConstraintResult<D>),
@@ -110,18 +114,67 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         producer: Arc<ConstraintOperandOrigin<D>>,
         input: Arc<ConstraintOperandOrigin<D>>,
     },
+    Projection {
+        root: Arc<TypeKind>,
+        root_scope: Arc<ConstraintLexicalScope>,
+        occurrence_scope: Arc<ConstraintLexicalScope>,
+        producer: Arc<ConstraintOperandOrigin<D>>,
+        address: Arc<ConstraintOperandProjection>,
+    },
 }
 
-pub(super) struct ConstraintOperand<D: ConstraintDomain> {
-    value: TypeKind,
+pub(in crate::types) struct ConstraintOperand<D: ConstraintDomain, T = TypeKind> {
+    value: Arc<T>,
     scope: Arc<ConstraintLexicalScope>,
     origin: Arc<ConstraintOperandOrigin<D>>,
 }
 
-impl<D: ConstraintDomain> Clone for ConstraintOperand<D> {
+impl<D: ConstraintDomain, T> Clone for ConstraintOperand<D, T> {
     fn clone(&self) -> Self {
         Self {
-            value: self.value.clone(),
+            value: Arc::clone(&self.value),
+            scope: Arc::clone(&self.scope),
+            origin: Arc::clone(&self.origin),
+        }
+    }
+}
+
+impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
+    pub(super) fn original(
+        value: T,
+        scope: Arc<ConstraintLexicalScope>,
+        original: OriginalProducerContext,
+    ) -> Self {
+        Self {
+            value: Arc::new(value),
+            scope,
+            origin: Arc::new(ConstraintOperandOrigin::Original(original)),
+        }
+    }
+
+    pub(in crate::types) fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Retain the input used by a typed composition or specialization. This
+    /// records a value-flow edge, not an application-wide permission union.
+    pub(super) fn derived_from<U>(mut self, input: &ConstraintOperand<D, U>) -> Self {
+        self.origin = Arc::new(ConstraintOperandOrigin::Derived {
+            producer: self.origin,
+            input: Arc::clone(&input.origin),
+        });
+        self
+    }
+
+    pub(super) fn scope(&self) -> &ConstraintLexicalScope {
+        &self.scope
+    }
+
+    /// A shared projection/closure keeps the exact originating authority.
+    /// This is internal to the lower's derivations, not a source constructor.
+    pub(super) fn projected(&self, value: T) -> Self {
+        Self {
+            value: Arc::new(value),
             scope: Arc::clone(&self.scope),
             origin: Arc::clone(&self.origin),
         }
@@ -129,25 +182,13 @@ impl<D: ConstraintDomain> Clone for ConstraintOperand<D> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D> {
-    pub(super) fn original(
-        value: TypeKind,
-        scope: Arc<ConstraintLexicalScope>,
-        original: OriginalProducerContext,
-    ) -> Self {
-        Self {
-            value,
-            scope,
-            origin: Arc::new(ConstraintOperandOrigin::Original(original)),
-        }
-    }
-
     pub(super) fn template(
         value: TypeKind,
         scope: Arc<ConstraintLexicalScope>,
         owner: &Arc<ConstraintApplicationScope<D>>,
     ) -> Self {
         Self {
-            value,
+            value: Arc::new(value),
             scope,
             origin: Arc::new(ConstraintOperandOrigin::Template(Arc::clone(owner))),
         }
@@ -161,7 +202,7 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
         value_owner: ResolvedConstraintSource<D>,
     ) -> Self {
         Self {
-            value,
+            value: Arc::new(value),
             scope,
             origin: Arc::new(ConstraintOperandOrigin::Source {
                 original,
@@ -177,38 +218,14 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
         result: ResolvedConstraintResult<D>,
     ) -> Self {
         Self {
-            value,
+            value: Arc::new(value),
             scope,
             origin: Arc::new(ConstraintOperandOrigin::Result(result)),
         }
     }
 
-    pub(super) fn value(&self) -> &TypeKind {
-        &self.value
-    }
-
-    /// Retain the input used by a typed composition or specialization. This
-    /// records a value-flow edge, not an application-wide permission union.
-    pub(super) fn derived_from(mut self, input: &Self) -> Self {
-        self.origin = Arc::new(ConstraintOperandOrigin::Derived {
-            producer: self.origin,
-            input: Arc::clone(&input.origin),
-        });
-        self
-    }
-
-    pub(super) fn scope(&self) -> &ConstraintLexicalScope {
-        &self.scope
-    }
-
-    /// A shared projection/closure keeps the exact originating authority.
-    /// This is internal to the lower's derivations, not a source constructor.
-    pub(super) fn projected(&self, value: TypeKind) -> Self {
-        Self {
-            value,
-            scope: Arc::clone(&self.scope),
-            origin: Arc::clone(&self.origin),
-        }
+    pub(in crate::types) fn view(&self) -> ConstraintOperandView<'_, D> {
+        ConstraintOperandView::root(self)
     }
 
     pub(super) fn transport<A: TypeConstraintAccounting>(
@@ -217,12 +234,33 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
         Ok(Self {
-            value: target.transport_type(&self.scope, &self.value, context)?,
+            value: Arc::new(target.transport_type(&self.scope, &self.value, context)?),
             scope: Arc::clone(target),
             origin: Arc::clone(&self.origin),
         })
     }
+}
 
+impl<D: ConstraintDomain> ConstraintOperand<D, ArrayLength> {
+    pub(in crate::types) fn view(&self) -> ConstraintConstOperandView<'_, D> {
+        ConstraintConstOperandView::root(self)
+    }
+
+    pub(super) fn transport<A: TypeConstraintAccounting>(
+        &self,
+        target: &Arc<ConstraintLexicalScope>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
+        Ok(Self {
+            value: Arc::new(target.transport_length(&self.scope, &self.value, context)?),
+            scope: Arc::clone(target),
+            origin: Arc::clone(&self.origin),
+        })
+    }
+}
+
+#[cfg(test)]
+impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     #[cfg(test)]
     pub(super) fn original_context(&self) -> &OriginalProducerContext {
         self.origin.original_context()
@@ -248,6 +286,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
             ConstraintOperandOrigin::Template(owner) => owner.original_context(),
             ConstraintOperandOrigin::Result(result) => result.owner.original_context(),
             ConstraintOperandOrigin::Derived { producer, .. } => producer.original_context(),
+            ConstraintOperandOrigin::Projection { producer, .. } => producer.original_context(),
         }
     }
 
@@ -255,6 +294,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
         match self {
             ConstraintOperandOrigin::Result(result) => Some(result.projection()),
             ConstraintOperandOrigin::Source { value, .. } => value.projection(),
+            ConstraintOperandOrigin::Projection { producer, .. } => producer.result_origin(),
             ConstraintOperandOrigin::Derived { producer, input } => {
                 producer.result_origin().or_else(|| input.result_origin())
             }
@@ -265,6 +305,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
     fn source_receipt(&self) -> Option<&ConstraintSourceReceipt<D>> {
         match self {
             ConstraintOperandOrigin::Source { receipt, .. } => Some(receipt),
+            ConstraintOperandOrigin::Projection { producer, .. } => producer.source_receipt(),
             ConstraintOperandOrigin::Derived { producer, input } => {
                 producer.source_receipt().or_else(|| input.source_receipt())
             }

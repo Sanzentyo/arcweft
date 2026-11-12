@@ -32,7 +32,10 @@ use super::{
 use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 mod operand;
-use operand::{ConstraintOperand, ResolvedConstraintResult, ResolvedConstraintSource};
+pub(in crate::types) use operand::{
+    ConstraintConstOperandView, ConstraintOperand, ConstraintOperandView,
+};
+use operand::{ResolvedConstraintResult, ResolvedConstraintSource};
 
 /// One equation retained until candidate closure. Source ordinals connect to
 /// the single source trace; selection and container evidence stay there.
@@ -72,12 +75,12 @@ impl<D: ConstraintDomain> PendingEquation<D> {
             direction: self.direction,
             source_ordinal: self.source_ordinal,
             timing: self.timing,
-            pattern: self.pattern.transport(&target, context)?,
-            actual: self.actual.transport(&target, context)?,
+            pattern: self.pattern.view().transport(&target, context)?,
+            actual: self.actual.view().transport(&target, context)?,
             final_expected: self
                 .final_expected
                 .as_ref()
-                .map(|ty| ty.transport(&target, context))
+                .map(|ty| ty.view().transport(&target, context))
                 .transpose()?,
         })
     }

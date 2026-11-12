@@ -141,6 +141,21 @@ impl ConstraintLexicalScope {
         scope
     }
 
+    /// A type's children use these same actual frames, with only its own
+    /// function binder added by the live relation traversal.
+    pub(super) fn admits_children_scope(&self, target: &Self, binder: GenericBinder) -> bool {
+        if binder.is_empty() {
+            return self == target;
+        }
+        self.frames.len().checked_add(1) == Some(target.frames.len())
+            && target.shape.binders().last() == Some(&binder)
+            && self
+                .frames
+                .iter()
+                .zip(&target.frames)
+                .all(|(left, right)| Arc::ptr_eq(left, right))
+    }
+
     /// A template traversal is isolated from the actual operands. Its arities
     /// cannot certify an alignment with an independently retained actual scope.
     pub(super) fn template(shape: GenericScope) -> Self {
