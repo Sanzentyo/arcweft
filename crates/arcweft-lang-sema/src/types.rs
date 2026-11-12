@@ -67,6 +67,7 @@ pub use nominal::{
 pub(crate) use project_nominal_visit::visit_project_nominals;
 pub(crate) use projection_control::UnmeteredTypeProjection;
 pub use projection_control::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind};
+pub(crate) use projection_control::{visit_effect_predicate, visit_effect_row};
 pub use style::{CompileTimeStyleType, StyleNumericType};
 pub(crate) use substitution::TypeParameterSubstitutions;
 pub(crate) use substitution::contains_generic_parameter;

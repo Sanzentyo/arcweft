@@ -221,7 +221,8 @@ impl From<crate::types::GenericScopeError> for CallConstraintInvariant {
 impl From<super::schema::CallableFunctionTypeProjectionError<Self>> for CallConstraintInvariant {
     fn from(error: super::schema::CallableFunctionTypeProjectionError<Self>) -> Self {
         match error {
-            super::schema::CallableFunctionTypeProjectionError::MissingGroup { .. } => {
+            super::schema::CallableFunctionTypeProjectionError::MissingGroup { .. }
+            | super::schema::CallableFunctionTypeProjectionError::MissingParameter { .. } => {
                 Self::MalformedSchemaInventory
             }
             super::schema::CallableFunctionTypeProjectionError::Projection(error) => error,

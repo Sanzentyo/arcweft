@@ -53,6 +53,7 @@ impl CheckedCallableFacts {
                 crate::callable::schema::CallableFunctionTypeProjectionError::MissingGroup {
                     group,
                 } => CheckedCallableParameterContractError::MissingGroup { group },
+                crate::callable::schema::CallableFunctionTypeProjectionError::MissingParameter { .. } => CheckedCallableParameterContractError::InvalidSchema,
                 crate::callable::schema::CallableFunctionTypeProjectionError::Projection(error) => {
                     error
                 }

@@ -89,7 +89,7 @@ impl TypeProjectionError<Infallible> {
     }
 }
 
-pub(in crate::types) fn visit_effect_row<C: TypeProjectionControl>(
+pub(crate) fn visit_effect_row<C: TypeProjectionControl>(
     control: &mut C,
     row: &EffectRow,
     depth: u64,
@@ -97,7 +97,7 @@ pub(in crate::types) fn visit_effect_row<C: TypeProjectionControl>(
     row.encode(&mut EffectProjectionVisitor { control, depth })
 }
 
-pub(in crate::types) fn visit_effect_predicate<C: TypeProjectionControl>(
+pub(crate) fn visit_effect_predicate<C: TypeProjectionControl>(
     control: &mut C,
     predicate: &crate::effect_row::EffectPredicate,
     depth: u64,
