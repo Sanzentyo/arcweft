@@ -950,7 +950,7 @@ fn map_effects(
     .map_err(TypeProjectionError::into_instantiation)
 }
 
-pub(super) fn map_predicate_with_control<C: TypeProjectionControl>(
+pub(in crate::types::constraints) fn map_predicate_with_control<C: TypeProjectionControl>(
     predicate: &EffectPredicate,
     depth: u64,
     control: &mut C,
@@ -966,7 +966,7 @@ pub(super) fn map_predicate_with_control<C: TypeProjectionControl>(
     )
 }
 
-pub(super) fn map_effects_with_control<C: TypeProjectionControl>(
+pub(in crate::types::constraints) fn map_effects_with_control<C: TypeProjectionControl>(
     row: &EffectRow,
     depth: u64,
     control: &mut C,
@@ -1036,7 +1036,7 @@ struct ProjectionFrame<'ty> {
     clippy::too_many_arguments,
     reason = "one scoped fold owns source and target binders, accounting, and the three scalar projection operations"
 )]
-pub(super) fn map_term_with_control<C: TypeProjectionControl>(
+pub(in crate::types::constraints) fn map_term_with_control<C: TypeProjectionControl>(
     ty: &TypeKind,
     source: &GenericScope,
     target: &GenericScope,

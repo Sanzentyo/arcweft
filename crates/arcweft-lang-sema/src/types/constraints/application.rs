@@ -20,6 +20,9 @@ use crate::{
 /// admitted application scope implements this trait.
 trait ImportedApplicationScopeAuthority {
     fn id(&self) -> ConstraintApplicationId;
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn same_application(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool;
+    fn parameters(&self) -> &TypeConstraintParameterScope;
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
     fn permits_local_inference(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
 }
@@ -183,6 +186,21 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
         ConstraintApplicationScope::id(self)
     }
 
+    fn parameters(&self) -> &TypeConstraintParameterScope {
+        self.parameters()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn same_application(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| self.application() == other.application())
+    }
+
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
         match parameter {
             super::ConstraintGenericParameterId::Type(parameter) => {
@@ -233,6 +251,79 @@ impl<D: ConstraintDomain> Clone for ConstraintApplicationInventory<D> {
 }
 
 impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
+    pub(super) fn empty() -> Self {
+        Self {
+            applications: BTreeMap::new(),
+            imported: Box::new([]),
+        }
+    }
+
+    /// A product retains independently admitted roots, including legitimate
+    /// shared openings. Identity conflicts fail; overlap is never freshened.
+    pub(super) fn merge_original<A: super::context::TypeConstraintAccounting>(
+        &mut self,
+        original: &Self,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), super::TypeConstraintError> {
+        let conflict = || {
+            super::TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                TypeConstraintParameterScopeInvariant::ApplicationContractConflict,
+            ))
+        };
+        for (id, application) in &original.applications {
+            context.enter_node()?;
+            if let Some(existing) = self.applications.get(id) {
+                if existing.application() != application.application()
+                    || existing.parameters() != application.parameters()
+                {
+                    return Err(conflict());
+                }
+            } else {
+                for owner in &self.imported {
+                    context.enter_node()?;
+                    if owner.id() == *id
+                        && (!owner.owner.same_application(application.as_ref())
+                            || owner.owner.parameters() != application.parameters())
+                    {
+                        return Err(conflict());
+                    }
+                }
+                self.applications.insert(*id, Arc::clone(application));
+            }
+        }
+        let mut imported =
+            BTreeMap::<ConstraintApplicationId, ImportedApplicationScopeLease>::new();
+        for owner in self.imported.iter().chain(original.imported.iter()) {
+            context.enter_node()?;
+            if let Some(application) = self.applications.get(&owner.id())
+                && (!owner.owner.same_application(application.as_ref())
+                    || application.parameters() != owner.owner.parameters())
+            {
+                return Err(conflict());
+            }
+            if let Some(existing) = imported.get_mut(&owner.id()) {
+                if !existing.owner.same_application(owner.owner.as_ref())
+                    || existing.owner.parameters() != owner.owner.parameters()
+                {
+                    return Err(conflict());
+                }
+                let mut parameters = BTreeSet::new();
+                for parameter in existing.parameters.iter().chain(owner.parameters.iter()) {
+                    context.enter_node()?;
+                    parameters.insert(parameter.clone());
+                }
+                existing.parameters = parameters.into_iter().collect();
+            } else {
+                for _ in &owner.parameters {
+                    context.enter_node()?;
+                }
+                imported.insert(owner.id(), owner.clone());
+            }
+        }
+        self.imported = imported.into_values().collect();
+        Ok(())
+    }
+
     pub(super) fn single(
         scope: ConstraintApplicationScope<D>,
         imported: Option<ImportedGenericParameterScopeLease>,

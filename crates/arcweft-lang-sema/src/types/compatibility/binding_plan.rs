@@ -7,7 +7,7 @@ use super::super::{
     TypeCompatibilityPolicy, TypeKind,
 };
 use crate::types::constraints::context::{TypeConstraintAccounting, TypeConstraintContext};
-use crate::types::constraints::transaction::ConstraintPath;
+use crate::types::constraints::transaction::ConstraintInferenceBranch;
 use crate::types::constraints::{
     ChoiceDerivationStep, ChoiceForkRole, ConstAliasResolution, ConstraintDomain,
     TypeAliasResolution, TypeConstraintAbort, TypeConstraintConstEligibility, TypeConstraintError,
@@ -22,17 +22,93 @@ pub(crate) enum ConstraintAcceptance {
     ActualAcceptsPattern,
 }
 
-fn fork_choice_path<A, D>(
-    path: &ConstraintPath<D>,
-    role: ChoiceForkRole,
-    expected: Option<usize>,
-    actual: Option<usize>,
-    direction: ConstraintAcceptance,
+#[derive(Clone, Copy)]
+enum ConstraintRelation {
+    Accepts(ConstraintAcceptance),
+    Equal,
+}
+
+impl ConstraintRelation {
+    fn direction(self) -> ConstraintAcceptance {
+        match self {
+            Self::Accepts(direction) => direction,
+            Self::Equal => ConstraintAcceptance::PatternAcceptsActual,
+        }
+    }
+
+    fn reverse(self) -> Self {
+        match self {
+            Self::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
+                Self::Accepts(ConstraintAcceptance::ActualAcceptsPattern)
+            }
+            Self::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
+                Self::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+            }
+            Self::Equal => Self::Equal,
+        }
+    }
+}
+
+pub(crate) fn relate_selected_call<A, D, L: Clone>(
+    pattern: &TypeKind,
+    actual: &TypeKind,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ConstraintPath<D>, TypeConstraintError>
+    acceptance: ConstraintAcceptance,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+{
+    relate_constraint(
+        pattern,
+        actual,
+        path,
+        context,
+        ConstraintRelation::Accepts(acceptance),
+    )
+}
+
+/// Equality shares the ordinary binder, alias, constant, occurs and effect
+/// relation. It does not turn a subtype or a Choice member into an equal type.
+pub(in crate::types) fn unify_original_binding<A, D, L: Clone>(
+    pattern: &TypeKind,
+    actual: &TypeKind,
+    path: ConstraintInferenceBranch<D, L>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    relate_constraint(pattern, actual, path, context, ConstraintRelation::Equal)
+}
+
+pub(in crate::types) fn unify_original_length<A, D, L: Clone>(
+    pattern: &ArrayLength,
+    actual: &ArrayLength,
+    path: ConstraintInferenceBranch<D, L>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    relate_array_lengths(pattern, actual, path, context, ConstraintRelation::Equal)
+}
+
+fn fork_choice_path<A, D, L>(
+    path: &ConstraintInferenceBranch<D, L>,
+    role: ChoiceForkRole,
+    expected: Option<usize>,
+    actual: Option<usize>,
+    relation: ConstraintRelation,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<ConstraintInferenceBranch<D, L>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+    L: Clone,
 {
     let mut path = context.fork_path(path)?;
     let to_ordinal = |index: Option<usize>| {
@@ -51,7 +127,7 @@ where
                 ),
             ))?
             .ordinal,
-        direction,
+        direction: relation.direction(),
         role,
         expected: to_ordinal(expected)?,
         actual: to_ordinal(actual)?,
@@ -59,21 +135,28 @@ where
     Ok(path)
 }
 
-/// Relates one equation and performs directional SelectedCall acceptance on
+/// Relates one equation and performs directional SelectedCall relation on
 /// every alternative before the branch can re-enter the candidate frontier.
 /// This keeps Choice alternatives branch-local rather than applying a single
-/// whole-Choice acceptance after raw paths have been retained.
-pub(crate) fn relate_selected_call<A, D>(
+/// whole-Choice relation after raw paths have been retained.
+fn relate_constraint<A, D, L>(
     pattern: &TypeKind,
     actual: &TypeKind,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
+    if matches!(relation, ConstraintRelation::Equal) {
+        // Original products close after every original binding/effect relation
+        // has contributed. A temporary nonprincipal effect relation may still
+        // be resolved by another original root, so do not seal it here.
+        return relate_with_policy(pattern, actual, path, context, relation);
+    }
     let pattern_shape = pattern.constraint_shape();
     let actual_shape = actual.constraint_shape();
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
@@ -85,15 +168,15 @@ where
     }
     let paths = match (pattern_shape, actual_shape) {
         (TypeConstraintShape::Choice(expected), TypeConstraintShape::Choice(found)) => {
-            relate_choice_to_choice_selected(expected, found, path, context, acceptance)?
+            relate_choice_to_choice_selected(expected, found, path, context, relation)?
         }
         (TypeConstraintShape::Choice(expected), _) => {
-            relate_choice_to_actual_selected(expected, actual, path, context, acceptance)?
+            relate_choice_to_actual_selected(expected, actual, path, context, relation)?
         }
         (_, TypeConstraintShape::Choice(found)) => {
-            relate_actual_choice_selected(pattern, found, path, context, acceptance)?
+            relate_actual_choice_selected(pattern, found, path, context, relation)?
         }
-        _ => relate_with_policy(pattern, actual, path, context, acceptance)?,
+        _ => relate_with_policy(pattern, actual, path, context, relation)?,
     };
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
         || matches!(actual_shape, TypeConstraintShape::Choice(_))
@@ -102,27 +185,28 @@ where
     }
     let mut accepted = Vec::new();
     for path in paths {
-        if let Some(path) = accept_branch(pattern, actual, path, context, acceptance)? {
+        if let Some(path) = accept_branch(pattern, actual, path, context, relation)? {
             accepted.push(path);
         }
     }
     Ok(accepted)
 }
 
-fn accept_branch<A, D>(
+fn accept_branch<A, D, L>(
     pattern: &TypeKind,
     actual: &TypeKind,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if !path.deferred_cycles.parameters.is_empty() {
         // Provisional back-edges are evidence only.  Do not let this local
-        // acceptance pass turn a later source failure into an early mismatch;
+        // relation pass turn a later source failure into an early mismatch;
         // the close phase owns cycle pruning after all source work.
         return Ok(Some(path));
     }
@@ -154,15 +238,22 @@ where
             None,
         )
     })?;
-    let compatible = match acceptance {
-        ConstraintAcceptance::PatternAcceptsActual => projected_pattern
-            .accepts_with(
-                &projected_actual,
-                TypeCompatibilityPolicy::SelectedCall,
-                context,
-            )
-            .map_err(map_compatibility_error),
-        ConstraintAcceptance::ActualAcceptsPattern => projected_actual
+    let compatible = match relation {
+        ConstraintRelation::Equal => crate::types::constraints::completed_types_equal(
+            &projected_pattern,
+            &projected_actual,
+            context,
+        ),
+        ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
+            projected_pattern
+                .accepts_with(
+                    &projected_actual,
+                    TypeCompatibilityPolicy::SelectedCall,
+                    context,
+                )
+                .map_err(map_compatibility_error)
+        }
+        ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => projected_actual
             .accepts_with(
                 &projected_pattern,
                 TypeCompatibilityPolicy::SelectedCall,
@@ -188,21 +279,22 @@ pub(crate) fn map_compatibility_error(
 ///
 /// Each alternative receives an independent fork and goes through the same
 /// selected-call entry point as a non-Choice equation.  That entry point is
-/// the branch-local seal/acceptance boundary; keeping it here (rather than
+/// the branch-local seal/relation boundary; keeping it here (rather than
 /// accepting the projected Choice after the raw relation) prevents a
 /// rejected alternative from re-entering the frontier.
-fn relate_choice_to_actual_selected<A, D>(
+fn relate_choice_to_actual_selected<A, D, L>(
     expected: &[TypeKind],
     actual: &TypeKind,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
-    match acceptance {
+    match relation.direction() {
         ConstraintAcceptance::PatternAcceptsActual => {
             expected
                 .iter()
@@ -213,11 +305,11 @@ where
                         ChoiceForkRole::ExpectedAlternative,
                         Some(index),
                         None,
-                        acceptance,
+                        relation,
                         context,
                     )?;
-                    output.extend(relate_selected_call(
-                        expected, actual, path, context, acceptance,
+                    output.extend(relate_constraint(
+                        expected, actual, path, context, relation,
                     )?);
                     Ok(output)
                 })
@@ -233,11 +325,11 @@ where
                             ChoiceForkRole::ExpectedAlternative,
                             Some(index),
                             None,
-                            acceptance,
+                            relation,
                             context,
                         )?;
-                        output.extend(relate_selected_call(
-                            expected, actual, path, context, acceptance,
+                        output.extend(relate_constraint(
+                            expected, actual, path, context, relation,
                         )?);
                         Ok(output)
                     })
@@ -247,18 +339,19 @@ where
 }
 
 /// Relate one expected value against each actual Choice alternative.
-fn relate_actual_choice_selected<A, D>(
+fn relate_actual_choice_selected<A, D, L>(
     expected: &TypeKind,
     actual: &[TypeKind],
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
-    match acceptance {
+    match relation.direction() {
         ConstraintAcceptance::PatternAcceptsActual => {
             actual
                 .iter()
@@ -270,11 +363,11 @@ where
                             ChoiceForkRole::ActualAlternative,
                             None,
                             Some(index),
-                            acceptance,
+                            relation,
                             context,
                         )?;
-                        output.extend(relate_selected_call(
-                            expected, actual, path, context, acceptance,
+                        output.extend(relate_constraint(
+                            expected, actual, path, context, relation,
                         )?);
                         Ok(output)
                     })
@@ -290,11 +383,11 @@ where
                         ChoiceForkRole::ActualAlternative,
                         None,
                         Some(index),
-                        acceptance,
+                        relation,
                         context,
                     )?;
-                    output.extend(relate_selected_call(
-                        expected, actual, path, context, acceptance,
+                    output.extend(relate_constraint(
+                        expected, actual, path, context, relation,
                     )?);
                     Ok(output)
                 })
@@ -303,18 +396,19 @@ where
 }
 
 /// Relate every expected/actual Choice pair in its own branch.
-fn relate_choice_to_choice_selected<A, D>(
+fn relate_choice_to_choice_selected<A, D, L>(
     expected: &[TypeKind],
     actual: &[TypeKind],
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
-    match acceptance {
+    match relation.direction() {
         ConstraintAcceptance::PatternAcceptsActual => {
             actual
                 .iter()
@@ -327,11 +421,11 @@ where
                                 ChoiceForkRole::ExpectedActualPair,
                                 Some(expected_index),
                                 Some(actual_index),
-                                acceptance,
+                                relation,
                                 context,
                             )?;
-                            output.extend(relate_selected_call(
-                                expected, actual, path, context, acceptance,
+                            output.extend(relate_constraint(
+                                expected, actual, path, context, relation,
                             )?);
                         }
                         Ok(output)
@@ -350,11 +444,11 @@ where
                                 ChoiceForkRole::ExpectedActualPair,
                                 Some(expected_index),
                                 Some(actual_index),
-                                acceptance,
+                                relation,
                                 context,
                             )?;
-                            output.extend(relate_selected_call(
-                                expected, actual, path, context, acceptance,
+                            output.extend(relate_constraint(
+                                expected, actual, path, context, relation,
                             )?);
                         }
                         Ok(output)
@@ -364,16 +458,17 @@ where
     }
 }
 
-fn relate_with_policy<A, D>(
+fn relate_with_policy<A, D, L>(
     pattern: &TypeKind,
     actual: &TypeKind,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     context.enter_node()?;
     relate_entered_with_policy(
@@ -383,18 +478,19 @@ where
         actual.constraint_shape(),
         path,
         context,
-        acceptance,
+        relation,
     )
 }
 
-fn resolve_type_parameter<A, D>(
+fn resolve_type_parameter<A, D, L>(
     parameter: &GenericTypeReference,
-    path: &ConstraintPath<D>,
+    path: &ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeAliasResolution, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if matches!(parameter, GenericTypeReference::Bound(_)) {
         Ok(TypeAliasResolution::Parameter(parameter.clone()))
@@ -403,14 +499,15 @@ where
     }
 }
 
-fn type_parameter_eligibility<A, D>(
+fn type_parameter_eligibility<A, D, L>(
     parameter: &GenericTypeReference,
-    path: &ConstraintPath<D>,
+    path: &ConstraintInferenceBranch<D, L>,
     context: &TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeConstraintParameterEligibility, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if matches!(parameter, GenericTypeReference::Bound(_)) {
         return Ok(TypeConstraintParameterEligibility::Rigid);
@@ -426,15 +523,16 @@ where
         })
 }
 
-fn bind_type_parameter<A, D>(
+fn bind_type_parameter<A, D, L>(
     parameter: &GenericTypeReference,
     value: &TypeKind,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if matches!(
         type_parameter_eligibility(parameter, &path, context)?,
@@ -448,16 +546,17 @@ where
         .map(|path| path.into_iter().collect())
 }
 
-fn relate_generic_parameters<A, D>(
+fn relate_generic_parameters<A, D, L>(
     pattern: &GenericTypeReference,
     actual: &GenericTypeReference,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if pattern == actual {
         return Ok(vec![path]);
@@ -466,7 +565,7 @@ where
     let actual_eligibility = type_parameter_eligibility(actual, &path, context)?;
     let pattern_active = pattern_eligibility != TypeConstraintParameterEligibility::Rigid;
     let actual_active = actual_eligibility != TypeConstraintParameterEligibility::Rigid;
-    let target = match acceptance {
+    let target = match relation.direction() {
         ConstraintAcceptance::PatternAcceptsActual if pattern_active => (pattern, actual),
         ConstraintAcceptance::ActualAcceptsPattern if actual_active => (actual, pattern),
         _ if pattern_active => (pattern, actual),
@@ -481,18 +580,19 @@ where
     )
 }
 
-fn relate_entered_with_policy<A, D>(
+fn relate_entered_with_policy<A, D, L>(
     pattern: &TypeKind,
     actual: &TypeKind,
     pattern_shape: TypeConstraintShape<'_>,
     actual_shape: TypeConstraintShape<'_>,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if matches!(pattern_shape, TypeConstraintShape::Unresolved(_))
         || matches!(actual_shape, TypeConstraintShape::Unresolved(_))
@@ -568,19 +668,26 @@ where
         _ => unreachable!("generic shape has an alias resolution"),
     };
     if pattern_changed || actual_changed {
-        return relate_with_policy(&pattern_value, &actual_value, path, context, acceptance);
+        return relate_with_policy(&pattern_value, &actual_value, path, context, relation);
     }
 
     // Bottom contributes no binding, but unresolved descendants in the
     // expected shape still cannot reach a selected seal.
-    if matches!(actual_shape, TypeConstraintShape::Never) {
+    if matches!(relation, ConstraintRelation::Accepts(_))
+        && matches!(actual_shape, TypeConstraintShape::Never)
+    {
         validate_type(pattern, path.projection_view(), context)?;
         return Ok(vec![path]);
     }
 
     match (pattern_shape, actual_shape) {
+        (TypeConstraintShape::Choice(expected), TypeConstraintShape::Choice(found))
+            if matches!(relation, ConstraintRelation::Equal) =>
+        {
+            return relate_slices(expected, found, path, context, relation);
+        }
         (TypeConstraintShape::Generic(pattern), TypeConstraintShape::Generic(actual)) => {
-            return relate_generic_parameters(pattern, actual, path, context, acceptance);
+            return relate_generic_parameters(pattern, actual, path, context, relation);
         }
         (TypeConstraintShape::Generic(parameter), _)
             if type_parameter_eligibility(parameter, &path, context)?
@@ -599,14 +706,19 @@ where
     }
 
     match (pattern_shape, actual_shape) {
+        (TypeConstraintShape::Choice(_), _) | (_, TypeConstraintShape::Choice(_))
+            if matches!(relation, ConstraintRelation::Equal) =>
+        {
+            Ok(Vec::new())
+        }
         (TypeConstraintShape::Choice(expected), TypeConstraintShape::Choice(found)) => {
-            relate_choice_to_choice_selected(expected, found, path, context, acceptance)
+            relate_choice_to_choice_selected(expected, found, path, context, relation)
         }
         (TypeConstraintShape::Choice(expected), _) => {
-            relate_choice_to_actual_selected(expected, actual, path, context, acceptance)
+            relate_choice_to_actual_selected(expected, actual, path, context, relation)
         }
         (_, TypeConstraintShape::Choice(found)) => {
-            relate_actual_choice_selected(pattern, found, path, context, acceptance)
+            relate_actual_choice_selected(pattern, found, path, context, relation)
         }
         (
             TypeConstraintShape::Nominal {
@@ -623,8 +735,15 @@ where
                 found_arguments,
                 path,
                 context,
-                ConstraintAcceptance::PatternAcceptsActual,
+                if matches!(relation, ConstraintRelation::Equal) {
+                    relation
+                } else {
+                    ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+                },
             )?;
+            if matches!(relation, ConstraintRelation::Equal) {
+                return Ok(paths);
+            }
             expected_arguments.iter().zip(found_arguments).try_fold(
                 paths,
                 |paths, (expected, found)| {
@@ -633,7 +752,7 @@ where
                         found,
                         paths,
                         context,
-                        ConstraintAcceptance::ActualAcceptsPattern,
+                        ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern),
                     )
                 },
             )
@@ -643,7 +762,7 @@ where
         {
             match (expected.value(), found.value()) {
                 (Some(expected), Some(found)) => {
-                    relate_with_policy(expected, found, path, context, acceptance)
+                    relate_with_policy(expected, found, path, context, relation)
                 }
                 (Some(_), None) => Ok(vec![path]),
                 (None, Some(found)) => {
@@ -663,7 +782,7 @@ where
                 child: found,
             },
         ) if expected_kind == found_kind => {
-            relate_with_policy(expected, found, path, context, acceptance)
+            relate_with_policy(expected, found, path, context, relation)
         }
         (
             TypeConstraintShape::Iterator {
@@ -675,7 +794,7 @@ where
                 item: found,
             },
         ) if expected_family == found_family => {
-            relate_with_policy(expected, found, path, context, acceptance)
+            relate_with_policy(expected, found, path, context, relation)
         }
         (
             TypeConstraintShape::Array {
@@ -688,11 +807,11 @@ where
             },
         ) => {
             let Some(path) =
-                relate_array_lengths(expected_len, found_len, path, context, acceptance)?
+                relate_array_lengths(expected_len, found_len, path, context, relation)?
             else {
                 return Ok(Vec::new());
             };
-            relate_with_policy(expected, found, path, context, acceptance)
+            relate_with_policy(expected, found, path, context, relation)
         }
         (
             TypeConstraintShape::Map {
@@ -712,7 +831,7 @@ where
             found_value,
             path,
             context,
-            acceptance,
+            relation,
         ),
         (
             TypeConstraintShape::Borrow {
@@ -726,7 +845,7 @@ where
                 inner: found,
             },
         ) if expected_kind == found_kind && expected_lifetime == found_lifetime => {
-            relate_with_policy(expected, found, path, context, acceptance)
+            relate_with_policy(expected, found, path, context, relation)
         }
         (
             TypeConstraintShape::Pair {
@@ -746,7 +865,7 @@ where
             found_second,
             path,
             context,
-            acceptance,
+            relation,
         ),
         (
             TypeConstraintShape::Function {
@@ -768,14 +887,7 @@ where
                 if !expected_predicate.equal_with(found_predicate, context)? {
                     return Ok(Vec::new());
                 }
-                let parameter_acceptance = match acceptance {
-                    ConstraintAcceptance::PatternAcceptsActual => {
-                        ConstraintAcceptance::ActualAcceptsPattern
-                    }
-                    ConstraintAcceptance::ActualAcceptsPattern => {
-                        ConstraintAcceptance::PatternAcceptsActual
-                    }
-                };
+                let parameter_acceptance = relation.reverse();
                 let paths = relate_slices(
                     expected_params,
                     found_params,
@@ -785,7 +897,7 @@ where
                 )?;
                 let mut effect_paths = Vec::with_capacity(paths.len());
                 for mut path in paths {
-                    let (actual_effects, permitted_effects) = match acceptance {
+                    let (actual_effects, permitted_effects) = match relation.direction() {
                         ConstraintAcceptance::PatternAcceptsActual => {
                             (found_effects, expected_effects)
                         }
@@ -797,7 +909,20 @@ where
                         .effects
                         .constrain_subset(actual_effects, permitted_effects, context)
                     {
-                        Ok(()) => effect_paths.push(path),
+                        Ok(()) => {
+                            if matches!(relation, ConstraintRelation::Equal) {
+                                match path.effects.constrain_subset(
+                                    permitted_effects,
+                                    actual_effects,
+                                    context,
+                                ) {
+                                    Ok(()) => {}
+                                    Err(TypeConstraintError::Rejected(_)) => continue,
+                                    Err(error) => return Err(error),
+                                }
+                            }
+                            effect_paths.push(path)
+                        }
                         Err(TypeConstraintError::Rejected(_)) => {}
                         Err(error) => return Err(error),
                     }
@@ -807,14 +932,14 @@ where
                     found_result,
                     effect_paths,
                     context,
-                    acceptance,
+                    relation,
                 )
             })
         }
         (TypeConstraintShape::Tuple(expected), TypeConstraintShape::Tuple(found))
             if expected.len() == found.len() =>
         {
-            relate_slices(expected, found, path, context, acceptance)
+            relate_slices(expected, found, path, context, relation)
         }
         (TypeConstraintShape::Payload(expected), TypeConstraintShape::Payload(found))
             if expected.has_same_header(found) =>
@@ -823,7 +948,7 @@ where
                 .children()
                 .zip(found.children())
                 .try_fold(vec![path], |paths, (expected, found)| {
-                    relate_many(expected, found, paths, context, acceptance)
+                    relate_many(expected, found, paths, context, relation)
                 })
         }
         (TypeConstraintShape::Leaf(_), _) => Ok(vec![path]),
@@ -832,14 +957,15 @@ where
     }
 }
 
-fn resolve_const_parameter<A, D>(
+fn resolve_const_parameter<A, D, L>(
     parameter: &GenericConstReference,
-    path: &ConstraintPath<D>,
+    path: &ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstAliasResolution, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if matches!(parameter, GenericConstReference::Bound(_)) {
         Ok(ConstAliasResolution::Parameter(parameter.clone()))
@@ -848,14 +974,15 @@ where
     }
 }
 
-fn const_parameter_eligibility<A, D>(
+fn const_parameter_eligibility<A, D, L>(
     parameter: &GenericConstReference,
-    path: &ConstraintPath<D>,
+    path: &ConstraintInferenceBranch<D, L>,
     context: &TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeConstraintConstEligibility, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if matches!(parameter, GenericConstReference::Bound(_)) {
         return Ok(TypeConstraintConstEligibility::Rigid);
@@ -871,15 +998,16 @@ where
         })
 }
 
-fn bind_const_parameter<A, D>(
+fn bind_const_parameter<A, D, L>(
     parameter: &GenericConstReference,
     value: &ArrayLength,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
+) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if matches!(
         const_parameter_eligibility(parameter, &path, context)?,
@@ -890,16 +1018,17 @@ where
     context.add_const_binding(path, parameter.clone(), value)
 }
 
-fn relate_const_parameters<A, D>(
+fn relate_const_parameters<A, D, L>(
     pattern: &GenericConstReference,
     actual: &GenericConstReference,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if pattern == actual {
         return Ok(Some(path));
@@ -908,7 +1037,7 @@ where
         != TypeConstraintConstEligibility::Rigid;
     let actual_active = const_parameter_eligibility(actual, &path, context)?
         != TypeConstraintConstEligibility::Rigid;
-    let (parameter, value) = match acceptance {
+    let (parameter, value) = match relation.direction() {
         ConstraintAcceptance::PatternAcceptsActual if pattern_active => {
             (pattern, ArrayLength::Generic(actual.clone()))
         }
@@ -922,16 +1051,17 @@ where
     context.add_const_binding(path, parameter.clone(), &value)
 }
 
-fn relate_array_lengths<A, D>(
+fn relate_array_lengths<A, D, L>(
     expected: &ArrayLength,
     found: &ArrayLength,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     context.enter_node()?;
     let expected = match expected {
@@ -978,7 +1108,7 @@ where
             Ok((expected == found).then_some(path))
         }
         (ArrayLength::Generic(expected), ArrayLength::Generic(found)) => {
-            relate_const_parameters(expected, found, path, context, acceptance)
+            relate_const_parameters(expected, found, path, context, relation)
         }
         (ArrayLength::Generic(parameter), found) => {
             bind_const_parameter(parameter, found, path, context)
@@ -989,16 +1119,17 @@ where
     }
 }
 
-pub(crate) fn relate_slices<A, D>(
+fn relate_slices<A, D, L>(
     expected: &[TypeKind],
     found: &[TypeKind],
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     if expected.len() != found.len() {
         return Ok(Vec::new());
@@ -1007,42 +1138,44 @@ where
         .iter()
         .zip(found)
         .try_fold(vec![path], |paths, (expected, found)| {
-            relate_many(expected, found, paths, context, acceptance)
+            relate_many(expected, found, paths, context, relation)
         })
 }
 
-pub(crate) fn relate_pair<A, D>(
+fn relate_pair<A, D, L>(
     expected_first: &TypeKind,
     found_first: &TypeKind,
     expected_second: &TypeKind,
     found_second: &TypeKind,
-    path: ConstraintPath<D>,
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
-    let paths = relate_with_policy(expected_first, found_first, path, context, acceptance)?;
-    relate_many(expected_second, found_second, paths, context, acceptance)
+    let paths = relate_with_policy(expected_first, found_first, path, context, relation)?;
+    relate_many(expected_second, found_second, paths, context, relation)
 }
 
-pub(crate) fn relate_many<A, D>(
+fn relate_many<A, D, L>(
     expected: &TypeKind,
     found: &TypeKind,
-    paths: Vec<ConstraintPath<D>>,
+    paths: Vec<ConstraintInferenceBranch<D, L>>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    L: Clone,
 {
     paths.into_iter().try_fold(Vec::new(), |mut output, path| {
         let path = context.fork_path(&path)?;
         output.extend(relate_with_policy(
-            expected, found, path, context, acceptance,
+            expected, found, path, context, relation,
         )?);
         Ok(output)
     })

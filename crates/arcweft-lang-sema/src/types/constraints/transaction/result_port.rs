@@ -109,7 +109,7 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
             input: Some(self.source),
         });
         for path in &mut transaction.frontier {
-            path.projections.push(Arc::clone(&request));
+            path.lineage.projections.push(Arc::clone(&request));
         }
         let mut pending = transaction
             .suspend_result(context, key)?
@@ -177,7 +177,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     let application = scope.id();
                     path = context.admit_application(path, scope)?;
                     path = Self::prepare_application(context, application, path, None)?;
-                    path.projections.push(Arc::new(ProjectionRequest {
+                    path.lineage.projections.push(Arc::new(ProjectionRequest {
                         application,
                         key: Arc::new(key.clone()),
                         value: template.clone(),

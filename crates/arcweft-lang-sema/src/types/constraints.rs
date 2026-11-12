@@ -15,6 +15,7 @@ use super::{
 mod application;
 pub(crate) mod context;
 mod hints;
+mod lexical;
 mod normalization;
 mod references;
 mod shape;
@@ -44,6 +45,7 @@ pub(crate) use hints::{
     SourceAlternativeHint, SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult,
     SourceProbeSelection,
 };
+pub(super) use normalization::completed_types_equal;
 pub(crate) use normalization::{
     ConstAliasResolution, TypeAliasResolution, resolve_const_alias, resolve_type_alias,
 };
@@ -85,6 +87,12 @@ pub(crate) enum TypeConstraintRejection {
     UnresolvedType,
     #[error("generic parameter {parameter:?} remains unbound at the terminal boundary")]
     IncompleteInstantiation {
+        parameter: ConstraintGenericParameterId,
+    },
+    #[error(
+        "binding for {parameter:?} refers to an ambient frame outside its original application"
+    )]
+    EscapingInstantiation {
         parameter: ConstraintGenericParameterId,
     },
     #[error("effect-row subset is missing effects {missing:?}")]
@@ -182,6 +190,8 @@ pub(crate) enum TypeConstraintParameterScopeInvariant {
     ApplicationOutOfScope,
     #[error("constraint path already owns this application or generic opening")]
     ApplicationAlreadyAdmitted,
+    #[error("one generic opening names conflicting application contracts")]
+    ApplicationContractConflict,
     #[error("type parameter is outside the candidate parameter scope")]
     TypeParameterOutOfScope { parameter: GenericTypeReference },
     #[error("constant parameter is outside the candidate parameter scope")]

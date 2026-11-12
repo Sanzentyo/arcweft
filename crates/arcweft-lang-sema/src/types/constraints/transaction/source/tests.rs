@@ -117,7 +117,7 @@ mod retained_preparation {
         let mut closed = Vec::new();
         for path in &resumed.frontier {
             closed.push(
-                path.probe_trace[0]
+                path.lineage.probe_trace[0]
                     .clone()
                     .close(
                         path.projection_view(),

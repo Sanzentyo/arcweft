@@ -50,7 +50,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .require_application(self.application)
                 .map_err(TypeConstraintError::Invariant)?;
             let mut found = None;
-            for request in &path.projections {
+            for request in &path.lineage.projections {
                 context.enter_node()?;
                 if request.application == self.application && request.key.as_ref() == &key {
                     if found.is_some() {

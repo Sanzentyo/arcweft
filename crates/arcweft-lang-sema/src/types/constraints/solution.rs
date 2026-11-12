@@ -31,6 +31,9 @@ mod instantiation;
 mod predicate_tests;
 mod template;
 pub(crate) use template::{LocalizedTypeTemplate, TypeTemplateLocalizer};
+pub(super) use template::{
+    map_effects_with_control, map_predicate_with_control, map_term_with_control,
+};
 #[cfg(test)]
 mod tests;
 pub(crate) use instantiation::ClosedTypeInstantiation;
@@ -976,6 +979,9 @@ fn map_completed_self_error(
         | TypeConstraintError::Rejected(TypeConstraintRejection::AmbiguousSolution { .. })
         | TypeConstraintError::Rejected(TypeConstraintRejection::CyclicInstantiation { .. })
         | TypeConstraintError::Rejected(TypeConstraintRejection::IncompleteInstantiation {
+            ..
+        })
+        | TypeConstraintError::Rejected(TypeConstraintRejection::EscapingInstantiation {
             ..
         })
         | TypeConstraintError::Rejected(TypeConstraintRejection::EffectSubset { .. }) => {

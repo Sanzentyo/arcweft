@@ -327,7 +327,9 @@ fn materialization_failures_follow_trace_order_across_applications() {
     let cancellation = AtomicBool::new(false);
     let (mut context, mut transaction) = repeated_source_component(&cancellation, 1);
     let mut alternative = context.fork_path(&transaction.frontier[0]).unwrap();
-    let source::ConstraintProbe::Active(probe) = alternative.probe_trace.last_mut().unwrap() else {
+    let source::ConstraintProbe::Active(probe) =
+        alternative.lineage.probe_trace.last_mut().unwrap()
+    else {
         panic!("active alternative");
     };
     probe.branch = SourceProbeObservation::closed_for_test(1, ());
@@ -379,7 +381,8 @@ fn closing_a_source_rejects_a_foreign_application_or_ordinal() {
         let (mut context, mut transaction) = repeated_source_component(&cancellation, 1);
         let path = &mut transaction.frontier[0];
         let parent = path.root_id();
-        let source::ConstraintProbe::Active(probe) = path.probe_trace.last_mut().unwrap() else {
+        let source::ConstraintProbe::Active(probe) = path.lineage.probe_trace.last_mut().unwrap()
+        else {
             panic!("unclosed child source");
         };
         if foreign_application {
@@ -928,21 +931,23 @@ fn source_frontier<A: TypeConstraintAccounting>(
     let [first, second] = [(); 2].map(|()| {
         let mut path = context.fork_path(path).expect("admitted frontier row");
         path.bindings.insert(parameter.clone(), TypeKind::I64);
-        path.probe_trace.push(source::ConstraintProbe::Active(
-            source::ActiveConstraintProbe {
-                source: ConstraintSourceId::new(path.root_id(), ()),
-                source_ordinal: PreparedSourceOrdinal {
-                    application: path.root_id(),
-                    ordinal: 0,
+        path.lineage
+            .probe_trace
+            .push(source::ConstraintProbe::Active(
+                source::ActiveConstraintProbe {
+                    source: ConstraintSourceId::new(path.root_id(), ()),
+                    source_ordinal: PreparedSourceOrdinal {
+                        application: path.root_id(),
+                        ordinal: 0,
+                    },
+                    branch: SourceProbeObservation::closed_for_test((), ()),
+                    selection: StoredSourceSelection::Unchecked,
+                    prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
+                    value_expected: None,
+                    actual: TypeKind::I64,
+                    result_origin: None,
                 },
-                branch: SourceProbeObservation::closed_for_test((), ()),
-                selection: StoredSourceSelection::Unchecked,
-                prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
-                value_expected: None,
-                actual: TypeKind::I64,
-                result_origin: None,
-            },
-        ));
+            ));
         path
     });
     let mut transaction =
@@ -1105,7 +1110,8 @@ fn incomplete_alternatives_are_rejected_before_any_materialization() {
         {
             if source_demand {
                 let unresolved = path.bindings.keys().next().unwrap().clone();
-                let source::ConstraintProbe::Active(probe) = &mut path.probe_trace[0] else {
+                let source::ConstraintProbe::Active(probe) = &mut path.lineage.probe_trace[0]
+                else {
                     panic!("the source has not been closed");
                 };
                 probe.actual = TypeKind::GenericParam(unresolved);

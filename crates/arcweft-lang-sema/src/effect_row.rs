@@ -641,6 +641,14 @@ impl EffectSubsetError {
 }
 
 impl EffectConstraintEnvironment {
+    pub(crate) fn original_variables(&self) -> impl Iterator<Item = &GenericEffectReference> {
+        self.parameters.keys()
+    }
+
+    pub(crate) fn original_predicate(&self) -> &EffectPredicate {
+        &self.predicate
+    }
+
     pub(crate) fn new(
         variables: &[EffectConstraintVariable],
     ) -> Result<Self, EffectConstraintEnvironmentError> {

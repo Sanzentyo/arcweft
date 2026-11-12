@@ -726,6 +726,99 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
 }
 
 #[test]
+fn imported_opening_cannot_change_semantic_application_when_original_roots_join() {
+    use crate::types::{
+        DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId,
+        constraints::{
+            ConstraintAcceptance, ConstraintGenericParameterId, TypeConstraintEffectScope,
+            TypeConstraintInvariant, TypeConstraintParameterEligibility,
+            TypeConstraintParameterScopeInvariant, application::ConstraintApplicationScope,
+            context::TypeConstraintTypeParameterScopeRow,
+        },
+    };
+    for reversed in [false, true] {
+        let cancellation = AtomicBool::new(false);
+        let mut context = ConstraintTestSetup::<_, Applications>::new(
+            TypeConstraintLimits::new(65536, 65536, 1024, 1024),
+            &cancellation,
+        )
+        .into_parts()
+        .0;
+        let mut component = OpenConstraintComponent::<Applications, ()>::new(&mut context).unwrap();
+        let key = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(9492)),
+            0,
+        );
+        let parameters = TypeConstraintParameterScope::seal_call_scope(
+            GenericBinder::EMPTY,
+            [TypeConstraintTypeParameterScopeRow::new(
+                key.clone(),
+                TypeConstraintParameterEligibility::Bindable,
+            )],
+            [],
+            TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+            [],
+            [],
+        )
+        .unwrap();
+        let reference = parameters.type_reference(&key.into()).unwrap();
+        let parent = context
+            .start_path(ConstraintApplicationScope::new(1, parameters.clone()))
+            .unwrap();
+        let lease = parent
+            .applications
+            .import_parameters(&[ConstraintGenericParameterId::Type(reference.clone())])
+            .unwrap();
+        let mut owner =
+            TypeConstraintTransaction::initialize(&mut context, 0, parameters, None).unwrap();
+        owner.constrain(
+            &mut context,
+            &TypeKind::GenericParam(reference),
+            &TypeKind::Bool,
+            ConstraintAcceptance::PatternAcceptsActual,
+        );
+        owner.request_projection(
+            &mut context,
+            (),
+            &TypeKind::I64,
+            TypeConstraintProjectionClosure::Closed,
+        );
+        let owner = owner.suspend_result(&mut context, ()).unwrap();
+        let mut imported = TypeConstraintTransaction::initialize_with_imported(
+            &mut context,
+            2,
+            TypeConstraintParameterScope::empty(),
+            None,
+            Some(lease),
+        )
+        .unwrap();
+        imported.request_projection(
+            &mut context,
+            (),
+            &TypeKind::I64,
+            TypeConstraintProjectionClosure::Closed,
+        );
+        let imported = imported.suspend_result(&mut context, ()).unwrap();
+        let roots = if reversed {
+            [imported, owner]
+        } else {
+            [owner, imported]
+        };
+        for root in roots {
+            component.admit_roots(&mut context, vec![root], ()).unwrap();
+        }
+        assert!(matches!(
+            component.infer_original_products(&mut context),
+            Err(PreparedValueFailure::Constraint(
+                TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                    TypeConstraintParameterScopeInvariant::ApplicationContractConflict
+                ))
+            ))
+        ));
+    }
+}
+
+#[test]
 fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() {
     use crate::types::{
         DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,

@@ -1,6 +1,7 @@
 //! Canonical type projection, path normalization, and equality.
 
 use super::ConstraintSourceId;
+use super::transaction::ConstraintInferenceBranch;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -12,9 +13,9 @@ use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, Typ
 use super::application::ConstraintApplicationInventory;
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::{
-    CheckedConstraintSourceProjection, ConstraintAcceptance, ConstraintDomain, ConstraintPath,
-    SourceError, TypeConstraintAbort, TypeConstraintError, TypeConstraintInvariant,
-    TypeConstraintRejection, TypeConstraintShape,
+    CheckedConstraintSourceProjection, ConstraintAcceptance, ConstraintDomain, SourceError,
+    TypeConstraintAbort, TypeConstraintError, TypeConstraintInvariant, TypeConstraintRejection,
+    TypeConstraintShape,
 };
 
 #[cfg(test)]
@@ -86,7 +87,7 @@ impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
     }
 }
 
-impl<D: ConstraintDomain> ConstraintPath<D> {
+impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
     pub(crate) fn projection_view(&self) -> ConstraintProjectionView<'_, D> {
         ConstraintProjectionView {
             applications: &self.applications,
@@ -120,9 +121,9 @@ pub(crate) enum ConstAliasResolution {
 /// Resolve direct alias chains with the same scope checks and node budget as
 /// other path projections. A deterministic representative is retained for a
 /// genuine alias cycle so callers can defer it without recursing forever.
-pub(crate) fn resolve_type_alias<A, D>(
+pub(crate) fn resolve_type_alias<A, D, L>(
     parameter: &GenericTypeReference,
-    path: &ConstraintPath<D>,
+    path: &ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeAliasResolution, TypeConstraintError>
 where
@@ -165,9 +166,9 @@ where
 
 /// Resolve direct constant alias chains under the exact application scope and
 /// node budget. A deterministic cycle witness is deferred to path closure.
-pub(crate) fn resolve_const_alias<A, D>(
+pub(crate) fn resolve_const_alias<A, D, L>(
     parameter: &GenericConstReference,
-    path: &ConstraintPath<D>,
+    path: &ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstAliasResolution, TypeConstraintError>
 where
@@ -643,10 +644,10 @@ where
     occurs_in_shape_inner(ty.constraint_shape(), parameter, view, context, aliases)
 }
 
-pub(crate) fn seal_path<A, D>(
-    path: ConstraintPath<D>,
+pub(crate) fn seal_path<A, D, L>(
+    path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ConstraintPath<D>, TypeConstraintError>
+) -> Result<ConstraintInferenceBranch<D, L>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
@@ -699,7 +700,7 @@ where
     )
 }
 
-fn seal_const<A, D>(
+pub(in crate::types::constraints) fn seal_const<A, D>(
     value: &ArrayLength,
     view: ConstraintProjectionView<'_, D>,
     visiting: &mut BTreeSet<GenericConstReference>,
@@ -722,7 +723,7 @@ where
 
 /// Completed terms have already passed their own lexical-scope seal. Equality
 /// still visits every compared type and effect node using the live work owner.
-pub(super) fn completed_types_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
+pub(in crate::types) fn completed_types_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
     left: &TypeKind,
     right: &TypeKind,
     context: &mut TypeConstraintContext<'_, A, D>,

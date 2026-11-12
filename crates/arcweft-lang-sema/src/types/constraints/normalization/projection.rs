@@ -2,8 +2,9 @@
 
 use std::collections::BTreeSet;
 
+use super::super::lexical::ConstraintLexicalScope;
 use crate::types::{
-    ArrayLength, GenericBinder, GenericConstReference, GenericScope, GenericTypeReference, TypeKind,
+    ArrayLength, GenericBinder, GenericConstReference, GenericTypeReference, TypeKind,
 };
 
 use super::super::{
@@ -47,7 +48,7 @@ enum ProjectionFrame<'ty> {
         children: TypeConstraintChildren<'ty>,
         projected: Vec<TypeKind>,
         length: Option<ArrayLength>,
-        enclosing: Option<GenericScope>,
+        enclosing: Option<ConstraintLexicalScope>,
     },
 }
 
@@ -234,7 +235,7 @@ fn rebuild<A: TypeConstraintAccounting, D: ConstraintDomain>(
     shape: TypeConstraintShape<'_>,
     children: Vec<TypeKind>,
     length: Option<ArrayLength>,
-    enclosing: Option<GenericScope>,
+    enclosing: Option<ConstraintLexicalScope>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind, TypeConstraintError> {
     if let Some(enclosing) = enclosing {

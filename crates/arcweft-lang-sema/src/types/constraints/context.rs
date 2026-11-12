@@ -3,6 +3,7 @@
 //! This module owns the persistent cancellation/work context. The transaction
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
+use super::transaction::ConstraintInferenceBranch;
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::{
@@ -23,6 +24,7 @@ use super::super::{
 #[cfg(test)]
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
 use super::application::{ConstraintApplicationId, ConstraintApplicationScope};
+use super::lexical::ConstraintLexicalScope;
 use super::normalization::ConstraintProjectionView;
 use super::{
     ConstraintDomain, ConstraintPath, TypeConstraintAbort, TypeConstraintError,
@@ -1170,7 +1172,7 @@ pub(crate) struct TypeConstraintContext<'c, A: TypeConstraintAccounting, D: Cons
     limits: TypeConstraintLimits,
     cancellation: &'c AtomicBool,
     accounting: A,
-    lexical_scope: GenericScope,
+    lexical_scope: ConstraintLexicalScope,
     work: TypeConstraintWorkReport,
     domain: PhantomData<fn() -> D>,
 }
@@ -1190,7 +1192,7 @@ where
             limits,
             cancellation,
             accounting,
-            lexical_scope: GenericScope::default(),
+            lexical_scope: ConstraintLexicalScope::default(),
             work: TypeConstraintWorkReport::default(),
             domain: PhantomData,
         }
@@ -1212,6 +1214,7 @@ where
         if let GenericTypeReference::Bound(parameter) = parameter {
             return self
                 .lexical_scope
+                .shape()
                 .bound_type(parameter.depth(), parameter.slot())
                 .ok()
                 .map(|_| TypeConstraintParameterEligibility::Rigid);
@@ -1227,6 +1230,7 @@ where
         if let GenericConstReference::Bound(parameter) = parameter {
             return self
                 .lexical_scope
+                .shape()
                 .bound_const(parameter.depth(), parameter.slot())
                 .ok()
                 .map(|_| TypeConstraintConstEligibility::Rigid);
@@ -1248,20 +1252,20 @@ where
     /// The iterative type projector retains the returned enclosing scope on
     /// its frame and restores it when that frame finishes. Its outer scoped
     /// call also restores the original scope on every error return.
-    pub(super) fn enter_binder_scope(&mut self, binder: GenericBinder) -> GenericScope {
+    pub(super) fn enter_binder_scope(&mut self, binder: GenericBinder) -> ConstraintLexicalScope {
         let nested = self.lexical_scope.with_binder(binder);
         std::mem::replace(&mut self.lexical_scope, nested)
     }
 
-    pub(super) fn restore_binder_scope(&mut self, enclosing: GenericScope) {
+    pub(super) fn restore_binder_scope(&mut self, enclosing: ConstraintLexicalScope) {
         self.lexical_scope = enclosing;
     }
 
     /// Required type/constant keys must be bound before final projection and
     /// publication. Future groups and rigid references remain open.
-    pub(super) fn validate_type_and_const_completion(
+    pub(super) fn validate_type_and_const_completion<L>(
         &self,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
     ) -> Result<(), TypeConstraintError> {
         for application in path.applications.applications() {
             let scope = application.parameters();
@@ -1369,14 +1373,28 @@ where
             .completed_contract()
             .template_scope()
             .clone();
-        let enclosing = std::mem::replace(&mut self.lexical_scope, template);
+        let enclosing = std::mem::replace(
+            &mut self.lexical_scope,
+            ConstraintLexicalScope::template(template),
+        );
         let result = operation(self);
         self.lexical_scope = enclosing;
         result
     }
 
     pub(super) fn lexical_scope(&self) -> &GenericScope {
-        &self.lexical_scope
+        self.lexical_scope.shape()
+    }
+
+    pub(super) fn with_original_scope<T, E>(
+        &mut self,
+        scope: ConstraintLexicalScope,
+        action: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let enclosing = std::mem::replace(&mut self.lexical_scope, scope);
+        let result = action(self);
+        self.lexical_scope = enclosing;
+        result
     }
     pub(crate) fn effect_eligibility(
         &self,
@@ -1386,6 +1404,7 @@ where
         match variable {
             GenericEffectReference::Bound(parameter) => self
                 .lexical_scope
+                .shape()
                 .bound_effect(parameter.depth(), parameter.slot())
                 .ok()
                 .map(|_| EffectConstraintEligibility::Rigid),
@@ -1479,17 +1498,23 @@ where
             let predicate = application.parameters().opened_effect_predicate(self)?;
             effects.restore_predicate(&predicate, self)?;
         }
+        let frame_count = self.lexical_scope().binders().len();
+        for _ in 0..frame_count {
+            self.enter_node()?;
+        }
+        let scope = self.lexical_scope.clone();
         Ok(ConstraintPath::empty_with_imported(
             application,
             effects,
             imported,
+            scope,
         ))
     }
 
-    pub(crate) fn fork_path(
+    pub(crate) fn fork_path<L: Clone>(
         &mut self,
-        path: &ConstraintPath<D>,
-    ) -> Result<ConstraintPath<D>, TypeConstraintError> {
+        path: &ConstraintInferenceBranch<D, L>,
+    ) -> Result<ConstraintInferenceBranch<D, L>, TypeConstraintError> {
         self.charge_counter(1, Counter::Branches)?;
         Ok(path.clone())
     }
@@ -1534,13 +1559,13 @@ where
         Ok(path)
     }
 
-    pub(crate) fn add_binding(
+    pub(crate) fn add_binding<L>(
         &mut self,
-        path: ConstraintPath<D>,
+        path: ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
         value: &TypeKind,
         value_shape: TypeConstraintShape<'_>,
-    ) -> Result<Option<ConstraintPath<D>>, TypeConstraintError> {
+    ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
         self.check_cancelled()?;
         if path.bindings.contains_key(&parameter) {
             return Ok(Some(path));
@@ -1587,12 +1612,12 @@ where
         Ok(Some(path))
     }
 
-    pub(crate) fn add_const_binding(
+    pub(crate) fn add_const_binding<L>(
         &mut self,
-        path: ConstraintPath<D>,
+        path: ConstraintInferenceBranch<D, L>,
         parameter: GenericConstReference,
         value: &super::super::ArrayLength,
-    ) -> Result<Option<ConstraintPath<D>>, TypeConstraintError> {
+    ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
         self.check_cancelled()?;
         if path.const_bindings.contains_key(&parameter) {
             return Ok(Some(path));
@@ -1639,9 +1664,9 @@ where
         Ok(Some(path))
     }
 
-    pub(crate) fn add_sealed_binding(
+    pub(crate) fn add_sealed_binding<L>(
         &mut self,
-        path: &mut ConstraintPath<D>,
+        path: &mut ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
         value: TypeKind,
     ) -> Result<(), TypeConstraintError> {
@@ -1666,9 +1691,9 @@ where
         Ok(())
     }
 
-    pub(crate) fn add_sealed_const_binding(
+    pub(crate) fn add_sealed_const_binding<L>(
         &mut self,
-        path: &mut ConstraintPath<D>,
+        path: &mut ConstraintInferenceBranch<D, L>,
         parameter: GenericConstReference,
         value: super::super::ArrayLength,
     ) -> Result<(), TypeConstraintError> {

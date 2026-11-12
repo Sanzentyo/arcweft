@@ -44,6 +44,80 @@ pub(crate) struct PendingEquation {
     timing: ConstraintEquationTiming,
 }
 
+impl PendingEquation {
+    pub(super) fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        original: &super::lexical::ConstraintLexicalScope,
+        target: &super::lexical::ConstraintLexicalScope,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
+        Ok(Self {
+            ordinal: self.ordinal,
+            direction: self.direction,
+            source_ordinal: self.source_ordinal,
+            timing: self.timing,
+            pattern: target.transport_type(original, &self.pattern, context)?,
+            actual: target.transport_type(original, &self.actual, context)?,
+            final_expected: self
+                .final_expected
+                .as_ref()
+                .map(|ty| target.transport_type(original, ty, context))
+                .transpose()?,
+        })
+    }
+
+    pub(super) fn validate_completed<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        view: super::normalization::ConstraintProjectionView<'_, D>,
+        effect_substitution: &EffectSubstitution,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        let pattern = self.final_expected.as_ref().unwrap_or(&self.pattern);
+        let project = |value, context: &mut TypeConstraintContext<'_, A, D>| {
+            seal_type(value, view, &mut BTreeSet::new(), context)?
+                .substitute_effect_rows(effect_substitution)
+                .map_err(|_error| {
+                    super::effect_invariant(
+                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+                        None,
+                    )
+                })
+        };
+        let pattern = project(pattern, context)?;
+        let actual = if self.timing == ConstraintEquationTiming::InferredEffectResult {
+            let annotation = project_type(
+                &self.actual,
+                view,
+                ConstraintClosurePolicy::ResultAnnotation,
+                context,
+            )?
+            .value;
+            let completed = annotation
+                .binding_type_with_inferred_effects(&pattern)
+                .ok_or(TypeConstraintRejection::Mismatch)?;
+            project(&completed, context)?
+        } else {
+            project(&self.actual, context)?
+        };
+        let (expected, actual) = match self.direction {
+            ConstraintAcceptance::PatternAcceptsActual => (&pattern, &actual),
+            ConstraintAcceptance::ActualAcceptsPattern => (&actual, &pattern),
+        };
+        if !expected
+            .accepts_with(
+                actual,
+                super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
+                context,
+            )
+            .map_err(super::super::compatibility::binding_plan::map_compatibility_error)?
+        {
+            return Err(TypeConstraintRejection::Mismatch.into());
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum ConstraintEquationTiming {
     Immediate,
@@ -141,9 +215,10 @@ impl<D: ConstraintDomain> PartialEq for StoredSourceSelection<D> {
 
 impl<D: ConstraintDomain> Eq for StoredSourceSelection<D> {}
 
-pub(crate) struct ConstraintPath<D: ConstraintDomain> {
-    /// Actual source lineage. Membership alone does not identify a root.
-    root: ConstraintApplicationId,
+/// Source ownership is distinct from the inference algebra. A joint original
+/// product uses the same algebra without fabricating a source root or probe.
+pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
+    pub(super) lineage: L,
     pub(super) applications: Arc<ConstraintApplicationInventory<D>>,
     pub(crate) bindings: BTreeMap<GenericTypeReference, TypeKind>,
     pub(crate) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
@@ -151,26 +226,50 @@ pub(crate) struct ConstraintPath<D: ConstraintDomain> {
     pub(crate) equations: Vec<PendingEquation>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
     pub(crate) deferred_cycles: DeferredCycleWitness,
+}
+
+pub(crate) struct ConstraintSourceLineage<D: ConstraintDomain> {
+    root: ConstraintApplicationId,
+    pub(super) scope: super::lexical::ConstraintLexicalScope,
     pub(super) probe_trace: Vec<ConstraintProbe<D>>,
     pub(super) projections: Vec<Arc<ProjectionRequest<D>>>,
 }
+
+impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
+    fn clone(&self) -> Self {
+        Self {
+            root: self.root,
+            scope: self.scope.clone(),
+            probe_trace: self.probe_trace.clone(),
+            projections: self.projections.clone(),
+        }
+    }
+}
+
+pub(crate) type ConstraintPath<D> = ConstraintInferenceBranch<D, ConstraintSourceLineage<D>>;
 
 impl<D: ConstraintDomain> ConstraintPath<D> {
     pub(super) fn empty(
         application: ConstraintApplicationScope<D>,
         effects: crate::effect_row::EffectConstraintEnvironment,
     ) -> Self {
-        Self::empty_with_imported(application, effects, None)
+        Self::empty_with_imported(application, effects, None, Default::default())
     }
 
     pub(super) fn empty_with_imported(
         application: ConstraintApplicationScope<D>,
         effects: crate::effect_row::EffectConstraintEnvironment,
         imported: Option<super::ImportedGenericParameterScopeLease>,
+        scope: super::lexical::ConstraintLexicalScope,
     ) -> Self {
         let root = application.id();
         Self {
-            root,
+            lineage: ConstraintSourceLineage {
+                root,
+                scope,
+                probe_trace: Vec::new(),
+                projections: Vec::new(),
+            },
             applications: Arc::new(ConstraintApplicationInventory::single(
                 application,
                 imported,
@@ -181,27 +280,25 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             equations: Vec::new(),
             choice_key: Vec::new(),
             deferred_cycles: DeferredCycleWitness::default(),
-            probe_trace: Vec::new(),
-            projections: Vec::new(),
         }
     }
 
     pub(super) const fn root_id(&self) -> ConstraintApplicationId {
-        self.root
+        self.lineage.root
     }
 
     #[cfg(test)]
     pub(super) fn root_scope(&self) -> &ConstraintApplicationScope<D> {
         self.applications
-            .application(self.root)
+            .application(self.root_id())
             .expect("a source path retains its original root application")
     }
 }
 
-impl<D: ConstraintDomain> Clone for ConstraintPath<D> {
+impl<D: ConstraintDomain, L: Clone> Clone for ConstraintInferenceBranch<D, L> {
     fn clone(&self) -> Self {
         Self {
-            root: self.root,
+            lineage: self.lineage.clone(),
             applications: Arc::clone(&self.applications),
             bindings: self.bindings.clone(),
             const_bindings: self.const_bindings.clone(),
@@ -209,8 +306,6 @@ impl<D: ConstraintDomain> Clone for ConstraintPath<D> {
             equations: self.equations.clone(),
             choice_key: self.choice_key.clone(),
             deferred_cycles: self.deferred_cycles.clone(),
-            probe_trace: self.probe_trace.clone(),
-            projections: self.projections.clone(),
         }
     }
 }
@@ -1188,7 +1283,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 input,
             });
             for path in &mut self.frontier {
-                path.projections.push(Arc::clone(&request));
+                path.lineage.projections.push(Arc::clone(&request));
             }
         }
     }
@@ -1472,6 +1567,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         },
                     };
                     if path
+                        .lineage
                         .probe_trace
                         .iter()
                         .any(|probe| probe.source() == input.source)
@@ -1583,7 +1679,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         result_origin,
                         actual: actual.clone(),
                     });
-                    path.probe_trace.push(probe);
+                    path.lineage.probe_trace.push(probe);
 
                     let related = if let Some(expected) = pattern.as_ref() {
                         relate_selected_call(expected, &actual, path, context, input.acceptance)
@@ -2044,7 +2140,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .applications
             .require_application(selected)?
             .application();
-        for request in &path.projections {
+        for request in &path.lineage.projections {
             path.applications.require_application(request.application)?;
         }
         let ordered = path
@@ -2072,8 +2168,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 super::CompletedConstraintApplication::new(solution, projections),
             );
         }
-        path.projections.clear();
-        let closed_sources = core::mem::take(&mut path.probe_trace)
+        path.lineage.projections.clear();
+        let closed_sources = core::mem::take(&mut path.lineage.probe_trace)
             .into_iter()
             .map(ConstraintProbe::into_closed)
             .collect::<Result<Box<[_]>, _>>()?;
@@ -2090,54 +2186,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     fn validate_completed_equations<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
-        effect_substitution: &EffectSubstitution,
+        effects: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         for equation in &path.equations {
-            let pattern = equation
-                .final_expected
-                .as_ref()
-                .unwrap_or(&equation.pattern);
-            let project = |value, context: &mut TypeConstraintContext<'_, A, D>| {
-                seal_type(value, path.projection_view(), &mut BTreeSet::new(), context)?
-                    .substitute_effect_rows(effect_substitution)
-                    .map_err(|_error| {
-                        super::effect_invariant(
-                            super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                            None,
-                        )
-                    })
-            };
-            let pattern = project(pattern, context)?;
-            let actual = if equation.timing == ConstraintEquationTiming::InferredEffectResult {
-                let annotation = project_type(
-                    &equation.actual,
-                    path.projection_view(),
-                    ConstraintClosurePolicy::ResultAnnotation,
-                    context,
-                )?
-                .value;
-                let completed = annotation
-                    .binding_type_with_inferred_effects(&pattern)
-                    .ok_or(TypeConstraintRejection::Mismatch)?;
-                project(&completed, context)?
-            } else {
-                project(&equation.actual, context)?
-            };
-            let (expected, actual) = match equation.direction {
-                ConstraintAcceptance::PatternAcceptsActual => (&pattern, &actual),
-                ConstraintAcceptance::ActualAcceptsPattern => (&actual, &pattern),
-            };
-            if !expected
-                .accepts_with(
-                    actual,
-                    super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
-                    context,
-                )
-                .map_err(super::super::compatibility::binding_plan::map_compatibility_error)?
-            {
-                return Err(TypeConstraintRejection::Mismatch.into());
-            }
+            equation.validate_completed(path.projection_view(), effects, context)?;
         }
         Ok(())
     }
@@ -2157,6 +2210,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     {
         let mut projections = Vec::new();
         for request in path
+            .lineage
             .projections
             .iter()
             .filter(|request| request.application == application)
@@ -2318,7 +2372,7 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
         SourceProbeTerm::Type(value) => Ok((value, None)),
         SourceProbeTerm::Result(result) => {
             path.applications.require_application(result.application)?;
-            let mut requests = path.projections.iter().filter(|request| {
+            let mut requests = path.lineage.projections.iter().filter(|request| {
                 request.application == result.application && request.key == result.key
             });
             let Some(request) = requests.next() else {
@@ -2421,6 +2475,7 @@ fn ensure_unique_sources<D: ConstraintDomain>(
 ) -> Result<(), TypeConstraintError> {
     let mut sources = BTreeSet::new();
     if path
+        .lineage
         .probe_trace
         .iter()
         .any(|probe| !sources.insert(probe.source()))
@@ -2466,7 +2521,7 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    let probes = core::mem::take(&mut path.probe_trace);
+    let probes = core::mem::take(&mut path.lineage.probe_trace);
     let mut closed = Vec::with_capacity(probes.len());
     for probe in probes {
         let probe = probe.close(path.projection_view(), effect_substitution, context)?;
@@ -2481,7 +2536,7 @@ where
         }
         closed.push(ConstraintProbe::Closed(probe));
     }
-    path.probe_trace = closed;
+    path.lineage.probe_trace = closed;
     Ok(())
 }
 
@@ -2492,17 +2547,24 @@ fn path_correlation_cmp<D: ConstraintDomain>(
     left.choice_key
         .cmp(&right.choice_key)
         .then_with(|| {
-            left.probe_trace
+            left.lineage
+                .probe_trace
                 .iter()
                 .map(|probe| (probe.ordinal(), probe.source()))
                 .cmp(
                     right
+                        .lineage
                         .probe_trace
                         .iter()
                         .map(|probe| (probe.ordinal(), probe.source())),
                 )
         })
-        .then_with(|| left.probe_trace.len().cmp(&right.probe_trace.len()))
+        .then_with(|| {
+            left.lineage
+                .probe_trace
+                .len()
+                .cmp(&right.lineage.probe_trace.len())
+        })
 }
 
 fn protocol_error(kind: TypeConstraintSourceProtocolInvariant) -> TypeConstraintError {
