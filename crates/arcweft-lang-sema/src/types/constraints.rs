@@ -17,6 +17,10 @@ pub(crate) mod context;
 mod hints;
 mod lexical;
 mod normalization;
+mod original_context;
+pub(crate) use original_context::{
+    OriginalProducerContext, OriginalProducerSource, OriginalRigidScope,
+};
 mod references;
 mod shape;
 mod solution;
@@ -279,6 +283,8 @@ pub(crate) enum TypeConstraintProjectionInvariant {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum TypeConstraintInvariant {
+    #[error("original producer source is invalid")]
+    OriginalProducer,
     #[error(transparent)]
     Instantiation(TypeInstantiationError),
     #[error(transparent)]

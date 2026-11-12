@@ -50,12 +50,12 @@ impl<P, U> PreparedCallGraph<P, U> {
         enclosing: &EnclosingGenericParameterScope,
         limits: &crate::callable::CallableLimits,
     ) -> Result<PreparedFunctionSpecializationScope, CallConstraintInvariant> {
-        if !enclosing.source.admits(expression) {
+        if !enclosing.header.source.admits(expression) {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
         PreparedConstraintAuthority {
             issuer: Arc::clone(&self.issuer),
-            source: enclosing.source.clone(),
+            source: enclosing.header.source.clone(),
         }
         .prepare_function_specialization(source, enclosing, limits)
     }
@@ -68,7 +68,7 @@ impl PreparedConstraintAuthority {
         enclosing: &EnclosingGenericParameterScope,
         limits: &crate::callable::CallableLimits,
     ) -> Result<PreparedFunctionSpecializationScope, CallConstraintInvariant> {
-        if self.source != enclosing.source {
+        if self.source != enclosing.header.source {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
         let TypeKind::Function {

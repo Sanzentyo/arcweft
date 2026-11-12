@@ -264,6 +264,11 @@ impl std::error::Error for PreparedCallGraphInvariant {}
 /// The graph issuer consumes it and does not retain a parallel scope table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EnclosingGenericParameterScope {
+    header: Arc<EnclosingGenericScopeHeader>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct EnclosingGenericScopeHeader {
     source: EnclosingConstraintSource,
     types: Box<[GenericTypeReference]>,
     consts: Box<[GenericConstReference]>,
@@ -371,30 +376,92 @@ impl EnclosingGenericParameterScope {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
         Ok(Self {
-            source,
-            types: types.into_boxed_slice(),
-            consts: consts.into_boxed_slice(),
-            effects: effects.into_boxed_slice(),
-            imported_scope,
+            header: Arc::new(EnclosingGenericScopeHeader {
+                source,
+                types: types.into_boxed_slice(),
+                consts: consts.into_boxed_slice(),
+                effects: effects.into_boxed_slice(),
+                imported_scope,
+            }),
         })
     }
 
     pub(crate) fn types(&self) -> &[GenericTypeReference] {
-        &self.types
+        &self.header.types
     }
 
     pub(crate) fn consts(&self) -> &[GenericConstReference] {
-        &self.consts
+        &self.header.consts
     }
 
     pub(crate) fn effects(&self) -> &[GenericEffectReference] {
-        &self.effects
+        &self.header.effects
     }
 
     fn imported_scope(
         &self,
     ) -> Option<&crate::types::constraints::ImportedGenericParameterScopeLease> {
-        self.imported_scope.as_ref()
+        self.header.imported_scope.as_ref()
+    }
+
+    pub(crate) fn original_context<
+        A: crate::types::constraints::context::TypeConstraintAccounting,
+        D: crate::types::constraints::ConstraintDomain,
+    >(
+        &self,
+        context: &mut crate::types::constraints::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        crate::types::constraints::OriginalProducerContext,
+        crate::types::constraints::TypeConstraintError,
+    > {
+        context.original_producer_context(&self.header)
+    }
+}
+
+impl crate::types::constraints::OriginalProducerSource for EnclosingGenericScopeHeader {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn same_source(&self, other: &dyn crate::types::constraints::OriginalProducerSource) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| self == other)
+    }
+
+    fn rigid_scope(&self) -> crate::types::constraints::OriginalRigidScope<'_> {
+        crate::types::constraints::OriginalRigidScope {
+            types: &self.types,
+            consts: &self.consts,
+            effects: &self.effects,
+            imported: self.imported_scope.as_ref(),
+        }
+    }
+
+    fn declaration_formals(
+        &self,
+    ) -> Result<crate::types::GenericDeclarationBinder, crate::types::GenericScopeError> {
+        match &self.source {
+            EnclosingConstraintSource::Checked(source) => source.declaration_formals(),
+            #[cfg(test)]
+            EnclosingConstraintSource::Fixture => crate::types::GenericDeclarationBinder::new(
+                crate::types::GenericScope::default(),
+                Box::new([]),
+                Box::new([]),
+                Box::new([]),
+            ),
+        }
+    }
+
+    fn domain(&self) -> std::borrow::Cow<'_, crate::effect_row::EffectPredicate> {
+        match &self.source {
+            EnclosingConstraintSource::Checked(source) => source.domain(),
+            #[cfg(test)]
+            EnclosingConstraintSource::Fixture => {
+                std::borrow::Cow::Owned(crate::effect_row::EffectPredicate::unconstrained())
+            }
+        }
     }
 }
 
@@ -2141,7 +2208,7 @@ impl<P, U> PreparedCallGraph<P, U> {
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
-        if !enclosing.source.admits(site.expression()) {
+        if !enclosing.header.source.admits(site.expression()) {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
         issue_constraint_initialization(
@@ -2168,8 +2235,8 @@ impl<P, U> PreparedCallGraph<P, U> {
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
         self.validate_constraint_authority(parent_authority)?;
-        if parent_authority.source != enclosing.source
-            || !enclosing.source.admits(site.expression())
+        if parent_authority.source != enclosing.header.source
+            || !enclosing.header.source.admits(site.expression())
         {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
@@ -2547,7 +2614,7 @@ fn issue_scope_initialization(
         future_parameters,
         continuation_seed: seed,
         imported_scope: enclosing.imported_scope().cloned(),
-        source: enclosing.source.clone(),
+        source: enclosing.header.source.clone(),
     })
 }
 

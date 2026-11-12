@@ -111,6 +111,19 @@ impl std::fmt::Debug for ImportedGenericParameterScopeLease {
 }
 
 impl ImportedGenericParameterScopeLease {
+    pub(super) fn merge_original_gamma<
+        A: super::context::TypeConstraintAccounting,
+        D: ConstraintDomain,
+    >(
+        &self,
+        gamma: &mut ConstraintLexicalScope,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), super::TypeConstraintError> {
+        for application in &self.applications {
+            gamma.merge(application.owner.introduction_scope(), context)?;
+        }
+        Ok(())
+    }
     pub(crate) fn parameters(&self) -> &[super::ConstraintGenericParameterId] {
         &self.parameters
     }

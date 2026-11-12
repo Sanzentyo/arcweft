@@ -50,6 +50,33 @@ impl PartialEq for CheckedConstraintSourceOwner {
 impl Eq for CheckedConstraintSourceOwner {}
 
 impl CheckedConstraintSourceOwner {
+    pub(crate) fn domain(&self) -> std::borrow::Cow<'_, crate::effect_row::EffectPredicate> {
+        match &self.contract {
+            SourceContract::Declaration { record, .. } => {
+                std::borrow::Cow::Borrowed(record.schema().effect_predicate())
+            }
+            // This is an authenticated, non-generic item root, not a missing
+            // declaration whose contract could be supplied by a candidate.
+            SourceContract::Item => {
+                std::borrow::Cow::Owned(crate::effect_row::EffectPredicate::unconstrained())
+            }
+        }
+    }
+
+    pub(crate) fn declaration_formals(
+        &self,
+    ) -> Result<crate::types::GenericDeclarationBinder, crate::types::GenericScopeError> {
+        match &self.contract {
+            SourceContract::Declaration { record, .. } => record.schema().function_value_binder(),
+            SourceContract::Item => crate::types::GenericDeclarationBinder::new(
+                crate::types::GenericScope::default(),
+                Box::new([]),
+                Box::new([]),
+                Box::new([]),
+            ),
+        }
+    }
+
     pub(crate) fn signature(&self) -> Option<&super::super::CallableSignatureSchema> {
         match &self.contract {
             SourceContract::Declaration { record, .. } => Some(record.schema()),
@@ -112,6 +139,10 @@ mod tests {
     use crate::final_analysis::{
         FinalSemanticAnalysis,
         tests::{analyze, fixture},
+    };
+    use crate::types::constraints::{
+        NoConstraintClient,
+        context::{LocalConstraintAccounting, TypeConstraintContext, TypeConstraintLimits},
     };
 
     fn builder(analysis: &FinalSemanticAnalysis) -> CheckedCallableCatalogBuilder {
@@ -334,5 +365,90 @@ fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
         assert!(Arc::ptr_eq(record, pending.record()));
         assert!(source.admits(owner));
         assert!(source.signature().is_some());
+    }
+
+    #[test]
+    fn original_source_context_retains_real_frames_without_flattening_captures() {
+        let world = fixture("fn identity<T>(value: T) -> T { value }", None);
+        let analysis = analyze(&world).unwrap();
+        let builder = builder(&analysis);
+        let source = builder
+            .constraint_source_owner(analysis.hir_topology(), expression(&analysis, "identity"))
+            .unwrap();
+        let enclosing = Arc::new(
+            super::super::super::EnclosingGenericParameterScope::for_source(source.clone(), None)
+                .unwrap(),
+        );
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let mut work = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+            LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(10_000, 10_000, 100, 100),
+                &cancellation,
+            ),
+        );
+        let large = crate::types::GenericBinder::new(u16::MAX, 0, 0);
+        let original = work
+            .with_binder(large, |work| {
+                work.with_binder(large, |work| {
+                    let first = enclosing.original_context(work)?;
+                    let shared = enclosing.original_context(work)?;
+                    assert_eq!(first, shared);
+                    Ok(first)
+                })
+            })
+            .unwrap();
+        assert_eq!(original.scope().binders(), &[large, large]);
+        assert_eq!(
+            original.declaration_formals().type_parameters(),
+            enclosing.types()
+        );
+        assert_eq!(
+            original.declaration_formals().scope().binders(),
+            &[crate::types::GenericBinder::new(1, 0, 0)]
+        );
+        assert!(std::ptr::eq(
+            original.domain().as_ref(),
+            source.signature().unwrap().effect_predicate()
+        ));
+        let other = work
+            .with_binder(large, |work| {
+                work.with_binder(large, |work| enclosing.original_context(work))
+            })
+            .unwrap();
+        assert_eq!(original.scope(), other.scope());
+        assert_ne!(
+            original, other,
+            "an equally shaped opening is a different ambient environment"
+        );
+    }
+
+    #[test]
+    fn original_source_context_keeps_equal_ground_domains_owned_by_distinct_bodies() {
+        let world = fixture("fn left() {}\nfn right() {}", None);
+        let analysis = analyze(&world).unwrap();
+        let builder = builder(&analysis);
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let mut work = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+            LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(1000, 1000, 100, 100),
+                &cancellation,
+            ),
+        );
+        let contexts = ["left", "right"].map(|name| {
+            let source = builder
+                .constraint_source_owner(analysis.hir_topology(), expression(&analysis, name))
+                .unwrap();
+            let enclosing =
+                super::super::super::EnclosingGenericParameterScope::for_source(source, None)
+                    .unwrap();
+            enclosing.original_context(&mut work).unwrap()
+        });
+        assert_eq!(contexts[0].domain(), contexts[1].domain());
+        assert_eq!(contexts[0].scope(), contexts[1].scope());
+        assert_eq!(
+            contexts[0].declaration_formals(),
+            contexts[1].declaration_formals()
+        );
+        assert_ne!(contexts[0], contexts[1]);
     }
 }
