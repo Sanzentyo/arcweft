@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Clone, Copy)]
 pub(super) struct FiniteRowValuation<'a> {
-    pub(super) layout: ClassLayout<'a>,
+    pub(super) classes: LabelClasses<'a>,
     pub(super) owner: FormalOwner,
     pub(super) parameters: &'a [GenericEffectReference],
 }
@@ -23,7 +23,7 @@ impl FiniteRowValuation<'_> {
         work: &mut Work<'_, C>,
     ) -> Result<BTreeSet<Atom>, PreparedEffectFailure<C::Error>> {
         let mut result = BTreeSet::new();
-        for class in 0..self.layout.classes() {
+        for class in 0..self.classes.classes() {
             for parameter in 0..self.parameters.len() {
                 work.charge(DecisionWork::Node)?;
                 result.insert(Atom::Formal {

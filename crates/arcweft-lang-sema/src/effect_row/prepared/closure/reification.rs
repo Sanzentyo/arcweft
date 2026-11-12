@@ -70,7 +70,7 @@ impl PrincipalEffectClosure<'_> {
                 }
             }
             let scope = FiniteRowValuation {
-                layout: self.layout.view(),
+                classes: self.layout.view().label_classes(),
                 owner: FormalOwner::Scheme(id),
                 parameters: &scheme.header.parameters,
             };

@@ -3,6 +3,8 @@
 use super::*;
 
 #[cfg(test)]
+mod predicate_tests;
+#[cfg(test)]
 mod tests;
 
 #[derive(Clone, Copy)]
@@ -14,6 +16,11 @@ enum Root<'a> {
 struct ObservationSupport {
     labels: BTreeSet<EffectId>,
     parameters: BTreeSet<GenericEffectReference>,
+}
+
+struct ObservationLayout {
+    labels: Box<[EffectId]>,
+    parameters: Box<[GenericEffectReference]>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,8 +56,7 @@ impl RowRegions {
 /// into the pointwise conjunction grammar of an EffectPredicate.
 pub(crate) struct EffectRowObservation<'g> {
     _source: &'g PreparedEffectGraph,
-    labels: Box<[EffectId]>,
-    parameters: Box<[GenericEffectReference]>,
+    layout: ObservationLayout,
     regions: RowRegions,
     positive: Box<[Decision]>,
     negative: Box<[Decision]>,
@@ -87,13 +93,35 @@ pub(crate) enum EffectPredicateRegion {
 
 pub(crate) struct EffectPredicateObservation<'g> {
     _source: &'g PreparedEffectGraph,
+    layout: ObservationLayout,
+    probe: Decision,
+    invariant: Decision,
     vacuous: Decision,
     yes: Decision,
     no: Decision,
     ambiguous: Decision,
 }
 
-impl EffectPredicateObservation<'_> {
+/// A pointwise conjunction representing the observed Boolean condition on
+/// exactly the original invariant region. Losing the guard requires totality.
+pub(crate) struct GuardedEffectPredicate<'o, 'g> {
+    observation: &'o EffectPredicateObservation<'g>,
+    predicate: EffectPredicate,
+}
+
+impl GuardedEffectPredicate<'_, '_> {
+    pub(crate) fn predicate(&self) -> &EffectPredicate {
+        &self.predicate
+    }
+    pub(crate) fn is_total(&self) -> bool {
+        self.observation.invariant.is_constant(true)
+    }
+    pub(crate) fn into_total(self) -> Option<EffectPredicate> {
+        self.is_total().then_some(self.predicate)
+    }
+}
+
+impl<'g> EffectPredicateObservation<'g> {
     fn region(&self, region: EffectPredicateRegion) -> &Decision {
         match region {
             EffectPredicateRegion::Vacuous => &self.vacuous,
@@ -117,16 +145,53 @@ impl EffectPredicateObservation<'_> {
             None
         }
     }
+
+    pub(crate) fn canonical_extension<C: DecisionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<Option<GuardedEffectPredicate<'_, 'g>>, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        work.charge(DecisionWork::Visit)?;
+        if self.invariant.is_constant(false) {
+            return Ok(None);
+        }
+        let predicate = if self.yes.is_constant(false) {
+            EffectPredicate::impossible()
+        } else {
+            // The strongest pointwise conjunction accepting every positive
+            // valuation permits each local input pattern occurring in one.
+            // It is representable iff that conjunction rejects every negative.
+            let default =
+                self.layout
+                    .local(&self.yes.and(&self.probe, &mut work)?, 0, &mut work)?;
+            let mut violations = BTreeMap::new();
+            for (index, label) in self.layout.labels.iter().enumerate() {
+                let allowed = self.layout.local(&self.yes, index + 1, &mut work)?;
+                work.charge(DecisionWork::Node)?;
+                violations.insert(label.clone(), allowed.not(&mut work)?);
+            }
+            let violations =
+                EffectFormula::try_from_decisions(default.not(&mut work)?, violations, &mut work)?;
+            let empty = EffectFormula::from_set(&crate::effects::EffectSet::new(), &mut work)?;
+            violations.subset(&empty, &mut work)?
+        };
+        let actual = self.layout.guard(&predicate, &mut work)?;
+        if !self
+            .yes
+            .and(&actual.not(&mut work)?, &mut work)?
+            .is_constant(false)
+            || !self.no.and(&actual, &mut work)?.is_constant(false)
+        {
+            return Err(PreparedEffectFailure::NonPointwiseObservation);
+        }
+        Ok(Some(GuardedEffectPredicate {
+            observation: self,
+            predicate,
+        }))
+    }
 }
 
-impl<'g> EffectRowObservation<'g> {
-    pub(crate) fn region_is_empty(&self, region: EffectRowRegion) -> bool {
-        self.regions.get(region).is_constant(false)
-    }
-    pub(crate) fn region_is_universal(&self, region: EffectRowRegion) -> bool {
-        self.regions.get(region).is_constant(true)
-    }
-
+impl ObservationLayout {
     fn local<C: DecisionControl>(
         &self,
         decision: &Decision,
@@ -172,6 +237,54 @@ impl<'g> EffectRowObservation<'g> {
             })
     }
 
+    fn valuation(&self) -> FiniteRowValuation<'_> {
+        FiniteRowValuation {
+            classes: LabelClasses {
+                labels: &self.labels,
+            },
+            owner: FormalOwner::Observation,
+            parameters: &self.parameters,
+        }
+    }
+
+    fn guard<C: DecisionControl>(
+        &self,
+        predicate: &EffectPredicate,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let valuation = self.valuation();
+        let mut members = Vec::new();
+        for class in 0..valuation.classes.classes() {
+            let value = valuation
+                .classes
+                .at(predicate.membership(), class)
+                .map_references(work, &mut |reference, _| {
+                    self.parameters
+                        .binary_search(reference)
+                        .map(|parameter| Atom::Formal {
+                            owner: FormalOwner::Observation,
+                            class,
+                            parameter,
+                        })
+                        .map_err(|_| {
+                            PreparedEffectInvariant::UndeclaredParameter(reference.clone()).into()
+                        })
+                })?;
+            work.charge(DecisionWork::Node)?;
+            members.push(value);
+        }
+        valuation.whole(&members, work)
+    }
+}
+
+impl<'g> EffectRowObservation<'g> {
+    pub(crate) fn region_is_empty(&self, region: EffectRowRegion) -> bool {
+        self.regions.get(region).is_constant(false)
+    }
+    pub(crate) fn region_is_universal(&self, region: EffectRowRegion) -> bool {
+        self.regions.get(region).is_constant(true)
+    }
+
     pub(crate) fn canonical_extension<C: DecisionControl>(
         &self,
         control: &mut C,
@@ -189,8 +302,8 @@ impl<'g> EffectRowObservation<'g> {
                 positive = positive.and(&self.probe, &mut work)?;
                 negative = negative.and(&self.probe, &mut work)?;
             }
-            let positive = self.local(&positive, class, &mut work)?;
-            let negative = self.local(&negative, class, &mut work)?;
+            let positive = self.layout.local(&positive, class, &mut work)?;
+            let negative = self.layout.local(&negative, class, &mut work)?;
             if !positive.and(&negative, &mut work)?.is_constant(false) {
                 return Err(PreparedEffectFailure::NonPointwiseObservation);
             }
@@ -202,7 +315,7 @@ impl<'g> EffectRowObservation<'g> {
             .next()
             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
         let mut overrides = BTreeMap::new();
-        for (label, member) in self.labels.iter().zip(members) {
+        for (label, member) in self.layout.labels.iter().zip(members) {
             work.charge(DecisionWork::Node)?;
             overrides.insert(label.clone(), member);
         }
@@ -366,8 +479,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         let probe = compilation.valuation().probe_domain(&mut work)?;
         Ok(EffectRowObservation {
             _source: self.graph,
-            labels,
-            parameters,
+            layout: ObservationLayout { labels, parameters },
             regions,
             positive: positive.into_boxed_slice(),
             negative: negative.into_boxed_slice(),
@@ -412,12 +524,20 @@ impl<'g> PrincipalEffectClosure<'g> {
         let no = scoped
             .and(&predicate.not(&mut work)?, &mut work)?
             .exists(&self.choices, &mut work)?;
+        let ambiguous = yes.and(&no, &mut work)?;
+        let exclusive_yes = yes.and(&no.not(&mut work)?, &mut work)?;
+        let exclusive_no = no.and(&yes.not(&mut work)?, &mut work)?;
+        let invariant = exclusive_yes.or(&exclusive_no, &mut work)?;
+        let probe = compilation.valuation().probe_domain(&mut work)?;
         Ok(EffectPredicateObservation {
             _source: self.graph,
+            layout: ObservationLayout { labels, parameters },
+            probe,
+            invariant,
             vacuous: possible.not(&mut work)?,
-            ambiguous: yes.and(&no, &mut work)?,
-            yes: yes.and(&no.not(&mut work)?, &mut work)?,
-            no: no.and(&yes.not(&mut work)?, &mut work)?,
+            ambiguous,
+            yes: exclusive_yes,
+            no: exclusive_no,
         })
     }
 

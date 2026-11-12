@@ -13,7 +13,7 @@ mod observation;
 mod reification;
 pub(crate) use observation::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
-    GuardedEffectRow,
+    GuardedEffectPredicate, GuardedEffectRow,
 };
 mod valuation;
 use valuation::FiniteRowValuation;
@@ -63,6 +63,12 @@ struct Layout {
 struct ClassLayout<'a> {
     labels: &'a [EffectId],
     tables: &'a BTreeMap<u64, usize>,
+}
+
+/// Label classes are independent of the solver's scheme-cell tables.
+#[derive(Clone, Copy)]
+struct LabelClasses<'a> {
+    labels: &'a [EffectId],
 }
 
 impl Layout {
@@ -221,7 +227,27 @@ impl Layout {
     }
 }
 
-impl ClassLayout<'_> {
+impl<'a> ClassLayout<'a> {
+    fn label_classes(self) -> LabelClasses<'a> {
+        LabelClasses {
+            labels: self.labels,
+        }
+    }
+
+    fn classes(self) -> usize {
+        self.label_classes().classes()
+    }
+
+    fn at<'v, V: Clone + Ord>(
+        self,
+        view: EffectMembershipView<'v, V>,
+        class: usize,
+    ) -> &'v EffectDecision<V> {
+        self.label_classes().at(view, class)
+    }
+}
+
+impl LabelClasses<'_> {
     fn classes(self) -> usize {
         self.labels.len() + 1
     }

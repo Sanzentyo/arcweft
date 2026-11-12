@@ -5,7 +5,7 @@ use crate::{
     types::{GenericBinder, GenericScope},
 };
 
-fn truth(value: bool) -> PreparedEffectPredicate {
+pub(super) fn truth(value: bool) -> PreparedEffectPredicate {
     PreparedEffectPredicate::Canonical(if value {
         EffectPredicate::unconstrained()
     } else {
@@ -215,6 +215,17 @@ fn global_boolean_guards_match_exhaustive_finite_sets_with_distinct_unnamed_labe
             .observe_predicate(&truth(true), predicate, &mut control)
             .unwrap()
     });
+    for observation in &observed[..2] {
+        assert!(matches!(
+            observation.canonical_extension(&mut control),
+            Err(PreparedEffectFailure::NonPointwiseObservation)
+        ));
+    }
+    let extension = observed[2]
+        .canonical_extension(&mut control)
+        .unwrap()
+        .unwrap();
+    assert!(extension.is_total());
     let universe =
         ["fresh.first", "fresh.second", "fresh.third"].map(|label| EffectId::parse(label).unwrap());
     let sets: Vec<BTreeSet<EffectId>> = (0..8)
@@ -242,6 +253,13 @@ fn global_boolean_guards_match_exhaustive_finite_sets_with_distinct_unnamed_labe
                 assert!(observation.region_is_empty(EffectPredicateRegion::Vacuous));
                 assert!(observation.region_is_empty(EffectPredicateRegion::Ambiguous));
             }
+            assert_eq!(
+                super::predicate_tests::finite_predicate(
+                    extension.predicate(),
+                    &BTreeMap::from([(e.clone(), left.clone()), (f.clone(), right.clone())])
+                ),
+                left == right
+            );
             checked += 1;
         }
     }
@@ -280,7 +298,7 @@ fn default_class_ambiguity_is_a_whole_row_property_even_at_an_absent_probe() {
     let observation = principal
         .observe_row(&truth(true), &row, &mut control)
         .unwrap();
-    assert!(observation.labels.is_empty());
+    assert!(observation.layout.labels.is_empty());
     for rows in [
         BTreeSet::new(),
         BTreeSet::from([EffectId::parse("fresh.first").unwrap()]),
@@ -384,7 +402,7 @@ fn observation_can_extend_support_without_changing_the_least_scheme_tables() {
         )
         .unwrap();
     assert_eq!(
-        observation.labels.as_ref(),
+        observation.layout.labels.as_ref(),
         query_label.iter().cloned().collect::<Vec<_>>()
     );
     let extension = observation

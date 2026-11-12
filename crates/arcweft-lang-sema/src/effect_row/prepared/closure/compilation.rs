@@ -46,7 +46,7 @@ impl<'a> Compilation<'a> {
 
     pub(super) fn valuation(&self) -> FiniteRowValuation<'_> {
         FiniteRowValuation {
-            layout: self.layout,
+            classes: self.layout.label_classes(),
             owner: self.owner,
             parameters: self.parameters,
         }

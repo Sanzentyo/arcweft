@@ -89,10 +89,10 @@ impl<'a> CanonicalReplay<'a> {
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         let mut members = Vec::new();
-        for class in 0..self.scope.layout.classes() {
+        for class in 0..self.scope.classes.classes() {
             work.charge(DecisionWork::Node)?;
             members.push(self.scalar(
-                self.scope.layout.at(predicate.membership(), class),
+                self.scope.classes.at(predicate.membership(), class),
                 class,
                 work,
             )?);
@@ -286,8 +286,8 @@ impl<'a> CanonicalReplay<'a> {
             }
         }
         let mut closed = EffectDecision::constant(true);
-        for class in 0..self.scope.layout.classes() {
-            let value = self.scope.layout.at(row.membership(), class);
+        for class in 0..self.scope.classes.classes() {
+            let value = self.scope.classes.at(row.membership(), class);
             let base = value.substitute(&zero, work)?;
             let equal = value
                 .conditional(&base, &base.not(work)?, work)?

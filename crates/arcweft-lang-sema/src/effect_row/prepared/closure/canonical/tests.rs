@@ -42,7 +42,7 @@ fn a_uniform_choice_is_not_a_finite_effect_row_variable() {
     let mut control = budget();
     let principal = graph.solve_principal(&mut control).unwrap();
     let scope = FiniteRowValuation {
-        layout: principal.layout.view(),
+        classes: principal.layout.view().label_classes(),
         owner: FormalOwner::Observation,
         parameters: &[],
     };

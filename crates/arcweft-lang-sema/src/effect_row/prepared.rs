@@ -18,7 +18,7 @@ use crate::types::GenericEffectReference;
 mod closure;
 pub(crate) use closure::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
-    GuardedEffectRow, PrincipalEffectClosure,
+    GuardedEffectPredicate, GuardedEffectRow, PrincipalEffectClosure,
 };
 mod substitution;
 pub(crate) use substitution::PreparedEffectTermEdit;
@@ -124,7 +124,7 @@ pub(crate) enum PreparedEffectFailure<E> {
     NonPrincipal,
     #[error("the requested effect observation is not unconditionally admitted and invariant")]
     ObservationNotTotal,
-    #[error("the guarded effect observation cannot be represented by pointwise effect rows")]
+    #[error("the guarded effect observation cannot be represented by pointwise effect formulas")]
     NonPointwiseObservation,
 }
 
