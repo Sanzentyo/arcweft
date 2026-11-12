@@ -1,22 +1,15 @@
 //! Move-only projection results keep a proof at every corresponding value port.
 
 use super::*;
-use crate::effect_row::{EffectPredicate, EffectRow};
 use crate::types::constraints::TypeConstraintShape;
-use crate::types::constraints::normalization::ConstraintClosedEffects;
+use crate::types::constraints::normalization::{
+    ConstraintClosedEffects, ConstraintProjectedEffectHeader,
+};
 use std::marker::PhantomData;
 
 pub(in crate::types::constraints) enum ConstraintOperandEffects<D: ConstraintDomain> {
     Original,
     Closed(Arc<ConstraintClosedEffects<D>>),
-}
-
-enum HeaderProjection {
-    Original,
-    Closed {
-        row: Option<EffectRow>,
-        predicate: Option<EffectPredicate>,
-    },
 }
 
 pub(in crate::types::constraints) struct ConstraintOperandDerivation<D: ConstraintDomain, T> {
@@ -178,18 +171,8 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
                 TypeConstraintShape::Function {
                     effects, predicate, ..
                 },
-            ) => {
-                let (row, predicate, proof) =
-                    owner.project_header(&self.contents_scope, effects, predicate, context)?;
-                (
-                    HeaderProjection::Closed {
-                        row: Some(row),
-                        predicate: Some(predicate),
-                    },
-                    proof,
-                )
-            }
-            _ => (HeaderProjection::Original, None),
+            ) => owner.project_header(&self.contents_scope, effects, predicate, context)?,
+            _ => (ConstraintProjectedEffectHeader::Original, None),
         };
         let value = self.source.value().constraint_shape().rebuild_with(
             values,
@@ -199,22 +182,8 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
                     length.take().expect("array length was projected first"),
                 )
             },
-            |(_, header), row| {
-                Ok(match header {
-                    HeaderProjection::Original => row.clone(),
-                    HeaderProjection::Closed { row, .. } => row
-                        .take()
-                        .expect("the closed function row is consumed once"),
-                })
-            },
-            |(_, header), predicate| {
-                Ok(match header {
-                    HeaderProjection::Original => predicate.clone(),
-                    HeaderProjection::Closed { predicate, .. } => predicate
-                        .take()
-                        .expect("the closed function predicate is consumed once"),
-                })
-            },
+            |(_, header), row| Ok(header.take_row(row)),
+            |(_, header), predicate| Ok(header.take_predicate(predicate)),
         )?;
         let scope = Arc::clone(&self.source.scope);
         let origin = Arc::new(ConstraintOperandOrigin::Rebuilt {

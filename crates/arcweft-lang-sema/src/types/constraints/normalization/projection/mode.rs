@@ -64,7 +64,7 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     type ShapeSeed = TypeConstraintShape<'ty>;
     type TypeOutput = TypeKind;
     type ConstOutput = ArrayLength;
-    type Effects = ();
+    type Effects = ConstraintOperandEffects<D>;
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind {
         input
@@ -101,15 +101,27 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         shape: Self::ShapeSeed,
         children: Vec<TypeKind>,
         length: Option<ArrayLength>,
-        _: &(),
-        _: &mut TypeConstraintContext<'_, A, D>,
+        effects: &Self::Effects,
+        context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
+        let mut header = match (effects, shape) {
+            (
+                ConstraintOperandEffects::Closed(owner),
+                TypeConstraintShape::Function {
+                    effects, predicate, ..
+                },
+            ) => {
+                let scope = std::sync::Arc::new(context.capture_lexical_scope()?);
+                owner.project_header(&scope, effects, predicate, context)?.0
+            }
+            _ => super::super::ConstraintProjectedEffectHeader::Original,
+        };
         shape.rebuild_with(
             children,
-            &mut (),
-            |(), _| Ok(length.expect("array length was projected before its children")),
-            |(), row| Ok(row.clone()),
-            |(), predicate| Ok(predicate.clone()),
+            &mut header,
+            |_, _| Ok(length.expect("array length was projected before its children")),
+            |header, row| Ok(header.take_row(row)),
+            |header, predicate| Ok(header.take_predicate(predicate)),
         )
     }
     fn substitute_type<A: TypeConstraintAccounting>(

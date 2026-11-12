@@ -1,7 +1,9 @@
-//! An exact path's immutable effect completion and the rows a header uses.
+//! One branch's scoped effect completion and the rows a header uses.
 
 use super::super::{
-    OriginalProducerContext, lexical::ConstraintLexicalScope, transaction::ConstraintPath,
+    OriginalProducerContext,
+    lexical::ConstraintLexicalScope,
+    transaction::{ConstraintInferenceBranch, ConstraintPath},
 };
 use super::*;
 use crate::effect_row::{
@@ -9,12 +11,19 @@ use crate::effect_row::{
 };
 use crate::types::GenericEffectReference;
 
-pub(in crate::types::constraints) struct ConstraintClosedEffects<D: ConstraintDomain> {
+pub(in crate::types) struct ConstraintClosedEffects<D: ConstraintDomain> {
     completion: EffectConstraintCompletion,
-    premises: EffectConstraintEnvironment,
+    constraints: EffectConstraintEnvironment,
     applications: Arc<ConstraintApplicationInventory<D>>,
     scope: Arc<ConstraintLexicalScope>,
-    original: OriginalProducerContext,
+    origin: ConstraintEffectCompletionOrigin,
+}
+
+/// A relation's mathematical completion cannot impersonate a source closure.
+/// Neither case authorizes Free references or supplies a declaration's D.
+enum ConstraintEffectCompletionOrigin {
+    Source(OriginalProducerContext),
+    ScopedRelation,
 }
 
 /// A header refers only to the completion rows it actually substituted.
@@ -25,32 +34,108 @@ pub(in crate::types::constraints) struct ConstraintClosedEffectHeader<D: Constra
     pub(in crate::types::constraints) predicate_keys: Box<[GenericEffectReference]>,
 }
 
+pub(in crate::types::constraints) enum ConstraintProjectedEffectHeader {
+    Original,
+    Closed {
+        row: Option<EffectRow>,
+        predicate: Option<EffectPredicate>,
+    },
+}
+
+impl ConstraintProjectedEffectHeader {
+    pub(in crate::types::constraints) fn take_row(&mut self, original: &EffectRow) -> EffectRow {
+        match self {
+            Self::Original => original.clone(),
+            Self::Closed { row, .. } => row
+                .take()
+                .expect("the closed function row is consumed once"),
+        }
+    }
+
+    pub(in crate::types::constraints) fn take_predicate(
+        &mut self,
+        original: &EffectPredicate,
+    ) -> EffectPredicate {
+        match self {
+            Self::Original => original.clone(),
+            Self::Closed { predicate, .. } => predicate
+                .take()
+                .expect("the closed function predicate is consumed once"),
+        }
+    }
+}
+
 impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     pub(in crate::types::constraints) fn for_path<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
-        let completion = path.effects.complete(context)?;
-        for _ in path.effects.original_variables() {
+        for _ in path.lineage.scope.shape().binders() {
+            context.enter_node()?;
+        }
+        Self::complete_branch(
+            path,
+            Arc::new(path.lineage.scope.clone()),
+            ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
+            context,
+        )
+    }
+
+    /// C is interpreted in the real relation context, including a joint
+    /// original product. No synthetic source lineage is introduced.
+    pub(in crate::types) fn for_branch<A: TypeConstraintAccounting, L>(
+        branch: &ConstraintInferenceBranch<D, L>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Arc<Self>, TypeConstraintError> {
+        let scope = Arc::new(context.capture_lexical_scope()?);
+        Self::complete_branch(
+            branch,
+            scope,
+            ConstraintEffectCompletionOrigin::ScopedRelation,
+            context,
+        )
+    }
+
+    fn complete_branch<A: TypeConstraintAccounting, L>(
+        branch: &ConstraintInferenceBranch<D, L>,
+        scope: Arc<ConstraintLexicalScope>,
+        origin: ConstraintEffectCompletionOrigin,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Arc<Self>, TypeConstraintError> {
+        let completion = branch.effects.complete(context)?;
+        for _ in branch.effects.original_variables() {
             context.enter_node()?;
         }
         Ok(Arc::new(Self {
             completion,
-            premises: path.effects.clone(),
-            applications: Arc::clone(&path.applications),
-            scope: Arc::new(path.lineage.scope.clone()),
-            original: path.lineage.original.clone(),
+            constraints: branch.effects.clone(),
+            applications: Arc::clone(&branch.applications),
+            scope,
+            origin,
         }))
+    }
+
+    pub(in crate::types::constraints) fn require_branch<L>(
+        &self,
+        branch: &ConstraintInferenceBranch<D, L>,
+    ) -> Result<(), TypeConstraintError> {
+        if !Arc::ptr_eq(&self.applications, &branch.applications)
+            || self.constraints != branch.effects
+        {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        }
+        Ok(())
     }
 
     pub(in crate::types::constraints) fn require_path(
         &self,
         path: &ConstraintPath<D>,
     ) -> Result<(), TypeConstraintError> {
-        if !Arc::ptr_eq(&self.applications, &path.applications)
-            || self.premises != path.effects
-            || self.scope.as_ref() != &path.lineage.scope
-            || self.original != path.lineage.original
+        self.require_branch(path)?;
+        if self.scope.as_ref() != &path.lineage.scope
+            || !matches!(&self.origin,
+                ConstraintEffectCompletionOrigin::Source(original)
+                    if original == &path.lineage.original)
         {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
@@ -69,8 +154,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         (
-            EffectRow,
-            EffectPredicate,
+            ConstraintProjectedEffectHeader,
             Option<ConstraintClosedEffectHeader<D>>,
         ),
         TypeConstraintError,
@@ -94,7 +178,13 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 predicate_keys: predicate_keys.into_iter().collect(),
             }
         });
-        Ok((row, predicate, proof))
+        Ok((
+            ConstraintProjectedEffectHeader::Closed {
+                row: Some(row),
+                predicate: Some(predicate),
+            },
+            proof,
+        ))
     }
 
     fn replacement<A: TypeConstraintAccounting>(

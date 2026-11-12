@@ -884,16 +884,6 @@ impl EffectConstraintEnvironment {
     {
         Ok(self.complete(control)?.substitution.0.into_iter().collect())
     }
-
-    pub(crate) fn substitution<C: DecisionControl>(
-        &self,
-        control: &mut C,
-    ) -> Result<EffectSubstitution, C::Error>
-    where
-        C::Error: From<EffectConstraintEnvironmentError>,
-    {
-        Ok(self.complete(control)?.substitution)
-    }
 }
 impl EffectRowSummary {
     pub fn closed(

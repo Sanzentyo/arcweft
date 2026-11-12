@@ -17,6 +17,7 @@ pub(crate) mod context;
 mod hints;
 mod lexical;
 mod normalization;
+pub(in crate::types) use normalization::{ConstraintClosedEffects, project_closed_operand};
 mod original_context;
 pub(crate) use original_context::{
     OriginalProducerContext, OriginalProducerSource, OriginalRigidScope,
@@ -50,6 +51,8 @@ pub(crate) use hints::{
     SourceProbeResult, SourceProbeSelection,
 };
 pub(super) use normalization::completed_types_equal;
+#[cfg(test)]
+pub(super) use normalization::seal_type;
 pub(in crate::types) use normalization::{
     ConstraintAliasResolution, resolve_const_alias, resolve_type_alias,
 };
@@ -58,7 +61,7 @@ pub(crate) use normalization::{
     SolvedCandidate, TypeConstraintCandidateFailure, TypeConstraintFailure,
     TypeConstraintFailureInvariant,
 };
-pub(super) use normalization::{occurs_in_shape, seal_path, seal_type, validate_type};
+pub(super) use normalization::{occurs_in_shape, seal_path, validate_type};
 pub(in crate::types) use shape::TypeConstraintChildren;
 pub(crate) use shape::TypeConstraintShape;
 pub(crate) use solution::ClosedTypeInstantiation;

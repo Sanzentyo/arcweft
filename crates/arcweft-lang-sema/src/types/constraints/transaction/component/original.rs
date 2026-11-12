@@ -9,8 +9,9 @@ use crate::effect_row::{EffectConstraintEnvironment, EffectConstraintVariable};
 use crate::types::{
     compatibility::binding_plan::{unify_original_binding, unify_original_length},
     constraints::{
-        application::ConstraintApplicationInventory, lexical::ConstraintLexicalScope,
-        normalization::seal_path,
+        application::ConstraintApplicationInventory,
+        lexical::ConstraintLexicalScope,
+        normalization::{ConstraintClosedEffects, project_closed_type, seal_path},
     },
 };
 
@@ -54,7 +55,7 @@ type JointBranch<D> = ConstraintInferenceBranch<D, Arc<[OriginalProductMember]>>
 
 pub(super) struct OriginalProductSolution<D: ConstraintDomain> {
     pub(super) branch: JointBranch<D>,
-    pub(super) effects: crate::effect_row::EffectConstraintCompletion,
+    pub(super) effects: Arc<ConstraintClosedEffects<D>>,
 }
 
 pub(super) struct OriginalProductInference<D: ConstraintDomain> {
@@ -314,17 +315,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     TypeConstraintRejection::CyclicInstantiation { parameter }.into(),
                 ));
             }
-            let effects = branch
-                .effects
-                .complete(context)
+            let effects = ConstraintClosedEffects::for_branch(&branch, context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
-            self.validate_original_bindings(
-                &branch,
-                members,
-                scope,
-                &effects.substitution,
-                context,
-            )?;
+            self.validate_original_bindings(&branch, members, scope, &effects, context)?;
             context
                 .validate_type_and_const_completion(&branch)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
@@ -339,13 +332,17 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         branch: &JointBranch<D>,
         members: &[OriginalProductMember],
         scope: &ConstraintLexicalScope,
-        effects: &crate::effect_row::EffectSubstitution,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), OriginalInferenceFailure> {
         let project = |ty: &TypeKind, context: &mut TypeConstraintContext<'_, A, D>| {
-            crate::types::constraints::seal_type(ty, branch.projection_view(), &mut std::collections::BTreeSet::new(), context)?
-                .substitute_effect_rows(effects)
-                .map_err(|_| crate::types::constraints::effect_invariant(crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited, None))
+            project_closed_type(
+                ty,
+                branch,
+                crate::types::constraints::ConstraintClosurePolicy::Hint,
+                effects,
+                context,
+            )
         };
         for member in members {
             let original = self.original_path(*member)?;
@@ -430,7 +427,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 }
             }
             for parameter in original.effects.original_variables() {
-                let Some(value) = effects.get(parameter) else {
+                let Some(value) = effects.completion().substitution.get(parameter) else {
                     continue;
                 };
                 context.enter_node()?;
@@ -505,7 +502,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     .transport(scope, context)
                     .map_err(projection_failure)?;
                 equation
-                    .validate_completed(branch.projection_view(), effects, context)
+                    .validate_completed(branch, effects, context)
                     .map_err(|error| reject(check, error))?;
             }
         }

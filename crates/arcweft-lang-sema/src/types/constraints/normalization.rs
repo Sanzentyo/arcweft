@@ -153,9 +153,12 @@ pub(in crate::types) use alias::{
 mod projection;
 pub(in crate::types::constraints) use projection::{close_type_operand, seal_type_operand};
 mod effects;
+pub(in crate::types) use effects::ConstraintClosedEffects;
 pub(in crate::types::constraints) use effects::{
-    ConstraintClosedEffectHeader, ConstraintClosedEffects,
+    ConstraintClosedEffectHeader, ConstraintProjectedEffectHeader,
 };
+pub(in crate::types) use projection::project_closed_operand;
+pub(in crate::types::constraints) use projection::project_closed_type;
 use projection::{project_array_length, project_type_inner};
 pub(super) use projection::{project_const_argument, project_type};
 
@@ -644,6 +647,7 @@ where
     Ok(sealed)
 }
 
+#[cfg(test)]
 pub(crate) fn seal_type<A, D>(
     ty: &TypeKind,
     view: ConstraintProjectionView<'_, D>,

@@ -2,8 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::effect_row::{EffectRowError, EffectSubstitution};
-
 use super::{
     AcceptedNominalType, EntityType, GenericTypeParameterId, GenericTypeReference, OpenNominalType,
     ProjectNominalType, TypeKind, VariantPayloadType,
@@ -377,156 +375,6 @@ impl TypeKind {
             )),
             other => other.clone(),
         }
-    }
-
-    /// Applies issuer-backed effect bindings to every nested function row.
-    /// This projection does not reinterpret caller-owned free type/constant
-    /// declarations as slots in a callee template.
-    pub(crate) fn substitute_effect_rows(
-        &self,
-        substitutions: &EffectSubstitution,
-    ) -> Result<Self, EffectRowError> {
-        let recurse = |ty: &Self| ty.substitute_effect_rows(substitutions);
-        Ok(match self {
-            Self::ProjectNominal(nominal) => Self::ProjectNominal(ProjectNominalType::new(
-                nominal.declaration().clone(),
-                nominal
-                    .arguments()
-                    .iter()
-                    .map(recurse)
-                    .collect::<Result<Vec<_>, _>>()?,
-            )),
-            Self::AcceptedNominal(nominal) => Self::AcceptedNominal(AcceptedNominalType::new(
-                nominal.declaration().clone(),
-                nominal
-                    .arguments()
-                    .iter()
-                    .map(recurse)
-                    .collect::<Result<Vec<_>, _>>()?,
-            )),
-            Self::OpenNominal(nominal) => Self::OpenNominal(OpenNominalType::new(
-                nominal.rule().clone(),
-                nominal.path().clone(),
-                nominal
-                    .arguments()
-                    .iter()
-                    .map(recurse)
-                    .collect::<Result<Vec<_>, _>>()?,
-            )),
-            Self::Range(inner) => Self::Range(Box::new(recurse(inner)?)),
-            Self::Probe(inner) => Self::Probe(Box::new(recurse(inner)?)),
-            Self::Vec(inner) => Self::Vec(Box::new(recurse(inner)?)),
-            Self::DataShape(inner) => Self::DataShape(Box::new(recurse(inner)?)),
-            Self::Slice(inner) => Self::Slice(Box::new(recurse(inner)?)),
-            Self::Seq(inner) => Self::Seq(Box::new(recurse(inner)?)),
-            Self::Need(inner) => Self::Need(Box::new(recurse(inner)?)),
-            Self::Option(inner) => Self::Option(Box::new(recurse(inner)?)),
-            Self::SlotRef(inner) => Self::SlotRef(Box::new(recurse(inner)?)),
-            Self::Handle {
-                item,
-                lifetime,
-                state,
-                must_drop,
-            } => Self::Handle {
-                item: Box::new(recurse(item)?),
-                lifetime: lifetime.clone(),
-                state: *state,
-                must_drop: *must_drop,
-            },
-            Self::ThreadHandle(inner) => Self::ThreadHandle(Box::new(recurse(inner)?)),
-            Self::Shared(inner) => Self::Shared(Box::new(recurse(inner)?)),
-            Self::DialogueLine(inner) => Self::DialogueLine(Box::new(recurse(inner)?)),
-            Self::MetaType(inner) => Self::MetaType(Box::new(recurse(inner)?)),
-            Self::FixedVector(vector) => Self::FixedVector(super::FixedVectorType::new(
-                vector.dimensions(),
-                recurse(vector.component())?,
-            )),
-            Self::BorrowRef {
-                kind,
-                lifetime,
-                inner,
-            } => Self::BorrowRef {
-                kind: *kind,
-                lifetime: lifetime.clone(),
-                inner: Box::new(recurse(inner)?),
-            },
-            Self::IteratorState { family, item } => Self::IteratorState {
-                family: *family,
-                item: Box::new(recurse(item)?),
-            },
-            Self::Array { item, len } => Self::Array {
-                item: Box::new(recurse(item)?),
-                len: len.clone(),
-            },
-            Self::Ref(entity) => Self::Ref(EntityType::new(
-                entity.kind().clone(),
-                entity.value().map(recurse).transpose()?,
-            )),
-            Self::Map { kind, key, value } => Self::Map {
-                kind: *kind,
-                key: Box::new(recurse(key)?),
-                value: Box::new(recurse(value)?),
-            },
-            Self::Traversal { source, mapping } => Self::Traversal {
-                source: Box::new(recurse(source)?),
-                mapping: Box::new(recurse(mapping)?),
-            },
-            Self::Stream { item, error } => Self::Stream {
-                item: Box::new(recurse(item)?),
-                error: Box::new(recurse(error)?),
-            },
-            Self::Parser { item, error } => Self::Parser {
-                item: Box::new(recurse(item)?),
-                error: Box::new(recurse(error)?),
-            },
-            Self::Result { ok, error } => Self::Result {
-                ok: Box::new(recurse(ok)?),
-                error: Box::new(recurse(error)?),
-            },
-            Self::Function {
-                binder,
-                predicate,
-                params,
-                return_type,
-                effects,
-            } => {
-                let effects = match effects.resolve_partial(substitutions) {
-                    Ok(effects) => effects,
-                    // Structural type projection cannot resolve an unknown
-                    // source effect row. Preserve that authority as unknown;
-                    // only effect constraints or a concrete consumer may
-                    // require it to close.
-                    Err(EffectRowError::UnknownRow) => crate::effect_row::EffectRow::unknown(),
-                    Err(error) => return Err(error),
-                };
-                Self::function_with_contract(
-                    *binder,
-                    substitutions.resolve_predicate(predicate)?,
-                    params.iter().map(recurse).collect::<Result<Vec<_>, _>>()?,
-                    recurse(return_type)?,
-                    effects,
-                )
-            }
-            Self::Projection {
-                subject,
-                trait_name,
-                assoc,
-            } => Self::Projection {
-                subject: Box::new(recurse(subject)?),
-                trait_name: trait_name.clone(),
-                assoc: assoc.clone(),
-            },
-            Self::Tuple(items) => {
-                Self::Tuple(items.iter().map(recurse).collect::<Result<Vec<_>, _>>()?)
-            }
-            Self::Choice(items) => {
-                Self::Choice(items.iter().map(recurse).collect::<Result<Vec<_>, _>>()?)
-            }
-            Self::VariantPayload(payload) => {
-                Self::VariantPayload(Box::new(payload.try_map(recurse)?))
-            }
-            other => other.clone(),
-        })
     }
 
     fn substitute_nominal_type_parameters(
@@ -961,30 +809,6 @@ mod tests {
                 error: Box::new(TypeKind::generic_parameter(untouched)),
             }
         );
-    }
-
-    #[test]
-    fn structural_effect_substitution_preserves_unknown_rows() {
-        use crate::effect_row::{EffectRow, EffectSubstitution};
-
-        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(71));
-        let variable: crate::types::GenericEffectReference =
-            crate::types::GenericEffectParameterId::new(owner, 0).into();
-        let function = TypeKind::function_with_effects(
-            [],
-            TypeKind::I64,
-            EffectRow::open(crate::effects::EffectSet::new(), variable.clone()),
-        );
-        let substitutions = EffectSubstitution::from_rows([(variable, EffectRow::unknown())]);
-
-        let projected = function
-            .substitute_effect_rows(&substitutions)
-            .expect("unknown effect authority is carried through structural substitution");
-        let TypeKind::Function { effects, .. } = projected else {
-            panic!("substituted type remains a function")
-        };
-        assert!(!effects.is_known());
-        assert!(!effects.is_empty());
     }
 
     #[test]

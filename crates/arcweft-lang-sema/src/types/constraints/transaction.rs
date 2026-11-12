@@ -8,15 +8,15 @@ use std::{
     sync::Arc,
 };
 
-use crate::effect_row::EffectSubstitution;
-
 use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
 use super::application::{
     ConstraintApplicationId, ConstraintApplicationInventory, ConstraintApplicationScope,
 };
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::hints::SourceProbeTerm;
-use super::normalization::{project_type, validate_selected_call_self};
+use super::normalization::{
+    ConstraintClosedEffects, project_closed_type, project_type, validate_selected_call_self,
+};
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
     ConstraintClosurePolicy, ConstraintDomain, ExpectedHint, InheritedSolutionInvariant,
@@ -27,7 +27,7 @@ use super::{
     TypeConstraintFailure, TypeConstraintFailureInvariant, TypeConstraintInvariant,
     TypeConstraintProjectionClosure, TypeConstraintProjectionInvariant, TypeConstraintRejection,
     TypeConstraintSolution, TypeConstraintSourceProtocolInvariant, relate_selected_call, seal_path,
-    seal_type, validate_type,
+    validate_type,
 };
 use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
@@ -90,14 +90,14 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         })
     }
 
-    pub(super) fn validate_completed<A: TypeConstraintAccounting>(
+    pub(super) fn validate_completed<A: TypeConstraintAccounting, L>(
         &self,
-        view: super::normalization::ConstraintProjectionView<'_, D>,
-        effect_substitution: &EffectSubstitution,
+        branch: &ConstraintInferenceBranch<D, L>,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         context.with_original_scope(self.scope().clone(), |context| {
-            self.validate_in_scope(view, effect_substitution, context)
+            self.validate_in_scope(branch, effects, context)
         })
     }
 
@@ -105,10 +105,10 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         self.pattern.scope()
     }
 
-    fn validate_in_scope<A: TypeConstraintAccounting>(
+    fn validate_in_scope<A: TypeConstraintAccounting, L>(
         &self,
-        view: super::normalization::ConstraintProjectionView<'_, D>,
-        effect_substitution: &EffectSubstitution,
+        branch: &ConstraintInferenceBranch<D, L>,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         let pattern = self
@@ -116,32 +116,33 @@ impl<D: ConstraintDomain> PendingEquation<D> {
             .as_ref()
             .unwrap_or(&self.pattern)
             .value();
-        let project = |value, context: &mut TypeConstraintContext<'_, A, D>| {
-            seal_type(value, view, &mut BTreeSet::new(), context)?
-                .substitute_effect_rows(effect_substitution)
-                .map_err(|_error| {
-                    super::effect_invariant(
-                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                        None,
-                    )
-                })
+        let project = |value: &TypeKind, context: &mut TypeConstraintContext<'_, A, D>| {
+            project_closed_type(
+                value,
+                branch,
+                ConstraintClosurePolicy::Hint,
+                effects,
+                context,
+            )
         };
         let pattern = project(pattern, context)?;
-        let actual = if self.timing == ConstraintEquationTiming::InferredEffectResult {
-            let annotation = project_type(
-                self.actual.value(),
-                view,
-                ConstraintClosurePolicy::ResultAnnotation,
-                context,
-            )?
-            .value;
-            let completed = annotation
-                .binding_type_with_inferred_effects(&pattern)
-                .ok_or(TypeConstraintRejection::Mismatch)?;
-            project(&completed, context)?
-        } else {
-            project(self.actual.value(), context)?
-        };
+        let actual = context.with_original_scope(self.actual.scope().clone(), |context| {
+            if self.timing == ConstraintEquationTiming::InferredEffectResult {
+                let annotation = project_type(
+                    self.actual.value(),
+                    branch.projection_view(),
+                    ConstraintClosurePolicy::ResultAnnotation,
+                    context,
+                )?
+                .value;
+                let completed = annotation
+                    .binding_type_with_inferred_effects(&pattern)
+                    .ok_or(TypeConstraintRejection::Mismatch)?;
+                project(&completed, context)
+            } else {
+                project(self.actual.value(), context)
+            }
+        })?;
         let (expected, actual) = match self.direction {
             ConstraintAcceptance::PatternAcceptsActual => (&pattern, &actual),
             ConstraintAcceptance::ActualAcceptsPattern => (&actual, &pattern),
@@ -2308,7 +2309,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         ensure_unique_sources(path)?;
         let effects = super::normalization::ConstraintClosedEffects::for_path(path, context)?;
         close_source_rows(path, &effects, context)?;
-        Self::validate_completed_equations(path, &effects.completion().substitution, context)?;
+        Self::validate_completed_equations(path, &effects, context)?;
         context.validate_type_and_const_completion(path)?;
         let selected_domain = path
             .applications
@@ -2327,16 +2328,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let solution = Arc::new(TypeConstraintSolution::complete_application_with_effects(
                 path,
                 application,
-                effects.completion(),
+                &effects,
                 context,
             )?);
-            let projections = Self::finish_projections(
-                path,
-                application,
-                &solution,
-                &effects.completion().substitution,
-                context,
-            )?;
+            let projections =
+                Self::finish_projections(path, application, &solution, &effects, context)?;
             completed.insert(
                 domain,
                 super::CompletedConstraintApplication::new(solution, projections),
@@ -2360,11 +2356,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     fn validate_completed_equations<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
-        effects: &EffectSubstitution,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         for equation in &path.equations {
-            equation.validate_completed(path.projection_view(), effects, context)?;
+            equation.validate_completed(path, effects, context)?;
         }
         Ok(())
     }
@@ -2373,7 +2369,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         path: &ConstraintPath<D>,
         application: ConstraintApplicationId,
         solution: &TypeConstraintSolution,
-        effect_substitution: &EffectSubstitution,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         Box<[super::KeyedConstraintProjection<D::Application, D::Projection>]>,
@@ -2400,16 +2396,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let opened = context
                 .open_template_type(&request.value, path, application)
                 .map_err(projection_error)?;
-            let value = project_type(&opened, path.projection_view(), policy, context)
-                .map_err(projection_error)?
-                .value
-                .substitute_effect_rows(effect_substitution)
-                .map_err(|_error| {
-                    super::effect_invariant(
-                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                        None,
-                    )
-                })?;
+            let value = project_closed_type(&opened, path, policy, effects, context)
+                .map_err(projection_error)?;
             if policy != ConstraintClosurePolicy::ProjectionFuture {
                 validate_selected_call_self(&value, context).map_err(projection_error)?;
             }
@@ -2418,15 +2406,16 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .as_ref()
                 .map(|input| {
                     context.with_original_scope(input.scope().clone(), |context| {
-                        let projected = project_type(
+                        let projected = project_closed_type(
                             input.value(),
-                            path.projection_view(),
+                            path,
                             ConstraintClosurePolicy::ProjectionClosed,
+                            effects,
                             context,
                         )
                         .map_err(projection_error)?;
                         solution
-                            .reify_projection_input(&projected.value, path, application, context)
+                            .reify_projection_input(&projected, path, application, context)
                             .map_err(projection_error)
                     })
                 })

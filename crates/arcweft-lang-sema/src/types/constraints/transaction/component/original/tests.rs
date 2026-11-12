@@ -188,7 +188,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
             Some(&ArrayLength::Const(7))
         );
     }
-    assert!(solved.effects.predicate.is_unconstrained());
+    assert!(solved.effects.completion().predicate.is_unconstrained());
     let ValueDefinition::Constraint { frontiers, .. } =
         &forest.original.value(&first).unwrap().definition
     else {
@@ -651,9 +651,12 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
         .as_ref()
         .ok()
         .expect("joint effect inference is principal")[0];
-    assert_eq!(solution.effects.substitution.get(&effects[0]), Some(&log));
     assert_eq!(
-        solution.effects.substitution.get(&effects[1]),
+        solution.effects.completion().substitution.get(&effects[0]),
+        Some(&log)
+    );
+    assert_eq!(
+        solution.effects.completion().substitution.get(&effects[1]),
         Some(&EffectRow::closed(EffectSet::new()))
     );
     let ValueDefinition::Constraint { frontiers, .. } =

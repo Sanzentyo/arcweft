@@ -99,12 +99,34 @@ where
     D: ConstraintDomain,
 {
     effects.require_path(path)?;
+    project_closed_operand(
+        input,
+        path,
+        ConstraintClosurePolicy::ProjectionClosed,
+        effects,
+        context,
+    )
+}
+
+/// Retain the exact operand's derivation while closing it under this branch's C.
+pub(in crate::types) fn project_closed_operand<'ty, A, D, L>(
+    input: ConstraintOperandView<'ty, D>,
+    branch: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
+    policy: ConstraintClosurePolicy,
+    effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<ConstraintOperand<D>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    effects.require_branch(branch)?;
     let scope = input.lexical_scope().as_ref().clone();
     context.with_original_scope(scope, |context| {
         project_type_fold::<A, D, RetainOrigins>(
             input,
-            path.projection_view(),
-            ConstraintClosurePolicy::ProjectionClosed,
+            branch.projection_view(),
+            policy,
             context,
             &mut BTreeSet::new(),
             &mut BTreeSet::new(),
@@ -112,6 +134,31 @@ where
         )
         .map(|value| value.into_operand())
     })
+}
+
+/// Read-only closure uses the same scoped header substitution as retained
+/// operands. Its raw result cannot acquire provenance or Free authorization.
+pub(in crate::types::constraints) fn project_closed_type<A, D, L>(
+    ty: &TypeKind,
+    branch: &super::super::transaction::ConstraintInferenceBranch<D, L>,
+    policy: ConstraintClosurePolicy,
+    effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<TypeKind, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    effects.require_branch(branch)?;
+    project_type_fold::<A, D, InspectValues>(
+        ty,
+        branch.projection_view(),
+        policy,
+        context,
+        &mut BTreeSet::new(),
+        &mut BTreeSet::new(),
+        &ConstraintOperandEffects::Closed(std::sync::Arc::clone(effects)),
+    )
 }
 
 pub(super) fn seal_const_operand<'ty, A, D>(
@@ -149,7 +196,15 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    project_type_fold::<A, D, InspectValues>(ty, view, policy, context, visiting, remaining, &())
+    project_type_fold::<A, D, InspectValues>(
+        ty,
+        view,
+        policy,
+        context,
+        visiting,
+        remaining,
+        &ConstraintOperandEffects::Original,
+    )
 }
 fn project_type_fold<'ty, A, D, M>(
     ty: M::TypeInput,
@@ -362,10 +417,13 @@ where
     D: ConstraintDomain,
     M: ProjectionMode<'ty, D>,
 {
+    // Headers are expressed inside their actual local binder. Both output
+    // modes rebuild there, and restore the enclosing scope even on failure.
+    let result = M::rebuild(seed, children, length, effects, context);
     if let Some(enclosing) = enclosing {
         context.restore_binder_scope(enclosing);
     }
-    M::rebuild(seed, children, length, effects, context)
+    result
 }
 fn allows_unbound_type(
     policy: ConstraintClosurePolicy,

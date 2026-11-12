@@ -227,3 +227,224 @@ fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_resu
         "an observed value remains a value even when its inferred type follows another result"
     );
 }
+
+#[test]
+fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
+    use crate::effect_row::EffectPredicate;
+    use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let outer = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
+    let ambient_scope = context.capture_lexical_scope().unwrap();
+    let (mut path, keys) = path(&mut context);
+    path.effects
+        .constrain_subset(
+            &EffectRow::open(
+                EffectSet::new(),
+                context.lexical_scope().bound_effect(0, 0).unwrap(),
+            ),
+            &EffectRow::open(EffectSet::new(), keys[0].clone()),
+            &mut context,
+        )
+        .unwrap();
+    let local = GenericBinder::new(0, 0, 1);
+    let first = context.lexical_scope().with_binder(local);
+    let second = first.with_binder(local);
+    let predicate = EffectFormula::variable(keys[0].clone(), &mut context)
+        .unwrap()
+        .subset(
+            &EffectFormula::variable(second.bound_effect(0, 0).unwrap(), &mut context).unwrap(),
+            &mut context,
+        )
+        .unwrap();
+    let input = TypeKind::function_with_contract(
+        local,
+        EffectPredicate::unconstrained(),
+        [],
+        TypeKind::function_with_contract(
+            local,
+            predicate,
+            [],
+            TypeKind::I64,
+            EffectRow::open(EffectSet::new(), keys[0].clone()),
+        ),
+        EffectRow::open(EffectSet::new(), keys[0].clone()),
+    );
+    let completion = ConstraintClosedEffects::for_branch(&path, &mut context).unwrap();
+    let closed = project_closed_type(
+        &input,
+        &path,
+        ConstraintClosurePolicy::ProjectionClosed,
+        &completion,
+        &mut context,
+    )
+    .unwrap();
+    let TypeKind::Function {
+        return_type,
+        effects,
+        ..
+    } = &closed
+    else {
+        panic!("outer function")
+    };
+    assert_eq!(
+        effects,
+        &EffectRow::open(EffectSet::new(), first.bound_effect(1, 0).unwrap())
+    );
+    let TypeKind::Function {
+        effects, predicate, ..
+    } = return_type.as_ref()
+    else {
+        panic!("inner function")
+    };
+    assert_eq!(
+        effects,
+        &EffectRow::open(EffectSet::new(), second.bound_effect(2, 0).unwrap())
+    );
+    let expected = EffectFormula::variable(second.bound_effect(2, 0).unwrap(), &mut context)
+        .unwrap()
+        .subset(
+            &EffectFormula::variable(second.bound_effect(0, 0).unwrap(), &mut context).unwrap(),
+            &mut context,
+        )
+        .unwrap();
+    assert_eq!(predicate, &expected);
+    assert_eq!(context.lexical_frames(), &ambient_scope);
+    context.restore_binder_scope(outer);
+}
+
+#[test]
+fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints() {
+    use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let (path, keys) = path(&mut context);
+    let input = context.fixture_operand(TypeKind::I64);
+    let completion = ConstraintClosedEffects::for_branch(&path, &mut context).unwrap();
+    assert!(matches!(
+        close_type_operand(input.view(), &path, &completion, &mut context),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::OriginalProducer
+        ))
+    ));
+    assert_eq!(
+        project_closed_type(
+            input.value(),
+            &path,
+            ConstraintClosurePolicy::ProjectionClosed,
+            &completion,
+            &mut context
+        )
+        .unwrap(),
+        TypeKind::I64
+    );
+    let mut changed = context.fork_path(&path).unwrap();
+    changed
+        .effects
+        .constrain_subset(
+            &EffectRow::open(EffectSet::new(), keys[0].clone()),
+            &EffectRow::open(EffectSet::new(), keys[1].clone()),
+            &mut context,
+        )
+        .unwrap();
+    assert!(matches!(
+        project_closed_type(
+            input.value(),
+            &changed,
+            ConstraintClosurePolicy::ProjectionClosed,
+            &completion,
+            &mut context
+        ),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::OriginalProducer
+        ))
+    ));
+}
+
+#[test]
+fn future_closure_preserves_the_unknown_source_effect_header() {
+    use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let (path, _) = path(&mut context);
+    let input = TypeKind::function_with_effects([], TypeKind::I64, EffectRow::unknown());
+    let completion = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let projected = project_closed_type(
+        &input,
+        &path,
+        ConstraintClosurePolicy::ProjectionFuture,
+        &completion,
+        &mut context,
+    )
+    .unwrap();
+    let TypeKind::Function { effects, .. } = projected else {
+        panic!("function projection")
+    };
+    assert!(!effects.is_known());
+    assert!(!effects.is_empty());
+}
+
+#[test]
+fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
+    use crate::types::constraints::transaction::{
+        ConstraintEquationId, ConstraintEquationTiming, PendingEquation,
+    };
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let outer = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
+    let (mut path, keys) = path(&mut context);
+    path.effects
+        .constrain_subset(
+            &EffectRow::open(
+                EffectSet::new(),
+                context.lexical_scope().bound_effect(0, 0).unwrap(),
+            ),
+            &EffectRow::open(EffectSet::new(), keys[0].clone()),
+            &mut context,
+        )
+        .unwrap();
+    let local = GenericBinder::new(0, 0, 1);
+    let contents = context.lexical_scope().with_binder(local);
+    let actual = context.fixture_operand(TypeKind::function_with_binder(
+        local,
+        [],
+        TypeKind::I64,
+        EffectRow::open(EffectSet::new(), keys[0].clone()),
+    ));
+    let completion = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    for (depth, accepted) in [(1, true), (0, false)] {
+        let equation = PendingEquation {
+            ordinal: ConstraintEquationId {
+                application: path.root_id(),
+                ordinal: 0,
+            },
+            direction: ConstraintAcceptance::PatternAcceptsActual,
+            pattern: context.fixture_operand(TypeKind::function_with_binder(
+                local,
+                [],
+                TypeKind::I64,
+                EffectRow::open(EffectSet::new(), contents.bound_effect(depth, 0).unwrap()),
+            )),
+            actual: actual.clone(),
+            source_ordinal: None,
+            final_expected: None,
+            timing: ConstraintEquationTiming::Immediate,
+        };
+        let result = equation.validate_completed(&path, &completion, &mut context);
+        if accepted {
+            result.unwrap();
+        } else {
+            assert!(matches!(
+                result,
+                Err(TypeConstraintError::Rejected(
+                    TypeConstraintRejection::Mismatch
+                ))
+            ));
+        }
+    }
+    context.restore_binder_scope(outer);
+}

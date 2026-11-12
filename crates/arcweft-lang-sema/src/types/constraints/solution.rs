@@ -7,7 +7,7 @@
 
 use std::{slice, sync::Arc};
 
-use crate::effect_row::{EffectConstraintCompletion, EffectConstraintEligibility, EffectRow};
+use crate::effect_row::{EffectConstraintEligibility, EffectRow};
 
 use super::super::{
     ArrayLength, GenericConstReference, GenericEffectReference, GenericScope, GenericTypeReference,
@@ -17,7 +17,10 @@ use super::super::{
 #[cfg(test)]
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
 use super::context::{CompletedParameterScope, TypeConstraintAccounting, TypeConstraintContext};
-use super::normalization::{project_const_argument, project_type, validate_selected_call_self};
+use super::normalization::{
+    ConstraintClosedEffects, project_closed_operand, project_const_argument, project_type,
+    validate_selected_call_self,
+};
 use super::{
     ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, TypeConstraintError,
     TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintRejection,
@@ -330,7 +333,7 @@ impl TypeConstraintSolution {
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
-        let effects = path.effects.complete(context)?;
+        let effects = ConstraintClosedEffects::for_path(path, context)?;
         Self::complete_application_with_effects(path, application, &effects, context)
     }
 
@@ -339,7 +342,7 @@ impl TypeConstraintSolution {
     pub(super) fn complete_application_with_effects<A, D>(
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
-        effects: &EffectConstraintCompletion,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
@@ -449,7 +452,7 @@ impl TypeConstraintSolution {
             .into_iter()
             .map(|(key, value)| (key, context.fixture_operand(value)))
             .collect();
-        let effects = path.effects.complete(context)?;
+        let effects = ConstraintClosedEffects::for_path(path, context)?;
         Self::seal_application(
             path,
             application,
@@ -462,7 +465,7 @@ impl TypeConstraintSolution {
     fn seal_application<A, D>(
         path: &ConstraintPath<D>,
         application: &super::application::ConstraintApplicationScope<D>,
-        completed_effects: &EffectConstraintCompletion,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         input: CompletedSolutionInput,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
@@ -470,6 +473,8 @@ impl TypeConstraintSolution {
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
+        effects.require_path(path)?;
+        let completed_effects = effects.completion();
         let source_bindings = path
             .bindings
             .iter()
@@ -547,25 +552,26 @@ impl TypeConstraintSolution {
                 ));
             }
             let reified = context.with_original_scope(owner, |context| {
-                let projected = project_type(
-                    value.value(),
-                    path.projection_view(),
+                let projected = project_closed_operand(
+                    value.view(),
+                    path,
                     ConstraintClosurePolicy::SolutionCompletion,
+                    effects,
                     context,
                 )
                 .map_err(|error| {
                     map_completed_canonical_error(error, parameter.clone().into(), input)
                 })?;
-                if input.requires_canonical_claim() && &projected.value != value.value() {
+                if input.requires_canonical_claim() && projected.value() != value.value() {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::NonCanonical,
                         Some(parameter.clone().into()),
                     ));
                 }
-                validate_selected_call_self(&projected.value, context).map_err(|error| {
+                validate_selected_call_self(projected.value(), context).map_err(|error| {
                     map_completed_self_error(error, parameter.clone().into(), input)
                 })?;
-                generic_context.reify_type(&projected.value, path, application, context)
+                generic_context.reify_type(projected.value(), path, application, context)
             })?;
             bindings.push((declaration, reified));
         }

@@ -11,11 +11,11 @@ use crate::types::constraints::transaction::{
     ConstraintConstOperandView, ConstraintInferenceBranch, ConstraintOperand, ConstraintOperandView,
 };
 use crate::types::constraints::{
-    ChoiceDerivationStep, ChoiceForkRole, ConstraintAliasResolution, ConstraintDomain,
-    TypeConstraintAbort, TypeConstraintConstEligibility, TypeConstraintError,
-    TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintRejection,
-    TypeConstraintShape, TypeConstraintSourceProtocolInvariant, resolve_const_alias,
-    resolve_type_alias, seal_path, seal_type, validate_type,
+    ChoiceDerivationStep, ChoiceForkRole, ConstraintAliasResolution, ConstraintClosedEffects,
+    ConstraintClosurePolicy, ConstraintDomain, TypeConstraintAbort, TypeConstraintConstEligibility,
+    TypeConstraintError, TypeConstraintInvariant, TypeConstraintParameterEligibility,
+    TypeConstraintRejection, TypeConstraintShape, TypeConstraintSourceProtocolInvariant,
+    project_closed_operand, resolve_const_alias, resolve_type_alias, seal_path, validate_type,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -227,43 +227,33 @@ where
         return Ok(Some(path));
     }
     let path = seal_path(path, context)?;
-    let effects = path.effects.substitution(context)?;
-    let projected_pattern = seal_type(
-        pattern.value(),
-        path.projection_view(),
-        &mut BTreeSet::new(),
+    let effects = ConstraintClosedEffects::for_branch(&path, context)?;
+    let projected_pattern = project_closed_operand(
+        pattern.clone(),
+        &path,
+        ConstraintClosurePolicy::Hint,
+        &effects,
         context,
-    )?
-    .substitute_effect_rows(&effects)
-    .map_err(|_| {
-        crate::types::constraints::effect_invariant(
-            crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-            None,
-        )
-    })?;
-    let projected_actual = seal_type(
-        actual.value(),
-        path.projection_view(),
-        &mut BTreeSet::new(),
+    )?;
+    let projected_actual = project_closed_operand(
+        actual.clone(),
+        &path,
+        ConstraintClosurePolicy::Hint,
+        &effects,
         context,
-    )?
-    .substitute_effect_rows(&effects)
-    .map_err(|_| {
-        crate::types::constraints::effect_invariant(
-            crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-            None,
-        )
-    })?;
+    )?;
+    let projected_pattern = projected_pattern.value();
+    let projected_actual = projected_actual.value();
     let compatible = match relation {
         ConstraintRelation::Equal => crate::types::constraints::completed_types_equal(
-            &projected_pattern,
-            &projected_actual,
+            projected_pattern,
+            projected_actual,
             context,
         ),
         ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
             projected_pattern
                 .accepts_with(
-                    &projected_actual,
+                    projected_actual,
                     TypeCompatibilityPolicy::SelectedCall,
                     context,
                 )
@@ -271,7 +261,7 @@ where
         }
         ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => projected_actual
             .accepts_with(
-                &projected_pattern,
+                projected_pattern,
                 TypeCompatibilityPolicy::SelectedCall,
                 context,
             )
