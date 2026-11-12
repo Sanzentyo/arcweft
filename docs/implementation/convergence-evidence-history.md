@@ -17021,3 +17021,21 @@ ConstraintApplicationScopeに元OriginalProducerContextを必須で保持し、r
 依存境界の判断を記録する。source headerのrigid inventoryとimport leaseだけでは、実際に選ばれたchild resultから受け取ったFree captureと、無関係なadmitted applicationから手書きした同じFree referenceを区別できない。元Γへのchild captureの一括追加やheader whitelistは採用しない。exact source/value/result portとtemplateから発行したopaque operand evidenceを、equation・binding・alias・共有fold・元product replay・completionまで値と一緒に保持する。support集合は証拠から導いたcacheに限り、任意の集合を型へ貼るconstructorやbinding別side tableを作らない。既存のchild capture positiveは入力を実result/value portへ移行し、出力・read-only・continuationのassertionを維持する。readonlyの設計相談は検証実行として数えない。今回のowner contextはこの基盤であり、ownerごとのFree検査、条件付きMGU、適格性／rank、Fnの局所∀、frontend全体のprepared value接続・body一回準備・sealは未完了のまま区別する。既受入のGeneric Match、caller-bound recursion、同group prefixを戻さない。
 
 [検証原本](acceptance-evidence/task-application-source-context.raw.zip)は40 entry、展開時17512592 bytes、ZIP 1627821 bytes、SHA-256 `8931800afa2c79332b36fb24afe42e34b1a637f6280af46197d52217b9be5557`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusだけを更新し、既存履歴のbyte prefix・SHA・実測を保持した。
+
+## Scoped operands in original equations
+
+2026-11-13。Source `aec57cbc8ceada7599c8bc82c872135496d9ee16`、tree `8ace43e13de0978a501a42094c829b133c4e059e`、親 `367d6b1c7c612d594f36d6ee329b3ac244069da9` を既存mainへnon-forced pushし、origin/mainのcommit・tree・変更6 blobと固定入力を照合した。tracked差分0件から本記録を更新し、未追跡 `%SystemDrive%/` を保持した。
+
+PendingEquationのpattern・actual・final_expectedをConstraintOperandへ移した。型と実scopeに加え、元OriginalProducerContext、実template owner、exact source receipt、admitted owner上で一意に解決したresult requestを保持する。result proofは公開keyだけで再構成せず、検証した実requestとownerのArcを保持する。source projectionの合成と関数値の特殊化は実入力へのderivation edgeを保持する。転送とclosureは値の変換と一緒に同じ出所を引き継ぎ、元productのequation replayも同じcarrierを使う。重複したequation単独のscope fieldを削除した。任意のFree集合を貼るconstructorやbinding別capture tableは作っていない。
+
+全featureのSema lib／testsは1,619件中1,613 PASS／6 FAIL／0 SKIP（71.516秒）。全選択IDと終端IDが一致、重複0。既知6件のIDと実診断（5 ExpressionCycle、1 PendingCallableEffectProjection）は前回と一致する。追加2件は、source receiptと元context、選択したchild result portが、source closure・final expectedの生成・実frameを持つ別scopeへの転送を経ても残ることを確認する。既存のshared alias・read-only child capture・256 probeと1 replayの4,096上限も同じ全件runで通過した。Semaのlocked・全target・全feature Clippyとworkspace fmt checkは終了0、警告を保持した。各実行の前後と公開時に6 pathのbyte pinを照合した。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+開発中のcheckはresult-useでInvariantからFailureへの暗黙変換がなくE0277になったため、TypeConstraintErrorを経由させて修正した。開発用の選択100件は100 PASS／0 FAIL（0.863秒）、filter外1,495件は未実行。その実行中にもcarrierを編集しており、この結果を最終入力の固定検証とは扱わない。上記の別pinを持つ最終全件・品質検証で確認した。最初のcheckと開発runの原本も保持する。
+
+新しいoperand ownerは241物理LOC、transactionは2,685（基点2,648、増加37）、result_portは258（基点236、増加22）、original productは569（増加0）、applicationは892（増加11）、責任testは1,450（増加143）。全byte・hash・分類は原本に保持する。operandの状態と出所の変換を専用ownerへ置き、transactionは候補全体の順序・source状態遷移とclosureを引き続き所有する。大きなtransactionの物理分割だけの公開API拡張は行わない。Cargo edge、公開export、unsafe、I/O、version、budgetは不変。privateなcarrier保持の変更で全Semaを実行し、22 packageのresolved closureは不変。21 consumerの直近2,507 PASS／2 FAIL／1 SKIPとworkspace全件の品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の実測を保持し、新入力の再実行や合算とはしない。Wasm・Tier 2・新しいbody Native／AWBCの受入は主張しない。
+
+このcarrierは式における出所保持の基盤であり、raw source callbackのactualを実checked/prepared value portへ結ぶ移行、binding／alias・共有fold・capture sealの移行とownerごとのFree検査は未完了。条件付きMGU・適格性／rank、Fnの局所∀、body一回準備も未完了として区別する。既受入のGeneric Match、caller-bound recursion、同group prefixは維持する。
+
+記録の訂正: 前原本task-application-source-context.raw.zipのmanifestにあるrun commandには、実行していない `--no-tests fail` が余分に含まれていた。同梱のapplication-source-context.final-validation.jsonのArgumentsを実コマンドの正とする。実選択1,617件・全終端ID照合と実結果は変更しない。同原本のapplication/tests.rsのClassificationはtestが正しく、productionという記載を訂正する。byte・物理LOC・テスト結果はそのまま履歴として保持し、凍結原本を上書きしない。今回のmanifestは実Argumentsに合わせ、test fileの分類も修正した。
+
+[検証原本](acceptance-evidence/task-equation-operand-context.raw.zip)は23 entry、展開時9025099 bytes、ZIP 842155 bytes、SHA-256 `4ecb0865ba6ba48d87aff1b90c5f7b1021161e59b4486471cb7e0bc1ae3a644e`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusに集約し、既存履歴のbyte prefix・SHA・実測を保持した。
