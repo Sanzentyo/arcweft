@@ -19,7 +19,7 @@ use crate::types::constraints::{
 };
 use crate::types::{DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId};
 
-struct ApplicationSourceDomain;
+pub(super) struct ApplicationSourceDomain;
 
 impl ConstraintDomain for ApplicationSourceDomain {
     type Application = u32;

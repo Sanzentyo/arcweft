@@ -1,12 +1,13 @@
 //! Affine transformation of a pending result on the path that produced it.
 
 use super::{
-    Arc, ConstraintClosurePolicy, ConstraintDomain, ConstraintSourceReceipt, NestedConstraintPath,
-    PendingChildAlternative, PendingChildConstraint, ProjectionRequest, SourceProbeTerm,
-    TypeConstraintAccounting, TypeConstraintContext, TypeConstraintError, TypeConstraintFailure,
+    Arc, ConstraintDomain, ConstraintSourceReceipt, NestedConstraintPath, PendingChildAlternative,
+    PendingChildConstraint, ProjectionRequest, SourceProbeTerm, TypeConstraintAccounting,
+    TypeConstraintContext, TypeConstraintError, TypeConstraintFailure,
     TypeConstraintProjectionClosure, TypeConstraintSourceProtocolInvariant,
-    TypeConstraintTransaction, TypeKind, project_type, protocol_error, resolve_probe_term,
+    TypeConstraintTransaction, TypeKind, protocol_error, resolve_probe_term,
 };
+use crate::types::constraints::normalization::seal_type_operand;
 
 /// The head premise and path are inseparable. A consumer can admit a value-use
 /// application without sealing, re-solving, or replaying its source expression.
@@ -36,18 +37,17 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                     &alternative.path,
                     context,
                 )?;
-                let source = project_type(
-                    &opened,
-                    alternative.path.projection_view(),
-                    ConstraintClosurePolicy::Hint,
-                    context,
-                )?
-                .value;
-                let source = Arc::new(super::ConstraintOperand::result(
-                    source,
+                let source = super::ConstraintOperand::result(
+                    opened,
                     Arc::new(context.capture_lexical_scope()?),
                     result.into_result()?,
-                ));
+                );
+                let source = Arc::new(seal_type_operand(
+                    source.view(),
+                    alternative.path.projection_view(),
+                    &mut std::collections::BTreeSet::new(),
+                    context,
+                )?);
                 Ok(PendingResultConstraint {
                     receipt: self.receipt.clone(),
                     alternative,
@@ -170,20 +170,16 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let (opened, resolved) =
                 resolve_probe_term(SourceProbeTerm::Result(origin.clone()), &path, context)?;
             let resolved = resolved.into_result()?;
-            let source = project_type(
-                &opened,
-                path.projection_view(),
-                ConstraintClosurePolicy::Hint,
-                context,
-            )?
-            .value;
             let scope = Arc::new(context.capture_lexical_scope()?);
-            let source = Arc::new(super::ConstraintOperand::result(
-                source,
-                Arc::clone(&scope),
-                resolved,
-            ));
-            let (pattern, template_owner) = match prepare(source.value(), context)? {
+            let original_source =
+                super::ConstraintOperand::result(opened, Arc::clone(&scope), resolved);
+            let source = Arc::new(seal_type_operand(
+                original_source.view(),
+                path.projection_view(),
+                &mut std::collections::BTreeSet::new(),
+                context,
+            )?);
+            let pattern = match prepare(source.value(), context)? {
                 Some((application, parameters, template)) => {
                     let scope = context.application_scope(
                         application,
@@ -201,23 +197,17 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         source: Some(origin.clone()),
                         input: Some(Arc::clone(&source)),
                     }));
-                    (
-                        context.open_template_type(&template, &path, application)?,
-                        Some(Arc::clone(
-                            path.applications
-                                .require_application_owner(application)
-                                .map_err(TypeConstraintError::from)?,
-                        )),
+                    let pattern = context.open_template_type(&template, &path, application)?;
+                    super::ConstraintOperand::template(
+                        pattern,
+                        original_source.shared_scope(),
+                        path.applications
+                            .require_application_owner(application)
+                            .map_err(TypeConstraintError::from)?,
                     )
+                    .derived_from(&source)
                 }
-                None => (opened, None),
-            };
-            let pattern = match template_owner {
-                Some(owner) => {
-                    super::ConstraintOperand::template(pattern, Arc::clone(&scope), &owner)
-                        .derived_from(&source)
-                }
-                None => source.projected(pattern),
+                None => original_source,
             };
             let timing = super::ConstraintEquationTiming::ResultContext.for_actual(
                 expected,

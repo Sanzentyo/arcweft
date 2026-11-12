@@ -63,7 +63,7 @@ enum ProjectionFrame<'ty, D: ConstraintDomain, M: ProjectionMode<'ty, D>> {
     },
 }
 
-pub(super) fn seal_type_operand<'ty, A, D>(
+pub(in crate::types::constraints) fn seal_type_operand<'ty, A, D>(
     input: ConstraintOperandView<'ty, D>,
     view: ConstraintProjectionView<'ty, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,

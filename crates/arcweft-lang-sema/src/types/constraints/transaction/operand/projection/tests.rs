@@ -9,6 +9,7 @@ use std::sync::atomic::AtomicBool;
 
 mod bindings;
 mod normalization;
+mod result_uses;
 
 type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
