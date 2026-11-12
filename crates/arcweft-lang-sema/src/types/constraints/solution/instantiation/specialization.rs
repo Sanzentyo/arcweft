@@ -27,7 +27,7 @@ impl TypeConstraintSolution {
         control: &mut C,
     ) -> Result<ClosedTypeInstantiation, TypeProjectionError<C::Error>> {
         control.check().map_err(TypeProjectionError::Control)?;
-        if arguments.template_scope != *self.residual.scope() {
+        if arguments.template_scope != *self.context.residual.scope() {
             return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
         }
         let environment = arguments.with_enclosing_parameters(enclosing, control)?;
@@ -58,16 +58,16 @@ impl TypeConstraintSolution {
                 row.parameter.clone(),
                 environment.project_type_with_control(
                     &row.value,
-                    self.residual.scope(),
+                    self.context.residual.scope(),
                     control,
                 )?,
             );
         }
-        for (slot, parameter) in (0u16..).zip(self.residual.type_origins()) {
+        for (slot, parameter) in (0u16..).zip(self.context.residual.type_origins()) {
             control
                 .visit_binding()
                 .map_err(TypeProjectionError::Control)?;
-            let reference = self.residual.scope().bound_type(0, slot)?;
+            let reference = self.context.residual.scope().bound_type(0, slot)?;
             let value = environment
                 .instantiate_type_with_control(&TypeKind::GenericParam(reference), control)?;
             if types.insert(parameter.clone(), value).is_some() {
@@ -84,11 +84,11 @@ impl TypeConstraintSolution {
                 environment.instantiate_array_length_with_control(&row.value, control)?,
             );
         }
-        for (slot, parameter) in (0u16..).zip(self.residual.const_origins()) {
+        for (slot, parameter) in (0u16..).zip(self.context.residual.const_origins()) {
             control
                 .visit_binding()
                 .map_err(TypeProjectionError::Control)?;
-            let reference = self.residual.scope().bound_const(0, slot)?;
+            let reference = self.context.residual.scope().bound_const(0, slot)?;
             let value = environment
                 .instantiate_array_length_with_control(&ArrayLength::Generic(reference), control)?;
             if consts.insert(parameter.clone(), value).is_some() {
@@ -107,7 +107,7 @@ impl TypeConstraintSolution {
                 ),
             );
         }
-        for (slot, parameter) in (0u32..).zip(self.residual.effect_origins()) {
+        for (slot, parameter) in (0u32..).zip(self.context.residual.effect_origins()) {
             if effects.contains_key(parameter) {
                 // A future effect row may already contain fixed effects in
                 // addition to its residual variable; the row above owns both.
@@ -116,7 +116,7 @@ impl TypeConstraintSolution {
             control
                 .visit_binding()
                 .map_err(TypeProjectionError::Control)?;
-            let reference = self.residual.scope().bound_effect(0, slot)?;
+            let reference = self.context.residual.scope().bound_effect(0, slot)?;
             effects.insert(
                 parameter.clone(),
                 EffectRow::closed(environment.project_effect_row_with_control(
@@ -157,9 +157,9 @@ impl TypeConstraintSolution {
         if self.template_scope() != &completed.template_scope {
             return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
         }
-        let scope = self.residual.scope();
+        let scope = self.context.residual.scope();
         let bindings = (0u16..)
-            .zip(self.residual.type_origins())
+            .zip(self.context.residual.type_origins())
             .map(|(slot, origin)| {
                 control
                     .visit_binding()
@@ -174,7 +174,7 @@ impl TypeConstraintSolution {
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
         let const_bindings = (0u16..)
-            .zip(self.residual.const_origins())
+            .zip(self.context.residual.const_origins())
             .map(|(slot, origin)| {
                 control
                     .visit_binding()
@@ -189,7 +189,7 @@ impl TypeConstraintSolution {
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
         let effect_bindings = (0u32..)
-            .zip(self.residual.effect_origins())
+            .zip(self.context.residual.effect_origins())
             .map(|(slot, origin)| {
                 control
                     .visit_binding()

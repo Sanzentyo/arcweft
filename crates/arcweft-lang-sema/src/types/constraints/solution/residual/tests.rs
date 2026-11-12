@@ -210,7 +210,7 @@ fn nested_function_binders_preserve_inner_variables_and_bind_future_types_and_le
     ));
     assert!(
         value
-            .semantic_identity_digest_in_scope(solution.residual.scope())
+            .semantic_identity_digest_in_scope(solution.context.value_scope())
             .is_ok()
     );
 }

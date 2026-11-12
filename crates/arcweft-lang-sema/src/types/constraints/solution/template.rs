@@ -43,9 +43,27 @@ impl TypeConstraintSolution {
         ty: &TypeKind,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+        let value = self.apply_contextual_result_template_with_control(ty, control)?;
+        if self.context.ambient.shape().binders().is_empty() {
+            return Ok(value.into_value());
+        }
+        clone_scoped_term_with_control(value.view().value(), &GenericScope::default(), 1, control)
+    }
+
+    /// Generalize the continuation slots only. Ambient frames stay in the
+    /// returned scope until an enclosing instantiation supplies their values.
+    pub(crate) fn apply_contextual_result_template_with_control<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
         self.apply_template_with_control(ty, control)?
             .view()
-            .quantify_with_predicate_and_control(&self.effect_predicate, control)
+            .quantify_suffix_with_predicate_and_control(
+                &self.effect_predicate,
+                self.context.ambient.shape(),
+                control,
+            )
     }
 
     /// Template references name this solution's formal parameters. Replacement
@@ -94,8 +112,12 @@ impl TypeConstraintSolution {
             return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
         }
         let result = ScopedTypeView::sealed(&return_type, &scope)
-            .quantify_with_predicate_and_control(&self.effect_predicate, control)?;
-        let arrow = TypeKind::function_with_effects(params, result, effects);
+            .quantify_suffix_with_predicate_and_control(
+                &self.effect_predicate,
+                self.context.ambient.shape(),
+                control,
+            )?;
+        let arrow = TypeKind::function_with_effects(params, result.into_value(), effects);
         clone_scoped_term_with_control(&arrow, &GenericScope::default(), 1, control)
     }
 
@@ -165,7 +187,7 @@ impl localized::TemplateProjection<'_> {
     fn scopes(&self, under: &GenericScope) -> (GenericScope, GenericScope) {
         scoped_pair(
             self.solution.template_scope(),
-            self.solution.residual.scope(),
+            self.solution.context.value_scope(),
             under,
         )
     }
@@ -176,7 +198,7 @@ impl localized::TemplateProjection<'_> {
         under: &GenericScope,
         control: &mut C,
     ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
-        let residual = self.solution.residual.scope();
+        let residual = self.solution.context.value_scope();
         let template = self.solution.template_scope();
         let (source_scope, target_scope) = self.scopes(under);
         let value = map_term_with_control(
@@ -195,7 +217,7 @@ impl localized::TemplateProjection<'_> {
                         let value = ScopedTypeView::sealed(self.type_value(index), residual);
                         return lift_value(value, target, depth, control);
                     }
-                    if let Some(slot) = self.solution.residual.type_slot(&parameter) {
+                    if let Some(slot) = self.solution.context.residual.type_slot(&parameter) {
                         return Ok(TypeKind::GenericParam(
                             target.bound_type(depth_difference(target, residual)?, slot)?,
                         ));
@@ -226,7 +248,7 @@ impl localized::TemplateProjection<'_> {
         control: &mut C,
     ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
         let template = self.solution.template_scope();
-        let residual = self.solution.residual.scope();
+        let residual = self.solution.context.value_scope();
         map_effects_with_control(row, depth, control, &|reference, control| {
             if let Some(parameter) = reference.template_key(template, source)? {
                 if let Ok(index) = self
@@ -242,7 +264,7 @@ impl localized::TemplateProjection<'_> {
                         control,
                     );
                 }
-                if let Some(slot) = self.solution.residual.effect_slot(&parameter) {
+                if let Some(slot) = self.solution.context.residual.effect_slot(&parameter) {
                     return Ok(EffectRow::open(
                         crate::effects::EffectSet::new(),
                         target.bound_effect(depth_difference(target, residual)?, slot)?,
@@ -296,7 +318,7 @@ impl localized::TemplateProjection<'_> {
             };
         };
         let template = self.solution.template_scope();
-        let residual = self.solution.residual.scope();
+        let residual = self.solution.context.value_scope();
         if let Some(parameter) = reference.template_key(template, source)? {
             if let Ok(index) = self
                 .solution
@@ -305,7 +327,7 @@ impl localized::TemplateProjection<'_> {
             {
                 return lift_length(self.const_value(index), residual, target);
             }
-            if let Some(slot) = self.solution.residual.const_slot(&parameter) {
+            if let Some(slot) = self.solution.context.residual.const_slot(&parameter) {
                 return Ok(ArrayLength::Generic(
                     target.bound_const(depth_difference(target, residual)?, slot)?,
                 ));
@@ -539,19 +561,54 @@ impl ScopedTypeView<'_> {
         incoming_predicate: &EffectPredicate,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+        self.quantify_suffix_with_predicate_and_control(
+            incoming_predicate,
+            &GenericScope::default(),
+            control,
+        )
+        .map(ScopedType::into_value)
+    }
+
+    pub(in crate::types::constraints::solution) fn quantify_suffix_with_predicate_and_control<
+        C: TypeProjectionControl,
+    >(
+        self,
+        incoming_predicate: &EffectPredicate,
+        ambient: &GenericScope,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
         control.check().map_err(TypeProjectionError::Control)?;
-        if self.scope().binders().is_empty() {
-            let mut value = clone_term_with_control(self.value(), 1, control)?;
+        if !self.scope().binders().starts_with(ambient.binders()) {
+            return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
+        }
+        let ambient_count = ambient.binders().len();
+        if self.scope() == ambient {
+            let mut value = clone_scoped_term_with_control(self.value(), ambient, 1, control)?;
             if !incoming_predicate.is_unconstrained() {
-                let TypeKind::Function { predicate, .. } = &mut value else {
-                    return Ok(value);
+                let TypeKind::Function {
+                    binder, predicate, ..
+                } = &mut value
+                else {
+                    return Ok(ScopedType::new(value, ambient.clone()));
                 };
-                *predicate = predicate.and(
-                    incoming_predicate,
-                    &mut EffectProjectionControl { control, depth: 1 },
-                )?;
+                let source = ambient.with_binder(*binder);
+                let lifted =
+                    map_predicate_with_control(incoming_predicate, 1, control, &|reference, _| {
+                        Ok(EffectRow::open(
+                            crate::effects::EffectSet::new(),
+                            lift_effect(
+                                reference,
+                                ambient,
+                                &source,
+                                ambient_count,
+                                depth_difference(&source, ambient)?,
+                            )?,
+                        ))
+                    })?;
+                *predicate =
+                    predicate.and(&lifted, &mut EffectProjectionControl { control, depth: 1 })?;
             }
-            return Ok(value);
+            return Ok(ScopedType::new(value, ambient.clone()));
         }
         let TypeKind::Function {
             binder,
@@ -562,13 +619,13 @@ impl ScopedTypeView<'_> {
         } = self.value()
         else {
             return Err(TypeInstantiationError::Residual {
-                binder: merge_binders(self.scope().binders())?,
+                binder: merge_binders(&self.scope().binders()[ambient_count..])?,
             }
             .into());
         };
         let source = self.scope().with_binder(*binder);
-        let merged = merge_binders(source.binders())?;
-        let target = GenericScope::default().with_binder(merged);
+        let merged = merge_binders(&source.binders()[ambient_count..])?;
+        let target = ambient.with_binder(merged);
         let root_depth = source.binders().len();
         let type_map =
             |reference: &GenericTypeReference, source: &GenericScope, target: &GenericScope| {
@@ -580,6 +637,7 @@ impl ScopedTypeView<'_> {
                     source,
                     target,
                     root_depth,
+                    ambient_count,
                     parameter.depth(),
                     parameter.slot(),
                     GenericParameterKind::Type,
@@ -596,6 +654,7 @@ impl ScopedTypeView<'_> {
                     source,
                     target,
                     root_depth,
+                    ambient_count,
                     parameter.depth(),
                     parameter.slot(),
                     GenericParameterKind::Const,
@@ -618,7 +677,17 @@ impl ScopedTypeView<'_> {
                 (parameter.depth(), parameter.slot())
             } else {
                 let owner = source.binders().len() - 1 - parameter.depth() as usize;
-                let offset = merge_binders(&source.binders()[..owner])?.effects();
+                if owner < ambient_count {
+                    return Ok(EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        target.bound_effect(
+                            u32::try_from(target.binders().len() - 1 - owner)
+                                .map_err(|_| TypeInstantiationError::DepthOverflow)?,
+                            parameter.slot(),
+                        )?,
+                    ));
+                }
+                let offset = merge_binders(&source.binders()[ambient_count..owner])?.effects();
                 let slot = parameter.slot().checked_add(offset).ok_or(
                     GenericScopeError::BinderArityOverflow {
                         kind: GenericParameterKind::Effect,
@@ -626,7 +695,7 @@ impl ScopedTypeView<'_> {
                     },
                 )?;
                 (
-                    u32::try_from(target.binders().len() - 1).map_err(|_| {
+                    u32::try_from(target.binders().len() - ambient_count - 1).map_err(|_| {
                         GenericScopeError::UnknownDepth {
                             depth: parameter.depth(),
                         }
@@ -693,15 +762,18 @@ impl ScopedTypeView<'_> {
         control
             .visit_node(TypeProjectionNodeKind::Type, 1)
             .map_err(TypeProjectionError::Control)?;
-        Ok(TypeKind::function_with_contract(
-            merged,
-            predicate,
-            params
-                .iter()
-                .map(|ty| project(ty, control))
-                .collect::<Result<Vec<_>, _>>()?,
-            project(return_type, control)?,
-            effect_map(effects, &source, &target, 1, control)?,
+        Ok(ScopedType::new(
+            TypeKind::function_with_contract(
+                merged,
+                predicate,
+                params
+                    .iter()
+                    .map(|ty| project(ty, control))
+                    .collect::<Result<Vec<_>, _>>()?,
+                project(return_type, control)?,
+                effect_map(effects, &source, &target, 1, control)?,
+            ),
+            ambient.clone(),
         ))
     }
 }
@@ -716,6 +788,7 @@ fn fused_coordinate(
     source: &GenericScope,
     target: &GenericScope,
     root_depth: usize,
+    ambient_count: usize,
     depth: u32,
     slot: u16,
     kind: GenericParameterKind,
@@ -725,7 +798,14 @@ fn fused_coordinate(
         return Ok((depth, slot));
     }
     let owner = source.binders().len() - 1 - depth as usize;
-    let prefix = merge_binders(&source.binders()[..owner])?;
+    if owner < ambient_count {
+        return Ok((
+            u32::try_from(target.binders().len() - 1 - owner)
+                .map_err(|_| TypeInstantiationError::DepthOverflow)?,
+            slot,
+        ));
+    }
+    let prefix = merge_binders(&source.binders()[ambient_count..owner])?;
     let offset = match kind {
         GenericParameterKind::Type => prefix.types(),
         GenericParameterKind::Const => prefix.const_lengths(),
@@ -738,7 +818,7 @@ fn fused_coordinate(
             count: usize::from(slot) + usize::from(offset),
         })?;
     Ok((
-        u32::try_from(target.binders().len() - 1)
+        u32::try_from(target.binders().len() - ambient_count - 1)
             .map_err(|_| GenericScopeError::UnknownDepth { depth })?,
         slot,
     ))
@@ -1189,7 +1269,9 @@ pub(super) fn clone_term_with_control<C: TypeProjectionControl>(
     clone_scoped_term_with_control(ty, &GenericScope::default(), depth, control)
 }
 
-fn clone_scoped_term_with_control<C: TypeProjectionControl>(
+pub(in crate::types::constraints::solution) fn clone_scoped_term_with_control<
+    C: TypeProjectionControl,
+>(
     ty: &TypeKind,
     scope: &GenericScope,
     depth: u64,

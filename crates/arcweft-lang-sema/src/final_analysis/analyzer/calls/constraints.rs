@@ -2600,18 +2600,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             )
                         })?;
                 }
-                let actual = result
-                    .projection()
-                    .value()
-                    .to_quantified_type()
-                    .map_err(|_| {
-                        crate::callable::SourceCallbackFailure::invariant(
-                            AnalyzerCallClientInvariant::constraint(
-                                source,
-                                CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                            ),
-                        )
-                    })?;
+                let actual = result.projection().to_quantified_type().map_err(|_| {
+                    crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                        ),
+                    )
+                })?;
                 AnalyzerCallObservedSource::checked(
                     actual,
                     ObservedSemanticValueEvidence::NoVariantCase,
@@ -5973,7 +5969,7 @@ pub(crate) fn run_prepared_candidate(
                         ),
                     )
                 })?;
-            let result = projection.value().to_quantified_type().map_err(|error| {
+            let result = projection.to_quantified_type().map_err(|error| {
                 TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
                     TypeConstraintInvariant::Instantiation(error),
                 ))
@@ -6180,18 +6176,14 @@ fn collect_completed_nested_calls<'h>(
                         Some(seal_function_value_use(&result, source, work)?)
                     }
                 };
-                let actual = result
-                    .projection()
-                    .value()
-                    .to_quantified_type()
-                    .map_err(|_| {
-                        crate::callable::SourceCallbackFailure::invariant(
-                            AnalyzerCallClientInvariant::constraint(
-                                source,
-                                CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                            ),
-                        )
-                    })?;
+                let actual = result.projection().to_quantified_type().map_err(|_| {
+                    crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                        ),
+                    )
+                })?;
                 if &actual != request.actual() {
                     return Err(crate::callable::SourceCallbackFailure::invariant(
                         AnalyzerCallClientInvariant::constraint(
@@ -6237,18 +6229,14 @@ fn collect_completed_nested_calls<'h>(
                         ),
                     ));
                 }
-                let actual = result
-                    .projection()
-                    .value()
-                    .to_quantified_type()
-                    .map_err(|_| {
-                        crate::callable::SourceCallbackFailure::invariant(
-                            AnalyzerCallClientInvariant::constraint(
-                                source,
-                                CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                            ),
-                        )
-                    })?;
+                let actual = result.projection().to_quantified_type().map_err(|_| {
+                    crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                        ),
+                    )
+                })?;
                 let selection = if request.expected().is_some() {
                     super::CheckedTypeSelection::Expected
                 } else {
@@ -6497,7 +6485,7 @@ fn completed_candidate_rank(
             .iter()
             .find(|projection| projection.key() == &AnalyzerCallProjection::Result)
     {
-        let result = result.value().to_quantified_type().map_err(|error| {
+        let result = result.to_quantified_type().map_err(|error| {
             TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
                 TypeConstraintInvariant::Instantiation(error),
             ))

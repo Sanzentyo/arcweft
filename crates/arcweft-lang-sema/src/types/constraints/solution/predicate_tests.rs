@@ -348,7 +348,7 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
             &mut context,
         )
         .unwrap();
-    assert_eq!(projection.value().to_quantified_type().unwrap(), result);
+    assert_eq!(projection.to_quantified_type().unwrap(), result);
 }
 
 #[test]

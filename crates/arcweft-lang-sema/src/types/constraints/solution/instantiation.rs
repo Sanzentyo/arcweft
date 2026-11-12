@@ -81,20 +81,21 @@ impl TypeConstraintSolution {
         control: &mut C,
     ) -> Result<ClosedTypeInstantiation, TypeProjectionError<C::Error>> {
         control.check().map_err(TypeProjectionError::Control)?;
-        if !self.residual.binder().is_empty() {
+        if !self.context.residual.binder().is_empty() {
             return Err(TypeInstantiationError::Residual {
-                binder: self.residual.binder(),
+                binder: self.context.residual.binder(),
             }
             .into());
         }
         let empty = ClosedTypeInstantiation::default();
         let caller = enclosing.unwrap_or(&empty);
+        let root = GenericScope::default();
         if !self.effect_predicate.is_unconstrained() {
             visit_effect_predicate(control, &self.effect_predicate, 1)?;
             let predicate = self.effect_predicate.try_substitute_variables(
                 &mut EffectProjectionControl { control, depth: 1 },
                 &mut |reference, adapter| {
-                    let reference = super::template::keep_effect(reference, self.residual.scope())?;
+                    let reference = super::template::keep_effect(reference, &root)?;
                     let value = caller.effect_binding(&reference).ok_or(
                         TypeInstantiationError::UnboundEffect {
                             parameter: reference,
@@ -114,9 +115,21 @@ impl TypeConstraintSolution {
                 control
                     .visit_binding()
                     .map_err(TypeProjectionError::Control)?;
+                if !self.context.ambient.shape().binders().is_empty() {
+                    // This flat entry point has no mapping for actual ambient
+                    // frames. An equally shaped caller scheme cannot supply
+                    // that authority. Unused frames may disappear after the
+                    // walk proves all bound references belong to the value.
+                    super::template::clone_scoped_term_with_control(
+                        value.value(),
+                        &root,
+                        1,
+                        control,
+                    )?;
+                }
                 Ok(CheckedTypeArgumentBinding::new(
                     parameter.value().clone(),
-                    caller.project_type_with_control(value.value(), value.scope(), control)?,
+                    caller.project_type_with_control(value.value(), &root, control)?,
                 ))
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
@@ -131,13 +144,7 @@ impl TypeConstraintSolution {
                     .map_err(TypeProjectionError::Control)?;
                 Ok(CheckedConstArgumentBinding::new(
                     parameter.value().clone(),
-                    caller.project_length_with_control(
-                        value.value(),
-                        value.scope(),
-                        value.scope(),
-                        1,
-                        control,
-                    )?,
+                    caller.project_length_with_control(value.value(), &root, &root, 1, control)?,
                 ))
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
@@ -147,6 +154,19 @@ impl TypeConstraintSolution {
                 control
                     .visit_binding()
                     .map_err(TypeProjectionError::Control)?;
+                if !self.context.ambient.shape().binders().is_empty() {
+                    super::template::map_effects_with_control(
+                        value.value(),
+                        1,
+                        control,
+                        &|reference, _| {
+                            Ok(EffectRow::open(
+                                crate::effects::EffectSet::new(),
+                                super::template::keep_effect(reference, &root)?,
+                            ))
+                        },
+                    )?;
+                }
                 Ok(CheckedEffectArgumentBinding::new(
                     variable.value().clone(),
                     EffectRow::closed(caller.project_effect_row_with_control(
@@ -158,7 +178,7 @@ impl TypeConstraintSolution {
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
         Ok(ClosedTypeInstantiation {
-            template_scope: self.authority.parameter_scope.template_scope().clone(),
+            template_scope: self.context.parameter_scope.template_scope().clone(),
             bindings,
             const_bindings,
             effect_bindings,

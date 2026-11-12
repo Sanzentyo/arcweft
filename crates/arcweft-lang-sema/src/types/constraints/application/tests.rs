@@ -869,6 +869,215 @@ fn admitted_children_retain_their_rigid_type_and_constant_references() {
 }
 
 #[test]
+fn completion_checks_an_alias_in_its_original_owner_before_merging_ambient_frames() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation, 8192);
+    let parameters = |application| {
+        TypeConstraintParameterScope::seal_call_scope(
+            GenericBinder::EMPTY,
+            [TypeConstraintTypeParameterScopeRow::new(
+                GenericTypeParameterId::new(
+                    GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(
+                        90_102 + application,
+                    )),
+                    0,
+                ),
+                TypeConstraintParameterEligibility::Bindable,
+            )],
+            [],
+            TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+            [],
+            [],
+        )
+        .unwrap()
+    };
+    let outer = context.application_scope(0, parameters(0)).unwrap();
+    let outer_id = outer.id();
+    let outer_key = outer
+        .parameters()
+        .type_reference(outer.parameters().iter().next().unwrap().0)
+        .unwrap();
+    let mut path = context.start_path(outer).unwrap();
+    let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
+    let inner = context.application_scope(1, parameters(1)).unwrap();
+    let inner_key = inner
+        .parameters()
+        .type_reference(inner.parameters().iter().next().unwrap().0)
+        .unwrap();
+    path = context.admit_application(path, inner).unwrap();
+    let alias = TypeKind::GenericParam(inner_key.clone());
+    path = context
+        .add_binding(path, outer_key, &alias, alias.constraint_shape())
+        .unwrap()
+        .unwrap();
+    let local = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
+    path = context
+        .add_binding(path, inner_key, &local, local.constraint_shape())
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        TypeConstraintSolution::complete_application(&path, outer_id, &mut context),
+        Err(TypeConstraintError::Rejected(
+            crate::types::constraints::TypeConstraintRejection::EscapingInstantiation { .. }
+        ))
+    ));
+    assert_eq!(context.lexical_scope().binders().len(), 1);
+    context.restore_binder_scope(enclosing);
+}
+
+#[test]
+fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation, 8192);
+    let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(90_101));
+    let ty = GenericTypeReference::Free(GenericTypeParameterId::new(owner.clone(), 0));
+    let length = GenericConstReference::Free(GenericConstParameterId::new(owner.clone(), 0));
+    let row = GenericEffectReference::Free(GenericEffectParameterId::new(owner, 0));
+    let child = ConstraintApplicationScope::test_root(
+        1,
+        TypeConstraintParameterScope::seal_call_scope(
+            GenericBinder::EMPTY,
+            [TypeConstraintTypeParameterScopeRow::new(
+                ty.clone(),
+                TypeConstraintParameterEligibility::Rigid,
+            )],
+            [TypeConstraintConstParameterScopeRow::new(
+                length.clone(),
+                TypeConstraintConstEligibility::Rigid,
+            )],
+            TypeConstraintEffectScope::seal_call_scope(
+                [EffectConstraintVariable::new(
+                    row.clone(),
+                    EffectConstraintEligibility::Rigid,
+                )],
+                [],
+            )
+            .unwrap(),
+            [],
+            [],
+        )
+        .unwrap(),
+    );
+    let parent = scope(0);
+    let parent_array = array(&parent);
+    let parent_effect = EffectRow::open(EffectSet::new(), effect(&parent));
+    let type_keys = parent
+        .parameters()
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let const_keys = parent
+        .parameters()
+        .const_iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let effect_keys = parent
+        .effects()
+        .variables()
+        .map(|row| row.variable().clone())
+        .collect::<Vec<_>>();
+    let captured = TypeKind::Array {
+        item: Box::new(TypeKind::GenericParam(ty.clone())),
+        len: ArrayLength::Generic(length.clone()),
+    };
+    let captured_effect = EffectRow::open(EffectSet::new(), row.clone());
+    let parent = context.start_path(parent).unwrap();
+    let parent = context.admit_application(parent, child).unwrap();
+    let mut parent = relation(parent, &parent_array, &captured, &mut context);
+    parent
+        .effects
+        .constrain_subset(&parent_effect, &captured_effect, &mut context)
+        .unwrap();
+    parent
+        .effects
+        .constrain_subset(&captured_effect, &parent_effect, &mut context)
+        .unwrap();
+    let solution =
+        TypeConstraintSolution::complete_application(&parent, parent.root_id(), &mut context)
+            .unwrap();
+    let continuation = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        type_keys.iter().cloned().map(|key| {
+            TypeConstraintTypeParameterScopeRow::new(
+                key,
+                TypeConstraintParameterEligibility::Bindable,
+            )
+        }),
+        const_keys.iter().cloned().map(|key| {
+            TypeConstraintConstParameterScopeRow::new(key, TypeConstraintConstEligibility::Bindable)
+        }),
+        TypeConstraintEffectScope::seal_call_scope(
+            effect_keys.iter().cloned().map(|key| {
+                EffectConstraintVariable::new(key, EffectConstraintEligibility::Bindable)
+            }),
+            effect_keys.iter().cloned(),
+        )
+        .unwrap(),
+        type_keys.iter().cloned(),
+        const_keys.iter().cloned(),
+    )
+    .unwrap();
+    let next = context
+        .start_path(ConstraintApplicationScope::test_root(2, continuation))
+        .unwrap();
+    assert_eq!(
+        context.parameter_eligibility(&ty, next.projection_view()),
+        None
+    );
+    let next = solution
+        .restore_inherited_path(next.root_id(), next, &mut context)
+        .unwrap();
+    assert_eq!(
+        context.parameter_eligibility(&ty, next.projection_view()),
+        Some(TypeConstraintParameterEligibility::Rigid)
+    );
+    assert_eq!(
+        context.const_parameter_eligibility(&length, next.projection_view()),
+        Some(TypeConstraintConstEligibility::Rigid)
+    );
+    assert_eq!(
+        context.effect_eligibility(&row, next.projection_view()),
+        Some(EffectConstraintEligibility::Rigid)
+    );
+    let parameters = [ty.clone().into(), length.clone().into(), row.into()];
+    let lease = next.applications.import_parameters(&parameters).unwrap();
+    assert_eq!(lease.parameters(), &parameters);
+    assert!(
+        parameters
+            .iter()
+            .all(|parameter| !lease.permits_local_inference(parameter))
+    );
+    let empty = ConstraintApplicationScope::test_root(3, TypeConstraintParameterScope::empty());
+    let child = context
+        .start_path_with_imported(empty, Some(lease))
+        .unwrap();
+    assert_eq!(
+        crate::types::constraints::seal_type(
+            &captured,
+            child.projection_view(),
+            &mut BTreeSet::new(),
+            &mut context
+        )
+        .unwrap(),
+        captured
+    );
+    let completed =
+        TypeConstraintSolution::complete_application(&next, next.root_id(), &mut context).unwrap();
+    assert_eq!(
+        completed.bindings().next().unwrap().1.value(),
+        &TypeKind::GenericParam(ty)
+    );
+    assert_eq!(
+        completed.const_bindings().next().unwrap().1.value(),
+        &ArrayLength::Generic(length)
+    );
+    assert_eq!(
+        completed.effect_bindings().next().unwrap().1.value(),
+        &captured_effect
+    );
+}
+
+#[test]
 fn application_identity_and_live_opening_cannot_be_admitted_twice() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 2048);

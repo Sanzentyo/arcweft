@@ -948,6 +948,14 @@ impl TypeConstraintParameterScope {
 }
 
 impl CompletedParameterScope {
+    pub(super) fn rigid_type_references(&self) -> &[GenericTypeReference] {
+        &self.rigid_types
+    }
+
+    pub(super) fn rigid_const_references(&self) -> &[GenericConstReference] {
+        &self.rigid_consts
+    }
+
     pub(super) const fn effect_contract(&self) -> &TypeConstraintEffectScope {
         &self.effects
     }

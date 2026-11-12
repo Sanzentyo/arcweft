@@ -99,7 +99,7 @@ impl LocalizedTypeTemplate {
     }
 
     pub(crate) fn result_scope(&self) -> &GenericScope {
-        self.solution.residual.scope()
+        self.solution.context.value_scope()
     }
 
     pub(crate) fn body_type_parameters(&self) -> impl Iterator<Item = &GenericTypeReference> {
@@ -107,7 +107,7 @@ impl LocalizedTypeTemplate {
             .bindings
             .iter()
             .map(|row| &row.parameter)
-            .chain(self.solution.residual.type_origins())
+            .chain(self.solution.context.residual.type_origins())
     }
 
     pub(crate) fn body_const_parameters(&self) -> impl Iterator<Item = &GenericConstReference> {
@@ -115,7 +115,7 @@ impl LocalizedTypeTemplate {
             .const_bindings
             .iter()
             .map(|row| &row.parameter)
-            .chain(self.solution.residual.const_origins())
+            .chain(self.solution.context.residual.const_origins())
     }
 
     pub(crate) fn project_type<C: TypeProjectionControl>(

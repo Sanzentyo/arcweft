@@ -196,7 +196,25 @@ impl ConstraintLexicalScope {
         if depth_index < nested {
             return Ok(depth);
         }
-        let distance = (depth_index - nested)
+        self.ambient_depth(original, depth, nested, nested, context)
+    }
+
+    /// Move an ambient reference while independently inserting/removing local
+    /// quantifiers. Residual slots and function-owned slots are handled by the
+    /// scoped reference mapper before entering this actual-frame operation.
+    pub(super) fn ambient_depth<C: crate::types::TypeProjectionControl>(
+        &self,
+        original: &Self,
+        depth: u32,
+        source_inner: usize,
+        target_inner: usize,
+        control: &mut C,
+    ) -> Result<u32, TypeProjectionError<C::Error>> {
+        let depth_index =
+            usize::try_from(depth).map_err(|_| TypeInstantiationError::DepthOverflow)?;
+        let distance = depth_index
+            .checked_sub(source_inner)
+            .ok_or(TypeInstantiationError::SpecializationScopeMismatch)?
             .checked_add(1)
             .ok_or(TypeInstantiationError::DepthOverflow)?;
         let index = original
@@ -206,10 +224,12 @@ impl ConstraintLexicalScope {
             .ok_or(TypeInstantiationError::SpecializationScopeMismatch)?;
         let frame = &original.frames[index];
         for (target, existing) in self.frames.iter().enumerate() {
-            context.enter_node().map_err(TypeProjectionError::Control)?;
+            control
+                .visit_node(crate::types::TypeProjectionNodeKind::Type, 1)
+                .map_err(TypeProjectionError::Control)?;
             if Arc::ptr_eq(existing, frame) {
                 let depth = (self.frames.len() - target - 1)
-                    .checked_add(nested)
+                    .checked_add(target_inner)
                     .ok_or(TypeInstantiationError::DepthOverflow)?;
                 return u32::try_from(depth)
                     .map_err(|_| TypeInstantiationError::DepthOverflow.into());

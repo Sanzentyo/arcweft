@@ -369,16 +369,16 @@ where
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct KeyedConstraintProjection<A, P> {
     key: Arc<P>,
-    value: super::super::ScopedType,
+    value: super::solution::CompletedConstraintType,
     source: Option<super::completion::CompletedProjectionAddress<A, P>>,
     input: Option<TypeKind>,
 }
 
 impl<A, P> KeyedConstraintProjection<A, P> {
-    pub(super) fn new(key: Arc<P>, value: TypeKind, scope: super::super::GenericScope) -> Self {
+    pub(super) fn new(key: Arc<P>, value: super::solution::CompletedConstraintType) -> Self {
         Self {
             key,
-            value: super::super::ScopedType::new(value, scope),
+            value,
             source: None,
             input: None,
         }
@@ -408,8 +408,14 @@ impl<A, P> KeyedConstraintProjection<A, P> {
         &self.key
     }
 
-    pub(crate) const fn value(&self) -> super::super::ScopedTypeView<'_> {
+    pub(crate) fn value(&self) -> super::super::ScopedTypeView<'_> {
         self.value.view()
+    }
+
+    pub(crate) fn to_quantified_type(
+        &self,
+    ) -> Result<TypeKind, super::solution::TypeInstantiationError> {
+        self.value.quantify()
     }
 }
 

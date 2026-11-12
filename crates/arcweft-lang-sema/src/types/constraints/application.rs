@@ -17,6 +17,9 @@ use crate::{
     types::{GenericConstReference, GenericEffectReference, GenericTypeReference},
 };
 
+mod captures;
+pub(super) use captures::RetainedRigidGenericScope;
+
 /// Private owner contract retained by an imported scope lease. Only a real
 /// admitted application scope implements this trait.
 trait ImportedApplicationScopeAuthority {
@@ -58,6 +61,7 @@ impl ImportedApplicationScopeLease {
 pub(crate) struct ImportedGenericParameterScopeLease {
     applications: Box<[ImportedApplicationScopeLease]>,
     parameters: Box<[super::ConstraintGenericParameterId]>,
+    captures: RetainedRigidGenericScope,
 }
 
 impl Clone for ImportedGenericParameterScopeLease {
@@ -65,6 +69,7 @@ impl Clone for ImportedGenericParameterScopeLease {
         Self {
             applications: self.applications.clone(),
             parameters: self.parameters.clone(),
+            captures: self.captures.clone(),
         }
     }
 }
@@ -72,6 +77,7 @@ impl Clone for ImportedGenericParameterScopeLease {
 impl PartialEq for ImportedGenericParameterScopeLease {
     fn eq(&self, other: &Self) -> bool {
         self.parameters == other.parameters
+            && self.captures == other.captures
             && self.applications.len() == other.applications.len()
             && self
                 .applications
@@ -260,6 +266,7 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
 pub(super) struct ConstraintApplicationInventory<D: ConstraintDomain> {
     applications: BTreeMap<ConstraintApplicationId, Arc<ConstraintApplicationScope<D>>>,
     imported: Box<[ImportedApplicationScopeLease]>,
+    captures: RetainedRigidGenericScope,
 }
 
 impl<D: ConstraintDomain> Clone for ConstraintApplicationInventory<D> {
@@ -267,6 +274,7 @@ impl<D: ConstraintDomain> Clone for ConstraintApplicationInventory<D> {
         Self {
             applications: self.applications.clone(),
             imported: self.imported.clone(),
+            captures: self.captures.clone(),
         }
     }
 }
@@ -276,6 +284,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         Self {
             applications: BTreeMap::new(),
             imported: Box::new([]),
+            captures: RetainedRigidGenericScope::default(),
         }
     }
 
@@ -334,6 +343,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             }
         }
         self.imported = imported.into_values().collect();
+        self.captures = self.captures.union(&original.captures, context)?;
         Ok(())
     }
 
@@ -342,15 +352,22 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         imported: Option<ImportedGenericParameterScopeLease>,
     ) -> Self {
         let application = scope.id();
-        let imported = imported.map_or_else(Vec::new, |lease| lease.applications.into_vec());
+        let (imported, captures) = imported.map_or_else(
+            || (Vec::new(), RetainedRigidGenericScope::default()),
+            |lease| (lease.applications.into_vec(), lease.captures),
+        );
         Self {
             applications: BTreeMap::from([(application, Arc::new(scope))]),
             imported: imported.into_boxed_slice(),
+            captures,
         }
     }
 
     pub(super) fn len(&self) -> usize {
-        self.applications.len().saturating_add(self.imported.len())
+        self.applications
+            .len()
+            .saturating_add(self.imported.len())
+            .saturating_add(self.captures.len())
     }
 
     pub(super) fn validate_admission(
@@ -421,15 +438,23 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             // Free references keep their declaration identity across captures.
             // Inference variables resolve through their exact application or
             // an imported owner lease retained by this path.
-            GenericTypeReference::Free(_) => (self.applications().any(|application| {
-                application.parameters().eligibility(reference)
-                    == Some(TypeConstraintParameterEligibility::Rigid)
-            }) || self.imported.iter().any(|owner| {
-                owner.contains(&super::ConstraintGenericParameterId::Type(
-                    reference.clone(),
-                ))
-            }))
-            .then_some(TypeConstraintParameterEligibility::Rigid),
+            GenericTypeReference::Free(_) => {
+                (self
+                    .captures
+                    .contains(&super::ConstraintGenericParameterId::Type(
+                        reference.clone(),
+                    ))
+                    || self.applications().any(|application| {
+                        application.parameters().eligibility(reference)
+                            == Some(TypeConstraintParameterEligibility::Rigid)
+                    })
+                    || self.imported.iter().any(|owner| {
+                        owner.contains(&super::ConstraintGenericParameterId::Type(
+                            reference.clone(),
+                        ))
+                    }))
+                .then_some(TypeConstraintParameterEligibility::Rigid)
+            }
             GenericTypeReference::Bound(_) => None,
         }
     }
@@ -463,7 +488,12 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                 BTreeSet<super::ConstraintGenericParameterId>,
             ),
         >::new();
+        let mut captures = BTreeSet::new();
         for parameter in parameters {
+            if self.captures.contains(parameter) {
+                captures.insert(parameter.clone());
+                continue;
+            }
             let Some(owner) = self.owner_for_parameter(parameter) else {
                 return Err(match parameter {
                     super::ConstraintGenericParameterId::Type(reference) => {
@@ -503,6 +533,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                 })
                 .collect(),
             parameters: parameters.to_vec().into_boxed_slice(),
+            captures: RetainedRigidGenericScope::from_admitted(captures),
         })
     }
 
@@ -717,15 +748,23 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                         }
                     })
                 }),
-            GenericConstReference::Free(_) => (self.applications().any(|application| {
-                application.parameters().const_eligibility(reference)
-                    == Some(TypeConstraintConstEligibility::Rigid)
-            }) || self.imported.iter().any(|owner| {
-                owner.contains(&super::ConstraintGenericParameterId::Const(
-                    reference.clone(),
-                ))
-            }))
-            .then_some(TypeConstraintConstEligibility::Rigid),
+            GenericConstReference::Free(_) => {
+                (self
+                    .captures
+                    .contains(&super::ConstraintGenericParameterId::Const(
+                        reference.clone(),
+                    ))
+                    || self.applications().any(|application| {
+                        application.parameters().const_eligibility(reference)
+                            == Some(TypeConstraintConstEligibility::Rigid)
+                    })
+                    || self.imported.iter().any(|owner| {
+                        owner.contains(&super::ConstraintGenericParameterId::Const(
+                            reference.clone(),
+                        ))
+                    }))
+                .then_some(TypeConstraintConstEligibility::Rigid)
+            }
             GenericConstReference::Bound(_) => None,
         }
     }
@@ -750,15 +789,23 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                         }
                     })
                 }),
-            GenericEffectReference::Free(_) => (self.applications().any(|application| {
-                application.parameters().effect_eligibility(reference)
-                    == Some(EffectConstraintEligibility::Rigid)
-            }) || self.imported.iter().any(|owner| {
-                owner.contains(&super::ConstraintGenericParameterId::Effect(
-                    reference.clone(),
-                ))
-            }))
-            .then_some(EffectConstraintEligibility::Rigid),
+            GenericEffectReference::Free(_) => {
+                (self
+                    .captures
+                    .contains(&super::ConstraintGenericParameterId::Effect(
+                        reference.clone(),
+                    ))
+                    || self.applications().any(|application| {
+                        application.parameters().effect_eligibility(reference)
+                            == Some(EffectConstraintEligibility::Rigid)
+                    })
+                    || self.imported.iter().any(|owner| {
+                        owner.contains(&super::ConstraintGenericParameterId::Effect(
+                            reference.clone(),
+                        ))
+                    }))
+                .then_some(EffectConstraintEligibility::Rigid)
+            }
             GenericEffectReference::Bound(_) => None,
         }
     }

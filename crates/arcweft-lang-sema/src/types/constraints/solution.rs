@@ -26,6 +26,9 @@ use super::{
 
 mod residual;
 use residual::ResidualGenericBinder;
+mod completed_context;
+pub(super) use completed_context::CompletedConstraintType;
+use completed_context::CompletedGenericContext;
 mod instantiation;
 #[cfg(test)]
 mod predicate_tests;
@@ -75,16 +78,6 @@ impl CheckedEffectArgumentBinding {
     }
 }
 
-/// Exact scope authority under which one solution was completed.
-///
-/// Eligibility is retained because it is part of the completeness proof. A
-/// later continuation may change eligibility, but must retain the exact type,
-/// constant, and effect-variable inventories before it can restore the rows.
-#[derive(Debug, Eq, PartialEq)]
-struct CompletedTypeConstraintAuthority {
-    parameter_scope: CompletedParameterScope,
-}
-
 #[derive(Clone, Copy)]
 enum CompletedSolutionInput {
     ActivePath,
@@ -108,8 +101,7 @@ impl CompletedSolutionInput {
 /// which proves scope, completeness, and canonicality exactly once.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintSolution {
-    authority: CompletedTypeConstraintAuthority,
-    residual: ResidualGenericBinder,
+    context: Arc<CompletedGenericContext>,
     bindings: Box<[CheckedTypeArgumentBinding]>,
     const_bindings: Box<[CheckedConstArgumentBinding]>,
     effect_bindings: Box<[CheckedEffectArgumentBinding]>,
@@ -118,11 +110,11 @@ pub(crate) struct TypeConstraintSolution {
 
 impl TypeConstraintSolution {
     pub(crate) fn residual_scope(&self) -> &GenericScope {
-        self.residual.scope()
+        self.context.residual.scope()
     }
 
     pub(crate) fn template_scope(&self) -> &GenericScope {
-        self.authority.parameter_scope.template_scope()
+        self.context.parameter_scope.template_scope()
     }
 
     pub(super) fn equal_with<A: TypeConstraintAccounting, D: ConstraintDomain>(
@@ -134,7 +126,7 @@ impl TypeConstraintSolution {
         // These inventories contain reference identities and eligibility only;
         // their type/effect values are compared through the controlled folds below.
         for solution in [self, other] {
-            let scope = &solution.authority.parameter_scope;
+            let scope = &solution.context.parameter_scope;
             for _ in scope.iter() {
                 context.enter_node()?;
             }
@@ -145,8 +137,7 @@ impl TypeConstraintSolution {
                 context.enter_node()?;
             }
         }
-        if self.authority != other.authority
-            || self.residual != other.residual
+        if self.context != other.context
             || self.bindings.len() != other.bindings.len()
             || self.const_bindings.len() != other.const_bindings.len()
             || self.effect_bindings.len() != other.effect_bindings.len()
@@ -180,55 +171,55 @@ impl TypeConstraintSolution {
     pub(crate) fn effect_predicate(&self) -> crate::types::ScopedEffectPredicateView<'_> {
         crate::types::ScopedEffectPredicateView::sealed(
             &self.effect_predicate,
-            self.residual.scope(),
+            self.context.value_scope(),
         )
     }
     pub(crate) fn type_parameter_view<'a>(
         &'a self,
         parameter: &'a GenericTypeReference,
     ) -> ScopedTypeReferenceView<'a> {
-        ScopedTypeReferenceView::sealed(parameter, self.authority.parameter_scope.template_scope())
+        ScopedTypeReferenceView::sealed(parameter, self.context.parameter_scope.template_scope())
     }
 
     pub(crate) fn const_parameter_view<'a>(
         &'a self,
         parameter: &'a GenericConstReference,
     ) -> ScopedConstReferenceView<'a> {
-        ScopedConstReferenceView::sealed(parameter, self.authority.parameter_scope.template_scope())
+        ScopedConstReferenceView::sealed(parameter, self.context.parameter_scope.template_scope())
     }
     pub(crate) fn has_residual_type(&self, parameter: &GenericTypeReference) -> bool {
-        self.residual.contains_type(parameter)
+        self.context.residual.contains_type(parameter)
     }
 
     pub(crate) fn has_residual_const(&self, parameter: &GenericConstReference) -> bool {
-        self.residual.contains_const(parameter)
+        self.context.residual.contains_const(parameter)
     }
 
     pub(crate) fn has_residual_effects(&self) -> bool {
-        self.residual.binder().effects() != 0
+        self.context.residual.binder().effects() != 0
     }
 
     pub(crate) fn bindings(&self) -> TypeConstraintBindingIter<'_> {
         TypeConstraintBindingIter {
             rows: self.bindings.iter(),
-            scope: self.residual.scope(),
-            template_scope: self.authority.parameter_scope.template_scope(),
+            scope: self.context.value_scope(),
+            template_scope: self.context.parameter_scope.template_scope(),
         }
     }
 
     pub(crate) fn effect_bindings(&self) -> TypeConstraintEffectBindingIter<'_> {
         TypeConstraintEffectBindingIter {
             rows: self.effect_bindings.iter(),
-            scope: self.residual.scope(),
-            template_scope: self.authority.parameter_scope.template_scope(),
+            scope: self.context.value_scope(),
+            template_scope: self.context.parameter_scope.template_scope(),
         }
     }
 
     pub(crate) fn const_bindings(&self) -> TypeConstraintConstBindingIter<'_> {
         TypeConstraintConstBindingIter {
             rows: self.const_bindings.iter(),
-            scope: self.residual.scope(),
-            template_scope: self.authority.parameter_scope.template_scope(),
+            scope: self.context.value_scope(),
+            template_scope: self.context.parameter_scope.template_scope(),
         }
     }
 
@@ -249,16 +240,15 @@ impl TypeConstraintSolution {
                         super::TypeConstraintParameterScopeInvariant::ApplicationOutOfScope,
                     ),
                 ))?;
-        let mut value = self.residual.reify_type(ty, path, application, context)?;
+        let mut value = self.context.reify_type(ty, path, application, context)?;
         if closure == ConstraintClosurePolicy::ProjectionFuture {
             self.retain_result_predicate(&mut value, context)?;
-            self.residual
+            self.context
                 .validate_reified_future_type(&value, path, context)?;
         }
         Ok(super::KeyedConstraintProjection::new(
             key,
-            value,
-            self.residual.scope().clone(),
+            CompletedConstraintType::new(value, Arc::clone(&self.context)),
         ))
     }
 
@@ -279,7 +269,7 @@ impl TypeConstraintSolution {
         if self.effect_predicate.is_unconstrained() {
             return Ok(());
         }
-        let source = self.residual.scope();
+        let source = self.context.value_scope();
         let target = source.with_binder(*binder);
         let inserted = u32::from(!binder.is_empty());
         let lifted = self
@@ -485,7 +475,11 @@ impl TypeConstraintSolution {
                 Some(rows[1].0.clone().into()),
             ));
         }
-        let residual = ResidualGenericBinder::for_application(path, application)?;
+        let generic_context = Arc::new(CompletedGenericContext::for_application(
+            path,
+            application,
+            context,
+        )?);
         let mut bindings = Vec::with_capacity(source_bindings.len());
         for (parameter, value) in source_bindings {
             match context.parameter_eligibility(&parameter, path.projection_view()) {
@@ -514,13 +508,6 @@ impl TypeConstraintSolution {
                 continue;
             };
             let owner = context.binding_scope(path, &parameter.clone().into())?;
-            let occurrence = context.capture_lexical_scope()?;
-            let value = context.transport_binding_type(
-                &occurrence,
-                &owner,
-                &value,
-                parameter.clone().into(),
-            )?;
             if matches!(
                 value.constraint_shape(),
                 TypeConstraintShape::Generic(bound) if bound == &parameter
@@ -536,28 +523,28 @@ impl TypeConstraintSolution {
                     Some(parameter.clone().into()),
                 ));
             }
-            let projected = project_type(
-                &value,
-                path.projection_view(),
-                ConstraintClosurePolicy::SolutionCompletion,
-                context,
-            )
-            .map_err(|error| {
-                map_completed_canonical_error(error, parameter.clone().into(), input)
+            let reified = context.with_original_scope(owner, |context| {
+                let projected = project_type(
+                    &value,
+                    path.projection_view(),
+                    ConstraintClosurePolicy::SolutionCompletion,
+                    context,
+                )
+                .map_err(|error| {
+                    map_completed_canonical_error(error, parameter.clone().into(), input)
+                })?;
+                if input.requires_canonical_claim() && projected.value != value {
+                    return Err(completed_solution_invariant(
+                        super::InheritedSolutionInvariantKind::NonCanonical,
+                        Some(parameter.clone().into()),
+                    ));
+                }
+                validate_selected_call_self(&projected.value, context).map_err(|error| {
+                    map_completed_self_error(error, parameter.clone().into(), input)
+                })?;
+                generic_context.reify_type(&projected.value, path, application, context)
             })?;
-            if input.requires_canonical_claim() && projected.value != value {
-                return Err(completed_solution_invariant(
-                    super::InheritedSolutionInvariantKind::NonCanonical,
-                    Some(parameter.clone().into()),
-                ));
-            }
-            validate_selected_call_self(&projected.value, context).map_err(|error| {
-                map_completed_self_error(error, parameter.clone().into(), input)
-            })?;
-            bindings.push((
-                declaration,
-                residual.reify_type(&projected.value, path, application, context)?,
-            ));
+            bindings.push((declaration, reified));
         }
         let mut const_bindings = Vec::with_capacity(source_const_bindings.len());
         for (parameter, value) in source_const_bindings {
@@ -587,13 +574,6 @@ impl TypeConstraintSolution {
                 continue;
             };
             let owner = context.binding_scope(path, &parameter.clone().into())?;
-            let occurrence = context.capture_lexical_scope()?;
-            let value = context.transport_binding_length(
-                &occurrence,
-                &owner,
-                &value,
-                parameter.clone().into(),
-            )?;
             if matches!(&value, ArrayLength::Generic(bound) if bound == &parameter) {
                 if !input.requires_canonical_claim() {
                     return Err(TypeConstraintRejection::CyclicInstantiation {
@@ -606,35 +586,35 @@ impl TypeConstraintSolution {
                     Some(parameter.clone().into()),
                 ));
             }
-            let projected = project_const_argument(
-                &value,
-                path.projection_view(),
-                ConstraintClosurePolicy::SolutionCompletion,
-                context,
-            )
-            .map_err(|error| {
-                map_completed_canonical_error(error, parameter.clone().into(), input)
+            let reified = context.with_original_scope(owner, |context| {
+                let projected = project_const_argument(
+                    &value,
+                    path.projection_view(),
+                    ConstraintClosurePolicy::SolutionCompletion,
+                    context,
+                )
+                .map_err(|error| {
+                    map_completed_canonical_error(error, parameter.clone().into(), input)
+                })?;
+                if input.requires_canonical_claim() && projected != value {
+                    return Err(completed_solution_invariant(
+                        super::InheritedSolutionInvariantKind::NonCanonical,
+                        Some(parameter.clone().into()),
+                    ));
+                }
+                if matches!(projected, ArrayLength::Error(_) | ArrayLength::Inferred) {
+                    return Err(completed_solution_invariant(
+                        super::InheritedSolutionInvariantKind::Forbidden,
+                        Some(parameter.clone().into()),
+                    ));
+                }
+                generic_context.reify_length(&projected, path, application, context)
             })?;
-            if input.requires_canonical_claim() && projected != value {
-                return Err(completed_solution_invariant(
-                    super::InheritedSolutionInvariantKind::NonCanonical,
-                    Some(parameter.clone().into()),
-                ));
-            }
-            if matches!(projected, ArrayLength::Error(_) | ArrayLength::Inferred) {
-                return Err(completed_solution_invariant(
-                    super::InheritedSolutionInvariantKind::Forbidden,
-                    Some(parameter.clone().into()),
-                ));
-            }
-            const_bindings.push((
-                declaration,
-                residual.reify_length(&projected, path, application, context)?,
-            ));
+            const_bindings.push((declaration, reified));
         }
         context.validate_type_and_const_completion(path)?;
 
-        let effect_predicate = residual.reify_effect_predicate(
+        let effect_predicate = generic_context.reify_effect_predicate(
             &completed_effects.predicate,
             path,
             application,
@@ -659,15 +639,12 @@ impl TypeConstraintSolution {
                     )
                 })?;
             context.validate_effect_row(value, path.projection_view())?;
-            let value = residual.reify_effect_row(value, path, application, context)?;
+            let value = generic_context.reify_effect_row(value, path, application, context)?;
             effect_bindings.push((row.variable().clone(), value));
         }
         Ok(Self {
-            residual,
+            context: generic_context,
             effect_predicate,
-            authority: CompletedTypeConstraintAuthority {
-                parameter_scope: application.parameters().completed_contract().clone(),
-            },
             bindings: bindings
                 .into_iter()
                 .map(|(parameter, value)| CheckedTypeArgumentBinding::new(parameter, value))
@@ -702,7 +679,7 @@ impl TypeConstraintSolution {
         let parameters = application.parameters();
         let effects = application.effects();
         if !self
-            .authority
+            .context
             .parameter_scope
             .accepts_continuation_scope(parameters.completed_contract())
         {
@@ -766,7 +743,26 @@ impl TypeConstraintSolution {
         require_exact_type_keys(self, parameters.required_inherited_keys())?;
         require_exact_const_keys(self, parameters.required_inherited_const_keys())?;
         require_exact_effect_keys(self, effects.required_inherited())?;
-        let predicate = self.residual.reopen_effect_predicate(
+        // A chosen child may have supplied rigid declaration references which
+        // do not appear in the parent's formal inventory. Retain only their
+        // read authority; no old inference issuer is admitted here.
+        for _ in 0..path.applications.len() {
+            context.enter_node()?;
+        }
+        Arc::make_mut(&mut path.applications)
+            .restore_rigid_captures(&self.context.captures, context)?;
+        let mut rigid_effects = Vec::new();
+        for parameter in self.context.captures.parameters() {
+            context.enter_node()?;
+            if let super::ConstraintGenericParameterId::Effect(reference) = parameter {
+                rigid_effects.push(crate::effect_row::EffectConstraintVariable::new(
+                    reference.clone(),
+                    EffectConstraintEligibility::Rigid,
+                ));
+            }
+        }
+        path.effects.admit_variables(&rigid_effects)?;
+        let predicate = self.context.reopen_effect_predicate(
             &self.effect_predicate,
             &path,
             application,
@@ -776,7 +772,7 @@ impl TypeConstraintSolution {
 
         for (parameter, value) in self.bindings() {
             let value = self
-                .residual
+                .context
                 .reopen_type(value.value(), &path, application, context)?;
             context.restore_completed_binding(
                 &mut path,
@@ -787,7 +783,7 @@ impl TypeConstraintSolution {
         }
         for (parameter, value) in self.const_bindings() {
             let value = self
-                .residual
+                .context
                 .reopen_length(value.value(), &path, application, context)?;
             context.restore_completed_const_binding(
                 &mut path,
@@ -801,7 +797,7 @@ impl TypeConstraintSolution {
                 .effect_reference(variable.value())
                 .expect("the inherited contract retains each effect parameter");
             let value =
-                self.residual
+                self.context
                     .reopen_effect_row(value.value(), &path, application, context)?;
             path.effects
                 .restore_completed_inherited(reference, &value, context)?;
