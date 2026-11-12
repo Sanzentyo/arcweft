@@ -474,13 +474,17 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
             Self::Projection { producer, .. } => producer.association(),
             Self::ConstOccurrence(root) => root.origin.association(),
             Self::Rebuilt { source, .. } => source.association(),
-            Self::TypeAlias { steps, terminal } => steps.iter()
+            Self::TypeAlias { steps, terminal } => steps
+                .iter()
                 .find_map(|step| step.occurrence.origin.association())
                 .or_else(|| terminal.origin.association()),
-            Self::ConstAlias { steps, terminal } => steps.iter()
+            Self::ConstAlias { steps, terminal } => steps
+                .iter()
                 .find_map(|step| step.occurrence.origin.association())
                 .or_else(|| terminal.origin.association()),
-            Self::Derived { producer, input } => producer.association().or_else(|| input.association()),
+            Self::Derived { producer, input } => {
+                producer.association().or_else(|| input.association())
+            }
             _ => None,
         }
     }

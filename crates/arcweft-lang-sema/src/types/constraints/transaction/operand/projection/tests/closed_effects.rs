@@ -167,3 +167,63 @@ fn a_closed_effect_owner_rejects_changed_premises_and_another_application_invent
         &TypeKind::I64
     );
 }
+
+#[test]
+fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_result() {
+    use crate::types::constraints::transaction::{
+        ConstraintResultProjection, TypeConstraintTransaction,
+    };
+    use crate::types::constraints::{
+        ConstraintAcceptance, PreparedConstraintSourceProjection, PreparedSourceConstraint,
+        TypeConstraintProjectionClosure,
+    };
+    let cancellation = AtomicBool::new(false);
+    let (mut context, path, parameters, _) = super::bindings::setup(&cancellation, 1, 0);
+    let application = path.root_id();
+    let mut transaction =
+        TypeConstraintTransaction::from_path(&mut context, application, path, None).unwrap();
+    transaction.request_projection(
+        &mut context,
+        (),
+        &TypeKind::I64,
+        TypeConstraintProjectionClosure::Closed,
+    );
+    transaction
+        .begin_prepared_probe(
+            &mut context,
+            PreparedSourceConstraint::unchecked((), PreparedConstraintSourceProjection::Scalar),
+            ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+    let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+    let receipt = ticket.receipt();
+    let mut path = ticket.fork_for_child(&mut context).unwrap().path;
+    let result = ConstraintResultProjection {
+        application,
+        key: Arc::new(()),
+    };
+    let (value, result) = ResolvedConstraintResult::resolve(result, &path, &mut context).unwrap();
+    let scope = Arc::new(context.capture_lexical_scope().unwrap());
+    path.bindings.insert(
+        parameters[0].clone(),
+        ConstraintOperand::result(value, Arc::clone(&scope), result),
+    );
+    let actual = ConstraintOperand::source(
+        TypeKind::GenericParam(parameters[0].clone()),
+        scope,
+        path.lineage.original.clone(),
+        receipt,
+        ResolvedConstraintSource::Fixture,
+    );
+    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let closed = close_type_operand(actual.view(), &path, &effects, &mut context).unwrap();
+    assert_eq!(closed.value(), &TypeKind::I64);
+    let ConstraintOperandOrigin::TypeAlias { terminal, .. } = closed.origin.as_ref() else {
+        panic!("the result was reached through an alias")
+    };
+    assert!(terminal.origin.associated_result().is_some());
+    assert!(
+        closed.associated_result().is_none(),
+        "an observed value remains a value even when its inferred type follows another result"
+    );
+}
