@@ -112,6 +112,18 @@ impl std::fmt::Debug for ImportedGenericParameterScopeLease {
 }
 
 impl ImportedGenericParameterScopeLease {
+    pub(super) fn admits_original_parameter(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> bool {
+        self.parameters.binary_search(parameter).is_ok()
+            && (self.captures.contains(parameter)
+                || self
+                    .applications
+                    .iter()
+                    .any(|owner| owner.contains(parameter)))
+    }
+
     pub(super) fn merge_original_gamma<
         A: super::context::TypeConstraintAccounting,
         D: ConstraintDomain,

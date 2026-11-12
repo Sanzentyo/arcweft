@@ -199,10 +199,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 direction: crate::types::ConstraintAcceptance::ActualAcceptsPattern,
                 pattern: pattern.clone(),
                 actual: super::ConstraintOperand::original(
-                    expected.clone(),
+                    expected,
                     scope,
                     path.lineage.original.clone(),
-                ),
+                    context,
+                )?,
                 source_ordinal: None,
                 final_expected: None,
                 timing,

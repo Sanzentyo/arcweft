@@ -59,10 +59,12 @@ fn tuple_children_borrow_the_root_and_retain_distinct_exact_addresses() {
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     let original = context.fixture_original_context(None).unwrap();
     let root = ConstraintOperand::<NoConstraintClient>::original(
-        TypeKind::Tuple(vec![TypeKind::I64, TypeKind::String]),
+        &TypeKind::Tuple(vec![TypeKind::I64, TypeKind::String]),
         Arc::clone(&scope),
         original,
-    );
+        &mut context,
+    )
+    .unwrap();
     let TypeKind::Tuple(values) = root.value() else {
         panic!("tuple")
     };
@@ -111,13 +113,15 @@ fn an_array_item_and_its_length_have_distinct_type_and_const_projections() {
     let ty = context.lexical_scope().bound_type(0, 0).unwrap();
     let length = ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap());
     let root = ConstraintOperand::<NoConstraintClient>::original(
-        TypeKind::Array {
+        &TypeKind::Array {
             item: Box::new(TypeKind::GenericParam(ty.clone())),
             len: length.clone(),
         },
         Arc::clone(&scope),
         original,
-    );
+        &mut context,
+    )
+    .unwrap();
     let view = root.view();
     let item = view
         .children(&mut context)
@@ -152,10 +156,12 @@ fn a_stored_constant_has_its_own_borrowed_view_without_a_synthetic_type() {
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     let original = context.fixture_original_context(None).unwrap();
     let root = ConstraintOperand::<NoConstraintClient, ArrayLength>::original(
-        ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap()),
+        &ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap()),
         Arc::clone(&scope),
         original,
-    );
+        &mut context,
+    )
+    .unwrap();
     let view = root.view();
     assert!(std::ptr::eq(view.value(), root.value()));
     let retained = view.transport(&scope, &mut context).unwrap();
@@ -182,7 +188,7 @@ fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_fore
     let original = context.fixture_original_context(None).unwrap();
     let nested = scope.shape().with_binder(ambient);
     let root = ConstraintOperand::<NoConstraintClient>::original(
-        TypeKind::function_with_binder(
+        &TypeKind::function_with_binder(
             ambient,
             [TypeKind::GenericParam(nested.bound_type(0, 0).unwrap())],
             TypeKind::GenericParam(nested.bound_type(1, 0).unwrap()),
@@ -190,7 +196,9 @@ fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_fore
         ),
         Arc::clone(&scope),
         original,
-    );
+        &mut context,
+    )
+    .unwrap();
     let view = root.view();
     assert!(view.children(&mut context).is_err());
     let local = context.enter_binder_scope(ambient);

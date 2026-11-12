@@ -1546,11 +1546,7 @@ where
 
     #[cfg(test)]
     pub(in crate::types) fn fixture_operand<T>(&self, value: T) -> ConstraintOperand<D, T> {
-        ConstraintOperand::original(
-            value,
-            std::sync::Arc::new(self.lexical_scope.clone()),
-            super::OriginalProducerContext::ground_fixture(self.lexical_scope.clone()),
-        )
+        ConstraintOperand::fixture_original(value, std::sync::Arc::new(self.lexical_scope.clone()))
     }
 
     #[cfg(test)]

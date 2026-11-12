@@ -4,6 +4,7 @@ use super::*;
 use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexicalScope};
 
 mod function_scheme;
+mod original_value;
 mod projection;
 pub(crate) use function_scheme::{ConstraintResultUseSource, PreparedConstraintFunctionScheme};
 pub(in crate::types::constraints) use projection::ConstraintOperandChildren;
@@ -200,18 +201,6 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
             && steps
                 .windows(2)
                 .all(|pair| same_term(&pair[0].replacement, &pair[1].occurrence))
-    }
-
-    pub(in crate::types::constraints) fn original(
-        value: T,
-        scope: Arc<ConstraintLexicalScope>,
-        original: OriginalProducerContext,
-    ) -> Self {
-        Self {
-            value: Arc::new(value),
-            scope,
-            origin: Arc::new(ConstraintOperandOrigin::Original(original)),
-        }
     }
 
     pub(in crate::types::constraints) fn associated_result(

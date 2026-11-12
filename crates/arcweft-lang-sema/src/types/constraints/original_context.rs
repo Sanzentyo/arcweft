@@ -70,6 +70,25 @@ impl Debug for OriginalProducerContext {
 }
 
 impl OriginalProducerContext {
+    pub(super) fn admits_free(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
+        let rigid = self.0.source.rigid_scope();
+        let declared = match parameter {
+            super::ConstraintGenericParameterId::Type(reference) => {
+                rigid.types.binary_search(reference).is_ok()
+            }
+            super::ConstraintGenericParameterId::Const(reference) => {
+                rigid.consts.binary_search(reference).is_ok()
+            }
+            super::ConstraintGenericParameterId::Effect(reference) => {
+                rigid.effects.binary_search(reference).is_ok()
+            }
+        };
+        declared
+            || rigid
+                .imported
+                .is_some_and(|lease| lease.admits_original_parameter(parameter))
+    }
+
     pub(crate) fn belongs_to<S: OriginalProducerSource>(&self, source: &Arc<S>) -> bool {
         self.0.source.same_source(source.as_ref())
     }
@@ -146,6 +165,12 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
                     TypeConstraintInvariant::OriginalProducer,
                 ));
             }
+        }
+        if rigid.types.windows(2).any(|pair| pair[0] >= pair[1])
+            || rigid.consts.windows(2).any(|pair| pair[0] >= pair[1])
+            || rigid.effects.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
         for variable in source.domain().variables() {
             self.enter_node()?;

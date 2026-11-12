@@ -244,10 +244,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         })
                     })?;
                 let reference = super::super::ConstraintOperand::original(
-                    TypeKind::GenericParam(parameter.clone()),
+                    &TypeKind::GenericParam(parameter.clone()),
                     Arc::clone(&operand_scope),
                     owner.original.clone(),
-                );
+                    context,
+                )?;
                 let value = value
                     .transport(&operand_scope, context)
                     .map_err(projection_failure)?;
@@ -279,10 +280,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         })
                     })?;
                 let reference = super::super::ConstraintOperand::original(
-                    ArrayLength::Generic(parameter.clone()),
+                    &ArrayLength::Generic(parameter.clone()),
                     Arc::clone(&operand_scope),
                     owner.original.clone(),
-                );
+                    context,
+                )?;
                 let value = value
                     .transport(&operand_scope, context)
                     .map_err(projection_failure)?;

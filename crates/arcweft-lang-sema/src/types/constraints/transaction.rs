@@ -1238,10 +1238,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         .require_application_owner(self.application)?,
                 ),
                 actual: ConstraintOperand::original(
-                    actual.clone(),
+                    actual,
                     scope,
                     path.lineage.original.clone(),
-                ),
+                    context,
+                )?,
                 source_ordinal: None,
                 final_expected: None,
                 timing,
@@ -1401,11 +1402,18 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             let input = match input {
                 Some(input) => match context.capture_lexical_scope() {
-                    Ok(scope) => Some(Arc::new(ConstraintOperand::original(
-                        input.clone(),
+                    Ok(scope) => match ConstraintOperand::original(
+                        input,
                         Arc::new(scope),
                         self.original.clone(),
-                    ))),
+                        context,
+                    ) {
+                        Ok(input) => Some(Arc::new(input)),
+                        Err(error) => {
+                            self.record_failure(error.into());
+                            return;
+                        }
+                    },
                     Err(error) => {
                         self.record_failure(error.into());
                         return;
