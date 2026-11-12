@@ -151,7 +151,11 @@ pub(in crate::types) use alias::{
 };
 
 mod projection;
-pub(in crate::types::constraints) use projection::seal_type_operand;
+pub(in crate::types::constraints) use projection::{close_type_operand, seal_type_operand};
+mod effects;
+pub(in crate::types::constraints) use effects::{
+    ConstraintClosedEffectHeader, ConstraintClosedEffects,
+};
 use projection::{project_array_length, project_type_inner};
 pub(super) use projection::{project_const_argument, project_type};
 

@@ -143,6 +143,7 @@ fn sealing_keeps_a_function_header_on_its_actual_local_frame() {
         contents_scope,
         children,
         length: None,
+        header: None,
     } = value.origin.as_ref()
     else {
         panic!("the header retains its source and actual local frame")

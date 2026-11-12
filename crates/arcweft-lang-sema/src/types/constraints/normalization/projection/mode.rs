@@ -3,7 +3,8 @@
 use super::*;
 use crate::types::constraints::transaction::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandChildren,
-    ConstraintOperandRebuild, ConstraintOperandView, ConstraintProjectedOperand,
+    ConstraintOperandEffects, ConstraintOperandRebuild, ConstraintOperandView,
+    ConstraintProjectedOperand,
 };
 
 pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
@@ -13,6 +14,7 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
     type ShapeSeed;
     type TypeOutput;
     type ConstOutput;
+    type Effects;
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind;
     fn length(input: &Self::ConstInput) -> &'ty ArrayLength;
@@ -25,10 +27,12 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
     ) -> Result<(Self::Children, Self::ShapeSeed), TypeConstraintError>;
     fn type_leaf(input: &Self::TypeInput) -> Self::TypeOutput;
     fn const_leaf(input: &Self::ConstInput) -> Self::ConstOutput;
-    fn rebuild(
+    fn rebuild<A: TypeConstraintAccounting>(
         seed: Self::ShapeSeed,
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
+        effects: &Self::Effects,
+        context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError>;
     fn substitute_type<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
@@ -60,6 +64,7 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     type ShapeSeed = TypeConstraintShape<'ty>;
     type TypeOutput = TypeKind;
     type ConstOutput = ArrayLength;
+    type Effects = ();
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind {
         input
@@ -92,10 +97,12 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     fn const_leaf(input: &Self::ConstInput) -> ArrayLength {
         (*input).clone()
     }
-    fn rebuild(
+    fn rebuild<A: TypeConstraintAccounting>(
         shape: Self::ShapeSeed,
         children: Vec<TypeKind>,
         length: Option<ArrayLength>,
+        _: &(),
+        _: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
         shape.rebuild_with(
             children,
@@ -142,6 +149,7 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
     type ShapeSeed = ConstraintOperandRebuild<'ty, D>;
     type TypeOutput = ConstraintProjectedOperand<D, TypeKind>;
     type ConstOutput = ConstraintProjectedOperand<D, ArrayLength>;
+    type Effects = ConstraintOperandEffects<D>;
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind {
         input.value()
@@ -172,12 +180,14 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
     fn const_leaf(input: &Self::ConstInput) -> Self::ConstOutput {
         input.projected_leaf()
     }
-    fn rebuild(
+    fn rebuild<A: TypeConstraintAccounting>(
         seed: Self::ShapeSeed,
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
+        effects: &Self::Effects,
+        context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError> {
-        seed.rebuild(children, length)
+        seed.rebuild(children, length, effects, context)
     }
     fn substitute_type<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,

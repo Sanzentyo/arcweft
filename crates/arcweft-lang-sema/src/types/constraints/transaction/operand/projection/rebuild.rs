@@ -1,7 +1,23 @@
 //! Move-only projection results keep a proof at every corresponding value port.
 
 use super::*;
+use crate::effect_row::{EffectPredicate, EffectRow};
+use crate::types::constraints::TypeConstraintShape;
+use crate::types::constraints::normalization::ConstraintClosedEffects;
 use std::marker::PhantomData;
+
+pub(in crate::types::constraints) enum ConstraintOperandEffects<D: ConstraintDomain> {
+    Original,
+    Closed(Arc<ConstraintClosedEffects<D>>),
+}
+
+enum HeaderProjection {
+    Original,
+    Closed {
+        row: Option<EffectRow>,
+        predicate: Option<EffectPredicate>,
+    },
+}
 
 pub(in crate::types::constraints) struct ConstraintOperandDerivation<D: ConstraintDomain, T> {
     pub(in crate::types::constraints::transaction::operand) origin: Arc<ConstraintOperandOrigin<D>>,
@@ -22,13 +38,6 @@ impl<D: ConstraintDomain, T> ConstraintOperandDerivation<D, T> {
             scope,
             kind: PhantomData,
         }
-    }
-
-    #[cfg(test)]
-    pub(in crate::types::constraints::transaction::operand) fn result_origin(
-        &self,
-    ) -> Option<ConstraintResultProjection<D>> {
-        self.origin.result_origin()
     }
 
     #[cfg(test)]
@@ -136,10 +145,12 @@ impl<'a, D: ConstraintDomain> ConstraintOperandChildren<'a, D> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
-    pub(in crate::types::constraints) fn rebuild(
+    pub(in crate::types::constraints) fn rebuild<A: TypeConstraintAccounting>(
         self,
         children: Vec<ConstraintProjectedOperand<D, TypeKind>>,
         length: Option<ConstraintProjectedOperand<D, ArrayLength>>,
+        effects: &ConstraintOperandEffects<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintProjectedOperand<D, TypeKind>, TypeConstraintError> {
         let mut values = Vec::with_capacity(children.len());
         let mut proofs = Vec::with_capacity(children.len());
@@ -151,7 +162,7 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             values.push(value);
             proofs.push(derivation);
         }
-        let (mut length_value, length_proof) = match length {
+        let (length_value, length_proof) = match length {
             Some(length) => {
                 let (value, derivation) = length.const_parts();
                 if derivation.scope != self.contents_scope {
@@ -161,16 +172,49 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             }
             None => (None, None),
         };
+        let (header, header_proof) = match (effects, self.source.value().constraint_shape()) {
+            (
+                ConstraintOperandEffects::Closed(owner),
+                TypeConstraintShape::Function {
+                    effects, predicate, ..
+                },
+            ) => {
+                let (row, predicate, proof) =
+                    owner.project_header(&self.contents_scope, effects, predicate, context)?;
+                (
+                    HeaderProjection::Closed {
+                        row: Some(row),
+                        predicate: Some(predicate),
+                    },
+                    proof,
+                )
+            }
+            _ => (HeaderProjection::Original, None),
+        };
         let value = self.source.value().constraint_shape().rebuild_with(
             values,
-            &mut length_value,
-            |length, _| {
+            &mut (length_value, header),
+            |(length, _), _| {
                 Ok::<_, TypeConstraintError>(
                     length.take().expect("array length was projected first"),
                 )
             },
-            |_, row| Ok(row.clone()),
-            |_, predicate| Ok(predicate.clone()),
+            |(_, header), row| {
+                Ok(match header {
+                    HeaderProjection::Original => row.clone(),
+                    HeaderProjection::Closed { row, .. } => row
+                        .take()
+                        .expect("the closed function row is consumed once"),
+                })
+            },
+            |(_, header), predicate| {
+                Ok(match header {
+                    HeaderProjection::Original => predicate.clone(),
+                    HeaderProjection::Closed { predicate, .. } => predicate
+                        .take()
+                        .expect("the closed function predicate is consumed once"),
+                })
+            },
         )?;
         let scope = Arc::clone(&self.source.scope);
         let origin = Arc::new(ConstraintOperandOrigin::Rebuilt {
@@ -178,6 +222,7 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             contents_scope: self.contents_scope,
             children: proofs.into_boxed_slice(),
             length: length_proof,
+            header: header_proof,
         });
         Ok(ConstraintProjectedOperand::new(
             value,

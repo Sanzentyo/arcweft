@@ -2,19 +2,20 @@
 
 use std::sync::{Arc, OnceLock};
 
-use crate::{effect_row::EffectSubstitution, types::TypeKind};
+use crate::types::TypeKind;
 
 use super::super::context::{TypeConstraintAccounting, TypeConstraintContext};
-use super::super::normalization::ConstraintProjectionView;
+use super::super::normalization::{ConstraintClosedEffects, close_type_operand};
 use super::{ConstraintApplicationId, ConstraintApplicationInventory};
+use super::{ConstraintOperand, ConstraintPath};
 
 #[cfg(test)]
 mod tests;
 use super::{
-    CheckedConstraintSourceProjection, ConstraintClosurePolicy, ConstraintDomain,
-    ConstraintResultProjection, ConstraintSourceId, PreparedConstraintSourceProjection,
-    PreparedSourceOrdinal, StoredSourceSelection, TypeConstraintError,
-    TypeConstraintSourceProtocolInvariant, project_type, protocol_error,
+    CheckedConstraintSourceProjection, ConstraintDomain, ConstraintResultProjection,
+    ConstraintSourceId, PreparedConstraintSourceProjection, PreparedSourceOrdinal,
+    StoredSourceSelection, TypeConstraintError, TypeConstraintSourceProtocolInvariant,
+    protocol_error,
 };
 
 /// The original branch allocation also owns its closed source preparation.
@@ -94,9 +95,8 @@ pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDoma
     pub(super) branch: Arc<SourceProbeObservation<D>>,
     pub(super) selection: StoredSourceSelection<D>,
     pub(super) prepared_source_projection: PreparedConstraintSourceProjection,
-    pub(super) value_expected: Option<TypeKind>,
-    pub(super) actual: TypeKind,
-    pub(super) origin: super::ResolvedConstraintSource<D>,
+    pub(super) value_expected: Option<ConstraintOperand<D>>,
+    pub(super) actual: ConstraintOperand<D>,
 }
 
 /// The selected source's type and constant references are closed against the
@@ -109,8 +109,7 @@ pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     branch: Arc<SourceProbeObservation<D>>,
     selection: ClosedSourceSelection<D>,
     prepared_source_projection: PreparedConstraintSourceProjection,
-    origin: super::ResolvedConstraintSource<D>,
-    actual: TypeKind,
+    actual: ConstraintOperand<D>,
     source_projection: CheckedConstraintSourceProjection,
 }
 
@@ -144,8 +143,8 @@ impl<D: ConstraintDomain> ClosedConstraintSourceTrace<D> {
                 || !self.same_result_origin(left, other, right)
                 || left.prepared_source_projection != right.prepared_source_projection
                 || !super::super::normalization::completed_types_equal(
-                    &left.actual,
-                    &right.actual,
+                    left.actual.value(),
+                    right.actual.value(),
                     context,
                 )?
             {
@@ -167,8 +166,8 @@ impl<D: ConstraintDomain> ClosedConstraintSourceTrace<D> {
                 ) if left_alternative == right_alternative
                     && left_evidence == right_evidence
                     && super::super::normalization::completed_types_equal(
-                        left_expected,
-                        right_expected,
+                        left_expected.value(),
+                        right_expected.value(),
                         context,
                     )? => {}
                 _ => return Ok(false),
@@ -220,7 +219,10 @@ impl<D: ConstraintDomain> ClosedConstraintSourceTrace<D> {
         other: &Self,
         right: &ClosedConstraintProbe<D>,
     ) -> bool {
-        match (left.origin.projection(), right.origin.projection()) {
+        match (
+            left.actual.associated_result(),
+            right.actual.associated_result(),
+        ) {
             (None, None) => true,
             (Some(left), Some(right)) => {
                 self.domain_application(left.application())
@@ -256,7 +258,7 @@ pub(crate) enum ClosedSourceSelection<D: ConstraintDomain> {
     Checked {
         alternative: D::AlternativeIndex,
         evidence: Arc<D::CheckedEvidence>,
-        expected: TypeKind,
+        expected: ConstraintOperand<D>,
     },
 }
 
@@ -268,8 +270,8 @@ pub(in crate::types::constraints) enum ConstraintProbe<D: ConstraintDomain> {
 impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
     fn close<A: TypeConstraintAccounting>(
         self,
-        view: ConstraintProjectionView<'_, D>,
-        effects: &EffectSubstitution,
+        path: &ConstraintPath<D>,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
         if self.branch.preparation().is_none() {
@@ -277,28 +279,21 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
-        view.applications()
+        effects.require_path(path)?;
+        path.projection_view()
+            .applications()
             .require_application(self.source.application())?;
         if self.source_ordinal.application != self.source.application() {
             return Err(protocol_error(
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
-        let mut project = |ty: &TypeKind| {
-            project_type(ty, view, ConstraintClosurePolicy::ProjectionClosed, context)?
-                .value
-                .substitute_effect_rows(effects)
-                .map_err(|_error| {
-                    super::super::effect_invariant(
-                        super::super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                        None,
-                    )
-                })
-        };
-        let actual = project(&self.actual)?;
-        let source_projection =
-            CheckedConstraintSourceProjection::derive(self.prepared_source_projection, &actual)
-                .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Outcome))?;
+        let actual = close_type_operand(self.actual.view(), path, effects, context)?;
+        let source_projection = CheckedConstraintSourceProjection::derive(
+            self.prepared_source_projection,
+            actual.value(),
+        )
+        .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Outcome))?;
         let selection = match (self.selection, self.value_expected) {
             (StoredSourceSelection::Unchecked, None) => ClosedSourceSelection::Unchecked,
             (
@@ -308,15 +303,16 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 },
                 Some(expected),
             ) => {
-                let value_expected = project(&expected)?;
-                let evidence =
-                    D::project_checked_evidence(evidence.as_ref(), &actual).ok_or_else(|| {
+                let value_expected = close_type_operand(expected.view(), path, effects, context)?;
+                let evidence = D::project_checked_evidence(evidence.as_ref(), actual.value())
+                    .ok_or_else(|| {
                         protocol_error(TypeConstraintSourceProtocolInvariant::InvalidEvidence)
                     })?;
                 ClosedSourceSelection::Checked {
                     alternative,
                     evidence: Arc::new(evidence),
-                    expected: source_projection.compose_expected(&value_expected),
+                    expected: source_projection
+                        .compose_operand(&actual.view(), &value_expected.view())?,
                 }
             }
             _ => {
@@ -331,7 +327,6 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
             branch: self.branch,
             selection,
             prepared_source_projection: self.prepared_source_projection,
-            origin: self.origin,
             actual,
             source_projection,
         })
@@ -341,12 +336,12 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 impl<D: ConstraintDomain> ConstraintProbe<D> {
     pub(super) fn close<A: TypeConstraintAccounting>(
         self,
-        view: ConstraintProjectionView<'_, D>,
-        effects: &EffectSubstitution,
+        path: &ConstraintPath<D>,
+        effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
         match self {
-            Self::Active(probe) => probe.close(view, effects, context),
+            Self::Active(probe) => probe.close(path, effects, context),
             Self::Closed(_) => Err(protocol_error(
                 TypeConstraintSourceProtocolInvariant::Outcome,
             )),
@@ -378,6 +373,17 @@ impl<D: ConstraintDomain> ConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
+    pub(super) fn actual_operand(&self) -> &ConstraintOperand<D> {
+        &self.actual
+    }
+
+    pub(super) fn expected_operand(&self) -> Option<&ConstraintOperand<D>> {
+        match &self.selection {
+            ClosedSourceSelection::Unchecked => None,
+            ClosedSourceSelection::Checked { expected, .. } => Some(expected),
+        }
+    }
+
     pub(crate) fn preparation(&self) -> &D::ProbePreparation {
         self.branch
             .preparation()
@@ -388,7 +394,7 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     /// fresh opening, but must preserve this source's schema and observation.
     fn same_observation(&self, other: &Self) -> bool {
         self.same_observation_except_origin(other)
-            && self.origin.projection() == other.origin.projection()
+            && self.actual.associated_result() == other.actual.associated_result()
     }
 
     fn same_observation_except_origin(&self, other: &Self) -> bool {
@@ -397,7 +403,7 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
             && self.branch == other.branch
             && self.selection == other.selection
             && self.prepared_source_projection == other.prepared_source_projection
-            && self.actual == other.actual
+            && self.actual.value() == other.actual.value()
             && self.source_projection == other.source_projection
     }
     pub(crate) const fn source(&self) -> ConstraintSourceId<D::Source> {
@@ -412,13 +418,13 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     pub(in crate::types::constraints) fn branch(&self) -> &D::ProbeSemanticBranch {
         self.branch.branch()
     }
-    pub(crate) const fn actual(&self) -> &TypeKind {
-        &self.actual
+    pub(crate) fn actual(&self) -> &TypeKind {
+        self.actual.value()
     }
-    pub(crate) const fn final_expected(&self) -> Option<&TypeKind> {
+    pub(crate) fn final_expected(&self) -> Option<&TypeKind> {
         match &self.selection {
             ClosedSourceSelection::Unchecked => None,
-            ClosedSourceSelection::Checked { expected, .. } => Some(expected),
+            ClosedSourceSelection::Checked { expected, .. } => Some(expected.value()),
         }
     }
     pub(crate) const fn selection(&self) -> &ClosedSourceSelection<D> {
@@ -432,7 +438,7 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     }
 
     pub(crate) fn result_origin(&self) -> Option<ConstraintResultProjection<D>> {
-        self.origin.projection()
+        self.actual.associated_result()
     }
 }
 
@@ -464,7 +470,6 @@ impl<D: ConstraintDomain> Clone for ActiveConstraintProbe<D> {
             prepared_source_projection: self.prepared_source_projection,
             value_expected: self.value_expected.clone(),
             actual: self.actual.clone(),
-            origin: self.origin.clone(),
         }
     }
 }
@@ -476,9 +481,10 @@ impl<D: ConstraintDomain> PartialEq for ActiveConstraintProbe<D> {
             && self.branch == other.branch
             && self.selection == other.selection
             && self.prepared_source_projection == other.prepared_source_projection
-            && self.origin.projection() == other.origin.projection()
-            && self.value_expected == other.value_expected
-            && self.actual == other.actual
+            && self.actual.associated_result() == other.actual.associated_result()
+            && self.value_expected.as_ref().map(ConstraintOperand::value)
+                == other.value_expected.as_ref().map(ConstraintOperand::value)
+            && self.actual.value() == other.actual.value()
     }
 }
 
@@ -517,7 +523,9 @@ impl<D: ConstraintDomain> PartialEq for ClosedSourceSelection<D> {
                     expected: right_expected,
                 },
             ) => {
-                left == right && left_evidence == right_evidence && left_expected == right_expected
+                left == right
+                    && left_evidence == right_evidence
+                    && left_expected.value() == right_expected.value()
             }
             _ => false,
         }
@@ -534,7 +542,6 @@ impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
             branch: Arc::clone(&self.branch),
             selection: self.selection.clone(),
             prepared_source_projection: self.prepared_source_projection,
-            origin: self.origin.clone(),
             actual: self.actual.clone(),
             source_projection: self.source_projection.clone(),
         }

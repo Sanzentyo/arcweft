@@ -8,6 +8,7 @@ use crate::types::{GenericBinder, GenericTypeReference};
 use std::sync::atomic::AtomicBool;
 
 mod bindings;
+mod closed_effects;
 mod normalization;
 mod result_uses;
 mod source_expectations;

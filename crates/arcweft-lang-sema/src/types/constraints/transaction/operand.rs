@@ -9,7 +9,7 @@ use projection::ConstraintOperandDerivation;
 use projection::ConstraintOperandProjection;
 pub(in crate::types) use projection::{ConstraintConstOperandView, ConstraintOperandView};
 pub(in crate::types::constraints) use projection::{
-    ConstraintOperandRebuild, ConstraintProjectedOperand,
+    ConstraintOperandEffects, ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
 
 pub(super) enum ResolvedConstraintSource<D: ConstraintDomain> {
@@ -142,6 +142,7 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         contents_scope: Arc<ConstraintLexicalScope>,
         children: Box<[ConstraintOperandDerivation<D, TypeKind>]>,
         length: Option<ConstraintOperandDerivation<D, ArrayLength>>,
+        header: Option<super::super::normalization::ConstraintClosedEffectHeader<D>>,
     },
     TypeAlias {
         steps: Box<[ConstraintAliasStep<D, TypeKind>]>,
@@ -208,6 +209,12 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
         }
     }
 
+    pub(in crate::types::constraints) fn associated_result(
+        &self,
+    ) -> Option<ConstraintResultProjection<D>> {
+        self.origin.associated_result()
+    }
+
     pub(in crate::types) fn value(&self) -> &T {
         &self.value
     }
@@ -228,16 +235,6 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 
     pub(in crate::types::constraints) fn shared_scope(&self) -> Arc<ConstraintLexicalScope> {
         Arc::clone(&self.scope)
-    }
-
-    /// A shared projection/closure keeps the exact originating authority.
-    /// This is internal to the lower's derivations, not a source constructor.
-    pub(in crate::types::constraints) fn projected(&self, value: T) -> Self {
-        Self {
-            value: Arc::new(value),
-            scope: Arc::clone(&self.scope),
-            origin: Arc::clone(&self.origin),
-        }
     }
 
     pub(in crate::types::constraints) fn completed(
@@ -390,7 +387,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 
     #[cfg(test)]
     pub(super) fn result_origin(&self) -> Option<ConstraintResultProjection<D>> {
-        self.origin.result_origin()
+        self.origin.associated_result()
     }
 
     #[cfg(test)]
@@ -424,35 +421,6 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
         }
     }
 
-    fn result_origin(&self) -> Option<ConstraintResultProjection<D>> {
-        match self {
-            ConstraintOperandOrigin::Result(result) => Some(result.projection()),
-            ConstraintOperandOrigin::Source { value, .. } => value.projection(),
-            ConstraintOperandOrigin::SourceExpectation { actual, .. } => actual.result_origin(),
-            ConstraintOperandOrigin::Projection { producer, .. } => producer.result_origin(),
-            ConstraintOperandOrigin::ConstOccurrence(root) => root.result_origin(),
-            ConstraintOperandOrigin::Rebuilt { source, .. } => source.result_origin(),
-            ConstraintOperandOrigin::TypeAlias { steps, terminal } => {
-                terminal.result_origin().or_else(|| {
-                    steps
-                        .iter()
-                        .find_map(|step| step.occurrence.result_origin())
-                })
-            }
-            ConstraintOperandOrigin::ConstAlias { steps, terminal } => {
-                terminal.result_origin().or_else(|| {
-                    steps
-                        .iter()
-                        .find_map(|step| step.occurrence.result_origin())
-                })
-            }
-            ConstraintOperandOrigin::Derived { producer, input } => {
-                producer.result_origin().or_else(|| input.result_origin())
-            }
-            _ => None,
-        }
-    }
-
     fn source_receipt(&self) -> Option<&ConstraintSourceReceipt<D>> {
         match self {
             ConstraintOperandOrigin::Source { receipt, .. } => Some(receipt),
@@ -477,6 +445,42 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
             ConstraintOperandOrigin::Derived { producer, input } => {
                 producer.source_receipt().or_else(|| input.source_receipt())
             }
+            _ => None,
+        }
+    }
+}
+
+enum ConstraintOperandAssociation<D: ConstraintDomain> {
+    Value,
+    Result(ConstraintResultProjection<D>),
+}
+
+impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
+    fn associated_result(&self) -> Option<ConstraintResultProjection<D>> {
+        match self.association() {
+            Some(ConstraintOperandAssociation::Result(result)) => Some(result),
+            Some(ConstraintOperandAssociation::Value) | None => None,
+        }
+    }
+
+    fn association(&self) -> Option<ConstraintOperandAssociation<D>> {
+        match self {
+            Self::Result(result) => Some(ConstraintOperandAssociation::Result(result.projection())),
+            Self::Source { value, .. } => Some(match value.projection() {
+                Some(result) => ConstraintOperandAssociation::Result(result),
+                None => ConstraintOperandAssociation::Value,
+            }),
+            Self::SourceExpectation { actual, .. } => actual.origin.association(),
+            Self::Projection { producer, .. } => producer.association(),
+            Self::ConstOccurrence(root) => root.origin.association(),
+            Self::Rebuilt { source, .. } => source.association(),
+            Self::TypeAlias { steps, terminal } => steps.iter()
+                .find_map(|step| step.occurrence.origin.association())
+                .or_else(|| terminal.origin.association()),
+            Self::ConstAlias { steps, terminal } => steps.iter()
+                .find_map(|step| step.occurrence.origin.association())
+                .or_else(|| terminal.origin.association()),
+            Self::Derived { producer, input } => producer.association().or_else(|| input.association()),
             _ => None,
         }
     }

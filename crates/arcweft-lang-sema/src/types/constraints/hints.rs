@@ -810,7 +810,7 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.source_ref()
     }
 
-    pub(crate) const fn expected(&self) -> Option<&'h TypeKind> {
+    pub(crate) fn expected(&self) -> Option<&'h TypeKind> {
         self.source.final_expected()
     }
 
@@ -822,7 +822,7 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.selection().evidence()
     }
 
-    pub(crate) const fn actual(&self) -> &'h TypeKind {
+    pub(crate) fn actual(&self) -> &'h TypeKind {
         self.source.actual()
     }
 

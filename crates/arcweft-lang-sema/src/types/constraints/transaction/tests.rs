@@ -362,7 +362,10 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
     let before = path.equations[0].actual.clone();
     let receipt = before.source_receipt().unwrap().clone();
     let original = before.original_context().clone();
-    close_source_rows(&mut path, &EffectSubstitution::default(), &mut context).unwrap();
+    let effects =
+        super::super::normalization::ConstraintClosedEffects::for_path(&path, &mut context)
+            .unwrap();
+    close_source_rows(&mut path, &effects, &mut context).unwrap();
     let equation = &path.equations[0];
     assert!(equation.actual.source_receipt().unwrap().matches(&receipt));
     assert_eq!(equation.actual.original_context(), &original);
@@ -521,7 +524,10 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
     assert_eq!(before.value(), &TypeKind::String);
     assert_eq!(before.result_origin().unwrap().application(), child_id);
     assert!(before.source_receipt().unwrap().matches(&receipt));
-    close_source_rows(&mut path, &EffectSubstitution::default(), &mut context).unwrap();
+    let effects =
+        super::super::normalization::ConstraintClosedEffects::for_path(&path, &mut context)
+            .unwrap();
+    close_source_rows(&mut path, &effects, &mut context).unwrap();
     let enclosing = context.enter_binder_scope(crate::types::GenericBinder::new(1, 0, 0));
     let target = context.capture_lexical_scope().unwrap();
     let transported = path
@@ -1286,7 +1292,8 @@ fn source_frontier<A: TypeConstraintAccounting>(
         .expect("opened candidate parameter");
     let [first, second] = [(); 2].map(|()| {
         let mut path = context.fork_path(path).expect("admitted frontier row");
-        path.bindings.insert(parameter.clone(), context.fixture_operand(TypeKind::I64));
+        path.bindings
+            .insert(parameter.clone(), context.fixture_operand(TypeKind::I64));
         path.lineage
             .probe_trace
             .push(source::ConstraintProbe::Active(
@@ -1300,8 +1307,7 @@ fn source_frontier<A: TypeConstraintAccounting>(
                     selection: StoredSourceSelection::Unchecked,
                     prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
                     value_expected: None,
-                    actual: TypeKind::I64,
-                    origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
+                    actual: context.fixture_operand(TypeKind::I64),
                 },
             ));
         path
@@ -1470,7 +1476,7 @@ fn incomplete_alternatives_are_rejected_before_any_materialization() {
                 else {
                     panic!("the source has not been closed");
                 };
-                probe.actual = TypeKind::GenericParam(unresolved);
+                probe.actual = context.fixture_operand(TypeKind::GenericParam(unresolved));
             }
             path.bindings.clear();
         }

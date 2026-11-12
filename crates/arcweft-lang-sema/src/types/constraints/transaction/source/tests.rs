@@ -121,8 +121,8 @@ mod retained_preparation {
                 path.lineage.probe_trace[0]
                     .clone()
                     .close(
-                        path.projection_view(),
-                        &EffectSubstitution::new(),
+                        &path,
+                        &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
                         &mut context,
                     )
                     .unwrap(),
@@ -208,6 +208,7 @@ fn context(cancellation: &AtomicBool) -> TestContext<'_> {
 }
 
 fn source(
+    context: &TypeConstraintContext<'_, LocalConstraintAccounting<'_>, NoConstraintClient>,
     application: ConstraintApplicationId,
     actual: TypeKind,
 ) -> ConstraintProbe<NoConstraintClient> {
@@ -221,8 +222,7 @@ fn source(
         selection: StoredSourceSelection::Unchecked,
         prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
         value_expected: None,
-        actual,
-        origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
+        actual: context.fixture_operand(actual),
     })
 }
 
@@ -230,15 +230,15 @@ fn source(
 fn an_unclosed_probe_preparation_cannot_issue_a_completed_source() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path();
-    let mut probe = source(path.root_id(), TypeKind::I32);
+    let mut probe = source(&context, path.root_id(), TypeKind::I32);
     let ConstraintProbe::Active(active) = &mut probe else {
         unreachable!()
     };
     active.branch = SourceProbeObservation::new(());
     assert!(matches!(
         probe.close(
-            path.projection_view(),
-            &EffectSubstitution::new(),
+            &path,
+            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
             &mut context
         ),
         Err(TypeConstraintError::Invariant(
@@ -258,12 +258,16 @@ fn source_operand_cannot_retain_an_unowned_future_type_reference() {
         .parameters()
         .type_reference(&(future_parameter()).clone().into())
         .expect("future slot");
-    let probe = source(path.root_id(), TypeKind::GenericParam(future.clone()));
+    let probe = source(
+        &context,
+        path.root_id(),
+        TypeKind::GenericParam(future.clone()),
+    );
     assert_eq!(
         probe
             .close(
-                path.projection_view(),
-                &EffectSubstitution::new(),
+                &path,
+                &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
                 &mut context
             )
             .err()
@@ -290,10 +294,10 @@ fn source_function_value_retains_its_own_type_and_constant_binder() {
     );
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path();
-    let closed = source(path.root_id(), function.clone())
+    let closed = source(&context, path.root_id(), function.clone())
         .close(
-            path.projection_view(),
-            &EffectSubstitution::new(),
+            &path,
+            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("an operand's own quantifiers must remain valid: {error}"));
@@ -332,19 +336,18 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
         prepared_source_projection: PreparedConstraintSourceProjection::InferSpreadContainer {
             policy: ConstraintSourceContainerPolicy::Positional,
         },
-        value_expected: Some(item.clone()),
-        actual: TypeKind::Array {
+        value_expected: Some(context.fixture_operand(item.clone())),
+        actual: context.fixture_operand(TypeKind::Array {
             item: Box::new(item),
             len: ArrayLength::Const(4),
-        },
-        origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
+        }),
     });
     path.bindings
         .insert(parameter, context.fixture_operand(TypeKind::I64));
     let closed = probe
         .close(
-            path.projection_view(),
-            &EffectSubstitution::new(),
+            &path,
+            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("normalized source: {error}"));
@@ -364,13 +367,13 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
 fn source_trace_cannot_skip_or_repeat_completion() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path();
-    let active = source(path.root_id(), TypeKind::I64);
+    let active = source(&context, path.root_id(), TypeKind::I64);
     let expected = protocol_error(TypeConstraintSourceProtocolInvariant::Outcome);
     assert_eq!(active.clone().into_closed().err(), Some(expected.clone()));
     let closed = active
         .close(
-            path.projection_view(),
-            &EffectSubstitution::new(),
+            &path,
+            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("complete source: {error}"));
@@ -379,8 +382,8 @@ fn source_trace_cannot_skip_or_repeat_completion() {
         trace
             .clone()
             .close(
-                path.projection_view(),
-                &EffectSubstitution::new(),
+                &path,
+                &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
                 &mut context
             )
             .err(),
@@ -478,16 +481,15 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
             evidence: Arc::new(observed),
         },
         prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
-        value_expected: Some(actual.clone()),
-        actual,
-        origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
+        value_expected: Some(context.fixture_operand(actual.clone())),
+        actual: context.fixture_operand(actual),
     });
     path.bindings
         .insert(reference, context.fixture_operand(TypeKind::I64));
     let closed = probe
         .close(
-            path.projection_view(),
-            &EffectSubstitution::new(),
+            &path,
+            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("complete source evidence: {error}"));

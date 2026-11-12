@@ -21,7 +21,7 @@ use super::{
 
 mod mode;
 use crate::types::constraints::transaction::{
-    ConstraintConstOperandView, ConstraintOperand, ConstraintOperandView,
+    ConstraintConstOperandView, ConstraintOperand, ConstraintOperandEffects, ConstraintOperandView,
 };
 use mode::{InspectValues, ProjectionMode, RetainOrigins};
 
@@ -82,6 +82,33 @@ where
             context,
             visiting,
             &mut BTreeSet::new(),
+            &ConstraintOperandEffects::Original,
+        )
+        .map(|value| value.into_operand())
+    })
+}
+
+pub(in crate::types::constraints) fn close_type_operand<'ty, A, D>(
+    input: ConstraintOperandView<'ty, D>,
+    path: &'ty super::super::transaction::ConstraintPath<D>,
+    effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<ConstraintOperand<D>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    effects.require_path(path)?;
+    let scope = input.lexical_scope().as_ref().clone();
+    context.with_original_scope(scope, |context| {
+        project_type_fold::<A, D, RetainOrigins>(
+            input,
+            path.projection_view(),
+            ConstraintClosurePolicy::ProjectionClosed,
+            context,
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+            &ConstraintOperandEffects::Closed(std::sync::Arc::clone(effects)),
         )
         .map(|value| value.into_operand())
     })
@@ -122,7 +149,7 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    project_type_fold::<A, D, InspectValues>(ty, view, policy, context, visiting, remaining)
+    project_type_fold::<A, D, InspectValues>(ty, view, policy, context, visiting, remaining, &())
 }
 fn project_type_fold<'ty, A, D, M>(
     ty: M::TypeInput,
@@ -131,6 +158,7 @@ fn project_type_fold<'ty, A, D, M>(
     context: &mut TypeConstraintContext<'_, A, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
     remaining: &mut BTreeSet<RemainingConstraintParameter>,
+    effects: &M::Effects,
 ) -> Result<M::TypeOutput, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
@@ -266,7 +294,7 @@ where
                         current = child;
                         continue;
                     }
-                    rebuild::<A, D, M>(seed, Vec::new(), length, enclosing, context)?
+                    rebuild::<A, D, M>(seed, Vec::new(), length, enclosing, effects, context)?
                 }
             };
             loop {
@@ -303,7 +331,9 @@ where
                             current = child;
                             break;
                         }
-                        value = rebuild::<A, D, M>(seed, projected, length, enclosing, context)?;
+                        value = rebuild::<A, D, M>(
+                            seed, projected, length, enclosing, effects, context,
+                        )?;
                     }
                 }
             }
@@ -324,6 +354,7 @@ fn rebuild<'ty, A, D, M>(
     children: Vec<M::TypeOutput>,
     length: Option<M::ConstOutput>,
     enclosing: Option<ConstraintLexicalScope>,
+    effects: &M::Effects,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<M::TypeOutput, TypeConstraintError>
 where
@@ -334,7 +365,7 @@ where
     if let Some(enclosing) = enclosing {
         context.restore_binder_scope(enclosing);
     }
-    M::rebuild(seed, children, length)
+    M::rebuild(seed, children, length, effects, context)
 }
 fn allows_unbound_type(
     policy: ConstraintClosurePolicy,

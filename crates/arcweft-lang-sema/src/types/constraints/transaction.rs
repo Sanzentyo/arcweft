@@ -37,7 +37,8 @@ pub(in crate::types) use operand::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandView,
 };
 pub(in crate::types::constraints) use operand::{
-    ConstraintOperandChildren, ConstraintOperandRebuild, ConstraintProjectedOperand,
+    ConstraintOperandChildren, ConstraintOperandEffects, ConstraintOperandRebuild,
+    ConstraintProjectedOperand,
 };
 use operand::{ResolvedConstraintResult, ResolvedConstraintSource};
 
@@ -1779,37 +1780,39 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             }
                         };
 
+                    let scope = Arc::new(context.capture_lexical_scope()?);
+                    let actual_operand = ConstraintOperand::source(
+                        actual.clone(),
+                        Arc::clone(&scope),
+                        path.lineage.original.clone(),
+                        ConstraintSourceReceipt {
+                            input: Arc::clone(&input),
+                        },
+                        result_origin,
+                    );
+                    let value_expected = value_expected
+                        .map(|value| {
+                            Ok::<_, TypeConstraintError>(ConstraintOperand::template(
+                                value,
+                                scope,
+                                path.applications
+                                    .require_application_owner(self.application)?,
+                            ))
+                        })
+                        .transpose()?;
                     if pattern.is_some() {
-                        let scope = Arc::new(context.capture_lexical_scope()?);
-                        let actual = ConstraintOperand::source(
-                            actual.clone(),
-                            Arc::clone(&scope),
-                            path.lineage.original.clone(),
-                            ConstraintSourceReceipt {
-                                input: Arc::clone(&input),
-                            },
-                            result_origin.clone(),
-                        );
-                        let expected = ConstraintOperand::template(
-                            value_expected
-                                .as_ref()
-                                .ok_or_else(|| {
-                                    protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
-                                })?
-                                .clone(),
-                            scope,
-                            path.applications
-                                .require_application_owner(self.application)?,
-                        );
-                        let pattern =
-                            source_projection.compose_operand(&actual.view(), &expected.view())?;
+                        let expected = value_expected.as_ref().ok_or_else(|| {
+                            protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
+                        })?;
+                        let pattern = source_projection
+                            .compose_operand(&actual_operand.view(), &expected.view())?;
                         path.equations.push(PendingEquation {
                             ordinal: input.equation_ordinal.ok_or_else(|| {
                                 protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
                             })?,
                             direction: input.acceptance,
                             pattern,
-                            actual,
+                            actual: actual_operand.clone(),
                             source_ordinal: Some(operation.source_ordinal),
                             final_expected: None,
                             timing: ConstraintEquationTiming::Immediate,
@@ -1836,8 +1839,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         selection: stored_selection,
                         prepared_source_projection: input.prepared.source_projection(),
                         value_expected,
-                        origin: result_origin,
-                        actual: actual.clone(),
+                        actual: actual_operand,
                     });
                     path.lineage.probe_trace.push(probe);
 
@@ -2304,9 +2306,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     {
         context.check_cancelled()?;
         ensure_unique_sources(path)?;
-        let effects = path.effects.complete(context)?;
-        close_source_rows(path, &effects.substitution, context)?;
-        Self::validate_completed_equations(path, &effects.substitution, context)?;
+        let effects = super::normalization::ConstraintClosedEffects::for_path(path, context)?;
+        close_source_rows(path, &effects, context)?;
+        Self::validate_completed_equations(path, &effects.completion().substitution, context)?;
         context.validate_type_and_const_completion(path)?;
         let selected_domain = path
             .applications
@@ -2325,14 +2327,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let solution = Arc::new(TypeConstraintSolution::complete_application_with_effects(
                 path,
                 application,
-                &effects,
+                effects.completion(),
                 context,
             )?);
             let projections = Self::finish_projections(
                 path,
                 application,
                 &solution,
-                &effects.substitution,
+                &effects.completion().substitution,
                 context,
             )?;
             completed.insert(
@@ -2681,22 +2683,23 @@ fn unique_request_ordinal<D: ConstraintDomain>(
 }
 fn close_source_rows<A, D>(
     path: &mut ConstraintPath<D>,
-    effect_substitution: &EffectSubstitution,
+    effects: &Arc<super::normalization::ConstraintClosedEffects<D>>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
+    effects.require_path(path)?;
     let probes = core::mem::take(&mut path.lineage.probe_trace);
     let mut closed = Vec::with_capacity(probes.len());
     for probe in probes {
-        let probe = probe.close(path.projection_view(), effect_substitution, context)?;
+        let probe = probe.close(path, effects, context)?;
         for equation in &mut path.equations {
             if equation.source_ordinal == Some(probe.ordinal()) {
-                equation.actual = equation.actual.projected(probe.actual().clone());
-                if let Some(expected) = probe.final_expected() {
-                    let expected = equation.pattern.projected(expected.clone());
+                equation.actual = probe.actual_operand().clone();
+                if let Some(expected) = probe.expected_operand() {
+                    let expected = expected.clone();
                     equation.final_expected = Some(expected.clone());
                     equation.pattern = expected;
                 }
