@@ -1779,7 +1779,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             }
                         };
 
-                    if let Some(expected) = pattern.as_ref() {
+                    if pattern.is_some() {
                         let scope = Arc::new(context.capture_lexical_scope()?);
                         let actual = ConstraintOperand::source(
                             actual.clone(),
@@ -1790,13 +1790,19 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             },
                             result_origin.clone(),
                         );
-                        let pattern = ConstraintOperand::template(
-                            expected.clone(),
+                        let expected = ConstraintOperand::template(
+                            value_expected
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
+                                })?
+                                .clone(),
                             scope,
                             path.applications
                                 .require_application_owner(self.application)?,
-                        )
-                        .derived_from(&actual);
+                        );
+                        let pattern =
+                            source_projection.compose_operand(&actual.view(), &expected.view())?;
                         path.equations.push(PendingEquation {
                             ordinal: input.equation_ordinal.ok_or_else(|| {
                                 protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)

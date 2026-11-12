@@ -124,6 +124,11 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         producer: Arc<ConstraintOperandOrigin<D>>,
         input: Arc<ConstraintOperandOrigin<D>>,
     },
+    SourceExpectation {
+        projection: CheckedConstraintSourceProjection,
+        actual: ConstraintOperand<D>,
+        value_expected: ConstraintOperand<D>,
+    },
     Projection {
         root: Arc<TypeKind>,
         root_scope: Arc<ConstraintLexicalScope>,
@@ -404,6 +409,9 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
             ConstraintOperandOrigin::Template(owner) => owner.original_context(),
             ConstraintOperandOrigin::Result(result) => result.owner.original_context(),
             ConstraintOperandOrigin::Derived { producer, .. } => producer.original_context(),
+            ConstraintOperandOrigin::SourceExpectation { value_expected, .. } => {
+                value_expected.original_context()
+            }
             ConstraintOperandOrigin::Projection { producer, .. } => producer.original_context(),
             ConstraintOperandOrigin::ConstOccurrence(root) => root.original_context(),
             ConstraintOperandOrigin::Rebuilt { source, .. } => source.original_context(),
@@ -420,6 +428,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
         match self {
             ConstraintOperandOrigin::Result(result) => Some(result.projection()),
             ConstraintOperandOrigin::Source { value, .. } => value.projection(),
+            ConstraintOperandOrigin::SourceExpectation { actual, .. } => actual.result_origin(),
             ConstraintOperandOrigin::Projection { producer, .. } => producer.result_origin(),
             ConstraintOperandOrigin::ConstOccurrence(root) => root.result_origin(),
             ConstraintOperandOrigin::Rebuilt { source, .. } => source.result_origin(),
@@ -447,6 +456,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
     fn source_receipt(&self) -> Option<&ConstraintSourceReceipt<D>> {
         match self {
             ConstraintOperandOrigin::Source { receipt, .. } => Some(receipt),
+            ConstraintOperandOrigin::SourceExpectation { actual, .. } => actual.source_receipt(),
             ConstraintOperandOrigin::Projection { producer, .. } => producer.source_receipt(),
             ConstraintOperandOrigin::ConstOccurrence(root) => root.source_receipt(),
             ConstraintOperandOrigin::Rebuilt { source, .. } => source.source_receipt(),

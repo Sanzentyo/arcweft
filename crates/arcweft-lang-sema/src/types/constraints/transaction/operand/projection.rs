@@ -4,6 +4,7 @@ use super::*;
 use crate::types::constraints::shape::TypeConstraintChildren;
 
 mod rebuild;
+mod source_expectation;
 pub(in crate::types::constraints) use rebuild::{
     ConstraintOperandDerivation, ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
