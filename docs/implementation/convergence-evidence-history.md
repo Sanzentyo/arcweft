@@ -16991,3 +16991,17 @@ Source `377206557e9e41a95da3b3cc1f77bfd46a0974ab` の3 modeのresolved metadata�
 このcutは元宣言と実Γの保持を接続したもので、元Dの下の条件付きMGU・適格性／rank、Fn自身の局所∀、metaの依存範囲と実Γでの引数転送、intrinsic／派生useのcontext、prepared effectのfrontend全体と一括sealは継続中である。新しい本体推論のNative／AWBC、Wasm、Tier 2を今回の結果として扱わない。Generic Match、caller-bound recursion、同じgroupのprefixなどの既受入は維持し、全体goalの未達を取り消し理由にしない。
 
 [検証原本](acceptance-evidence/task-original-context-retention.raw.zip)は262 entry、展開時43012750 bytes、ZIP 4980164 bytes、SHA-256 `fbfe69230c87c7f8463e3e59d8ba3f64bba3c9cdaf273d2cbfe490a5cd36fcb3`。manifestを含む全entryを読み戻し照合した。現状一覧では完了したlower保持を残作業から除き、その訂正理由を本節へ記録した。過去の実行結果・full SHA・既存履歴のbyte prefixと未追跡 `%SystemDrive%/` を保持する。
+
+## Contexts on intrinsic values and uses
+
+2026-11-12。Source `2365a0dfa163a3e7e06a247ee507f1a12eb44f64`、tree `f53eae19e28e38a1c580df2dc59d7ff0afd9f7a8`、parent `f316fa4f3231b92cd4450f9d537b1589c6a4c9aa`。既存mainの3 Rust pathを通常commit／non-forced pushし、full SHA・tree・3 blobを照合した。Supersedes: 前節のSourceで残作業に記載したintrinsic／派生useのcontext保持を、このprivate ownerの実装と検証に基づき完了へ更新する。前節の結果は当時の履歴として保持する。
+
+RegisteredValueが一つのOriginalProducerContextを所有し、constraint root、intrinsic値、派生use、型のない診断結果に同じ保持契約を適用する。各alternativeのArc<GenericScope>とreadonly visitorの別scope fieldを削除し、shapeはcontextから借りる。PreparedValueOutputとuseの発行はcontextを必須とする。inputは元producerのcontextを返し、accepted／conditional outputはuse自身のcontextと照合してから記録する。違えばUseContextで拒否し、ticketを失敗状態にしてvalueを公開しない。既存のroot相関、affineなpreparationの共有、effect graphの失敗時rollbackは維持する。productionの省略用constructorやshapeからのΓ再構築は追加していない。
+
+新規3件を含むowner 33件がすべてPASS（0.276秒）、選択IDと終端IDは一致し重複0。型・const・effectの実frameを持つintrinsic値を同形の別frame内で登録・参照しても元contextを保つこと、別contextのaccepted／conditional outputを公開前に拒否すること、派生値がavailable／diagnosticのどちらでもuse contextを保持することを確認した。既存の原型推論、相関、取消し、上限、未知effect行、foreign／stale graphとrollbackのtestも同じ33件で通過した。filter外1,558件は未実行で、Sema全件の成功へ読み替えない。前後で3 pathのsource byte pinを照合した。Semaのlocked・全target・全feature Clippyとworkspace fmt checkは終了0、警告を保持した。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+変更APIはcrate-privateで、具体的なproducer／consumerは同じcomponent ownerのtestにある。Cargo入力と3 modeの22 package逆依存closureは不変。公開契約やfrontendの利用側を変更していないため、このcutでは全Sema・consumerの再実行やworkspace全check／Clippyを重ねない。直近の全件実測はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の4,113 PASS／8既知FAIL／1 SKIPとして保持し、新Sourceの実測と合算しない。Native／AWBC、Wasm、Tier 2の新しい受入も主張しない。
+
+所有測定はproduction component 1,087物理LOC（基点1,059、増加28）、test module 1,386（基点1,190、増加196）、original test module 825（基点823、増加2）。byteとblob／SHA-256も原本へ保持する。componentは値の不変metadata、準備済みeffect graph、affineなuseの状態を一緒に所有する。元contextを共通ownerへ移し、重複したshapeの保存を削除した。別catalog、context cache、公開範囲の拡大、Cargo edge、unsafe、I/O、contract version変更はない。
+
+元Dの下での条件付きMGU・適格性／rank、Fnの局所∀、metaの依存範囲・実Γの引数転送、prepared value／effectのfrontend全体への接続と一括sealは継続中である。Generic Match、caller-bound recursion、同じgroupのprefixなどの既受入は維持する。[検証原本](acceptance-evidence/task-prepared-value-context.raw.zip)は15 entry、展開時6859561 bytes、ZIP 575362 bytes、SHA-256 `24644e8cb8be2d8b47d9f1bc75f6314f66f9db12b1784ed718b9e93964174520`。manifestを含む全entryを読み戻し照合した。現状一覧を更新し、過去のSHA・実測・既存履歴のbyte prefixと未追跡 `%SystemDrive%/` を保持した。
