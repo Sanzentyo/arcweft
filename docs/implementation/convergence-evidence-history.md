@@ -17159,3 +17159,21 @@ normal／normal+dev／normal+dev+build、全feature・全target向けのcargo tr
 逆依存はSource `5012e0c6d26655fe005d150c321d47051a21096f` のnormal／dev／build・全feature・全target向け22 package graphを、Cargo.toml／Cargo.lock／設定／toolchainの差分0を確認して再利用した。原本のreuse receiptはNewExecution=falseを明記する。今回はprivateな結果入力保持の接続であり、全owner/frontend/APIは再実行した。他21 packageの2,507 PASS／2 FAIL／1 SKIPとworkspace品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の歴史的な実測を保持し、今回の件数へ合算しない。再帰本体6失敗、Free認可や新bodyのNative／AWBC受入を完了としない。現状の未達範囲はcurrent-statusだけに置き、Generic Match、caller-bound recursion、同group prefixの既受入を維持する。
 
 [検証原本](acceptance-evidence/task-result-port-provenance.raw.zip)は29 entry、展開時9735616 bytes、ZIP 934476 bytes、SHA-256 `f9219ac70d23531158424cdefa622eb26899217fcfdc447b358eb46dc715ff12`。manifestを含む全entryのsize／hashを読み戻し、portableなpath区切りを照合した。以前の履歴のbyte prefix・SHA・実測とGeneric Matchの受入行を保持し、今回移行した経路を未完了一覧から除いた。
+
+## Typed source expectation composition
+
+2026-11-13。Source `108864edfc1ea2bc7ad38ebe641a4b2ccbd64a07`、tree `56f61a94fa12188b00b30c289f77a956509cc8f2`、親 `896834803f8670753514cfc01320b66af9cf39a2` を既存mainへnon-forced pushし、origin/mainと変更6 blobを照合した。ユーザーの途中commit方針に従いcheckpointを先に公開し、その同一sourceを各検証の前後にbyte pinで照合した。tracked差分0件から本記録・一覧・原本を更新し、既存の未追跡 `%SystemDrive%/` を保持した。
+
+sourceの期待型を保持する初回probe経路を、任意のtemplate operandにactual全体のDerived辺を付ける経路から、CheckedConstraintSourceProjection::compose_operandへ移行した。既存のchecked projectionが唯一のconstructor grammarを所有する。Scalarは選択したtemplate値、Vec／Seq／Sliceはその値のwrapper、Arrayは実lengthとtemplate要素、Mapは実kind／keyとtemplate値を合成する。SourceExpectationは実sourceとvalue_expectedを別の役割で保持する。receiptと選択resultのassociationは実source、期待型のoriginal contextはtemplateに帰属し、実要素／値や兄弟を期待型の子へ取り込まない。共通のmatches_actualと実lexical frame identityを確認してから構築し、別のAST walkerやcapture unionを増やしていない。
+
+最終固定入力の全feature Sema lib／testsは1,639件中1,633 PASS／6 FAIL／0 SKIP（69.235秒、slow 0）。選択IDと終端IDは一致し重複0、既存1,636 IDすべてと新3 IDを照合した。失敗IDと実診断は直前と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。新3件はScalar／Vec／Seq／Slice／Array／Mapの6 constructor family、選択tuple位置・両rootの保持と解放、Array length／Map kind／key／container shapeの偽装拒否、同形の別frameの拒否を確認した。元のsource receipt／子結果の追跡を弱めず通過した。構造／alias／関数headerと局所frame、10,000 aliasと正確な10,001 node、分岐予算、256 probe／1 replay・4,096上限も同じ全件runで通過した。Semaのlocked・全target・全feature Clippy、workspace fmt check、canonical構造gateは終了0。警告を保持し、全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+開発時のlibrary checkは終了0（15.13秒）。追加testを確定した後のnextest listも終了0で、公開後の別の固定入力で最終list／run／Clippy／fmtを終端まで実行した。途中commitを最終受入と扱わず、公開後の6 pathを照合した。
+
+所有測定はtransaction 2,740物理LOC（+6）、operand 483（+10）、operand projection 279（+1）、新source composition 30、test親module 220（+1）、新source expectation test 175。全pathのbyte・hash・分類を原本へ保持する。transactionは既存のprobe／equation協調、operandはscopedな値と導出の所有を維持し、新しい型grammar、可変state cluster、fallbackを作らない。30 LOCのprivate moduleはchecked projectionとoperandの合成責任を所有する。構造gateは98 package・3,478 files・3,347 Rust files、review trigger 396、blocking 0。Semaのworkspace fan-in／outは8／15、devは4／0。Cargo・外部public shape・unsafe・I/O・version・予算は不変。
+
+逆依存はSource `5012e0c6d26655fe005d150c321d47051a21096f` のnormal／dev／build・全feature・全target向け22 package graphを、Cargo.toml／Cargo.lock／設定／toolchainの差分0を確認して再利用した。原本のreuse receiptはNewExecution=falseを明記する。privateなsource導出の移行なのでowner/frontend/APIは全件再実行し、他21 packageの2,507 PASS／2 FAIL／1 SKIPとworkspace品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の元入力の実測として保持する。今回の件数へ合算しない。
+
+今回完了したのは初回probeでのsource期待型合成とその所有境界である。source rowの閉鎖はまだrawなeffect置換値をprojectedで保持し、scheme特殊化はDerivedを使うため、これらやFree認可を完了とは扱わない。前の現状一覧でsource構造合成と特殊化を一括してDerivedの残作業としていた列挙を、今回のコードと実測に基づき訂正した。広い未達一覧はcurrent-statusだけに置き、Generic Match、caller-bound recursion、同group prefixの受入を維持する。
+
+[検証原本](acceptance-evidence/task-source-expectation.raw.zip)は29 entry、展開時9744680 bytes、ZIP 935349 bytes、SHA-256 `63d766b44b8038034b2a613731e56e1f695ce2174e3366ca556118832f938516`。manifestを含む全entryのsize／hashを読み戻し、portableなpath区切りを照合した。以前の履歴のbyte prefix・SHA・実測とGeneric Matchの受入行を保持した。
