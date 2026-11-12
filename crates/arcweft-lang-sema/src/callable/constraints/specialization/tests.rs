@@ -30,6 +30,7 @@ impl ConstraintDomain for Domain {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = u8;
+    type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = u8;
     type SourceErrorCause = ();
@@ -198,8 +199,12 @@ impl TypeConstraintClient<Domain> for Client<'_> {
     ) -> Result<(), SourceCheckpointFailure<Domain>> {
         Ok(())
     }
-    fn close_probe_checkpoint(&mut self, _: ()) -> Result<(), SourceCheckpointFailure<Domain>> {
-        Ok(())
+    fn close_probe_checkpoint(
+        &mut self,
+        _: (),
+        disposition: crate::callable::ProbeCheckpointDisposition,
+    ) -> Result<Option<()>, SourceCheckpointFailure<Domain>> {
+        Ok((disposition == crate::callable::ProbeCheckpointDisposition::Retain).then_some(()))
     }
     fn open_materialization_checkpoint(
         &mut self,

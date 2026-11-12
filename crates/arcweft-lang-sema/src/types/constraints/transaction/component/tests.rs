@@ -576,6 +576,7 @@ impl ConstraintDomain for Applications {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = ();
+    type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = ();
     type SourceErrorCause = ();

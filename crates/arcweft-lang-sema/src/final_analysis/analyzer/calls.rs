@@ -1273,7 +1273,8 @@ impl Analyzer<'_, '_, '_> {
             };
             // Declaration body prerequisites are independent of candidate
             // argument solving. Retain them with the callee transaction;
-            // candidate probes deliberately discard their source facts.
+            // The lower source trace retains each successfully closed probe's
+            // original facts separately from these callee prerequisites.
             self.prepare_pending_result_projection(source.site, candidate)
                 .map_err(AnalyzerExpressionError::fatal)?;
             let prepared = self

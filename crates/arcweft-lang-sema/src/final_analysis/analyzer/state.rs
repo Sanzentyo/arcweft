@@ -340,6 +340,15 @@ pub(super) struct CandidateSemanticProjection {
 }
 
 impl CandidateSemanticProjection {
+    /// Absence, a projected deletion, and a retained expression are distinct.
+    /// The borrowed fact is original preparation, not a closed type witness.
+    pub(super) fn expression_update(
+        &self,
+        owner: ExprId,
+    ) -> Option<Option<&PreparedExpressionFact>> {
+        self.data.expressions.get(&owner).map(Option::as_ref)
+    }
+
     pub(super) fn effect_view<'a>(
         &'a self,
         graph: &'a AnalyzerPreparedCallGraph,

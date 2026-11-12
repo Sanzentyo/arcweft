@@ -93,6 +93,7 @@ pub(crate) struct DeferredCycleWitness {
 }
 
 mod source;
+pub(super) use source::SourceProbeObservation;
 use source::{ActiveConstraintProbe, ConstraintProbe};
 pub(crate) use source::{ClosedConstraintProbe, ClosedConstraintSourceTrace};
 
@@ -280,12 +281,12 @@ pub(crate) struct PendingChildConstraint<D: ConstraintDomain> {
 struct PendingChildAlternative<D: ConstraintDomain> {
     path: ConstraintPath<D>,
     result: ConstraintResultProjection<D>,
-    branch: Option<Arc<D::ProbeSemanticBranch>>,
+    branch: Option<Arc<SourceProbeObservation<D>>>,
 }
 
 impl<D: ConstraintDomain> PendingChildConstraint<D> {
     pub(crate) fn with_probe_branch(mut self, branch: D::ProbeSemanticBranch) -> Self {
-        let branch = Arc::new(branch);
+        let branch = SourceProbeObservation::new(branch);
         for alternative in &mut self.alternatives {
             alternative.branch = Some(Arc::clone(&branch));
         }
@@ -310,12 +311,81 @@ pub(crate) struct SourceProbeContribution<D: ConstraintDomain> {
     alternatives: Vec<ObservedProbeAlternative<D>>,
 }
 
+/// A callback has closed its fact scope before these alternatives can enter
+/// the frontier. Forked paths alias this one move-only preparation.
+pub(crate) struct ClosedSourceProbeContribution<D: ConstraintDomain> {
+    input: Arc<ProbeInput<D>>,
+    alternatives: Vec<ObservedProbeAlternative<D>>,
+    preparation: D::ProbePreparation,
+}
+
+impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
+    fn bind_preparation<A: TypeConstraintAccounting>(
+        self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<SourceProbeContribution<D>, TypeConstraintError> {
+        context.check_cancelled()?;
+        let first = self
+            .alternatives
+            .first()
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Outcome))?
+            .result
+            .observation();
+        if first.preparation().is_some() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            ));
+        }
+        let mut shared = false;
+        for alternative in self.alternatives.iter().skip(1) {
+            context.enter_node()?;
+            let observation = alternative.result.observation();
+            if observation.preparation().is_some() {
+                return Err(protocol_error(
+                    TypeConstraintSourceProtocolInvariant::Outcome,
+                ));
+            }
+            shared |= !Arc::ptr_eq(first, observation);
+        }
+        if shared {
+            // Distinct observations share facts without cloning the payload.
+            // Admit this extra owner and the scan before publishing any facts.
+            context.enter_node()?;
+            let preparation = Arc::new(self.preparation);
+            for alternative in &self.alternatives {
+                let observation = alternative.result.observation();
+                if observation.preparation().is_none() {
+                    observation.retain_shared(Arc::clone(&preparation))?;
+                }
+            }
+        } else {
+            // The existing branch allocation is the preparation owner too.
+            first.retain_owned(self.preparation)?;
+        }
+        Ok(SourceProbeContribution {
+            input: self.input,
+            alternatives: self.alternatives,
+        })
+    }
+}
+
 struct ObservedProbeAlternative<D: ConstraintDomain> {
     path: ConstraintPath<D>,
     result: SourceProbeResult<D>,
 }
 
 impl<D: ConstraintDomain> SourceProbeContribution<D> {
+    pub(crate) fn close_preparation(
+        self,
+        preparation: D::ProbePreparation,
+    ) -> ClosedSourceProbeContribution<D> {
+        ClosedSourceProbeContribution {
+            input: self.input,
+            alternatives: self.alternatives,
+            preparation,
+        }
+    }
+
     pub(crate) fn append(&mut self, other: Self) -> Result<(), TypeConstraintError> {
         if !Arc::ptr_eq(&self.input, &other.input) {
             return Err(protocol_error(
@@ -426,7 +496,7 @@ impl<D: ConstraintDomain> ProbeTicket<D> {
             receipt: _,
             alternatives,
         } = pending;
-        let branch = Arc::new(branch);
+        let branch = SourceProbeObservation::new(branch);
         let alternatives = alternatives
             .into_iter()
             .map(|alternative| ObservedProbeAlternative {
@@ -489,7 +559,7 @@ impl<D: ConstraintDomain> ProbeInput<D> {
 }
 
 pub(crate) enum ProbeSubmission<D: ConstraintDomain> {
-    Accepted(SourceProbeContribution<D>),
+    Accepted(ClosedSourceProbeContribution<D>),
     Rejected(D::SourceErrorCause),
 }
 
@@ -1361,10 +1431,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 TypeConstraintSourceProtocolInvariant::Ticket,
             ));
         }
-        operation.active_input = None;
         match submission {
-            ProbeSubmission::Rejected(cause) => operation.rejections.push(cause),
+            ProbeSubmission::Rejected(cause) => {
+                operation.active_input = None;
+                operation.rejections.push(cause);
+            }
             ProbeSubmission::Accepted(contribution) => {
+                let contribution = contribution.bind_preparation(context)?;
+                operation.active_input = None;
                 for ObservedProbeAlternative { mut path, result } in contribution.alternatives {
                     let (actual_term, branch, callback_selection) = result.into_parts();
                     let (actual, result_origin) = resolve_probe_term(actual_term, &path, context)?;

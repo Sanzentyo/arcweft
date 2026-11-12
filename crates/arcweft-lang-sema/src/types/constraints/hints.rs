@@ -7,6 +7,7 @@
 
 use super::ConstraintSourceId;
 
+use super::transaction::SourceProbeObservation;
 use std::sync::Arc;
 
 use super::super::{ArrayLength, MapKind, TypeKind};
@@ -31,6 +32,9 @@ pub(crate) trait ConstraintDomain: 'static {
     type ObservedEvidence: Eq;
     type CheckedEvidence: Eq;
     type ProbeSemanticBranch: Eq;
+    /// Affine source facts transferred by the callback's successful close.
+    /// They are retained evidence, not a completed type/equivalence certificate.
+    type ProbePreparation;
     type SealedBranchValue: Eq;
     type Projection: Eq + Ord;
     type SourceErrorCause;
@@ -71,6 +75,7 @@ impl ConstraintDomain for NoConstraintClient {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = ();
+    type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = ();
     type SourceErrorCause = ();
@@ -569,7 +574,7 @@ pub(crate) enum SourceProbeSelection<A, E> {
 /// Expected types and source constructors never cross the callback boundary.
 pub(crate) struct SourceProbeResult<D: ConstraintDomain> {
     actual: SourceProbeTerm<D>,
-    canonical_branch: Arc<D::ProbeSemanticBranch>,
+    canonical_branch: Arc<SourceProbeObservation<D>>,
     selection: SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
 }
 
@@ -582,7 +587,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
     pub(crate) fn unchecked(actual: TypeKind, canonical_branch: D::ProbeSemanticBranch) -> Self {
         Self {
             actual: SourceProbeTerm::Type(actual),
-            canonical_branch: Arc::new(canonical_branch),
+            canonical_branch: SourceProbeObservation::new(canonical_branch),
             selection: SourceProbeSelection::Unchecked,
         }
     }
@@ -595,7 +600,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
     ) -> Self {
         Self {
             actual: SourceProbeTerm::Type(actual),
-            canonical_branch: Arc::new(canonical_branch),
+            canonical_branch: SourceProbeObservation::new(canonical_branch),
             selection: SourceProbeSelection::Checked {
                 alternative,
                 evidence: Arc::new(evidence),
@@ -603,9 +608,9 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
         }
     }
 
-    pub(crate) fn projection(
+    pub(super) fn projection(
         result: super::transaction::ConstraintResultProjection<D>,
-        canonical_branch: Arc<D::ProbeSemanticBranch>,
+        canonical_branch: Arc<SourceProbeObservation<D>>,
         selection: SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
     ) -> Self {
         Self {
@@ -615,11 +620,15 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
         }
     }
 
-    pub(crate) fn into_parts(
+    pub(super) fn observation(&self) -> &Arc<SourceProbeObservation<D>> {
+        &self.canonical_branch
+    }
+
+    pub(super) fn into_parts(
         self,
     ) -> (
         SourceProbeTerm<D>,
-        Arc<D::ProbeSemanticBranch>,
+        Arc<SourceProbeObservation<D>>,
         SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
     ) {
         (self.actual, self.canonical_branch, self.selection)
@@ -703,6 +712,10 @@ impl<D: ConstraintDomain> super::CompletedConstraintComponent<D> {
 }
 
 impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
+    pub(crate) fn preparation(&self) -> &'h D::ProbePreparation {
+        self.source.preparation()
+    }
+
     pub(super) fn from_component(
         component: &'h super::CompletedConstraintComponent<D>,
         ordinal: usize,

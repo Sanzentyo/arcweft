@@ -2,6 +2,7 @@ use crate::types::constraints::test_support::ConstraintTestSetup;
 use std::sync::atomic::AtomicBool;
 
 use super::*;
+use crate::types::constraints::transaction::{ProbeSubmission, TypeConstraintTransaction};
 use crate::{
     effect_row::EffectRow,
     effects::EffectSet,
@@ -18,6 +19,171 @@ use crate::{
 };
 
 type TestContext<'a> = ConstraintTestSetup<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
+
+mod retained_preparation {
+    use super::*;
+    use crate::types::constraints::{SourceProbeResult, TypeConstraintProjectionClosure};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Facts {
+        value: u32,
+        drops: Arc<AtomicUsize>,
+    }
+    impl Drop for Facts {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    struct Domain;
+    impl ConstraintDomain for Domain {
+        type Application = ();
+        type Source = ();
+        type AlternativeIndex = ();
+        type EvidenceRule = ();
+        type ObservedEvidence = ();
+        type CheckedEvidence = ();
+        type ProbeSemanticBranch = ();
+        type ProbePreparation = Facts;
+        type SealedBranchValue = ();
+        type Projection = ();
+        type SourceErrorCause = ();
+        type ClientInvariant = ();
+        fn evidence_accepts((): &(), (): &()) -> bool {
+            true
+        }
+        fn project_checked_evidence((): &(), _: &TypeKind) -> Option<()> {
+            Some(())
+        }
+        fn alternative_ordinal((): &()) -> u32 {
+            0
+        }
+        fn client_invariant_source((): &()) {}
+        fn empty_sealed_branch() {}
+    }
+
+    #[test]
+    fn forked_and_suspended_paths_share_the_original_non_clone_preparation() {
+        let cancellation = AtomicBool::new(false);
+        let (mut context, parameters) = ConstraintTestSetup::<_, Domain>::new(
+            TypeConstraintLimits::new(4096, 2048, 128, 64),
+            &cancellation,
+        )
+        .into_parts();
+        let mut transaction =
+            TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+        transaction
+            .begin_prepared_probe(
+                &mut context,
+                super::super::super::PreparedSourceConstraint::unchecked(
+                    (),
+                    PreparedConstraintSourceProjection::Scalar,
+                ),
+                super::super::super::ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .unwrap();
+        let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+        let mut left = ticket
+            .fork(&mut context)
+            .unwrap()
+            .observe(SourceProbeResult::unchecked(TypeKind::I32, ()))
+            .unwrap();
+        let right = ticket
+            .observe(SourceProbeResult::unchecked(TypeKind::String, ()))
+            .unwrap();
+        left.append(right).unwrap();
+        let drops = Arc::new(AtomicUsize::new(0));
+        let contribution = left.close_preparation(Facts {
+            value: 913,
+            drops: Arc::clone(&drops),
+        });
+        transaction
+            .submit_probe(
+                &mut context,
+                ticket.input(),
+                ProbeSubmission::Accepted(contribution),
+            )
+            .unwrap();
+        assert!(transaction.next_probe(&mut context).unwrap().is_none());
+        transaction.request_projection(
+            &mut context,
+            (),
+            &TypeKind::Unit,
+            TypeConstraintProjectionClosure::Closed,
+        );
+        let suspended = transaction.suspend_result(&mut context, ()).unwrap();
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        let resumed = suspended.resume();
+        assert_eq!(resumed.frontier.len(), 2);
+        let mut closed = Vec::new();
+        for path in &resumed.frontier {
+            closed.push(
+                path.probe_trace[0]
+                    .clone()
+                    .close(
+                        path.projection_view(),
+                        &EffectSubstitution::new(),
+                        &mut context,
+                    )
+                    .unwrap(),
+            );
+        }
+        assert_eq!(closed[0].preparation().value, 913);
+        assert!(std::ptr::eq(
+            closed[0].preparation(),
+            closed[1].preparation()
+        ));
+        assert_ne!(closed[0].actual(), closed[1].actual());
+        drop(resumed);
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        drop(closed);
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn cancelled_preparation_admission_keeps_the_affine_input_unpublished() {
+        let cancellation = AtomicBool::new(false);
+        let (mut context, parameters) = ConstraintTestSetup::<_, Domain>::new(
+            TypeConstraintLimits::new(4096, 2048, 128, 64),
+            &cancellation,
+        )
+        .into_parts();
+        let mut transaction =
+            TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+        transaction
+            .begin_prepared_probe(
+                &mut context,
+                super::super::super::PreparedSourceConstraint::unchecked(
+                    (),
+                    PreparedConstraintSourceProjection::Scalar,
+                ),
+                super::super::super::ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .unwrap();
+        let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+        let drops = Arc::new(AtomicUsize::new(0));
+        let contribution = ticket
+            .observe(SourceProbeResult::unchecked(TypeKind::I32, ()))
+            .unwrap()
+            .close_preparation(Facts {
+                value: 7,
+                drops: Arc::clone(&drops),
+            });
+        cancellation.store(true, Ordering::Release);
+        assert!(matches!(
+            transaction.submit_probe(
+                &mut context,
+                ticket.input(),
+                ProbeSubmission::Accepted(contribution)
+            ),
+            Err(TypeConstraintError::Abort(
+                crate::types::constraints::TypeConstraintAbort::Cancelled
+            ))
+        ));
+        assert!(transaction.probe.as_ref().unwrap().active_input.is_some());
+        assert!(transaction.frontier.is_empty());
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+}
 
 fn future_parameter() -> GenericTypeParameterId {
     GenericTypeParameterId::new(
@@ -49,13 +215,36 @@ fn source(
             application,
             ordinal: 0,
         },
-        branch: Arc::new(()),
+        branch: SourceProbeObservation::closed_for_test((), ()),
         selection: StoredSourceSelection::Unchecked,
         prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
         value_expected: None,
         actual,
         result_origin: None,
     })
+}
+
+#[test]
+fn an_unclosed_probe_preparation_cannot_issue_a_completed_source() {
+    let cancellation = AtomicBool::new(false);
+    let (mut context, path) = context(&cancellation).into_path();
+    let mut probe = source(path.applications.root_id(), TypeKind::I32);
+    let ConstraintProbe::Active(active) = &mut probe else {
+        unreachable!()
+    };
+    active.branch = SourceProbeObservation::new(());
+    assert!(matches!(
+        probe.close(
+            path.projection_view(),
+            &EffectSubstitution::new(),
+            &mut context
+        ),
+        Err(TypeConstraintError::Invariant(
+            super::super::super::TypeConstraintInvariant::SourceProtocol(
+                TypeConstraintSourceProtocolInvariant::Outcome
+            )
+        ))
+    ));
 }
 
 #[test]
@@ -138,7 +327,7 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
             application: path.applications.root_id(),
             ordinal: 3,
         },
-        branch: Arc::new(()),
+        branch: SourceProbeObservation::closed_for_test((), ()),
         selection: StoredSourceSelection::Checked {
             alternative: (),
             evidence: Arc::new(()),
@@ -230,6 +419,7 @@ impl ConstraintDomain for EvidenceDomain {
     type ObservedEvidence = ObservedCase;
     type CheckedEvidence = CheckedCase;
     type ProbeSemanticBranch = ();
+    type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = u8;
     type SourceErrorCause = ();
@@ -284,7 +474,7 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
             application: path.applications.root_id(),
             ordinal: 0,
         },
-        branch: Arc::new(()),
+        branch: SourceProbeObservation::closed_for_test((), ()),
         selection: StoredSourceSelection::Checked {
             alternative: 0,
             evidence: Arc::new(observed),

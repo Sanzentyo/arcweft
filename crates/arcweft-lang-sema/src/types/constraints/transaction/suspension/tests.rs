@@ -105,9 +105,10 @@ fn suspension_retains_the_original_source_trace_scope_and_source_ordinal() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::unchecked(TypeKind::I32, ()))
-                    .unwrap(),
+                    .unwrap())
+                .close_preparation(()),
             ),
         )
         .unwrap();

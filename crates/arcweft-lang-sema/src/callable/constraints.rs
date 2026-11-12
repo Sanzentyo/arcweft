@@ -29,6 +29,12 @@ use std::sync::Arc;
 mod specialization;
 pub(crate) use specialization::FunctionSpecializationFailure;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProbeCheckpointDisposition {
+    Retain,
+    Discard,
+}
+
 /// The callback vocabulary is deliberately owned by callable.  Source facts
 /// cross the boundary only as typed lower results, while checkpoint closure
 /// remains client-owned because it moves analyzer semantic state.
@@ -51,7 +57,8 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
     fn close_probe_checkpoint(
         &mut self,
         checkpoint: Self::ProbeCheckpoint,
-    ) -> Result<(), SourceCheckpointFailure<D>>;
+        disposition: ProbeCheckpointDisposition,
+    ) -> Result<Option<D::ProbePreparation>, SourceCheckpointFailure<D>>;
 
     fn open_materialization_checkpoint(
         &mut self,
@@ -525,8 +532,10 @@ where
     fn close_probe_checkpoint_once(
         &mut self,
         checkpoint: C::ProbeCheckpoint,
-    ) -> Result<(), SourceCheckpointFailure<D>> {
-        let result = self.with_callback(|client, _| client.close_probe_checkpoint(checkpoint));
+        disposition: ProbeCheckpointDisposition,
+    ) -> Result<Option<D::ProbePreparation>, SourceCheckpointFailure<D>> {
+        let result =
+            self.with_callback(|client, _| client.close_probe_checkpoint(checkpoint, disposition));
         self.active_ticket = None;
         result
     }
@@ -593,7 +602,7 @@ where
         ticket: SourceCallbackTicket<D>,
         checkpoint: BoundSourceCheckpoint<C::ProbeCheckpoint>,
         attempt: Result<SourceProbeOutcome<D>, SourceCallbackFailure<D>>,
-    ) -> Result<SourceProbeOutcome<D>, TypeConstraintFailure<D>> {
+    ) -> Result<ProbeSubmission<D>, TypeConstraintFailure<D>> {
         let authority_source = match &ticket.authority {
             SourceCallbackAuthority::Probe { source } => Some(*source),
             SourceCallbackAuthority::Materialize { .. } => None,
@@ -630,20 +639,37 @@ where
             }
             _ => None,
         };
-        let close_failure = self
-            .close_probe_checkpoint_once(checkpoint.checkpoint)
-            .err();
+        let disposition = if authority_failure.is_none()
+            && invalid.is_none()
+            && matches!(&attempt, Ok(SourceProbeOutcome::Accepted(_)))
+        {
+            ProbeCheckpointDisposition::Retain
+        } else {
+            ProbeCheckpointDisposition::Discard
+        };
+        let close = self.close_probe_checkpoint_once(checkpoint.checkpoint, disposition);
         if let Some(failure) = authority_failure {
             return Err(Self::protocol_failure(failure));
         }
         if let Some(invalid) = invalid {
             return Err(Self::protocol_failure(invalid));
         }
-        if let Some(failure) = close_failure {
-            return Err(Self::checkpoint_failure(failure));
+        let preparation = close.map_err(Self::checkpoint_failure)?;
+        if preparation.is_some() != (disposition == ProbeCheckpointDisposition::Retain) {
+            return Err(Self::protocol_failure(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            ));
         }
         match attempt {
-            Ok(outcome) => Ok(outcome),
+            Ok(SourceProbeOutcome::Accepted(contribution)) => {
+                let preparation = preparation.ok_or_else(|| {
+                    Self::protocol_failure(TypeConstraintSourceProtocolInvariant::Outcome)
+                })?;
+                Ok(ProbeSubmission::Accepted(
+                    contribution.close_preparation(preparation),
+                ))
+            }
+            Ok(SourceProbeOutcome::Rejected(cause)) => Ok(ProbeSubmission::Rejected(cause)),
             Err(SourceCallbackFailure::Constraint(error)) => Err(error.into()),
             Err(SourceCallbackFailure::Fatal(error)) => {
                 Err(TypeConstraintFailure::FatalSource(error))
@@ -927,8 +953,7 @@ where
             let lower_ticket = source_context.ticket;
             let input = lower_ticket.input();
             let submission = match self.close_probe_callback(callback_ticket, checkpoint, attempt) {
-                Ok(SourceProbeOutcome::Accepted(result)) => ProbeSubmission::Accepted(result),
-                Ok(SourceProbeOutcome::Rejected(cause)) => ProbeSubmission::Rejected(cause),
+                Ok(submission) => submission,
                 Err(error) => {
                     self.lower.record_failure(error);
                     break;
@@ -1121,8 +1146,9 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
     fn close_probe_checkpoint(
         &mut self,
         _checkpoint: Self::ProbeCheckpoint,
-    ) -> Result<(), SourceCheckpointFailure<crate::types::NoConstraintClient>> {
-        Ok(())
+        disposition: ProbeCheckpointDisposition,
+    ) -> Result<Option<()>, SourceCheckpointFailure<crate::types::NoConstraintClient>> {
+        Ok((disposition == ProbeCheckpointDisposition::Retain).then_some(()))
     }
 
     fn open_materialization_checkpoint(
@@ -1350,6 +1376,7 @@ pub(crate) mod tests {
         type ObservedEvidence = ();
         type CheckedEvidence = ();
         type ProbeSemanticBranch = Branch;
+        type ProbePreparation = ();
         type SealedBranchValue = Sealed;
         type Projection = u8;
         type SourceErrorCause = &'static str;
@@ -1403,6 +1430,8 @@ pub(crate) mod tests {
         OpenProbeFailure,
         OpenMaterializationFailure,
         CloseProbeClientFailure,
+        MissingProbePreparation,
+        UnexpectedProbePreparation,
         CloseMaterializationClientFailure,
     }
 
@@ -1507,6 +1536,7 @@ pub(crate) mod tests {
                 | CallbackMode::OpenProbeFailure
                 | CallbackMode::OpenMaterializationFailure
                 | CallbackMode::CloseProbeClientFailure
+                | CallbackMode::MissingProbePreparation
                 | CallbackMode::CloseMaterializationClientFailure
                 | CallbackMode::GroupRejectedThenSuccess
                 | CallbackMode::GroupRejectedThenFatal
@@ -1514,7 +1544,9 @@ pub(crate) mod tests {
                 | CallbackMode::GroupRejectedThenInvariant => {
                     probe.observe(SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()))
                 }
-                CallbackMode::Rejected => Ok(SourceProbeOutcome::Rejected("rejected")),
+                CallbackMode::Rejected | CallbackMode::UnexpectedProbePreparation => {
+                    Ok(SourceProbeOutcome::Rejected("rejected"))
+                }
                 CallbackMode::ProbeAbort => {
                     Err(SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled))
                 }
@@ -1561,12 +1593,19 @@ pub(crate) mod tests {
         fn close_probe_checkpoint(
             &mut self,
             _checkpoint: Self::ProbeCheckpoint,
-        ) -> Result<(), SourceCheckpointFailure<Domain>> {
+            disposition: ProbeCheckpointDisposition,
+        ) -> Result<Option<()>, SourceCheckpointFailure<Domain>> {
             self.counts.probe_close.fetch_add(1, Ordering::Relaxed);
             if matches!(self.mode, CallbackMode::CloseProbeClientFailure) {
                 return Err(SourceCheckpointFailure::client(()));
             }
-            Ok(())
+            if matches!(self.mode, CallbackMode::MissingProbePreparation) {
+                return Ok(None);
+            }
+            if matches!(self.mode, CallbackMode::UnexpectedProbePreparation) {
+                return Ok(Some(()));
+            }
+            Ok((disposition == ProbeCheckpointDisposition::Retain).then_some(()))
         }
 
         fn open_materialization_checkpoint(
@@ -1668,6 +1707,8 @@ pub(crate) mod tests {
                 CallbackMode::OpenProbeFailure
                 | CallbackMode::OpenMaterializationFailure
                 | CallbackMode::CloseProbeClientFailure
+                | CallbackMode::MissingProbePreparation
+                | CallbackMode::UnexpectedProbePreparation
                 | CallbackMode::CloseMaterializationClientFailure
                 | CallbackMode::ProbeAbort
                 | CallbackMode::ProbeInvariant
@@ -2280,6 +2321,28 @@ pub(crate) mod tests {
             assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
             assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 0);
             assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[test]
+    fn probe_close_must_return_preparation_exactly_for_an_accepted_outcome() {
+        for mode in [
+            CallbackMode::MissingProbePreparation,
+            CallbackMode::UnexpectedProbePreparation,
+        ] {
+            let counts = Arc::new(Counts::default());
+            assert!(matches!(
+                run(mode, Arc::clone(&counts)),
+                Err(TypeConstraintFailure::Invariant(
+                    TypeConstraintFailureInvariant::Constraint(
+                        TypeConstraintInvariant::SourceProtocol(
+                            TypeConstraintSourceProtocolInvariant::Outcome
+                        )
+                    )
+                ))
+            ));
+            assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
+            assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 0);
         }
     }
 

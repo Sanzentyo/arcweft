@@ -3022,6 +3022,7 @@ impl ConstraintDomain for SyntheticClient {
     type ObservedEvidence = u8;
     type CheckedEvidence = u8;
     type ProbeSemanticBranch = u8;
+    type ProbePreparation = ();
     type SealedBranchValue = u8;
     type Projection = u8;
     type SourceErrorCause = &'static str;
@@ -3061,14 +3062,15 @@ impl SyntheticClient {
             .input()
             .with_hint(|hint| assert!(matches!(hint, ExpectedHint::Alternatives(_))));
         ProbeSubmission::Accepted(
-            ticket
+            (ticket
                 .observe(SourceProbeResult::checked(
                     TypeKind::I32,
                     self.probes.load(Ordering::Relaxed) as u8,
                     0,
                     0,
                 ))
-                .expect("observed source branch"),
+                .expect("observed source branch"))
+            .close_preparation(()),
         )
     }
 
@@ -3128,7 +3130,11 @@ fn probe_alternatives_keep_distinct_actuals_branches_and_evidence() {
         };
         contribution.append(other).unwrap();
         transaction
-            .submit_probe(&mut context, input, ProbeSubmission::Accepted(contribution))
+            .submit_probe(
+                &mut context,
+                input,
+                ProbeSubmission::Accepted((contribution).close_preparation(())),
+            )
             .unwrap();
         assert!(transaction.next_probe(&mut context).unwrap().is_none());
         let mut observed = Vec::new();
@@ -3428,9 +3434,10 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
                     &mut context,
                     ticket.input(),
                     ProbeSubmission::Accepted(
-                        ticket
+                        (ticket
                             .observe(SourceProbeResult::checked(TypeKind::I32, source, 0, 0))
-                            .expect("observed source branch"),
+                            .expect("observed source branch"))
+                        .close_preparation(()),
                     ),
                 )
                 .expect("accepted source");
@@ -3535,9 +3542,10 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
                     &mut context,
                     ticket.input(),
                     ProbeSubmission::Accepted(
-                        ticket
+                        (ticket
                             .observe(SourceProbeResult::checked(TypeKind::I32, source, 0, 0))
-                            .expect("observed source branch"),
+                            .expect("observed source branch"))
+                        .close_preparation(()),
                     ),
                 )
                 .expect("accepted source");
@@ -3628,9 +3636,10 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
                 &mut context,
                 ticket.input(),
                 ProbeSubmission::Accepted(
-                    ticket
+                    (ticket
                         .observe(SourceProbeResult::checked(TypeKind::I32, 3, 0, 0))
-                        .expect("observed source branch"),
+                        .expect("observed source branch"))
+                    .close_preparation(()),
                 ),
             )
             .expect("accepted source");
@@ -3928,6 +3937,7 @@ impl ConstraintDomain for PreparedDomain {
     type ObservedEvidence = PreparedRule;
     type CheckedEvidence = PreparedRule;
     type ProbeSemanticBranch = PreparedBranch;
+    type ProbePreparation = ();
     type SealedBranchValue = PreparedSealed;
     type Projection = u8;
     type SourceErrorCause = &'static str;
@@ -4027,14 +4037,15 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         TypeKind::I32,
                         PreparedBranch("tag"),
                         0,
                         PreparedRule::Tag(1),
                     ))
-                    .expect("observed source branch"),
+                    .expect("observed source branch"))
+                .close_preparation(()),
             ),
         )
         .expect("checked evidence accepted");
@@ -4101,14 +4112,15 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         TypeKind::I32,
                         PreparedBranch("mismatch"),
                         0,
                         PreparedRule::Otherwise,
                     ))
-                    .expect("observed source branch"),
+                    .expect("observed source branch"))
+                .close_preparation(()),
             ),
         )
         .expect("typed mismatch is retained until lower closes the row");
@@ -4185,14 +4197,15 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
                 &mut context,
                 ticket.input(),
                 ProbeSubmission::Accepted(
-                    ticket
+                    (ticket
                         .observe(SourceProbeResult::checked(
                             TypeKind::I32,
                             PreparedBranch("frontier"),
                             alternative,
                             evidence,
                         ))
-                        .expect("observed source branch"),
+                        .expect("observed source branch"))
+                    .close_preparation(()),
                 ),
             )
             .expect("submit frontier row");
@@ -4269,14 +4282,15 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
                 &mut context,
                 ticket.input(),
                 ProbeSubmission::Accepted(
-                    ticket
+                    (ticket
                         .observe(SourceProbeResult::checked(
                             actual,
                             PreparedBranch("frontier mismatch"),
                             alternative,
                             evidence,
                         ))
-                        .expect("observed source branch"),
+                        .expect("observed source branch"))
+                    .close_preparation(()),
                 ),
             )
             .expect("submit frontier row");
@@ -4325,12 +4339,13 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::unchecked(
                         TypeKind::I32,
                         PreparedBranch("unchecked"),
                     ))
-                    .expect("observed source branch"),
+                    .expect("observed source branch"))
+                .close_preparation(()),
             ),
         )
         .expect("unchecked source accepted");
@@ -4412,7 +4427,7 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         TypeKind::Array {
                             item: Box::new(TypeKind::I32),
@@ -4422,7 +4437,8 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
                         0,
                         PreparedRule::Otherwise,
                     ))
-                    .expect("observed source branch"),
+                    .expect("observed source branch"))
+                .close_preparation(()),
             ),
         )
         .expect("rest actual accepted");
@@ -4527,14 +4543,15 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         actual,
                         PreparedBranch("generic-rest"),
                         0,
                         PreparedRule::Otherwise,
                     ))
-                    .expect("observed source branch"),
+                    .expect("observed source branch"))
+                .close_preparation(()),
             ),
         )
         .expect("generic actual relates to item expected");
@@ -4664,14 +4681,15 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         actual,
                         PreparedBranch("generic-map-rest"),
                         0,
                         PreparedRule::Otherwise,
                     ))
-                    .expect("observed source branch"),
+                    .expect("observed source branch"))
+                .close_preparation(()),
             ),
         )
         .expect("generic map actual relates to value expected");
@@ -4767,14 +4785,15 @@ fn otherwise_cannot_shortcut_a_matching_guard() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         TypeKind::I32,
                         PreparedBranch("bad"),
                         1,
                         PreparedRule::Tag(1),
                     ))
-                    .expect("observed source branch")
+                    .expect("observed source branch"))
+                .close_preparation(())
             ),
         ),
         Err(TypeConstraintError::Invariant(
@@ -4812,14 +4831,15 @@ fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         TypeKind::I32,
                         PreparedBranch("otherwise"),
                         1,
                         PreparedRule::Tag(2),
                     ))
-                    .expect("observed source branch"),
+                    .expect("observed source branch"))
+                .close_preparation(()),
             ),
         )
         .expect("nonmatching evidence selects otherwise");
@@ -4868,14 +4888,15 @@ fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
             &mut context,
             ticket.input(),
             ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(SourceProbeResult::checked(
                         TypeKind::I32,
                         PreparedBranch("tampered"),
                         0,
                         PreparedRule::Tag(1),
                     ))
-                    .expect("observed source branch")
+                    .expect("observed source branch"))
+                .close_preparation(())
             ),
         ),
         Err(TypeConstraintError::Invariant(

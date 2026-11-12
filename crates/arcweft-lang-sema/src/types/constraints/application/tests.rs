@@ -34,6 +34,7 @@ impl ConstraintDomain for Domain {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = ();
+    type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = ();
     type SourceErrorCause = ();
@@ -516,14 +517,15 @@ fn a_child_transaction_opens_projects_and_seals_its_own_parameters() {
             &mut context,
             ticket.input(),
             crate::types::constraints::transaction::ProbeSubmission::Accepted(
-                ticket
+                (ticket
                     .observe(crate::types::constraints::SourceProbeResult::checked(
                         child_value.clone(),
                         (),
                         (),
                         (),
                     ))
-                    .expect("observed child source"),
+                    .expect("observed child source"))
+                .close_preparation(()),
             ),
         )
         .unwrap();

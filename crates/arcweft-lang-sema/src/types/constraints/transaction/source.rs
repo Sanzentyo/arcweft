@@ -1,6 +1,6 @@
 //! Source trace transitions from probing to normalized materialization evidence.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::{effect_row::EffectSubstitution, types::TypeKind};
 
@@ -17,10 +17,81 @@ use super::{
     TypeConstraintSourceProtocolInvariant, project_type, protocol_error,
 };
 
+/// The original branch allocation also owns its closed source preparation.
+/// Only a successful affine callback close may initialize the payload; a
+/// completed source trace cannot be constructed from an uninitialized record.
+pub(in crate::types::constraints) struct SourceProbeObservation<D: ConstraintDomain> {
+    branch: D::ProbeSemanticBranch,
+    preparation: OnceLock<RetainedProbePreparation<D>>,
+}
+
+enum RetainedProbePreparation<D: ConstraintDomain> {
+    Owned(D::ProbePreparation),
+    Shared(Arc<D::ProbePreparation>),
+}
+
+impl<D: ConstraintDomain> SourceProbeObservation<D> {
+    pub(in crate::types::constraints) fn new(branch: D::ProbeSemanticBranch) -> Arc<Self> {
+        Arc::new(Self {
+            branch,
+            preparation: OnceLock::new(),
+        })
+    }
+
+    pub(in crate::types::constraints) fn branch(&self) -> &D::ProbeSemanticBranch {
+        &self.branch
+    }
+
+    pub(in crate::types::constraints) fn preparation(&self) -> Option<&D::ProbePreparation> {
+        self.preparation.get().map(|preparation| match preparation {
+            RetainedProbePreparation::Owned(value) => value,
+            RetainedProbePreparation::Shared(value) => value.as_ref(),
+        })
+    }
+
+    pub(in crate::types::constraints) fn retain_owned(
+        &self,
+        preparation: D::ProbePreparation,
+    ) -> Result<(), super::TypeConstraintError> {
+        self.preparation
+            .set(RetainedProbePreparation::Owned(preparation))
+            .map_err(|_| protocol_error(TypeConstraintSourceProtocolInvariant::Outcome))
+    }
+
+    pub(in crate::types::constraints) fn retain_shared(
+        &self,
+        preparation: Arc<D::ProbePreparation>,
+    ) -> Result<(), super::TypeConstraintError> {
+        self.preparation
+            .set(RetainedProbePreparation::Shared(preparation))
+            .map_err(|_| protocol_error(TypeConstraintSourceProtocolInvariant::Outcome))
+    }
+
+    #[cfg(test)]
+    pub(in crate::types::constraints) fn closed_for_test(
+        branch: D::ProbeSemanticBranch,
+        preparation: D::ProbePreparation,
+    ) -> Arc<Self> {
+        let observation = Self::new(branch);
+        observation
+            .retain_owned(preparation)
+            .unwrap_or_else(|_| unreachable!("a fresh fixture observation is uninitialized"));
+        observation
+    }
+}
+
+// Preparation is retained input, not normalized semantic equality evidence.
+impl<D: ConstraintDomain> PartialEq for SourceProbeObservation<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.branch == other.branch
+    }
+}
+impl<D: ConstraintDomain> Eq for SourceProbeObservation<D> {}
+
 pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDomain> {
     pub(super) source: ConstraintSourceId<D::Source>,
     pub(super) source_ordinal: PreparedSourceOrdinal,
-    pub(super) branch: Arc<D::ProbeSemanticBranch>,
+    pub(super) branch: Arc<SourceProbeObservation<D>>,
     pub(super) selection: StoredSourceSelection<D>,
     pub(super) prepared_source_projection: PreparedConstraintSourceProjection,
     pub(super) value_expected: Option<TypeKind>,
@@ -35,7 +106,7 @@ pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDoma
 pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     source: ConstraintSourceId<D::Source>,
     source_ordinal: PreparedSourceOrdinal,
-    branch: Arc<D::ProbeSemanticBranch>,
+    branch: Arc<SourceProbeObservation<D>>,
     selection: ClosedSourceSelection<D>,
     prepared_source_projection: PreparedConstraintSourceProjection,
     result_origin: Option<ConstraintResultProjection<D>>,
@@ -201,6 +272,11 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
         effects: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
+        if self.branch.preparation().is_none() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            ));
+        }
         view.applications()
             .require_application(self.source.application())?;
         if self.source_ordinal.application != self.source.application() {
@@ -302,6 +378,12 @@ impl<D: ConstraintDomain> ConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
+    pub(crate) fn preparation(&self) -> &D::ProbePreparation {
+        self.branch
+            .preparation()
+            .expect("a completed source trace owns its callback's closed preparation")
+    }
+
     /// Application identity is compared by the owning trace. A replay has a
     /// fresh opening, but must preserve this source's schema and observation.
     fn same_observation(&self, other: &Self) -> bool {
@@ -326,8 +408,8 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     pub(super) const fn ordinal(&self) -> PreparedSourceOrdinal {
         self.source_ordinal
     }
-    pub(in crate::types::constraints) fn branch(&self) -> &Arc<D::ProbeSemanticBranch> {
-        &self.branch
+    pub(in crate::types::constraints) fn branch(&self) -> &D::ProbeSemanticBranch {
+        self.branch.branch()
     }
     pub(crate) const fn actual(&self) -> &TypeKind {
         &self.actual

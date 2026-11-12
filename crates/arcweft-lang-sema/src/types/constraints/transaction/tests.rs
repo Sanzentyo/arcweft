@@ -29,6 +29,7 @@ impl ConstraintDomain for ApplicationSourceDomain {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = u8;
+    type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = ();
     type SourceErrorCause = &'static str;
@@ -101,9 +102,10 @@ fn repeated_source_component(
                 &mut context,
                 ticket.input(),
                 ProbeSubmission::Accepted(
-                    ticket
+                    (ticket
                         .observe(SourceProbeResult::checked(ty, 0, 0, ()))
-                        .expect("observed source branch"),
+                        .expect("observed source branch"))
+                    .close_preparation(()),
                 ),
             )
             .unwrap();
@@ -328,7 +330,7 @@ fn materialization_failures_follow_trace_order_across_applications() {
     let source::ConstraintProbe::Active(probe) = alternative.probe_trace.last_mut().unwrap() else {
         panic!("active alternative");
     };
-    probe.branch = Arc::new(1);
+    probe.branch = SourceProbeObservation::closed_for_test(1, ());
     transaction.frontier.push(alternative);
     let mut attempts = 0;
     let mut parent_source = None;
@@ -546,7 +548,7 @@ fn one_probe_submission_retains_each_correlated_path_and_actual_until_materializ
         .submit_probe(
             &mut fixture.context,
             input,
-            ProbeSubmission::Accepted(contribution),
+            ProbeSubmission::Accepted((contribution).close_preparation(())),
         )
         .unwrap();
     assert!(
@@ -601,7 +603,7 @@ fn observed_probe_branches_cannot_be_reused_or_forked() {
         .submit_probe(
             &mut fixture.context,
             fixture.ticket.input(),
-            ProbeSubmission::Accepted(contribution),
+            ProbeSubmission::Accepted((contribution).close_preparation(())),
         )
         .unwrap();
     assert!(
@@ -659,7 +661,7 @@ fn foreign_contribution_rejection_preserves_the_accepted_alternatives() {
         .submit_probe(
             &mut fixture.context,
             fixture.ticket.input(),
-            ProbeSubmission::Accepted(contribution),
+            ProbeSubmission::Accepted((contribution).close_preparation(())),
         )
         .unwrap();
     assert!(
@@ -715,7 +717,7 @@ fn equal_source_coordinates_cannot_substitute_foreign_inputs_or_contributions() 
         fixture.transaction.submit_probe(
             &mut fixture.context,
             foreign_input,
-            ProbeSubmission::Accepted(observation)
+            ProbeSubmission::Accepted((observation).close_preparation(()))
         ),
         Err(protocol_error(
             TypeConstraintSourceProtocolInvariant::Ticket
@@ -729,7 +731,7 @@ fn equal_source_coordinates_cannot_substitute_foreign_inputs_or_contributions() 
         fixture.transaction.submit_probe(
             &mut fixture.context,
             fixture.ticket.input(),
-            ProbeSubmission::Accepted(observation)
+            ProbeSubmission::Accepted((observation).close_preparation(()))
         ),
         Err(protocol_error(
             TypeConstraintSourceProtocolInvariant::Ticket
@@ -741,7 +743,7 @@ fn equal_source_coordinates_cannot_substitute_foreign_inputs_or_contributions() 
         .submit_probe(
             &mut fixture.context,
             fixture.ticket.input(),
-            ProbeSubmission::Accepted(contribution),
+            ProbeSubmission::Accepted((contribution).close_preparation(())),
         )
         .unwrap();
     assert!(
@@ -777,7 +779,7 @@ fn an_outstanding_probe_cannot_be_skipped_by_advancing_or_closing() {
         .submit_probe(
             &mut fixture.context,
             fixture.ticket.input(),
-            ProbeSubmission::Accepted(contribution),
+            ProbeSubmission::Accepted((contribution).close_preparation(())),
         )
         .unwrap();
     assert!(
@@ -935,7 +937,7 @@ fn source_frontier<A: TypeConstraintAccounting>(
                     application: path.applications.root_id(),
                     ordinal: 0,
                 },
-                branch: Arc::new(()),
+                branch: SourceProbeObservation::closed_for_test((), ()),
                 selection: StoredSourceSelection::Unchecked,
                 prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
                 value_expected: None,
