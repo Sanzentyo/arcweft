@@ -16955,3 +16955,13 @@ SourceOwner moduleは338物理LOC（production 108、test 230）。新規338行�
 このcutはsource rootと宣言signatureの認証であり、lowerのsuspended frontier／original value rootsへOriginalProducerContext全体を保持する接続、実Γと宣言formalsの対応、元Dの下での条件付きMGU・候補の適格性／rank、Fn自身の局所∀、prepared effectのfrontend全体と一括sealは未完了。Source `2fba5fde824ac806569fa044a3a80221abbff6d3` のeffect header参照APIを今回のsource認証と接続済みとは扱わない。元の受入済みGeneric Match、caller-bound recursion、同じgroupのprefixを未完了に戻さない。今回発生したFx回帰は修復した事実を残し、既受入の取り消しや全体goal未完了による残作業列挙へ読み替えない。
 
 [検証原本](acceptance-evidence/task-original-constraint-source.raw.zip)は258 entry、展開時41546712 bytes、ZIP 4789448 bytes、SHA-256 `ae098751479bf61c627d88e21834701941cbb0858afd206aeddaa11d3d3afad0`。manifestを含む全entryを読み戻し照合した。現状一覧の再帰本体・逆依存・CLI・品質の行をこの固定Sourceの実測へ更新し、前回の入力・全結果・full SHAは履歴と既存原本へ保持した。履歴の既存byte prefixと既存の未追跡 `%SystemDrive%/` を保持した。
+
+## Original producer context foundation
+
+2026-11-12。Source `ec5ca07733caa51ecfca9eb78c7ed6e6e7917592`、tree `130c7054768a4544a72d81e95ca8d11c1fce7530`、parent `c2737c17fdbe5236b40b519c3210f51dbc907ac1`。既存mainの6 Rust pathを通常commit／non-forced pushし、公開SHA・tree・6 blobを照合した。OriginalProducerContextは実sourceのlease、宣言自身のGenericDeclarationBinder、実Γのframeを一つのArc ownerに保持する。Dは同じ登録recordから借り、Γに捕捉した外側の形式引数を宣言自身のbinderへ合算しない。imported scopeは実ownerの導入frameからΓへ合流する。Source層のprotocol実装を使い、typesからcallableへの依存、仮scheme、Dのコピーを追加しない。enclosing scopeの不変headerもArcで共有し、candidateごとの深いcloneを除いた。
+
+元宣言のtransport・二つのu16::MAX幅の外側frame・同形の別frame拒否、同じground domainでも別bodyの拒否、予算0でtransport投影を始めず予算内で一度だけ投影する新規3件を含む関係37件が全件PASS（0.405秒）。入力byte pinを前後で照合し、終端ID重複0。filter外1,548件は未実行で、全Sema成功へ読み替えない。Semaのlocked・全target・全feature Clippyは終了0、警告を保持した。先の2件・36件のrun、初回checkのGenericScope／実frame accessorの取り違え3 compile errorとcapture_lexical_scopeへの修復も原本に保持し、件数を合算しない。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+このSourceではAPIとsource実装を用意しただけで、lower transactionの開始・suspend・元root登録への必須接続、条件付きMGU／局所∀／rank／frontendは未完了。新しいAPIを原型の推論の完成や実Native／AWBC受入とは扱わない。全Sema・規定107 consumer・workspace品質の直近実測はSource `217f927d7282d73cc3d91b1045c933f2c83c08c2` の4,107 PASS／8既知FAIL／1 SKIPとして維持し、このSourceの結果に差し替えない。Generic Matchを含む既受入は維持する。
+
+[原本](acceptance-evidence/task-original-producer-context.raw.zip)は20 entry、展開時6765089 bytes、ZIP 573091 bytes、SHA-256 `220c9f9ea4e4dee5c61c2ee306f0fdf929a337df3ffaef11e9ce719a69f41f73`。manifestを含む全entryを読み戻し照合済み。[所有測定](acceptance-evidence/task-original-producer-context-owner.json)に6 pathのbyte・物理LOC・基点との差・埋込testと責任を記録した。新moduleは236物理LOC。現状一覧にはAPIの範囲だけを追記し、全件検証の固定Sourceを維持した。既存履歴のbyte prefixと未追跡 `%SystemDrive%/` を保持した。

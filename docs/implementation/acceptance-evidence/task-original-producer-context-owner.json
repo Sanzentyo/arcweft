@@ -1,0 +1,70 @@
+{
+  "Version": 1,
+  "Source": "ec5ca07733caa51ecfca9eb78c7ed6e6e7917592",
+  "Tree": "130c7054768a4544a72d81e95ca8d11c1fce7530",
+  "Base": "c2737c17fdbe5236b40b519c3210f51dbc907ac1",
+  "Measurements": [
+    {
+      "Path": "crates/arcweft-lang-sema/src/callable/checked_catalog/source_owner.rs",
+      "Crate": "arcweft-lang-sema",
+      "Bytes": 17879,
+      "PhysicalLOC": 454,
+      "BaseLOC": 338,
+      "Growth": 116,
+      "Classification": "production",
+      "EmbeddedTestsLOC": 319
+    },
+    {
+      "Path": "crates/arcweft-lang-sema/src/callable/continuation.rs",
+      "Crate": "arcweft-lang-sema",
+      "Bytes": 107510,
+      "PhysicalLOC": 2784,
+      "BaseLOC": 2717,
+      "Growth": 67,
+      "Classification": "production",
+      "EmbeddedTestsLOC": 30
+    },
+    {
+      "Path": "crates/arcweft-lang-sema/src/callable/continuation/specialization.rs",
+      "Crate": "arcweft-lang-sema",
+      "Bytes": 5095,
+      "PhysicalLOC": 130,
+      "BaseLOC": 130,
+      "Growth": 0,
+      "Classification": "production",
+      "EmbeddedTestsLOC": 0
+    },
+    {
+      "Path": "crates/arcweft-lang-sema/src/types/constraints.rs",
+      "Crate": "arcweft-lang-sema",
+      "Bytes": 16473,
+      "PhysicalLOC": 416,
+      "BaseLOC": 410,
+      "Growth": 6,
+      "Classification": "production",
+      "EmbeddedTestsLOC": 0
+    },
+    {
+      "Path": "crates/arcweft-lang-sema/src/types/constraints/application.rs",
+      "Crate": "arcweft-lang-sema",
+      "Bytes": 31878,
+      "PhysicalLOC": 832,
+      "BaseLOC": 819,
+      "Growth": 13,
+      "Classification": "production",
+      "EmbeddedTestsLOC": 0
+    },
+    {
+      "Path": "crates/arcweft-lang-sema/src/types/constraints/original_context.rs",
+      "Crate": "arcweft-lang-sema",
+      "Bytes": 8563,
+      "PhysicalLOC": 236,
+      "BaseLOC": 0,
+      "Growth": 236,
+      "Classification": "production",
+      "EmbeddedTestsLOC": 74
+    }
+  ],
+  "Disposition": "The lower context owns one shared source lease, the existing declaration-formal transport, and real ambient frames. Its source protocol follows the existing imported-application authority boundary and introduces no types dependency on callable/analyzer owners. Callable owns immutable source metadata and borrows D from the actual registered record. The existing graph/initialization module retains those duties; the context implementation and its control test are a distinct lower responsibility. No new crate edge, I/O, public API, copied domain, side catalog, or body traversal.",
+  "ValidationScope": "37 focused tests and Sema locked/all-target/all-feature Clippy only; root-consumer migration is not implemented; full evidence remains on 217f927d7282d73cc3d91b1045c933f2c83c08c2"
+}
