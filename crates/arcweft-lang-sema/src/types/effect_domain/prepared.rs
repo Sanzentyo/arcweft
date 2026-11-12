@@ -12,6 +12,7 @@ use crate::types::projection_control::{
 
 mod validation;
 pub(crate) use validation::PreparedTypeRetentionFailure;
+mod canonical;
 
 /// Prepared identity is operational. This domain cannot issue a checked type
 /// digest, specialization, runtime projection or completed constraint solution.
@@ -94,16 +95,20 @@ pub(crate) enum PreparedTypeEffectProjectionFailure<E: std::error::Error + 'stat
 }
 
 impl<E: std::error::Error + 'static> PreparedTypeEffectProjectionFailure<E> {
+    fn from_projection(error: TypeProjectionError<E>) -> TypeProjectionError<Self> {
+        match error {
+            TypeProjectionError::Instantiation(error) => TypeProjectionError::Instantiation(error),
+            TypeProjectionError::Control(error) => {
+                TypeProjectionError::Control(Self::Control(error))
+            }
+        }
+    }
+
     fn from_effect(
         failure: PreparedEffectFailure<TypeProjectionError<E>>,
     ) -> TypeProjectionError<Self> {
         match failure {
-            PreparedEffectFailure::Control(TypeProjectionError::Instantiation(error)) => {
-                TypeProjectionError::Instantiation(error)
-            }
-            PreparedEffectFailure::Control(TypeProjectionError::Control(error)) => {
-                TypeProjectionError::Control(Self::Control(error))
-            }
+            PreparedEffectFailure::Control(error) => Self::from_projection(error),
             failure => TypeProjectionError::Control(Self::Effects(failure)),
         }
     }

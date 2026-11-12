@@ -559,6 +559,25 @@ impl<'g> PrincipalEffectClosure<'g> {
             .and_then(GuardedEffectRow::into_total)
             .ok_or(PreparedEffectInvariant::PrincipalConfirmation.into())
     }
+
+    pub(crate) fn resolve_predicate<C: DecisionControl>(
+        &self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<EffectPredicate, PreparedEffectFailure<C::Error>> {
+        let observation = self.observe_predicate(
+            &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            predicate,
+            control,
+        )?;
+        if !observation.invariant.is_constant(true) {
+            return Err(PreparedEffectFailure::ObservationNotTotal);
+        }
+        observation
+            .canonical_extension(control)?
+            .and_then(GuardedEffectPredicate::into_total)
+            .ok_or(PreparedEffectInvariant::PrincipalConfirmation.into())
+    }
 }
 
 impl ObservationSupport {
