@@ -551,6 +551,14 @@ struct OwnedAlternativeHint<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> ProbeTicket<D> {
+    pub(crate) fn original_context(
+        &self,
+    ) -> Result<&super::OriginalProducerContext, TypeConstraintError> {
+        self.path
+            .as_ref()
+            .map(|path| &path.lineage.original)
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::WrongPhase))
+    }
     #[cfg(test)]
     pub(super) fn test_path(&self) -> &ConstraintPath<D> {
         self.path.as_ref().expect("unobserved probe branch")

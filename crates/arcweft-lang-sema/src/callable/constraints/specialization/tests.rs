@@ -376,7 +376,7 @@ fn drive(
         .unwrap();
     let initialization = super::super::tests::initialization_from_graph(graph, scope);
     session
-        .with_driver::<Domain, _, _>(application, initialization, client, |mut driver| {
+        .with_fixture_driver::<Domain, _, _>(application, initialization, client, |mut driver| {
             for (index, expected) in expected.iter().enumerate() {
                 driver.probe_prepared_source(
                     PreparedSourceConstraint::checked(

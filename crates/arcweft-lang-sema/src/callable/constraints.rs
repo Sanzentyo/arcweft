@@ -106,6 +106,14 @@ pub(crate) struct CandidateConstraintSourceContext<'probe, 'control, D: Constrai
 }
 
 impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'probe, 'control, D> {
+    pub(crate) fn original_context(
+        &self,
+    ) -> Result<
+        &crate::types::constraints::OriginalProducerContext,
+        crate::types::constraints::TypeConstraintError,
+    > {
+        self.ticket.original_context()
+    }
     pub(crate) fn validate_graph<P, U>(
         &self,
         graph: &super::PreparedCallGraph<P, U>,
@@ -389,6 +397,60 @@ impl<'a> CandidateConstraintWorkSession<'a> {
     /// and releasing the surrounding accounting reservation are separate acts.
     pub(crate) fn with_driver<D, C, R>(
         self,
+        original: crate::types::constraints::OriginalProducerContext,
+        application: D::Application,
+        initialization: PreparedConstraintInitialization,
+        client: C,
+        drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'a, D, C>) -> R,
+    ) -> Result<R, CandidateConstraintDriverStartFailure>
+    where
+        D: ConstraintDomain,
+        C: TypeConstraintClient<D>,
+    {
+        let mut context = TypeConstraintContext::with_accounting(self);
+        Self::drive_with_context(
+            &mut context,
+            original,
+            application,
+            initialization,
+            client,
+            drive,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_fixture_driver<D, C, R>(
+        self,
+        application: D::Application,
+        initialization: PreparedConstraintInitialization,
+        client: C,
+        drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'a, D, C>) -> R,
+    ) -> Result<R, CandidateConstraintDriverStartFailure>
+    where
+        D: ConstraintDomain,
+        C: TypeConstraintClient<D>,
+    {
+        let mut context = TypeConstraintContext::with_accounting(self);
+        let original = initialization
+            .fixture_original_context(&mut context)
+            .map_err(|error| {
+                CandidateConstraintDriverStartFailure::Lower(
+                    TypeConstraintInitializationFailure::original_context(error),
+                )
+            })?;
+        Self::drive_with_context(
+            &mut context,
+            original,
+            application,
+            initialization,
+            client,
+            drive,
+        )
+    }
+
+    fn drive_with_context<D, C, R>(
+        context: &mut TypeConstraintContext<'a, CandidateConstraintWorkSession<'a>, D>,
+        original: crate::types::constraints::OriginalProducerContext,
         application: D::Application,
         initialization: PreparedConstraintInitialization,
         client: C,
@@ -401,14 +463,15 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         let (authority, parameter_scope, inherited, imported_scope) = initialization
             .into_lower_parts()
             .map_err(CandidateConstraintDriverStartFailure::Prepared)?;
-        let mut context = TypeConstraintContext::with_accounting(self);
-        let original = authority.original_context(&mut context).map_err(|error| {
-            CandidateConstraintDriverStartFailure::Lower(
-                TypeConstraintInitializationFailure::original_context(error),
-            )
-        })?;
+        if !authority.admits_original(&original) {
+            return Err(CandidateConstraintDriverStartFailure::Lower(
+                TypeConstraintInitializationFailure::Invariant(
+                    TypeConstraintInvariant::OriginalProducer,
+                ),
+            ));
+        }
         let lower = TypeConstraintTransaction::initialize_with_imported(
-            &mut context,
+            context,
             original,
             application,
             parameter_scope,
@@ -417,7 +480,7 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         )
         .map_err(CandidateConstraintDriverStartFailure::Lower)?;
         let driver = CandidateConstraintDriver {
-            context: &mut context,
+            context,
             authority,
             lower,
             client,
@@ -1792,7 +1855,7 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(limits, &cancellation)
             .expect("candidate session");
         let result = session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client { counts, mode },
@@ -1833,7 +1896,7 @@ pub(crate) mod tests {
             .unwrap();
         let counts = Arc::new(Counts::default());
         let result = session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization,
                 Client {
@@ -1902,7 +1965,7 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
         session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client { counts, mode },
@@ -1971,7 +2034,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
         let failure = session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
@@ -2010,7 +2073,7 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let result = session.with_driver::<Domain, _, _>(
+        let result = session.with_fixture_driver::<Domain, _, _>(
             0,
             initialization(TypeConstraintParameterScope::empty()),
             Client {
@@ -2041,7 +2104,7 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(limits, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let result = session.with_driver::<Domain, _, _>(
+        let result = session.with_fixture_driver::<Domain, _, _>(
             0,
             initialization(TypeConstraintParameterScope::empty()),
             Client {
@@ -2071,6 +2134,43 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_root_rejects_an_original_context_from_another_source_before_callbacks() {
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let mut work = ResolverWork::new(4_096);
+        let original = {
+            let session = work
+                .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+                .unwrap();
+            let mut context = TypeConstraintContext::<_, Domain>::with_accounting(session);
+            context.fixture_original_context(None).unwrap()
+        };
+        let session = work
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        let counts = Arc::new(Counts::default());
+        let result = session.with_driver::<Domain, _, _>(
+            original,
+            0,
+            initialization(TypeConstraintParameterScope::empty()),
+            Client {
+                counts: Arc::clone(&counts),
+                mode: CallbackMode::Success,
+            },
+            |_driver| panic!("a foreign source must not start the driver"),
+        );
+        assert!(matches!(
+            result,
+            Err(CandidateConstraintDriverStartFailure::Lower(
+                TypeConstraintInitializationFailure::Invariant(
+                    TypeConstraintInvariant::OriginalProducer
+                )
+            ))
+        ));
+        assert_eq!(counts.probe_begin.load(Ordering::Relaxed), 0);
+        assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
     fn materialization_limit_charges_first_callback_then_aborts_before_second_open() {
         let cancellation = std::sync::atomic::AtomicBool::new(false);
         let limits = PRODUCTION_CALLABLE_LIMITS.with_type_constraint_source_limits(64, 1);
@@ -2093,7 +2193,7 @@ pub(crate) mod tests {
         ])
         .expect("choice scope");
         let result = session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(scope),
                 Client {
@@ -2163,7 +2263,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
         let result = session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
@@ -2254,7 +2354,7 @@ pub(crate) mod tests {
         ])
         .expect("choice scope");
         let result = session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(scope),
                 Client {
@@ -2558,7 +2658,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
         session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
@@ -2617,7 +2717,7 @@ pub(crate) mod tests {
             .expect("second candidate session");
         let counts = Arc::new(Counts::default());
         session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
@@ -2670,7 +2770,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
         session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
@@ -2739,7 +2839,7 @@ pub(crate) mod tests {
             .expect("second candidate session");
         let counts = Arc::new(Counts::default());
         session
-            .with_driver::<Domain, _, _>(
+            .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {

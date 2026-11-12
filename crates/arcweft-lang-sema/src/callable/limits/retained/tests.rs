@@ -92,7 +92,7 @@ fn resumed_constraint_sessions_keep_original_work_and_physical_source_counts() {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .unwrap();
         session
-            .with_driver::<crate::types::NoConstraintClient, _, _>(
+            .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 crate::callable::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
@@ -128,7 +128,7 @@ fn a_root_frontier_outlives_its_driver_and_publication_reads_the_live_original_l
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .unwrap();
         session
-            .with_driver::<crate::types::NoConstraintClient, _, _>(
+            .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 crate::callable::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,

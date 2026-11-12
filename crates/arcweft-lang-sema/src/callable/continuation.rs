@@ -416,6 +416,31 @@ impl EnclosingGenericParameterScope {
     > {
         context.original_producer_context(&self.header)
     }
+
+    /// Admit the caller once before inspecting any candidate. Every root and
+    /// selected replay of this source occurrence shares the resulting context.
+    pub(crate) fn admit_original_context<D: crate::types::constraints::ConstraintDomain>(
+        &self,
+        work: &mut super::ResolverWork,
+        limits: super::CallableLimits,
+        cancellation: &std::sync::atomic::AtomicBool,
+    ) -> Result<
+        crate::types::constraints::OriginalProducerContext,
+        crate::types::constraints::TypeConstraintError,
+    > {
+        let session = work
+            .begin_candidate_constraint_session(limits, cancellation)
+            .map_err(|_| {
+                crate::types::constraints::TypeConstraintError::Abort(
+                    crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow,
+                )
+            })?;
+        let mut context =
+            crate::types::constraints::context::TypeConstraintContext::<_, D>::with_accounting(
+                session,
+            );
+        self.original_context(&mut context)
+    }
 }
 
 impl crate::types::constraints::OriginalProducerSource for EnclosingGenericScopeHeader {
@@ -2699,6 +2724,12 @@ pub(super) struct PreparedConstraintAuthority {
 }
 
 impl PreparedConstraintAuthority {
+    pub(super) fn admits_original(
+        &self,
+        original: &crate::types::constraints::OriginalProducerContext,
+    ) -> bool {
+        original.belongs_to(&self.enclosing.header)
+    }
     pub(super) fn original_context<
         A: crate::types::constraints::context::TypeConstraintAccounting,
         D: crate::types::constraints::ConstraintDomain,
@@ -2721,6 +2752,19 @@ enum PreparedCallConstraintSeed {
 }
 
 impl PreparedConstraintInitialization {
+    #[cfg(test)]
+    pub(super) fn fixture_original_context<
+        A: crate::types::constraints::context::TypeConstraintAccounting,
+        D: crate::types::constraints::ConstraintDomain,
+    >(
+        &self,
+        context: &mut crate::types::constraints::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        crate::types::constraints::OriginalProducerContext,
+        crate::types::constraints::TypeConstraintError,
+    > {
+        self.enclosing.original_context(context)
+    }
     pub(crate) fn future_parameters(&self) -> &[GenericTypeReference] {
         &self.future_parameters
     }

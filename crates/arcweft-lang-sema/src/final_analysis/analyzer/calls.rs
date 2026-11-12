@@ -174,6 +174,7 @@ fn close_call_frame<T>(
 }
 
 struct PreparedCandidateBatch {
+    original: crate::types::constraints::OriginalProducerContext,
     probes: Vec<PreparedCandidateOutcome>,
 }
 
@@ -554,6 +555,7 @@ impl PreparedCandidateBatch {
 }
 
 struct PreparedCandidateRequest<'a, 'ctx> {
+    original: &'a crate::types::constraints::OriginalProducerContext,
     module: &'a HirModule,
     owner: ExprId,
     site: crate::callable::CheckedCallSite,
@@ -1246,6 +1248,10 @@ impl Analyzer<'_, '_, '_> {
         ),
         AnalyzerExpressionError,
     > {
+        let original = parent_source
+            .original_context()
+            .map_err(|error| terminal_lower_constraint_failure(source.owner, error.into()))?
+            .clone();
         let mut candidates = Vec::new();
         for candidate in &resolution.considered {
             self.control
@@ -1287,6 +1293,7 @@ impl Analyzer<'_, '_, '_> {
                         .with_consumer(source_context.consumer());
                         let result = this.prepare_child_candidate(
                             PreparedCandidateRequest {
+                                original: &original,
                                 module: source.module,
                                 owner: source.owner,
                                 site: source.site,
@@ -2259,6 +2266,12 @@ impl Analyzer<'_, '_, '_> {
         source: CallSource<'_>,
         resolution: &mut ResolvedCallQuery,
     ) -> Result<PreparedCandidateBatch, AnalyzerExpressionError> {
+        let original = self.admit_original_context(
+            source.module,
+            source.owner,
+            source.expectation.nested_call_scope_lease(),
+            &mut resolution.work,
+        )?;
         let mut probes = Vec::with_capacity(resolution.considered.len());
         for candidate in &resolution.considered {
             self.control
@@ -2298,6 +2311,7 @@ impl Analyzer<'_, '_, '_> {
                     .with_consumer(source_context.consumer());
                     let probe = this.prepare_candidate(
                         PreparedCandidateRequest {
+                            original: &original,
                             module: source.module,
                             owner: source.owner,
                             site: source.site,
@@ -2367,7 +2381,7 @@ impl Analyzer<'_, '_, '_> {
             };
             probes.push(probe);
         }
-        Ok(PreparedCandidateBatch { probes })
+        Ok(PreparedCandidateBatch { original, probes })
     }
 
     #[expect(
@@ -2449,12 +2463,14 @@ impl Analyzer<'_, '_, '_> {
                     owner,
                 })
             })?;
+        let original = self.admit_original_context(module, owner, None, &mut work)?;
         let probe = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
             |this, authority, _transaction_authority| {
                 let candidate_context =
                     AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
                 let outcome = this.prepare_candidate(
                     PreparedCandidateRequest {
+                        original: &original,
                         module,
                         owner,
                         site: crate::callable::CheckedCallSite::AttachedContentApplication {
@@ -2768,6 +2784,7 @@ impl Analyzer<'_, '_, '_> {
                 crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow,
             )
         })?;
+        let original = self.admit_original_context(module, owner, None, &mut work)?;
         work.record_candidate_argument_probes(argument_count)
             .and_then(|_| work.charge_argument_mapping(argument_count))
             .map_err(|_| {
@@ -2796,6 +2813,7 @@ impl Analyzer<'_, '_, '_> {
                         })?;
                     let outcome = this.prepare_candidate(
                     PreparedCandidateRequest {
+                        original: &original,
                         module,
                         owner,
                         site: crate::callable::CheckedCallSite::AttachedContentApplication {
@@ -2979,6 +2997,7 @@ impl Analyzer<'_, '_, '_> {
                     .with_consumer(consumer);
                     let replay = this.prepare_candidate(
                         PreparedCandidateRequest {
+                            original: &batch.original,
                             module: source.module,
                             owner: source.owner,
                             site: source.site,
@@ -4808,6 +4827,22 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
+    fn admit_original_context(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        imported: Option<&crate::types::constraints::ImportedGenericParameterScopeLease>,
+        work: &mut ResolverWork,
+    ) -> Result<crate::types::constraints::OriginalProducerContext, AnalyzerExpressionError> {
+        self.enclosing_constraint_scope(module, owner, imported)?
+            .admit_original_context::<constraints::AnalyzerCallConstraintDomain>(
+                work,
+                self.catalogs.callable_limits,
+                self.control.cancellation(),
+            )
+            .map_err(|error| terminal_lower_constraint_failure(owner, error.into()))
+    }
+
     pub(super) fn enclosing_constraint_scope(
         &self,
         module: &HirModule,
@@ -4893,6 +4928,7 @@ impl Analyzer<'_, '_, '_> {
         >,
     ) -> Result<PreparedCandidatePreparationOutcome, AnalyzerExpressionError> {
         let PreparedCandidateRequest {
+            original,
             module,
             owner,
             site,
@@ -5126,6 +5162,7 @@ impl Analyzer<'_, '_, '_> {
             self.catalogs.world().environment().compile_time_scalars(),
             consumer.clone(),
             &enclosing,
+            original,
             parent_source.as_deref(),
             site,
         )

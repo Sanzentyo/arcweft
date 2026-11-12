@@ -1414,7 +1414,7 @@ mod final_call_accounting_tests {
             .begin_candidate_constraint_session(limits, &cancellation)
             .expect("reserved candidate session");
         let outcome = session
-            .with_driver::<crate::types::NoConstraintClient, _, _>(
+            .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
@@ -1448,7 +1448,7 @@ mod final_call_accounting_tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("reserved candidate session");
         assert!(matches!(
-            session.with_driver::<crate::types::NoConstraintClient, _, _>(
+            session.with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
@@ -1491,7 +1491,7 @@ mod final_call_accounting_tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("reserved candidate session");
         session
-            .with_driver::<crate::types::NoConstraintClient, _, _>(
+            .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,

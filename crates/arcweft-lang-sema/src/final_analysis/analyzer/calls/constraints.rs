@@ -3018,6 +3018,7 @@ impl AnalyzerCallConsumerAdmission {
 /// carrier as one affine value, so a caller cannot provide a token from one
 /// candidate with the mapping or source plans from another.
 pub(crate) struct PreparedCallConstraintSet {
+    original: crate::types::constraints::OriginalProducerContext,
     enclosing: EnclosingGenericParameterScope,
     candidate: Arc<PreparedResolvedCallable>,
     consumer: AnalyzerCallConsumerAdmission,
@@ -4470,6 +4471,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
     scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
     consumer: AnalyzerCallConsumerAdmission,
     enclosing: &EnclosingGenericParameterScope,
+    original: &crate::types::constraints::OriginalProducerContext,
     parent_source: Option<&CandidateConstraintSourceContext<'_, '_, AnalyzerCallConstraintDomain>>,
     site: CheckedCallSite,
 ) -> CallAnalysisResult<PreparedCallConstraintSet> {
@@ -5398,6 +5400,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
         }
     }));
     Ok(PreparedCallConstraintSet {
+        original: original.clone(),
         enclosing: enclosing.clone(),
         candidate,
         consumer,
@@ -5710,6 +5713,7 @@ pub(crate) fn run_prepared_candidate(
     set: PreparedCallConstraintSet,
 ) -> Result<RanCandidateTransaction, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
+        original,
         enclosing,
         candidate,
         consumer,
@@ -5770,6 +5774,7 @@ pub(crate) fn run_prepared_candidate(
         .map(|constraint| constraint.expected_type().clone());
     let alternatives = session
         .with_driver(
+            original,
             CallableConstraintApplication::Call(application),
             initialization,
             AnalyzerCallConstraintClient::new(operations),
@@ -6592,6 +6597,7 @@ pub(crate) fn run_prepared_child_candidate(
     set: PreparedCallConstraintSet,
 ) -> Result<PreparedChildCandidateRun, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
+        original: _,
         enclosing: _,
         candidate,
         consumer,

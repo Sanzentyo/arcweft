@@ -70,6 +70,9 @@ impl Debug for OriginalProducerContext {
 }
 
 impl OriginalProducerContext {
+    pub(crate) fn belongs_to<S: OriginalProducerSource>(&self, source: &Arc<S>) -> bool {
+        self.0.source.same_source(source.as_ref())
+    }
     #[cfg(test)]
     pub(super) fn ground_fixture(gamma: ConstraintLexicalScope) -> Self {
         Self(Arc::new(OriginalProducer {
