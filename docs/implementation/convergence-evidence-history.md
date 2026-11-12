@@ -16965,3 +16965,29 @@ SourceOwner moduleは338物理LOC（production 108、test 230）。新規338行�
 このSourceではAPIとsource実装を用意しただけで、lower transactionの開始・suspend・元root登録への必須接続、条件付きMGU／局所∀／rank／frontendは未完了。新しいAPIを原型の推論の完成や実Native／AWBC受入とは扱わない。全Sema・規定107 consumer・workspace品質の直近実測はSource `217f927d7282d73cc3d91b1045c933f2c83c08c2` の4,107 PASS／8既知FAIL／1 SKIPとして維持し、このSourceの結果に差し替えない。Generic Matchを含む既受入は維持する。
 
 [原本](acceptance-evidence/task-original-producer-context.raw.zip)は20 entry、展開時6765089 bytes、ZIP 573091 bytes、SHA-256 `220c9f9ea4e4dee5c61c2ee306f0fdf929a337df3ffaef11e9ce719a69f41f73`。manifestを含む全entryを読み戻し照合済み。[所有測定](acceptance-evidence/task-original-producer-context-owner.json)に6 pathのbyte・物理LOC・基点との差・埋込testと責任を記録した。新moduleは236物理LOC。現状一覧にはAPIの範囲だけを追記し、全件検証の固定Sourceを維持した。既存履歴のbyte prefixと未追跡 `%SystemDrive%/` を保持した。
+
+## Original producer contexts in lower roots
+
+2026-11-12。最終Source `8b5e375a9c7b3096fe5ed2f65df556a463741a8d`、tree `57e63f76f27432a3a04018007f4cd467baf59c6a`、parent `91fac4359ec73ca33b4bcc370c650ebdcae8cf47`。基点 `ba4b9de09884a1c8b476556df3509aa684805345` から27 Rust pathを移行した。初回Sourceと修復Sourceを既存mainで通常commit／non-forced pushし、リモートのfull SHA・tree・全対象blobを照合した。
+
+Supersedes: `Original producer context foundation` に記録した「APIだけでlowerへの接続は未完了」という当時の範囲を、この最終Sourceではlowerの開始・suspend／resume・独立root登録まで接続した状態へ更新する。以前の記述と検証結果は当時の履歴として保持する。
+
+通常callの候補探索前に、元callerの実checked source、借用する宣言域D、宣言自身のformals、実Γのframeを一つのOriginalProducerContextとして登録する。全候補と選択後の再生は同じcontextを共有し、子の準備は親の実ticketから同じcontextを引き継ぐ。productionのroot driverはcontextを必須入力とし、prepared authorityと同じsourceであることをcallback前に検証する。lowerのpath lineageとtransaction、suspended frontierはそのauthorityを保持し、再開時に新しいsourceから作り直さない。
+
+OpenConstraintComponentの独立root登録もcontextを必須とし、空の候補集合でも省略できない。全rootのcontextを照合してから登録し、投影は元pathのframeへ戻して行い、元contextのΓへ転送する。登録時の作業スコープを使う旧retain_scopeは削除した。元rootのreadonly visitorからcontextを借りられる。defaultの型関係は任意のsignatureではなく、staged／checked catalogの同じsource ownerを受け取る。二つのcatalog入口は一つの認証constructorを共有し、別catalogや本文再走査を追加していない。productionのlower初期化ではcontextを必須とし、source catalogを持たないraw testは明示したcfg(test) fixtureを使う。
+
+新規3件は、実binder内で始めたrootを二度のsuspendとその間のresumeで同じcontextを保持すること、同じshapeの独立frameでは登録を代用できず失敗後にvalueを公開しないこと、無候補でも元contextを保持すること、別sourceのcontextをroot driverがcallback前に拒否することを確認した。初回開発runの119件中5失敗はfixtureの未移行と計上範囲の変化を修復し、119件すべてPASSした。投影のfixtureは宣言側templateを用い、実Γの型を正式なparameterの束縛経由で渡す形に訂正した。admissionとsuspensionの既存の上限拒否assertionは上限を変更せず、既に登録されたfixtureを使ってそれぞれの計上範囲を分離した。
+
+初回Source `91fac4359ec73ca33b4bcc370c650ebdcae8cf47`、tree `a0843076414a7d7d4a25f62a8f56d508505ab019` のSema全feature・lib／integrationは1,611件中1,604 PASS／7 FAIL／0 SKIP、78.171秒だった。既知6件に加え、256候補のinclusive boundaryが回帰した。実診断のための一時的なtest出力はResolverWorkのconsumed=4096、next=4097、limit=4096を示した。候補ごとに元contextを登録し直していたことが原因で、修復では候補の準備前に一度だけ登録して全probeとreplayで共有する。予算、候補数、probe／replayのassertionは変更していない。一時的な診断出力は修復commit前に削除した。修復時の関連42件は全件PASS（0.491秒）。初回の7失敗と開発途中のcompile失敗を原本へ残し、最終結果には合算しない。
+
+最終SourceのSema全feature・lib／integration 5 binaryは1,612件中1,606 PASS／6 FAIL／0 SKIP、77.673秒。全選択IDと終端IDが一致し、重複0。新規3件、先行context APIの3件、256候補の境界と既定4,096予算のtestはPASSした。失敗IDは既知の6件と同じで、実診断はExpressionCycle 5件とPendingCallableEffectProjection 1件。
+
+推移的な他21 packageの規定107 targetは2,507 PASS／2 FAIL／1 SKIP。Compilerの31 targetを個別に逐次実行し、他20 packageの76 targetと合わせ、全選択・終端ID、件数、ignored／filter、hashを照合して重複0。0 runnableの3 targetはコンパイル済みとして区別する。Compilerのflow_wait 2失敗も既知の同じID・ExpressionCycleである。合計は4,113 PASS／8 FAIL／1 SKIP。CLIはlibrary 196件と規定統合6 target 30件の226 PASS、binはコンパイル済み・runnable 0。全CLI checkの再実行ではない。
+
+Source `377206557e9e41a95da3b3cc1f77bfd46a0974ab` の3 modeのresolved metadata、normal／dev／buildを含む22 package closure、規定107 target計画だけを、Cargo入力差分0とrustc -vV全行一致を確認して再利用した。test結果は最終Sourceで取り直した。locked・全target・全feature workspace check／Clippy、fmt、構造gate（blocking 0）、全feature Sema doctest 2件は終了0。警告を保持する。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし、ビルド生成物の移動・コピーなし。
+
+所有測定は27 pathのbyte・全物理LOC・基点との差・埋込testを原本へ記録した。checked source ownerは実recordとHIRの認証、prepared authorityはcall siteとsourceの照合、候補batchは元contextの共有、lower transactionはaffineな状態の保持、componentは元root登録と投影を所有する。ResolverWorkは計上のみを担当し、context cacheやside tableを追加していない。既存大型ownerの責任と依存方向を維持し、型をファイル分割だけのために公開していない。Cargo edge、unsafe、I/O、contract versionの追加はない。
+
+このcutは元宣言と実Γの保持を接続したもので、元Dの下の条件付きMGU・適格性／rank、Fn自身の局所∀、metaの依存範囲と実Γでの引数転送、intrinsic／派生useのcontext、prepared effectのfrontend全体と一括sealは継続中である。新しい本体推論のNative／AWBC、Wasm、Tier 2を今回の結果として扱わない。Generic Match、caller-bound recursion、同じgroupのprefixなどの既受入は維持し、全体goalの未達を取り消し理由にしない。
+
+[検証原本](acceptance-evidence/task-original-context-retention.raw.zip)は262 entry、展開時43012750 bytes、ZIP 4980164 bytes、SHA-256 `fbfe69230c87c7f8463e3e59d8ba3f64bba3c9cdaf273d2cbfe490a5cd36fcb3`。manifestを含む全entryを読み戻し照合した。現状一覧では完了したlower保持を残作業から除き、その訂正理由を本節へ記録した。過去の実行結果・full SHA・既存履歴のbyte prefixと未追跡 `%SystemDrive%/` を保持する。
