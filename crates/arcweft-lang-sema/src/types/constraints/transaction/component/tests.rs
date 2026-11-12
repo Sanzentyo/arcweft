@@ -44,11 +44,10 @@ fn root(
 }
 
 fn output(context: &mut Context<'_>, ty: &TypeKind) -> PreparedValueOutput<&'static str> {
+    let original = context.fixture_original_context(None).unwrap();
     PreparedValueOutput {
-        ty: ty
-            .prepare_effects(&GenericScope::default(), context)
-            .unwrap(),
-        scope: GenericScope::default(),
+        ty: ty.prepare_effects(original.scope(), context).unwrap(),
+        original,
         preparation: "use",
     }
 }
@@ -120,18 +119,10 @@ fn original_source_context_is_retained_and_current_registration_scope_cannot_rep
                 .admit_roots(context, original.clone(), vec![second], "original")
                 .unwrap();
             let retained = component.value(&value).unwrap();
-            let ValueDefinition::Constraint {
-                original: retained_original,
-                ..
-            } = &retained.definition
-            else {
-                panic!("original constraint")
-            };
-            assert_eq!(retained_original, &original);
-            let ValueContent::Available { ty, scope } = &retained.alternatives[0].value else {
+            assert_eq!(retained.original, original);
+            let ValueContent::Available { ty } = &retained.alternatives[0].value else {
                 panic!("the original scoped type remains available")
             };
-            assert_eq!(scope.as_ref(), original.scope());
             assert_eq!(
                 ty,
                 &TypeKind::GenericParam(original.scope().bound_type(0, 0).unwrap())
@@ -151,15 +142,11 @@ fn original_source_context_is_required_even_when_no_candidate_frontier_exists() 
         .admit_roots(&mut context, original.clone(), Vec::new(), "diagnostic")
         .unwrap();
     let retained = component.value(&value).unwrap();
-    let ValueDefinition::Constraint {
-        original: retained_original,
-        frontiers,
-    } = &retained.definition
-    else {
+    let ValueDefinition::Constraint { frontiers } = &retained.definition else {
         panic!("retained original diagnostic")
     };
     assert!(frontiers.is_empty());
-    assert_eq!(retained_original, &original);
+    assert_eq!(retained.original, original);
     assert_eq!(retained.alternatives.len(), 2);
     assert!(
         retained
@@ -182,7 +169,7 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
         .admit_fixture_roots(&mut context, roots, "initializer")
         .unwrap();
     let mut use_ = component
-        .issue_use(&mut context, &[value.clone(), value.clone()])
+        .issue_fixture_use(&mut context, &[value.clone(), value.clone()])
         .unwrap();
     assert!(component.has_live_uses());
     let mut observed = Vec::new();
@@ -242,6 +229,201 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
 }
 
 #[test]
+fn intrinsic_values_retain_their_actual_type_const_and_effect_frames() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let binder = GenericBinder::new(1, 1, 1);
+    let (original, output) = context
+        .with_binder(binder, |context| {
+            let original = context.fixture_original_context(None)?;
+            let ty = TypeKind::function_with_effects(
+                [TypeKind::Array {
+                    item: Box::new(TypeKind::GenericParam(
+                        original.scope().bound_type(0, 0).unwrap(),
+                    )),
+                    len: ArrayLength::Generic(original.scope().bound_const(0, 0).unwrap()),
+                }],
+                TypeKind::Bool,
+                EffectRow::open(
+                    EffectSet::new(),
+                    original.scope().bound_effect(0, 0).unwrap(),
+                ),
+            );
+            let output = PreparedValueOutput {
+                ty: ty.prepare_effects(original.scope(), context).unwrap(),
+                original: original.clone(),
+                preparation: "intrinsic",
+            };
+            Ok((original, output))
+        })
+        .unwrap();
+    let mut component = Component::new(&mut context).unwrap();
+    context
+        .with_binder(binder, |context| {
+            let unrelated = context.fixture_original_context(None)?;
+            assert_eq!(unrelated.scope(), original.scope());
+            assert_ne!(unrelated, original);
+            let value = component.admit_value(context, output).unwrap();
+            assert_eq!(component.value(&value).unwrap().original, original);
+            let mut use_ = component.issue_use(context, unrelated, &[value]).unwrap();
+            let alternative = component
+                .next_use_alternative(context, &mut use_)
+                .unwrap()
+                .unwrap();
+            let input = component.input(&use_, &alternative, 0).unwrap();
+            assert_eq!(input.original_context(), &original);
+            let PreparedValueInput::Available {
+                ty: TypeKind::Function {
+                    params, effects, ..
+                },
+                ..
+            } = input
+            else {
+                panic!("the original intrinsic function remains available")
+            };
+            assert_eq!(
+                params,
+                &[TypeKind::Array {
+                    item: Box::new(TypeKind::GenericParam(
+                        original.scope().bound_type(0, 0).unwrap()
+                    )),
+                    len: ArrayLength::Generic(original.scope().bound_const(0, 0).unwrap()),
+                }]
+            );
+            assert_eq!(
+                effects,
+                &PreparedEffectRow::Canonical(EffectRow::open(
+                    EffectSet::new(),
+                    original.scope().bound_effect(0, 0).unwrap(),
+                ))
+            );
+            component
+                .submit_use(
+                    context,
+                    &mut use_,
+                    alternative,
+                    PreparedValueOutcome::Rejected("use outcome"),
+                )
+                .unwrap();
+            assert!(
+                component
+                    .next_use_alternative(context, &mut use_)
+                    .unwrap()
+                    .is_none()
+            );
+            let observed = component.finish_use(use_).unwrap();
+            drop(observed);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn accepted_and_conditional_use_outputs_cannot_substitute_an_equal_shaped_foreign_context() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let binder = GenericBinder::new(1, 0, 0);
+    let original = context
+        .with_binder(binder, |context| context.fixture_original_context(None))
+        .unwrap();
+    let foreign = context
+        .with_binder(binder, |context| context.fixture_original_context(None))
+        .unwrap();
+    assert_eq!(original.scope(), foreign.scope());
+    assert_ne!(original, foreign);
+    let mut component = Component::new(&mut context).unwrap();
+    for conditional in [false, true] {
+        let mut use_ = component
+            .issue_use(&mut context, original.clone(), &[])
+            .unwrap();
+        let alternative = component
+            .next_use_alternative(&mut context, &mut use_)
+            .unwrap()
+            .unwrap();
+        let accepted = PreparedValueOutput {
+            ty: TypeKind::I32,
+            original: foreign.clone(),
+            preparation: "foreign",
+        };
+        let outcome = if conditional {
+            PreparedValueOutcome::Conditional {
+                fits: Component::always(),
+                accepted,
+                rejected: "rejected",
+            }
+        } else {
+            PreparedValueOutcome::Accepted(accepted)
+        };
+        assert!(matches!(
+            component.submit_use(&mut context, &mut use_, alternative, outcome),
+            Err(PreparedValueFailure::UseContext)
+        ));
+        assert!(use_.outputs.is_empty());
+        assert_eq!(component.next_value, 0);
+        assert!(component.values.is_empty());
+        assert!(matches!(
+            component.finish_use(use_),
+            Err(PreparedValueFailure::UseState)
+        ));
+    }
+}
+
+#[test]
+fn derived_values_keep_the_use_context_for_both_available_and_diagnostic_outcomes() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let original = context
+        .with_binder(GenericBinder::new(1, 0, 0), |context| {
+            context.fixture_original_context(None)
+        })
+        .unwrap();
+    let mut component = Component::new(&mut context).unwrap();
+    for accepted in [true, false] {
+        let mut use_ = component
+            .issue_use(&mut context, original.clone(), &[])
+            .unwrap();
+        let alternative = component
+            .next_use_alternative(&mut context, &mut use_)
+            .unwrap()
+            .unwrap();
+        let outcome = if accepted {
+            PreparedValueOutcome::Accepted(PreparedValueOutput {
+                ty: TypeKind::Bool,
+                original: original.clone(),
+                preparation: "accepted",
+            })
+        } else {
+            PreparedValueOutcome::Rejected("diagnostic")
+        };
+        component
+            .submit_use(&mut context, &mut use_, alternative, outcome)
+            .unwrap();
+        assert!(
+            component
+                .next_use_alternative(&mut context, &mut use_)
+                .unwrap()
+                .is_none()
+        );
+        let observed = component.finish_use(use_).unwrap();
+        let value = component.retain_use(&mut context, observed).unwrap();
+        assert_eq!(component.value(&value).unwrap().original, original);
+        let reader = context.fixture_original_context(None).unwrap();
+        let mut use_ = component.issue_use(&mut context, reader, &[value]).unwrap();
+        let alternative = component
+            .next_use_alternative(&mut context, &mut use_)
+            .unwrap()
+            .unwrap();
+        let input = component.input(&use_, &alternative, 0).unwrap();
+        assert_eq!(input.original_context(), &original);
+        assert_eq!(
+            matches!(input, PreparedValueInput::Available { .. }),
+            accepted
+        );
+        drop(use_);
+    }
+}
+
+#[test]
 fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
@@ -255,7 +437,7 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
                 .unwrap(),
         );
     }
-    let mut use_ = component.issue_use(&mut context, &values).unwrap();
+    let mut use_ = component.issue_fixture_use(&mut context, &values).unwrap();
     let mut count = 0;
     while let Some(alternative) = component
         .next_use_alternative(&mut context, &mut use_)
@@ -275,7 +457,7 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
     let observed = component.finish_use(use_).unwrap();
     let derived = component.retain_use(&mut context, observed).unwrap();
     let mut use_ = component
-        .issue_use(&mut context, &[values[0].clone(), derived])
+        .issue_fixture_use(&mut context, &[values[0].clone(), derived])
         .unwrap();
     let mut correlated = 0;
     while let Some(alternative) = component
@@ -304,10 +486,10 @@ fn foreign_references_and_ticket_misuse_do_not_create_checked_results() {
     let value_output = output(&mut context, &TypeKind::I32);
     let value = first.admit_value(&mut context, value_output).unwrap();
     assert!(matches!(
-        second.issue_use(&mut context, &[value.clone()]),
+        second.issue_fixture_use(&mut context, &[value.clone()]),
         Err(PreparedValueFailure::ForeignIssuer)
     ));
-    let mut use_ = first.issue_use(&mut context, &[value]).unwrap();
+    let mut use_ = first.issue_fixture_use(&mut context, &[value]).unwrap();
     let alternative = first
         .next_use_alternative(&mut context, &mut use_)
         .unwrap()
@@ -362,7 +544,7 @@ fn conditional_use_keeps_rejection_without_constraining_the_producer_scheme() {
         )
         .unwrap();
     let mut use_ = component
-        .issue_use(&mut context, &[producer.clone()])
+        .issue_fixture_use(&mut context, &[producer.clone()])
         .unwrap();
     let alternative = component
         .next_use_alternative(&mut context, &mut use_)
@@ -432,7 +614,9 @@ fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
     let foreign_fits = PreparedEffectGraph::default()
         .not(Component::always(), &mut context)
         .unwrap();
-    let mut use_ = component.issue_use(&mut context, &[producer]).unwrap();
+    let mut use_ = component
+        .issue_fixture_use(&mut context, &[producer])
+        .unwrap();
     let mut fits = [local_fits, foreign_fits].into_iter();
     while let Some(alternative) = component
         .next_use_alternative(&mut context, &mut use_)
@@ -467,7 +651,10 @@ fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
     assert!(!component.has_live_uses());
 }
 
-fn arrow(row: PreparedEffectRow) -> PreparedValueOutput<&'static str> {
+fn arrow(
+    original: OriginalProducerContext,
+    row: PreparedEffectRow,
+) -> PreparedValueOutput<&'static str> {
     PreparedValueOutput {
         ty: TypeKind::Function {
             binder: GenericBinder::EMPTY,
@@ -476,7 +663,7 @@ fn arrow(row: PreparedEffectRow) -> PreparedValueOutput<&'static str> {
             return_type: Box::new(TypeKind::I32),
             effects: row,
         },
-        scope: GenericScope::default(),
+        original,
         preparation: "function value",
     }
 }
@@ -486,10 +673,14 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context).unwrap();
+    let original = context.fixture_original_context(None).unwrap();
     let value = component
         .admit_value(
             &mut context,
-            arrow(PreparedEffectRow::Canonical(EffectRow::unknown())),
+            arrow(
+                original.clone(),
+                PreparedEffectRow::Canonical(EffectRow::unknown()),
+            ),
         )
         .unwrap();
     assert!(matches!(
@@ -502,7 +693,7 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
         .union(vec![], &mut context)
         .unwrap();
     assert!(matches!(
-        component.admit_value(&mut context, arrow(foreign)),
+        component.admit_value(&mut context, arrow(original.clone(), foreign)),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::ForeignIssuer)
         ))
@@ -511,7 +702,7 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
     let stale = component.effects.union(vec![], &mut context).unwrap();
     component.effects.rollback(&mut checkpoint).unwrap();
     assert!(matches!(
-        component.admit_value(&mut context, arrow(stale)),
+        component.admit_value(&mut context, arrow(original, stale)),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::StaleReference)
         ))
@@ -524,7 +715,7 @@ fn empty_input_use_runs_once_and_a_failed_submission_cannot_be_resumed() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context).unwrap();
-    let mut use_ = component.issue_use(&mut context, &[]).unwrap();
+    let mut use_ = component.issue_fixture_use(&mut context, &[]).unwrap();
     let alternative = component
         .next_use_alternative(&mut context, &mut use_)
         .unwrap()
@@ -547,7 +738,7 @@ fn empty_input_use_runs_once_and_a_failed_submission_cannot_be_resumed() {
         Err(PreparedValueFailure::UseState)
     ));
     assert!(!component.has_live_uses());
-    let mut use_ = component.issue_use(&mut context, &[]).unwrap();
+    let mut use_ = component.issue_fixture_use(&mut context, &[]).unwrap();
     let alternative = component
         .next_use_alternative(&mut context, &mut use_)
         .unwrap()
@@ -601,7 +792,9 @@ fn fixed_component_allocations_and_cancelled_enumeration_obey_the_original_budge
     let producer = component
         .admit_value(&mut context, producer_output)
         .unwrap();
-    let mut use_ = component.issue_use(&mut context, &[producer]).unwrap();
+    let mut use_ = component
+        .issue_fixture_use(&mut context, &[producer])
+        .unwrap();
     cancellation.store(true, Ordering::Relaxed);
     assert!(matches!(
         component.next_use_alternative(&mut context, &mut use_),
@@ -634,18 +827,19 @@ fn aliases_do_not_copy_affine_preparation_facts() {
     let mut component =
         OpenConstraintComponent::<NoConstraintClient, Preparation>::new(&mut context).unwrap();
     let dropped = Rc::new(Cell::new(0));
+    let original = context.fixture_original_context(None).unwrap();
     let producer = component
         .admit_value(
             &mut context,
             PreparedValueOutput {
                 ty: TypeKind::I32,
-                scope: GenericScope::default(),
+                original: original.clone(),
                 preparation: Preparation(Rc::clone(&dropped)),
             },
         )
         .unwrap();
     let mut use_ = component
-        .issue_use(&mut context, &[producer.clone(), producer])
+        .issue_fixture_use(&mut context, &[producer.clone(), producer])
         .unwrap();
     let alternative = component
         .next_use_alternative(&mut context, &mut use_)
@@ -673,7 +867,7 @@ fn aliases_do_not_copy_affine_preparation_facts() {
             alternative,
             PreparedValueOutcome::Accepted(PreparedValueOutput {
                 ty: TypeKind::I32,
-                scope: GenericScope::default(),
+                original,
                 preparation: Preparation(Rc::clone(&dropped)),
             }),
         )
@@ -1021,7 +1215,7 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
     context.restore_binder_scope(enclosing);
     assert!(context.lexical_scope().binders().is_empty());
     let mut use_ = component
-        .issue_use(&mut context, &[value.clone(), value])
+        .issue_fixture_use(&mut context, &[value.clone(), value])
         .unwrap();
     let alternative = component
         .next_use_alternative(&mut context, &mut use_)
@@ -1092,7 +1286,7 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
         .admit_fixture_roots(&mut context, vec![root], "original")
         .unwrap();
     let mut first = component
-        .issue_use(&mut context, &[producer.clone()])
+        .issue_fixture_use(&mut context, &[producer.clone()])
         .unwrap();
     while let Some(alternative) = component
         .next_use_alternative(&mut context, &mut first)
@@ -1110,7 +1304,7 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
     let first = component.finish_use(first).unwrap();
     let derived = component.retain_use(&mut context, first).unwrap();
     let mut use_ = component
-        .issue_use(&mut context, &[producer, derived.clone(), derived])
+        .issue_fixture_use(&mut context, &[producer, derived.clone(), derived])
         .unwrap();
     let mut available = 0;
     let mut diagnostic = 0;
@@ -1153,7 +1347,9 @@ fn original_constraint_observation_validates_authority_and_cancellation_before_v
     let producer = component
         .admit_fixture_roots(&mut context, vec![root], "original")
         .unwrap();
-    let mut use_ = component.issue_use(&mut context, &[producer]).unwrap();
+    let mut use_ = component
+        .issue_fixture_use(&mut context, &[producer])
+        .unwrap();
     let alternative = component
         .next_use_alternative(&mut context, &mut use_)
         .unwrap()

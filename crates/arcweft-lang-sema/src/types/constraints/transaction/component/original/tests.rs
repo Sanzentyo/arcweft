@@ -428,7 +428,7 @@ fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() 
     let value = component
         .admit_fixture_roots(&mut context, vec![root], "initializer")
         .unwrap();
-    let use_ = component.issue_use(&mut context, &[value]).unwrap();
+    let use_ = component.issue_fixture_use(&mut context, &[value]).unwrap();
     assert!(matches!(
         component.infer_original_products(&mut context),
         Err(PreparedValueFailure::UseState)
@@ -658,7 +658,9 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
     let producer = component
         .admit_fixture_roots(&mut context, vec![root], "original")
         .unwrap();
-    let mut use_ = component.issue_use(&mut context, &[producer]).unwrap();
+    let mut use_ = component
+        .issue_fixture_use(&mut context, &[producer])
+        .unwrap();
     while let Some(alternative) = component
         .next_use_alternative(&mut context, &mut use_)
         .unwrap()
@@ -672,7 +674,7 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
                     ty: TypeKind::String
                         .prepare_effects(&GenericScope::default(), &mut context)
                         .unwrap(),
-                    scope: GenericScope::default(),
+                    original: use_.original.clone(),
                     preparation: "later result",
                 },
                 rejected: "false fit",

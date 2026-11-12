@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, marker::PhantomData, rc::Rc, sync::Arc};
 
-use super::super::TypeConstraintParameterScope;
+use super::super::{OriginalProducerContext, TypeConstraintParameterScope};
 use super::{
     ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, SourceProbeTerm,
     SuspendedConstraintFrontier, TypeConstraintAccounting, TypeConstraintContext,
@@ -46,6 +46,8 @@ pub(crate) enum PreparedValueFailure {
     ProducerApplication,
     #[error("one producer contains frontiers from different original source contexts")]
     ProducerContext,
+    #[error("prepared value-use output belongs to another source context")]
+    UseContext,
     #[error("prepared value ordinal overflow")]
     OrdinalOverflow,
 }
@@ -113,10 +115,7 @@ struct ValueAlternative {
 }
 
 enum ValueContent {
-    Available {
-        ty: TypeKind<PreparedEffects>,
-        scope: Arc<GenericScope>,
-    },
+    Available { ty: TypeKind<PreparedEffects> },
     Unavailable(PreparedValueUnavailable),
     UnresolvedProjection(TypeConstraintRejection),
 }
@@ -124,7 +123,6 @@ enum ValueContent {
 enum ValueDefinition<D: ConstraintDomain> {
     Constraint {
         frontiers: Box<[SuspendedConstraintFrontier<D>]>,
-        original: super::super::OriginalProducerContext,
     },
     Intrinsic,
     Use(Box<[PreparedValueRef<D>]>),
@@ -133,6 +131,7 @@ enum ValueDefinition<D: ConstraintDomain> {
 /// Prepared projection and original proof terms have distinct roles: use
 /// checking reads the former; eligibility/completion retains the latter.
 struct RegisteredValue<D: ConstraintDomain, P> {
+    original: OriginalProducerContext,
     definition: ValueDefinition<D>,
     preparations: Box<[P]>,
     alternatives: Box<[ValueAlternative]>,
@@ -145,7 +144,6 @@ struct RegisteredValue<D: ConstraintDomain, P> {
 pub(crate) struct PreparedValueOriginalConstraint<'a, D: ConstraintDomain> {
     original: &'a super::super::OriginalProducerContext,
     application: D::Application,
-    scope: &'a GenericScope,
     parameters: &'a TypeConstraintParameterScope,
     path: &'a ConstraintPath<D>,
 }
@@ -159,7 +157,7 @@ impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
     }
 
     pub(crate) fn scope(&self) -> &GenericScope {
-        self.scope
+        self.original.scope()
     }
 
     pub(crate) fn parameters(&self) -> &TypeConstraintParameterScope {
@@ -218,14 +216,16 @@ impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
 pub(crate) enum PreparedValueInput<'a, P> {
     Available {
         ty: &'a TypeKind<PreparedEffects>,
-        scope: &'a GenericScope,
+        original: &'a OriginalProducerContext,
         preparation: &'a P,
     },
     Unavailable {
+        original: &'a OriginalProducerContext,
         reason: PreparedValueUnavailable,
         preparation: &'a P,
     },
     UnresolvedProjection {
+        original: &'a OriginalProducerContext,
         reason: &'a TypeConstraintRejection,
         preparation: &'a P,
     },
@@ -233,8 +233,18 @@ pub(crate) enum PreparedValueInput<'a, P> {
 
 pub(crate) struct PreparedValueOutput<P> {
     pub(crate) ty: TypeKind<PreparedEffects>,
-    pub(crate) scope: GenericScope,
+    pub(crate) original: OriginalProducerContext,
     pub(crate) preparation: P,
+}
+
+impl<P> PreparedValueInput<'_, P> {
+    pub(crate) fn original_context(&self) -> &OriginalProducerContext {
+        match self {
+            Self::Available { original, .. }
+            | Self::Unavailable { original, .. }
+            | Self::UnresolvedProjection { original, .. } => original,
+        }
+    }
 }
 
 /// Rejection remains an outcome. It never filters the producing frontier.
@@ -252,6 +262,7 @@ pub(crate) enum PreparedValueOutcome<P> {
 
 #[must_use = "finish or discard the affine value-use ticket"]
 pub(crate) struct PreparedValueUseTicket<D, P> {
+    original: OriginalProducerContext,
     issuer: Rc<ValueIssuer>,
     lease: Rc<UseLease>,
     ordinal: u64,
@@ -286,6 +297,7 @@ struct RecordedUse<P> {
 
 #[must_use = "retain this observed use in its component"]
 pub(crate) struct PreparedValueUse<D, P> {
+    original: OriginalProducerContext,
     issuer: Rc<ValueIssuer>,
     lease: Rc<UseLease>,
     inputs: Box<[PreparedValueRef<D>]>,
@@ -305,6 +317,15 @@ pub(crate) struct OpenConstraintComponent<D: ConstraintDomain, P> {
 }
 
 impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
+    #[cfg(test)]
+    pub(crate) fn issue_fixture_use<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        inputs: &[PreparedValueRef<D>],
+    ) -> Result<PreparedValueUseTicket<D, P>, PreparedValueFailure> {
+        let original = context.fixture_original_context(None)?;
+        self.issue_use(context, original, inputs)
+    }
     /// Fixture cohorts use the authority retained by their first real root.
     /// Empty/diagnostic-only producers must pass an explicit source context.
     #[cfg(test)]
@@ -414,10 +435,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 application = Some(owner);
             }
         }
-        for _ in original.scope().binders() {
-            context.enter_node()?;
-        }
-        let scope = Arc::new(original.scope().clone());
         let mut alternatives = Vec::new();
         for (frontier, root) in roots.iter().enumerate() {
             for (path_index, path) in root.transaction.frontier.iter().enumerate() {
@@ -446,13 +463,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                             .transport_type(&path.lineage.scope, &projection.value, context)
                             .map_err(Self::projection_failure)?;
                         let ty = value
-                            .prepare_effects(&scope, context)
+                            .prepare_effects(original.scope(), context)
                             .map_err(Self::projection_failure)?;
                         context.enter_node()?;
-                        ValueContent::Available {
-                            ty,
-                            scope: Arc::clone(&scope),
-                        }
+                        ValueContent::Available { ty }
                     }
                     Err(TypeConstraintError::Rejected(reason)) => {
                         ValueContent::UnresolvedProjection(reason)
@@ -496,9 +510,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         self.insert(
             context,
             RegisteredValue {
+                original,
                 definition: ValueDefinition::Constraint {
                     frontiers: roots.into_boxed_slice(),
-                    original,
                 },
                 preparations: Box::new([preparation]),
                 alternatives: alternatives.into_boxed_slice(),
@@ -511,18 +525,19 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         context: &mut TypeConstraintContext<'_, A, D>,
         value: PreparedValueOutput<P>,
     ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
-        let (ty, scope, preparation) = self.retain_output(context, value)?;
+        let (ty, original, preparation) = self.retain_output(context, value)?;
         context.enter_node()?;
         self.insert(
             context,
             RegisteredValue {
+                original,
                 definition: ValueDefinition::Intrinsic,
                 preparations: Box::new([preparation]),
                 alternatives: Box::new([ValueAlternative {
                     origins: Box::new([]),
                     predicate: Self::always(),
                     preparation: 0,
-                    value: ValueContent::Available { ty, scope },
+                    value: ValueContent::Available { ty },
                 }]),
             },
         )
@@ -531,6 +546,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn issue_use<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        original: OriginalProducerContext,
         inputs: &[PreparedValueRef<D>],
     ) -> Result<PreparedValueUseTicket<D, P>, PreparedValueFailure> {
         let ordinal = self.next_use;
@@ -565,6 +581,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         let next_indices = vec![0; unique.len()];
         self.next_use = next;
         Ok(PreparedValueUseTicket {
+            original,
             issuer: Rc::clone(&self.issuer),
             lease: Rc::clone(&self.use_lease),
             ordinal,
@@ -738,17 +755,19 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         let alternative = &value.alternatives[alternative.positions[input]];
         let preparation = &value.preparations[alternative.preparation];
         Ok(match &alternative.value {
-            ValueContent::Available { ty, scope } => PreparedValueInput::Available {
+            ValueContent::Available { ty } => PreparedValueInput::Available {
                 ty,
-                scope,
+                original: &value.original,
                 preparation,
             },
             ValueContent::Unavailable(reason) => PreparedValueInput::Unavailable {
+                original: &value.original,
                 reason: *reason,
                 preparation,
             },
             ValueContent::UnresolvedProjection(reason) => {
                 PreparedValueInput::UnresolvedProjection {
+                    original: &value.original,
                     reason,
                     preparation,
                 }
@@ -777,11 +796,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 .values
                 .get(origin)
                 .ok_or(PreparedValueFailure::StaleReference)?;
-            let ValueDefinition::Constraint {
-                frontiers,
-                original,
-            } = &value.definition
-            else {
+            let ValueDefinition::Constraint { frontiers } = &value.definition else {
                 return Err(PreparedValueFailure::InputState);
             };
             // Diagnostic alternatives have no source path. Their unavailable
@@ -803,9 +818,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 .map_err(TypeConstraintError::Invariant)?;
             visit(
                 PreparedValueOriginalConstraint {
-                    original,
+                    original: &value.original,
                     application: owner.application(),
-                    scope: original.scope(),
                     parameters: owner.parameters(),
                     path,
                 },
@@ -847,6 +861,18 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         if !valid {
             return Err(PreparedValueFailure::InputState);
         }
+        let output_context = match &outcome {
+            PreparedValueOutcome::Accepted(output)
+            | PreparedValueOutcome::Conditional {
+                accepted: output, ..
+            } => Some(&output.original),
+            PreparedValueOutcome::Rejected(_)
+            | PreparedValueOutcome::Blocked(_)
+            | PreparedValueOutcome::Deferred(_) => None,
+        };
+        if output_context.is_some_and(|original| original != &ticket.original) {
+            return Err(PreparedValueFailure::UseContext);
+        }
         context.enter_node()?;
         ticket.outputs.push(RecordedUse {
             origins: alternative.origins,
@@ -866,6 +892,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             return Err(PreparedValueFailure::UseState);
         }
         Ok(PreparedValueUse {
+            original: ticket.original,
             issuer: ticket.issuer,
             lease: ticket.lease,
             inputs: ticket.inputs,
@@ -934,7 +961,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             };
             match recorded.outcome {
                 PreparedValueOutcome::Accepted(output) => {
-                    let (ty, scope, preparation) = self.retain_output(context, output)?;
+                    let (ty, _, preparation) = self.retain_output(context, output)?;
                     context.enter_node()?;
                     let index = preparations.len();
                     preparations.push(preparation);
@@ -942,7 +969,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         origins: recorded.origins,
                         predicate: recorded.predicate,
                         preparation: index,
-                        value: ValueContent::Available { ty, scope },
+                        value: ValueContent::Available { ty },
                     });
                 }
                 PreparedValueOutcome::Rejected(preparation) => emit(
@@ -968,7 +995,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     accepted,
                     rejected,
                 } => {
-                    let (ty, scope, preparation) = self.retain_output(context, accepted)?;
+                    let (ty, _, preparation) = self.retain_output(context, accepted)?;
                     self.effects
                         .validate_retained_predicate(&fits)
                         .map_err(|error| {
@@ -989,7 +1016,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         (
                             recorded.origins,
                             accepted_guard,
-                            ValueContent::Available { ty, scope },
+                            ValueContent::Available { ty },
                             preparation,
                         ),
                         (
@@ -1013,6 +1040,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
         }
         Ok(RegisteredValue {
+            original: observed.original,
             definition: ValueDefinition::Use(observed.inputs),
             preparations: preparations.into_boxed_slice(),
             alternatives: alternatives.into_boxed_slice(),
@@ -1023,13 +1051,13 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         &self,
         context: &mut TypeConstraintContext<'_, A, D>,
         output: PreparedValueOutput<P>,
-    ) -> Result<(TypeKind<PreparedEffects>, Arc<GenericScope>, P), PreparedValueFailure> {
+    ) -> Result<(TypeKind<PreparedEffects>, OriginalProducerContext, P), PreparedValueFailure> {
         let ty = output
             .ty
-            .retain_in_effect_graph(&output.scope, &self.effects, context)
+            .retain_in_effect_graph(output.original.scope(), &self.effects, context)
             .map_err(Self::retention_failure)?;
         context.enter_node()?;
-        Ok((ty, Arc::new(output.scope), output.preparation))
+        Ok((ty, output.original, output.preparation))
     }
 
     fn projection_failure(error: TypeProjectionError<TypeConstraintError>) -> PreparedValueFailure {
