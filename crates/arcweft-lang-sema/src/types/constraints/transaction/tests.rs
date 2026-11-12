@@ -53,6 +53,156 @@ impl ConstraintDomain for ApplicationSourceDomain {
 type ApplicationSourceContext<'a> =
     TypeConstraintContext<'a, LocalConstraintAccounting<'a>, ApplicationSourceDomain>;
 
+struct OwnedSourceValue {
+    source: ConstraintSourceId<u8>,
+    receipt: Option<ConstraintSourceReceipt<ApplicationSourceDomain>>,
+    value: TypeKind,
+}
+
+impl crate::types::constraints::ConstraintSourceValueOwner<ApplicationSourceDomain>
+    for OwnedSourceValue
+{
+    fn source(&self) -> ConstraintSourceId<u8> {
+        self.source
+    }
+    fn probe_receipt(&self) -> Option<&ConstraintSourceReceipt<ApplicationSourceDomain>> {
+        self.receipt.as_ref()
+    }
+    fn value_type(&self) -> &TypeKind {
+        &self.value
+    }
+}
+
+#[test]
+fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_source() {
+    for checked in [false, true] {
+        let cancellation = AtomicBool::new(false);
+        let (mut context, parameters) =
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, ApplicationSourceDomain>::new(
+                TypeConstraintLimits::new(4096, 2048, 128, 128),
+                &cancellation,
+            )
+            .into_parts();
+        let mut transaction =
+            TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None)
+                .unwrap();
+        let sibling = context.fork_path(&transaction.frontier[0]).unwrap();
+        transaction.frontier.push(sibling);
+        let prepared = if checked {
+            PreparedSourceConstraint::checked(
+                7,
+                PreparedConstraintSourceProjection::Scalar,
+                [],
+                super::super::PreparedSourceAlternative::new(0, (), TypeKind::I64),
+            )
+            .unwrap()
+        } else {
+            PreparedSourceConstraint::unchecked(7, PreparedConstraintSourceProjection::Scalar)
+        };
+        transaction
+            .begin_prepared_probe(
+                &mut context,
+                prepared,
+                ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .unwrap();
+        let probe = transaction.next_probe(&mut context).unwrap().unwrap();
+        let stale = Arc::new(OwnedSourceValue {
+            source: probe.source(),
+            receipt: Some(probe.receipt()),
+            value: TypeKind::I64,
+        });
+        transaction
+            .submit_probe(
+                &mut context,
+                probe.input(),
+                ProbeSubmission::Rejected("discard the first branch"),
+            )
+            .unwrap();
+        drop(probe);
+        let mut probe = transaction.next_probe(&mut context).unwrap().unwrap();
+        assert_eq!(stale.source, probe.source());
+        assert!(!stale.receipt.as_ref().unwrap().matches(&probe.receipt()));
+        assert!(matches!(
+            probe.observe(SourceProbeResult::unchecked_value(stale, 0)),
+            Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::SourceProtocol(
+                    TypeConstraintSourceProtocolInvariant::WrongSource
+                )
+            ))
+        ));
+        let foreign = Arc::new(OwnedSourceValue {
+            source: ConstraintSourceId::new(probe.source().application(), 8),
+            receipt: Some(probe.receipt()),
+            value: TypeKind::I64,
+        });
+        assert!(matches!(
+            probe.observe(SourceProbeResult::unchecked_value(foreign, 0)),
+            Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::SourceProtocol(
+                    TypeConstraintSourceProtocolInvariant::WrongSource
+                )
+            ))
+        ));
+        let recheck = Arc::new(OwnedSourceValue {
+            source: probe.source(),
+            receipt: None,
+            value: TypeKind::I64,
+        });
+        assert!(matches!(
+            probe.observe(SourceProbeResult::unchecked_value(recheck, 0)),
+            Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::SourceProtocol(
+                    TypeConstraintSourceProtocolInvariant::WrongSource
+                )
+            ))
+        ));
+        let value = Arc::new(OwnedSourceValue {
+            source: probe.source(),
+            receipt: Some(probe.receipt()),
+            value: TypeKind::I64,
+        });
+        let retained = Arc::downgrade(&value);
+        let observed = if checked {
+            SourceProbeResult::checked_value(value.clone(), 0, 0, ())
+        } else {
+            SourceProbeResult::unchecked_value(value.clone(), 0)
+        };
+        let contribution = probe
+            .observe(observed)
+            .expect("foreign observation did not consume the ticket")
+            .close_preparation(());
+        drop(value);
+        transaction
+            .submit_probe(
+                &mut context,
+                probe.input(),
+                ProbeSubmission::Accepted(contribution),
+            )
+            .unwrap();
+        assert!(transaction.next_probe(&mut context).unwrap().is_none());
+        assert!(retained.upgrade().is_some());
+        let mut ticket = transaction
+            .next_materialization_ticket(&mut context)
+            .unwrap()
+            .unwrap();
+        ticket.bind_callback().unwrap();
+        let submission = ticket
+            .bind_closed_submission(ClosedMaterializationSubmission::Sealed(()))
+            .unwrap();
+        transaction
+            .submit_closed_materialization(ticket, submission)
+            .unwrap();
+        let solved = transaction.finish(&mut context).unwrap();
+        assert!(
+            retained.upgrade().is_some(),
+            "completed source trace retains the actual value owner"
+        );
+        drop(solved);
+        assert!(retained.upgrade().is_none());
+    }
+}
+
 fn repeated_source_component(
     cancellation: &AtomicBool,
     child_application: u32,
@@ -1156,7 +1306,7 @@ fn source_frontier<A: TypeConstraintAccounting>(
                     prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
                     value_expected: None,
                     actual: TypeKind::I64,
-                    result_origin: None,
+                    origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
                 },
             ));
         path

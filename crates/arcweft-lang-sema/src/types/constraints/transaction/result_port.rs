@@ -46,9 +46,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                 let source = Arc::new(super::ConstraintOperand::result(
                     source,
                     Arc::new(context.capture_lexical_scope()?),
-                    result.ok_or_else(|| {
-                        protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
-                    })?,
+                    result.into_result()?,
                 ));
                 Ok(PendingResultConstraint {
                     receipt: self.receipt.clone(),
@@ -171,9 +169,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             context.enter_node()?;
             let (opened, resolved) =
                 resolve_probe_term(SourceProbeTerm::Result(origin.clone()), &path, context)?;
-            let resolved = resolved.ok_or_else(|| {
-                protocol_error(super::TypeConstraintSourceProtocolInvariant::Outcome)
-            })?;
+            let resolved = resolved.into_result()?;
             let source = project_type(
                 &opened,
                 path.projection_view(),

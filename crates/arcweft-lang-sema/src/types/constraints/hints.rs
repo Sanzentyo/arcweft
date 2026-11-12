@@ -578,12 +578,71 @@ pub(crate) struct SourceProbeResult<D: ConstraintDomain> {
     selection: SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
 }
 
+/// The source layer retains the checked fact or staged semantic value that
+/// actually supplied this term. A type or a set of Free references alone is
+/// not an owning source value.
+pub(crate) trait ConstraintSourceValueOwner<D: ConstraintDomain>: 'static {
+    fn source(&self) -> ConstraintSourceId<D::Source>;
+    /// Rechecks have no probe authority. A successful probe value retains the
+    /// exact receipt under which its owner was checked, including its branch.
+    fn probe_receipt(&self) -> Option<&super::ConstraintSourceReceipt<D>>;
+    fn value_type(&self) -> &TypeKind;
+}
+
 pub(crate) enum SourceProbeTerm<D: ConstraintDomain> {
+    Value(Arc<dyn ConstraintSourceValueOwner<D>>),
+    #[cfg(test)]
     Type(TypeKind),
     Result(super::transaction::ConstraintResultProjection<D>),
 }
 
 impl<D: ConstraintDomain> SourceProbeResult<D> {
+    pub(crate) fn unchecked_value(
+        actual: Arc<dyn ConstraintSourceValueOwner<D>>,
+        canonical_branch: D::ProbeSemanticBranch,
+    ) -> Self {
+        Self {
+            actual: SourceProbeTerm::Value(actual),
+            canonical_branch: SourceProbeObservation::new(canonical_branch),
+            selection: SourceProbeSelection::Unchecked,
+        }
+    }
+
+    pub(crate) fn checked_value(
+        actual: Arc<dyn ConstraintSourceValueOwner<D>>,
+        canonical_branch: D::ProbeSemanticBranch,
+        alternative: D::AlternativeIndex,
+        evidence: D::ObservedEvidence,
+    ) -> Self {
+        Self {
+            actual: SourceProbeTerm::Value(actual),
+            canonical_branch: SourceProbeObservation::new(canonical_branch),
+            selection: SourceProbeSelection::Checked {
+                alternative,
+                evidence: Arc::new(evidence),
+            },
+        }
+    }
+
+    pub(super) fn validate_source(
+        &self,
+        receipt: &super::ConstraintSourceReceipt<D>,
+    ) -> Result<(), TypeConstraintError> {
+        if let SourceProbeTerm::Value(owner) = &self.actual
+            && (owner.source() != receipt.source()
+                || !owner
+                    .probe_receipt()
+                    .is_some_and(|owner| owner.matches(receipt)))
+        {
+            return Err(TypeConstraintInvariant::SourceProtocol(
+                super::TypeConstraintSourceProtocolInvariant::WrongSource,
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub(crate) fn unchecked(actual: TypeKind, canonical_branch: D::ProbeSemanticBranch) -> Self {
         Self {
             actual: SourceProbeTerm::Type(actual),
@@ -592,6 +651,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn checked(
         actual: TypeKind,
         canonical_branch: D::ProbeSemanticBranch,

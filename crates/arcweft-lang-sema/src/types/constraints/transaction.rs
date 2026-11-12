@@ -32,7 +32,7 @@ use super::{
 use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 mod operand;
-use operand::{ConstraintOperand, ResolvedConstraintResult};
+use operand::{ConstraintOperand, ResolvedConstraintResult, ResolvedConstraintSource};
 
 /// One equation retained until candidate closure. Source ordinals connect to
 /// the single source trace; selection and container evidence stay there.
@@ -631,6 +631,7 @@ impl<D: ConstraintDomain> ProbeTicket<D> {
         &mut self,
         result: SourceProbeResult<D>,
     ) -> Result<SourceProbeContribution<D>, TypeConstraintError> {
+        result.validate_source(&self.receipt())?;
         let path = self
             .path
             .take()
@@ -1816,9 +1817,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         selection: stored_selection,
                         prepared_source_projection: input.prepared.source_projection(),
                         value_expected,
-                        result_origin: result_origin
-                            .as_ref()
-                            .map(ResolvedConstraintResult::projection),
+                        origin: result_origin,
                         actual: actual.clone(),
                     });
                     path.lineage.probe_trace.push(probe);
@@ -2513,12 +2512,17 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
     term: SourceProbeTerm<D>,
     path: &ConstraintPath<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<(TypeKind, Option<ResolvedConstraintResult<D>>), TypeConstraintError> {
+) -> Result<(TypeKind, ResolvedConstraintSource<D>), TypeConstraintError> {
     match term {
-        SourceProbeTerm::Type(value) => Ok((value, None)),
+        SourceProbeTerm::Value(owner) => Ok((
+            owner.value_type().clone(),
+            ResolvedConstraintSource::Value(owner),
+        )),
+        #[cfg(test)]
+        SourceProbeTerm::Type(value) => Ok((value, ResolvedConstraintSource::Fixture)),
         SourceProbeTerm::Result(result) => {
             let (actual, result) = ResolvedConstraintResult::resolve(result, path, context)?;
-            Ok((actual, Some(result)))
+            Ok((actual, ResolvedConstraintSource::Result(result)))
         }
     }
 }

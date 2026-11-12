@@ -3,6 +3,42 @@
 use super::*;
 use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexicalScope};
 
+pub(super) enum ResolvedConstraintSource<D: ConstraintDomain> {
+    Value(Arc<dyn super::super::ConstraintSourceValueOwner<D>>),
+    Result(ResolvedConstraintResult<D>),
+    #[cfg(test)]
+    Fixture,
+}
+
+impl<D: ConstraintDomain> Clone for ResolvedConstraintSource<D> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Value(value) => Self::Value(Arc::clone(value)),
+            Self::Result(result) => Self::Result(result.clone()),
+            #[cfg(test)]
+            Self::Fixture => Self::Fixture,
+        }
+    }
+}
+
+impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
+    pub(super) fn projection(&self) -> Option<ConstraintResultProjection<D>> {
+        match self {
+            Self::Result(result) => Some(result.projection()),
+            _ => None,
+        }
+    }
+
+    pub(super) fn into_result(self) -> Result<ResolvedConstraintResult<D>, TypeConstraintError> {
+        match self {
+            Self::Result(result) => Ok(result),
+            _ => Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            )),
+        }
+    }
+}
+
 /// Issued only by resolving one unique projection on its admitted owner.
 /// Keeping the request itself prevents a later equal type from replacing the
 /// selected result's authority.
@@ -67,7 +103,7 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
     Source {
         original: OriginalProducerContext,
         receipt: ConstraintSourceReceipt<D>,
-        result: Option<ResolvedConstraintResult<D>>,
+        value: ResolvedConstraintSource<D>,
     },
     Result(ResolvedConstraintResult<D>),
     Derived {
@@ -122,7 +158,7 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
         scope: Arc<ConstraintLexicalScope>,
         original: OriginalProducerContext,
         receipt: ConstraintSourceReceipt<D>,
-        result: Option<ResolvedConstraintResult<D>>,
+        value_owner: ResolvedConstraintSource<D>,
     ) -> Self {
         Self {
             value,
@@ -130,7 +166,7 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
             origin: Arc::new(ConstraintOperandOrigin::Source {
                 original,
                 receipt,
-                result,
+                value: value_owner,
             }),
         }
     }
@@ -217,11 +253,8 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
 
     fn result_origin(&self) -> Option<ConstraintResultProjection<D>> {
         match self {
-            ConstraintOperandOrigin::Result(result)
-            | ConstraintOperandOrigin::Source {
-                result: Some(result),
-                ..
-            } => Some(result.projection()),
+            ConstraintOperandOrigin::Result(result) => Some(result.projection()),
+            ConstraintOperandOrigin::Source { value, .. } => value.projection(),
             ConstraintOperandOrigin::Derived { producer, input } => {
                 producer.result_origin().or_else(|| input.result_origin())
             }

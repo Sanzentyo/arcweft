@@ -96,7 +96,7 @@ pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDoma
     pub(super) prepared_source_projection: PreparedConstraintSourceProjection,
     pub(super) value_expected: Option<TypeKind>,
     pub(super) actual: TypeKind,
-    pub(super) result_origin: Option<ConstraintResultProjection<D>>,
+    pub(super) origin: super::ResolvedConstraintSource<D>,
 }
 
 /// The selected source's type and constant references are closed against the
@@ -109,7 +109,7 @@ pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     branch: Arc<SourceProbeObservation<D>>,
     selection: ClosedSourceSelection<D>,
     prepared_source_projection: PreparedConstraintSourceProjection,
-    result_origin: Option<ConstraintResultProjection<D>>,
+    origin: super::ResolvedConstraintSource<D>,
     actual: TypeKind,
     source_projection: CheckedConstraintSourceProjection,
 }
@@ -220,7 +220,7 @@ impl<D: ConstraintDomain> ClosedConstraintSourceTrace<D> {
         other: &Self,
         right: &ClosedConstraintProbe<D>,
     ) -> bool {
-        match (&left.result_origin, &right.result_origin) {
+        match (left.origin.projection(), right.origin.projection()) {
             (None, None) => true,
             (Some(left), Some(right)) => {
                 self.domain_application(left.application())
@@ -331,7 +331,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
             branch: self.branch,
             selection,
             prepared_source_projection: self.prepared_source_projection,
-            result_origin: self.result_origin,
+            origin: self.origin,
             actual,
             source_projection,
         })
@@ -387,7 +387,8 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     /// Application identity is compared by the owning trace. A replay has a
     /// fresh opening, but must preserve this source's schema and observation.
     fn same_observation(&self, other: &Self) -> bool {
-        self.same_observation_except_origin(other) && self.result_origin == other.result_origin
+        self.same_observation_except_origin(other)
+            && self.origin.projection() == other.origin.projection()
     }
 
     fn same_observation_except_origin(&self, other: &Self) -> bool {
@@ -430,8 +431,8 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
         &self.source_projection
     }
 
-    pub(crate) fn result_origin(&self) -> Option<&ConstraintResultProjection<D>> {
-        self.result_origin.as_ref()
+    pub(crate) fn result_origin(&self) -> Option<ConstraintResultProjection<D>> {
+        self.origin.projection()
     }
 }
 
@@ -463,7 +464,7 @@ impl<D: ConstraintDomain> Clone for ActiveConstraintProbe<D> {
             prepared_source_projection: self.prepared_source_projection,
             value_expected: self.value_expected.clone(),
             actual: self.actual.clone(),
-            result_origin: self.result_origin.clone(),
+            origin: self.origin.clone(),
         }
     }
 }
@@ -475,7 +476,7 @@ impl<D: ConstraintDomain> PartialEq for ActiveConstraintProbe<D> {
             && self.branch == other.branch
             && self.selection == other.selection
             && self.prepared_source_projection == other.prepared_source_projection
-            && self.result_origin == other.result_origin
+            && self.origin.projection() == other.origin.projection()
             && self.value_expected == other.value_expected
             && self.actual == other.actual
     }
@@ -533,7 +534,7 @@ impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
             branch: Arc::clone(&self.branch),
             selection: self.selection.clone(),
             prepared_source_projection: self.prepared_source_projection,
-            result_origin: self.result_origin.clone(),
+            origin: self.origin.clone(),
             actual: self.actual.clone(),
             source_projection: self.source_projection.clone(),
         }

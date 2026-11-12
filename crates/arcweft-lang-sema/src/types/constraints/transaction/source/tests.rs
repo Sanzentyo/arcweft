@@ -222,7 +222,7 @@ fn source(
         prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
         value_expected: None,
         actual,
-        result_origin: None,
+        origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
     })
 }
 
@@ -337,7 +337,7 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
             item: Box::new(item),
             len: ArrayLength::Const(4),
         },
-        result_origin: None,
+        origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
     });
     path.bindings.insert(parameter, TypeKind::I64);
     let closed = probe
@@ -479,7 +479,7 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
         prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
         value_expected: Some(actual.clone()),
         actual,
-        result_origin: None,
+        origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
     });
     path.bindings.insert(reference, TypeKind::I64);
     let closed = probe

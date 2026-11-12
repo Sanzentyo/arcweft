@@ -43,11 +43,11 @@ pub(crate) use context::{
 pub(crate) use hints::NoConstraintClient;
 pub use hints::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub(crate) use hints::{
-    CompletedResultProjectionView, ConstraintDomain, ConstraintSourceContainerPolicy, ExpectedHint,
-    MaterializationOutcome, MaterializedSourceRequest, PreparedConstraintSourceProjection,
-    PreparedSourceAlternative, PreparedSourceConstraint, ProjectedExpectedHint,
-    SourceAlternativeHint, SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult,
-    SourceProbeSelection,
+    CompletedResultProjectionView, ConstraintDomain, ConstraintSourceContainerPolicy,
+    ConstraintSourceValueOwner, ExpectedHint, MaterializationOutcome, MaterializedSourceRequest,
+    PreparedConstraintSourceProjection, PreparedSourceAlternative, PreparedSourceConstraint,
+    ProjectedExpectedHint, SourceAlternativeHint, SourceError, SourcePhase, SourceProbeOutcome,
+    SourceProbeResult, SourceProbeSelection,
 };
 pub(super) use normalization::completed_types_equal;
 pub(crate) use normalization::{

@@ -891,8 +891,11 @@ impl AnalyzerCallEvidenceRule {
     }
 }
 
+mod source_value;
+use source_value::{AnalyzerObservedSourceOrigin, AnalyzerObservedSourceValue};
+
 struct AnalyzerCallObservedSource {
-    actual: Option<TypeKind>,
+    actual: Option<Arc<AnalyzerObservedSourceValue>>,
     evidence: ObservedSemanticValueEvidence,
     pending_child:
         Option<crate::types::constraints::PendingChildConstraint<AnalyzerCallConstraintDomain>>,
@@ -900,13 +903,20 @@ struct AnalyzerCallObservedSource {
 }
 
 impl AnalyzerCallObservedSource {
-    fn checked(actual: TypeKind, evidence: ObservedSemanticValueEvidence) -> Self {
+    fn checked(
+        actual: Arc<AnalyzerObservedSourceValue>,
+        evidence: ObservedSemanticValueEvidence,
+    ) -> Self {
         Self {
             actual: Some(actual),
             evidence,
             pending_child: None,
             prepared_children: Vec::new(),
         }
+    }
+
+    fn actual_type(&self) -> Option<&TypeKind> {
+        self.actual.as_ref().map(|value| value.actual())
     }
 
     fn child(
@@ -929,13 +939,21 @@ fn validate_materialized_source_request(
     request: &MaterializedSourceRequest<'_, AnalyzerCallConstraintDomain>,
     checked: &AnalyzerCallObservedSource,
 ) -> Result<(), TypeConstraintInvariant> {
+    validate_materialized_source_value(request, checked.actual_type(), &checked.evidence)
+}
+
+fn validate_materialized_source_value(
+    request: &MaterializedSourceRequest<'_, AnalyzerCallConstraintDomain>,
+    actual: Option<&TypeKind>,
+    evidence: &ObservedSemanticValueEvidence,
+) -> Result<(), TypeConstraintInvariant> {
     let source = *request.source();
     if request.canonical_branch().source != source.local() {
         return Err(TypeConstraintInvariant::SourceProtocol(
             crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
         ));
     }
-    let Some(actual) = checked.actual.as_ref() else {
+    let Some(actual) = actual else {
         return Err(TypeConstraintInvariant::SourceProtocol(
             crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
         ));
@@ -947,13 +965,12 @@ fn validate_materialized_source_request(
             ),
         ));
     }
-    if request.evidence().is_some_and(|evidence| {
+    if request.evidence().is_some_and(|checked_evidence| {
         <AnalyzerCallConstraintDomain as ConstraintDomain>::project_checked_evidence(
-            &checked.evidence,
-            actual,
+            evidence, actual,
         )
         .as_ref()
-            != Some(evidence)
+            != Some(checked_evidence)
     }) {
         return Err(TypeConstraintInvariant::SourceProtocol(
             crate::types::constraints::TypeConstraintSourceProtocolInvariant::InvalidEvidence,
@@ -1422,6 +1439,10 @@ impl<'a, 'project, 'catalog, 'control>
         >,
     ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure> {
         let source = source_id.local();
+        let origin = match parent_probe.as_ref() {
+            Some(probe) => AnalyzerObservedSourceOrigin::Probe(probe.receipt()),
+            None => AnalyzerObservedSourceOrigin::Check(source_id),
+        };
         let expectation = if let Some(AnalyzerCallSourceAdmission::PublicIdReference(family)) =
             source_admission
         {
@@ -1465,7 +1486,8 @@ impl<'a, 'project, 'catalog, 'control>
                     ),
                 ));
             }
-            let actual = prepared.actual().clone();
+            let actual = AnalyzerObservedSourceValue::prepared(origin, prepared.clone())
+                .ok_or(AnalyzerCallCheckFailure::Mismatch)?;
             return Ok(AnalyzerCallObservedSource::checked(
                 actual,
                 prepared.evidence(),
@@ -1794,6 +1816,8 @@ impl<'a, 'project, 'catalog, 'control>
                         payload,
                     },
                 );
+                let actual = AnalyzerObservedSourceValue::expression(origin, checked)
+                    .ok_or(AnalyzerCallCheckFailure::Mismatch)?;
                 Ok(AnalyzerCallObservedSource::checked(actual, evidence))
             }
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Rejected(_)) => {
@@ -2063,7 +2087,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         ));
                     }
                     if let Some(actual) = checked.actual {
-                        observed = Some((actual, checked.evidence));
+                        observed = Some((actual.actual().clone(), checked.evidence));
                     }
                 }
                 Err(AnalyzerCallCheckFailure::Mismatch) => {}
@@ -2085,8 +2109,8 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             .extend(checked.prepared_children.iter().cloned());
                         match (checked.actual, checked.pending_child) {
                         (Some(actual), None) => {
-                            self.retain_physical_observed_type(source_id, &actual)?;
-                            probe.observe(SourceProbeResult::unchecked(
+                            self.retain_physical_observed_type(source_id, actual.actual())?;
+                            probe.observe(SourceProbeResult::unchecked_value(
                                 actual,
                                 AnalyzerCallProbeSemanticBranch {
                                     source,
@@ -2171,8 +2195,8 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             if alternative.evidence().accepts(&checked.evidence) {
                                 return match (checked.actual, checked.pending_child) {
                                     (Some(actual), None) => {
-                                        self.retain_physical_observed_type(source_id, &actual)?;
-                                        probe.observe(SourceProbeResult::checked(
+                                        self.retain_physical_observed_type(source_id, actual.actual())?;
+                                        probe.observe(SourceProbeResult::checked_value(
                                             actual,
                                             AnalyzerCallProbeSemanticBranch {
                                                 source,
@@ -2209,7 +2233,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             }
                             if observed.is_none() {
                                 if let Some(actual) = checked.actual {
-                                    observed = Some((actual, checked.evidence));
+                                    observed = Some((actual.actual().clone(), checked.evidence));
                                 }
                             }
                             continue;
@@ -2522,7 +2546,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     ))
                 })?;
             }
-            let checked = if let Some(result) = request.result_projection() {
+            let validation = if let Some(result) = request.result_projection() {
                 if matches!(
                     result.application_id(),
                     CallableConstraintApplication::Specialize(_)
@@ -2559,7 +2583,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         })?;
                     let owner = specialization.owner();
                     if source.expression_owner() != Some(owner)
-                        || observed.actual.as_ref() != Some(specialization.source_type())
+                        || observed.actual_type() != Some(specialization.source_type())
                     {
                         return Err(crate::callable::SourceCallbackFailure::invariant(
                             AnalyzerCallClientInvariant::constraint(
@@ -2608,9 +2632,10 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         ),
                     )
                 })?;
-                AnalyzerCallObservedSource::checked(
-                    actual,
-                    ObservedSemanticValueEvidence::NoVariantCase,
+                validate_materialized_source_value(
+                    &request,
+                    Some(&actual),
+                    &ObservedSemanticValueEvidence::NoVariantCase,
                 )
             } else {
                 let expected = request.expected();
@@ -2622,7 +2647,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         .get(&(source, alternative))
                         .cloned()
                 });
-                match self.check_source(
+                let checked = match self.check_source(
                     source_id,
                     AnalyzerExpressionExpectation::from_complete(expected),
                     source_admission.as_ref(),
@@ -2646,9 +2671,10 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     Err(AnalyzerCallCheckFailure::Invariant(invariant)) => {
                         return Err(crate::callable::SourceCallbackFailure::invariant(invariant));
                     }
-                }
+                };
+                validate_materialized_source_request(&request, &checked)
             };
-            if let Err(invariant) = validate_materialized_source_request(&request, &checked) {
+            if let Err(invariant) = validation {
                 return Err(crate::callable::SourceCallbackFailure::invariant(
                     AnalyzerCallClientInvariant::constraint(
                         source,
@@ -6844,7 +6870,10 @@ mod tests {
         let ticket = materialization(source);
         let request = ticket.requests().next().expect("completed source request");
         let checked = AnalyzerCallObservedSource {
-            actual: Some(TypeKind::I32),
+            actual: Some(AnalyzerObservedSourceValue::fixture(
+                *request.source(),
+                TypeKind::I32,
+            )),
             evidence: ObservedSemanticValueEvidence::NoVariantCase,
             pending_child: None,
             prepared_children: Vec::new(),
@@ -6862,7 +6891,10 @@ mod tests {
         );
 
         let wrong_actual = AnalyzerCallObservedSource {
-            actual: Some(TypeKind::I64),
+            actual: Some(AnalyzerObservedSourceValue::fixture(
+                *request.source(),
+                TypeKind::I64,
+            )),
             evidence: ObservedSemanticValueEvidence::NoVariantCase,
             pending_child: None,
             prepared_children: Vec::new(),
@@ -6877,7 +6909,10 @@ mod tests {
         ));
 
         let wrong_evidence = AnalyzerCallObservedSource {
-            actual: Some(TypeKind::I32),
+            actual: Some(AnalyzerObservedSourceValue::fixture(
+                *request.source(),
+                TypeKind::I32,
+            )),
             evidence: ObservedSemanticValueEvidence::VariantCase {
                 owner: TypeKind::I32,
                 ordinal: 0,
@@ -7130,7 +7165,7 @@ mod tests {
                     None,
                 )
                 .unwrap_or_else(|_| panic!("evaluate the real source expression"));
-            assert_eq!(observed.actual, Some(TypeKind::I64));
+            assert_eq!(observed.actual_type(), Some(&TypeKind::I64));
             let original = client
                 .analyzer
                 .facts
