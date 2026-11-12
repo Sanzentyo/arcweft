@@ -83,7 +83,7 @@ fn scope(application: u32) -> ConstraintApplicationScope<Domain> {
         [],
     )
     .expect("application parameter inventory");
-    ConstraintApplicationScope::new(application, parameters)
+    ConstraintApplicationScope::test_root(application, parameters)
 }
 
 fn effect(scope: &ConstraintApplicationScope<Domain>) -> GenericEffectReference {
@@ -141,7 +141,7 @@ fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_
             .iter()
             .all(|parameter| imported.permits_local_inference(parameter))
     );
-    let child = ConstraintApplicationScope::new(1, TypeConstraintParameterScope::empty());
+    let child = ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty());
     let child_id = child.id();
     let child = context
         .start_path_with_imported(child, Some(imported))
@@ -249,7 +249,7 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
         let length = scope.const_reference(&length).unwrap_or(length);
         let effect = scope.effect_reference(&effect).unwrap_or(effect);
         let parent = context
-            .start_path(ConstraintApplicationScope::new(0, scope))
+            .start_path(ConstraintApplicationScope::test_root(0, scope))
             .unwrap();
         let parameters = [
             super::super::ConstraintGenericParameterId::Type(ty.clone()),
@@ -264,7 +264,7 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
         );
         let child = context
             .start_path_with_imported(
-                ConstraintApplicationScope::new(1, TypeConstraintParameterScope::empty()),
+                ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty()),
                 Some(imported),
             )
             .unwrap();
@@ -632,7 +632,7 @@ fn inherited_child_bindings_restore_without_replacing_the_parent() {
     let inherited =
         TypeConstraintSolution::complete_application(&prior_path, prior_id, &mut context).unwrap();
 
-    let child = ConstraintApplicationScope::new(
+    let child = ConstraintApplicationScope::test_root(
         2,
         TypeConstraintParameterScope::seal_call_scope(
             GenericBinder::EMPTY,
@@ -803,7 +803,7 @@ fn admitted_children_retain_their_rigid_type_and_constant_references() {
     let type_reference = GenericTypeReference::Free(GenericTypeParameterId::new(owner.clone(), 0));
     let const_reference = GenericConstReference::Free(GenericConstParameterId::new(owner, 0));
     let captured_scope = |application| {
-        ConstraintApplicationScope::new(
+        ConstraintApplicationScope::test_root(
             application,
             TypeConstraintParameterScope::seal_call_scope(
                 GenericBinder::EMPTY,
@@ -873,7 +873,7 @@ fn application_identity_and_live_opening_cannot_be_admitted_twice() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 2048);
     let parent = scope(0);
-    let reused_opening = ConstraintApplicationScope::new(1, parent.parameters().clone());
+    let reused_opening = ConstraintApplicationScope::test_root(1, parent.parameters().clone());
     let root = context.start_path(parent).unwrap();
     for duplicate in [scope(0), reused_opening] {
         let sibling = context.fork_path(&root).unwrap();
@@ -894,7 +894,7 @@ fn repeated_effect_declarations_open_independently_in_distinct_applications() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 2048);
     let parent = scope(0);
-    let child = ConstraintApplicationScope::new(1, scope(0).parameters);
+    let child = ConstraintApplicationScope::test_root(1, scope(0).parameters);
     assert_eq!(
         parent
             .effects()
@@ -945,7 +945,7 @@ fn admission_charges_the_shared_context_and_observes_cancellation() {
 #[test]
 fn equal_binding_values_do_not_erase_different_application_membership() {
     fn empty(application: u32) -> ConstraintApplicationScope<Domain> {
-        ConstraintApplicationScope::new(application, TypeConstraintParameterScope::empty())
+        ConstraintApplicationScope::test_root(application, TypeConstraintParameterScope::empty())
     }
 
     let cancellation = AtomicBool::new(false);
@@ -961,7 +961,7 @@ fn equal_binding_values_do_not_erase_different_application_membership() {
         .applications()
         .find(|scope| scope.application() == 1)
         .unwrap();
-    let reused = ConstraintApplicationScope::new(1, application.parameters().clone());
+    let reused = ConstraintApplicationScope::test_root(1, application.parameters().clone());
     let equivalent_seed = context.fork_path(&root).unwrap();
     let equivalent = context.admit_application(equivalent_seed, reused).unwrap();
     let complete = |path: ConstraintPath<Domain>, context: &mut Context<'_>| {

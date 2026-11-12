@@ -118,7 +118,13 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 let members: Arc<[OriginalProductMember]> = members.into();
                 let mut scope = ConstraintLexicalScope::default();
                 for member in members.iter() {
-                    scope.merge(&self.original_path(*member)?.lineage.scope, context)?;
+                    let path = self.original_path(*member)?;
+                    scope.merge(&path.lineage.scope, context)?;
+                    path.applications
+                        .merge_lexical_scopes(&mut scope, context)?;
+                    for equation in &path.equations {
+                        scope.merge(&equation.scope, context)?;
+                    }
                 }
                 for _ in scope.shape().binders() {
                     context.enter_node()?;
@@ -227,8 +233,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             let original = self.original_path(*member)?;
             for (parameter, value) in &original.bindings {
                 context.enter_node()?;
+                let owner = context.binding_scope(original, &parameter.clone().into())?;
                 let value = scope
-                    .transport_type(&original.lineage.scope, value, context)
+                    .transport_type(&owner, value, context)
                     .map_err(projection_failure)?;
                 let check = OriginalProductCheck::TypeBinding {
                     member: *member,
@@ -253,8 +260,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             for (parameter, value) in &original.const_bindings {
                 context.enter_node()?;
+                let owner = context.binding_scope(original, &parameter.clone().into())?;
                 let value = scope
-                    .transport_length(&original.lineage.scope, value, context)
+                    .transport_length(&owner, value, context)
                     .map_err(projection_failure)?;
                 let check = OriginalProductCheck::ConstBinding {
                     member: *member,
@@ -325,7 +333,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         };
         for member in members {
             let original = self.original_path(*member)?;
-            for (parameter, value) in &branch.bindings {
+            for parameter in branch.bindings.keys() {
                 if original
                     .applications
                     .parameter_eligibility(parameter)
@@ -340,19 +348,23 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     member: *member,
                     parameter: parameter.clone(),
                 };
-                let value = project(value, context)?;
-                let value = original
-                    .lineage
-                    .scope
+                let owner = context.binding_scope(original, &parameter)?;
+                let crate::types::constraints::ConstraintGenericParameterId::Type(reference) =
+                    &parameter
+                else {
+                    unreachable!("type key")
+                };
+                let value = project(&TypeKind::GenericParam(reference.clone()), context)?;
+                let value = owner
                     .transport_type(scope, &value, context)
                     .map_err(|error| {
                         scope_projection_failure(check.clone(), parameter.clone(), error)
                     })?;
-                for _ in original.lineage.scope.shape().binders() {
+                for _ in owner.shape().binders() {
                     context.enter_node()?;
                 }
                 context
-                    .with_original_scope(original.lineage.scope.clone(), |context| {
+                    .with_original_scope(owner, |context| {
                         crate::types::constraints::validate_type(
                             &value,
                             original.projection_view(),
@@ -361,7 +373,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     })
                     .map_err(|error| scope_constraint_failure(check, parameter, error))?;
             }
-            for (parameter, value) in &branch.const_bindings {
+            for parameter in branch.const_bindings.keys() {
                 if original
                     .applications
                     .const_parameter_eligibility(parameter)
@@ -376,10 +388,15 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     member: *member,
                     parameter: kind.clone(),
                 };
-                let value = original
-                    .lineage
-                    .scope
-                    .transport_length(scope, value, context)
+                let owner = context.binding_scope(original, &kind)?;
+                let value = crate::types::constraints::normalization::seal_const(
+                    &ArrayLength::Generic(parameter.clone()),
+                    branch.projection_view(),
+                    &mut std::collections::BTreeSet::new(),
+                    context,
+                )?;
+                let value = owner
+                    .transport_length(scope, &value, context)
                     .map_err(|error| {
                         scope_projection_failure(check.clone(), kind.clone(), error)
                     })?;
@@ -426,8 +443,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     member: *member,
                     parameter: parameter.clone(),
                 };
+                let owner = context.binding_scope(original, &parameter.clone().into())?;
                 let value = scope
-                    .transport_type(&original.lineage.scope, value, context)
+                    .transport_type(&owner, value, context)
                     .map_err(projection_failure)?;
                 let left = project(&TypeKind::GenericParam(parameter.clone()), context)?;
                 let right = project(&value, context)?;
@@ -441,8 +459,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     member: *member,
                     parameter: parameter.clone(),
                 };
+                let owner = context.binding_scope(original, &parameter.clone().into())?;
                 let value = scope
-                    .transport_length(&original.lineage.scope, value, context)
+                    .transport_length(&owner, value, context)
                     .map_err(projection_failure)?;
                 let left = crate::types::constraints::normalization::seal_const(
                     &ArrayLength::Generic(parameter.clone()),
@@ -467,7 +486,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     equation: equation.ordinal,
                 };
                 let equation = equation
-                    .transport(&original.lineage.scope, scope, context)
+                    .transport(scope, context)
                     .map_err(projection_failure)?;
                 equation
                     .validate_completed(branch.projection_view(), effects, context)

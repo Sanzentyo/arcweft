@@ -21,6 +21,28 @@ pub(super) struct ConstraintLexicalScope {
     frames: Vec<Arc<LexicalFrame>>,
 }
 
+impl PartialEq for ConstraintLexicalScope {
+    fn eq(&self, other: &Self) -> bool {
+        self.frames.len() == other.frames.len()
+            && self
+                .frames
+                .iter()
+                .zip(&other.frames)
+                .all(|(left, right)| Arc::ptr_eq(left, right))
+    }
+}
+
+impl Eq for ConstraintLexicalScope {}
+
+impl std::fmt::Debug for ConstraintLexicalScope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ConstraintLexicalScope")
+            .field("shape", &self.shape)
+            .finish_non_exhaustive()
+    }
+}
+
 impl ConstraintLexicalScope {
     pub(super) fn transport_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,

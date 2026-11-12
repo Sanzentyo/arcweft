@@ -513,6 +513,14 @@ impl TypeConstraintSolution {
             else {
                 continue;
             };
+            let owner = context.binding_scope(path, &parameter.clone().into())?;
+            let occurrence = context.capture_lexical_scope()?;
+            let value = context.transport_binding_type(
+                &occurrence,
+                &owner,
+                &value,
+                parameter.clone().into(),
+            )?;
             if matches!(
                 value.constraint_shape(),
                 TypeConstraintShape::Generic(bound) if bound == &parameter
@@ -578,6 +586,14 @@ impl TypeConstraintSolution {
             else {
                 continue;
             };
+            let owner = context.binding_scope(path, &parameter.clone().into())?;
+            let occurrence = context.capture_lexical_scope()?;
+            let value = context.transport_binding_length(
+                &occurrence,
+                &owner,
+                &value,
+                parameter.clone().into(),
+            )?;
             if matches!(&value, ArrayLength::Generic(bound) if bound == &parameter) {
                 if !input.requires_canonical_claim() {
                     return Err(TypeConstraintRejection::CyclicInstantiation {

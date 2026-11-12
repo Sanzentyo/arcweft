@@ -62,8 +62,10 @@ fn repeated_source_component(
 ) {
     // Prepare the child opening first so source precedence cannot accidentally
     // rely on monotonically issued application identities.
-    let child_scope =
-        ConstraintApplicationScope::new(child_application, TypeConstraintParameterScope::empty());
+    let child_scope = ConstraintApplicationScope::test_root(
+        child_application,
+        TypeConstraintParameterScope::empty(),
+    );
     let mut child_scope = Some(child_scope);
     let (mut context, parameters) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, ApplicationSourceDomain>::new(

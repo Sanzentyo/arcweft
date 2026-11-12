@@ -82,7 +82,18 @@ fn frontier(
     scope: TypeConstraintParameterScope,
     equations: &[(TypeKind, TypeKind)],
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
-    let mut lower = TypeConstraintTransaction::initialize(context, (), scope, None).unwrap();
+    frontier_with_imported(context, scope, equations, None)
+}
+
+fn frontier_with_imported(
+    context: &mut Context<'_>,
+    scope: TypeConstraintParameterScope,
+    equations: &[(TypeKind, TypeKind)],
+    imported: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
+) -> SuspendedConstraintFrontier<NoConstraintClient> {
+    let mut lower =
+        TypeConstraintTransaction::initialize_with_imported(context, (), scope, None, imported)
+            .unwrap();
     for (pattern, actual) in equations {
         lower.constrain(
             context,
@@ -293,7 +304,7 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
 }
 
 #[test]
-fn identical_scope_arities_do_not_identify_independently_opened_ambient_binders() {
+fn one_application_opening_cannot_claim_independently_opened_ambient_binders() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context).unwrap();
@@ -311,12 +322,13 @@ fn identical_scope_arities_do_not_identify_independently_opened_ambient_binders(
             .unwrap();
         context.restore_binder_scope(enclosing);
     }
-    let forest = component.infer_original_products(&mut context).unwrap();
-    assert_eq!(forest.products[0].scope.shape().binders().len(), 2);
-    assert_eq!(
-        forest.products[0].result.as_ref().err().unwrap().reason,
-        TypeConstraintRejection::Mismatch
-    );
+    assert!(matches!(component.infer_original_products(&mut context),
+        Err(PreparedValueFailure::Constraint(TypeConstraintError::Invariant(
+            crate::types::constraints::TypeConstraintInvariant::ParameterScope(
+                crate::types::constraints::TypeConstraintParameterScopeInvariant::ApplicationContractConflict
+            )
+        )))
+    ));
     assert!(context.lexical_scope().binders().is_empty());
 }
 
@@ -356,17 +368,22 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
     let first = frontier(
         &mut context,
         scope.clone(),
-        &[(TypeKind::GenericParam(ty[0].clone()), value)],
+        &[(TypeKind::GenericParam(ty[0].clone()), value.clone())],
     );
+    let lease = first.transaction.frontier[0]
+        .applications
+        .import_parameters(&[ty[0].clone().into()])
+        .unwrap();
     component
         .admit_roots(&mut context, vec![first], "outer")
         .unwrap();
     let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let expected = scoped_function(context.lexical_scope(), 2);
-    let second = frontier(
+    let second = frontier_with_imported(
         &mut context,
-        scope,
+        TypeConstraintParameterScope::empty(),
         &[(TypeKind::GenericParam(ty[0].clone()), expected.clone())],
+        Some(lease),
     );
     component
         .admit_roots(&mut context, vec![second], "outer beneath another frame")
@@ -381,7 +398,18 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
         .as_ref()
         .ok()
         .expect("same original ambient binder")[0];
-    assert_eq!(solution.branch.bindings.get(&ty[0]), Some(&expected));
+    assert_eq!(solution.branch.bindings.get(&ty[0]), Some(&value));
+    let projected = context
+        .with_original_scope(product.scope.clone(), |context| {
+            crate::types::constraints::normalization::project_type(
+                &TypeKind::GenericParam(ty[0].clone()),
+                solution.branch.projection_view(),
+                crate::types::constraints::ConstraintClosurePolicy::ProjectionClosed,
+                context,
+            )
+        })
+        .unwrap();
+    assert_eq!(projected.value, expected);
     assert!(context.lexical_scope().binders().is_empty());
 }
 
@@ -422,7 +450,7 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
     let mut component = Component::new(&mut context).unwrap();
     let (scope, ty, _) = parameters(2, 0);
     let parent = context
-        .start_path(ConstraintApplicationScope::new((), scope))
+        .start_path(ConstraintApplicationScope::test_root((), scope))
         .unwrap();
     let parent_id = parent.root_id();
     let lease = parent
@@ -718,39 +746,72 @@ fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
 }
 
 #[test]
-fn joint_inference_cannot_capture_a_frame_absent_from_an_original_application() {
+fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_original() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context).unwrap();
     let (scope, ty, _) = parameters(1, 0);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
-    let first = frontier(&mut context, scope.clone(), &[]);
-    let first = component
+    let first = frontier(&mut context, scope, &[]);
+    let owner = first.transaction.frontier[0].lineage.scope.clone();
+    let lease = first.transaction.frontier[0]
+        .applications
+        .import_parameters(&[ty[0].clone().into()])
+        .unwrap();
+    let actual = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
+    component
         .admit_roots(&mut context, vec![first], "no binding in its own frame")
         .unwrap();
     context.restore_binder_scope(enclosing);
-    let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
-    let actual = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
-    let second = frontier(
+    let mut lower = TypeConstraintTransaction::initialize_with_imported(
         &mut context,
-        scope,
-        &[(TypeKind::GenericParam(ty[0].clone()), actual)],
+        (),
+        TypeConstraintParameterScope::empty(),
+        None,
+        Some(lease),
+    )
+    .unwrap();
+    context
+        .with_original_scope(owner, |context| {
+            lower.constrain(
+                context,
+                &TypeKind::GenericParam(ty[0].clone()),
+                &actual,
+                ConstraintAcceptance::PatternAcceptsActual,
+            );
+            Ok::<_, TypeConstraintError>(())
+        })
+        .unwrap();
+    lower.request_projection(
+        &mut context,
+        (),
+        &TypeKind::I64,
+        TypeConstraintProjectionClosure::Closed,
+    );
+    let second = lower.suspend_result(&mut context, ()).unwrap();
+    assert!(
+        second.transaction.frontier[0]
+            .lineage
+            .scope
+            .shape()
+            .binders()
+            .is_empty()
     );
     component
-        .admit_roots(&mut context, vec![second], "another original frame")
+        .admit_roots(
+            &mut context,
+            vec![second],
+            "receiver retains the original owner's lease",
+        )
         .unwrap();
-    context.restore_binder_scope(enclosing);
     let forest = component.infer_original_products(&mut context).unwrap();
-    let failure = forest.products[0]
+    let solutions = forest.products[0]
         .result
         .as_ref()
-        .err()
-        .expect("joint visibility is not an original capture capability");
-    assert!(
-        matches!(&failure.check,OriginalProductCheck::BindingScope {member,parameter:crate::types::constraints::ConstraintGenericParameterId::Type(parameter)} if member.producer==first.ordinal && parameter==&ty[0])
-    );
-    assert!(
-        matches!(&failure.reason,TypeConstraintRejection::EscapingInstantiation {parameter:crate::types::constraints::ConstraintGenericParameterId::Type(parameter)} if parameter==&ty[0])
-    );
+        .ok()
+        .expect("the exact imported owner authorizes this dependency");
+    assert_eq!(solutions.len(), 1);
+    assert_eq!(forest.products[0].scope.shape().binders().len(), 1);
+    assert_eq!(solutions[0].branch.bindings.get(&ty[0]), Some(&actual));
     assert!(context.lexical_scope().binders().is_empty());
 }

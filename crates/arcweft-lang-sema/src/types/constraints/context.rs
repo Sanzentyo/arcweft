@@ -4,6 +4,7 @@
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
 use super::transaction::ConstraintInferenceBranch;
+use crate::types::ArrayLength;
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::{
@@ -1261,6 +1262,13 @@ where
         self.lexical_scope = enclosing;
     }
 
+    pub(super) fn replace_lexical_scope(
+        &mut self,
+        scope: ConstraintLexicalScope,
+    ) -> ConstraintLexicalScope {
+        std::mem::replace(&mut self.lexical_scope, scope)
+    }
+
     /// Required type/constant keys must be bound before final projection and
     /// publication. Future groups and rigid references remain open.
     pub(super) fn validate_type_and_const_completion<L>(
@@ -1384,6 +1392,111 @@ where
 
     pub(super) fn lexical_scope(&self) -> &GenericScope {
         self.lexical_scope.shape()
+    }
+
+    pub(super) fn capture_lexical_scope(
+        &mut self,
+    ) -> Result<ConstraintLexicalScope, TypeConstraintError> {
+        self.check_cancelled()?;
+        // Charge before cloning the retained frame inventory.
+        let count = self.lexical_scope.shape().binders().len();
+        for _ in 0..count {
+            self.enter_node()?;
+        }
+        Ok(self.lexical_scope.clone())
+    }
+
+    pub(super) fn application_scope(
+        &mut self,
+        application: D::Application,
+        parameters: TypeConstraintParameterScope,
+    ) -> Result<ConstraintApplicationScope<D>, TypeConstraintError> {
+        Ok(ConstraintApplicationScope::new(
+            application,
+            parameters,
+            self.capture_lexical_scope()?,
+        ))
+    }
+
+    pub(super) fn binding_scope<L>(
+        &self,
+        path: &ConstraintInferenceBranch<D, L>,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> Result<ConstraintLexicalScope, TypeConstraintError> {
+        path.applications
+            .binding_scope(parameter)
+            .cloned()
+            .ok_or_else(|| {
+                TypeConstraintError::Rejected(
+                    super::TypeConstraintRejection::EscapingInstantiation {
+                        parameter: parameter.clone(),
+                    },
+                )
+            })
+    }
+
+    pub(super) fn transport_binding_type(
+        &mut self,
+        target: &ConstraintLexicalScope,
+        source: &ConstraintLexicalScope,
+        value: &TypeKind,
+        parameter: super::ConstraintGenericParameterId,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        if target == source {
+            return Ok(value.clone());
+        }
+        target
+            .transport_type(source, value, self)
+            .map_err(|error| Self::binding_transport_error(error, parameter))
+    }
+
+    pub(super) fn transport_binding_length(
+        &mut self,
+        target: &ConstraintLexicalScope,
+        source: &ConstraintLexicalScope,
+        value: &ArrayLength,
+        parameter: super::ConstraintGenericParameterId,
+    ) -> Result<ArrayLength, TypeConstraintError> {
+        if target == source {
+            return Ok(value.clone());
+        }
+        target
+            .transport_length(source, value, self)
+            .map_err(|error| Self::binding_transport_error(error, parameter))
+    }
+
+    fn binding_transport_error(
+        error: crate::types::TypeProjectionError<TypeConstraintError>,
+        parameter: super::ConstraintGenericParameterId,
+    ) -> TypeConstraintError {
+        match error {
+            crate::types::TypeProjectionError::Control(error) => error,
+            crate::types::TypeProjectionError::Instantiation(_) => {
+                super::TypeConstraintRejection::EscapingInstantiation { parameter }.into()
+            }
+        }
+    }
+
+    fn root_binding_type<L>(
+        &mut self,
+        path: &ConstraintInferenceBranch<D, L>,
+        parameter: &GenericTypeReference,
+        value: &TypeKind,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        let parameter = parameter.clone().into();
+        let owner = self.binding_scope(path, &parameter)?;
+        self.transport_binding_type(&owner, &self.lexical_scope.clone(), value, parameter)
+    }
+
+    fn root_binding_length<L>(
+        &mut self,
+        path: &ConstraintInferenceBranch<D, L>,
+        parameter: &GenericConstReference,
+        value: &ArrayLength,
+    ) -> Result<ArrayLength, TypeConstraintError> {
+        let parameter = parameter.clone().into();
+        let owner = self.binding_scope(path, &parameter)?;
+        self.transport_binding_length(&owner, &self.lexical_scope.clone(), value, parameter)
     }
 
     pub(super) fn with_original_scope<T, E>(
@@ -1608,7 +1721,8 @@ where
                 .parameters
                 .insert(parameter.clone().into());
         }
-        path.bindings.insert(parameter, value.clone());
+        let rooted = self.root_binding_type(&path, &parameter, value)?;
+        path.bindings.insert(parameter, rooted);
         Ok(Some(path))
     }
 
@@ -1660,7 +1774,8 @@ where
                 .parameters
                 .insert(parameter.clone().into());
         }
-        path.const_bindings.insert(parameter, value.clone());
+        let rooted = self.root_binding_length(&path, &parameter, value)?;
+        path.const_bindings.insert(parameter, rooted);
         Ok(Some(path))
     }
 
@@ -1687,7 +1802,8 @@ where
                 .parameters
                 .insert(parameter.clone().into());
         }
-        path.bindings.insert(parameter, value);
+        let rooted = self.root_binding_type(path, &parameter, &value)?;
+        path.bindings.insert(parameter, rooted);
         Ok(())
     }
 
@@ -1714,7 +1830,8 @@ where
                 .parameters
                 .insert(parameter.clone().into());
         }
-        path.const_bindings.insert(parameter, value);
+        let rooted = self.root_binding_length(path, &parameter, &value)?;
+        path.const_bindings.insert(parameter, rooted);
         Ok(())
     }
 
@@ -1750,8 +1867,9 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
+        let rooted = self.root_binding_type(path, &reference, &value)?;
         assert!(
-            path.bindings.insert(reference, value).is_none(),
+            path.bindings.insert(reference, rooted).is_none(),
             "completed solution rows are uniquely sealed before restoration"
         );
         Ok(())
@@ -1786,8 +1904,9 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
+        let rooted = self.root_binding_length(path, &reference, &value)?;
         assert!(
-            path.const_bindings.insert(reference, value).is_none(),
+            path.const_bindings.insert(reference, rooted).is_none(),
             "completed const solution rows are uniquely sealed before restoration"
         );
         Ok(())

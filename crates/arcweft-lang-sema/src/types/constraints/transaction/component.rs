@@ -162,14 +162,44 @@ impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
 
     pub(crate) fn type_bindings(
         &self,
-    ) -> impl ExactSizeIterator<Item = (&GenericTypeReference, &TypeKind)> {
-        self.path.bindings.iter()
+    ) -> impl ExactSizeIterator<
+        Item = (
+            &GenericTypeReference,
+            super::super::normalization::ConstraintBindingView<'_, TypeKind>,
+        ),
+    > {
+        self.path.bindings.iter().map(|(parameter, value)| {
+            let scope = self
+                .path
+                .applications
+                .binding_scope(&parameter.clone().into())
+                .expect("original binding retains its admitted owner");
+            (
+                parameter,
+                super::super::normalization::ConstraintBindingView { value, scope },
+            )
+        })
     }
 
     pub(crate) fn const_bindings(
         &self,
-    ) -> impl ExactSizeIterator<Item = (&GenericConstReference, &ArrayLength)> {
-        self.path.const_bindings.iter()
+    ) -> impl ExactSizeIterator<
+        Item = (
+            &GenericConstReference,
+            super::super::normalization::ConstraintBindingView<'_, ArrayLength>,
+        ),
+    > {
+        self.path.const_bindings.iter().map(|(parameter, value)| {
+            let scope = self
+                .path
+                .applications
+                .binding_scope(&parameter.clone().into())
+                .expect("original binding retains its admitted owner");
+            (
+                parameter,
+                super::super::normalization::ConstraintBindingView { value, scope },
+            )
+        })
     }
 
     pub(crate) fn projection_view(

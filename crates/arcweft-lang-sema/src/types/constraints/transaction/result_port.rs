@@ -173,7 +173,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .value;
             let pattern = match prepare(&source, context)? {
                 Some((application, parameters, template)) => {
-                    let scope = super::ConstraintApplicationScope::new(application, parameters);
+                    let scope = context.application_scope(application, parameters)?;
                     let application = scope.id();
                     path = context.admit_application(path, scope)?;
                     path = Self::prepare_application(context, application, path, None)?;
@@ -195,6 +195,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 context,
             )?;
             path.equations.push(super::PendingEquation {
+                scope: context.capture_lexical_scope()?,
                 ordinal: super::ConstraintEquationId {
                     application: self.application,
                     ordinal,

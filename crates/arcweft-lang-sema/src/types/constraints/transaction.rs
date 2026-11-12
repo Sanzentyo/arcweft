@@ -35,6 +35,7 @@ use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 /// the single source trace; selection and container evidence stay there.
 #[derive(Clone)]
 pub(crate) struct PendingEquation {
+    scope: super::lexical::ConstraintLexicalScope,
     pub(crate) ordinal: ConstraintEquationId,
     pub(crate) direction: ConstraintAcceptance,
     pub(crate) pattern: TypeKind,
@@ -47,26 +48,37 @@ pub(crate) struct PendingEquation {
 impl PendingEquation {
     pub(super) fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
-        original: &super::lexical::ConstraintLexicalScope,
         target: &super::lexical::ConstraintLexicalScope,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
         Ok(Self {
+            scope: target.clone(),
             ordinal: self.ordinal,
             direction: self.direction,
             source_ordinal: self.source_ordinal,
             timing: self.timing,
-            pattern: target.transport_type(original, &self.pattern, context)?,
-            actual: target.transport_type(original, &self.actual, context)?,
+            pattern: target.transport_type(&self.scope, &self.pattern, context)?,
+            actual: target.transport_type(&self.scope, &self.actual, context)?,
             final_expected: self
                 .final_expected
                 .as_ref()
-                .map(|ty| target.transport_type(original, ty, context))
+                .map(|ty| target.transport_type(&self.scope, ty, context))
                 .transpose()?,
         })
     }
 
     pub(super) fn validate_completed<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        view: super::normalization::ConstraintProjectionView<'_, D>,
+        effect_substitution: &EffectSubstitution,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        context.with_original_scope(self.scope.clone(), |context| {
+            self.validate_in_scope(view, effect_substitution, context)
+        })
+    }
+
+    fn validate_in_scope<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         view: super::normalization::ConstraintProjectionView<'_, D>,
         effect_substitution: &EffectSubstitution,
@@ -220,8 +232,10 @@ impl<D: ConstraintDomain> Eq for StoredSourceSelection<D> {}
 pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
     pub(super) lineage: L,
     pub(super) applications: Arc<ConstraintApplicationInventory<D>>,
-    pub(crate) bindings: BTreeMap<GenericTypeReference, TypeKind>,
-    pub(crate) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
+    // Each value is relative to the exact introduction scope of its key's
+    // admitted application. Only the scoped projection view follows an edge.
+    pub(super) bindings: BTreeMap<GenericTypeReference, TypeKind>,
+    pub(super) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
     pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
     pub(crate) equations: Vec<PendingEquation>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
@@ -975,18 +989,21 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        let scope = ConstraintApplicationScope::new(application, parameters);
-        let application = scope.id();
         let result = context
-            .admit_application(nested.path, scope)
-            .and_then(|path| {
-                Self::from_path_with_parent(
-                    context,
-                    application,
-                    path,
-                    inherited.as_deref(),
-                    Some(nested.receipt),
-                )
+            .application_scope(application, parameters)
+            .and_then(|scope| {
+                let application = scope.id();
+                context
+                    .admit_application(nested.path, scope)
+                    .and_then(|path| {
+                        Self::from_path_with_parent(
+                            context,
+                            application,
+                            path,
+                            inherited.as_deref(),
+                            Some(nested.receipt),
+                        )
+                    })
             });
         result.map_err(|error| match error {
             TypeConstraintError::Abort(error) => {
@@ -1030,12 +1047,16 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        let scope = ConstraintApplicationScope::new(application, parameters);
-        let application = scope.id();
         match context
-            .start_path_with_imported(scope, imported)
-            .and_then(|path| Self::from_path(context, application, path, inherited.as_deref()))
-        {
+            .application_scope(application, parameters)
+            .and_then(|scope| {
+                let application = scope.id();
+                context
+                    .start_path_with_imported(scope, imported)
+                    .and_then(|path| {
+                        Self::from_path(context, application, path, inherited.as_deref())
+                    })
+            }) {
             Ok(transaction) => Ok(transaction),
             Err(error) => Err(match error {
                 TypeConstraintError::Abort(error) => {
@@ -1118,6 +1139,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         for mut path in frontier {
             let pattern = context.open_template_type(pattern, &path, self.application)?;
             path.equations.push(PendingEquation {
+                scope: context.capture_lexical_scope()?,
                 ordinal: ConstraintEquationId {
                     application: self.application,
                     ordinal,
@@ -1644,6 +1666,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
                     if let Some(expected) = pattern.as_ref() {
                         path.equations.push(PendingEquation {
+                            scope: context.capture_lexical_scope()?,
                             ordinal: input.equation_ordinal.ok_or_else(|| {
                                 protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
                             })?,

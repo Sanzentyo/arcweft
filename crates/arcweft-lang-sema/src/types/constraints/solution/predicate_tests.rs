@@ -168,7 +168,7 @@ fn freshly_opened_scheme_predicates_reject_forbidden_effects_without_mutating_th
         (&["fs.write"][..], false),
     ] {
         let mut context = context(&cancellation);
-        let application = ConstraintApplicationScope::new(
+        let application = ConstraintApplicationScope::test_root(
             (),
             parameters(
                 binder,
@@ -263,7 +263,7 @@ fn known_callback_predicates_distinguish_callable_digests_and_selected_call_cand
         .map(|expected| {
             let mut context = context(&cancellation);
             let path = context
-                .start_path(ConstraintApplicationScope::new(
+                .start_path(ConstraintApplicationScope::test_root(
                     (),
                     TypeConstraintParameterScope::empty(),
                 ))
@@ -291,7 +291,7 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let path = context
-        .start_path(ConstraintApplicationScope::new(
+        .start_path(ConstraintApplicationScope::test_root(
             (),
             parameters(
                 GenericBinder::EMPTY,

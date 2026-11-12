@@ -683,10 +683,10 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
     .into_parts()
     .0;
     let mut component = OpenConstraintComponent::<Applications, ()>::new(&mut context).unwrap();
-    let parent = ConstraintApplicationScope::new(0, TypeConstraintParameterScope::empty());
+    let parent = ConstraintApplicationScope::test_root(0, TypeConstraintParameterScope::empty());
     let parent_id = parent.id();
     let path = context.start_path(parent).unwrap();
-    let child = ConstraintApplicationScope::new(1, TypeConstraintParameterScope::empty());
+    let child = ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty());
     let child_id = child.id();
     let path = context.admit_application(path, child).unwrap();
     assert_eq!(path.root_id(), parent_id);
@@ -763,7 +763,7 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
         .unwrap();
         let reference = parameters.type_reference(&key.into()).unwrap();
         let parent = context
-            .start_path(ConstraintApplicationScope::new(1, parameters.clone()))
+            .start_path(ConstraintApplicationScope::test_root(1, parameters.clone()))
             .unwrap();
         let lease = parent
             .applications
@@ -919,12 +919,24 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
                 Some(TypeConstraintParameterEligibility::FutureEligible)
             );
             assert_eq!(
-                original.type_bindings().collect::<Vec<_>>(),
-                vec![(&bound, &TypeKind::String)]
+                original
+                    .type_bindings()
+                    .map(|(parameter, binding)| {
+                        assert_eq!(binding.scope().binders(), &[binder]);
+                        (parameter, binding.value().clone())
+                    })
+                    .collect::<Vec<_>>(),
+                vec![(&bound, TypeKind::String)]
             );
             assert_eq!(
-                original.const_bindings().collect::<Vec<_>>(),
-                vec![(&length, &ArrayLength::Const(3))]
+                original
+                    .const_bindings()
+                    .map(|(parameter, binding)| {
+                        assert_eq!(binding.scope().binders(), &[binder]);
+                        (parameter, binding.value().clone())
+                    })
+                    .collect::<Vec<_>>(),
+                vec![(&length, ArrayLength::Const(3))]
             );
             assert!(
                 original

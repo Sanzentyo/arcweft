@@ -42,7 +42,10 @@ where
 }
 
 enum ProjectionFrame<'ty> {
-    Binding(&'ty GenericTypeReference),
+    Binding {
+        parameter: &'ty GenericTypeReference,
+        enclosing: ConstraintLexicalScope,
+    },
     Shape {
         shape: TypeConstraintShape<'ty>,
         children: TypeConstraintChildren<'ty>,
@@ -86,11 +89,15 @@ where
                         },
                     )?;
                     if !matches!(policy, ConstraintClosurePolicy::Validation)
-                        && let Some(bound) = view.binding(parameter)
+                        && let Some(bound) = view.binding(parameter)?
                     {
                         if visiting.insert(parameter.clone()) {
-                            frames.push(ProjectionFrame::Binding(parameter));
-                            current = bound;
+                            let enclosing = context.replace_lexical_scope(bound.scope.clone());
+                            frames.push(ProjectionFrame::Binding {
+                                parameter,
+                                enclosing,
+                            });
+                            current = bound.value;
                             continue;
                         }
                         match policy {
@@ -193,8 +200,20 @@ where
             loop {
                 match frames.pop() {
                     None => return Ok(value),
-                    Some(ProjectionFrame::Binding(parameter)) => {
+                    Some(ProjectionFrame::Binding {
+                        parameter,
+                        enclosing,
+                    }) => {
                         visiting.remove(parameter);
+                        let owner = context.replace_lexical_scope(enclosing.clone());
+                        if owner != enclosing {
+                            value = context.transport_binding_type(
+                                &enclosing,
+                                &owner,
+                                &value,
+                                parameter.clone().into(),
+                            )?;
+                        }
                     }
                     Some(ProjectionFrame::Shape {
                         shape,
@@ -224,7 +243,7 @@ where
     // On failure, only binding guards still on our own stack were introduced
     // by this call. Preserve any caller-supplied cycle guard exactly.
     for frame in frames {
-        if let ProjectionFrame::Binding(parameter) = frame {
+        if let ProjectionFrame::Binding { parameter, .. } = frame {
             visiting.remove(parameter);
         }
     }
@@ -304,7 +323,7 @@ where
     D: ConstraintDomain,
 {
     let mut entered = Vec::new();
-    let result = (|| {
+    let result = context.with_binder(GenericBinder::EMPTY, |context| {
         let mut current = length;
         loop {
             context.check_cancelled()?;
@@ -322,7 +341,7 @@ where
                             ))
                         })?;
                     if !matches!(policy, ConstraintClosurePolicy::Validation)
-                        && let Some(bound) = view.const_binding(parameter)
+                        && let Some(bound) = view.const_binding(parameter)?
                     {
                         if !visiting.insert(parameter.clone()) {
                             return match policy {
@@ -344,8 +363,9 @@ where
                                 }
                             };
                         }
-                        entered.push(parameter);
-                        current = bound;
+                        let enclosing = context.replace_lexical_scope(bound.scope.clone());
+                        entered.push((parameter, enclosing));
+                        current = bound.value;
                         continue;
                     }
                     if allows_unbound_const(policy, eligibility) {
@@ -365,9 +385,24 @@ where
                 }
             }
         }
-    })();
-    for parameter in entered {
+    });
+    // The scoped loop restored its caller on return; replay each edge's owner
+    // frame explicitly while lifting the final scalar back to that caller.
+    let mut result = result;
+    for (parameter, enclosing) in entered.into_iter().rev() {
         visiting.remove(parameter);
+        if let Ok(value) = result {
+            let owner = view
+                .applications()
+                .binding_scope(&parameter.clone().into())
+                .expect("followed binding retains its exact owner");
+            result = context.transport_binding_length(
+                &enclosing,
+                &owner,
+                &value,
+                parameter.clone().into(),
+            );
+        }
     }
     result
 }

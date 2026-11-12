@@ -9,6 +9,7 @@ use super::context::{
     TypeConstraintConstEligibility, TypeConstraintEffectScope, TypeConstraintParameterEligibility,
     TypeConstraintParameterScope,
 };
+use super::lexical::ConstraintLexicalScope;
 use super::{ConstraintDomain, TypeConstraintInvariant, TypeConstraintParameterScopeInvariant};
 use crate::types::generics::GenericApplicationIssuer;
 use crate::{
@@ -21,8 +22,8 @@ use crate::{
 trait ImportedApplicationScopeAuthority {
     fn id(&self) -> ConstraintApplicationId;
     fn as_any(&self) -> &dyn std::any::Any;
-    fn same_application(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool;
-    fn parameters(&self) -> &TypeConstraintParameterScope;
+    fn same_owner(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool;
+    fn introduction_scope(&self) -> &ConstraintLexicalScope;
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
     fn permits_local_inference(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
 }
@@ -76,7 +77,11 @@ impl PartialEq for ImportedGenericParameterScopeLease {
                 .applications
                 .iter()
                 .zip(&other.applications)
-                .all(|(left, right)| left.id() == right.id() && left.parameters == right.parameters)
+                .all(|(left, right)| {
+                    left.id() == right.id()
+                        && left.parameters == right.parameters
+                        && left.owner.same_owner(right.owner.as_ref())
+                })
     }
 }
 
@@ -149,16 +154,27 @@ impl<S: Copy> ConstraintSourceId<S> {
 pub(super) struct ConstraintApplicationScope<D: ConstraintDomain> {
     application: D::Application,
     parameters: TypeConstraintParameterScope,
+    introduction: ConstraintLexicalScope,
 }
 
 impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
+    #[cfg(test)]
+    pub(super) fn test_root(
+        application: D::Application,
+        parameters: TypeConstraintParameterScope,
+    ) -> Self {
+        Self::new(application, parameters, ConstraintLexicalScope::default())
+    }
+
     pub(super) fn new(
         application: D::Application,
         parameters: TypeConstraintParameterScope,
+        introduction: ConstraintLexicalScope,
     ) -> Self {
         Self {
             application,
             parameters,
+            introduction,
         }
     }
 
@@ -174,6 +190,10 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         &self.parameters
     }
 
+    pub(super) fn introduction_scope(&self) -> &ConstraintLexicalScope {
+        &self.introduction
+    }
+
     pub(super) const fn effects(&self) -> &TypeConstraintEffectScope {
         self.parameters.effect_contract()
     }
@@ -186,19 +206,20 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
         ConstraintApplicationScope::id(self)
     }
 
-    fn parameters(&self) -> &TypeConstraintParameterScope {
-        self.parameters()
+    fn introduction_scope(&self) -> &ConstraintLexicalScope {
+        self.introduction_scope()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn same_application(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|other| self.application() == other.application())
+    fn same_owner(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool {
+        other.as_any().downcast_ref::<Self>().is_some_and(|other| {
+            self.application() == other.application()
+                && self.parameters() == other.parameters()
+                && self.introduction_scope() == other.introduction_scope()
+        })
     }
 
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
@@ -273,18 +294,13 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         for (id, application) in &original.applications {
             context.enter_node()?;
             if let Some(existing) = self.applications.get(id) {
-                if existing.application() != application.application()
-                    || existing.parameters() != application.parameters()
-                {
+                if !existing.same_owner(application.as_ref()) {
                     return Err(conflict());
                 }
             } else {
                 for owner in &self.imported {
                     context.enter_node()?;
-                    if owner.id() == *id
-                        && (!owner.owner.same_application(application.as_ref())
-                            || owner.owner.parameters() != application.parameters())
-                    {
+                    if owner.id() == *id && !owner.owner.same_owner(application.as_ref()) {
                         return Err(conflict());
                     }
                 }
@@ -296,15 +312,12 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         for owner in self.imported.iter().chain(original.imported.iter()) {
             context.enter_node()?;
             if let Some(application) = self.applications.get(&owner.id())
-                && (!owner.owner.same_application(application.as_ref())
-                    || application.parameters() != owner.owner.parameters())
+                && !owner.owner.same_owner(application.as_ref())
             {
                 return Err(conflict());
             }
             if let Some(existing) = imported.get_mut(&owner.id()) {
-                if !existing.owner.same_application(owner.owner.as_ref())
-                    || existing.owner.parameters() != owner.owner.parameters()
-                {
+                if !existing.owner.same_owner(owner.owner.as_ref()) {
                     return Err(conflict());
                 }
                 let mut parameters = BTreeSet::new();
@@ -511,6 +524,59 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                     self.scope_for_effect(reference)
                 }
             })
+    }
+
+    /// The exact owner capability survives imports. A receiving path's ambient
+    /// scope neither extends nor replaces this application's dependencies.
+    pub(super) fn binding_scope(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> Option<&ConstraintLexicalScope> {
+        use super::ConstraintGenericParameterId;
+        let issuer = match parameter {
+            ConstraintGenericParameterId::Type(GenericTypeReference::Inference(reference)) => {
+                Some(reference.issuer())
+            }
+            ConstraintGenericParameterId::Const(GenericConstReference::Inference(reference)) => {
+                Some(reference.issuer())
+            }
+            ConstraintGenericParameterId::Effect(GenericEffectReference::Inference(reference)) => {
+                Some(reference.issuer())
+            }
+            _ => None,
+        };
+        let owned = match issuer {
+            Some(issuer) => self
+                .applications
+                .get(&ConstraintApplicationId(issuer))
+                .map(Arc::as_ref)
+                .filter(|application| application.admits(parameter)),
+            None => self
+                .applications()
+                .find(|application| application.admits(parameter)),
+        };
+        owned
+            .map(ConstraintApplicationScope::introduction_scope)
+            .or_else(|| {
+                self.imported
+                    .iter()
+                    .find(|lease| lease.contains(parameter))
+                    .map(|lease| lease.owner.introduction_scope())
+            })
+    }
+
+    pub(super) fn merge_lexical_scopes<A: super::context::TypeConstraintAccounting>(
+        &self,
+        scope: &mut ConstraintLexicalScope,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), super::TypeConstraintError> {
+        for application in self.applications() {
+            scope.merge(application.introduction_scope(), context)?;
+        }
+        for imported in &self.imported {
+            scope.merge(imported.owner.introduction_scope(), context)?;
+        }
+        Ok(())
     }
 
     fn scope_for_type(

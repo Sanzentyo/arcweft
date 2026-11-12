@@ -1,4 +1,6 @@
 use crate::types::constraints::test_support::ConstraintTestSetup;
+
+mod rooted_bindings;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::atomic::AtomicBool,

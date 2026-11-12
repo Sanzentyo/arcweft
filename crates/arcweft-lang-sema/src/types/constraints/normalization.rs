@@ -62,6 +62,23 @@ pub(crate) struct ConstraintProjectionView<'a, D: ConstraintDomain> {
     const_bindings: &'a BTreeMap<GenericConstReference, ArrayLength>,
 }
 
+/// A binding edge is rooted in its admitted application, including when that
+/// owner is retained only by an imported lease. Raw map values never describe
+/// the receiving occurrence's lexical frame.
+pub(crate) struct ConstraintBindingView<'a, T> {
+    pub(super) value: &'a T,
+    pub(super) scope: &'a super::lexical::ConstraintLexicalScope,
+}
+
+impl<T> ConstraintBindingView<'_, T> {
+    pub(crate) fn value(&self) -> &T {
+        self.value
+    }
+    pub(crate) fn scope(&self) -> &super::super::GenericScope {
+        self.scope.shape()
+    }
+}
+
 impl<D: ConstraintDomain> Copy for ConstraintProjectionView<'_, D> {}
 
 impl<D: ConstraintDomain> Clone for ConstraintProjectionView<'_, D> {
@@ -75,15 +92,40 @@ impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
         self.applications
     }
 
-    pub(super) fn binding(self, parameter: &GenericTypeReference) -> Option<&'a TypeKind> {
-        self.bindings.get(parameter)
+    pub(super) fn binding(
+        self,
+        parameter: &GenericTypeReference,
+    ) -> Result<Option<ConstraintBindingView<'a, TypeKind>>, TypeConstraintError> {
+        self.bindings
+            .get(parameter)
+            .map(|value| {
+                let parameter = parameter.clone().into();
+                let scope = self.applications.binding_scope(&parameter).ok_or_else(|| {
+                    TypeConstraintError::from(TypeConstraintRejection::EscapingInstantiation {
+                        parameter,
+                    })
+                })?;
+                Ok(ConstraintBindingView { value, scope })
+            })
+            .transpose()
     }
 
     pub(super) fn const_binding(
         self,
         parameter: &GenericConstReference,
-    ) -> Option<&'a ArrayLength> {
-        self.const_bindings.get(parameter)
+    ) -> Result<Option<ConstraintBindingView<'a, ArrayLength>>, TypeConstraintError> {
+        self.const_bindings
+            .get(parameter)
+            .map(|value| {
+                let parameter = parameter.clone().into();
+                let scope = self.applications.binding_scope(&parameter).ok_or_else(|| {
+                    TypeConstraintError::from(TypeConstraintRejection::EscapingInstantiation {
+                        parameter,
+                    })
+                })?;
+                Ok(ConstraintBindingView { value, scope })
+            })
+            .transpose()
     }
 }
 
@@ -130,6 +172,35 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
+    context.with_binder(super::super::GenericBinder::EMPTY, |context| {
+        let mut scopes = Vec::new();
+        let resolved = resolve_type_alias_in_owner(parameter, path, context, &mut scopes)?;
+        let mut value = match resolved {
+            TypeAliasResolution::Cycle(cycle) => return Ok(TypeAliasResolution::Cycle(cycle)),
+            TypeAliasResolution::Parameter(parameter) => TypeKind::GenericParam(parameter),
+            TypeAliasResolution::Structure(value) => value,
+        };
+        for (parameter, enclosing) in scopes.into_iter().rev() {
+            let owner = context.replace_lexical_scope(enclosing.clone());
+            value = context.transport_binding_type(&enclosing, &owner, &value, parameter.into())?;
+        }
+        Ok(match value {
+            TypeKind::GenericParam(parameter) => TypeAliasResolution::Parameter(parameter),
+            value => TypeAliasResolution::Structure(value),
+        })
+    })
+}
+
+fn resolve_type_alias_in_owner<A, D, L>(
+    parameter: &GenericTypeReference,
+    path: &ConstraintInferenceBranch<D, L>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    scopes: &mut Vec<(GenericTypeReference, super::lexical::ConstraintLexicalScope)>,
+) -> Result<TypeAliasResolution, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
     let view = path.projection_view();
     let mut current = parameter.clone();
     let mut positions = BTreeMap::<GenericTypeReference, usize>::new();
@@ -154,12 +225,16 @@ where
         }
         positions.insert(current.clone(), chain.len());
         chain.push(current.clone());
-        let Some(bound) = view.binding(&current) else {
+        let Some(bound) = view.binding(&current)? else {
             return Ok(TypeAliasResolution::Parameter(current));
         };
-        match bound.constraint_shape() {
+        scopes.push((
+            current.clone(),
+            context.replace_lexical_scope(bound.scope.clone()),
+        ));
+        match bound.value.constraint_shape() {
             TypeConstraintShape::Generic(next) => current = next.clone(),
-            _ => return Ok(TypeAliasResolution::Structure(bound.clone())),
+            _ => return Ok(TypeAliasResolution::Structure(bound.value.clone())),
         }
     }
 }
@@ -170,6 +245,39 @@ pub(crate) fn resolve_const_alias<A, D, L>(
     parameter: &GenericConstReference,
     path: &ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<ConstAliasResolution, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    context.with_binder(super::super::GenericBinder::EMPTY, |context| {
+        let mut scopes = Vec::new();
+        let resolved = resolve_const_alias_in_owner(parameter, path, context, &mut scopes)?;
+        let mut value = match resolved {
+            ConstAliasResolution::Cycle(cycle) => return Ok(ConstAliasResolution::Cycle(cycle)),
+            ConstAliasResolution::Parameter(parameter) => ArrayLength::Generic(parameter),
+            ConstAliasResolution::Value(value) => value,
+        };
+        for (parameter, enclosing) in scopes.into_iter().rev() {
+            let owner = context.replace_lexical_scope(enclosing.clone());
+            value =
+                context.transport_binding_length(&enclosing, &owner, &value, parameter.into())?;
+        }
+        Ok(match value {
+            ArrayLength::Generic(parameter) => ConstAliasResolution::Parameter(parameter),
+            value => ConstAliasResolution::Value(value),
+        })
+    })
+}
+
+fn resolve_const_alias_in_owner<A, D, L>(
+    parameter: &GenericConstReference,
+    path: &ConstraintInferenceBranch<D, L>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    scopes: &mut Vec<(
+        GenericConstReference,
+        super::lexical::ConstraintLexicalScope,
+    )>,
 ) -> Result<ConstAliasResolution, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
@@ -202,12 +310,16 @@ where
         }
         positions.insert(current.clone(), chain.len());
         chain.push(current.clone());
-        let Some(bound) = view.const_binding(&current) else {
+        let Some(bound) = view.const_binding(&current)? else {
             return Ok(ConstAliasResolution::Parameter(current));
         };
-        match bound {
+        scopes.push((
+            current.clone(),
+            context.replace_lexical_scope(bound.scope.clone()),
+        ));
+        match bound.value {
             ArrayLength::Generic(next) => current = next.clone(),
-            _ => return Ok(ConstAliasResolution::Value(bound.clone())),
+            _ => return Ok(ConstAliasResolution::Value(bound.value.clone())),
         }
     }
 }
@@ -245,10 +357,12 @@ where
         if !visited.insert(candidate.clone()) {
             return Ok(false);
         }
-        let Some(bound) = view.const_binding(candidate) else {
+        let Some(bound) = view.const_binding(candidate)? else {
             return Ok(false);
         };
-        current = bound;
+        // Constant occurs detection depends on inference identities, never on
+        // de Bruijn indices. Bound formals are rigid and cannot be this key.
+        current = bound.value;
     }
 }
 
@@ -597,11 +711,13 @@ where
             if !aliases.insert(candidate.clone()) {
                 return Ok(false);
             }
-            let Some(bound) = view.binding(candidate) else {
+            let Some(bound) = view.binding(candidate)? else {
                 aliases.remove(candidate);
                 return Ok(false);
             };
-            let result = occurs_in_type_inner(bound, parameter, view, context, aliases);
+            let result = context.with_original_scope(bound.scope.clone(), |context| {
+                occurs_in_type_inner(bound.value, parameter, view, context, aliases)
+            });
             aliases.remove(candidate);
             result
         }
@@ -668,13 +784,19 @@ where
     };
     for (parameter, value) in &source {
         let mut visiting = BTreeSet::new();
-        let value = seal_type(value, source_view, &mut visiting, context)?;
-        context.add_sealed_binding(&mut sealed, parameter.clone(), value)?;
+        let owner = context.binding_scope(&sealed, &parameter.clone().into())?;
+        context.with_original_scope(owner, |context| {
+            let value = seal_type(value, source_view, &mut visiting, context)?;
+            context.add_sealed_binding(&mut sealed, parameter.clone(), value)
+        })?;
     }
     for (parameter, value) in &const_source {
         let mut visiting = BTreeSet::new();
-        let value = seal_const(value, source_view, &mut visiting, context)?;
-        context.add_sealed_const_binding(&mut sealed, parameter.clone(), value)?;
+        let owner = context.binding_scope(&sealed, &parameter.clone().into())?;
+        context.with_original_scope(owner, |context| {
+            let value = seal_const(value, source_view, &mut visiting, context)?;
+            context.add_sealed_const_binding(&mut sealed, parameter.clone(), value)
+        })?;
     }
     Ok(sealed)
 }

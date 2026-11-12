@@ -17,7 +17,7 @@ use super::{
 /// Standalone callback-protocol fixtures need an opening even when they do
 /// not execute a lower transaction. Tests that project a path use its real ID.
 pub(crate) fn source_id<S: Copy>(local: S) -> super::ConstraintSourceId<S> {
-    let scope = ConstraintApplicationScope::<super::NoConstraintClient>::new(
+    let scope = ConstraintApplicationScope::<super::NoConstraintClient>::test_root(
         (),
         TypeConstraintParameterScope::empty(),
     );
@@ -75,7 +75,7 @@ impl<'c, A: TypeConstraintAccounting, D: ConstraintDomain> ConstraintTestSetup<'
         )
         .expect("fixture effect inventory is canonical");
         let application =
-            ConstraintApplicationScope::new(D::Application::default(), self.parameters);
+            ConstraintApplicationScope::test_root(D::Application::default(), self.parameters);
         (self.context, ConstraintPath::empty(application, effects))
     }
 }
