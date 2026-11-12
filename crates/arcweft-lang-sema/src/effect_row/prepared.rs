@@ -16,10 +16,12 @@ use super::{
 use crate::types::GenericEffectReference;
 
 mod closure;
+mod declaration;
 pub(crate) use closure::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
     GuardedEffectPredicate, GuardedEffectRow, PrincipalEffectClosure,
 };
+pub(crate) use declaration::PreparedEffectDeclaration;
 mod substitution;
 pub(crate) use substitution::PreparedEffectTermEdit;
 #[cfg(test)]
