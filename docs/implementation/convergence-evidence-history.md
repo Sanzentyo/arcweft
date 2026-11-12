@@ -17125,3 +17125,21 @@ direct aliasは、実際の出現項とlookupした置換operandを平坦な辺�
 今回の完了境界はmap・plannerの型／定数operand保持、direct aliasの実辺、再導入の実owner保持である。正規化foldはまだprojectedで元carrierのoriginを保持するため、展開後の子・header・alias別の導出証拠は未発行。任意のprojected／広いDerivedをFree認可の証明として使う完成状態とはしない。次は既存の反復foldへ証拠を組み立て、別の型walkerを増やさずにこの境界を移行する。旧一覧のbinding／alias全体を未完了とする列挙は、今回のsourceとテストに基づき、移行済みの境界と正規化に残る境界へ訂正した。広い残作業はcurrent-statusだけに置き、Generic Match、caller-bound recursion、同group prefixの受入は維持する。
 
 [検証原本](acceptance-evidence/task-scoped-binding-terms.raw.zip)は58 entry、展開時11696549 bytes、ZIP 1204248 bytes、SHA-256 `8237bde239bed47ce033672c26468fa73a72d20cecd245914821d8ad0a17be91`。manifestを含む全entryを読み戻し照合し、構造5 reportを含むpath区切りも確認した。現状をcurrent-statusへ集約し、既存履歴のbyte prefix・SHA・実測を保持した。
+
+## Corresponding provenance in the shared normalization fold
+
+2026-11-13。Source `5012e0c6d26655fe005d150c321d47051a21096f`、tree `63e2bbaf84fa99c3c73a4ab64807e2e557db859c`、親 `3b2fa58164061b0f5ccf788195c99d644b835953` を既存mainへnon-forced pushし、origin/mainと変更11 blobを照合した。ユーザーの途中commit方針に従いcheckpointを先に公開し、その同一sourceを各検証の前後にbyte pinで確認した。tracked差分0件から本記録・一覧・原本を更新し、既存の未追跡 `%SystemDrive%/` を保持した。
+
+既存の反復正規化foldを一つのまま維持し、検査用の値出力と保持用の出所付き出力を型で区別した。node admission、error順序、binder entry、alias guard、元のscope transportとshape grammarを共有する。保持する構造では子の値を親へmoveし、それぞれに対応する導出証拠と独立した配列長の証拠を保存する。再構築した部分木を各祖先で複製せず、最終operandだけにArcを確保する。関数の変更されないeffect row／predicateは正確な元headerと実contents frameへ帰属し、子のFreeの和集合から認可しない。aliasの実出現項とlookupされたbinding、各中間scopeの転送を保持し、次の構造親かrootで平坦な証拠へまとめる。terminalには値を重複所有するoperandではなく導出を保持する。定数の直接rootと配列長portを区別し、合成Array型は作らない。
+
+binding sealはrawな値を元originで包み直す経路からこの保持用foldへ移行した。入力scopeを採用する前に、mapの実rootを認証済みbinding ownerと照合する。読み出しでscopeを検査する従来の境界に加え、root自身を正規化する時にも偽装を拒否する。前項時点の「正規化foldの子・header・alias証拠は未発行」という現在形を、今回移行したbinding sealの範囲で訂正した。他の任意値projected／Derived経路まで移行済みとは扱わず、残る現状はcurrent-statusだけに集約する。
+
+最終固定入力の全feature Sema lib／testsは1,635件中1,629 PASS／6 FAIL／0 SKIP（71.130秒、slow 0）。選択IDと終端IDは一致し重複0、既存1,631 IDすべてと新4 IDを照合した。失敗ID・実診断は直前の既知6件と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。新4件は、tupleの対応する子・型alias・配列item／length・定数aliasの出所と元ownerの保持・解放、非自明な効果predicateとrowを持つ関数header／実局所frameと同形の別frameの区別、格納root scopeの偽装拒否、共通正規化foldでの10,000 aliasの保持・解放と10,001 nodeの正確な上限を確認した。従来のscope escape、capture、空tupleと分岐予算、256 probe／1 replay・4,096上限のassertionも保持して通過した。Semaのlocked・全target・全feature Clippyとworkspace fmt check、canonical構造gateは終了0。警告は保持し、全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+開発時のlibrary checkは終了0（16.27秒）。その後fixtureの証拠readerを新terminalへ移し、4回帰を確定した。開発用の2回のnextest listも終了0だったが、最終結果には公開後の別の固定入力によるlist／run／Clippy／fmtを使った。途中commitを最終受入と扱わず、実測と公開full SHAを別途照合した。
+
+所有測定はnormalization 745物理LOC（差0）、共通projection 510（+81）、新mode 204、新rebuild 273、transaction 2,734（+3）、operand 473（+24）、既存operand projection 278（+3）。全11 pathのbyte・hash・分類・embedded test LOCを原本へ保持する。新modeは同じ走査の出力契約、新rebuildはmove-onlyな値と対応証拠の組立を所有し、別の型walker・capture side table・scope resolverを増やさない。transactionはsource／closureの既存協調、operandはscoped valueの所有を維持する。新test module 187 LOCと既存rooted testの+36 LOCは同じ寿命・scope・計量境界を観測する。構造gateは98 package・3,475 files・3,344 Rust files、review trigger 396、blocking 0。Semaのworkspace fan-in／outは8／15、devは4／0。Cargo edge・外部public shape・unsafe・I/O・version・予算の変更はない。
+
+normal／normal+dev／normal+dev+build、全feature・全target向けのcargo treeでowner込み22 packageの逆依存を再確認した。変更はSema内部の保持用derivationとprivateなseal経路で、公開の型意味・Cargo入力は不変のため、frontendとAPI compileを含むowner全件を実行した。他21 packageの実行は再実行せず、Source `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の2,507 PASS／2 FAIL／1 SKIPとworkspace品質を元入力の履歴として保持し、今回のSema実測と合算しない。Free認可、再帰本体6失敗の修復、新body Native／AWBC・Wasm・Tier 2の受入を今回の保持移行から主張しない。Generic Match、caller-bound recursion、同group prefixの受入を維持する。
+
+[検証原本](acceptance-evidence/task-retained-normalization.raw.zip)は37 entry、展開時10198134 bytes、ZIP 998181 bytes、SHA-256 `52cb54931f4c4bcdf8102749537da1263b8ccfd893c2a6b4d5560f108f18f7da`。manifestを含む全entryのsize／hashを読み戻し照合し、portableなpath区切りを確認した。以前の履歴のbyte prefix・SHA・実測を保持し、重複する現状は増やしていない。
