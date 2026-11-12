@@ -16753,3 +16753,21 @@ Rejected／Blocked／Deferredは元producerを削らずに保持する。条件�
 新規componentは31,231 bytes／865行、別test 23,036 bytes／668行、prepared型の保持validationは3,465 bytes／107行。300行超の増加について、componentは同じissuer・不変producer inventory・origin product・affine use状態を一つで所有し、ticketと値の公開責務を分散させていないことを確認した。型の走査は共有foldへ委譲し、同じowner境界にテストを置く。新たな依存、I/O、unsafe、並列の型文法、互換reader、versionや予算の緩和はない。
 
 初回診断、途中選択結果、最終全ID／結果、品質log／receipt、Cargo graph、clean receipt、Source差分・実測・公開照合を28 entry、展開時12,618,271 bytes、ZIP 1,112,551 bytes、SHA-256 `d5a5def679519d1cbedff9ecab7fd301768f0305d40736f66718a8125c6598dd` の[原本](acceptance-evidence/task-correlated-component-value-ports.raw.zip)へ保持し、manifestを含む全entryの長さ・hashを照合した。現状欄の前段ownerの説明を今回の実測へ置換し、重複した残作業はcurrent-status.mdの一か所へ集約した。以前の実行結果・full SHA・凍結原本、Generic Match・呼出し側再帰・同一グループprefix等の受入判定は保持した。
+
+### Retained source probe preparation
+
+2026-11-12、基点 `46f3680895c1be1b49c94e68185754602620d1f9` の既存mainから、Source `d20f11a7fa9762662df0cdbbe042670207b0177b`、tree `6dfbd45225c38ed55d8282e916c0a5e5fe99b454` を通常pushした。remote mainのfull SHA・tree・変更16pathのblobを照合した。実際のAnalyzer callbackは、accepted probeを閉じると元のCandidateSemanticProjectionをmoveし、式・local・pattern等のfactと元graph deltaをlowerのsource observationへ保持する。拒否・error・不正なsourceはrollbackする。driverがcloseを一度だけ行い、acceptedの場合だけ準備が返ることを型付きprotocolで検査する。生のprobe contributionはclosed preparationなしではlowerへ提出できない。
+
+元のbranch allocationにOnceLockで準備を一度だけ保持し、同じobservationのforkは同じ所有を参照する。一つのcallbackに異なるobservationがある場合だけ、追加の共有allocationと走査を事前admissionして同じpayloadを共有する。準備payloadへClone／Eqを要求せず、準備そのものをsemantic equality証明にはしない。source closeは未初期化のobservationを拒否し、元factsを保持したtraceは停止・再開・正規化と完了sourceの参照まで存続する。選択後の既存materialization／replay経路と物理回数の契約は維持した。
+
+初期実装は各sourceへ独立した準備Arcを追加し、全Sema 1,536件が1,529 PASS／7 FAILとなった。この7件には従来6件のほか、変更起因の `t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once` のCallResolutionFailedが含まれる。元のobservation allocationへ準備を統合して追加課金を除き、製品既定の4,096予算・256候補・全候補1回probe・選択1回replay・計257物理評価のassertionを維持して修復した。途中の旧fixtureやcallback契約未移行によるcheck終了101と修復途中check終了0も原本へ残し、最終入力の結果と区別する。
+
+固定入力は上記baseとstaged treeで、公開Sourceのtreeと一致し、全16pathのhashも前後一致する。全featureのSemaは5 binary・全1,537件、1,531 PASS／6 FAIL／0 SKIP、nextest終了100、実行時間134.264秒。選択IDと終端IDは一致し、重複0、失敗6件は直前の元入力と同じ再帰本体のIDだった。新規5件は全PASSで、実HIR式からの元fact抽出とlive状態のrollback、acceptedに限るclose準備、Cloneできないpayloadのfork／停止／再開と一度だけのdrop、取消しによるaffine入力・frontierの未公開、未close sourceの拒否を確認した。最終入力の選択6件（新規5件と256候補）は全PASSだが、全件結果へ加算しない。
+
+今回のresolved Cargo metadataはhost default・host all-features・all-targets all-featuresの3 modeでnormal／dev／buildを含む同じ22パッケージを確認し、逆依存treeも終了0。Cargo入力はgraph基点 `518d63e31dd2be9750158004b171a6174b2725a7` と差分0。Sema以外21パッケージのhost既定feature／filter、規定107 Cargo targetを同じ公開Sourceで終端まで実行し、2,507 PASS／2 FAIL／1 SKIPとなった。全選択IDと終端件数を照合し重複0、CLI bin・LSP bin・Native TSF sampleのrunnable test 0件はコンパイル結果として区別した。RuntimePlanの手動対象1件は既定のignoredでskip。consumer失敗2件は `recursive_body_attached_prefix_restores_before_inferred_default_execution` と `recursive_body_function_values_resume_with_a_shared_generic_prefix` で、Source `344a6f6f61359268c19ebee202b75cbb974f1799` の実失敗logとIDが一致する。ownerと合わせて4,038 PASS／8 FAIL／1 SKIP。異なる過去入力を加算した件数ではない。CLI library196件と規定統合6 targetの30件はPASSで、CLI全checkの再実行ではない。
+
+同じ固定入力のlocked・全target・全feature workspace check／Clippy、整形、構造gateは終了0、blocking 0件。Clippyには未接続APIと既存を含む警告が残る。Sema全feature doctest 2件はPASS、wasm32-unknown-unknownのplayer-web library checkも終了0。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。全featureの全consumer test、Tier 2包括実行、実ブラウザー操作・画像parityの通過をこの結果から推定しない。
+
+構造実測はcallable driver 116,045 bytes／2,822行（基点2,759）、Analyzer call constraints 305,025 bytes／7,395行（基点7,266）、lower transaction 94,801 bytes／2,491行（基点2,417）、source owner 21,473 bytes／572行（基点490）。driverはclose一回とerror優先順位、Analyzerは元fact scopeの抽出、lower observationはopaque準備の一度の所有と共有をそれぞれ担当する。既存の大きなdriver／Analyzerを物理行数だけで分割せず、同じprotocolと所有状態の凝集を確認した。個別pathの増加は300行未満。依存、I/O、unsafe、並列の型文法・source authority、compatibility reader、version変更や予算緩和はない。
+
+初回と最終の入力・差分、check診断、全選択ID／結果、品質log、Cargo graph、実測、監査scriptと公開照合を371 entry、展開時49,905,351 bytes、ZIP 6,142,405 bytes、SHA-256 `412435c9c1315650bb8177d1e69135cc0612725177013e31b8b16b16fe2d7398` の[原本](acceptance-evidence/task-retained-source-probe-preparation.raw.zip)へ保持し、manifestを含む全entryの長さとhashを読み戻して照合した。現状一覧の前段ownerの説明と古い横断件数は今回の実測へ置換し、Compiler 2失敗を旧Sourceだけの記述から今回も再現した記述へ訂正した。以前の実行結果・full SHA・凍結ZIPと受入判定は保持し、残作業はcurrent-status.mdの一か所で扱う。
