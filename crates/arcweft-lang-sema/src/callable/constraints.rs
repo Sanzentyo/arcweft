@@ -402,8 +402,14 @@ impl<'a> CandidateConstraintWorkSession<'a> {
             .into_lower_parts()
             .map_err(CandidateConstraintDriverStartFailure::Prepared)?;
         let mut context = TypeConstraintContext::with_accounting(self);
+        let original = authority.original_context(&mut context).map_err(|error| {
+            CandidateConstraintDriverStartFailure::Lower(
+                TypeConstraintInitializationFailure::original_context(error),
+            )
+        })?;
         let lower = TypeConstraintTransaction::initialize_with_imported(
             &mut context,
+            original,
             application,
             parameter_scope,
             inherited,
@@ -2060,7 +2066,8 @@ pub(crate) mod tests {
         assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 0);
         assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 0);
         assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 0);
-        assert_eq!(work.type_constraint_report().work(), 0);
+        // The accepted source context is admitted before the branch budget.
+        assert_eq!(work.type_constraint_report().work(), 1);
     }
 
     #[test]

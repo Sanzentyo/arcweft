@@ -161,7 +161,7 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let child_application = context.application_scope((), child_parameters).unwrap();
     let child = context
-        .start_path_with_imported(child_application, Some(lease))
+        .start_fixture_path_with_imported(child_application, Some(lease))
         .unwrap();
     let alias = TypeKind::GenericParam(inner_types[0].clone());
     let child = context
@@ -207,7 +207,7 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
     let enclosing = context.enter_binder_scope(GenericBinder::new(0, 1, 0));
     let application = context.application_scope((), child_parameters).unwrap();
     let child = context
-        .start_path_with_imported(application, Some(lease))
+        .start_fixture_path_with_imported(application, Some(lease))
         .unwrap();
     let child = context
         .add_const_binding(
@@ -254,7 +254,7 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
     context.restore_binder_scope(enclosing);
     let application = context.application_scope((), empty_scope()).unwrap();
     let child = context
-        .start_path_with_imported(application, Some(lease))
+        .start_fixture_path_with_imported(application, Some(lease))
         .unwrap();
     let child = context
         .with_original_scope(owner.clone(), |context| {

@@ -1582,17 +1582,30 @@ where
         self.charge_counter(1, Counter::Materializations)
     }
 
+    #[cfg(test)]
     pub(super) fn start_path(
         &mut self,
         application: ConstraintApplicationScope<D>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
-        self.start_path_with_imported(application, None)
+        let original = self.fixture_original_context(None)?;
+        self.start_path_with_imported(application, None, original)
+    }
+
+    #[cfg(test)]
+    pub(super) fn start_fixture_path_with_imported(
+        &mut self,
+        application: ConstraintApplicationScope<D>,
+        imported: Option<super::ImportedGenericParameterScopeLease>,
+    ) -> Result<ConstraintPath<D>, TypeConstraintError> {
+        let original = self.fixture_original_context(imported.as_ref())?;
+        self.start_path_with_imported(application, imported, original)
     }
 
     pub(super) fn start_path_with_imported(
         &mut self,
         application: ConstraintApplicationScope<D>,
         imported: Option<super::ImportedGenericParameterScopeLease>,
+        original: super::OriginalProducerContext,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.charge_counter(1, Counter::Branches)?;
         let mut variables = application.parameters().opened_effect_variables();
@@ -1629,6 +1642,7 @@ where
             effects,
             imported,
             scope,
+            original,
         ))
     }
 

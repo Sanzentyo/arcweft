@@ -55,7 +55,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         }
         PreparedConstraintAuthority {
             issuer: Arc::clone(&self.issuer),
-            source: enclosing.header.source.clone(),
+            enclosing: enclosing.clone(),
         }
         .prepare_function_specialization(source, enclosing, limits)
     }
@@ -68,7 +68,7 @@ impl PreparedConstraintAuthority {
         enclosing: &EnclosingGenericParameterScope,
         limits: &crate::callable::CallableLimits,
     ) -> Result<PreparedFunctionSpecializationScope, CallConstraintInvariant> {
-        if self.source != enclosing.header.source {
+        if self.enclosing.header.source != enclosing.header.source {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
         let TypeKind::Function {
@@ -118,7 +118,10 @@ impl<D: ConstraintDomain> PreparedFunctionSpecialization<D> {
         if !Arc::ptr_eq(&self.scope.initialization.issuer, &authority.issuer) {
             return Err(CallConstraintInvariant::ForeignPreparedIssuer);
         }
-        if !self.receipt.matches(receipt) || self.scope.initialization.source != authority.source {
+        if !self.receipt.matches(receipt)
+            || self.scope.initialization.enclosing.header.source
+                != authority.enclosing.header.source
+        {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
         let (_, parameters, inherited, imported) = self.scope.initialization.into_lower_parts()?;

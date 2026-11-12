@@ -19,6 +19,12 @@ pub(crate) struct SuspendedConstraintFrontier<D: ConstraintDomain> {
     pub(super) result: ConstraintResultProjection<D>,
 }
 
+impl<D: ConstraintDomain> SuspendedConstraintFrontier<D> {
+    pub(crate) fn original_context(&self) -> &super::super::OriginalProducerContext {
+        &self.transaction.original
+    }
+}
+
 impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn suspend_result<A: TypeConstraintAccounting>(
         self,

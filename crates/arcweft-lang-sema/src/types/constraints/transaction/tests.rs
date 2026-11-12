@@ -74,7 +74,7 @@ fn repeated_source_component(
         )
         .into_parts();
     let mut transaction =
-        TypeConstraintTransaction::initialize(&mut context, 0, parameters, None).unwrap();
+        TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None).unwrap();
     for (application, ty) in [(0, TypeKind::I64), (child_application, TypeKind::String)] {
         if application != 0 {
             let scope = child_scope.take().unwrap();
@@ -502,7 +502,7 @@ fn forked_probe(cancellation: &AtomicBool) -> ForkedProbe<'_> {
         )
         .into_parts();
     let mut transaction =
-        TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+        TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None).unwrap();
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -817,7 +817,8 @@ fn fixed_effect_evidence_survives_candidate_sealing() {
         )
         .into_parts();
     let mut transaction =
-        TypeConstraintTransaction::initialize(&mut context, (), test_parameters, None).unwrap();
+        TypeConstraintTransaction::initialize_fixture(&mut context, (), test_parameters, None)
+            .unwrap();
     let known = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
     transaction.constrain_effect_equality(
         &mut context,
@@ -852,7 +853,8 @@ fn fixed_effect_evidence_rejects_shrinking_and_expanding_function_relations() {
             )
             .into_parts();
         let mut transaction =
-            TypeConstraintTransaction::initialize(&mut context, (), test_parameters, None).unwrap();
+            TypeConstraintTransaction::initialize_fixture(&mut context, (), test_parameters, None)
+                .unwrap();
         let projected = EffectRow::open(EffectSet::new(), variable);
         transaction.constrain_effect_equality(
             &mut context,
@@ -901,7 +903,8 @@ fn fixed_effect_evidence_abort_cannot_publish_a_partial_equality() {
         )
         .into_parts();
     let mut transaction =
-        TypeConstraintTransaction::initialize(&mut context, (), test_parameters, None).unwrap();
+        TypeConstraintTransaction::initialize_fixture(&mut context, (), test_parameters, None)
+            .unwrap();
     transaction.constrain_effect_equality(
         &mut context,
         &EffectRow::open(EffectSet::new(), variable),
@@ -1222,7 +1225,7 @@ fn transaction_completion_cannot_release_or_reset_the_surrounding_context() {
             proposed: TypeConstraintWorkReport::default(),
             committed: false,
         });
-        let first = TypeConstraintTransaction::<NoConstraintClient>::initialize(
+        let first = TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(
             &mut context,
             (),
             TypeConstraintParameterScope::empty(),
@@ -1237,7 +1240,7 @@ fn transaction_completion_cannot_release_or_reset_the_surrounding_context() {
         assert_eq!(receipt.commits.get(), 0);
 
         assert!(matches!(
-            TypeConstraintTransaction::<NoConstraintClient>::initialize(
+            TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(
                 &mut context,
                 (),
                 TypeConstraintParameterScope::empty(),

@@ -2235,7 +2235,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
         self.validate_constraint_authority(parent_authority)?;
-        if parent_authority.source != enclosing.header.source
+        if parent_authority.enclosing.header.source != enclosing.header.source
             || !enclosing.header.source.admits(site.expression())
         {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
@@ -2614,7 +2614,7 @@ fn issue_scope_initialization(
         future_parameters,
         continuation_seed: seed,
         imported_scope: enclosing.imported_scope().cloned(),
-        source: enclosing.header.source.clone(),
+        enclosing: enclosing.clone(),
     })
 }
 
@@ -2626,7 +2626,7 @@ pub(crate) struct PreparedConstraintInitialization {
     future_parameters: Box<[GenericTypeReference]>,
     continuation_seed: PreparedCallConstraintSeed,
     imported_scope: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
-    source: EnclosingConstraintSource,
+    enclosing: EnclosingGenericParameterScope,
 }
 
 /// One child application authorized by the same prepared graph and an exact
@@ -2657,8 +2657,13 @@ impl<D: crate::types::constraints::ConstraintDomain> PreparedChildConstraintInit
         candidate: &super::PreparedResolvedCallable,
     ) -> bool {
         Arc::ptr_eq(&self.initialization.issuer, &authority.issuer)
-            && self.initialization.source == authority.source
-            && self.initialization.source.admits(site.expression())
+            && self.initialization.enclosing.header.source == authority.enclosing.header.source
+            && self
+                .initialization
+                .enclosing
+                .header
+                .source
+                .admits(site.expression())
             && self.receipt.matches(receipt)
             && self.application == application
             && self.site == site
@@ -2690,7 +2695,22 @@ impl<D: crate::types::constraints::ConstraintDomain> PreparedChildConstraintInit
 /// cannot recreate it from a graph ID, an application coordinate or a scope.
 pub(super) struct PreparedConstraintAuthority {
     issuer: Arc<PreparedCallGraphIssuer>,
-    source: EnclosingConstraintSource,
+    enclosing: EnclosingGenericParameterScope,
+}
+
+impl PreparedConstraintAuthority {
+    pub(super) fn original_context<
+        A: crate::types::constraints::context::TypeConstraintAccounting,
+        D: crate::types::constraints::ConstraintDomain,
+    >(
+        &self,
+        context: &mut crate::types::constraints::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        crate::types::constraints::OriginalProducerContext,
+        crate::types::constraints::TypeConstraintError,
+    > {
+        self.enclosing.original_context(context)
+    }
 }
 
 enum PreparedCallConstraintSeed {
@@ -2722,7 +2742,7 @@ impl PreparedConstraintInitialization {
             future_parameters: _,
             continuation_seed,
             imported_scope,
-            source,
+            enclosing,
         } = self;
         let solution = match continuation_seed {
             PreparedCallConstraintSeed::None {
@@ -2741,7 +2761,7 @@ impl PreparedConstraintInitialization {
             }
         };
         Ok((
-            PreparedConstraintAuthority { issuer, source },
+            PreparedConstraintAuthority { issuer, enclosing },
             parameter_scope,
             solution,
             imported_scope,
@@ -2762,7 +2782,7 @@ mod initialization_tests {
             future_parameters,
             continuation_seed,
             imported_scope: _,
-            source,
+            enclosing,
         } = initialization;
         let foreign = PreparedConstraintInitialization {
             issuer: Arc::new(PreparedCallGraphIssuer),
@@ -2770,7 +2790,7 @@ mod initialization_tests {
             future_parameters,
             continuation_seed,
             imported_scope: None,
-            source,
+            enclosing,
         };
         assert!(matches!(
             foreign.into_lower_parts(),

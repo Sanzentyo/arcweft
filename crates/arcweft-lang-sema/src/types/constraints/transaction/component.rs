@@ -44,6 +44,8 @@ pub(crate) enum PreparedValueFailure {
     DependentRoot,
     #[error("one producer contains frontiers from different semantic applications")]
     ProducerApplication,
+    #[error("one producer contains frontiers from different original source contexts")]
+    ProducerContext,
     #[error("prepared value ordinal overflow")]
     OrdinalOverflow,
 }
@@ -122,7 +124,7 @@ enum ValueContent {
 enum ValueDefinition<D: ConstraintDomain> {
     Constraint {
         frontiers: Box<[SuspendedConstraintFrontier<D>]>,
-        scope: Arc<GenericScope>,
+        original: super::super::OriginalProducerContext,
     },
     Intrinsic,
     Use(Box<[PreparedValueRef<D>]>),
@@ -141,6 +143,7 @@ struct RegisteredValue<D: ConstraintDomain, P> {
 /// This is neither a completed instantiation nor permission to bind a producer
 /// again from one of its later uses.
 pub(crate) struct PreparedValueOriginalConstraint<'a, D: ConstraintDomain> {
+    original: &'a super::super::OriginalProducerContext,
     application: D::Application,
     scope: &'a GenericScope,
     parameters: &'a TypeConstraintParameterScope,
@@ -148,6 +151,9 @@ pub(crate) struct PreparedValueOriginalConstraint<'a, D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
+    pub(crate) fn original_context(&self) -> &super::super::OriginalProducerContext {
+        self.original
+    }
     pub(crate) fn application(&self) -> D::Application {
         self.application
     }
@@ -299,6 +305,22 @@ pub(crate) struct OpenConstraintComponent<D: ConstraintDomain, P> {
 }
 
 impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
+    /// Fixture cohorts use the authority retained by their first real root.
+    /// Empty/diagnostic-only producers must pass an explicit source context.
+    #[cfg(test)]
+    pub(crate) fn admit_fixture_roots<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        roots: Vec<SuspendedConstraintFrontier<D>>,
+        preparation: P,
+    ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
+        let original = roots
+            .first()
+            .ok_or(PreparedValueFailure::ProducerContext)?
+            .original_context()
+            .clone();
+        self.admit_roots(context, original, roots, preparation)
+    }
     pub(crate) fn new<A: TypeConstraintAccounting>(
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, PreparedValueFailure> {
@@ -361,12 +383,16 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn admit_roots<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        original: super::super::OriginalProducerContext,
         roots: Vec<SuspendedConstraintFrontier<D>>,
         preparation: P,
     ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
         let mut application = None;
         for root in &roots {
             context.enter_node()?;
+            if root.original_context() != &original {
+                return Err(PreparedValueFailure::ProducerContext);
+            }
             // A parent's branch is part of the child's identity. Registering
             // that child as a fresh root would silently erase the correlation.
             if root.transaction.parent_receipt.is_some() {
@@ -388,26 +414,38 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 application = Some(owner);
             }
         }
-        let scope = Self::retain_scope(context)?;
+        for _ in original.scope().binders() {
+            context.enter_node()?;
+        }
+        let scope = Arc::new(original.scope().clone());
         let mut alternatives = Vec::new();
         for (frontier, root) in roots.iter().enumerate() {
             for (path_index, path) in root.transaction.frontier.iter().enumerate() {
                 context.enter_node()?;
-                let (opened, _) = resolve_probe_term(
-                    SourceProbeTerm::Result(root.result.clone()),
-                    path,
-                    context,
-                )?;
-                let projection = project_type(
-                    &opened,
-                    path.projection_view(),
-                    ConstraintClosurePolicy::Hint,
-                    context,
-                );
+                for _ in path.lineage.scope.shape().binders() {
+                    context.enter_node()?;
+                }
+                let projection =
+                    context.with_original_scope(path.lineage.scope.clone(), |context| {
+                        let (opened, _) = resolve_probe_term(
+                            SourceProbeTerm::Result(root.result.clone()),
+                            path,
+                            context,
+                        )?;
+                        project_type(
+                            &opened,
+                            path.projection_view(),
+                            ConstraintClosurePolicy::Hint,
+                            context,
+                        )
+                    });
                 let value = match projection {
                     Ok(projection) => {
-                        let ty = projection
-                            .value
+                        let value = original
+                            .gamma()
+                            .transport_type(&path.lineage.scope, &projection.value, context)
+                            .map_err(Self::projection_failure)?;
+                        let ty = value
                             .prepare_effects(&scope, context)
                             .map_err(Self::projection_failure)?;
                         context.enter_node()?;
@@ -460,7 +498,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             RegisteredValue {
                 definition: ValueDefinition::Constraint {
                     frontiers: roots.into_boxed_slice(),
-                    scope,
+                    original,
                 },
                 preparations: Box::new([preparation]),
                 alternatives: alternatives.into_boxed_slice(),
@@ -739,7 +777,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 .values
                 .get(origin)
                 .ok_or(PreparedValueFailure::StaleReference)?;
-            let ValueDefinition::Constraint { frontiers, scope } = &value.definition else {
+            let ValueDefinition::Constraint {
+                frontiers,
+                original,
+            } = &value.definition
+            else {
                 return Err(PreparedValueFailure::InputState);
             };
             // Diagnostic alternatives have no source path. Their unavailable
@@ -761,8 +803,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 .map_err(TypeConstraintError::Invariant)?;
             visit(
                 PreparedValueOriginalConstraint {
+                    original,
                     application: owner.application(),
-                    scope,
+                    scope: original.scope(),
                     parameters: owner.parameters(),
                     path,
                 },
@@ -987,17 +1030,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             .map_err(Self::retention_failure)?;
         context.enter_node()?;
         Ok((ty, Arc::new(output.scope), output.preparation))
-    }
-
-    fn retain_scope<A: TypeConstraintAccounting>(
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Arc<GenericScope>, PreparedValueFailure> {
-        let count = context.lexical_scope().binders().len();
-        for _ in 0..count {
-            context.enter_node()?;
-        }
-        context.enter_node()?;
-        Ok(Arc::new(context.lexical_scope().clone()))
     }
 
     fn projection_failure(error: TypeProjectionError<TypeConstraintError>) -> PreparedValueFailure {

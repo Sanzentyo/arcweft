@@ -91,17 +91,19 @@ impl CheckedConstraintSourceOwner {
     }
 }
 
-impl CheckedCallableCatalogBuilder {
-    pub(crate) fn constraint_source_owner(
-        &self,
+impl CheckedConstraintSourceOwner {
+    fn admit(
+        authority: CheckedCallableAuthorityLease,
         topology: &Arc<HirProjectEvaluationTopology>,
         expression: ExprId,
-    ) -> Result<CheckedConstraintSourceOwner, CheckedCallableCatalogBuildError> {
-        let authority = CheckedCallableAuthorityLease {
-            generation: self.generation.clone(),
-            registered: self.registered.clone(),
-        };
-        if !authority.admits_generation(topology.generation()) || self.registered.is_none() {
+        declaration_record: impl FnOnce(
+            &CallableDeclarationKey,
+        ) -> Result<
+            (CheckedCallableId, Arc<CallableRecord>),
+            CheckedCallableCatalogBuildError,
+        >,
+    ) -> Result<Self, CheckedCallableCatalogBuildError> {
+        if !authority.admits_generation(topology.generation()) || authority.registered.is_none() {
             return Err(CheckedCallableCatalogBuildError::GenerationMismatch);
         }
         let location = topology
@@ -110,26 +112,73 @@ impl CheckedCallableCatalogBuilder {
             .ok_or(CheckedCallableCatalogBuildError::SourceIdentityMismatch)?;
         let contract = match location.root() {
             HirSemanticPathRoot::Declaration(declaration) => {
-                let pending = self
-                    .pending_by_candidate(&CallableCandidateId::Project(declaration.clone()))
-                    .map_err(|_| CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
-                // The sealed semantic path already identifies this actual
-                // declaration's source. Defaults also belong to declarations
-                // with fixed or bodyless contracts; body inference is not the
-                // authority for source ownership.
-                SourceContract::Declaration {
-                    id: pending.id().clone(),
-                    record: Arc::clone(pending.record()),
+                let (id, record) = declaration_record(declaration)?;
+                let candidate = CallableCandidateId::Project(declaration.clone());
+                if record.id() != &candidate || !authority.admits_callable_id(&id) {
+                    return Err(CheckedCallableCatalogBuildError::CandidateMismatch);
                 }
+                let accepted = authority
+                    .registered
+                    .as_ref()
+                    .expect("registered authority admitted")
+                    .record(&candidate)
+                    .ok_or(CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
+                if !Arc::ptr_eq(accepted, &record) {
+                    return Err(CheckedCallableCatalogBuildError::RecordPointerMismatch);
+                }
+                SourceContract::Declaration { id, record }
             }
             HirSemanticPathRoot::Item { .. } => SourceContract::Item,
         };
-        Ok(CheckedConstraintSourceOwner {
+        Ok(Self {
             topology: Arc::clone(topology),
             authority,
             root: location.root().clone(),
             contract,
         })
+    }
+}
+
+impl CheckedCallableCatalogBuilder {
+    pub(crate) fn constraint_source_owner(
+        &self,
+        topology: &Arc<HirProjectEvaluationTopology>,
+        expression: ExprId,
+    ) -> Result<CheckedConstraintSourceOwner, CheckedCallableCatalogBuildError> {
+        CheckedConstraintSourceOwner::admit(
+            CheckedCallableAuthorityLease {
+                generation: self.generation.clone(),
+                registered: self.registered.clone(),
+            },
+            topology,
+            expression,
+            |declaration| {
+                let pending = self
+                    .pending_by_candidate(&CallableCandidateId::Project(declaration.clone()))
+                    .map_err(|_| CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
+                Ok((pending.id().clone(), Arc::clone(pending.record())))
+            },
+        )
+    }
+}
+
+impl CheckedCallableCatalog {
+    pub(crate) fn constraint_source_owner(
+        &self,
+        topology: &Arc<HirProjectEvaluationTopology>,
+        expression: ExprId,
+    ) -> Result<CheckedConstraintSourceOwner, CheckedCallableCatalogBuildError> {
+        CheckedConstraintSourceOwner::admit(
+            self.authority_lease(),
+            topology,
+            expression,
+            |declaration| {
+                let facts = self
+                    .project_callable(declaration)
+                    .map_err(|_| CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
+                Ok((facts.id().clone(), Arc::clone(facts.record())))
+            },
+        )
     }
 }
 

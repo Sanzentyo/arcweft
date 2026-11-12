@@ -205,11 +205,15 @@ impl CandidateConstraintWorkSession<'_> {
             )
             .map_err(FunctionSpecializationFailure::Prepared)?
             .into_parts();
-        let (_, parameters, inherited, imported) = initialization
+        let (authority, parameters, inherited, imported) = initialization
             .into_lower_parts()
             .map_err(FunctionSpecializationFailure::Prepared)?;
+        let original = authority
+            .original_context(&mut context)
+            .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?;
         let mut lower = TypeConstraintTransaction::<D>::initialize_with_imported(
             &mut context,
+            original,
             application,
             parameters,
             inherited,

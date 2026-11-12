@@ -72,7 +72,10 @@ pub(super) fn checked_view_parameter_defaults(
             .value_type()
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: source })?;
         if !CheckedDeclarationDefault::check_type(
-            facts.signature(),
+            &analysis
+                .checked_callables()
+                .constraint_source_owner(analysis.hir_topology(), source)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?,
             position,
             result,
             source,

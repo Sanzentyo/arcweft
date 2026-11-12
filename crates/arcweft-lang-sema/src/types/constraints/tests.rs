@@ -811,7 +811,7 @@ where
         D::Application: Default,
     {
         let (mut context, test_parameters) = setup.into_parts();
-        let lower = TypeConstraintTransaction::initialize(
+        let lower = TypeConstraintTransaction::initialize_fixture(
             &mut context,
             D::Application::default(),
             test_parameters,
@@ -1879,7 +1879,7 @@ fn inherited_rigid_binding_is_an_initialization_invariant() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
@@ -2046,7 +2046,7 @@ fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, None),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, None),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::Unclosed,
@@ -2095,7 +2095,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
@@ -2136,7 +2136,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
@@ -2319,7 +2319,7 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize(
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(
             &mut context,
             (),
             test_parameters,
@@ -2346,7 +2346,7 @@ fn foreign_nested_hint_is_rejected_before_source_callback_boundary() {
             TypeConstraintParameterScope::empty(),
         )
         .into_parts();
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -3091,7 +3091,8 @@ fn probe_alternatives_keep_distinct_actuals_branches_and_evidence() {
             )
             .into_parts();
         let mut transaction =
-            TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+            TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None)
+                .unwrap();
         transaction
             .begin_prepared_probe(
                 &mut context,
@@ -3200,7 +3201,7 @@ fn source_choice_alternatives() -> (
             scope,
         )
         .into_parts();
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -3322,7 +3323,7 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
         TypeConstraintParameterScope::empty(),
     )
     .into_parts();
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -3389,7 +3390,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
             .expect("materialization scope"),
         )
         .into_parts();
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -3494,7 +3495,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
             scope,
         )
         .into_parts();
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -3595,7 +3596,7 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
             TypeConstraintParameterScope::empty(),
         )
         .into_parts();
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -3993,7 +3994,7 @@ fn checked_prepared_source(
 fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4074,7 +4075,7 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
 fn rejected_source_projection_retains_exact_lower_relation_authority() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4146,7 +4147,7 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
 fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4231,7 +4232,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
 fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4304,7 +4305,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
 fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4386,7 +4387,7 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
 fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4486,7 +4487,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
             scope,
         )
         .into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4623,7 +4624,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
             scope,
         )
         .into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4753,7 +4754,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
 fn otherwise_cannot_shortcut_a_matching_guard() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4799,7 +4800,7 @@ fn otherwise_cannot_shortcut_a_matching_guard() {
 fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4846,7 +4847,7 @@ fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
 fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,
@@ -4919,7 +4920,7 @@ fn prepared_source_structurally_owns_otherwise_and_requires_exact_ordinals() {
 
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
         (),
         test_parameters,

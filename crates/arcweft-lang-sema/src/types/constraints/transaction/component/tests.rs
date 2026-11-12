@@ -1,6 +1,7 @@
 use super::*;
 use crate::types::constraints::{
-    NoConstraintClient, TypeConstraintParameterScope, TypeConstraintProjectionClosure,
+    ConstraintAcceptance, NoConstraintClient, TypeConstraintParameterScope,
+    TypeConstraintProjectionClosure,
     context::{LocalConstraintAccounting, TypeConstraintLimits},
     test_support::ConstraintTestSetup,
     transaction::TypeConstraintTransaction,
@@ -31,7 +32,7 @@ fn root(
     context: &mut Context<'_>,
     ty: &TypeKind,
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
-    let mut lower = TypeConstraintTransaction::initialize(
+    let mut lower = TypeConstraintTransaction::initialize_fixture(
         context,
         (),
         TypeConstraintParameterScope::empty(),
@@ -53,6 +54,122 @@ fn output(context: &mut Context<'_>, ty: &TypeKind) -> PreparedValueOutput<&'sta
 }
 
 #[test]
+fn original_source_context_is_retained_and_current_registration_scope_cannot_replace_it() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut component = Component::new(&mut context).unwrap();
+    let binder = GenericBinder::new(1, 0, 0);
+    let (original, first, second) = context
+        .with_binder(binder, |context| {
+            let original = context.fixture_original_context(None)?;
+            let ty = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
+            let parameter = crate::types::GenericTypeParameterId::new(
+                crate::types::GenericParameterOwnerId::Detached(
+                    crate::types::DetachedGenericOwnerId::new(921),
+                ),
+                0,
+            );
+            let template = TypeKind::generic_parameter(parameter.clone());
+            let make = |context: &mut Context<'_>| {
+                let mut transaction = TypeConstraintTransaction::initialize(
+                    context,
+                    original.clone(),
+                    (),
+                    TypeConstraintParameterScope::new([(
+                        parameter.clone(),
+                        crate::types::constraints::TypeConstraintParameterEligibility::Bindable,
+                    )])
+                    .unwrap(),
+                    None,
+                )
+                .unwrap();
+                transaction.constrain(
+                    context,
+                    &template,
+                    &ty,
+                    ConstraintAcceptance::PatternAcceptsActual,
+                );
+                transaction.request_projection(
+                    context,
+                    (),
+                    &template,
+                    TypeConstraintProjectionClosure::Closed,
+                );
+                let suspended = transaction.suspend_result(context, ()).unwrap();
+                assert_eq!(suspended.original_context(), &original);
+                let resumed = suspended.resume();
+                let suspended = resumed.suspend_result(context, ()).unwrap();
+                assert_eq!(suspended.original_context(), &original);
+                suspended
+            };
+            Ok((original.clone(), make(context), make(context)))
+        })
+        .unwrap();
+    context
+        .with_binder(binder, |context| {
+            let unrelated = context.fixture_original_context(None)?;
+            assert_eq!(unrelated.scope(), original.scope());
+            assert_ne!(unrelated, original);
+            assert!(matches!(
+                component.admit_roots(context, unrelated, vec![first], "foreign"),
+                Err(PreparedValueFailure::ProducerContext)
+            ));
+            assert!(component.values.is_empty());
+            assert_eq!(component.next_value, 0);
+            let value = component
+                .admit_roots(context, original.clone(), vec![second], "original")
+                .unwrap();
+            let retained = component.value(&value).unwrap();
+            let ValueDefinition::Constraint {
+                original: retained_original,
+                ..
+            } = &retained.definition
+            else {
+                panic!("original constraint")
+            };
+            assert_eq!(retained_original, &original);
+            let ValueContent::Available { ty, scope } = &retained.alternatives[0].value else {
+                panic!("the original scoped type remains available")
+            };
+            assert_eq!(scope.as_ref(), original.scope());
+            assert_eq!(
+                ty,
+                &TypeKind::GenericParam(original.scope().bound_type(0, 0).unwrap())
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn original_source_context_is_required_even_when_no_candidate_frontier_exists() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let original = context.fixture_original_context(None).unwrap();
+    let mut component = Component::new(&mut context).unwrap();
+    let value = component
+        .admit_roots(&mut context, original.clone(), Vec::new(), "diagnostic")
+        .unwrap();
+    let retained = component.value(&value).unwrap();
+    let ValueDefinition::Constraint {
+        original: retained_original,
+        frontiers,
+    } = &retained.definition
+    else {
+        panic!("retained original diagnostic")
+    };
+    assert!(frontiers.is_empty());
+    assert_eq!(retained_original, &original);
+    assert_eq!(retained.alternatives.len(), 2);
+    assert!(
+        retained
+            .alternatives
+            .iter()
+            .all(|alternative| matches!(alternative.value, ValueContent::Unavailable(_)))
+    );
+}
+
+#[test]
 fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
@@ -62,7 +179,7 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
         root(&mut context, &TypeKind::String),
     ];
     let value = component
-        .admit_roots(&mut context, roots, "initializer")
+        .admit_fixture_roots(&mut context, roots, "initializer")
         .unwrap();
     let mut use_ = component
         .issue_use(&mut context, &[value.clone(), value.clone()])
@@ -132,7 +249,11 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
     let mut values = Vec::new();
     for _ in 0..2 {
         let roots = vec![root(&mut context, &TypeKind::I32)];
-        values.push(component.admit_roots(&mut context, roots, "root").unwrap());
+        values.push(
+            component
+                .admit_fixture_roots(&mut context, roots, "root")
+                .unwrap(),
+        );
     }
     let mut use_ = component.issue_use(&mut context, &values).unwrap();
     let mut count = 0;
@@ -302,7 +423,7 @@ fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
         root(&mut context, &TypeKind::String),
     ];
     let producer = component
-        .admit_roots(&mut context, roots, "producer")
+        .admit_fixture_roots(&mut context, roots, "producer")
         .unwrap();
     let local_fits = component
         .effects
@@ -613,7 +734,7 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
     let mut component = OpenConstraintComponent::<Applications, ()>::new(&mut context).unwrap();
     let mut roots = Vec::new();
     for application in [0, 1] {
-        let mut root = TypeConstraintTransaction::initialize(
+        let mut root = TypeConstraintTransaction::initialize_fixture(
             &mut context,
             application,
             TypeConstraintParameterScope::empty(),
@@ -629,10 +750,10 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
         roots.push(root.suspend_result(&mut context, ()).unwrap());
     }
     assert!(matches!(
-        component.admit_roots(&mut context, roots, ()),
+        component.admit_fixture_roots(&mut context, roots, ()),
         Err(PreparedValueFailure::ProducerApplication)
     ));
-    let mut parent = TypeConstraintTransaction::initialize(
+    let mut parent = TypeConstraintTransaction::initialize_fixture(
         &mut context,
         2,
         TypeConstraintParameterScope::empty(),
@@ -664,7 +785,7 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
     );
     let child = child.suspend_result(&mut context, ()).unwrap();
     assert!(matches!(
-        component.admit_roots(&mut context, vec![child], ()),
+        component.admit_fixture_roots(&mut context, vec![child], ()),
         Err(PreparedValueFailure::DependentRoot)
     ));
     assert!(component.values.is_empty());
@@ -701,12 +822,12 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
     );
     let child = child.suspend_result(&mut context, ()).unwrap();
     assert!(matches!(
-        component.admit_roots(&mut context, vec![child], ()),
+        component.admit_fixture_roots(&mut context, vec![child], ()),
         Err(PreparedValueFailure::DependentRoot)
     ));
     assert!(component.values.is_empty());
     assert_eq!(component.next_value, 0);
-    let mut root = TypeConstraintTransaction::initialize(
+    let mut root = TypeConstraintTransaction::initialize_fixture(
         &mut context,
         2,
         TypeConstraintParameterScope::empty(),
@@ -720,7 +841,9 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
         TypeConstraintProjectionClosure::Closed,
     );
     let root = root.suspend_result(&mut context, ()).unwrap();
-    let registered = component.admit_roots(&mut context, vec![root], ()).unwrap();
+    let registered = component
+        .admit_fixture_roots(&mut context, vec![root], ())
+        .unwrap();
     assert_eq!(registered.ordinal, 0);
     assert_eq!(component.values.len(), 1);
 }
@@ -770,7 +893,8 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
             .import_parameters(&[ConstraintGenericParameterId::Type(reference.clone())])
             .unwrap();
         let mut owner =
-            TypeConstraintTransaction::initialize(&mut context, 0, parameters, None).unwrap();
+            TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None)
+                .unwrap();
         owner.constrain(
             &mut context,
             &TypeKind::GenericParam(reference),
@@ -784,7 +908,7 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
             TypeConstraintProjectionClosure::Closed,
         );
         let owner = owner.suspend_result(&mut context, ()).unwrap();
-        let mut imported = TypeConstraintTransaction::initialize_with_imported(
+        let mut imported = TypeConstraintTransaction::initialize_with_imported_fixture(
             &mut context,
             2,
             TypeConstraintParameterScope::empty(),
@@ -805,7 +929,9 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
             [owner, imported]
         };
         for root in roots {
-            component.admit_roots(&mut context, vec![root], ()).unwrap();
+            component
+                .admit_fixture_roots(&mut context, vec![root], ())
+                .unwrap();
         }
         assert!(matches!(
             component.infer_original_products(&mut context),
@@ -863,7 +989,7 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
     let binder = GenericBinder::new(1, 0, 0);
     let enclosing = context.enter_binder_scope(binder);
     let mut lower =
-        TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+        TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None).unwrap();
     lower.constrain(
         &mut context,
         &TypeKind::Tuple(vec![
@@ -890,7 +1016,7 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
     );
     let root = lower.suspend_result(&mut context, ()).unwrap();
     let value = component
-        .admit_roots(&mut context, vec![root], "original initializer")
+        .admit_fixture_roots(&mut context, vec![root], "original initializer")
         .unwrap();
     context.restore_binder_scope(enclosing);
     assert!(context.lexical_scope().binders().is_empty());
@@ -963,7 +1089,7 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
     let mut component = Component::new(&mut context).unwrap();
     let root = root(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_roots(&mut context, vec![root], "original")
+        .admit_fixture_roots(&mut context, vec![root], "original")
         .unwrap();
     let mut first = component
         .issue_use(&mut context, &[producer.clone()])
@@ -1025,7 +1151,7 @@ fn original_constraint_observation_validates_authority_and_cancellation_before_v
     let mut component = Component::new(&mut context).unwrap();
     let root = root(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_roots(&mut context, vec![root], "original")
+        .admit_fixture_roots(&mut context, vec![root], "original")
         .unwrap();
     let mut use_ = component.issue_use(&mut context, &[producer]).unwrap();
     let alternative = component

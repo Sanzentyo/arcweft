@@ -87,13 +87,16 @@ impl CheckedDeclarationDefault {
     /// Omitted parameter effects may be chosen for this default invocation.
     /// Earlier input effects remain rigid; the declared binding is not narrowed.
     pub(crate) fn check_type(
-        signature: &CallableSignatureSchema,
+        source: &crate::callable::CheckedConstraintSourceOwner,
         coordinate: CallableParameterCoordinate,
         actual: &TypeKind,
         owner: ExprId,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<bool, FinalSemanticAnalysisError> {
         control.check()?;
+        let signature = source
+            .signature()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
         let expected = signature
             .parameter_type(coordinate)
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
@@ -129,8 +132,25 @@ impl CheckedDeclarationDefault {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, control.cancellation())
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
         let mut context = TypeConstraintContext::with_accounting(session);
+        let enclosing =
+            crate::callable::EnclosingGenericParameterScope::for_source(source.clone(), None)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let original = enclosing.original_context(&mut context).map_err(|error| {
+            failure(match error {
+                crate::types::constraints::TypeConstraintError::Abort(error) => {
+                    DefaultConstraintFailure::Abort(error)
+                }
+                crate::types::constraints::TypeConstraintError::Invariant(error) => {
+                    DefaultConstraintFailure::Invariant(error)
+                }
+                crate::types::constraints::TypeConstraintError::Rejected(_) => {
+                    DefaultConstraintFailure::Invariant(TypeConstraintInvariant::OriginalProducer)
+                }
+            })
+        })?;
         let mut relation = TypeConstraintTransaction::<DefaultTypeRelation>::initialize(
             &mut context,
+            original,
             coordinate,
             parameters,
             None,

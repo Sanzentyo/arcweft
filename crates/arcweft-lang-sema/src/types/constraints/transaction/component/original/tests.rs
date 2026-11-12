@@ -91,9 +91,14 @@ fn frontier_with_imported(
     equations: &[(TypeKind, TypeKind)],
     imported: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
-    let mut lower =
-        TypeConstraintTransaction::initialize_with_imported(context, (), scope, None, imported)
-            .unwrap();
+    let mut lower = TypeConstraintTransaction::initialize_with_imported_fixture(
+        context,
+        (),
+        scope,
+        None,
+        imported,
+    )
+    .unwrap();
     for (pattern, actual) in equations {
         lower.constrain(
             context,
@@ -139,7 +144,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
         ],
     );
     let first = component
-        .admit_roots(&mut context, vec![first], "T=U,N=M")
+        .admit_fixture_roots(&mut context, vec![first], "T=U,N=M")
         .unwrap();
     let second = frontier(
         &mut context,
@@ -153,7 +158,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
         ],
     );
     component
-        .admit_roots(&mut context, vec![second], "T=bool,N=7")
+        .admit_fixture_roots(&mut context, vec![second], "T=bool,N=7")
         .unwrap();
     let forest = component.infer_original_products(&mut context).unwrap();
     assert_eq!(forest.products.len(), 1);
@@ -208,7 +213,7 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
     };
     let root = frontier(&mut context, scope.clone(), &equations(TypeKind::Bool, 3));
     component
-        .admit_roots(&mut context, vec![root], "first")
+        .admit_fixture_roots(&mut context, vec![root], "first")
         .unwrap();
     let mut roots = Vec::new();
     for (value, count) in [
@@ -223,7 +228,7 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
         ));
     }
     let second = component
-        .admit_roots(&mut context, roots, "second")
+        .admit_fixture_roots(&mut context, roots, "second")
         .unwrap();
     let forest = component.infer_original_products(&mut context).unwrap();
     assert_eq!(forest.products.len(), 3);
@@ -256,7 +261,7 @@ fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
             )],
         );
         component
-            .admit_roots(&mut context, vec![root], "acyclic original")
+            .admit_fixture_roots(&mut context, vec![root], "acyclic original")
             .unwrap();
     }
     let forest = component.infer_original_products(&mut context).unwrap();
@@ -280,7 +285,7 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
     let second = frontier(&mut context, scope, &[]);
     let second_id = second.transaction.application;
     component
-        .admit_roots(&mut context, vec![first, second], "initializer")
+        .admit_fixture_roots(&mut context, vec![first, second], "initializer")
         .unwrap();
     let forest = component.infer_original_products(&mut context).unwrap();
     assert_eq!(forest.products.len(), 2);
@@ -290,9 +295,10 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
     assert!(
         matches!(&forest.products[1].result.as_ref().err().unwrap().reason,TypeConstraintRejection::IncompleteInstantiation {parameter: crate::types::constraints::ConstraintGenericParameterId::Type(parameter)} if parameter == &required)
     );
+    let original = context.fixture_original_context(None).unwrap();
     let mut component = Component::new(&mut context).unwrap();
     component
-        .admit_roots(&mut context, Vec::new(), "rejected original")
+        .admit_roots(&mut context, original, Vec::new(), "rejected original")
         .unwrap();
     assert!(
         component
@@ -318,7 +324,7 @@ fn one_application_opening_cannot_claim_independently_opened_ambient_binders() {
             &[(TypeKind::GenericParam(ty[0].clone()), value)],
         );
         component
-            .admit_roots(&mut context, vec![root], "ambient")
+            .admit_fixture_roots(&mut context, vec![root], "ambient")
             .unwrap();
         context.restore_binder_scope(enclosing);
     }
@@ -375,7 +381,7 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
         .import_parameters(&[ty[0].clone().into()])
         .unwrap();
     component
-        .admit_roots(&mut context, vec![first], "outer")
+        .admit_fixture_roots(&mut context, vec![first], "outer")
         .unwrap();
     let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let expected = scoped_function(context.lexical_scope(), 2);
@@ -386,7 +392,7 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
         Some(lease),
     );
     component
-        .admit_roots(&mut context, vec![second], "outer beneath another frame")
+        .admit_fixture_roots(&mut context, vec![second], "outer beneath another frame")
         .unwrap();
     context.restore_binder_scope(outer);
     context.restore_binder_scope(root_scope);
@@ -420,7 +426,7 @@ fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() 
     let mut component = Component::new(&mut context).unwrap();
     let root = frontier(&mut context, TypeConstraintParameterScope::empty(), &[]);
     let value = component
-        .admit_roots(&mut context, vec![root], "initializer")
+        .admit_fixture_roots(&mut context, vec![root], "initializer")
         .unwrap();
     let use_ = component.issue_use(&mut context, &[value]).unwrap();
     assert!(matches!(
@@ -464,7 +470,7 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
         .unwrap();
     drop(parent);
     for actual in [TypeKind::GenericParam(ty[1].clone()), TypeKind::Bool] {
-        let mut lower = TypeConstraintTransaction::initialize_with_imported(
+        let mut lower = TypeConstraintTransaction::initialize_with_imported_fixture(
             &mut context,
             (),
             TypeConstraintParameterScope::empty(),
@@ -486,7 +492,7 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
         );
         let root = lower.suspend_result(&mut context, ()).unwrap();
         component
-            .admit_roots(&mut context, vec![root], "imported original")
+            .admit_fixture_roots(&mut context, vec![root], "imported original")
             .unwrap();
     }
     let forest = component.infer_original_products(&mut context).unwrap();
@@ -531,7 +537,7 @@ fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
                 &[(TypeKind::GenericParam(ty[0].clone()), value)],
             );
             component
-                .admit_roots(&mut context, vec![root], "whole type")
+                .admit_fixture_roots(&mut context, vec![root], "whole type")
                 .unwrap();
         }
         let forest = component.infer_original_products(&mut context).unwrap();
@@ -604,7 +610,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
         Err(TypeConstraintError::Rejected(_))
     ));
     let first = component
-        .admit_roots(&mut context, vec![first], "original disjunction")
+        .admit_fixture_roots(&mut context, vec![first], "original disjunction")
         .unwrap();
     let second = frontier(
         &mut context,
@@ -612,7 +618,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
         &[(TypeKind::GenericParam(ty), function(log.clone()))],
     );
     component
-        .admit_roots(&mut context, vec![second], "original resolves e1")
+        .admit_fixture_roots(&mut context, vec![second], "original resolves e1")
         .unwrap();
     let forest = component.infer_original_products(&mut context).unwrap();
     let solution = &forest.products[0]
@@ -650,7 +656,7 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
         &[(TypeKind::GenericParam(ty[0].clone()), TypeKind::Bool)],
     );
     let producer = component
-        .admit_roots(&mut context, vec![root], "original")
+        .admit_fixture_roots(&mut context, vec![root], "original")
         .unwrap();
     let mut use_ = component.issue_use(&mut context, &[producer]).unwrap();
     while let Some(alternative) = component
@@ -760,10 +766,10 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
         .unwrap();
     let actual = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     component
-        .admit_roots(&mut context, vec![first], "no binding in its own frame")
+        .admit_fixture_roots(&mut context, vec![first], "no binding in its own frame")
         .unwrap();
     context.restore_binder_scope(enclosing);
-    let mut lower = TypeConstraintTransaction::initialize_with_imported(
+    let mut lower = TypeConstraintTransaction::initialize_with_imported_fixture(
         &mut context,
         (),
         TypeConstraintParameterScope::empty(),
@@ -798,7 +804,7 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
             .is_empty()
     );
     component
-        .admit_roots(
+        .admit_fixture_roots(
             &mut context,
             vec![second],
             "receiver retains the original owner's lease",

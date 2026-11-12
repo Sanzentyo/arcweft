@@ -6772,7 +6772,7 @@ mod tests {
                 &cancellation,
             )
             .into_parts();
-            let mut transaction = TypeConstraintTransaction::initialize(
+            let mut transaction = TypeConstraintTransaction::initialize_fixture(
                 &mut context,
                 CallableConstraintApplication::Call(owner),
                 parameters,

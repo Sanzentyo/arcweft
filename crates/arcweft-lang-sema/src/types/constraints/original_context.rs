@@ -70,6 +70,20 @@ impl Debug for OriginalProducerContext {
 }
 
 impl OriginalProducerContext {
+    #[cfg(test)]
+    pub(super) fn ground_fixture(gamma: ConstraintLexicalScope) -> Self {
+        Self(Arc::new(OriginalProducer {
+            source: Arc::new(GroundFixtureSource { imported: None }),
+            formals: GenericDeclarationBinder::new(
+                GenericScope::default(),
+                Box::new([]),
+                Box::new([]),
+                Box::new([]),
+            )
+            .unwrap(),
+            gamma,
+        }))
+    }
     pub(crate) fn domain(&self) -> Cow<'_, EffectPredicate> {
         self.0.source.domain()
     }
@@ -88,6 +102,15 @@ impl OriginalProducerContext {
 }
 
 impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_, A, D> {
+    #[cfg(test)]
+    pub(crate) fn fixture_original_context(
+        &mut self,
+        imported: Option<&ImportedGenericParameterScopeLease>,
+    ) -> Result<OriginalProducerContext, TypeConstraintError> {
+        self.original_producer_context(&Arc::new(GroundFixtureSource {
+            imported: imported.cloned(),
+        }))
+    }
     /// Reserve the source/header and frame work before projecting or sharing
     /// the declaration transport. Only its own formals are quantified; the
     /// imported/captured frames remain part of the real ambient environment.
@@ -157,6 +180,46 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
             formals,
             gamma,
         })))
+    }
+}
+
+/// Explicit ground source used by lower fixtures without a source catalog.
+/// Production initializers must receive an accepted source-layer authority.
+#[cfg(test)]
+#[derive(Debug)]
+struct GroundFixtureSource {
+    imported: Option<ImportedGenericParameterScopeLease>,
+}
+
+#[cfg(test)]
+impl OriginalProducerSource for GroundFixtureSource {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn same_source(&self, other: &dyn OriginalProducerSource) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| self.imported == other.imported)
+    }
+    fn rigid_scope(&self) -> OriginalRigidScope<'_> {
+        OriginalRigidScope {
+            types: &[],
+            consts: &[],
+            effects: &[],
+            imported: self.imported.as_ref(),
+        }
+    }
+    fn declaration_formals(&self) -> Result<GenericDeclarationBinder, GenericScopeError> {
+        GenericDeclarationBinder::new(
+            GenericScope::default(),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+        )
+    }
+    fn domain(&self) -> Cow<'_, EffectPredicate> {
+        Cow::Owned(EffectPredicate::unconstrained())
     }
 }
 

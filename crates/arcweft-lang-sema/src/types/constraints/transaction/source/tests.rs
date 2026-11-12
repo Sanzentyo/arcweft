@@ -70,7 +70,8 @@ mod retained_preparation {
         )
         .into_parts();
         let mut transaction =
-            TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+            TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None)
+                .unwrap();
         transaction
             .begin_prepared_probe(
                 &mut context,
@@ -148,7 +149,8 @@ mod retained_preparation {
         )
         .into_parts();
         let mut transaction =
-            TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+            TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None)
+                .unwrap();
         transaction
             .begin_prepared_probe(
                 &mut context,

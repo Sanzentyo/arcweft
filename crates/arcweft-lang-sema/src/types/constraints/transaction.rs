@@ -244,6 +244,7 @@ pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
 
 pub(crate) struct ConstraintSourceLineage<D: ConstraintDomain> {
     root: ConstraintApplicationId,
+    pub(super) original: super::OriginalProducerContext,
     pub(super) scope: super::lexical::ConstraintLexicalScope,
     pub(super) probe_trace: Vec<ConstraintProbe<D>>,
     pub(super) projections: Vec<Arc<ProjectionRequest<D>>>,
@@ -253,6 +254,7 @@ impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
     fn clone(&self) -> Self {
         Self {
             root: self.root,
+            original: self.original.clone(),
             scope: self.scope.clone(),
             probe_trace: self.probe_trace.clone(),
             projections: self.projections.clone(),
@@ -263,11 +265,15 @@ impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
 pub(crate) type ConstraintPath<D> = ConstraintInferenceBranch<D, ConstraintSourceLineage<D>>;
 
 impl<D: ConstraintDomain> ConstraintPath<D> {
+    #[cfg(test)]
     pub(super) fn empty(
         application: ConstraintApplicationScope<D>,
         effects: crate::effect_row::EffectConstraintEnvironment,
     ) -> Self {
-        Self::empty_with_imported(application, effects, None, Default::default())
+        let original = super::OriginalProducerContext::ground_fixture(
+            application.introduction_scope().clone(),
+        );
+        Self::empty_with_imported(application, effects, None, Default::default(), original)
     }
 
     pub(super) fn empty_with_imported(
@@ -275,11 +281,13 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         effects: crate::effect_row::EffectConstraintEnvironment,
         imported: Option<super::ImportedGenericParameterScopeLease>,
         scope: super::lexical::ConstraintLexicalScope,
+        original: super::OriginalProducerContext,
     ) -> Self {
         let root = application.id();
         Self {
             lineage: ConstraintSourceLineage {
                 root,
+                original,
                 scope,
                 probe_trace: Vec::new(),
                 projections: Vec::new(),
@@ -909,6 +917,7 @@ enum NormalizedPath<D: ConstraintDomain> {
 
 pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
     application: ConstraintApplicationId,
+    original: super::OriginalProducerContext,
     parent_receipt: Option<ConstraintSourceReceipt<D>>,
     frontier: Vec<ConstraintPath<D>>,
     first_failure: Option<TypeConstraintFailure<D>>,
@@ -928,6 +937,36 @@ pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
+    #[cfg(test)]
+    pub(crate) fn initialize_fixture<A: TypeConstraintAccounting>(
+        context: &mut TypeConstraintContext<'_, A, D>,
+        application: D::Application,
+        parameters: super::TypeConstraintParameterScope,
+        inherited: Option<Arc<TypeConstraintSolution>>,
+    ) -> Result<Self, super::TypeConstraintInitializationFailure> {
+        Self::initialize_with_imported_fixture(context, application, parameters, inherited, None)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn initialize_with_imported_fixture<A: TypeConstraintAccounting>(
+        context: &mut TypeConstraintContext<'_, A, D>,
+        application: D::Application,
+        parameters: super::TypeConstraintParameterScope,
+        inherited: Option<Arc<TypeConstraintSolution>>,
+        imported: Option<super::ImportedGenericParameterScopeLease>,
+    ) -> Result<Self, super::TypeConstraintInitializationFailure> {
+        let original = context
+            .fixture_original_context(imported.as_ref())
+            .map_err(super::TypeConstraintInitializationFailure::original_context)?;
+        Self::initialize_with_imported(
+            context,
+            original,
+            application,
+            parameters,
+            inherited,
+            imported,
+        )
+    }
     #[cfg(test)]
     pub(super) fn test_single_path(&self) -> &ConstraintPath<D> {
         assert_eq!(
@@ -958,8 +997,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         parent_receipt: Option<ConstraintSourceReceipt<D>>,
     ) -> Result<Self, TypeConstraintError> {
         let path = Self::prepare_application(context, application, path, inherited)?;
+        let original = path.lineage.original.clone();
         Ok(Self {
             application,
+            original,
             parent_receipt,
             frontier: vec![path],
             first_failure: None,
@@ -1027,6 +1068,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn initialize<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        original: super::OriginalProducerContext,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
         inherited: Option<Arc<TypeConstraintSolution>>,
@@ -1034,11 +1076,12 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        Self::initialize_with_imported(context, application, parameters, inherited, None)
+        Self::initialize_with_imported(context, original, application, parameters, inherited, None)
     }
 
     pub(crate) fn initialize_with_imported<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        original: super::OriginalProducerContext,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
         inherited: Option<Arc<TypeConstraintSolution>>,
@@ -1052,7 +1095,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .and_then(|scope| {
                 let application = scope.id();
                 context
-                    .start_path_with_imported(scope, imported)
+                    .start_path_with_imported(scope, imported, original)
                     .and_then(|path| {
                         Self::from_path(context, application, path, inherited.as_deref())
                     })

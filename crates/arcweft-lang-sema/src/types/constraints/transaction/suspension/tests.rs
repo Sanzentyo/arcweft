@@ -26,7 +26,7 @@ fn root<'a>(
         parameters,
     )
     .into_parts();
-    let transaction = Transaction::initialize(&mut context, (), parameters, None).unwrap();
+    let transaction = Transaction::initialize_fixture(&mut context, (), parameters, None).unwrap();
     (context, transaction)
 }
 
@@ -178,8 +178,17 @@ fn suspension_checks_unique_projections_cancellation_and_the_original_inclusive_
         ));
     }
     for (limit, succeeds) in [(3, true), (2, false)] {
-        let (mut context, mut transaction) =
-            root(&cancellation, TypeConstraintParameterScope::empty(), limit);
+        // Keep the suspension budget independent of the separately tested
+        // source-admission budget by supplying an already admitted fixture.
+        let (mut context, parameters) = ConstraintTestSetup::new(
+            TypeConstraintLimits::new(limit, 1024, 128, 128),
+            &cancellation,
+        )
+        .into_parts();
+        let original =
+            super::super::super::OriginalProducerContext::ground_fixture(Default::default());
+        let mut transaction =
+            Transaction::initialize(&mut context, original, (), parameters, None).unwrap();
         result(&mut context, &mut transaction, &TypeKind::I32);
         let suspended = transaction.suspend_result(&mut context, ());
         assert_eq!(suspended.is_ok(), succeeds);

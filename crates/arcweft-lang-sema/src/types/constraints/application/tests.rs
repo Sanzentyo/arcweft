@@ -144,7 +144,7 @@ fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_
     let child = ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty());
     let child_id = child.id();
     let child = context
-        .start_path_with_imported(child, Some(imported))
+        .start_fixture_path_with_imported(child, Some(imported))
         .unwrap();
     let actual = TypeKind::function_with_effects(
         [],
@@ -263,7 +263,7 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
                 .all(|parameter| !imported.permits_local_inference(parameter))
         );
         let child = context
-            .start_path_with_imported(
+            .start_fixture_path_with_imported(
                 ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty()),
                 Some(imported),
             )
@@ -1049,7 +1049,7 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
     );
     let empty = ConstraintApplicationScope::test_root(3, TypeConstraintParameterScope::empty());
     let child = context
-        .start_path_with_imported(empty, Some(lease))
+        .start_fixture_path_with_imported(empty, Some(lease))
         .unwrap();
     assert_eq!(
         crate::types::constraints::seal_type(
@@ -1131,7 +1131,11 @@ fn repeated_effect_declarations_open_independently_in_distinct_applications() {
 fn admission_charges_the_shared_context_and_observes_cancellation() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 2);
-    let root = context.start_path(scope(0)).unwrap();
+    // This test isolates application admission from source-context admission.
+    let original = super::super::OriginalProducerContext::ground_fixture(Default::default());
+    let root = context
+        .start_path_with_imported(scope(0), None, original)
+        .unwrap();
     let sibling = context.fork_path(&root).unwrap();
     assert!(matches!(
         context.admit_application(sibling, scope(1)),

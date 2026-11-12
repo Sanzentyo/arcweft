@@ -380,6 +380,20 @@ pub(crate) enum TypeConstraintInitializationFailure {
     Invariant(TypeConstraintInvariant),
 }
 
+impl TypeConstraintInitializationFailure {
+    pub(crate) fn original_context(error: TypeConstraintError) -> Self {
+        match error {
+            TypeConstraintError::Abort(error) => Self::Abort(error),
+            TypeConstraintError::Invariant(error) => Self::Invariant(error),
+            // Source admission is not a semantic type relation. A source
+            // provider cannot turn malformed authority into candidate rejection.
+            TypeConstraintError::Rejected(_) => {
+                Self::Invariant(TypeConstraintInvariant::OriginalProducer)
+            }
+        }
+    }
+}
+
 /// Immediate failures while opening, closing, or submitting one affine
 /// materialization correlation. Ordinary source rejection and fatal payloads
 /// remain closed submissions so lower can preserve global precedence.

@@ -1083,15 +1083,15 @@ impl Analyzer<'_, '_, '_> {
                 Err(error) => return Err(error),
             };
             if let Some((pattern, coordinate)) = default_patterns.get(&owner) {
-                let signature = self
-                    .catalogs
-                    .world
-                    .environment()
-                    .callable_catalog()
-                    .project_record(declaration)
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                let source = self
+                    .staged_callables
+                    .as_ref()
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .builder
+                    .constraint_source_owner(&self.topology, owner)
+                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 if !crate::callable::CheckedDeclarationDefault::check_type(
-                    signature.schema(),
+                    &source,
                     *coordinate,
                     &checked_type,
                     owner,
