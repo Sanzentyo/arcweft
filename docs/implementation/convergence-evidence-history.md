@@ -16817,3 +16817,19 @@ Rejected／Blocked／Deferredは元producerを削らずに保持する。条件�
 変更ownerは35,801 bytes／992行（基点848行）、別testは31,672 bytes／905行（基点669行）。いずれもこのcutの増加300行未満で、productionも1,200行未満。元proof forest、scope、origin相関と不変借用は同じowner内にあり、public exportや物理分割用の公開拡大はない。新依存、I/O、unsafe、互換reader、version変更、予算緩和は追加していない。借用する元入力の準備と、複数producerの束縛合意や実frontendへの接続を区別し、受入済み機能を再開していない。
 
 初回診断・入力・source snapshot、途中と最終の全選択／結果、差分・hash、lint・整形、scope／構造実測と公開照合を25 entry、展開時7,467,111 bytes、ZIP 668,192 bytes、SHA-256 `b619a0ab7a1a31cfdabf973b41bf46ed7e22aae99939c1f1d199cc5527c54ce5` の[原本](acceptance-evidence/task-original-value-binding-inputs.raw.zip)へ保持し、manifestを含む全entryの長さとhashを読み戻して照合した。現状行にこの元入力の保持を加えた理由は、後続利用時に値型だけを推論状態と誤認しない境界を実装・検証したためであり、束縛合意や再帰本体の推論の完成を示すためではない。全Sema件数は元Sourceを明示したまま保持し、以前のfull SHA・結果・凍結原本と他の現状行を変更していない。
+
+### Guarded canonical effect predicates
+
+2026-11-12、基点 `f61fd5fe17198d4153ed7bcefb3fd7bdd690347b` の既存mainから、Source `72fcdc6c0c13315bd909db8182a4183f0e6b0092`、tree `5bc765012e66a5b1269ab44061798e595e05da82` を通常pushし、remote mainのfull SHA・tree・変更10pathのblobを照合した。元のpredicate観測のTrue／False／Ambiguous／Vacuous分類に加え、元の不変な評価域で意味を保つcanonical EffectPredicateの拡張を追加した。genericなe⊆fを単なる非定数・未確定の真偽へ潰さず、同じ条件式として取り出せる。結果は元観測を借用するGuardedEffectPredicateに保持し、不変域が全体の場合にだけunguarded predicateへ移せる。空文脈や全域曖昧さから証明を発行しない。
+
+正例全体から、各名前付きラベルと実在するsupport外patternに許される局所入力を射影し、全正例を受理する最も強いpointwise conjunctionを構成する。その違反を表す有限行が空行の部分集合である、という既存core formulaの規則からpredicateを作る。元の全正例を受理し、全負例を拒否することを同じ凍結評価域で再照合するため、表現できないglobal OR／NOTを近似式として公開しない。行と条件が共有するObservationLayoutへ元label／parameter supportと局所射影をまとめ、有限集合のkernelは借用LabelClassesだけを読み、scheme cell tableの権限を必要としない。型付きguardを越えて候補選択や完成semantic identityを証明するAPIではない。
+
+新規5件は全PASS。未確定Choiceが残っても同じ非定数predicateを保持する場合、部分的な不変性とguard付き抽出、空文脈・全域曖昧さの無証明、名前付き／support外の8入力、文脈下で表現可能になるglobal条件、inclusive予算・取消し・元graph不変性を確認した。既存の64組の有限集合oracleも強化し、包含のglobal ORとそのNOTの非表現性、抽出した等値条件を、実際の有限集合とcore predicateの直接評価で照合した。関連66件は66 PASS、終了0で、これを全件結果へ加算していない。
+
+最終固定入力の全feature Semaは公開API compileを含む5 binary・全1,563件、1,557 PASS／6 FAIL／0 SKIP、nextest終了100、実行64.546秒。選択IDと終端IDは一致し重複0、新規5件・元束縛入力3件・強化oracleと256候補境界はPASS。失敗6件はSource `ed5c15c3a7cb80a500cbcb3b15a4416adf404807` と同じIDで、実診断もExpressionCycle 5件とPendingCallableEffectProjection 1件だった。初期のSema全target・全feature checkは終了0。新規oracleの初回checkだけはprivate evaluateを2か所で呼んで終了101、実行0件であり、既存の公開controlled evaluationへ修復した。途中入力・差分・新testのbyte-exact snapshotと診断を最終入力と分けて保持する。
+
+最終入力のSema locked・全target・全feature Clippy、workspace整形、構造gateは終了0、blocking 0件、警告が残る。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。Cargo入力はgraph基点 `518d63e31dd2be9750158004b171a6174b2725a7` と差分0で、前回Source `d20f11a7fa9762662df0cdbbe042670207b0177b` の3 mode・22 packageのresolved graphを再利用した。実frontend・公開型・runtime・codecを変えない私有観測ownerのため、全Semaとowner品質検査を選択し、前回の全consumer・workspace check／Clippy・Wasm・doctest・Compiler結果は元Sourceのまま保持する。
+
+観測ownerは26,127 bytes／700行（基点580）、新しいpredicate testは8,276 bytes／245行、既存oracleは19,059 bytes／519行。凍結supportとguardの所有、行の局所拡張、条件のpointwise分離検査は同じ観測責任に属し、cell compilationと独立canonical replayは共通のlabel partitionだけを借用する。新しい依存・I/O・unsafe・並列の型文法・互換reader・version変更・予算緩和はなく、物理分割用のproduction公開拡大もない。
+
+初回check、途中の失敗・source snapshot、固定入力・差分・全ID／結果、品質log、graph再利用・実測・監査と公開照合を30 entry、展開時8,613,714 bytes、ZIP 816,261 bytes、SHA-256 `04a5e43e7e618da3bb415c69db1c9c1bfc30aa82181c4ed177f1bfae0acd841a` の[原本](acceptance-evidence/task-guarded-effect-predicates.raw.zip)へ保持し、manifestを含む全entryの長さとhashを読み戻して照合した。現状行で前段のowner説明を重ねていた部分を今回のSourceと全件実測へまとめた理由は、同じ元入力を保持する私有基盤の検証が進んだためであり、実frontendの完成を示すためではない。以前の全結果・full SHA・凍結原本と受入済みのGeneric Match・呼出し側再帰・同一グループprefixは保持し、未接続範囲はcurrent-status.mdの一か所に維持する。
