@@ -546,40 +546,6 @@ where
         .map(|path| path.into_iter().collect())
 }
 
-fn relate_generic_parameters<A, D, L>(
-    pattern: &GenericTypeReference,
-    actual: &GenericTypeReference,
-    path: ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-    relation: ConstraintRelation,
-) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    L: Clone,
-{
-    if pattern == actual {
-        return Ok(vec![path]);
-    }
-    let pattern_eligibility = type_parameter_eligibility(pattern, &path, context)?;
-    let actual_eligibility = type_parameter_eligibility(actual, &path, context)?;
-    let pattern_active = pattern_eligibility != TypeConstraintParameterEligibility::Rigid;
-    let actual_active = actual_eligibility != TypeConstraintParameterEligibility::Rigid;
-    let target = match relation.direction() {
-        ConstraintAcceptance::PatternAcceptsActual if pattern_active => (pattern, actual),
-        ConstraintAcceptance::ActualAcceptsPattern if actual_active => (actual, pattern),
-        _ if pattern_active => (pattern, actual),
-        _ if actual_active => (actual, pattern),
-        _ => return Ok(Vec::new()),
-    };
-    bind_type_parameter(
-        target.0,
-        &TypeKind::GenericParam(target.1.clone()),
-        path,
-        context,
-    )
-}
-
 fn relate_entered_with_policy<A, D, L>(
     pattern: &TypeKind,
     actual: &TypeKind,
@@ -633,42 +599,42 @@ where
         }
         return Ok(vec![path]);
     }
-    let (pattern_value, pattern_changed) = match (pattern_shape, pattern_alias) {
+    let pattern_value = match (pattern_shape, pattern_alias) {
         (
             TypeConstraintShape::Generic(original),
             Some(TypeAliasResolution::Parameter(parameter)),
-        ) => {
-            let changed = &parameter != original;
-            (TypeKind::GenericParam(parameter), changed)
-        }
+        ) => (&parameter != original).then_some(TypeKind::GenericParam(parameter)),
         (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Structure(value))) => {
-            (value, true)
+            Some(value)
         }
         (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Cycle(_))) => {
             unreachable!("cycles handled above")
         }
-        (_, None) => (pattern.clone(), false),
+        (_, None) => None,
         _ => unreachable!("generic shape has an alias resolution"),
     };
-    let (actual_value, actual_changed) = match (actual_shape, actual_alias) {
+    let actual_value = match (actual_shape, actual_alias) {
         (
             TypeConstraintShape::Generic(original),
             Some(TypeAliasResolution::Parameter(parameter)),
-        ) => {
-            let changed = &parameter != original;
-            (TypeKind::GenericParam(parameter), changed)
-        }
+        ) => (&parameter != original).then_some(TypeKind::GenericParam(parameter)),
         (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Structure(value))) => {
-            (value, true)
+            Some(value)
         }
         (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Cycle(_))) => {
             unreachable!("cycles handled above")
         }
-        (_, None) => (actual.clone(), false),
+        (_, None) => None,
         _ => unreachable!("generic shape has an alias resolution"),
     };
-    if pattern_changed || actual_changed {
-        return relate_with_policy(&pattern_value, &actual_value, path, context, relation);
+    if pattern_value.is_some() || actual_value.is_some() {
+        return relate_with_policy(
+            pattern_value.as_ref().unwrap_or(pattern),
+            actual_value.as_ref().unwrap_or(actual),
+            path,
+            context,
+            relation,
+        );
     }
 
     // Bottom contributes no binding, but unresolved descendants in the
@@ -686,20 +652,41 @@ where
         {
             return relate_slices(expected, found, path, context, relation);
         }
-        (TypeConstraintShape::Generic(pattern), TypeConstraintShape::Generic(actual)) => {
-            return relate_generic_parameters(pattern, actual, path, context, relation);
+        (
+            TypeConstraintShape::Generic(pattern_parameter),
+            TypeConstraintShape::Generic(actual_parameter),
+        ) => {
+            if pattern_parameter == actual_parameter {
+                return Ok(vec![path]);
+            }
+            let pattern_active = type_parameter_eligibility(pattern_parameter, &path, context)?
+                != TypeConstraintParameterEligibility::Rigid;
+            let actual_active = type_parameter_eligibility(actual_parameter, &path, context)?
+                != TypeConstraintParameterEligibility::Rigid;
+            let (parameter, value) = match relation.direction() {
+                ConstraintAcceptance::PatternAcceptsActual if pattern_active => {
+                    (pattern_parameter, actual)
+                }
+                ConstraintAcceptance::ActualAcceptsPattern if actual_active => {
+                    (actual_parameter, pattern)
+                }
+                _ if pattern_active => (pattern_parameter, actual),
+                _ if actual_active => (actual_parameter, pattern),
+                _ => return Ok(Vec::new()),
+            };
+            return bind_type_parameter(parameter, value, path, context);
         }
         (TypeConstraintShape::Generic(parameter), _)
             if type_parameter_eligibility(parameter, &path, context)?
                 != TypeConstraintParameterEligibility::Rigid =>
         {
-            return bind_type_parameter(parameter, &actual_value, path, context);
+            return bind_type_parameter(parameter, actual, path, context);
         }
         (_, TypeConstraintShape::Generic(parameter)) => {
             if type_parameter_eligibility(parameter, &path, context)?
                 != TypeConstraintParameterEligibility::Rigid
             {
-                return bind_type_parameter(parameter, &pattern_value, path, context);
+                return bind_type_parameter(parameter, pattern, path, context);
             }
         }
         _ => {}
@@ -1018,39 +1005,6 @@ where
     context.add_const_binding(path, parameter.clone(), value)
 }
 
-fn relate_const_parameters<A, D, L>(
-    pattern: &GenericConstReference,
-    actual: &GenericConstReference,
-    path: ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-    relation: ConstraintRelation,
-) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    L: Clone,
-{
-    if pattern == actual {
-        return Ok(Some(path));
-    }
-    let pattern_active = const_parameter_eligibility(pattern, &path, context)?
-        != TypeConstraintConstEligibility::Rigid;
-    let actual_active = const_parameter_eligibility(actual, &path, context)?
-        != TypeConstraintConstEligibility::Rigid;
-    let (parameter, value) = match relation.direction() {
-        ConstraintAcceptance::PatternAcceptsActual if pattern_active => {
-            (pattern, ArrayLength::Generic(actual.clone()))
-        }
-        ConstraintAcceptance::ActualAcceptsPattern if actual_active => {
-            (actual, ArrayLength::Generic(pattern.clone()))
-        }
-        _ if pattern_active => (pattern, ArrayLength::Generic(actual.clone())),
-        _ if actual_active => (actual, ArrayLength::Generic(pattern.clone())),
-        _ => return Ok(None),
-    };
-    context.add_const_binding(path, parameter.clone(), &value)
-}
-
 fn relate_array_lengths<A, D, L>(
     expected: &ArrayLength,
     found: &ArrayLength,
@@ -1107,8 +1061,26 @@ where
         (ArrayLength::Const(expected), ArrayLength::Const(found)) => {
             Ok((expected == found).then_some(path))
         }
-        (ArrayLength::Generic(expected), ArrayLength::Generic(found)) => {
-            relate_const_parameters(expected, found, path, context, relation)
+        (ArrayLength::Generic(expected_parameter), ArrayLength::Generic(found_parameter)) => {
+            if expected_parameter == found_parameter {
+                return Ok(Some(path));
+            }
+            let pattern_active = const_parameter_eligibility(expected_parameter, &path, context)?
+                != TypeConstraintConstEligibility::Rigid;
+            let actual_active = const_parameter_eligibility(found_parameter, &path, context)?
+                != TypeConstraintConstEligibility::Rigid;
+            let (parameter, value) = match relation.direction() {
+                ConstraintAcceptance::PatternAcceptsActual if pattern_active => {
+                    (expected_parameter, &found)
+                }
+                ConstraintAcceptance::ActualAcceptsPattern if actual_active => {
+                    (found_parameter, &expected)
+                }
+                _ if pattern_active => (expected_parameter, &found),
+                _ if actual_active => (found_parameter, &expected),
+                _ => return Ok(None),
+            };
+            context.add_const_binding(path, parameter.clone(), value)
         }
         (ArrayLength::Generic(parameter), found) => {
             bind_const_parameter(parameter, found, path, context)
