@@ -17055,3 +17055,21 @@ solutionは1,203物理LOC（基点1,186、増加17）で新しい1,200 LOC revie
 checked frontend valueからoperandを発行する境界、binding／alias・共有fold・capture sealとownerごとのFree検査、条件付きMGU・適格性／rank、Fnの局所∀、body一回準備は未完了として区別する。今回のscoped input保持を、それら全体の完了へ読み替えない。Generic Match、caller-bound recursion、同group prefixの既受入は維持する。
 
 [検証原本](acceptance-evidence/task-projection-input-context.raw.zip)は25 entry、展開時9179514 bytes、ZIP 864841 bytes、SHA-256 `7b9d2986c3aafd7ee7ab5f2cba6c05b6a195361594f60edd900231470c7176dd`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusへ集約し、既存履歴のbyte prefix・SHA・実測を保持した。
+
+## Checked value owners on source probes
+
+2026-11-13。Source `23808f69375c2393deb282dec4562bc6ecfc4b20`、tree `143d0c75ddb5d4f207f59dd0f78420ae34ce2f0b`、親 `fd17963cde57a7c34be24db80cae0e7234d6eebb` を既存mainへnon-forced pushし、origin/mainのcommit・tree・変更10 blobと固定入力を照合した。tracked差分0件から本記録を更新し、未追跡 `%SystemDrive%/` を保持した。
+
+通常callbackのproduction入口をSourceProbeTerm::Valueへ移し、lowerのConstraintSourceValueOwner境界を通じて実際のPreparedExpressionFactまたはstaged semantic input ownerを保持する。source層の実装をlowerがimportすることなく、privateなsource value ownerが元のchecked／prepared recordを所有する。式検査前に実probe receiptを保持し、check-onlyの値はprobe authorityを持たない。ProbeTicketはsource IDとexact receiptを照合してからpathを消費する。同じsource IDでも別branchの検査結果を借用できず、拒否後のticketは正しい値で続行できる。raw TypeKindを受ける旧constructorとType variantはcfg(test)のfixtureに限定し、productionの二重readerとして残さない。
+
+ResolvedConstraintSourceをoperandとactive／closed source traceで共有し、uncheckedでequationが作られない場合も実value ownerを失わない。uncheckedはcompatibility選択だけを変え、認証を迂回しない。selected child resultは既存の実owner／request proofを同じcarrierで保つ。materializationはlowerのcompleted projectionを直接照合し、rawな型から通常source ownerを作り直す経路を削除した。source ordinal、selection、container evidence、実scope、affineなpreparationと既存のsemantic比較は維持する。任意のFree集合を型へ貼るAPIやcapture用のside tableは導入していない。
+
+全featureのSema lib／testsは1,621件中1,615 PASS／6 FAIL／0 SKIP（72.185秒）。全選択IDと終端IDが一致し重複0。失敗IDと実診断は既知6件と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。追加1件はchecked／uncheckedの両方で、別source、同じsource IDで別receipt、receiptなしのrecheckを拒否し、同じticketの正しい値で続行できること、元ownerを完了traceまで保持して最後の所有者と一緒に解放することを確認する。既存のprojection入力Γ、read-only child capture、alias、256 probe／1 replay・4,096上限も同じ全件runで通過した。Semaのlocked・全target・全feature Clippyとworkspace fmt checkは終了0、警告を保持した。10 pathのpinを実行前後と公開時に照合した。全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+最初のcheckはpath属性のある親moduleからのchild解決でE0583、materialization比較helperのobserved／checked evidence変数のshadowでE0308になった。実Rust moduleの解決先へsource_valueを置き、checked-evidenceの束縛名を分けて修正した。次の全target／全feature checkは終了0（24.35秒）。開発用の選択79件は0.699秒ですべてPASS。exact branch receiptを追加した次の79件も0.670秒ですべてPASSし、それぞれfilter外1,518件は未実行。receiptなしの拒否を追加後、上記の別pinを持つ最終全件と品質で確認した。失敗と途中の実行原本を保持する。
+
+所有測定ではcallback constraintsが7,426物理LOC（増加35）、末尾のcfg(test) moduleが662 LOC。新しいsource_value ownerは94 LOCでprivateなfact保持・originの状態を所有し、大きなcallback ownerはmapper／callback／fact transactionの協調を維持する。別state clusterをその協調ownerへ蓄積せず、物理分割だけの公開API拡張は行わない。lower transactionは2,709（増加4）、operandは274（増加33）、source traceは573（増加1）、hintは847（増加60）、result_portは265（減少4）、責任testは1,663（増加150）。その他のpath・全byte・hash・分類も原本に保持する。opaque traitはsource実装をlowerの依存へ逆流させず、Cargo edge・public export・unsafe・I/O・version・budgetは不変。crate-privateなproducer／consumerを全SemaとAPI compileで確認した。22 packageのresolved closureとCargo入力は不変。21 consumerの直近2,507 PASS／2 FAIL／1 SKIPとworkspace全件の品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の実測として保持し、新入力の再実行や合算とはしない。Wasm・Tier 2・新body Native／AWBC受入は主張しない。
+
+このcutは通常source入口のowner保持とexact receiptの認証を完了したもので、value依存証拠のbinding／alias・共有fold・capture sealへの接続とownerごとのFree検査は未完了。frontend全体のPreparedValueRef／prepared effect接続、条件付きMGU・適格性／rank、Fnの局所∀、body一回準備も未完了として区別する。元Γへ全child captureを一括追加することや、単なるFree scanで認可を発行することは行わない。Generic Match、caller-bound recursion、同group prefixの既受入は維持する。
+
+[検証原本](acceptance-evidence/task-source-value-owner.raw.zip)は29 entry、展開時9707506 bytes、ZIP 934035 bytes、SHA-256 `3ee4bc2ee9061abf283a12ba8837c1eee1399a3f7836ca8a2f832140466b2e62`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusへ集約し、既存履歴のbyte prefix・SHA・実測を保持した。
