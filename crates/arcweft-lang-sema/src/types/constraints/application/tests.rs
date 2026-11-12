@@ -872,7 +872,7 @@ fn admitted_children_retain_their_rigid_type_and_constant_references() {
 fn completion_checks_an_alias_in_its_original_owner_before_merging_ambient_frames() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 8192);
-    let parameters = |application| {
+    let parameters = |application: u64| {
         TypeConstraintParameterScope::seal_call_scope(
             GenericBinder::EMPTY,
             [TypeConstraintTypeParameterScopeRow::new(
