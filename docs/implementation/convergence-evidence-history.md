@@ -17091,3 +17091,17 @@ readonlyのAstra Max相談は投影とeffect置換の所有契約に限定し、
 同日02:01:53〜02:02:09 JST、ユーザーの最新指示に従いworkspace rootとtargetが `D:\git\arcweft`／`D:\git\arcweft\target` であることをmetadataで照合し、`cargo clean` を実行した（終了0、32,652 files／87.5 GiB）。D:空き容量は57,662,197,760から148,014,735,360 bytesへ回復した。独立したCargo scriptはユーザーホーム内の別targetで実行中のため対象外。上記のテストと品質はclean前の同一固定sourceに対する結果であり、clean後の再実行はしていない。ソースと検証ログは保持した。
 
 [検証原本](acceptance-evidence/task-binding-operand-projection.raw.zip)は28 entry、展開時9106185 bytes、ZIP 856285 bytes、SHA-256 `ca61d0641e5996d1272b8e39d6571c32af5a387dbe680699876c8a44a6111f6b`。manifestを含む全entryを読み戻し照合した。clean実行ログも同梱し、現状はcurrent-statusだけに集約した。以前のbyte prefix・SHA・実測は保持する。
+
+## Borrowed operands in the binding relation
+
+2026-11-13。Source `7aae945e1b94f999a973bd8a349010e6fcba514a`、tree `a6569ea5b807dae89ab5de6d2684fe7a5632a40e`、親 `b44f5ba45180438acf023c3dedd1157e67cf6e13` を既存mainへnon-forced pushし、origin/mainのcommit・tree・変更1 blobと固定入力を照合した。tracked差分0件から本記録を更新し、未追跡 `%SystemDrive%/` を保持した。
+
+binding relationでaliasに変化のないpattern／actualを元の参照のまま渡すようにし、各再帰visitにあった型全体の無条件cloneを削除した。aliasが変わった側だけが所有された置換値を使い、片側だけの変化では他方の借用を維持する。generic同士の型／定数bindingでは選択した実際の項を渡し、GenericParam／ArrayLength::Genericから項を再構成していた一回用helperを削除した。eligibility、関係の向き、occurs、scope転送、Choice分岐、work計量、失敗の順序は同じownerに保持する。これは型付きビューとbinding ownerの接続に向けた実項の借用維持であり、binding mapやalias proofの移行そのものの完了ではない。速度・allocation量の実測改善は主張しない。
+
+全featureのSema lib／testsは1,625件中1,619 PASS／6 FAIL／0 SKIP（181.644秒）。全選択IDと終端IDが一致し重複0、失敗ID・実診断は前回の既知6件と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。alias・実frame・Choice・generic binding、投影4件、256 probe／1 replay・4,096上限も通過した。同じ振る舞いの借用移行のため実装の綴りだけを追う新testは追加せず、既存全件を検証した。Semaのlocked・全target・全feature Clippyとworkspace fmt checkは終了0、警告を保持した。clean後に依存を再構築した。各実行の前後と公開時に1 pathのbyte pinを照合し、全CargoはCARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+binding_planは1154物理LOC（基点1182、差-28）、42207 bytes、productionでembedded test 0。既存のcandidate relationが型・alias・binder・Choiceと定数の関係を一貫して所有し、新たなstate・型grammar・authority・I/O・公開拡張は加えていない。Cargo edge、unsafe、version、budgetは不変。全feature・全target platform・normal／dev／buildを含むcargo treeの逆依存を再観察し、ownerを含む22 packageを確認した。privateな参照保持の変更で外部契約・意味規則は変えておらず全Semaを実行した。21 consumerの直近2,507 PASS／2 FAIL／1 SKIPとworkspace全件の品質はSource `8b5e375a9c7b3096fe5ed2f65df556a463741a8d` の実測を保持し、今回の再実行や合算とはしない。
+
+scoped operandのplanner／binding map・alias・正規化fold・certified effect・capture sealへの接続、ownerごとのFree検査、条件付きMGU・適格性／rank、Fnの局所∀、frontendのprepared value／effect接続とbody一回準備は引き続き未完了。今回をそれらの完了、既知の再帰本体6失敗の修復、新body Native／AWBC・Wasm・Tier 2の受入とは扱わない。Generic Match、caller-bound recursion、同group prefixの既受入を維持する。
+
+[検証原本](acceptance-evidence/task-borrowed-binding-relation.raw.zip)は20 entry、展開時8438011 bytes、ZIP 765085 bytes、SHA-256 `711330a80be3b6f95ea9a5982f21517fcb0b988b7a7ce8c3154c4e499d0b8ca3`。manifestを含む全entryを読み戻し照合した。現状はcurrent-statusへ集約し、既存履歴のbyte prefix・SHA・実測を保持した。
