@@ -16935,3 +16935,23 @@ Supersedes: 前回の現状行に列挙した「完了解・residual・template�
 静的な契約照合では、OriginalProducerContextのD／rigid Fはinitializer／callを元々検査するcaller bodyに属し、callee schemaのpredicateはfresh application meta Xへのobligationだと確認した。既存SchemeHeaderのDはそのreal bodyの∀F方程式に既に使われており、原型の条件付きMGUに同じauthorityを接続する必要がある。元body ref・実Γのlease・宣言formalsからΓへの写像をtransaction開始時から保持し、登録時のcurrent scopeやpath predicateで後付けしない。Fn自身のBは局所∀として閉じる。これはSource `741c17ca897b52bf3bbfcd7924b5d2cc5af1dd9c` のread-only相談と実sourceの照合であり、Cargo／実行受入ではない。実body・Γとの認証、元rootへの必須保持、条件付きMGU、局所∀、rank、frontendの接続は未完了で、今回の参照APIだけでは完了としない。現行仕様にcallerの前提とcalleeのobligationの区別を明記した。
 
 [検証原本](acceptance-evidence/task-original-effect-declaration-authority.raw.zip)は20 entry、展開時13381066 bytes、ZIP 1106556 bytes、SHA-256 `156ea0598d7e0148c2c393b71c2b1da2ae73f4c0b63b6dfd1ec96e035adaf17e`。manifestを含む全entryを読み戻し照合した。現状一覧の再帰本体行にこのprivate APIの範囲だけを追記し、全件検証のSourceを差し替えていない。既存の受入・結果・full SHAと履歴の既存byte prefixを保持し、既存の未追跡 `%SystemDrive%/` は保持した。
+
+## Original constraint source authority
+
+2026-11-12。Source `217f927d7282d73cc3d91b1045c933f2c83c08c2`、tree `b83b72f27db7707d2f59b55caa10f5c8208b82f8`、parent `d6d31ce5f7ac1123fb6e2bacd6af62289131f76a`。元の実装基点は `9cd1c83f2166c729a6b109dd26c1c6bdf92387f9`。既存mainで通常commit／non-forced pushを行い、初回8 pathと修復1 pathの公開SHA・tree・blobを照合した。
+
+CheckedConstraintSourceOwnerは、受入済みHIR generationと既存checked catalogの登録allocationを照合し、元の式のsealed semantic pathから実際の宣言／item rootを保持する。宣言は実checked IDと同じ不変record Arcを保持し、そのsignatureからenclosingの型・const・effectを導く。選択calleeのschemaを元callerの前提にしない。source用の別catalog、Dのコピー、仮のscheme、AST／本文の再構築を追加していない。通常callと関数値specializationの初期化で式の所属を確認し、driverは元sourceを保持する。子の発行・消費とspecializationは同じ元sourceのauthorityを要求する。異なる本体、別HIR generation、別の登録allocation、別itemの流用を拒否し、共有cloneと正しい宣言の利用を通す。
+
+初回Source `d6d31ce5f7ac1123fb6e2bacd6af62289131f76a`（tree `80f1945e080ade473c4e0c835c59ec7f796d5434`）のSema全featureは1,605件中1,596 PASS／9 FAIL、82.433秒だった。既知6件に加え、Fxのdefaultを使う既存3件が失敗した。元sourceの認証をPendingのbody inference契約に限定したことが原因で、固定契約の実宣言に属するdefaultを拒否していた。修復はFx名による例外ではなく、実宣言のsource ownershipとbody inferenceの状態を分離した。固定／bodylessを含む宣言のdefaultも同じ登録・HIR authorityで認証する。修復Sourceの新規4件と当該既存3件は7／7 PASS、2.203秒だった。初回の失敗、CLI optionの拒否、開発途中のcompile／fixture失敗を原本へ保持し、最終結果へ合算しない。
+
+最終SourceのSema全feature・lib／integration 5 binaryは1,606件中1,600 PASS／6 FAIL／0 SKIP、71.203秒。全選択IDと終端IDは一致し重複0、新規4件と既存256候補・既定4,096予算のtestはPASSした。失敗IDは以前の6件と同じで、実診断はExpressionCycle 5件とPendingCallableEffectProjection 1件。Fxの既存3件もこの全体runでPASSした。
+
+推移的な他21 packageの規定107 targetは2,507 PASS／2 FAIL／1 SKIP。Compilerの31 targetは個別に逐次実行し、他20 packageの76 targetと合わせて全選択・終端ID、件数、ignored／filter、hashを照合し、重複0。0 runnableの3 targetはコンパイル済みとして区別した。Compilerのflow_wait 2失敗は既知の同じID・ExpressionCycleである。合計は4,107 PASS／8 FAIL／1 SKIPで、Focused 7件や前回結果を足して水増ししない。CLIはlibrary 196件と規定の統合6 target 30件の計226 PASS、binはコンパイル済み・runnable 0。CLI全checkを再実行したとは扱わない。
+
+Source `377206557e9e41a95da3b3cc1f77bfd46a0974ab` の3 modeのresolved metadata、normal／dev／buildを含む22 package closure、107 target計画だけを、Cargo入力差分0とrustc -vVの全行一致を確認して再利用した。test結果の再利用ではない。最終Sourceのlocked・全target・全feature workspace check／Clippy、fmt、構造gate（blocking 0）、全feature Sema doctest 2件は終了0。警告は保持した。全CargoでCARGO_INCREMENTAL=0、jobs／profileの上書き、生成物の移動・コピーはない。Wasm／Tier 2、新しい再帰本体のNative／AWBC受入は今回の結果へ追加しない。
+
+SourceOwner moduleは338物理LOC（production 108、test 230）。新規338行と既存大型ownerを責任単位で確認した。checked catalogが受入source参照の発行を所有し、enclosing scopeはそのsignatureから導く。prepared graph／driverが初期化と同じsourceへの子の認証を所有し、Analyzerは発行を委譲する。別domainの保持、別catalog、追加の本文走査、I/O、公開APIやCargo edgeの追加はない。8 pathのbyte・全物理LOC・基点との差・埋込testを原本へ保持する。
+
+このcutはsource rootと宣言signatureの認証であり、lowerのsuspended frontier／original value rootsへOriginalProducerContext全体を保持する接続、実Γと宣言formalsの対応、元Dの下での条件付きMGU・候補の適格性／rank、Fn自身の局所∀、prepared effectのfrontend全体と一括sealは未完了。Source `2fba5fde824ac806569fa044a3a80221abbff6d3` のeffect header参照APIを今回のsource認証と接続済みとは扱わない。元の受入済みGeneric Match、caller-bound recursion、同じgroupのprefixを未完了に戻さない。今回発生したFx回帰は修復した事実を残し、既受入の取り消しや全体goal未完了による残作業列挙へ読み替えない。
+
+[検証原本](acceptance-evidence/task-original-constraint-source.raw.zip)は258 entry、展開時41546712 bytes、ZIP 4789448 bytes、SHA-256 `ae098751479bf61c627d88e21834701941cbb0858afd206aeddaa11d3d3afad0`。manifestを含む全entryを読み戻し照合した。現状一覧の再帰本体・逆依存・CLI・品質の行をこの固定Sourceの実測へ更新し、前回の入力・全結果・full SHAは履歴と既存原本へ保持した。履歴の既存byte prefixと既存の未追跡 `%SystemDrive%/` を保持した。
