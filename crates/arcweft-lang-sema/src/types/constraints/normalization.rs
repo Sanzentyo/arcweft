@@ -1,7 +1,7 @@
 //! Canonical type projection, path normalization, and equality.
 
 use super::ConstraintSourceId;
-use super::transaction::ConstraintInferenceBranch;
+use super::transaction::{ConstraintInferenceBranch, ConstraintOperand};
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -58,8 +58,8 @@ pub(crate) struct ProjectedConstraintType {
 /// path and its consuming normalization operation construct this view.
 pub(crate) struct ConstraintProjectionView<'a, D: ConstraintDomain> {
     applications: &'a ConstraintApplicationInventory<D>,
-    bindings: &'a BTreeMap<GenericTypeReference, TypeKind>,
-    const_bindings: &'a BTreeMap<GenericConstReference, ArrayLength>,
+    bindings: &'a BTreeMap<GenericTypeReference, ConstraintOperand<D>>,
+    const_bindings: &'a BTreeMap<GenericConstReference, ConstraintOperand<D, ArrayLength>>,
 }
 
 /// A binding edge is rooted in its admitted application, including when that
@@ -95,7 +95,7 @@ impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
     pub(super) fn binding(
         self,
         parameter: &GenericTypeReference,
-    ) -> Result<Option<ConstraintBindingView<'a, TypeKind>>, TypeConstraintError> {
+    ) -> Result<Option<&'a ConstraintOperand<D>>, TypeConstraintError> {
         self.bindings
             .get(parameter)
             .map(|value| {
@@ -105,7 +105,10 @@ impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
                         parameter,
                     })
                 })?;
-                Ok(ConstraintBindingView { value, scope })
+                if value.scope() != scope {
+                    return Err(TypeConstraintInvariant::OriginalProducer.into());
+                }
+                Ok(value)
             })
             .transpose()
     }
@@ -113,7 +116,7 @@ impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
     pub(super) fn const_binding(
         self,
         parameter: &GenericConstReference,
-    ) -> Result<Option<ConstraintBindingView<'a, ArrayLength>>, TypeConstraintError> {
+    ) -> Result<Option<&'a ConstraintOperand<D, ArrayLength>>, TypeConstraintError> {
         self.const_bindings
             .get(parameter)
             .map(|value| {
@@ -123,7 +126,10 @@ impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
                         parameter,
                     })
                 })?;
-                Ok(ConstraintBindingView { value, scope })
+                if value.scope() != scope {
+                    return Err(TypeConstraintInvariant::OriginalProducer.into());
+                }
+                Ok(value)
             })
             .transpose()
     }
@@ -139,190 +145,10 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
     }
 }
 
-/// The path-local representative of a generic reference after following only
-/// direct generic aliases. Structural bindings remain typed values so the
-/// ordinary relation visitor can handle their children under the right
-/// binders.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum TypeAliasResolution {
-    Parameter(GenericTypeReference),
-    Structure(TypeKind),
-    Cycle(Box<[GenericTypeReference]>),
-}
-
-/// The path-local representative of a generic constant after following only
-/// direct generic aliases. Non-alias constant values remain typed array-length
-/// values so the relation visitor owns unresolved/error handling.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ConstAliasResolution {
-    Parameter(GenericConstReference),
-    Value(ArrayLength),
-    Cycle(Box<[GenericConstReference]>),
-}
-
-/// Resolve direct alias chains with the same scope checks and node budget as
-/// other path projections. A deterministic representative is retained for a
-/// genuine alias cycle so callers can defer it without recursing forever.
-pub(crate) fn resolve_type_alias<A, D, L>(
-    parameter: &GenericTypeReference,
-    path: &ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeAliasResolution, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    context.with_binder(super::super::GenericBinder::EMPTY, |context| {
-        let mut scopes = Vec::new();
-        let resolved = resolve_type_alias_in_owner(parameter, path, context, &mut scopes)?;
-        let mut value = match resolved {
-            TypeAliasResolution::Cycle(cycle) => return Ok(TypeAliasResolution::Cycle(cycle)),
-            TypeAliasResolution::Parameter(parameter) => TypeKind::GenericParam(parameter),
-            TypeAliasResolution::Structure(value) => value,
-        };
-        for (parameter, enclosing) in scopes.into_iter().rev() {
-            let owner = context.replace_lexical_scope(enclosing.clone());
-            value = context.transport_binding_type(&enclosing, &owner, &value, parameter.into())?;
-        }
-        Ok(match value {
-            TypeKind::GenericParam(parameter) => TypeAliasResolution::Parameter(parameter),
-            value => TypeAliasResolution::Structure(value),
-        })
-    })
-}
-
-fn resolve_type_alias_in_owner<A, D, L>(
-    parameter: &GenericTypeReference,
-    path: &ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-    scopes: &mut Vec<(GenericTypeReference, super::lexical::ConstraintLexicalScope)>,
-) -> Result<TypeAliasResolution, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    let view = path.projection_view();
-    let mut current = parameter.clone();
-    let mut positions = BTreeMap::<GenericTypeReference, usize>::new();
-    let mut chain = Vec::new();
-    loop {
-        context.check_cancelled()?;
-        context.enter_node()?;
-        if context.parameter_eligibility(&current, view).is_none() {
-            return Err(TypeConstraintError::Invariant(
-                TypeConstraintInvariant::ParameterScope(
-                    super::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
-                        parameter: current,
-                    },
-                ),
-            ));
-        }
-        if let Some(start) = positions.get(&current).copied() {
-            let mut cycle = chain[start..].to_vec();
-            cycle.sort();
-            cycle.dedup();
-            return Ok(TypeAliasResolution::Cycle(cycle.into_boxed_slice()));
-        }
-        positions.insert(current.clone(), chain.len());
-        chain.push(current.clone());
-        let Some(bound) = view.binding(&current)? else {
-            return Ok(TypeAliasResolution::Parameter(current));
-        };
-        scopes.push((
-            current.clone(),
-            context.replace_lexical_scope(bound.scope.clone()),
-        ));
-        match bound.value.constraint_shape() {
-            TypeConstraintShape::Generic(next) => current = next.clone(),
-            _ => return Ok(TypeAliasResolution::Structure(bound.value.clone())),
-        }
-    }
-}
-
-/// Resolve direct constant alias chains under the exact application scope and
-/// node budget. A deterministic cycle witness is deferred to path closure.
-pub(crate) fn resolve_const_alias<A, D, L>(
-    parameter: &GenericConstReference,
-    path: &ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ConstAliasResolution, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    context.with_binder(super::super::GenericBinder::EMPTY, |context| {
-        let mut scopes = Vec::new();
-        let resolved = resolve_const_alias_in_owner(parameter, path, context, &mut scopes)?;
-        let mut value = match resolved {
-            ConstAliasResolution::Cycle(cycle) => return Ok(ConstAliasResolution::Cycle(cycle)),
-            ConstAliasResolution::Parameter(parameter) => ArrayLength::Generic(parameter),
-            ConstAliasResolution::Value(value) => value,
-        };
-        for (parameter, enclosing) in scopes.into_iter().rev() {
-            let owner = context.replace_lexical_scope(enclosing.clone());
-            value =
-                context.transport_binding_length(&enclosing, &owner, &value, parameter.into())?;
-        }
-        Ok(match value {
-            ArrayLength::Generic(parameter) => ConstAliasResolution::Parameter(parameter),
-            value => ConstAliasResolution::Value(value),
-        })
-    })
-}
-
-fn resolve_const_alias_in_owner<A, D, L>(
-    parameter: &GenericConstReference,
-    path: &ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-    scopes: &mut Vec<(
-        GenericConstReference,
-        super::lexical::ConstraintLexicalScope,
-    )>,
-) -> Result<ConstAliasResolution, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    let view = path.projection_view();
-    let mut current = parameter.clone();
-    let mut positions = BTreeMap::<GenericConstReference, usize>::new();
-    let mut chain = Vec::new();
-    loop {
-        context.check_cancelled()?;
-        context.enter_node()?;
-        if context
-            .const_parameter_eligibility(&current, view)
-            .is_none()
-        {
-            return Err(TypeConstraintError::Invariant(
-                TypeConstraintInvariant::ParameterScope(
-                    super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
-                        parameter: current,
-                    },
-                ),
-            ));
-        }
-        if let Some(start) = positions.get(&current).copied() {
-            let mut cycle = chain[start..].to_vec();
-            cycle.sort();
-            cycle.dedup();
-            return Ok(ConstAliasResolution::Cycle(cycle.into_boxed_slice()));
-        }
-        positions.insert(current.clone(), chain.len());
-        chain.push(current.clone());
-        let Some(bound) = view.const_binding(&current)? else {
-            return Ok(ConstAliasResolution::Parameter(current));
-        };
-        scopes.push((
-            current.clone(),
-            context.replace_lexical_scope(bound.scope.clone()),
-        ));
-        match bound.value {
-            ArrayLength::Generic(next) => current = next.clone(),
-            _ => return Ok(ConstAliasResolution::Value(bound.value.clone())),
-        }
-    }
-}
+mod alias;
+pub(in crate::types) use alias::{
+    ConstraintAliasResolution, resolve_const_alias, resolve_type_alias,
+};
 
 mod projection;
 use projection::{project_array_length, project_type_inner};
@@ -362,7 +188,7 @@ where
         };
         // Constant occurs detection depends on inference identities, never on
         // de Bruijn indices. Bound formals are rigid and cannot be this key.
-        current = bound.value;
+        current = bound.value();
     }
 }
 
@@ -723,8 +549,8 @@ where
                 aliases.remove(candidate);
                 return Ok(false);
             };
-            let result = context.with_original_scope(bound.scope.clone(), |context| {
-                occurs_in_type_inner(bound.value, parameter, view, context, aliases)
+            let result = context.with_original_scope(bound.scope().clone(), |context| {
+                occurs_in_type_inner(bound.value(), parameter, view, context, aliases)
             });
             aliases.remove(candidate);
             result
@@ -794,16 +620,20 @@ where
         let mut visiting = BTreeSet::new();
         let owner = context.binding_scope(&sealed, &parameter.clone().into())?;
         context.with_original_scope(owner, |context| {
-            let value = seal_type(value, source_view, &mut visiting, context)?;
-            context.add_sealed_binding(&mut sealed, parameter.clone(), value)
+            let projected = seal_type(value.value(), source_view, &mut visiting, context)?;
+            context.add_sealed_binding(&mut sealed, parameter.clone(), value.projected(projected))
         })?;
     }
     for (parameter, value) in &const_source {
         let mut visiting = BTreeSet::new();
         let owner = context.binding_scope(&sealed, &parameter.clone().into())?;
         context.with_original_scope(owner, |context| {
-            let value = seal_const(value, source_view, &mut visiting, context)?;
-            context.add_sealed_const_binding(&mut sealed, parameter.clone(), value)
+            let projected = seal_const(value.value(), source_view, &mut visiting, context)?;
+            context.add_sealed_const_binding(
+                &mut sealed,
+                parameter.clone(),
+                value.projected(projected),
+            )
         })?;
     }
     Ok(sealed)

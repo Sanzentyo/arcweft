@@ -173,14 +173,13 @@ impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
         ),
     > {
         self.path.bindings.iter().map(|(parameter, value)| {
-            let scope = self
-                .path
-                .applications
-                .binding_scope(&parameter.clone().into())
-                .expect("original binding retains its admitted owner");
+            let scope = value.scope();
             (
                 parameter,
-                super::super::normalization::ConstraintBindingView { value, scope },
+                super::super::normalization::ConstraintBindingView {
+                    value: value.value(),
+                    scope,
+                },
             )
         })
     }
@@ -194,14 +193,13 @@ impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
         ),
     > {
         self.path.const_bindings.iter().map(|(parameter, value)| {
-            let scope = self
-                .path
-                .applications
-                .binding_scope(&parameter.clone().into())
-                .expect("original binding retains its admitted owner");
+            let scope = value.scope();
             (
                 parameter,
-                super::super::normalization::ConstraintBindingView { value, scope },
+                super::super::normalization::ConstraintBindingView {
+                    value: value.value(),
+                    scope,
+                },
             )
         })
     }

@@ -240,7 +240,7 @@ fn active_const_alias_chain_closes_before_solution_publication() {
         .into_path();
     let solution = {
         path.bindings = BTreeMap::new();
-        path.const_bindings = BTreeMap::from([
+        path.const_bindings = context.fixture_bindings([
             (
                 path.root_scope()
                     .parameters()
@@ -470,6 +470,9 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
             next_scope,
         )
         .into_path();
+    let solution = Arc::new(solution);
+    let retained_solution = Arc::downgrade(&solution);
+    let sealed_parameter = solution.const_bindings().next().unwrap().0.value().clone();
     let path = solution
         .restore_inherited_path(
             next_context_path.root_id(),
@@ -478,7 +481,10 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
         )
         .expect("FutureEligible const becomes Bindable");
     assert_eq!(
-        path.const_bindings,
+        path.const_bindings
+            .iter()
+            .map(|(key, value)| (key.clone(), value.value().clone()))
+            .collect::<BTreeMap<_, _>>(),
         BTreeMap::from([(
             path.root_scope()
                 .parameters()
@@ -487,6 +493,16 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
             ArrayLength::Const(9)
         )])
     );
+    let restored = path.const_bindings.values().next().unwrap();
+    let (owner, parameter) = restored
+        .completed_origin()
+        .expect("restored rows retain their actual completed owner");
+    assert!(Arc::ptr_eq(owner, &solution));
+    assert_eq!(parameter, &sealed_parameter.into());
+    drop(solution);
+    assert!(retained_solution.upgrade().is_some());
+    drop(path);
+    assert!(retained_solution.upgrade().is_none());
 }
 
 #[test]
@@ -552,7 +568,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         )
         .into_path();
     assert!(matches!(
-        solution.restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
+        Arc::new(solution).restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
@@ -613,7 +629,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         )
         .into_path();
     assert!(matches!(
-        solution.restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
+        Arc::new(solution).restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::Unclosed,

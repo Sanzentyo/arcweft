@@ -137,14 +137,14 @@ pub(super) fn complete(
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path) = context(scope, &cancellation).into_path();
     {
-        path.bindings = BTreeMap::from([(
+        path.bindings = context.fixture_bindings([(
             path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("callee type"),
             ty,
         )]);
-        path.const_bindings = BTreeMap::from([(
+        path.const_bindings = context.fixture_bindings([(
             path.root_scope()
                 .parameters()
                 .const_reference(&(constant()).clone().into())
@@ -555,7 +555,7 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
                 .parameters()
                 .type_reference(&parameter(0).into())
                 .expect("callee type");
-            path.bindings.insert(key, ty);
+            path.bindings.insert(key, context.fixture_operand(ty));
         }
         let effect_key = path
             .root_scope()
@@ -650,11 +650,11 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
         .expect("type opening");
     path.bindings.insert(
         type_key,
-        TypeKind::function_with_effects(
+        context.fixture_operand(TypeKind::function_with_effects(
             [],
             TypeKind::Unit,
             EffectRow::open(crate::effects::EffectSet::new(), effect_key),
-        ),
+        )),
     );
     let solution =
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
@@ -813,7 +813,7 @@ fn residual_replacement_is_lifted_beneath_existing_template_binders() {
         .const_reference(&(constant()).clone().into())
         .expect("future const");
     let solution = {
-        path.bindings = BTreeMap::from([(
+        path.bindings = context.fixture_bindings([(
             path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
@@ -973,8 +973,8 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
         "opening restores the active relation scope"
     );
     let solution = {
-        path.bindings = BTreeMap::from([(inferred_type, TypeKind::I64)]);
-        path.const_bindings = BTreeMap::from([(inferred_const, ArrayLength::Const(4))]);
+        path.bindings = context.fixture_bindings([(inferred_type, TypeKind::I64)]);
+        path.const_bindings = context.fixture_bindings([(inferred_const, ArrayLength::Const(4))]);
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("completed scheme instance");
@@ -1032,7 +1032,7 @@ fn caller_scheme_keys_do_not_capture_quantifiers_inside_an_operand() {
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path) = context(parameter_scope, &cancellation).into_path();
     let caller = {
-        path.bindings = BTreeMap::from([(
+        path.bindings = context.fixture_bindings([(
             path.root_scope()
                 .parameters()
                 .type_reference(&key)

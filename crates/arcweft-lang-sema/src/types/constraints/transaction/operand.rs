@@ -110,6 +110,11 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         value: ResolvedConstraintSource<D>,
     },
     Result(ResolvedConstraintResult<D>),
+    Completed {
+        original: OriginalProducerContext,
+        solution: Arc<TypeConstraintSolution>,
+        parameter: super::super::ConstraintGenericParameterId,
+    },
     Derived {
         producer: Arc<ConstraintOperandOrigin<D>>,
         input: Arc<ConstraintOperandOrigin<D>>,
@@ -121,6 +126,19 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         producer: Arc<ConstraintOperandOrigin<D>>,
         address: Arc<ConstraintOperandProjection>,
     },
+    TypeAlias {
+        steps: Box<[ConstraintAliasStep<D, TypeKind>]>,
+        terminal: ConstraintOperand<D>,
+    },
+    ConstAlias {
+        steps: Box<[ConstraintAliasStep<D, ArrayLength>]>,
+        terminal: ConstraintOperand<D, ArrayLength>,
+    },
+}
+
+pub(in crate::types::constraints) struct ConstraintAliasStep<D: ConstraintDomain, T> {
+    pub(in crate::types::constraints) occurrence: ConstraintOperand<D, T>,
+    pub(in crate::types::constraints) replacement: ConstraintOperand<D, T>,
 }
 
 pub(in crate::types) struct ConstraintOperand<D: ConstraintDomain, T = TypeKind> {
@@ -140,7 +158,28 @@ impl<D: ConstraintDomain, T> Clone for ConstraintOperand<D, T> {
 }
 
 impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
-    pub(super) fn original(
+    fn valid_alias_steps(
+        steps: &[ConstraintAliasStep<D, T>],
+        terminal: &Self,
+        target: &ConstraintLexicalScope,
+    ) -> bool {
+        let same_term = |left: &Self, right: &Self| {
+            Arc::ptr_eq(&left.value, &right.value)
+                && Arc::ptr_eq(&left.origin, &right.origin)
+                && left.scope == right.scope
+        };
+        steps
+            .first()
+            .is_some_and(|step| step.occurrence.scope() == target)
+            && steps
+                .last()
+                .is_some_and(|step| same_term(&step.replacement, terminal))
+            && steps
+                .windows(2)
+                .all(|pair| same_term(&pair[0].replacement, &pair[1].occurrence))
+    }
+
+    pub(in crate::types::constraints) fn original(
         value: T,
         scope: Arc<ConstraintLexicalScope>,
         original: OriginalProducerContext,
@@ -166,22 +205,55 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
         self
     }
 
-    pub(super) fn scope(&self) -> &ConstraintLexicalScope {
+    pub(in crate::types::constraints) fn scope(&self) -> &ConstraintLexicalScope {
         &self.scope
+    }
+
+    pub(in crate::types::constraints) fn shared_scope(&self) -> Arc<ConstraintLexicalScope> {
+        Arc::clone(&self.scope)
     }
 
     /// A shared projection/closure keeps the exact originating authority.
     /// This is internal to the lower's derivations, not a source constructor.
-    pub(super) fn projected(&self, value: T) -> Self {
+    pub(in crate::types::constraints) fn projected(&self, value: T) -> Self {
         Self {
             value: Arc::new(value),
             scope: Arc::clone(&self.scope),
             origin: Arc::clone(&self.origin),
         }
     }
+
+    pub(in crate::types::constraints) fn completed(
+        value: T,
+        scope: Arc<ConstraintLexicalScope>,
+        original: OriginalProducerContext,
+        solution: Arc<TypeConstraintSolution>,
+        parameter: super::super::ConstraintGenericParameterId,
+    ) -> Self {
+        Self {
+            value: Arc::new(value),
+            scope,
+            origin: Arc::new(ConstraintOperandOrigin::Completed {
+                original,
+                solution,
+                parameter,
+            }),
+        }
+    }
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D> {
+    pub(in crate::types::constraints) fn aliased(
+        mut self,
+        steps: Box<[ConstraintAliasStep<D, TypeKind>]>,
+        terminal: Self,
+    ) -> Result<Self, TypeConstraintError> {
+        if !Self::valid_alias_steps(&steps, &terminal, &self.scope) {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        }
+        self.origin = Arc::new(ConstraintOperandOrigin::TypeAlias { steps, terminal });
+        Ok(self)
+    }
     pub(super) fn template(
         value: TypeKind,
         scope: Arc<ConstraintLexicalScope>,
@@ -228,7 +300,7 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
         ConstraintOperandView::root(self)
     }
 
-    pub(super) fn transport<A: TypeConstraintAccounting>(
+    pub(in crate::types::constraints) fn transport<A: TypeConstraintAccounting>(
         &self,
         target: &Arc<ConstraintLexicalScope>,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -242,11 +314,22 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D, ArrayLength> {
+    pub(in crate::types::constraints) fn aliased(
+        mut self,
+        steps: Box<[ConstraintAliasStep<D, ArrayLength>]>,
+        terminal: Self,
+    ) -> Result<Self, TypeConstraintError> {
+        if !Self::valid_alias_steps(&steps, &terminal, &self.scope) {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        }
+        self.origin = Arc::new(ConstraintOperandOrigin::ConstAlias { steps, terminal });
+        Ok(self)
+    }
     pub(in crate::types) fn view(&self) -> ConstraintConstOperandView<'_, D> {
         ConstraintConstOperandView::root(self)
     }
 
-    pub(super) fn transport<A: TypeConstraintAccounting>(
+    pub(in crate::types::constraints) fn transport<A: TypeConstraintAccounting>(
         &self,
         target: &Arc<ConstraintLexicalScope>,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -261,6 +344,22 @@ impl<D: ConstraintDomain> ConstraintOperand<D, ArrayLength> {
 
 #[cfg(test)]
 impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
+    pub(in crate::types::constraints) fn completed_origin(
+        &self,
+    ) -> Option<(
+        &Arc<TypeConstraintSolution>,
+        &super::super::ConstraintGenericParameterId,
+    )> {
+        match self.origin.as_ref() {
+            ConstraintOperandOrigin::Completed {
+                solution,
+                parameter,
+                ..
+            } => Some((solution, parameter)),
+            _ => None,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn original_context(&self) -> &OriginalProducerContext {
         self.origin.original_context()
@@ -282,11 +381,18 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
     fn original_context(&self) -> &OriginalProducerContext {
         match self {
             ConstraintOperandOrigin::Original(original)
-            | ConstraintOperandOrigin::Source { original, .. } => original,
+            | ConstraintOperandOrigin::Source { original, .. }
+            | ConstraintOperandOrigin::Completed { original, .. } => original,
             ConstraintOperandOrigin::Template(owner) => owner.original_context(),
             ConstraintOperandOrigin::Result(result) => result.owner.original_context(),
             ConstraintOperandOrigin::Derived { producer, .. } => producer.original_context(),
             ConstraintOperandOrigin::Projection { producer, .. } => producer.original_context(),
+            ConstraintOperandOrigin::TypeAlias { steps, .. } => {
+                steps[0].occurrence.original_context()
+            }
+            ConstraintOperandOrigin::ConstAlias { steps, .. } => {
+                steps[0].occurrence.original_context()
+            }
         }
     }
 
@@ -295,6 +401,20 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
             ConstraintOperandOrigin::Result(result) => Some(result.projection()),
             ConstraintOperandOrigin::Source { value, .. } => value.projection(),
             ConstraintOperandOrigin::Projection { producer, .. } => producer.result_origin(),
+            ConstraintOperandOrigin::TypeAlias { steps, terminal } => {
+                terminal.result_origin().or_else(|| {
+                    steps
+                        .iter()
+                        .find_map(|step| step.occurrence.result_origin())
+                })
+            }
+            ConstraintOperandOrigin::ConstAlias { steps, terminal } => {
+                terminal.result_origin().or_else(|| {
+                    steps
+                        .iter()
+                        .find_map(|step| step.occurrence.result_origin())
+                })
+            }
             ConstraintOperandOrigin::Derived { producer, input } => {
                 producer.result_origin().or_else(|| input.result_origin())
             }
@@ -306,6 +426,20 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
         match self {
             ConstraintOperandOrigin::Source { receipt, .. } => Some(receipt),
             ConstraintOperandOrigin::Projection { producer, .. } => producer.source_receipt(),
+            ConstraintOperandOrigin::TypeAlias { steps, terminal } => {
+                terminal.source_receipt().or_else(|| {
+                    steps
+                        .iter()
+                        .find_map(|step| step.occurrence.source_receipt())
+                })
+            }
+            ConstraintOperandOrigin::ConstAlias { steps, terminal } => {
+                terminal.source_receipt().or_else(|| {
+                    steps
+                        .iter()
+                        .find_map(|step| step.occurrence.source_receipt())
+                })
+            }
             ConstraintOperandOrigin::Derived { producer, input } => {
                 producer.source_receipt().or_else(|| input.source_receipt())
             }

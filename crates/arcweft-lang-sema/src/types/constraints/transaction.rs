@@ -32,6 +32,7 @@ use super::{
 use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 mod operand;
+pub(in crate::types::constraints) use operand::ConstraintAliasStep;
 pub(in crate::types) use operand::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandView,
 };
@@ -260,8 +261,8 @@ pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
     pub(super) applications: Arc<ConstraintApplicationInventory<D>>,
     // Each value is relative to the exact introduction scope of its key's
     // admitted application. Only the scoped projection view follows an edge.
-    pub(super) bindings: BTreeMap<GenericTypeReference, TypeKind>,
-    pub(super) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
+    pub(super) bindings: BTreeMap<GenericTypeReference, ConstraintOperand<D>>,
+    pub(super) const_bindings: BTreeMap<GenericConstReference, ConstraintOperand<D, ArrayLength>>,
     pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
     pub(crate) equations: Vec<PendingEquation<D>>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
@@ -1017,7 +1018,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
         application: ConstraintApplicationId,
         path: ConstraintPath<D>,
-        inherited: Option<&TypeConstraintSolution>,
+        inherited: Option<&Arc<TypeConstraintSolution>>,
     ) -> Result<Self, TypeConstraintError> {
         Self::from_path_with_parent(context, application, path, inherited, None)
     }
@@ -1026,7 +1027,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
         application: ConstraintApplicationId,
         path: ConstraintPath<D>,
-        inherited: Option<&TypeConstraintSolution>,
+        inherited: Option<&Arc<TypeConstraintSolution>>,
         parent_receipt: Option<ConstraintSourceReceipt<D>>,
     ) -> Result<Self, TypeConstraintError> {
         let path = Self::prepare_application(context, application, path, inherited)?;
@@ -1078,7 +1079,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             context,
                             application,
                             path,
-                            inherited.as_deref(),
+                            inherited.as_ref(),
                             Some(nested.receipt),
                         )
                     })
@@ -1134,7 +1135,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 context
                     .start_path_with_imported(scope, imported, original)
                     .and_then(|path| {
-                        Self::from_path(context, application, path, inherited.as_deref())
+                        Self::from_path(context, application, path, inherited.as_ref())
                     })
             }) {
             Ok(transaction) => Ok(transaction),
@@ -1274,7 +1275,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     Some(core::mem::replace(&mut path, inference))
                 }
             };
-            match relate_selected_call(&pattern, actual, path, context, acceptance) {
+            let equation = path
+                .equations
+                .last()
+                .expect("the current equation is retained");
+            let pattern = equation.pattern.clone();
+            let actual = equation.actual.clone();
+            match relate_selected_call(&pattern.view(), &actual.view(), path, context, acceptance) {
                 Ok(paths) if !paths.is_empty() => advanced.extend(paths),
                 Ok(_) => {
                     if let Some(original) = retained {
@@ -1825,8 +1832,20 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     });
                     path.lineage.probe_trace.push(probe);
 
-                    let related = if let Some(expected) = pattern.as_ref() {
-                        relate_selected_call(expected, &actual, path, context, input.acceptance)
+                    let related = if pattern.is_some() {
+                        let equation = path
+                            .equations
+                            .last()
+                            .expect("a checked source retains its equation");
+                        let expected = equation.pattern.clone();
+                        let actual = equation.actual.clone();
+                        relate_selected_call(
+                            &expected.view(),
+                            &actual.view(),
+                            path,
+                            context,
+                            input.acceptance,
+                        )
                     } else {
                         validate_type(&actual, path.projection_view(), context).map(|()| vec![path])
                     };
@@ -2445,7 +2464,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
         application: ConstraintApplicationId,
         path: ConstraintPath<D>,
-        inherited: Option<&TypeConstraintSolution>,
+        inherited: Option<&Arc<TypeConstraintSolution>>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,

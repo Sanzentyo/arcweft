@@ -18,8 +18,8 @@ use crate::{
                 LocalConstraintAccounting, TypeConstraintConstParameterScopeRow,
                 TypeConstraintContext, TypeConstraintLimits, TypeConstraintTypeParameterScopeRow,
             },
+            fixture_relate_selected_call,
             normalization::seal_path,
-            relate_selected_call,
         },
     },
 };
@@ -404,7 +404,7 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
             ),
         ] {
             assert!(
-                relate_selected_call(
+                fixture_relate_selected_call(
                     &expected,
                     &actual,
                     context.fork_path(&child).unwrap(),
@@ -441,7 +441,7 @@ fn relation(
     right: &TypeKind,
     context: &mut Context<'_>,
 ) -> ConstraintPath<Domain> {
-    let mut paths = relate_selected_call(
+    let mut paths = fixture_relate_selected_call(
         left,
         right,
         path,
@@ -783,7 +783,7 @@ fn inherited_child_bindings_restore_without_replacing_the_parent() {
             &mut context,
             child_id,
             path,
-            Some(&inherited),
+            Some(&Arc::new(inherited)),
         )
         .unwrap();
     assert_eq!(
@@ -1005,12 +1005,12 @@ fn completion_checks_an_alias_in_its_original_owner_before_merging_ambient_frame
     path = context.admit_application(path, inner).unwrap();
     let alias = TypeKind::GenericParam(inner_key.clone());
     path = context
-        .add_binding(path, outer_key, &alias, alias.constraint_shape())
+        .fixture_add_binding(path, outer_key, &alias)
         .unwrap()
         .unwrap();
     let local = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     path = context
-        .add_binding(path, inner_key, &local, local.constraint_shape())
+        .fixture_add_binding(path, inner_key, &local)
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -1122,7 +1122,7 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
         context.parameter_eligibility(&ty, next.projection_view()),
         None
     );
-    let next = solution
+    let next = Arc::new(solution)
         .restore_inherited_path(next.root_id(), next, &mut context)
         .unwrap();
     assert_eq!(

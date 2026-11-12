@@ -7,10 +7,12 @@ use super::super::{
     TypeCompatibilityPolicy, TypeKind,
 };
 use crate::types::constraints::context::{TypeConstraintAccounting, TypeConstraintContext};
-use crate::types::constraints::transaction::ConstraintInferenceBranch;
+use crate::types::constraints::transaction::{
+    ConstraintConstOperandView, ConstraintInferenceBranch, ConstraintOperand, ConstraintOperandView,
+};
 use crate::types::constraints::{
-    ChoiceDerivationStep, ChoiceForkRole, ConstAliasResolution, ConstraintDomain,
-    TypeAliasResolution, TypeConstraintAbort, TypeConstraintConstEligibility, TypeConstraintError,
+    ChoiceDerivationStep, ChoiceForkRole, ConstraintAliasResolution, ConstraintDomain,
+    TypeConstraintAbort, TypeConstraintConstEligibility, TypeConstraintError,
     TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintRejection,
     TypeConstraintShape, TypeConstraintSourceProtocolInvariant, resolve_const_alias,
     resolve_type_alias, seal_path, seal_type, validate_type,
@@ -49,9 +51,9 @@ impl ConstraintRelation {
     }
 }
 
-pub(crate) fn relate_selected_call<A, D, L: Clone>(
-    pattern: &TypeKind,
-    actual: &TypeKind,
+pub(in crate::types) fn relate_selected_call<A, D, L: Clone>(
+    pattern: &ConstraintOperandView<'_, D>,
+    actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     acceptance: ConstraintAcceptance,
@@ -72,8 +74,8 @@ where
 /// Equality shares the ordinary binder, alias, constant, occurs and effect
 /// relation. It does not turn a subtype or a Choice member into an equal type.
 pub(in crate::types) fn unify_original_binding<A, D, L: Clone>(
-    pattern: &TypeKind,
-    actual: &TypeKind,
+    pattern: &ConstraintOperandView<'_, D>,
+    actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
@@ -85,8 +87,8 @@ where
 }
 
 pub(in crate::types) fn unify_original_length<A, D, L: Clone>(
-    pattern: &ArrayLength,
-    actual: &ArrayLength,
+    pattern: &ConstraintConstOperandView<'_, D>,
+    actual: &ConstraintConstOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
@@ -140,8 +142,8 @@ where
 /// This keeps Choice alternatives branch-local rather than applying a single
 /// whole-Choice relation after raw paths have been retained.
 fn relate_constraint<A, D, L>(
-    pattern: &TypeKind,
-    actual: &TypeKind,
+    pattern: &ConstraintOperandView<'_, D>,
+    actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -157,8 +159,8 @@ where
         // be resolved by another original root, so do not seal it here.
         return relate_with_policy(pattern, actual, path, context, relation);
     }
-    let pattern_shape = pattern.constraint_shape();
-    let actual_shape = actual.constraint_shape();
+    let pattern_shape = pattern.value().constraint_shape();
+    let actual_shape = actual.value().constraint_shape();
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
         || matches!(actual_shape, TypeConstraintShape::Choice(_))
     {
@@ -167,15 +169,29 @@ where
         context.enter_node()?;
     }
     let paths = match (pattern_shape, actual_shape) {
-        (TypeConstraintShape::Choice(expected), TypeConstraintShape::Choice(found)) => {
-            relate_choice_to_choice_selected(expected, found, path, context, relation)?
+        (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_)) => {
+            relate_choice_to_choice_selected(
+                &pattern.children(context)?.collect::<Vec<_>>(),
+                &actual.children(context)?.collect::<Vec<_>>(),
+                path,
+                context,
+                relation,
+            )?
         }
-        (TypeConstraintShape::Choice(expected), _) => {
-            relate_choice_to_actual_selected(expected, actual, path, context, relation)?
-        }
-        (_, TypeConstraintShape::Choice(found)) => {
-            relate_actual_choice_selected(pattern, found, path, context, relation)?
-        }
+        (TypeConstraintShape::Choice(_), _) => relate_choice_to_actual_selected(
+            &pattern.children(context)?.collect::<Vec<_>>(),
+            actual,
+            path,
+            context,
+            relation,
+        )?,
+        (_, TypeConstraintShape::Choice(_)) => relate_actual_choice_selected(
+            pattern,
+            &actual.children(context)?.collect::<Vec<_>>(),
+            path,
+            context,
+            relation,
+        )?,
         _ => relate_with_policy(pattern, actual, path, context, relation)?,
     };
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
@@ -193,8 +209,8 @@ where
 }
 
 fn accept_branch<A, D, L>(
-    pattern: &TypeKind,
-    actual: &TypeKind,
+    pattern: &ConstraintOperandView<'_, D>,
+    actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -213,7 +229,7 @@ where
     let path = seal_path(path, context)?;
     let effects = path.effects.substitution(context)?;
     let projected_pattern = seal_type(
-        pattern,
+        pattern.value(),
         path.projection_view(),
         &mut BTreeSet::new(),
         context,
@@ -226,7 +242,7 @@ where
         )
     })?;
     let projected_actual = seal_type(
-        actual,
+        actual.value(),
         path.projection_view(),
         &mut BTreeSet::new(),
         context,
@@ -283,8 +299,8 @@ pub(crate) fn map_compatibility_error(
 /// accepting the projected Choice after the raw relation) prevents a
 /// rejected alternative from re-entering the frontier.
 fn relate_choice_to_actual_selected<A, D, L>(
-    expected: &[TypeKind],
-    actual: &TypeKind,
+    expected: &[ConstraintOperandView<'_, D>],
+    actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -340,8 +356,8 @@ where
 
 /// Relate one expected value against each actual Choice alternative.
 fn relate_actual_choice_selected<A, D, L>(
-    expected: &TypeKind,
-    actual: &[TypeKind],
+    expected: &ConstraintOperandView<'_, D>,
+    actual: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -397,8 +413,8 @@ where
 
 /// Relate every expected/actual Choice pair in its own branch.
 fn relate_choice_to_choice_selected<A, D, L>(
-    expected: &[TypeKind],
-    actual: &[TypeKind],
+    expected: &[ConstraintOperandView<'_, D>],
+    actual: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -459,8 +475,8 @@ where
 }
 
 fn relate_with_policy<A, D, L>(
-    pattern: &TypeKind,
-    actual: &TypeKind,
+    pattern: &ConstraintOperandView<'_, D>,
+    actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -474,29 +490,12 @@ where
     relate_entered_with_policy(
         pattern,
         actual,
-        pattern.constraint_shape(),
-        actual.constraint_shape(),
+        pattern.value().constraint_shape(),
+        actual.value().constraint_shape(),
         path,
         context,
         relation,
     )
-}
-
-fn resolve_type_parameter<A, D, L>(
-    parameter: &GenericTypeReference,
-    path: &ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeAliasResolution, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    L: Clone,
-{
-    if matches!(parameter, GenericTypeReference::Bound(_)) {
-        Ok(TypeAliasResolution::Parameter(parameter.clone()))
-    } else {
-        resolve_type_alias(parameter, path, context)
-    }
 }
 
 fn type_parameter_eligibility<A, D, L>(
@@ -525,7 +524,7 @@ where
 
 fn bind_type_parameter<A, D, L>(
     parameter: &GenericTypeReference,
-    value: &TypeKind,
+    value: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
@@ -540,15 +539,14 @@ where
     ) {
         return Ok(Vec::new());
     }
-    let shape = value.constraint_shape();
     context
-        .add_binding(path, parameter.clone(), value, shape)
+        .add_binding(path, parameter.clone(), value.clone())
         .map(|path| path.into_iter().collect())
 }
 
 fn relate_entered_with_policy<A, D, L>(
-    pattern: &TypeKind,
-    actual: &TypeKind,
+    pattern: &ConstraintOperandView<'_, D>,
+    actual: &ConstraintOperandView<'_, D>,
     pattern_shape: TypeConstraintShape<'_>,
     actual_shape: TypeConstraintShape<'_>,
     path: ConstraintInferenceBranch<D, L>,
@@ -570,24 +568,14 @@ where
     context.validate_type_header(pattern_shape, path.projection_view())?;
     context.validate_type_header(actual_shape, path.projection_view())?;
 
-    let pattern_alias = match pattern_shape {
-        TypeConstraintShape::Generic(parameter) => {
-            Some(resolve_type_parameter(parameter, &path, context)?)
-        }
-        _ => None,
-    };
-    let actual_alias = match actual_shape {
-        TypeConstraintShape::Generic(parameter) => {
-            Some(resolve_type_parameter(parameter, &path, context)?)
-        }
-        _ => None,
-    };
+    let pattern_alias = resolve_type_alias(pattern.clone(), &path, context)?;
+    let actual_alias = resolve_type_alias(actual.clone(), &path, context)?;
     let mut cycle = match (&pattern_alias, &actual_alias) {
-        (Some(TypeAliasResolution::Cycle(left)), Some(TypeAliasResolution::Cycle(right))) => {
+        (ConstraintAliasResolution::Cycle(left), ConstraintAliasResolution::Cycle(right)) => {
             left.iter().chain(right.iter()).cloned().collect::<Vec<_>>()
         }
-        (Some(TypeAliasResolution::Cycle(parameters)), _)
-        | (_, Some(TypeAliasResolution::Cycle(parameters))) => parameters.to_vec(),
+        (ConstraintAliasResolution::Cycle(parameters), _)
+        | (_, ConstraintAliasResolution::Cycle(parameters)) => parameters.to_vec(),
         _ => Vec::new(),
     };
     if !cycle.is_empty() {
@@ -599,58 +587,41 @@ where
         }
         return Ok(vec![path]);
     }
-    let pattern_value = match (pattern_shape, pattern_alias) {
-        (
-            TypeConstraintShape::Generic(original),
-            Some(TypeAliasResolution::Parameter(parameter)),
-        ) => (&parameter != original).then_some(TypeKind::GenericParam(parameter)),
-        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Structure(value))) => {
-            Some(value)
-        }
-        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Cycle(_))) => {
-            unreachable!("cycles handled above")
-        }
-        (_, None) => None,
-        _ => unreachable!("generic shape has an alias resolution"),
+    let pattern_value = match pattern_alias {
+        ConstraintAliasResolution::Unchanged => None,
+        ConstraintAliasResolution::Value(value) => Some(value),
+        ConstraintAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
     };
-    let actual_value = match (actual_shape, actual_alias) {
-        (
-            TypeConstraintShape::Generic(original),
-            Some(TypeAliasResolution::Parameter(parameter)),
-        ) => (&parameter != original).then_some(TypeKind::GenericParam(parameter)),
-        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Structure(value))) => {
-            Some(value)
-        }
-        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Cycle(_))) => {
-            unreachable!("cycles handled above")
-        }
-        (_, None) => None,
-        _ => unreachable!("generic shape has an alias resolution"),
+    let actual_value = match actual_alias {
+        ConstraintAliasResolution::Unchanged => None,
+        ConstraintAliasResolution::Value(value) => Some(value),
+        ConstraintAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
     };
     if pattern_value.is_some() || actual_value.is_some() {
+        let pattern_view = pattern_value.as_ref().map(ConstraintOperand::<D>::view);
+        let actual_view = actual_value.as_ref().map(ConstraintOperand::<D>::view);
         return relate_with_policy(
-            pattern_value.as_ref().unwrap_or(pattern),
-            actual_value.as_ref().unwrap_or(actual),
+            pattern_view.as_ref().unwrap_or(pattern),
+            actual_view.as_ref().unwrap_or(actual),
             path,
             context,
             relation,
         );
     }
-
     // Bottom contributes no binding, but unresolved descendants in the
     // expected shape still cannot reach a selected seal.
     if matches!(relation, ConstraintRelation::Accepts(_))
         && matches!(actual_shape, TypeConstraintShape::Never)
     {
-        validate_type(pattern, path.projection_view(), context)?;
+        validate_type(pattern.value(), path.projection_view(), context)?;
         return Ok(vec![path]);
     }
 
     match (pattern_shape, actual_shape) {
-        (TypeConstraintShape::Choice(expected), TypeConstraintShape::Choice(found))
+        (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_))
             if matches!(relation, ConstraintRelation::Equal) =>
         {
-            return relate_slices(expected, found, path, context, relation);
+            return relate_sliced_children(pattern, actual, path, context, relation);
         }
         (
             TypeConstraintShape::Generic(pattern_parameter),
@@ -698,15 +669,29 @@ where
         {
             Ok(Vec::new())
         }
-        (TypeConstraintShape::Choice(expected), TypeConstraintShape::Choice(found)) => {
-            relate_choice_to_choice_selected(expected, found, path, context, relation)
+        (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_)) => {
+            relate_choice_to_choice_selected(
+                &pattern.children(context)?.collect::<Vec<_>>(),
+                &actual.children(context)?.collect::<Vec<_>>(),
+                path,
+                context,
+                relation,
+            )
         }
-        (TypeConstraintShape::Choice(expected), _) => {
-            relate_choice_to_actual_selected(expected, actual, path, context, relation)
-        }
-        (_, TypeConstraintShape::Choice(found)) => {
-            relate_actual_choice_selected(pattern, found, path, context, relation)
-        }
+        (TypeConstraintShape::Choice(_), _) => relate_choice_to_actual_selected(
+            &pattern.children(context)?.collect::<Vec<_>>(),
+            actual,
+            path,
+            context,
+            relation,
+        ),
+        (_, TypeConstraintShape::Choice(_)) => relate_actual_choice_selected(
+            pattern,
+            &actual.children(context)?.collect::<Vec<_>>(),
+            path,
+            context,
+            relation,
+        ),
         (
             TypeConstraintShape::Nominal {
                 nominal: expected,
@@ -717,9 +702,11 @@ where
                 arguments: found_arguments,
             },
         ) if expected.same_owner(found) && expected_arguments.len() == found_arguments.len() => {
+            let expected_arguments = pattern.children(context)?.collect::<Vec<_>>();
+            let found_arguments = actual.children(context)?.collect::<Vec<_>>();
             let paths = relate_slices(
-                expected_arguments,
-                found_arguments,
+                &expected_arguments,
+                &found_arguments,
                 path,
                 context,
                 if matches!(relation, ConstraintRelation::Equal) {
@@ -731,7 +718,7 @@ where
             if matches!(relation, ConstraintRelation::Equal) {
                 return Ok(paths);
             }
-            expected_arguments.iter().zip(found_arguments).try_fold(
+            expected_arguments.iter().zip(&found_arguments).try_fold(
                 paths,
                 |paths, (expected, found)| {
                     relate_many(
@@ -748,139 +735,128 @@ where
             if expected.kind() == found.kind() =>
         {
             match (expected.value(), found.value()) {
-                (Some(expected), Some(found)) => {
-                    relate_with_policy(expected, found, path, context, relation)
-                }
-                (Some(_), None) => Ok(vec![path]),
+                (Some(_), Some(_)) => relate_children(pattern, actual, path, context, relation),
+                (Some(_), None) | (None, None) => Ok(vec![path]),
                 (None, Some(found)) => {
                     validate_type(found, path.projection_view(), context)?;
                     Ok(vec![path])
                 }
-                (None, None) => Ok(vec![path]),
             }
         }
         (
             TypeConstraintShape::Unary {
                 kind: expected_kind,
-                child: expected,
+                ..
             },
             TypeConstraintShape::Unary {
-                kind: found_kind,
-                child: found,
+                kind: found_kind, ..
             },
         ) if expected_kind == found_kind => {
-            relate_with_policy(expected, found, path, context, relation)
+            relate_children(pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Iterator {
                 family: expected_family,
-                item: expected,
+                ..
             },
             TypeConstraintShape::Iterator {
                 family: found_family,
-                item: found,
+                ..
             },
         ) if expected_family == found_family => {
-            relate_with_policy(expected, found, path, context, relation)
+            relate_children(pattern, actual, path, context, relation)
         }
-        (
-            TypeConstraintShape::Array {
-                item: expected,
-                len: expected_len,
-            },
-            TypeConstraintShape::Array {
-                item: found,
-                len: found_len,
-            },
-        ) => {
-            let Some(path) =
-                relate_array_lengths(expected_len, found_len, path, context, relation)?
+        (TypeConstraintShape::Array { .. }, TypeConstraintShape::Array { .. }) => {
+            let expected = pattern
+                .array_length()
+                .expect("array shape has a length port");
+            let found = actual
+                .array_length()
+                .expect("array shape has a length port");
+            let Some(path) = relate_array_lengths(&expected, &found, path, context, relation)?
             else {
                 return Ok(Vec::new());
             };
-            relate_with_policy(expected, found, path, context, relation)
+            relate_children(pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Map {
                 kind: expected_kind,
-                key: expected_key,
-                value: expected_value,
+                ..
             },
             TypeConstraintShape::Map {
-                kind: found_kind,
-                key: found_key,
-                value: found_value,
+                kind: found_kind, ..
             },
-        ) if expected_kind == found_kind => relate_pair(
-            expected_key,
-            found_key,
-            expected_value,
-            found_value,
-            path,
-            context,
-            relation,
-        ),
+        ) if expected_kind == found_kind => {
+            relate_children(pattern, actual, path, context, relation)
+        }
         (
             TypeConstraintShape::Borrow {
                 kind: expected_kind,
                 lifetime: expected_lifetime,
-                inner: expected,
+                ..
             },
             TypeConstraintShape::Borrow {
                 kind: found_kind,
                 lifetime: found_lifetime,
-                inner: found,
+                ..
             },
         ) if expected_kind == found_kind && expected_lifetime == found_lifetime => {
-            relate_with_policy(expected, found, path, context, relation)
+            relate_children(pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Pair {
                 kind: expected_kind,
-                first: expected_first,
-                second: expected_second,
+                ..
             },
             TypeConstraintShape::Pair {
-                kind: found_kind,
-                first: found_first,
-                second: found_second,
+                kind: found_kind, ..
             },
-        ) if expected_kind == found_kind => relate_pair(
-            expected_first,
-            found_first,
-            expected_second,
-            found_second,
-            path,
-            context,
-            relation,
-        ),
+        ) if expected_kind == found_kind => {
+            relate_children(pattern, actual, path, context, relation)
+        }
         (
             TypeConstraintShape::Function {
                 binder: expected_binder,
                 predicate: expected_predicate,
                 params: expected_params,
-                result: expected_result,
                 effects: expected_effects,
+                ..
             },
             TypeConstraintShape::Function {
                 binder: found_binder,
                 predicate: found_predicate,
                 params: found_params,
-                result: found_result,
                 effects: found_effects,
+                ..
             },
         ) if expected_binder == found_binder && expected_params.len() == found_params.len() => {
             context.with_binder(*expected_binder, |context| {
                 if !expected_predicate.equal_with(found_predicate, context)? {
                     return Ok(Vec::new());
                 }
-                let parameter_acceptance = relation.reverse();
+                let mut expected_children = pattern.children(context)?;
+                let mut found_children = actual.children(context)?;
+                let expected_params = expected_children
+                    .by_ref()
+                    .take(expected_params.len())
+                    .collect::<Vec<_>>();
+                let found_params = found_children
+                    .by_ref()
+                    .take(found_params.len())
+                    .collect::<Vec<_>>();
+                let expected_result = expected_children
+                    .next()
+                    .expect("function children end in a result");
+                let found_result = found_children
+                    .next()
+                    .expect("function children end in a result");
                 let paths = relate_slices(
-                    expected_params,
-                    found_params,
+                    &expected_params,
+                    &found_params,
                     path,
                     context,
-                    parameter_acceptance,
+                    relation.reverse(),
                 )?;
                 let mut effect_paths = Vec::with_capacity(paths.len());
                 for mut path in paths {
@@ -915,8 +891,8 @@ where
                     }
                 }
                 relate_many(
-                    expected_result,
-                    found_result,
+                    &expected_result,
+                    &found_result,
                     effect_paths,
                     context,
                     relation,
@@ -926,41 +902,18 @@ where
         (TypeConstraintShape::Tuple(expected), TypeConstraintShape::Tuple(found))
             if expected.len() == found.len() =>
         {
-            relate_slices(expected, found, path, context, relation)
+            relate_sliced_children(pattern, actual, path, context, relation)
         }
         (TypeConstraintShape::Payload(expected), TypeConstraintShape::Payload(found))
             if expected.has_same_header(found) =>
         {
-            expected
-                .children()
-                .zip(found.children())
-                .try_fold(vec![path], |paths, (expected, found)| {
-                    relate_many(expected, found, paths, context, relation)
-                })
+            relate_sliced_children(pattern, actual, path, context, relation)
         }
-        (TypeConstraintShape::Leaf(_), _) => Ok(vec![path]),
-        (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),
+        (TypeConstraintShape::Leaf(_), _)
+        | (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),
         _ => Ok(vec![path]),
     }
 }
-
-fn resolve_const_parameter<A, D, L>(
-    parameter: &GenericConstReference,
-    path: &ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ConstAliasResolution, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    L: Clone,
-{
-    if matches!(parameter, GenericConstReference::Bound(_)) {
-        Ok(ConstAliasResolution::Parameter(parameter.clone()))
-    } else {
-        resolve_const_alias(parameter, path, context)
-    }
-}
-
 fn const_parameter_eligibility<A, D, L>(
     parameter: &GenericConstReference,
     path: &ConstraintInferenceBranch<D, L>,
@@ -987,7 +940,7 @@ where
 
 fn bind_const_parameter<A, D, L>(
     parameter: &GenericConstReference,
-    value: &ArrayLength,
+    value: &ConstraintConstOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
@@ -1002,12 +955,12 @@ where
     ) {
         return Ok(None);
     }
-    context.add_const_binding(path, parameter.clone(), value)
+    context.add_const_binding(path, parameter.clone(), value.clone())
 }
 
 fn relate_array_lengths<A, D, L>(
-    expected: &ArrayLength,
-    found: &ArrayLength,
+    expected: &ConstraintConstOperandView<'_, D>,
+    found: &ConstraintConstOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -1018,20 +971,14 @@ where
     L: Clone,
 {
     context.enter_node()?;
-    let expected = match expected {
-        ArrayLength::Generic(parameter) => resolve_const_parameter(parameter, &path, context)?,
-        value => ConstAliasResolution::Value(value.clone()),
-    };
-    let found = match found {
-        ArrayLength::Generic(parameter) => resolve_const_parameter(parameter, &path, context)?,
-        value => ConstAliasResolution::Value(value.clone()),
-    };
-    let mut cycle = match (&expected, &found) {
-        (ConstAliasResolution::Cycle(left), ConstAliasResolution::Cycle(right)) => {
+    let expected_alias = resolve_const_alias(expected.clone(), &path, context)?;
+    let found_alias = resolve_const_alias(found.clone(), &path, context)?;
+    let mut cycle = match (&expected_alias, &found_alias) {
+        (ConstraintAliasResolution::Cycle(left), ConstraintAliasResolution::Cycle(right)) => {
             left.iter().chain(right.iter()).cloned().collect::<Vec<_>>()
         }
-        (ConstAliasResolution::Cycle(parameters), _)
-        | (_, ConstAliasResolution::Cycle(parameters)) => parameters.to_vec(),
+        (ConstraintAliasResolution::Cycle(parameters), _)
+        | (_, ConstraintAliasResolution::Cycle(parameters)) => parameters.to_vec(),
         _ => Vec::new(),
     };
     if !cycle.is_empty() {
@@ -1043,17 +990,25 @@ where
         }
         return Ok(Some(path));
     }
-    let expected = match expected {
-        ConstAliasResolution::Parameter(parameter) => ArrayLength::Generic(parameter),
-        ConstAliasResolution::Value(value) => value,
-        ConstAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
+    let expected_value = match expected_alias {
+        ConstraintAliasResolution::Unchanged => None,
+        ConstraintAliasResolution::Value(value) => Some(value),
+        ConstraintAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
     };
-    let found = match found {
-        ConstAliasResolution::Parameter(parameter) => ArrayLength::Generic(parameter),
-        ConstAliasResolution::Value(value) => value,
-        ConstAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
+    let found_value = match found_alias {
+        ConstraintAliasResolution::Unchanged => None,
+        ConstraintAliasResolution::Value(value) => Some(value),
+        ConstraintAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
     };
-    match (&expected, &found) {
+    let expected_view = expected_value
+        .as_ref()
+        .map(ConstraintOperand::<D, ArrayLength>::view);
+    let found_view = found_value
+        .as_ref()
+        .map(ConstraintOperand::<D, ArrayLength>::view);
+    let expected = expected_view.as_ref().unwrap_or(expected);
+    let found = found_view.as_ref().unwrap_or(found);
+    match (expected.value(), found.value()) {
         (ArrayLength::Error(_) | ArrayLength::Inferred, _)
         | (_, ArrayLength::Error(_) | ArrayLength::Inferred) => {
             Err(TypeConstraintRejection::UnresolvedType.into())
@@ -1071,29 +1026,28 @@ where
                 != TypeConstraintConstEligibility::Rigid;
             let (parameter, value) = match relation.direction() {
                 ConstraintAcceptance::PatternAcceptsActual if pattern_active => {
-                    (expected_parameter, &found)
+                    (expected_parameter, found)
                 }
                 ConstraintAcceptance::ActualAcceptsPattern if actual_active => {
-                    (found_parameter, &expected)
+                    (found_parameter, expected)
                 }
-                _ if pattern_active => (expected_parameter, &found),
-                _ if actual_active => (found_parameter, &expected),
+                _ if pattern_active => (expected_parameter, found),
+                _ if actual_active => (found_parameter, expected),
                 _ => return Ok(None),
             };
-            context.add_const_binding(path, parameter.clone(), value)
+            context.add_const_binding(path, parameter.clone(), value.clone())
         }
-        (ArrayLength::Generic(parameter), found) => {
+        (ArrayLength::Generic(parameter), _) => {
             bind_const_parameter(parameter, found, path, context)
         }
-        (found, ArrayLength::Generic(parameter)) => {
-            bind_const_parameter(parameter, found, path, context)
+        (_, ArrayLength::Generic(parameter)) => {
+            bind_const_parameter(parameter, expected, path, context)
         }
     }
 }
-
 fn relate_slices<A, D, L>(
-    expected: &[TypeKind],
-    found: &[TypeKind],
+    expected: &[ConstraintOperandView<'_, D>],
+    found: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -1114,11 +1068,9 @@ where
         })
 }
 
-fn relate_pair<A, D, L>(
-    expected_first: &TypeKind,
-    found_first: &TypeKind,
-    expected_second: &TypeKind,
-    found_second: &TypeKind,
+fn relate_children<A, D, L>(
+    expected: &ConstraintOperandView<'_, D>,
+    found: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -1128,13 +1080,37 @@ where
     D: ConstraintDomain,
     L: Clone,
 {
-    let paths = relate_with_policy(expected_first, found_first, path, context, relation)?;
-    relate_many(expected_second, found_second, paths, context, relation)
+    let mut expected = expected.children(context)?;
+    let mut found = found.children(context)?;
+    let (Some(first_expected), Some(first_found)) = (expected.next(), found.next()) else {
+        return Ok(Vec::new());
+    };
+    let paths = relate_with_policy(&first_expected, &first_found, path, context, relation)?;
+    expected
+        .zip(found)
+        .try_fold(paths, |paths, (expected, found)| {
+            relate_many(&expected, &found, paths, context, relation)
+        })
 }
-
+fn relate_sliced_children<A, D, L>(
+    expected: &ConstraintOperandView<'_, D>,
+    found: &ConstraintOperandView<'_, D>,
+    path: ConstraintInferenceBranch<D, L>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    relation: ConstraintRelation,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+    L: Clone,
+{
+    let expected = expected.children(context)?.collect::<Vec<_>>();
+    let found = found.children(context)?.collect::<Vec<_>>();
+    relate_slices(&expected, &found, path, context, relation)
+}
 fn relate_many<A, D, L>(
-    expected: &TypeKind,
-    found: &TypeKind,
+    expected: &ConstraintOperandView<'_, D>,
+    found: &ConstraintOperandView<'_, D>,
     paths: Vec<ConstraintInferenceBranch<D, L>>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,

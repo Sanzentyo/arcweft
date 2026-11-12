@@ -1,5 +1,6 @@
 use super::*;
 use crate::{effects::EffectSet, types::GenericTypeReference};
+use std::sync::Arc;
 
 fn ambient_value(scope: &GenericScope, ambient_depth: u32, own_function: bool) -> TypeKind {
     let array = |scope: &GenericScope, depth| TypeKind::Array {
@@ -42,13 +43,13 @@ fn complete_ambient(
     let mut path = work.start_path(application).unwrap();
     let value = ambient_value(work.lexical_scope(), 0, own_function);
     path = work
-        .add_binding(path, key, &value, value.constraint_shape())
+        .fixture_add_binding(path, key, &value)
         .unwrap()
         .unwrap();
     if !future {
         let value = ArrayLength::Generic(work.lexical_scope().bound_const(0, 0).unwrap());
         path = work
-            .add_const_binding(path, length, &value)
+            .fixture_add_const_binding(path, length, &value)
             .unwrap()
             .unwrap();
     }
@@ -163,8 +164,10 @@ fn flat_instance_closure_cannot_substitute_an_unrelated_same_shaped_caller() {
         .parameters()
         .const_reference(&length)
         .unwrap();
-    path.bindings.insert(type_key, TypeKind::I64);
-    path.const_bindings.insert(const_key, ArrayLength::Const(7));
+    path.bindings
+        .insert(type_key, work.fixture_operand(TypeKind::I64));
+    path.const_bindings
+        .insert(const_key, work.fixture_operand(ArrayLength::Const(7)));
     let caller = TypeConstraintSolution::complete_application(&path, path.root_id(), &mut work)
         .unwrap()
         .close_instantiation(None)
@@ -203,11 +206,12 @@ fn reopening_preserves_actual_ambient_frames_and_opens_residuals_freshly() {
     let mut path = work.start_path(application).unwrap();
     let value = ambient_value(work.lexical_scope(), 0, true);
     path = work
-        .add_binding(path, key, &value, value.constraint_shape())
+        .fixture_add_binding(path, key, &value)
         .unwrap()
         .unwrap();
     let solution =
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut work).unwrap();
+    let solution = Arc::new(solution);
     let inner = work.enter_binder_scope(GenericBinder::new(1, 1, 0));
     let mut previous = None;
     for _ in 0..2 {
@@ -244,7 +248,7 @@ fn equally_shaped_unrelated_ambient_frames_do_not_authorize_reopening() {
     let application = work.fixture_application_scope((), parameters).unwrap();
     let path = work.start_path(application).unwrap();
     assert!(matches!(
-        solution.restore_inherited_path(path.root_id(), path, &mut work),
+        Arc::new(solution).restore_inherited_path(path.root_id(), path, &mut work),
         Err(crate::types::constraints::TypeConstraintError::Rejected(
             crate::types::constraints::TypeConstraintRejection::EscapingInstantiation { .. }
         ))
@@ -305,7 +309,7 @@ fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
         .unwrap();
     let value = TypeKind::function_with_contract(own, predicate, [], TypeKind::Unit, effects);
     path = work
-        .add_binding(path, key, &value, value.constraint_shape())
+        .fixture_add_binding(path, key, &value)
         .unwrap()
         .unwrap();
     let solution =

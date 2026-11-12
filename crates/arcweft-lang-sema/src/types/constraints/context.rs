@@ -3,7 +3,9 @@
 //! This module owns the persistent cancellation/work context. The transaction
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
-use super::transaction::ConstraintInferenceBranch;
+use super::transaction::{
+    ConstraintConstOperandView, ConstraintInferenceBranch, ConstraintOperand, ConstraintOperandView,
+};
 use crate::types::ArrayLength;
 #[cfg(test)]
 use std::collections::BTreeMap;
@@ -1402,6 +1404,10 @@ where
         self.lexical_scope.shape()
     }
 
+    pub(super) fn lexical_frames(&self) -> &ConstraintLexicalScope {
+        &self.lexical_scope
+    }
+
     pub(super) fn capture_lexical_scope(
         &mut self,
     ) -> Result<ConstraintLexicalScope, TypeConstraintError> {
@@ -1491,7 +1497,7 @@ where
             .map_err(|error| Self::binding_transport_error(error, parameter))
     }
 
-    fn binding_transport_error(
+    pub(super) fn binding_transport_error(
         error: crate::types::TypeProjectionError<TypeConstraintError>,
         parameter: super::ConstraintGenericParameterId,
     ) -> TypeConstraintError {
@@ -1503,26 +1509,77 @@ where
         }
     }
 
+    #[cfg(test)]
+    pub(in crate::types) fn fixture_operand<T>(&self, value: T) -> ConstraintOperand<D, T> {
+        ConstraintOperand::original(
+            value,
+            std::sync::Arc::new(self.lexical_scope.clone()),
+            super::OriginalProducerContext::ground_fixture(self.lexical_scope.clone()),
+        )
+    }
+
+    #[cfg(test)]
+    pub(in crate::types) fn fixture_bindings<K: Ord, T>(
+        &self,
+        rows: impl IntoIterator<Item = (K, T)>,
+    ) -> BTreeMap<K, ConstraintOperand<D, T>> {
+        rows.into_iter()
+            .map(|(parameter, value)| (parameter, self.fixture_operand(value)))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(in crate::types) fn fixture_add_binding<L>(
+        &mut self,
+        path: ConstraintInferenceBranch<D, L>,
+        parameter: GenericTypeReference,
+        value: &TypeKind,
+    ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
+        let value = self.fixture_operand(value.clone());
+        self.add_binding(path, parameter, value.view())
+    }
+
+    #[cfg(test)]
+    pub(in crate::types) fn fixture_add_const_binding<L>(
+        &mut self,
+        path: ConstraintInferenceBranch<D, L>,
+        parameter: GenericConstReference,
+        value: &ArrayLength,
+    ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
+        let value = self.fixture_operand(value.clone());
+        self.add_const_binding(path, parameter, value.view())
+    }
+
     fn root_binding_type<L>(
         &mut self,
         path: &ConstraintInferenceBranch<D, L>,
         parameter: &GenericTypeReference,
-        value: &TypeKind,
-    ) -> Result<TypeKind, TypeConstraintError> {
+        value: ConstraintOperandView<'_, D>,
+    ) -> Result<ConstraintOperand<D>, TypeConstraintError> {
         let parameter = parameter.clone().into();
-        let owner = self.binding_scope(path, &parameter)?;
-        self.transport_binding_type(&owner, &self.lexical_scope.clone(), value, parameter)
+        let owner = std::sync::Arc::new(self.binding_scope(path, &parameter)?);
+        if owner.as_ref() == value.lexical_scope().as_ref() {
+            return Ok(value.retained());
+        }
+        value
+            .transport(&owner, self)
+            .map_err(|error| Self::binding_transport_error(error, parameter))
     }
 
     fn root_binding_length<L>(
         &mut self,
         path: &ConstraintInferenceBranch<D, L>,
         parameter: &GenericConstReference,
-        value: &ArrayLength,
-    ) -> Result<ArrayLength, TypeConstraintError> {
+        value: ConstraintConstOperandView<'_, D>,
+    ) -> Result<ConstraintOperand<D, ArrayLength>, TypeConstraintError> {
         let parameter = parameter.clone().into();
-        let owner = self.binding_scope(path, &parameter)?;
-        self.transport_binding_length(&owner, &self.lexical_scope.clone(), value, parameter)
+        let owner = std::sync::Arc::new(self.binding_scope(path, &parameter)?);
+        if owner.as_ref() == value.lexical_scope().as_ref() {
+            return Ok(value.retained());
+        }
+        value
+            .transport(&owner, self)
+            .map_err(|error| Self::binding_transport_error(error, parameter))
     }
 
     pub(super) fn with_original_scope<T, E>(
@@ -1730,8 +1787,7 @@ where
         &mut self,
         path: ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
-        value: &TypeKind,
-        value_shape: TypeConstraintShape<'_>,
+        value: ConstraintOperandView<'_, D>,
     ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
         self.check_cancelled()?;
         if path.bindings.contains_key(&parameter) {
@@ -1767,7 +1823,12 @@ where
             ))?;
         self.charge_binding(binding_count)?;
         let mut path = path;
-        if occurs_in_shape(value_shape, &parameter, path.projection_view(), self)? {
+        if occurs_in_shape(
+            value.value().constraint_shape(),
+            &parameter,
+            path.projection_view(),
+            self,
+        )? {
             // A back-edge is evidence, not an immediate candidate failure.
             // The close phase can discard this row while retaining a valid
             // sibling and gives later source failures precedence.
@@ -1784,7 +1845,7 @@ where
         &mut self,
         path: ConstraintInferenceBranch<D, L>,
         parameter: GenericConstReference,
-        value: &super::super::ArrayLength,
+        value: ConstraintConstOperandView<'_, D>,
     ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
         self.check_cancelled()?;
         if path.const_bindings.contains_key(&parameter) {
@@ -1823,7 +1884,12 @@ where
             ))?;
         self.charge_binding(binding_count)?;
         let mut path = path;
-        if super::normalization::const_occurs_in(value, &parameter, path.projection_view(), self)? {
+        if super::normalization::const_occurs_in(
+            value.value(),
+            &parameter,
+            path.projection_view(),
+            self,
+        )? {
             path.deferred_cycles
                 .parameters
                 .insert(parameter.clone().into());
@@ -1837,7 +1903,7 @@ where
         &mut self,
         path: &mut ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
-        value: TypeKind,
+        value: ConstraintOperand<D>,
     ) -> Result<(), TypeConstraintError> {
         self.check_cancelled()?;
         let binding_count = path
@@ -1850,13 +1916,13 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
-        let shape = value.constraint_shape();
+        let shape = value.value().constraint_shape();
         if occurs_in_shape(shape, &parameter, path.projection_view(), self)? {
             path.deferred_cycles
                 .parameters
                 .insert(parameter.clone().into());
         }
-        let rooted = self.root_binding_type(path, &parameter, &value)?;
+        let rooted = self.root_binding_type(path, &parameter, value.view())?;
         path.bindings.insert(parameter, rooted);
         Ok(())
     }
@@ -1865,7 +1931,7 @@ where
         &mut self,
         path: &mut ConstraintInferenceBranch<D, L>,
         parameter: GenericConstReference,
-        value: super::super::ArrayLength,
+        value: ConstraintOperand<D, ArrayLength>,
     ) -> Result<(), TypeConstraintError> {
         self.check_cancelled()?;
         let binding_count = path
@@ -1878,13 +1944,17 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
-        if super::normalization::const_occurs_in(&value, &parameter, path.projection_view(), self)?
-        {
+        if super::normalization::const_occurs_in(
+            value.value(),
+            &parameter,
+            path.projection_view(),
+            self,
+        )? {
             path.deferred_cycles
                 .parameters
                 .insert(parameter.clone().into());
         }
-        let rooted = self.root_binding_length(path, &parameter, &value)?;
+        let rooted = self.root_binding_length(path, &parameter, value.view())?;
         path.const_bindings.insert(parameter, rooted);
         Ok(())
     }
@@ -1897,7 +1967,7 @@ where
         path: &mut ConstraintPath<D>,
         application: ConstraintApplicationId,
         parameter: GenericTypeReference,
-        value: TypeKind,
+        value: ConstraintOperand<D>,
     ) -> Result<(), TypeConstraintError> {
         let reference = path
             .applications
@@ -1921,7 +1991,7 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
-        let rooted = self.root_binding_type(path, &reference, &value)?;
+        let rooted = self.root_binding_type(path, &reference, value.view())?;
         assert!(
             path.bindings.insert(reference, rooted).is_none(),
             "completed solution rows are uniquely sealed before restoration"
@@ -1934,7 +2004,7 @@ where
         path: &mut ConstraintPath<D>,
         application: ConstraintApplicationId,
         parameter: GenericConstReference,
-        value: super::super::ArrayLength,
+        value: ConstraintOperand<D, ArrayLength>,
     ) -> Result<(), TypeConstraintError> {
         let reference = path
             .applications
@@ -1958,7 +2028,7 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
-        let rooted = self.root_binding_length(path, &reference, &value)?;
+        let rooted = self.root_binding_length(path, &reference, value.view())?;
         assert!(
             path.const_bindings.insert(reference, rooted).is_none(),
             "completed const solution rows are uniquely sealed before restoration"

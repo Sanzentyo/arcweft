@@ -50,8 +50,8 @@ pub(crate) use hints::{
     SourceProbeResult, SourceProbeSelection,
 };
 pub(super) use normalization::completed_types_equal;
-pub(crate) use normalization::{
-    ConstAliasResolution, TypeAliasResolution, resolve_const_alias, resolve_type_alias,
+pub(in crate::types) use normalization::{
+    ConstraintAliasResolution, resolve_const_alias, resolve_type_alias,
 };
 pub(crate) use normalization::{
     ConstraintClosurePolicy, KeyedConstraintProjection, RejectedConstraintSourceProjection,
@@ -64,6 +64,8 @@ pub(crate) use shape::TypeConstraintShape;
 pub(crate) use solution::ClosedTypeInstantiation;
 pub(crate) use solution::TypeConstraintSolution;
 pub(crate) use solution::{LocalizedTypeTemplate, TypeTemplateLocalizer};
+#[cfg(test)]
+pub(in crate::types) use test_support::fixture_relate_selected_call;
 mod completion;
 pub(crate) use completion::{
     CompletedCandidateAlternatives, CompletedConstraintApplication, CompletedConstraintComponent,

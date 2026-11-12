@@ -169,11 +169,22 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
     let solved = &solutions[0];
     assert!(Arc::ptr_eq(&solved.branch.lineage, &product.members));
     for parameter in &ty {
-        assert_eq!(solved.branch.bindings.get(parameter), Some(&TypeKind::Bool));
+        assert_eq!(
+            solved
+                .branch
+                .bindings
+                .get(parameter)
+                .map(|value| value.value()),
+            Some(&TypeKind::Bool)
+        );
     }
     for parameter in &length {
         assert_eq!(
-            solved.branch.const_bindings.get(parameter),
+            solved
+                .branch
+                .const_bindings
+                .get(parameter)
+                .map(|value| value.value()),
             Some(&ArrayLength::Const(7))
         );
     }
@@ -185,11 +196,14 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
     };
     let original = &frontiers[0].transaction.frontier[0];
     assert_eq!(
-        original.bindings.get(&ty[0]),
+        original.bindings.get(&ty[0]).map(|value| value.value()),
         Some(&TypeKind::GenericParam(ty[1].clone()))
     );
     assert_eq!(
-        original.const_bindings.get(&length[0]),
+        original
+            .const_bindings
+            .get(&length[0])
+            .map(|value| value.value()),
         Some(&ArrayLength::Generic(length[1].clone()))
     );
     assert!(!original.bindings.contains_key(&ty[1]));
@@ -404,7 +418,14 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
         .as_ref()
         .ok()
         .expect("same original ambient binder")[0];
-    assert_eq!(solution.branch.bindings.get(&ty[0]), Some(&value));
+    assert_eq!(
+        solution
+            .branch
+            .bindings
+            .get(&ty[0])
+            .map(|value| value.value()),
+        Some(&value)
+    );
     let projected = context
         .with_original_scope(product.scope.clone(), |context| {
             crate::types::constraints::normalization::project_type(
@@ -508,7 +529,11 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
     );
     for parameter in &ty {
         assert_eq!(
-            solution.branch.bindings.get(parameter),
+            solution
+                .branch
+                .bindings
+                .get(parameter)
+                .map(|value| value.value()),
             Some(&TypeKind::Bool)
         );
     }
@@ -689,7 +714,14 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
     let forest = component.infer_original_products(&mut context).unwrap();
     assert_eq!(forest.products.len(), 1);
     let solution = &forest.products[0].result.as_ref().ok().unwrap()[0];
-    assert_eq!(solution.branch.bindings.get(&ty[0]), Some(&TypeKind::Bool));
+    assert_eq!(
+        solution
+            .branch
+            .bindings
+            .get(&ty[0])
+            .map(|value| value.value()),
+        Some(&TypeKind::Bool)
+    );
     assert_eq!(forest.original.values.len(), 2);
 }
 
@@ -820,6 +852,13 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
         .expect("the exact imported owner authorizes this dependency");
     assert_eq!(solutions.len(), 1);
     assert_eq!(forest.products[0].scope.shape().binders().len(), 1);
-    assert_eq!(solutions[0].branch.bindings.get(&ty[0]), Some(&actual));
+    assert_eq!(
+        solutions[0]
+            .branch
+            .bindings
+            .get(&ty[0])
+            .map(|value| value.value()),
+        Some(&actual)
+    );
     assert!(context.lexical_scope().binders().is_empty());
 }

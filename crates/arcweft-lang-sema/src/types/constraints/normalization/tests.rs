@@ -20,7 +20,7 @@ use crate::{
             TypeConstraintParameterEligibility, TypeConstraintParameterScope,
             TypeConstraintParameterScopeInvariant, TypeConstraintRejection,
             context::{LocalConstraintAccounting, TypeConstraintLimits},
-            relate_selected_call,
+            fixture_relate_selected_call,
         },
     },
 };
@@ -117,7 +117,7 @@ fn validation_and_selected_relation_reject_escaped_type_and_length_references() 
         );
         let path = context.fork_path(&path).expect("empty path");
         assert_eq!(
-            relate_selected_call(
+            fixture_relate_selected_call(
                 &ty,
                 &ty,
                 path,
@@ -308,7 +308,7 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
         .collect::<BTreeMap<_, _>>();
     let (mut type_context, mut type_context_path) =
         context(scope, &cancellation, 10_001).into_path();
-    type_context_path.bindings = bindings;
+    type_context_path.bindings = type_context.fixture_bindings(bindings);
     let projected = super::project_type(
         &TypeKind::GenericParam(parameters[0].clone()),
         type_context_path.projection_view(),
@@ -339,7 +339,7 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
         .collect::<BTreeMap<_, _>>();
     let (mut const_context, mut const_context_path) =
         context(scope, &cancellation, 10_001).into_path();
-    const_context_path.const_bindings = bindings;
+    const_context_path.const_bindings = const_context.fixture_bindings(bindings);
     let projected = super::project_const_argument(
         &ArrayLength::Generic(parameters[0].clone()),
         const_context_path.projection_view(),
@@ -404,7 +404,7 @@ fn projection_restores_enclosing_scope_and_seeded_guards_after_nested_abort() {
     let mut visiting = seed.clone();
     let mut remaining = BTreeSet::new();
     let (mut context, mut path) = context(scope, &cancellation, 2).into_path();
-    path.bindings = bindings;
+    path.bindings = context.fixture_bindings(bindings);
     let outer = GenericBinder::new(1, 1, 0);
     context
         .with_binder(outer, |context| {
@@ -453,7 +453,7 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
         let mut visiting = seed.clone();
         let mut remaining = BTreeSet::new();
         let (mut context, mut path) = context(scope.clone(), &cancellation, 16).into_path();
-        path.bindings = bindings.clone();
+        path.bindings = context.fixture_bindings(bindings.clone());
         let result = super::project_type_inner(
             &TypeKind::GenericParam(parameters[0].clone()),
             path.projection_view(),
@@ -503,7 +503,7 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
         let mut visiting = seed.clone();
         let mut remaining = BTreeSet::new();
         let (mut context, mut path) = context(scope.clone(), &cancellation, 16).into_path();
-        path.const_bindings = bindings.clone();
+        path.const_bindings = context.fixture_bindings(bindings.clone());
         let result = super::project_array_length(
             &ArrayLength::Generic(parameters[0].clone()),
             path.projection_view(),

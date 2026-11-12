@@ -879,12 +879,7 @@ fn forked_probe(cancellation: &AtomicBool) -> ForkedProbe<'_> {
         (&mut second, TypeKind::String),
     ] {
         branch.path = context
-            .add_binding(
-                branch.path.take().unwrap(),
-                variable.clone(),
-                &value,
-                value.constraint_shape(),
-            )
+            .fixture_add_binding(branch.path.take().unwrap(), variable.clone(), &value)
             .unwrap();
     }
     ForkedProbe {
@@ -1291,7 +1286,7 @@ fn source_frontier<A: TypeConstraintAccounting>(
         .expect("opened candidate parameter");
     let [first, second] = [(); 2].map(|()| {
         let mut path = context.fork_path(path).expect("admitted frontier row");
-        path.bindings.insert(parameter.clone(), TypeKind::I64);
+        path.bindings.insert(parameter.clone(), context.fixture_operand(TypeKind::I64));
         path.lineage
             .probe_trace
             .push(source::ConstraintProbe::Active(

@@ -339,7 +339,8 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
         },
         origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
     });
-    path.bindings.insert(parameter, TypeKind::I64);
+    path.bindings
+        .insert(parameter, context.fixture_operand(TypeKind::I64));
     let closed = probe
         .close(
             path.projection_view(),
@@ -481,7 +482,8 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
         actual,
         origin: crate::types::constraints::transaction::operand::ResolvedConstraintSource::Fixture,
     });
-    path.bindings.insert(reference, TypeKind::I64);
+    path.bindings
+        .insert(reference, context.fixture_operand(TypeKind::I64));
     let closed = probe
         .close(
             path.projection_view(),

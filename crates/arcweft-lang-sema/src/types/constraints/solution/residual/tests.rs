@@ -1,5 +1,8 @@
 use crate::types::constraints::test_support::ConstraintTestSetup;
-use std::{collections::BTreeMap, sync::atomic::AtomicBool};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 use crate::{
     effect_row::EffectRow,
@@ -77,7 +80,7 @@ fn recursive_binding_to_the_same_declaration_is_free_and_issuer_independent() {
         let caller = GenericTypeReference::Free(parameter(0));
         assert_ne!(callee, caller);
         {
-            path.bindings = BTreeMap::from([(callee, TypeKind::GenericParam(caller))]);
+            path.bindings = context.fixture_bindings([(callee, TypeKind::GenericParam(caller))]);
             path.const_bindings = BTreeMap::new();
             TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
         }
@@ -164,7 +167,7 @@ fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
         EffectRow::closed(crate::effects::EffectSet::new()),
     );
     {
-        path.bindings = BTreeMap::from([(
+        path.bindings = context.fixture_bindings([(
             path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
@@ -218,7 +221,7 @@ fn nested_function_binders_preserve_inner_variables_and_bind_future_types_and_le
 #[test]
 fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
     let cancellation = AtomicBool::new(false);
-    let solution = prefix(&cancellation);
+    let solution = Arc::new(prefix(&cancellation));
     let (mut first, first_path) = context(continuation_scope(true), &cancellation).into_path();
     let (mut second, second_path) = context(continuation_scope(true), &cancellation).into_path();
     let mut first_path = solution
@@ -238,15 +241,19 @@ fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
         .type_reference(&(parameter(1)).clone().into())
         .expect("second residual variable");
     assert_ne!(first_key, second_key);
-    first_path.bindings.insert(first_key, TypeKind::I32);
-    second_path.bindings.insert(second_key, TypeKind::String);
+    first_path
+        .bindings
+        .insert(first_key, first.fixture_operand(TypeKind::I32));
+    second_path
+        .bindings
+        .insert(second_key, second.fixture_operand(TypeKind::String));
     first_path.const_bindings.insert(
         first_path
             .root_scope()
             .parameters()
             .const_reference(&(constant()).clone().into())
             .expect("length"),
-        ArrayLength::Const(3),
+        first.fixture_operand(ArrayLength::Const(3)),
     );
     second_path.const_bindings.insert(
         second_path
@@ -254,7 +261,7 @@ fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
             .parameters()
             .const_reference(&(constant()).clone().into())
             .expect("length"),
-        ArrayLength::Const(5),
+        second.fixture_operand(ArrayLength::Const(5)),
     );
     let first = {
         TypeConstraintSolution::complete_application(&first_path, first_path.root_id(), &mut first)

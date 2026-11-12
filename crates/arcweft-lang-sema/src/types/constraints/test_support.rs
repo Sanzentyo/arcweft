@@ -24,6 +24,22 @@ pub(crate) fn source_id<S: Copy>(local: S) -> super::ConstraintSourceId<S> {
     super::ConstraintSourceId::new(scope.id(), local)
 }
 
+pub(in crate::types) fn fixture_relate_selected_call<A, D, L: Clone>(
+    pattern: &crate::types::TypeKind,
+    actual: &crate::types::TypeKind,
+    path: super::transaction::ConstraintInferenceBranch<D, L>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    acceptance: super::ConstraintAcceptance,
+) -> Result<Vec<super::transaction::ConstraintInferenceBranch<D, L>>, super::TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    let pattern = context.fixture_operand(pattern.clone());
+    let actual = context.fixture_operand(actual.clone());
+    super::relate_selected_call(&pattern.view(), &actual.view(), path, context, acceptance)
+}
+
 pub(crate) struct ConstraintTestSetup<'c, A: TypeConstraintAccounting, D: ConstraintDomain> {
     context: TypeConstraintContext<'c, A, D>,
     parameters: TypeConstraintParameterScope,

@@ -441,8 +441,14 @@ impl TypeConstraintSolution {
                 ));
             }
         }
-        path.bindings = bindings.into_iter().collect();
-        path.const_bindings = const_bindings.into_iter().collect();
+        path.bindings = bindings
+            .into_iter()
+            .map(|(key, value)| (key, context.fixture_operand(value)))
+            .collect();
+        path.const_bindings = const_bindings
+            .into_iter()
+            .map(|(key, value)| (key, context.fixture_operand(value)))
+            .collect();
         let effects = path.effects.complete(context)?;
         Self::seal_application(
             path,
@@ -526,7 +532,7 @@ impl TypeConstraintSolution {
             };
             let owner = context.binding_scope(path, &parameter.clone().into())?;
             if matches!(
-                value.constraint_shape(),
+                value.value().constraint_shape(),
                 TypeConstraintShape::Generic(bound) if bound == &parameter
             ) {
                 if !input.requires_canonical_claim() {
@@ -542,7 +548,7 @@ impl TypeConstraintSolution {
             }
             let reified = context.with_original_scope(owner, |context| {
                 let projected = project_type(
-                    &value,
+                    value.value(),
                     path.projection_view(),
                     ConstraintClosurePolicy::SolutionCompletion,
                     context,
@@ -550,7 +556,7 @@ impl TypeConstraintSolution {
                 .map_err(|error| {
                     map_completed_canonical_error(error, parameter.clone().into(), input)
                 })?;
-                if input.requires_canonical_claim() && projected.value != value {
+                if input.requires_canonical_claim() && &projected.value != value.value() {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::NonCanonical,
                         Some(parameter.clone().into()),
@@ -591,7 +597,7 @@ impl TypeConstraintSolution {
                 continue;
             };
             let owner = context.binding_scope(path, &parameter.clone().into())?;
-            if matches!(&value, ArrayLength::Generic(bound) if bound == &parameter) {
+            if matches!(value.value(), ArrayLength::Generic(bound) if bound == &parameter) {
                 if !input.requires_canonical_claim() {
                     return Err(TypeConstraintRejection::CyclicInstantiation {
                         parameter: parameter.into(),
@@ -605,7 +611,7 @@ impl TypeConstraintSolution {
             }
             let reified = context.with_original_scope(owner, |context| {
                 let projected = project_const_argument(
-                    &value,
+                    value.value(),
                     path.projection_view(),
                     ConstraintClosurePolicy::SolutionCompletion,
                     context,
@@ -613,7 +619,7 @@ impl TypeConstraintSolution {
                 .map_err(|error| {
                     map_completed_canonical_error(error, parameter.clone().into(), input)
                 })?;
-                if input.requires_canonical_claim() && projected != value {
+                if input.requires_canonical_claim() && &projected != value.value() {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::NonCanonical,
                         Some(parameter.clone().into()),
@@ -682,7 +688,7 @@ impl TypeConstraintSolution {
     /// that proof. This boundary checks only the phase transition (same
     /// inventory and exact required keys) before transferring the rows.
     pub(super) fn restore_inherited_path<A, D>(
-        &self,
+        self: &Arc<Self>,
         application: super::application::ConstraintApplicationId,
         mut path: ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -787,6 +793,7 @@ impl TypeConstraintSolution {
         )?;
         path.effects.restore_predicate(&predicate, context)?;
 
+        let operand_scope = Arc::new(context.capture_lexical_scope()?);
         for (parameter, value) in self.bindings() {
             let value = self
                 .context
@@ -795,7 +802,13 @@ impl TypeConstraintSolution {
                 &mut path,
                 application.id(),
                 parameter.value().clone(),
-                value,
+                super::transaction::ConstraintOperand::completed(
+                    value,
+                    Arc::clone(&operand_scope),
+                    application.original_context().clone(),
+                    Arc::clone(self),
+                    parameter.value().clone().into(),
+                ),
             )?;
         }
         for (parameter, value) in self.const_bindings() {
@@ -806,7 +819,13 @@ impl TypeConstraintSolution {
                 &mut path,
                 application.id(),
                 parameter.value().clone(),
-                value,
+                super::transaction::ConstraintOperand::completed(
+                    value,
+                    Arc::clone(&operand_scope),
+                    application.original_context().clone(),
+                    Arc::clone(self),
+                    parameter.value().clone().into(),
+                ),
             )?;
         }
         for (variable, value) in self.effect_bindings() {

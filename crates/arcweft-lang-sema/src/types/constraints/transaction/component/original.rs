@@ -228,14 +228,27 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             choice_key: Vec::new(),
             deferred_cycles: DeferredCycleWitness::default(),
         };
+        let operand_scope = Arc::new(scope.clone());
         let mut branches = vec![seed];
         for member in members.iter() {
             let original = self.original_path(*member)?;
             for (parameter, value) in &original.bindings {
                 context.enter_node()?;
-                let owner = context.binding_scope(original, &parameter.clone().into())?;
-                let value = scope
-                    .transport_type(&owner, value, context)
+                let owner = original
+                    .applications
+                    .binding_owner(&parameter.clone().into())
+                    .ok_or_else(|| {
+                        TypeConstraintError::from(TypeConstraintRejection::EscapingInstantiation {
+                            parameter: parameter.clone().into(),
+                        })
+                    })?;
+                let reference = super::super::ConstraintOperand::original(
+                    TypeKind::GenericParam(parameter.clone()),
+                    Arc::clone(&operand_scope),
+                    owner.original.clone(),
+                );
+                let value = value
+                    .transport(&operand_scope, context)
                     .map_err(projection_failure)?;
                 let check = OriginalProductCheck::TypeBinding {
                     member: *member,
@@ -243,12 +256,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 };
                 let mut next = Vec::new();
                 for branch in branches {
-                    match unify_original_binding(
-                        &TypeKind::GenericParam(parameter.clone()),
-                        &value,
-                        branch,
-                        context,
-                    ) {
+                    match unify_original_binding(&reference.view(), &value.view(), branch, context)
+                    {
                         Ok(paths) => next.extend(paths),
                         Err(error) => return Err(reject(check, error)),
                     }
@@ -260,9 +269,21 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             for (parameter, value) in &original.const_bindings {
                 context.enter_node()?;
-                let owner = context.binding_scope(original, &parameter.clone().into())?;
-                let value = scope
-                    .transport_length(&owner, value, context)
+                let owner = original
+                    .applications
+                    .binding_owner(&parameter.clone().into())
+                    .ok_or_else(|| {
+                        TypeConstraintError::from(TypeConstraintRejection::EscapingInstantiation {
+                            parameter: parameter.clone().into(),
+                        })
+                    })?;
+                let reference = super::super::ConstraintOperand::original(
+                    ArrayLength::Generic(parameter.clone()),
+                    Arc::clone(&operand_scope),
+                    owner.original.clone(),
+                );
+                let value = value
+                    .transport(&operand_scope, context)
                     .map_err(projection_failure)?;
                 let check = OriginalProductCheck::ConstBinding {
                     member: *member,
@@ -270,12 +291,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 };
                 let mut next = Vec::new();
                 for branch in branches {
-                    match unify_original_length(
-                        &ArrayLength::Generic(parameter.clone()),
-                        &value,
-                        branch,
-                        context,
-                    ) {
+                    match unify_original_length(&reference.view(), &value.view(), branch, context) {
                         Ok(Some(path)) => next.push(path),
                         Ok(None) => {}
                         Err(error) => return Err(reject(check, error)),
@@ -445,7 +461,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 };
                 let owner = context.binding_scope(original, &parameter.clone().into())?;
                 let value = scope
-                    .transport_type(&owner, value, context)
+                    .transport_type(&owner, value.value(), context)
                     .map_err(projection_failure)?;
                 let left = project(&TypeKind::GenericParam(parameter.clone()), context)?;
                 let right = project(&value, context)?;
@@ -461,7 +477,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 };
                 let owner = context.binding_scope(original, &parameter.clone().into())?;
                 let value = scope
-                    .transport_length(&owner, value, context)
+                    .transport_length(&owner, value.value(), context)
                     .map_err(projection_failure)?;
                 let left = crate::types::constraints::normalization::seal_const(
                     &ArrayLength::Generic(parameter.clone()),

@@ -19,8 +19,7 @@ fn outer_type_and_const_bindings_reject_new_inner_formals() {
     context
         .with_binder(GenericBinder::new(1, 0, 0), |context| {
             let value = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
-            let result =
-                context.add_binding(path, types[0].clone(), &value, value.constraint_shape());
+            let result = context.fixture_add_binding(path, types[0].clone(), &value);
             assert!(matches!(result, Err(error) if error == escaping(types[0].clone())));
             Ok(())
         })
@@ -32,7 +31,7 @@ fn outer_type_and_const_bindings_reject_new_inner_formals() {
     context
         .with_binder(GenericBinder::new(0, 1, 0), |context| {
             let value = ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap());
-            let result = context.add_const_binding(path, lengths[0].clone(), &value);
+            let result = context.fixture_add_const_binding(path, lengths[0].clone(), &value);
             assert!(matches!(result, Err(error) if error == escaping(lengths[0].clone())));
             Ok(())
         })
@@ -56,8 +55,7 @@ fn outer_binding_cannot_capture_an_inner_effect_through_a_function_type() {
                     context.lexical_scope().bound_effect(0, 0).unwrap(),
                 ),
             );
-            let result =
-                context.add_binding(path, types[0].clone(), &value, value.constraint_shape());
+            let result = context.fixture_add_binding(path, types[0].clone(), &value);
             assert!(matches!(result, Err(error) if error == escaping(types[0].clone())));
             Ok(())
         })
@@ -79,7 +77,7 @@ fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_referen
         len: ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap()),
     };
     let path = context
-        .add_binding(path, types[0].clone(), &value, value.constraint_shape())
+        .fixture_add_binding(path, types[0].clone(), &value)
         .unwrap()
         .unwrap();
     let binder = GenericBinder::new(1, 1, 0);
@@ -109,7 +107,10 @@ fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_referen
     .unwrap();
     assert_eq!(projected.value, expected);
     assert!(projected.remaining.is_empty());
-    assert_eq!(path.bindings.get(&types[0]), Some(&value));
+    assert_eq!(
+        path.bindings.get(&types[0]).map(|value| value.value()),
+        Some(&value)
+    );
     context.restore_binder_scope(enclosing);
 }
 
@@ -132,7 +133,7 @@ fn a_binding_may_own_its_own_polymorphic_function_binder() {
         EffectRow::open(EffectSet::new(), own.bound_effect(0, 0).unwrap()),
     );
     let path = context
-        .add_binding(path, types[0].clone(), &value, value.constraint_shape())
+        .fixture_add_binding(path, types[0].clone(), &value)
         .unwrap()
         .unwrap();
     context.restore_binder_scope(enclosing);
@@ -167,31 +168,24 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         .unwrap();
     let alias = TypeKind::GenericParam(inner_types[0].clone());
     let child = context
-        .add_binding(
-            child,
-            outer_types[0].clone(),
-            &alias,
-            alias.constraint_shape(),
-        )
+        .fixture_add_binding(child, outer_types[0].clone(), &alias)
         .unwrap()
         .unwrap();
     let inner = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     let child = context
-        .add_binding(
-            child,
-            inner_types[0].clone(),
-            &inner,
-            inner.constraint_shape(),
-        )
+        .fixture_add_binding(child, inner_types[0].clone(), &inner)
         .unwrap()
         .unwrap();
     assert_eq!(
         crate::types::constraints::normalization::resolve_type_alias(
-            &outer_types[0],
+            context
+                .fixture_operand(TypeKind::GenericParam(outer_types[0].clone()))
+                .view(),
             &child,
             &mut context
-        ),
-        Err(escaping(inner_types[0].clone()))
+        )
+        .err(),
+        Some(escaping(inner_types[0].clone()))
     );
     assert!(
         matches!(seal_path(child, &mut context), Err(error) if error == escaping(inner_types[0].clone()))
@@ -214,7 +208,7 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         .start_fixture_path_with_imported(application, Some(lease))
         .unwrap();
     let child = context
-        .add_const_binding(
+        .fixture_add_const_binding(
             child,
             outer_lengths[0].clone(),
             &ArrayLength::Generic(inner_lengths[0].clone()),
@@ -223,16 +217,19 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         .unwrap();
     let inner = ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap());
     let child = context
-        .add_const_binding(child, inner_lengths[0].clone(), &inner)
+        .fixture_add_const_binding(child, inner_lengths[0].clone(), &inner)
         .unwrap()
         .unwrap();
     assert_eq!(
         crate::types::constraints::normalization::resolve_const_alias(
-            &outer_lengths[0],
+            context
+                .fixture_operand(ArrayLength::Generic(outer_lengths[0].clone()))
+                .view(),
             &child,
             &mut context
-        ),
-        Err(escaping(inner_lengths[0].clone()))
+        )
+        .err(),
+        Some(escaping(inner_lengths[0].clone()))
     );
     assert!(
         matches!(seal_path(child, &mut context), Err(error) if error == escaping(inner_lengths[0].clone()))
@@ -264,7 +261,7 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
         .unwrap();
     let child = context
         .with_original_scope(owner.clone(), |context| {
-            context.add_binding(child, types[0].clone(), &value, value.constraint_shape())
+            context.fixture_add_binding(child, types[0].clone(), &value)
         })
         .unwrap()
         .unwrap();

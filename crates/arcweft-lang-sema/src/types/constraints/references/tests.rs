@@ -67,7 +67,8 @@ fn vector_components_open_and_complete_through_the_lower_constraint_authority() 
             vector(dimensions, TypeKind::GenericParam(component.clone()))
         );
         let solution = {
-            path.bindings = BTreeMap::from([(value, opened_vector), (component, TypeKind::F32)]);
+            path.bindings =
+                context.fixture_bindings([(value, opened_vector), (component, TypeKind::F32)]);
             path.const_bindings = BTreeMap::new();
             TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
         }
@@ -102,7 +103,7 @@ fn cyclic_vector_component_is_rejected_before_a_solution_can_publish() {
         .type_reference(&(parameter(0)).clone().into())
         .expect("type slot");
     let error = {
-        path.bindings = BTreeMap::from([(
+        path.bindings = context.fixture_bindings([(
             reference.clone(),
             vector(VectorDimensions::Three, TypeKind::GenericParam(reference)),
         )]);
@@ -178,7 +179,7 @@ fn identical_payload_fields_do_not_widen_their_dependent_owner() {
 
 #[test]
 fn payload_relation_infers_parameters_used_only_by_the_owner() {
-    use crate::types::constraints::{ConstraintAcceptance, relate_selected_call};
+    use crate::types::constraints::{ConstraintAcceptance, fixture_relate_selected_call};
 
     let scope = TypeConstraintParameterScope::new([(
         parameter(0),
@@ -202,7 +203,7 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
         .expect("open payload owner");
     let actual = error_payload(TypeKind::I64);
     let path = context.fork_path(&path).expect("candidate path");
-    let mut paths = relate_selected_call(
+    let mut paths = fixture_relate_selected_call(
         &expected,
         &actual,
         path,
@@ -259,7 +260,7 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
         .type_reference(&(parameter(1)).clone().into())
         .expect("owner argument slot");
     let solution = {
-        path.bindings = BTreeMap::from([(root, opened), (argument, TypeKind::I64)]);
+        path.bindings = context.fixture_bindings([(root, opened), (argument, TypeKind::I64)]);
         path.const_bindings = BTreeMap::new();
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
@@ -319,7 +320,7 @@ fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
         .type_reference(&(parameter(0)).clone().into())
         .expect("type slot");
     let error = {
-        path.bindings = BTreeMap::from([(reference, opened)]);
+        path.bindings = context.fixture_bindings([(reference, opened)]);
         path.const_bindings = BTreeMap::new();
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
@@ -373,7 +374,7 @@ fn residual_payload_owner_requires_its_retained_type_and_const_scope() {
         .type_reference(&(parameter(0)).clone().into())
         .expect("result slot");
     let solution = {
-        path.bindings = BTreeMap::from([(root, opened)]);
+        path.bindings = context.fixture_bindings([(root, opened)]);
         path.const_bindings = BTreeMap::new();
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }

@@ -244,9 +244,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 advanced.push(path);
                 continue;
             }
+            let actual = path
+                .equations
+                .last()
+                .expect("the result equation is retained")
+                .actual
+                .clone();
             advanced.extend(super::relate_selected_call(
-                pattern.value(),
-                expected,
+                &pattern.view(),
+                &actual.view(),
                 path,
                 context,
                 crate::types::ConstraintAcceptance::ActualAcceptsPattern,

@@ -92,12 +92,12 @@ where
                         && let Some(bound) = view.binding(parameter)?
                     {
                         if visiting.insert(parameter.clone()) {
-                            let enclosing = context.replace_lexical_scope(bound.scope.clone());
+                            let enclosing = context.replace_lexical_scope(bound.scope().clone());
                             frames.push(ProjectionFrame::Binding {
                                 parameter,
                                 enclosing,
                             });
-                            current = bound.value;
+                            current = bound.value();
                             continue;
                         }
                         match policy {
@@ -363,9 +363,9 @@ where
                                 }
                             };
                         }
-                        let enclosing = context.replace_lexical_scope(bound.scope.clone());
+                        let enclosing = context.replace_lexical_scope(bound.scope().clone());
                         entered.push((parameter, enclosing));
-                        current = bound.value;
+                        current = bound.value();
                         continue;
                     }
                     if allows_unbound_const(policy, eligibility) {

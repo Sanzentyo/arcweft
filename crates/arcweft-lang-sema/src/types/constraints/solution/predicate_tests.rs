@@ -268,7 +268,7 @@ fn known_callback_predicates_distinguish_callable_digests_and_selected_call_cand
                     TypeConstraintParameterScope::empty(),
                 ))
                 .unwrap();
-            super::super::relate_selected_call(
+            super::super::fixture_relate_selected_call(
                 expected,
                 &reading,
                 path,

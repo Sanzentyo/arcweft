@@ -99,6 +99,23 @@ enum ConstraintConstOperandOrigin<'a, D: ConstraintDomain> {
     Root(&'a ConstraintOperand<D, ArrayLength>),
 }
 
+impl<D: ConstraintDomain> Clone for ConstraintConstOperandView<'_, D> {
+    fn clone(&self) -> Self {
+        Self {
+            origin: match &self.origin {
+                ConstraintConstOperandOrigin::Array(parent) => {
+                    ConstraintConstOperandOrigin::Array(parent.clone())
+                }
+                ConstraintConstOperandOrigin::Root(root) => {
+                    ConstraintConstOperandOrigin::Root(root)
+                }
+            },
+            value: self.value,
+            scope: Arc::clone(&self.scope),
+        }
+    }
+}
+
 impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
     pub(super) fn root(root: &'a ConstraintOperand<D>) -> Self {
         Self {
@@ -117,19 +134,41 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
         self.scope.shape()
     }
 
+    pub(in crate::types::constraints) fn lexical_scope(&self) -> &Arc<ConstraintLexicalScope> {
+        &self.scope
+    }
+
+    pub(in crate::types::constraints) fn retained(&self) -> ConstraintOperand<D> {
+        match &self.address {
+            None => self.root.clone(),
+            Some(address) => ConstraintOperand {
+                value: Arc::new(self.value.clone()),
+                scope: Arc::clone(&self.scope),
+                origin: self.projected_origin(Arc::clone(address)),
+            },
+        }
+    }
+
     pub(in crate::types) fn children<A: TypeConstraintAccounting>(
         &self,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintOperandChildren<'a, D>, TypeConstraintError> {
         let shape = self.value.constraint_shape();
-        let scope = context.capture_lexical_scope()?;
-        if !self.scope.admits_children_scope(&scope, shape.binder()) {
+        if !self
+            .scope
+            .admits_children_scope(context.lexical_frames(), shape.binder())
+        {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
+        let scope = if shape.binder().is_empty() {
+            Arc::clone(&self.scope)
+        } else {
+            Arc::new(context.capture_lexical_scope()?)
+        };
         Ok(ConstraintOperandChildren {
             root: self.root,
             children: shape.children().enumerate(),
-            scope: Arc::new(scope),
+            scope,
             parent: self.address.clone(),
         })
     }
@@ -189,6 +228,25 @@ impl<'a, D: ConstraintDomain> ConstraintConstOperandView<'a, D> {
 
     pub(in crate::types) fn value(&self) -> &ArrayLength {
         self.value
+    }
+
+    pub(in crate::types::constraints) fn lexical_scope(&self) -> &Arc<ConstraintLexicalScope> {
+        &self.scope
+    }
+
+    pub(in crate::types::constraints) fn retained(&self) -> ConstraintOperand<D, ArrayLength> {
+        match &self.origin {
+            ConstraintConstOperandOrigin::Root(root) => (*root).clone(),
+            ConstraintConstOperandOrigin::Array(parent) => ConstraintOperand {
+                value: Arc::new(self.value.clone()),
+                scope: Arc::clone(&self.scope),
+                origin: parent.projected_origin(Arc::new(
+                    ConstraintOperandProjection::ArrayLength {
+                        parent: parent.address.clone(),
+                    },
+                )),
+            },
+        }
     }
 
     pub(in crate::types::constraints) fn transport<A: TypeConstraintAccounting>(

@@ -184,14 +184,14 @@ fn project_specialization_composes_residual_rows_and_recursive_caller_values_sim
     let length = opening.const_reference(&constant().into()).unwrap();
     path.bindings.insert(
         first,
-        TypeKind::Tuple(vec![
+        context.fixture_operand(TypeKind::Tuple(vec![
             TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter(0)))),
             TypeKind::GenericParam(future),
             TypeKind::Array {
                 item: Box::new(TypeKind::Bool),
                 len: ArrayLength::Generic(length),
             },
-        ]),
+        ])),
     );
     let prefix =
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context).unwrap();

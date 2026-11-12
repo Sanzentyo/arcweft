@@ -7,6 +7,8 @@ use crate::types::constraints::{
 use crate::types::{GenericBinder, GenericTypeReference};
 use std::sync::atomic::AtomicBool;
 
+mod bindings;
+
 type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
 fn context(cancellation: &AtomicBool) -> Context<'_> {
