@@ -135,7 +135,10 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         root: Arc<TypeKind>,
         root_scope: Arc<ConstraintLexicalScope>,
         occurrence_scope: Arc<ConstraintLexicalScope>,
+        // Result association stays with the observed root, including aliases.
         producer: Arc<ConstraintOperandOrigin<D>>,
+        // Value admission follows the corresponding child or alias terminal.
+        selected: Arc<ConstraintOperandOrigin<D>>,
         address: Option<Arc<ConstraintOperandProjection>>,
     },
     ConstOccurrence(ConstraintOperand<D, ArrayLength>),

@@ -88,6 +88,7 @@ impl<D: ConstraintDomain> ConstraintOperandView<'_, D> {
             root_scope: Arc::clone(&self.root.scope),
             occurrence_scope: Arc::clone(&self.scope),
             producer: Arc::clone(&self.root.origin),
+            selected: Arc::clone(&self.value_origin),
             address: self.address.clone(),
         })
     }
@@ -110,11 +111,12 @@ impl<D: ConstraintDomain> ConstraintConstOperandView<'_, D> {
             ConstraintConstOperandOrigin::Root(root) => {
                 Arc::new(ConstraintOperandOrigin::ConstOccurrence((*root).clone()))
             }
-            ConstraintConstOperandOrigin::Array(parent) => {
-                parent.projected_origin(Arc::new(ConstraintOperandProjection::ArrayLength {
+            ConstraintConstOperandOrigin::Array(parent) => parent.projected_origin(
+                Arc::new(ConstraintOperandProjection::ArrayLength {
                     parent: parent.address.clone(),
-                }))
-            }
+                }),
+                Arc::clone(&self.value_origin),
+            ),
         };
         ConstraintProjectedOperand::new(
             self.value.clone(),

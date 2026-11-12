@@ -198,7 +198,13 @@ fn a_transitive_type_alias_retains_every_occurrence_and_the_exact_replacement_ro
         TypeKind::String,
     ]));
     let retained_root = Arc::downgrade(&root.value);
-    let child = root.view().children(&mut context).unwrap().next().unwrap();
+    let child = root
+        .view()
+        .children(&mut context)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap();
     let path = context
         .add_binding(path, parameters[0].clone(), child)
         .unwrap()
@@ -275,7 +281,7 @@ fn a_constant_alias_keeps_the_array_length_port_without_a_synthetic_type() {
         .add_const_binding(
             path,
             parameters[0].clone(),
-            array.view().array_length().unwrap(),
+            array.view().array_length().unwrap().unwrap(),
         )
         .unwrap()
         .unwrap();

@@ -7,6 +7,7 @@ use crate::types::constraints::{
 use crate::types::{GenericBinder, GenericTypeReference};
 use std::sync::atomic::AtomicBool;
 
+mod authority;
 mod bindings;
 mod closed_effects;
 mod normalization;
@@ -67,8 +68,8 @@ fn tuple_children_borrow_the_root_and_retain_distinct_exact_addresses() {
     };
     let view = root.view();
     let mut children = view.children(&mut context).unwrap();
-    let first = children.next().unwrap();
-    let second = children.next().unwrap();
+    let first = children.next().unwrap().unwrap();
+    let second = children.next().unwrap().unwrap();
     assert!(children.next().is_none());
     assert!(std::ptr::eq(first.value(), &values[0]));
     assert!(std::ptr::eq(second.value(), &values[1]));
@@ -123,10 +124,12 @@ fn an_array_item_and_its_length_have_distinct_type_and_const_projections() {
         .unwrap()
         .next()
         .unwrap()
+        .unwrap()
         .transport(&scope, &mut context)
         .unwrap();
     let len = view
         .array_length()
+        .unwrap()
         .unwrap()
         .transport(&scope, &mut context)
         .unwrap();
@@ -193,8 +196,8 @@ fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_fore
     let local = context.enter_binder_scope(ambient);
     let local_scope = Arc::new(context.capture_lexical_scope().unwrap());
     let mut children = view.children(&mut context).unwrap();
-    let parameter = children.next().unwrap();
-    let result = children.next().unwrap();
+    let parameter = children.next().unwrap().unwrap();
+    let result = children.next().unwrap().unwrap();
     assert!(parameter.transport(&scope, &mut context).is_err());
     let parameter = parameter.transport(&local_scope, &mut context).unwrap();
     let result = result.transport(&scope, &mut context).unwrap();

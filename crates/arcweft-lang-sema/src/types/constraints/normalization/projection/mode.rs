@@ -10,7 +10,7 @@ use crate::types::constraints::transaction::{
 pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
     type TypeInput: Clone;
     type ConstInput: Clone;
-    type Children: Iterator<Item = Self::TypeInput>;
+    type Children;
     type ShapeSeed;
     type TypeOutput;
     type ConstOutput;
@@ -20,7 +20,12 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
     fn length(input: &Self::ConstInput) -> &'ty ArrayLength;
     fn type_binding(binding: &'ty ConstraintOperand<D>) -> Self::TypeInput;
     fn const_binding(binding: &'ty ConstraintOperand<D, ArrayLength>) -> Self::ConstInput;
-    fn array_length(input: &Self::TypeInput) -> Option<Self::ConstInput>;
+    fn array_length(
+        input: &Self::TypeInput,
+    ) -> Result<Option<Self::ConstInput>, TypeConstraintError>;
+    fn next_child(
+        children: &mut Self::Children,
+    ) -> Result<Option<Self::TypeInput>, TypeConstraintError>;
     fn children<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -78,11 +83,18 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     fn const_binding(binding: &'ty ConstraintOperand<D, ArrayLength>) -> Self::ConstInput {
         binding.value()
     }
-    fn array_length(input: &Self::TypeInput) -> Option<Self::ConstInput> {
-        match input.constraint_shape() {
+    fn array_length(
+        input: &Self::TypeInput,
+    ) -> Result<Option<Self::ConstInput>, TypeConstraintError> {
+        Ok(match input.constraint_shape() {
             TypeConstraintShape::Array { len, .. } => Some(len),
             _ => None,
-        }
+        })
+    }
+    fn next_child(
+        children: &mut Self::Children,
+    ) -> Result<Option<Self::TypeInput>, TypeConstraintError> {
+        Ok(children.next())
     }
     fn children<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
@@ -175,8 +187,15 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
     fn const_binding(binding: &'ty ConstraintOperand<D, ArrayLength>) -> Self::ConstInput {
         binding.view()
     }
-    fn array_length(input: &Self::TypeInput) -> Option<Self::ConstInput> {
+    fn array_length(
+        input: &Self::TypeInput,
+    ) -> Result<Option<Self::ConstInput>, TypeConstraintError> {
         input.array_length()
+    }
+    fn next_child(
+        children: &mut Self::Children,
+    ) -> Result<Option<Self::TypeInput>, TypeConstraintError> {
+        children.next().transpose()
     }
     fn children<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,

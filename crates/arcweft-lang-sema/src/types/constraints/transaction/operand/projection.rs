@@ -3,6 +3,7 @@
 use super::*;
 use crate::types::constraints::shape::TypeConstraintChildren;
 
+mod authority;
 mod rebuild;
 mod source_expectation;
 pub(in crate::types::constraints) use rebuild::{
@@ -58,6 +59,7 @@ pub(in crate::types) struct ConstraintOperandView<'a, D: ConstraintDomain> {
     value: &'a TypeKind,
     scope: Arc<ConstraintLexicalScope>,
     address: Option<Arc<ConstraintOperandProjection>>,
+    value_origin: Arc<ConstraintOperandOrigin<D>>,
 }
 
 impl<D: ConstraintDomain> Clone for ConstraintOperandView<'_, D> {
@@ -67,6 +69,7 @@ impl<D: ConstraintDomain> Clone for ConstraintOperandView<'_, D> {
             value: self.value,
             scope: Arc::clone(&self.scope),
             address: self.address.clone(),
+            value_origin: Arc::clone(&self.value_origin),
         }
     }
 }
@@ -78,11 +81,10 @@ pub(in crate::types) struct ConstraintOperandChildren<'a, D: ConstraintDomain> {
 }
 
 impl<'a, D: ConstraintDomain> Iterator for ConstraintOperandChildren<'a, D> {
-    type Item = ConstraintOperandView<'a, D>;
+    type Item = Result<ConstraintOperandView<'a, D>, TypeConstraintError>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.children
-            .next()
-            .map(|(index, value)| ConstraintOperandView {
+        self.children.next().map(|(index, value)| {
+            Ok(ConstraintOperandView {
                 root: self.parent.root,
                 value,
                 scope: Arc::clone(&self.scope),
@@ -90,7 +92,9 @@ impl<'a, D: ConstraintDomain> Iterator for ConstraintOperandChildren<'a, D> {
                     parent: self.parent.address.clone(),
                     index,
                 })),
+                value_origin: self.parent.value_origin.type_child_origin(index)?,
             })
+        })
     }
 }
 
@@ -98,6 +102,7 @@ pub(in crate::types) struct ConstraintConstOperandView<'a, D: ConstraintDomain> 
     origin: ConstraintConstOperandOrigin<'a, D>,
     value: &'a ArrayLength,
     scope: Arc<ConstraintLexicalScope>,
+    value_origin: Arc<ConstraintOperandOrigin<D>>,
 }
 
 enum ConstraintConstOperandOrigin<'a, D: ConstraintDomain> {
@@ -118,6 +123,7 @@ impl<D: ConstraintDomain> Clone for ConstraintConstOperandView<'_, D> {
             },
             value: self.value,
             scope: Arc::clone(&self.scope),
+            value_origin: Arc::clone(&self.value_origin),
         }
     }
 }
@@ -129,6 +135,7 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
             value: root.value(),
             scope: Arc::clone(&root.scope),
             address: None,
+            value_origin: Arc::clone(&root.origin),
         }
     }
 
@@ -150,7 +157,7 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
             Some(address) => ConstraintOperand {
                 value: Arc::new(self.value.clone()),
                 scope: Arc::clone(&self.scope),
-                origin: self.projected_origin(Arc::clone(address)),
+                origin: self.projected_origin(Arc::clone(address), Arc::clone(&self.value_origin)),
             },
         }
     }
@@ -178,28 +185,33 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
         })
     }
 
-    pub(in crate::types) fn array_length(&self) -> Option<ConstraintConstOperandView<'a, D>> {
+    pub(in crate::types) fn array_length(
+        &self,
+    ) -> Result<Option<ConstraintConstOperandView<'a, D>>, TypeConstraintError> {
         match self.value.constraint_shape() {
             crate::types::constraints::TypeConstraintShape::Array { len, .. } => {
-                Some(ConstraintConstOperandView {
+                Ok(Some(ConstraintConstOperandView {
                     origin: ConstraintConstOperandOrigin::Array(self.clone()),
                     value: len,
                     scope: Arc::clone(&self.scope),
-                })
+                    value_origin: self.value_origin.length_origin()?,
+                }))
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 
     fn projected_origin(
         &self,
         address: Arc<ConstraintOperandProjection>,
+        selected: Arc<ConstraintOperandOrigin<D>>,
     ) -> Arc<ConstraintOperandOrigin<D>> {
         Arc::new(ConstraintOperandOrigin::Projection {
             root: Arc::clone(&self.root.value),
             root_scope: Arc::clone(&self.root.scope),
             occurrence_scope: Arc::clone(&self.scope),
             producer: Arc::clone(&self.root.origin),
+            selected,
             address: Some(address),
         })
     }
@@ -211,7 +223,9 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
     ) -> Result<ConstraintOperand<D>, crate::types::TypeProjectionError<TypeConstraintError>> {
         let value = target.transport_type(&self.scope, self.value, context)?;
         let origin = match &self.address {
-            Some(address) => self.projected_origin(Arc::clone(address)),
+            Some(address) => {
+                self.projected_origin(Arc::clone(address), Arc::clone(&self.value_origin))
+            }
             None => Arc::clone(&self.root.origin),
         };
         Ok(ConstraintOperand {
@@ -228,6 +242,7 @@ impl<'a, D: ConstraintDomain> ConstraintConstOperandView<'a, D> {
             origin: ConstraintConstOperandOrigin::Root(root),
             value: root.value(),
             scope: Arc::clone(&root.scope),
+            value_origin: Arc::clone(&root.origin),
         }
     }
 
@@ -245,11 +260,12 @@ impl<'a, D: ConstraintDomain> ConstraintConstOperandView<'a, D> {
             ConstraintConstOperandOrigin::Array(parent) => ConstraintOperand {
                 value: Arc::new(self.value.clone()),
                 scope: Arc::clone(&self.scope),
-                origin: parent.projected_origin(Arc::new(
-                    ConstraintOperandProjection::ArrayLength {
+                origin: parent.projected_origin(
+                    Arc::new(ConstraintOperandProjection::ArrayLength {
                         parent: parent.address.clone(),
-                    },
-                )),
+                    }),
+                    Arc::clone(&self.value_origin),
+                ),
             },
         }
     }
@@ -265,11 +281,12 @@ impl<'a, D: ConstraintDomain> ConstraintConstOperandView<'a, D> {
         let value = target.transport_length(&self.scope, self.value, context)?;
         let origin = match &self.origin {
             ConstraintConstOperandOrigin::Root(root) => Arc::clone(&root.origin),
-            ConstraintConstOperandOrigin::Array(parent) => {
-                parent.projected_origin(Arc::new(ConstraintOperandProjection::ArrayLength {
+            ConstraintConstOperandOrigin::Array(parent) => parent.projected_origin(
+                Arc::new(ConstraintOperandProjection::ArrayLength {
                     parent: parent.address.clone(),
-                }))
-            }
+                }),
+                Arc::clone(&self.value_origin),
+            ),
         };
         Ok(ConstraintOperand {
             value: Arc::new(value),

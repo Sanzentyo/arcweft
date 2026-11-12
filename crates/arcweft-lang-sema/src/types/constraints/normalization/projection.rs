@@ -288,7 +288,7 @@ where
                 shape => {
                     // Scalar lengths precede type children in this relation's
                     // admission/error order. Rebuild consumes that result once.
-                    let length = match M::array_length(&current) {
+                    let length = match M::array_length(&current)? {
                         Some(length) => Some(project_length_fold::<A, D, M>(
                             length,
                             view,
@@ -338,7 +338,7 @@ where
                         }
                     }
                     let (mut children, seed) = M::children(&current, context)?;
-                    if let Some(child) = children.next() {
+                    if let Some(child) = M::next_child(&mut children)? {
                         frames.push(ProjectionFrame::Shape {
                             seed,
                             children,
@@ -375,7 +375,7 @@ where
                         enclosing,
                     }) => {
                         projected.push(value);
-                        if let Some(child) = children.next() {
+                        if let Some(child) = M::next_child(&mut children)? {
                             frames.push(ProjectionFrame::Shape {
                                 seed,
                                 children,

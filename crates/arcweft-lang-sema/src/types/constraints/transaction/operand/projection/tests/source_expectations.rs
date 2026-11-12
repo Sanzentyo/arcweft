@@ -60,12 +60,14 @@ fn source_expectations_keep_the_actual_header_and_selected_template_value_in_dis
             .children(&mut context)
             .unwrap()
             .next()
+            .unwrap()
             .unwrap();
         let value_expected = expected_root
             .view()
             .children(&mut context)
             .unwrap()
             .nth(1)
+            .unwrap()
             .unwrap();
         let projection =
             CheckedConstraintSourceProjection::derive(prepared, actual.value()).unwrap();

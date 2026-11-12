@@ -171,15 +171,15 @@ where
     let paths = match (pattern_shape, actual_shape) {
         (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_)) => {
             relate_choice_to_choice_selected(
-                &pattern.children(context)?.collect::<Vec<_>>(),
-                &actual.children(context)?.collect::<Vec<_>>(),
+                &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
+                &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
                 path,
                 context,
                 relation,
             )?
         }
         (TypeConstraintShape::Choice(_), _) => relate_choice_to_actual_selected(
-            &pattern.children(context)?.collect::<Vec<_>>(),
+            &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
             actual,
             path,
             context,
@@ -187,7 +187,7 @@ where
         )?,
         (_, TypeConstraintShape::Choice(_)) => relate_actual_choice_selected(
             pattern,
-            &actual.children(context)?.collect::<Vec<_>>(),
+            &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
             path,
             context,
             relation,
@@ -661,15 +661,15 @@ where
         }
         (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_)) => {
             relate_choice_to_choice_selected(
-                &pattern.children(context)?.collect::<Vec<_>>(),
-                &actual.children(context)?.collect::<Vec<_>>(),
+                &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
+                &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
                 path,
                 context,
                 relation,
             )
         }
         (TypeConstraintShape::Choice(_), _) => relate_choice_to_actual_selected(
-            &pattern.children(context)?.collect::<Vec<_>>(),
+            &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
             actual,
             path,
             context,
@@ -677,7 +677,7 @@ where
         ),
         (_, TypeConstraintShape::Choice(_)) => relate_actual_choice_selected(
             pattern,
-            &actual.children(context)?.collect::<Vec<_>>(),
+            &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
             path,
             context,
             relation,
@@ -692,8 +692,8 @@ where
                 arguments: found_arguments,
             },
         ) if expected.same_owner(found) && expected_arguments.len() == found_arguments.len() => {
-            let expected_arguments = pattern.children(context)?.collect::<Vec<_>>();
-            let found_arguments = actual.children(context)?.collect::<Vec<_>>();
+            let expected_arguments = pattern.children(context)?.collect::<Result<Vec<_>, _>>()?;
+            let found_arguments = actual.children(context)?.collect::<Result<Vec<_>, _>>()?;
             let paths = relate_slices(
                 &expected_arguments,
                 &found_arguments,
@@ -758,10 +758,10 @@ where
         }
         (TypeConstraintShape::Array { .. }, TypeConstraintShape::Array { .. }) => {
             let expected = pattern
-                .array_length()
+                .array_length()?
                 .expect("array shape has a length port");
             let found = actual
-                .array_length()
+                .array_length()?
                 .expect("array shape has a length port");
             let Some(path) = relate_array_lengths(&expected, &found, path, context, relation)?
             else {
@@ -830,17 +830,17 @@ where
                 let expected_params = expected_children
                     .by_ref()
                     .take(expected_params.len())
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>, _>>()?;
                 let found_params = found_children
                     .by_ref()
                     .take(found_params.len())
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>, _>>()?;
                 let expected_result = expected_children
                     .next()
-                    .expect("function children end in a result");
+                    .expect("function children end in a result")?;
                 let found_result = found_children
                     .next()
-                    .expect("function children end in a result");
+                    .expect("function children end in a result")?;
                 let paths = relate_slices(
                     &expected_params,
                     &found_params,
@@ -1072,14 +1072,16 @@ where
 {
     let mut expected = expected.children(context)?;
     let mut found = found.children(context)?;
-    let (Some(first_expected), Some(first_found)) = (expected.next(), found.next()) else {
+    let (Some(first_expected), Some(first_found)) =
+        (expected.next().transpose()?, found.next().transpose()?)
+    else {
         return Ok(Vec::new());
     };
     let paths = relate_with_policy(&first_expected, &first_found, path, context, relation)?;
     expected
         .zip(found)
         .try_fold(paths, |paths, (expected, found)| {
-            relate_many(&expected, &found, paths, context, relation)
+            relate_many(&expected?, &found?, paths, context, relation)
         })
 }
 fn relate_sliced_children<A, D, L>(
@@ -1094,8 +1096,8 @@ where
     D: ConstraintDomain,
     L: Clone,
 {
-    let expected = expected.children(context)?.collect::<Vec<_>>();
-    let found = found.children(context)?.collect::<Vec<_>>();
+    let expected = expected.children(context)?.collect::<Result<Vec<_>, _>>()?;
+    let found = found.children(context)?.collect::<Result<Vec<_>, _>>()?;
     relate_slices(&expected, &found, path, context, relation)
 }
 fn relate_many<A, D, L>(
