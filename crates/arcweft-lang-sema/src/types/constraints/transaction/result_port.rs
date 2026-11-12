@@ -1,8 +1,9 @@
 //! Affine transformation of a pending result on the path that produced it.
 
 use super::{
-    Arc, ConstraintDomain, ConstraintSourceReceipt, NestedConstraintPath, PendingChildAlternative,
-    PendingChildConstraint, ProjectionRequest, SourceProbeTerm, TypeConstraintAccounting,
+    Arc, ConstraintDomain, ConstraintResultUseSource, ConstraintSourceReceipt,
+    NestedConstraintPath, PendingChildAlternative, PendingChildConstraint,
+    PreparedConstraintFunctionScheme, ProjectionRequest, SourceProbeTerm, TypeConstraintAccounting,
     TypeConstraintContext, TypeConstraintError, TypeConstraintFailure,
     TypeConstraintProjectionClosure, TypeConstraintSourceProtocolInvariant,
     TypeConstraintTransaction, TypeKind, protocol_error, resolve_probe_term,
@@ -136,14 +137,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         key: D::Projection,
         expected: &TypeKind,
         mut prepare: impl FnMut(
-            &TypeKind,
+            &ConstraintResultUseSource<D>,
             &mut TypeConstraintContext<'_, A, D>,
         ) -> Result<
-            Option<(
-                D::Application,
-                super::super::TypeConstraintParameterScope,
-                TypeKind,
-            )>,
+            Option<PreparedConstraintFunctionScheme<D>>,
             TypeConstraintFailure<D>,
         >,
     ) -> Result<(), TypeConstraintFailure<D>>
@@ -179,33 +176,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 &mut std::collections::BTreeSet::new(),
                 context,
             )?);
-            let pattern = match prepare(source.value(), context)? {
-                Some((application, parameters, template)) => {
-                    let scope = context.application_scope(
-                        application,
-                        parameters,
-                        path.lineage.original.clone(),
-                    )?;
-                    let application = scope.id();
-                    path = context.admit_application(path, scope)?;
-                    path = Self::prepare_application(context, application, path, None)?;
-                    path.lineage.projections.push(Arc::new(ProjectionRequest {
-                        application,
-                        key: Arc::new(key.clone()),
-                        value: template.clone(),
-                        closure: TypeConstraintProjectionClosure::Closed,
-                        source: Some(origin.clone()),
-                        input: Some(Arc::clone(&source)),
-                    }));
-                    let pattern = context.open_template_type(&template, &path, application)?;
-                    super::ConstraintOperand::template(
-                        pattern,
-                        original_source.shared_scope(),
-                        path.applications
-                            .require_application_owner(application)
-                            .map_err(TypeConstraintError::from)?,
-                    )
-                    .derived_from(&source)
+            let use_source = ConstraintResultUseSource::for_result(Arc::clone(&source))?;
+            let pattern = match prepare(&use_source, context)? {
+                Some(prepared) => {
+                    let (next, operand) =
+                        prepared.instantiate(&source, path, Arc::new(key.clone()), context)?;
+                    path = next;
+                    operand
                 }
                 None => original_source,
             };

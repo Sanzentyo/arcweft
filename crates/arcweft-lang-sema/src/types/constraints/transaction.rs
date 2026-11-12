@@ -2550,6 +2550,7 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
 }
 
 mod result_port;
+pub(crate) use operand::{ConstraintResultUseSource, PreparedConstraintFunctionScheme};
 mod suspension;
 pub(crate) use suspension::SuspendedConstraintFrontier;
 mod component;

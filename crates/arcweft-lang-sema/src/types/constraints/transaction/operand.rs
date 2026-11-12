@@ -3,7 +3,9 @@
 use super::*;
 use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexicalScope};
 
+mod function_scheme;
 mod projection;
+pub(crate) use function_scheme::{ConstraintResultUseSource, PreparedConstraintFunctionScheme};
 pub(in crate::types::constraints) use projection::ConstraintOperandChildren;
 use projection::ConstraintOperandDerivation;
 use projection::ConstraintOperandProjection;
@@ -120,9 +122,9 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         solution: Arc<TypeConstraintSolution>,
         parameter: super::super::ConstraintGenericParameterId,
     },
-    Derived {
-        producer: Arc<ConstraintOperandOrigin<D>>,
-        input: Arc<ConstraintOperandOrigin<D>>,
+    FunctionSchemeInstantiation {
+        instance: ResolvedConstraintResult<D>,
+        source: Arc<ConstraintOperand<D>>,
     },
     SourceExpectation {
         projection: CheckedConstraintSourceProjection,
@@ -217,16 +219,6 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 
     pub(in crate::types) fn value(&self) -> &T {
         &self.value
-    }
-
-    /// Retain the input used by a typed composition or specialization. This
-    /// records a value-flow edge, not an application-wide permission union.
-    pub(super) fn derived_from<U>(mut self, input: &ConstraintOperand<D, U>) -> Self {
-        self.origin = Arc::new(ConstraintOperandOrigin::Derived {
-            producer: self.origin,
-            input: Arc::clone(&input.origin),
-        });
-        self
     }
 
     pub(in crate::types::constraints) fn scope(&self) -> &ConstraintLexicalScope {
@@ -405,7 +397,9 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
             | ConstraintOperandOrigin::Completed { original, .. } => original,
             ConstraintOperandOrigin::Template(owner) => owner.original_context(),
             ConstraintOperandOrigin::Result(result) => result.owner.original_context(),
-            ConstraintOperandOrigin::Derived { producer, .. } => producer.original_context(),
+            ConstraintOperandOrigin::FunctionSchemeInstantiation { instance, .. } => {
+                instance.owner.original_context()
+            }
             ConstraintOperandOrigin::SourceExpectation { value_expected, .. } => {
                 value_expected.original_context()
             }
@@ -442,8 +436,8 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
                         .find_map(|step| step.occurrence.source_receipt())
                 })
             }
-            ConstraintOperandOrigin::Derived { producer, input } => {
-                producer.source_receipt().or_else(|| input.source_receipt())
+            ConstraintOperandOrigin::FunctionSchemeInstantiation { source, .. } => {
+                source.source_receipt()
             }
             _ => None,
         }
@@ -482,9 +476,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
                 .iter()
                 .find_map(|step| step.occurrence.origin.association())
                 .or_else(|| terminal.origin.association()),
-            Self::Derived { producer, input } => {
-                producer.association().or_else(|| input.association())
-            }
+            Self::FunctionSchemeInstantiation { source, .. } => source.origin.association(),
             _ => None,
         }
     }

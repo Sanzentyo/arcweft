@@ -720,6 +720,41 @@ impl TypeConstraintParameterScope {
         &self.contract
     }
 
+    /// A scheme use opens every local quantifier and retains its exact D in
+    /// this application's effect contract. Ambient references stay rigid.
+    pub(super) fn matches_function_scheme(
+        &self,
+        binder: GenericBinder,
+        predicate: &EffectPredicate,
+    ) -> bool {
+        let types = self
+            .contract
+            .type_parameters
+            .iter()
+            .filter(|row| row.eligibility != TypeConstraintParameterEligibility::Rigid);
+        let consts = self
+            .contract
+            .const_parameters
+            .iter()
+            .filter(|row| row.eligibility != TypeConstraintConstEligibility::Rigid);
+        let effects = self.contract.effects.variables.iter();
+        !binder.is_empty()
+            && self.contract.template_scope == GenericScope::default().with_binder(binder)
+            && self.contract.effects.predicate == *predicate
+            && self.contract.required_inherited.type_keys.is_empty()
+            && self.contract.required_inherited.const_keys.is_empty()
+            && self.contract.effects.required_inherited.is_empty()
+            && types.clone().count() == usize::from(binder.types())
+            && types.clone().all(|row| row.eligibility == TypeConstraintParameterEligibility::Bindable
+                && matches!(&row.parameter, GenericTypeReference::Bound(key) if key.depth() == 0))
+            && consts.clone().count() == usize::from(binder.const_lengths())
+            && consts.clone().all(|row| row.eligibility == TypeConstraintConstEligibility::Bindable
+                && matches!(&row.parameter, GenericConstReference::Bound(key) if key.depth() == 0))
+            && u64::try_from(effects.clone().count()).ok() == Some(u64::from(binder.effects()))
+            && effects.clone().all(|row| row.eligibility() == EffectConstraintEligibility::Bindable
+                && matches!(row.variable(), GenericEffectReference::Bound(key) if key.depth() == 0))
+    }
+
     pub(super) fn application_issuer(&self) -> super::super::generics::GenericApplicationIssuer {
         self.opening.issuer()
     }

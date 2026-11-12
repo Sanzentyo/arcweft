@@ -280,12 +280,12 @@ where
         let authority = &self.authority;
         self.lower
             .constrain_result_use(self.context, result, expected, |source, context| {
-                if !matches!(source, TypeKind::Function { binder, .. } if !binder.is_empty()) {
+                if !matches!(source.source_type(), TypeKind::Function { binder, .. } if !binder.is_empty()) {
                     return Ok(None);
                 }
-                source
+                source.source_type()
                     .semantic_identity_digest_in_scope_with_control(
-                        &GenericScope::default(),
+                        source.source_scope(),
                         context,
                     )
                     .map_err(|error| match error {
@@ -295,7 +295,7 @@ where
                         }
                     })?;
                 let (initialization, _, template) = authority
-                    .prepare_function_specialization(source, enclosing, limits)
+                    .prepare_function_specialization(source.source_type(), enclosing, limits)
                     .map_err(|error| TypeConstraintFailure::client_invariant(invariant(error)))?
                     .into_parts();
                 let (_, parameters, inherited, imported) = initialization
@@ -306,7 +306,7 @@ where
                         CallConstraintInvariant::MalformedSchemaInventory,
                     )));
                 }
-                Ok(Some((application, parameters, template)))
+                Ok(Some(source.prepare_function_scheme(application, parameters, template, context)?))
             })
     }
 }
