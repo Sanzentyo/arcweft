@@ -109,7 +109,10 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
     assert!(!component.has_live_uses());
     assert_eq!(component.value(&value).unwrap().alternatives.len(), 4);
     assert_eq!(component.value(&derived).unwrap().alternatives.len(), 4);
-    let ValueDefinition::Constraint(originals) = &component.value(&value).unwrap().definition
+    let ValueDefinition::Constraint {
+        frontiers: originals,
+        ..
+    } = &component.value(&value).unwrap().definition
     else {
         panic!("the producer retains its original frontiers");
     };
@@ -666,4 +669,237 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
     ));
     assert!(component.values.is_empty());
     assert_eq!(component.next_value, 0);
+}
+
+#[test]
+fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() {
+    use crate::types::{
+        DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
+        GenericTypeParameterId,
+        constraints::{
+            ConstraintAcceptance, TypeConstraintConstEligibility,
+            TypeConstraintParameterEligibility,
+            context::{TypeConstraintConstParameterScopeRow, TypeConstraintTypeParameterScopeRow},
+        },
+    };
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut component = Component::new(&mut context).unwrap();
+    let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(941));
+    let bound = GenericTypeParameterId::new(owner.clone(), 0);
+    let future = GenericTypeParameterId::new(owner.clone(), 1);
+    let length = GenericConstParameterId::new(owner, 0);
+    let parameters = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [
+            TypeConstraintTypeParameterScopeRow::new(
+                bound.clone(),
+                TypeConstraintParameterEligibility::Bindable,
+            ),
+            TypeConstraintTypeParameterScopeRow::new(
+                future.clone(),
+                TypeConstraintParameterEligibility::FutureEligible,
+            ),
+        ],
+        [TypeConstraintConstParameterScopeRow::new(
+            length.clone(),
+            TypeConstraintConstEligibility::Bindable,
+        )],
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+        [],
+        [],
+    )
+    .unwrap();
+    let bound = parameters.type_reference(&bound.into()).unwrap();
+    let future = parameters.type_reference(&future.into()).unwrap();
+    let length = parameters.const_reference(&length.into()).unwrap();
+    let binder = GenericBinder::new(1, 0, 0);
+    let enclosing = context.enter_binder_scope(binder);
+    let mut lower =
+        TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+    lower.constrain(
+        &mut context,
+        &TypeKind::Tuple(vec![
+            TypeKind::GenericParam(bound.clone()),
+            TypeKind::Array {
+                item: Box::new(TypeKind::I32),
+                len: ArrayLength::Generic(length.clone()),
+            },
+        ]),
+        &TypeKind::Tuple(vec![
+            TypeKind::String,
+            TypeKind::Array {
+                item: Box::new(TypeKind::I32),
+                len: ArrayLength::Const(3),
+            },
+        ]),
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    lower.request_projection(
+        &mut context,
+        (),
+        &TypeKind::I64,
+        TypeConstraintProjectionClosure::Closed,
+    );
+    let root = lower.suspend_result(&mut context, ()).unwrap();
+    let value = component
+        .admit_roots(&mut context, vec![root], "original initializer")
+        .unwrap();
+    context.restore_binder_scope(enclosing);
+    assert!(context.lexical_scope().binders().is_empty());
+    let mut use_ = component
+        .issue_use(&mut context, &[value.clone(), value])
+        .unwrap();
+    let alternative = component
+        .next_use_alternative(&mut context, &mut use_)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        component.input(&use_, &alternative, 0).unwrap(),
+        PreparedValueInput::Available {
+            ty: TypeKind::I64,
+            ..
+        }
+    ));
+    let mut visits = 0;
+    component
+        .visit_original_constraints(&mut context, &use_, &alternative, |original, context| {
+            visits += 1;
+            assert_eq!(original.application(), ());
+            assert_eq!(original.scope().binders(), &[binder]);
+            assert_eq!(
+                original.parameters().eligibility(&future),
+                Some(TypeConstraintParameterEligibility::FutureEligible)
+            );
+            assert_eq!(
+                original.type_bindings().collect::<Vec<_>>(),
+                vec![(&bound, &TypeKind::String)]
+            );
+            assert_eq!(
+                original.const_bindings().collect::<Vec<_>>(),
+                vec![(&length, &ArrayLength::Const(3))]
+            );
+            assert!(
+                original
+                    .type_bindings()
+                    .all(|(parameter, _)| parameter != &future)
+            );
+            let projected = project_type(
+                &TypeKind::GenericParam(bound.clone()),
+                original.projection_view(),
+                ConstraintClosurePolicy::Hint,
+                context,
+            )?;
+            assert_eq!(projected.value, TypeKind::String);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(visits, 1);
+}
+
+#[test]
+fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_paths() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut component = Component::new(&mut context).unwrap();
+    let root = root(&mut context, &TypeKind::I32);
+    let producer = component
+        .admit_roots(&mut context, vec![root], "original")
+        .unwrap();
+    let mut first = component
+        .issue_use(&mut context, &[producer.clone()])
+        .unwrap();
+    while let Some(alternative) = component
+        .next_use_alternative(&mut context, &mut first)
+        .unwrap()
+    {
+        let outcome = if alternative.blocked {
+            PreparedValueOutcome::Blocked("blocked")
+        } else {
+            PreparedValueOutcome::Accepted(output(&mut context, &TypeKind::I32))
+        };
+        component
+            .submit_use(&mut context, &mut first, alternative, outcome)
+            .unwrap();
+    }
+    let first = component.finish_use(first).unwrap();
+    let derived = component.retain_use(&mut context, first).unwrap();
+    let mut use_ = component
+        .issue_use(&mut context, &[producer, derived.clone(), derived])
+        .unwrap();
+    let mut available = 0;
+    let mut diagnostic = 0;
+    while let Some(alternative) = component
+        .next_use_alternative(&mut context, &mut use_)
+        .unwrap()
+    {
+        let mut visits = 0;
+        component
+            .visit_original_constraints(&mut context, &use_, &alternative, |original, _| {
+                visits += 1;
+                assert_eq!(original.type_bindings().len(), 0);
+                assert_eq!(original.const_bindings().len(), 0);
+                Ok(())
+            })
+            .unwrap();
+        let outcome = if alternative.blocked {
+            assert_eq!(visits, 0);
+            diagnostic += 1;
+            PreparedValueOutcome::Blocked("blocked")
+        } else {
+            assert_eq!(visits, 1);
+            available += 1;
+            PreparedValueOutcome::Accepted(output(&mut context, &TypeKind::I32))
+        };
+        component
+            .submit_use(&mut context, &mut use_, alternative, outcome)
+            .unwrap();
+    }
+    assert_eq!((available, diagnostic), (1, 2));
+}
+
+#[test]
+fn original_constraint_observation_validates_authority_and_cancellation_before_visiting() {
+    use std::sync::atomic::Ordering;
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut component = Component::new(&mut context).unwrap();
+    let root = root(&mut context, &TypeKind::I32);
+    let producer = component
+        .admit_roots(&mut context, vec![root], "original")
+        .unwrap();
+    let mut use_ = component.issue_use(&mut context, &[producer]).unwrap();
+    let alternative = component
+        .next_use_alternative(&mut context, &mut use_)
+        .unwrap()
+        .unwrap();
+    let mut calls = 0;
+    cancellation.store(true, Ordering::Relaxed);
+    assert!(matches!(
+        component.visit_original_constraints(&mut context, &use_, &alternative, |_, _| {
+            calls += 1;
+            Ok(())
+        }),
+        Err(PreparedValueFailure::Constraint(
+            TypeConstraintError::Abort(_)
+        ))
+    ));
+    assert_eq!(calls, 0);
+    cancellation.store(false, Ordering::Relaxed);
+    let other = Component::new(&mut context).unwrap();
+    assert!(matches!(
+        other.visit_original_constraints(&mut context, &use_, &alternative, |_, _| {
+            calls += 1;
+            Ok(())
+        }),
+        Err(PreparedValueFailure::ForeignIssuer)
+    ));
+    assert_eq!(calls, 0);
+    component
+        .visit_original_constraints(&mut context, &use_, &alternative, |_, _| {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(calls, 1);
 }

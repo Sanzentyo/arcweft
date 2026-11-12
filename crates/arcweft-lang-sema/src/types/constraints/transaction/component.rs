@@ -2,10 +2,11 @@
 
 use std::{collections::BTreeMap, marker::PhantomData, rc::Rc, sync::Arc};
 
+use super::super::TypeConstraintParameterScope;
 use super::{
-    ConstraintClosurePolicy, ConstraintDomain, SourceProbeTerm, SuspendedConstraintFrontier,
-    TypeConstraintAccounting, TypeConstraintContext, TypeConstraintError, TypeConstraintRejection,
-    project_type, resolve_probe_term,
+    ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, SourceProbeTerm,
+    SuspendedConstraintFrontier, TypeConstraintAccounting, TypeConstraintContext,
+    TypeConstraintError, TypeConstraintRejection, project_type, resolve_probe_term,
 };
 use crate::{
     effect_row::{
@@ -13,8 +14,8 @@ use crate::{
         prepared::{PreparedEffectFailure, PreparedEffectGraph, PreparedEffectPredicate},
     },
     types::{
-        GenericScope, PreparedEffects, PreparedTypeRetentionFailure, TypeInstantiationError,
-        TypeKind, TypeProjectionError,
+        ArrayLength, GenericConstReference, GenericScope, GenericTypeReference, PreparedEffects,
+        PreparedTypeRetentionFailure, TypeInstantiationError, TypeKind, TypeProjectionError,
     },
 };
 
@@ -91,7 +92,14 @@ pub(crate) enum PreparedValueUnavailable {
     Deferred,
 }
 
-type OriginAssignments = Box<[(u64, usize)]>;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProducerBranch {
+    Constraint { frontier: usize, path: usize },
+    Rejected,
+    Ambiguous,
+}
+
+type OriginAssignments = Box<[(u64, ProducerBranch)]>;
 
 struct ValueAlternative {
     origins: OriginAssignments,
@@ -110,7 +118,10 @@ enum ValueContent {
 }
 
 enum ValueDefinition<D: ConstraintDomain> {
-    Constraint(Box<[SuspendedConstraintFrontier<D>]>),
+    Constraint {
+        frontiers: Box<[SuspendedConstraintFrontier<D>]>,
+        scope: Arc<GenericScope>,
+    },
     Intrinsic,
     Use(Box<[PreparedValueRef<D>]>),
 }
@@ -121,6 +132,49 @@ struct RegisteredValue<D: ConstraintDomain, P> {
     definition: ValueDefinition<D>,
     preparations: Box<[P]>,
     alternatives: Box<[ValueAlternative]>,
+}
+
+/// Read-only original inference input, including parameter eligibility and
+/// absent bindings. A projected value type alone cannot replace this authority.
+/// This is neither a completed instantiation nor permission to bind a producer
+/// again from one of its later uses.
+pub(crate) struct PreparedValueOriginalConstraint<'a, D: ConstraintDomain> {
+    application: D::Application,
+    scope: &'a GenericScope,
+    parameters: &'a TypeConstraintParameterScope,
+    path: &'a ConstraintPath<D>,
+}
+
+impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
+    pub(crate) fn application(&self) -> D::Application {
+        self.application
+    }
+
+    pub(crate) fn scope(&self) -> &GenericScope {
+        self.scope
+    }
+
+    pub(crate) fn parameters(&self) -> &TypeConstraintParameterScope {
+        self.parameters
+    }
+
+    pub(crate) fn type_bindings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&GenericTypeReference, &TypeKind)> {
+        self.path.bindings.iter()
+    }
+
+    pub(crate) fn const_bindings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&GenericConstReference, &ArrayLength)> {
+        self.path.const_bindings.iter()
+    }
+
+    pub(crate) fn projection_view(
+        &self,
+    ) -> super::super::normalization::ConstraintProjectionView<'_, D> {
+        self.path.projection_view()
+    }
 }
 
 pub(crate) enum PreparedValueInput<'a, P> {
@@ -299,9 +353,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 application = Some(owner);
             }
         }
+        let scope = Self::retain_scope(context)?;
         let mut alternatives = Vec::new();
-        for root in &roots {
-            for path in &root.transaction.frontier {
+        for (frontier, root) in roots.iter().enumerate() {
+            for (path_index, path) in root.transaction.frontier.iter().enumerate() {
                 context.enter_node()?;
                 let (opened, _) = resolve_probe_term(
                     SourceProbeTerm::Result(root.result.clone()),
@@ -316,12 +371,15 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 );
                 let value = match projection {
                     Ok(projection) => {
-                        let scope = Self::retain_scope(context)?;
                         let ty = projection
                             .value
                             .prepare_effects(&scope, context)
                             .map_err(Self::projection_failure)?;
-                        ValueContent::Available { ty, scope }
+                        context.enter_node()?;
+                        ValueContent::Available {
+                            ty,
+                            scope: Arc::clone(&scope),
+                        }
                     }
                     Err(TypeConstraintError::Rejected(reason)) => {
                         ValueContent::UnresolvedProjection(reason)
@@ -330,20 +388,32 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 };
                 context.enter_node()?;
                 alternatives.push(ValueAlternative {
-                    origins: Box::new([(self.next_value, alternatives.len())]),
+                    origins: Box::new([(
+                        self.next_value,
+                        ProducerBranch::Constraint {
+                            frontier,
+                            path: path_index,
+                        },
+                    )]),
                     predicate: Self::always(),
                     preparation: 0,
                     value,
                 });
             }
         }
-        for reason in [
-            PreparedValueUnavailable::RejectedProducer,
-            PreparedValueUnavailable::AmbiguousProducer,
+        for (branch, reason) in [
+            (
+                ProducerBranch::Rejected,
+                PreparedValueUnavailable::RejectedProducer,
+            ),
+            (
+                ProducerBranch::Ambiguous,
+                PreparedValueUnavailable::AmbiguousProducer,
+            ),
         ] {
             context.enter_node()?;
             alternatives.push(ValueAlternative {
-                origins: Box::new([(self.next_value, alternatives.len())]),
+                origins: Box::new([(self.next_value, branch)]),
                 predicate: Self::always(),
                 preparation: 0,
                 value: ValueContent::Unavailable(reason),
@@ -353,7 +423,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         self.insert(
             context,
             RegisteredValue {
-                definition: ValueDefinition::Constraint(roots.into_boxed_slice()),
+                definition: ValueDefinition::Constraint {
+                    frontiers: roots.into_boxed_slice(),
+                    scope,
+                },
                 preparations: Box::new([preparation]),
                 alternatives: alternatives.into_boxed_slice(),
             },
@@ -608,6 +681,60 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 }
             }
         })
+    }
+
+    /// Visit each correlated producer branch once, even if several input roles
+    /// or derived values read it. The references point into the retained root
+    /// forest; no bindings, scope, or source observations are reconstructed.
+    pub(crate) fn visit_original_constraints<A: TypeConstraintAccounting>(
+        &self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        ticket: &PreparedValueUseTicket<D, P>,
+        alternative: &PreparedValueUseAlternative,
+        mut visit: impl FnMut(
+            PreparedValueOriginalConstraint<'_, D>,
+            &mut TypeConstraintContext<'_, A, D>,
+        ) -> Result<(), PreparedValueFailure>,
+    ) -> Result<(), PreparedValueFailure> {
+        self.validate_alternative(ticket, alternative)?;
+        context.check_cancelled()?;
+        for (origin, branch) in &alternative.origins {
+            context.enter_node()?;
+            let value = self
+                .values
+                .get(origin)
+                .ok_or(PreparedValueFailure::StaleReference)?;
+            let ValueDefinition::Constraint { frontiers, scope } = &value.definition else {
+                return Err(PreparedValueFailure::InputState);
+            };
+            // Diagnostic alternatives have no source path. Their unavailable
+            // input remains visible through input(); never invent one here.
+            let ProducerBranch::Constraint { frontier, path } = branch else {
+                continue;
+            };
+            let root = frontiers
+                .get(*frontier)
+                .ok_or(PreparedValueFailure::InputState)?;
+            let path = root
+                .transaction
+                .frontier
+                .get(*path)
+                .ok_or(PreparedValueFailure::InputState)?;
+            let owner = path
+                .applications
+                .require_application(root.transaction.application)
+                .map_err(TypeConstraintError::Invariant)?;
+            visit(
+                PreparedValueOriginalConstraint {
+                    application: owner.application(),
+                    scope,
+                    parameters: owner.parameters(),
+                    path,
+                },
+                context,
+            )?;
+        }
+        Ok(())
     }
 
     pub(crate) fn submit_use<A: TypeConstraintAccounting>(
