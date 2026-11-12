@@ -108,6 +108,104 @@ fn context(cancellation: &AtomicBool, nodes: u64) -> Context<'_> {
 }
 
 #[test]
+fn binding_owners_keep_their_original_source_across_imports_and_equal_frame_shapes() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation, 4096);
+    let source = |id| {
+        crate::callable::EnclosingGenericParameterScope::sealed(
+            [GenericTypeParameterId::new(
+                GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(id)),
+                0,
+            )],
+            [],
+            [],
+        )
+        .unwrap()
+    };
+    let original = source(92_101).original_context(&mut context).unwrap();
+    let foreign = source(92_102).original_context(&mut context).unwrap();
+    assert_eq!(original.scope(), foreign.scope());
+    assert_ne!(original, foreign);
+    let parameters = scope(0).parameters;
+    let owner = context
+        .application_scope(0, parameters.clone(), original.clone())
+        .unwrap();
+    let same = ConstraintApplicationScope::<Domain>::new(
+        0,
+        parameters.clone(),
+        owner.introduction.clone(),
+        original.clone(),
+    );
+    let substituted = ConstraintApplicationScope::<Domain>::new(
+        0,
+        parameters,
+        owner.introduction.clone(),
+        foreign,
+    );
+    assert!(owner.same_owner(&same));
+    assert!(!owner.same_owner(&substituted));
+    let root = context
+        .start_path_with_imported(owner, None, original.clone())
+        .unwrap();
+    let parameter = root
+        .applications
+        .require_application(root.root_id())
+        .unwrap()
+        .parameters()
+        .iter()
+        .next()
+        .unwrap()
+        .0
+        .clone();
+    let parameter = root
+        .applications
+        .require_application(root.root_id())
+        .unwrap()
+        .parameters()
+        .type_reference(&parameter)
+        .unwrap();
+    let key = super::super::ConstraintGenericParameterId::Type(parameter);
+    let binding = root.applications.binding_owner(&key).unwrap();
+    assert_eq!(binding.original, &original);
+    let lease = root.applications.import_parameters(&[key.clone()]).unwrap();
+    let child_original = context.fixture_original_context(Some(&lease)).unwrap();
+    assert_ne!(child_original, original);
+    let child_owner = context
+        .application_scope(
+            1,
+            TypeConstraintParameterScope::empty(),
+            child_original.clone(),
+        )
+        .unwrap();
+    let child = context
+        .start_path_with_imported(child_owner, Some(lease), child_original)
+        .unwrap();
+    let imported = child.applications.binding_owner(&key).unwrap();
+    assert_eq!(imported.original, &original);
+    assert_eq!(imported.introduction, binding.introduction);
+}
+
+#[test]
+fn a_root_cannot_replace_its_application_owners_original_context() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation, 4096);
+    let original = context.fixture_original_context(None).unwrap();
+    let owner = context
+        .application_scope(0, TypeConstraintParameterScope::empty(), original)
+        .unwrap();
+    let foreign = crate::callable::EnclosingGenericParameterScope::sealed([], [], [])
+        .unwrap()
+        .original_context(&mut context)
+        .unwrap();
+    assert!(matches!(
+        context.start_path_with_imported(owner, None, foreign),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::OriginalProducer
+        ))
+    ));
+}
+
+#[test]
 fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_parent() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 4096);
@@ -891,7 +989,7 @@ fn completion_checks_an_alias_in_its_original_owner_before_merging_ambient_frame
         )
         .unwrap()
     };
-    let outer = context.application_scope(0, parameters(0)).unwrap();
+    let outer = context.fixture_application_scope(0, parameters(0)).unwrap();
     let outer_id = outer.id();
     let outer_key = outer
         .parameters()
@@ -899,7 +997,7 @@ fn completion_checks_an_alias_in_its_original_owner_before_merging_ambient_frame
         .unwrap();
     let mut path = context.start_path(outer).unwrap();
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
-    let inner = context.application_scope(1, parameters(1)).unwrap();
+    let inner = context.fixture_application_scope(1, parameters(1)).unwrap();
     let inner_key = inner
         .parameters()
         .type_reference(inner.parameters().iter().next().unwrap().0)

@@ -29,7 +29,7 @@ fn complete_ambient(
     let (mut work, parameters) = context(scope(false, future), &cancellation).into_parts();
     let ambient = GenericBinder::new(1, 1, 0);
     let enclosing = work.enter_binder_scope(ambient);
-    let application = work.application_scope((), parameters).unwrap();
+    let application = work.fixture_application_scope((), parameters).unwrap();
     let id = application.id();
     let key = application
         .parameters()
@@ -195,7 +195,7 @@ fn reopening_preserves_actual_ambient_frames_and_opens_residuals_freshly() {
     let cancellation = AtomicBool::new(false);
     let (mut work, parameters) = context(scope(false, true), &cancellation).into_parts();
     let outer = work.enter_binder_scope(GenericBinder::new(1, 1, 0));
-    let application = work.application_scope((), parameters).unwrap();
+    let application = work.fixture_application_scope((), parameters).unwrap();
     let key = application
         .parameters()
         .type_reference(&parameter(0).into())
@@ -212,7 +212,7 @@ fn reopening_preserves_actual_ambient_frames_and_opens_residuals_freshly() {
     let mut previous = None;
     for _ in 0..2 {
         let application = work
-            .application_scope((), continuation_parameters())
+            .fixture_application_scope((), continuation_parameters())
             .unwrap();
         let future = application
             .parameters()
@@ -241,7 +241,7 @@ fn equally_shaped_unrelated_ambient_frames_do_not_authorize_reopening() {
     let cancellation = AtomicBool::new(false);
     let (mut work, parameters) = context(continuation_parameters(), &cancellation).into_parts();
     let outer = work.enter_binder_scope(GenericBinder::new(1, 1, 0));
-    let application = work.application_scope((), parameters).unwrap();
+    let application = work.fixture_application_scope((), parameters).unwrap();
     let path = work.start_path(application).unwrap();
     assert!(matches!(
         solution.restore_inherited_path(path.root_id(), path, &mut work),
@@ -281,7 +281,7 @@ fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
     .unwrap();
     let (mut work, parameters) = context(parameters, &cancellation).into_parts();
     let outer = work.enter_binder_scope(GenericBinder::new(0, 0, 1));
-    let application = work.application_scope((), parameters).unwrap();
+    let application = work.fixture_application_scope((), parameters).unwrap();
     let key = application
         .parameters()
         .type_reference(&parameter(0).into())

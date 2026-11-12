@@ -1418,11 +1418,29 @@ where
         &mut self,
         application: D::Application,
         parameters: TypeConstraintParameterScope,
+        original: super::OriginalProducerContext,
     ) -> Result<ConstraintApplicationScope<D>, TypeConstraintError> {
         Ok(ConstraintApplicationScope::new(
             application,
             parameters,
             self.capture_lexical_scope()?,
+            original,
+        ))
+    }
+
+    #[cfg(test)]
+    pub(super) fn fixture_application_scope(
+        &mut self,
+        application: D::Application,
+        parameters: TypeConstraintParameterScope,
+    ) -> Result<ConstraintApplicationScope<D>, TypeConstraintError> {
+        let introduction = self.capture_lexical_scope()?;
+        let original = super::OriginalProducerContext::ground_fixture(introduction.clone());
+        Ok(ConstraintApplicationScope::new(
+            application,
+            parameters,
+            introduction,
+            original,
         ))
     }
 
@@ -1588,7 +1606,11 @@ where
         application: ConstraintApplicationScope<D>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         let original = self.fixture_original_context(None)?;
-        self.start_path_with_imported(application, None, original)
+        self.start_path_with_imported(
+            application.with_fixture_original(original.clone()),
+            None,
+            original,
+        )
     }
 
     #[cfg(test)]
@@ -1598,7 +1620,11 @@ where
         imported: Option<super::ImportedGenericParameterScopeLease>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         let original = self.fixture_original_context(imported.as_ref())?;
-        self.start_path_with_imported(application, imported, original)
+        self.start_path_with_imported(
+            application.with_fixture_original(original.clone()),
+            imported,
+            original,
+        )
     }
 
     pub(super) fn start_path_with_imported(
@@ -1607,6 +1633,12 @@ where
         imported: Option<super::ImportedGenericParameterScopeLease>,
         original: super::OriginalProducerContext,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
+        self.check_cancelled()?;
+        if application.original_context() != &original {
+            return Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::OriginalProducer,
+            ));
+        }
         self.charge_counter(1, Counter::Branches)?;
         let mut variables = application.parameters().opened_effect_variables();
         if let Some(imported) = &imported {

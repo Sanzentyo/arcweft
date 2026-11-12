@@ -173,7 +173,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .value;
             let pattern = match prepare(&source, context)? {
                 Some((application, parameters, template)) => {
-                    let scope = context.application_scope(application, parameters)?;
+                    let scope = context.application_scope(
+                        application,
+                        parameters,
+                        path.lineage.original.clone(),
+                    )?;
                     let application = scope.id();
                     path = context.admit_application(path, scope)?;
                     path = Self::prepare_application(context, application, path, None)?;

@@ -70,7 +70,7 @@ fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_referen
     let (scope, types) = type_inventory(1);
     let (mut context, parameters) = context(scope, &cancellation, 4096).into_parts();
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 1, 0));
-    let application = context.application_scope((), parameters).unwrap();
+    let application = context.fixture_application_scope((), parameters).unwrap();
     let path = context.start_path(application).unwrap();
     let value = TypeKind::Array {
         item: Box::new(TypeKind::GenericParam(
@@ -159,7 +159,9 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         .unwrap();
     let (child_parameters, inner_types) = type_inventory(1);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
-    let child_application = context.application_scope((), child_parameters).unwrap();
+    let child_application = context
+        .fixture_application_scope((), child_parameters)
+        .unwrap();
     let child = context
         .start_fixture_path_with_imported(child_application, Some(lease))
         .unwrap();
@@ -205,7 +207,9 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         .unwrap();
     let (child_parameters, inner_lengths) = const_inventory(1);
     let enclosing = context.enter_binder_scope(GenericBinder::new(0, 1, 0));
-    let application = context.application_scope((), child_parameters).unwrap();
+    let application = context
+        .fixture_application_scope((), child_parameters)
+        .unwrap();
     let child = context
         .start_fixture_path_with_imported(application, Some(lease))
         .unwrap();
@@ -243,7 +247,7 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
     let (parameters, types) = type_inventory(1);
     let (mut context, parameters) = context(parameters, &cancellation, 4096).into_parts();
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
-    let application = context.application_scope((), parameters).unwrap();
+    let application = context.fixture_application_scope((), parameters).unwrap();
     let parent = context.start_path(application).unwrap();
     let owner = parent.lineage.scope.clone();
     let lease = parent
@@ -252,7 +256,9 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
         .unwrap();
     let value = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     context.restore_binder_scope(enclosing);
-    let application = context.application_scope((), empty_scope()).unwrap();
+    let application = context
+        .fixture_application_scope((), empty_scope())
+        .unwrap();
     let child = context
         .start_fixture_path_with_imported(application, Some(lease))
         .unwrap();

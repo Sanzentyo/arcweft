@@ -27,6 +27,7 @@ trait ImportedApplicationScopeAuthority {
     fn as_any(&self) -> &dyn std::any::Any;
     fn same_owner(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool;
     fn introduction_scope(&self) -> &ConstraintLexicalScope;
+    fn original_context(&self) -> &super::OriginalProducerContext;
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
     fn permits_local_inference(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
 }
@@ -174,6 +175,15 @@ pub(super) struct ConstraintApplicationScope<D: ConstraintDomain> {
     application: D::Application,
     parameters: TypeConstraintParameterScope,
     introduction: ConstraintLexicalScope,
+    original: super::OriginalProducerContext,
+}
+
+/// Read-only authority of the exact application that introduced a binding key.
+/// The source environment does not extend its lexical introduction frames.
+#[derive(Clone, Copy)]
+pub(super) struct ConstraintBindingOwner<'a> {
+    pub(super) introduction: &'a ConstraintLexicalScope,
+    pub(super) original: &'a super::OriginalProducerContext,
 }
 
 impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
@@ -182,18 +192,25 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         application: D::Application,
         parameters: TypeConstraintParameterScope,
     ) -> Self {
-        Self::new(application, parameters, ConstraintLexicalScope::default())
+        Self::new(
+            application,
+            parameters,
+            ConstraintLexicalScope::default(),
+            super::OriginalProducerContext::ground_fixture(Default::default()),
+        )
     }
 
     pub(super) fn new(
         application: D::Application,
         parameters: TypeConstraintParameterScope,
         introduction: ConstraintLexicalScope,
+        original: super::OriginalProducerContext,
     ) -> Self {
         Self {
             application,
             parameters,
             introduction,
+            original,
         }
     }
 
@@ -213,6 +230,19 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         &self.introduction
     }
 
+    pub(super) fn original_context(&self) -> &super::OriginalProducerContext {
+        &self.original
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_fixture_original(
+        mut self,
+        original: super::OriginalProducerContext,
+    ) -> Self {
+        self.original = original;
+        self
+    }
+
     pub(super) const fn effects(&self) -> &TypeConstraintEffectScope {
         self.parameters.effect_contract()
     }
@@ -229,6 +259,10 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
         self.introduction_scope()
     }
 
+    fn original_context(&self) -> &super::OriginalProducerContext {
+        self.original_context()
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -238,6 +272,7 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
             self.application() == other.application()
                 && self.parameters() == other.parameters()
                 && self.introduction_scope() == other.introduction_scope()
+                && self.original_context() == other.original_context()
         })
     }
 
@@ -572,10 +607,10 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
 
     /// The exact owner capability survives imports. A receiving path's ambient
     /// scope neither extends nor replaces this application's dependencies.
-    pub(super) fn binding_scope(
+    pub(super) fn binding_owner(
         &self,
         parameter: &super::ConstraintGenericParameterId,
-    ) -> Option<&ConstraintLexicalScope> {
+    ) -> Option<ConstraintBindingOwner<'_>> {
         use super::ConstraintGenericParameterId;
         let issuer = match parameter {
             ConstraintGenericParameterId::Type(GenericTypeReference::Inference(reference)) => {
@@ -600,13 +635,27 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                 .find(|application| application.admits(parameter)),
         };
         owned
-            .map(ConstraintApplicationScope::introduction_scope)
+            .map(|owner| ConstraintBindingOwner {
+                introduction: owner.introduction_scope(),
+                original: owner.original_context(),
+            })
             .or_else(|| {
                 self.imported
                     .iter()
                     .find(|lease| lease.contains(parameter))
-                    .map(|lease| lease.owner.introduction_scope())
+                    .map(|lease| ConstraintBindingOwner {
+                        introduction: lease.owner.introduction_scope(),
+                        original: lease.owner.original_context(),
+                    })
             })
+    }
+
+    pub(super) fn binding_scope(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> Option<&ConstraintLexicalScope> {
+        self.binding_owner(parameter)
+            .map(|owner| owner.introduction)
     }
 
     pub(super) fn merge_lexical_scopes<A: super::context::TypeConstraintAccounting>(

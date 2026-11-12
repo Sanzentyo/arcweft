@@ -270,9 +270,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         application: ConstraintApplicationScope<D>,
         effects: crate::effect_row::EffectConstraintEnvironment,
     ) -> Self {
-        let original = super::OriginalProducerContext::ground_fixture(
-            application.introduction_scope().clone(),
-        );
+        let original = application.original_context().clone();
         Self::empty_with_imported(application, effects, None, Default::default(), original)
     }
 
@@ -1039,7 +1037,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         A: TypeConstraintAccounting,
     {
         let result = context
-            .application_scope(application, parameters)
+            .application_scope(
+                application,
+                parameters,
+                nested.path.lineage.original.clone(),
+            )
             .and_then(|scope| {
                 let application = scope.id();
                 context
@@ -1099,7 +1101,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         A: TypeConstraintAccounting,
     {
         match context
-            .application_scope(application, parameters)
+            .application_scope(application, parameters, original.clone())
             .and_then(|scope| {
                 let application = scope.id();
                 context
