@@ -333,6 +333,8 @@ pub(crate) struct PreparedEffectTermEdit<'a> {
     graph: &'a mut PreparedEffectGraph,
     row_limit: u64,
     predicate_limit: u64,
+    journal_start: usize,
+    original_state: super::transaction::PreparedEffectStateId,
     state: TermEditState,
 }
 
@@ -361,6 +363,8 @@ impl Drop for PreparedEffectTermEdit<'_> {
             {
                 self.graph.predicates.pop_last();
             }
+            self.graph.insertions.truncate(self.journal_start);
+            self.graph.state = self.original_state;
         }
     }
 }
@@ -444,6 +448,8 @@ impl PreparedEffectGraph {
         PreparedEffectTermEdit {
             row_limit: self.next_row,
             predicate_limit: self.next_predicate,
+            journal_start: self.insertions.len(),
+            original_state: self.state,
             graph: self,
             state: TermEditState::Open,
         }

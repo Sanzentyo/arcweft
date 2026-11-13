@@ -42,6 +42,10 @@ pub(crate) use declaration::PreparedEffectDeclaration;
 use scoped::ScopedObligation;
 mod substitution;
 pub(crate) use substitution::PreparedEffectTermEdit;
+mod transaction;
+pub(crate) use transaction::{
+    PreparedEffectCheckpoint, PreparedEffectDelta, PreparedEffectRestoreFailure,
+};
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
@@ -120,6 +124,8 @@ pub(crate) enum PreparedEffectInvariant {
     TruthTableOverflow,
     #[error("effect checkpoints must be completed in stack order")]
     CheckpointOrder,
+    #[error("effect candidate delta no longer matches its original graph state")]
+    DeltaBase,
     #[error("a solved effect cell retained an unbound Boolean reference")]
     UnclosedCell,
     #[error("principal effect projection contradicts the original typed equations")]
@@ -238,17 +244,6 @@ enum PredicateTerm {
     },
 }
 
-/// A rollback snapshot shares immutable definitions. Ordinals are never restored.
-pub(crate) struct PreparedEffectCheckpoint {
-    issuer: Arc<PreparedEffectIssuer>,
-    functions: BTreeMap<u64, Arc<Function>>,
-    obligation_limit: usize,
-    row_limit: u64,
-    predicate_limit: u64,
-    choice_limit: u64,
-    ordinal: u64,
-}
-
 #[derive(Debug)]
 pub(crate) struct PreparedEffectGraph {
     issuer: Arc<PreparedEffectIssuer>,
@@ -258,6 +253,9 @@ pub(crate) struct PreparedEffectGraph {
     next_choice: u64,
     next_checkpoint: u64,
     checkpoints: Vec<u64>,
+    state: transaction::PreparedEffectStateId,
+    next_state: u64,
+    insertions: Vec<transaction::EffectInsertion>,
     choices: BTreeSet<u64>,
     functions: BTreeMap<u64, Arc<Function>>,
     obligations: Vec<ScopedObligation>,
@@ -275,6 +273,9 @@ impl Default for PreparedEffectGraph {
             next_choice: 0,
             next_checkpoint: 0,
             checkpoints: Vec::new(),
+            state: transaction::PreparedEffectStateId::INITIAL,
+            next_state: 1,
+            insertions: Vec::new(),
             choices: BTreeSet::new(),
             functions: BTreeMap::new(),
             obligations: Vec::new(),
@@ -411,6 +412,8 @@ impl PreparedEffectGraph {
         self.next_row = id
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
+        self.changed()?;
+        self.record_insertion(transaction::EffectInsertion::Row(id));
         self.rows.insert(id, Arc::new(term));
         Ok(PreparedEffectRow::Term(PreparedEffectRowRef(
             self.reference(id),
@@ -498,6 +501,7 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         let header = Arc::clone(&previous.header);
+        self.changed()?;
         self.functions.insert(
             scheme.0.ordinal,
             Arc::new(Function::Scheme(Scheme {
@@ -533,6 +537,8 @@ impl PreparedEffectGraph {
         self.next_predicate = id
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
+        self.changed()?;
+        self.record_insertion(transaction::EffectInsertion::Predicate(id));
         self.predicates.insert(id, Arc::new(term));
         Ok(PreparedEffectPredicate::Term(PreparedEffectPredicateRef(
             self.reference(id),
@@ -608,6 +614,8 @@ impl PreparedEffectGraph {
         self.next_choice = id
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
+        self.changed()?;
+        self.record_insertion(transaction::EffectInsertion::Choice(id));
         self.choices.insert(id);
         Ok(PreparedEffectChoice(self.reference(id)))
     }
@@ -660,75 +668,5 @@ impl PreparedEffectGraph {
             },
             control,
         )
-    }
-
-    pub(crate) fn checkpoint<C: DecisionControl>(
-        &mut self,
-        control: &mut C,
-    ) -> Result<PreparedEffectCheckpoint, PreparedEffectFailure<C::Error>> {
-        for _ in self
-            .functions
-            .iter()
-            .map(|_| ())
-            .chain(self.obligations.iter().map(|_| ()))
-        {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
-        }
-        control
-            .charge(DecisionWork::Node)
-            .map_err(PreparedEffectFailure::Control)?;
-        let ordinal = self.next_checkpoint;
-        self.next_checkpoint = ordinal
-            .checked_add(1)
-            .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
-        self.checkpoints.push(ordinal);
-        Ok(PreparedEffectCheckpoint {
-            issuer: Arc::clone(&self.issuer),
-            functions: self.functions.clone(),
-            obligation_limit: self.obligations.len(),
-            row_limit: self.next_row,
-            predicate_limit: self.next_predicate,
-            choice_limit: self.next_choice,
-            ordinal,
-        })
-    }
-
-    fn validate_checkpoint(
-        &self,
-        checkpoint: &PreparedEffectCheckpoint,
-    ) -> Result<(), PreparedEffectInvariant> {
-        if !Arc::ptr_eq(&self.issuer, &checkpoint.issuer) {
-            return Err(PreparedEffectInvariant::ForeignIssuer);
-        }
-        if self.checkpoints.last() != Some(&checkpoint.ordinal) {
-            return Err(PreparedEffectInvariant::CheckpointOrder);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn commit(
-        &mut self,
-        checkpoint: &PreparedEffectCheckpoint,
-    ) -> Result<(), PreparedEffectInvariant> {
-        self.validate_checkpoint(checkpoint)?;
-        self.checkpoints.pop();
-        Ok(())
-    }
-
-    pub(crate) fn rollback(
-        &mut self,
-        checkpoint: &mut PreparedEffectCheckpoint,
-    ) -> Result<(), PreparedEffectInvariant> {
-        self.validate_checkpoint(checkpoint)?;
-        self.checkpoints.pop();
-        self.functions = std::mem::take(&mut checkpoint.functions);
-        self.obligations.truncate(checkpoint.obligation_limit);
-        self.rows.retain(|id, _| *id < checkpoint.row_limit);
-        self.predicates
-            .retain(|id, _| *id < checkpoint.predicate_limit);
-        self.choices.retain(|id| *id < checkpoint.choice_limit);
-        Ok(())
     }
 }
