@@ -17379,3 +17379,17 @@ Futureは元のdependency signatureとscope付き条件のままPreparedEffectGr
 現状一覧では実値が揃った後の入口と、未解決Futureを含む中間の条件付き推論を区別し、異なるSourceのowner／consumer結果を一つの新規runへ合算しない。元Γからのchecked primitive／計算済み行seal、型ownerの局所∀、条件付きMGU／rank、frontend本体一回準備・最終sealは継続する。既知の再帰本体6＋2失敗、Native／AWBC・Native／Webの追加受入を完了扱いにしない。Generic Match、caller-bound recursion、共有prefix、完了値capture、header portの既受入と、過去の実測・full SHAを保持する。全体cargo cleanは9:08の履行を維持した。
 
 [最新owner原本](acceptance-evidence/task-future-effect-functions.raw.zip)は41 entry、展開時9972678 bytes、ZIP 968322 bytes、SHA-256 `87e9d91930f897a1b7507331e2ddee093df4a3a219f58adcf231fdeec0e80a2d`。全entryの長さ・hash・portable pathとmanifestを読み戻して照合。[再利用したconsumer／workspace品質原本](acceptance-evidence/task-scoped-effect-functions.raw.zip)のSourceとhashは別に保持する。
+
+## Explicit fixture source gamma
+
+2026-11-13。Source `647403f016195194eb252876ec5e57ecfa3095c6`、tree `2cade5aa75c8bf23f17b8b57e7d43facf66f819e`、親・変更基点 `6abaf2aa93211b96f2e8322f8551fa34b774c03c`。既存mainで通常commit／non-forced pushし変更3 blobを照合。未追跡 `%SystemDrive%/` を保持した。
+
+cfg(test)のFixtureOriginalSourceはgroundと明示宣言を区別し、宣言type／const／effectと任意の既存import leaseを独立したfixture入力として保持する。値や受け手のinventoryからΓを作らない。fixture_operand_inは元Γの実frameを保持し、productionのOriginalOperandValue admissionへ入る。frame共有前の取消し・作業量を検査する。旧ground helperの空Γを広げず、無条件に参照を許すoriginも追加しない。既存のtype／const／effect・Fn predicateの2件をこの入口へ移した。production source-ownerを直接使う別のnegativeとbudget testも維持する。
+
+対象8件と、最終Sourceの全feature Sema lib／testsを実行。全1,687件中1,681 PASS／6 FAIL／0 SKIP、73.649秒、slow0。5 binaryで選択・終端ID一致、重複0、直前1,684 IDをすべて保持、新3件はPASS。元Γに参照がない場合と下位環境に変数がない場合を区別し、候補側の許可で前者を通さない。同形の別frameを現在contextから採用せず、元frameを保持すること、共有前の予算拒否、source identityと重複／不正rigid入力の拒否も確認した。既知6失敗は同じID・実診断の5 ExpressionCycle／1 PendingCallableEffectProjection。数学層56件を含む既存のassertion・budget・probe／replayを弱めていない。
+
+locked owner全target／全feature check／Clippyとowner fmt checkは終了0。各step前後のSource／tree／tracked差分0と3 pathのbyte pin・公開blob・出力hashを照合した。警告は原本へ保持。合計成長186 physical LOCで新しいsize／growth triggerなし。全変更はcfg(test)宣言・実装か既存のtest owner内であり、production・他owner・依存edge・公開API・codec・versionを変えない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+このため、調査済み22 package graphと他21 package・規定107 targetのSource `1914f17ba506ea591ed49cd5690bc31c27b332d3` の2,510 ID（2,507 PASS／2 FAIL／1 SKIP）、同Sourceのworkspace check／Clippy・workspace fmt・Sema doctest2件を再利用する。構造gateはSource `72df8edc204aec4009fd04884f8b46dd4dbc5a15` のreview trigger396・blocking0を再利用。元SHAを保持し、新規実行へ読み替えない。Γの全producerへの適用、checked primitive effect owner、条件付きcompletionとfrontend接続は継続し、このfixture準備をその受入とはしない。Generic Match、caller-bound recursion、共有prefix、完了値capture、header portの既受入を戻さず、過去の実測・full SHAを保持する。全体cargo cleanは9:08の履行を維持した。
+
+[最新owner原本](acceptance-evidence/task-fixture-source-gamma.raw.zip)は32 entry、展開時9564873 bytes、ZIP 906951 bytes、SHA-256 `130d0c4a66851257e7c00f7003e7aa13ec756e2e58885d22b08ebd3edd37e3a0`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。再利用のSourceと理由も原本へ区別して保持する。
