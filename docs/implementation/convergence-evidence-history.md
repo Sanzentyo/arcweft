@@ -17363,3 +17363,19 @@ locked workspace全target／全feature check／Clippy、Sema全feature doctest 2
 このcutは、全unknownが今回の共同最小化に参加する数学的な入口を閉じた。futureを未解決の行関数として残すscope付き条件付きcompletion、元Γからのchecked primitive／計算済み行seal、型ownerの実frameへの接続、frontendの本体一回準備と最終sealは継続する。既知の再帰本体6＋2失敗の修復、Native／AWBC・Native／Webの追加受入とはしない。現状一覧の長い実装経緯を現在の責務と境界へ整理した理由は、この新旧基盤と未接続範囲を混同しないためである。以前の実測・full SHAは履歴と原本を保持し、Generic Match・caller-bound recursion・共有prefix・完了値capture・header portの既受入を戻さない。全体cargo cleanは9:08の履行を維持し、今回再実行していない。
 
 [実装・検証原本](acceptance-evidence/task-scoped-effect-functions.raw.zip)は236 entry、展開時39579173 bytes、ZIP 4654649 bytes、SHA-256 `b84e5d7e43f423efd9148503a6aa0e9df1ba63e4189eb52b191ac23890596d53`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
+
+## Future effect function specialization
+
+2026-11-13。Source `72df8edc204aec4009fd04884f8b46dd4dbc5a15`、tree `d08e59a2f8c8eb324e125ff79d5b6af26209bef8`、親・変更基点 `59b57f9fa0cc13ecb91ad8cff3d4933c3f715ac4`。既存mainで通常commit／non-forced pushし、変更9 blobを照合した。前半のSource `1914f17ba506ea591ed49cd5690bc31c27b332d3` の共同推論に続き、FutureとBindableの導入時eligibilityを明示した。未追跡 `%SystemDrive%/` を保持する。
+
+Futureは元のdependency signatureとscope付き条件のままPreparedEffectGraphに残り、実値なしのsolve_principalはUnresolvedFutureを返す。specialize_principalは全Futureの実際の有限行関数を検査してから、実値にだけ現れるlabelも含めてclass集合を作り、既存の共同principal solverへ入る。元graphを書き換えず独立に具体化できる。実値はclosureへ保持してcanonical replayで再検証する。未指定、重複、別issuer、Bindableへの代入、許可されない引数、unknown annotation、作業取消しを型付きで拒否する。実値が揃う前の条件付きMGUはこの入口の完了範囲に含めない。先行label集合のoutside classだけでは、後から来る新labelを一般化できないため、実値を先に集める順序にした。
+
+最終Sourceの全feature Sema lib／testsは1,684件中1,678 PASS／6 FAIL／0 SKIP、72.211秒、slow0。5 binaryの選択と終端が全IDで一致・重複0。前回の1,678 IDをすべて維持し、新6件はPASS。失敗IDと実診断は前回と同じ5 ExpressionCycle／1 PendingCallableEffectProjection。数学層の既存50＋新6件は全owner runでも56 PASS。新labelの保持と独立具体化、パラメーター依存、一様な外側解と局所捕捉の拒否、Futureの実値によるNonPrincipal／Unsatisfiableの区別、入力admissionの原子性を確認した。開発時の構文エラーと存在しないpure constructorのE0599は修復し、失敗logを保持した。budget・候補数・probe／replay・取消し条件を弱めていない。
+
+最新Sourceでlocked owner全target／全feature check／Clippy、owner fmt check、canonical構造gateは終了0。各step前後のSource／tree／tracked差分0と変更9 pathのbyte pin・公開blobを照合した。構造gateは98 package・3,494 files・3,363 Rust files・1,895,729 Rust physical LOC、review trigger396・blocking0。合計成長458 physical LOC。新component150 LOCは元の関数定義・scope条件のcompileを同じ数学ownerへ移し、実値の追加を扱う。専用test244 LOC。別solver、並列の権限catalog、source walker、外部API、依存edge、unsafe、versionを追加しない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。警告を原本へ保持した。
+
+逆依存は調査済みの同じ22 package graphを用いる。変更はcrate内のprepared graphで、final analysisへの接続は未実装、schema／type／component consumerは今回のSema全件に含まれる。公開API・実行系・CLI・fixture・Cargo入力・他ownerを変えていないため、他21 package／規定107 targetの2,510 ID（2,507 PASS／2 FAIL／1 SKIP）はSource `1914f17ba506ea591ed49cd5690bc31c27b332d3` の実行を再利用した。Compiler既知2失敗とExpressionCycle slot 17／19、CLI226 PASS、callable_execution376 PASSもその入力の実測であり、最新Sourceの再実行へ読み替えない。workspace全target／全feature check／Clippy・workspace fmt・Sema doctest2件の同Sourceの終了0も再利用する。公開doc実行例・toolchain・features・該当挙動を変えていない。判定理由と元Source付きreceiptを原本へ保持する。
+
+現状一覧では実値が揃った後の入口と、未解決Futureを含む中間の条件付き推論を区別し、異なるSourceのowner／consumer結果を一つの新規runへ合算しない。元Γからのchecked primitive／計算済み行seal、型ownerの局所∀、条件付きMGU／rank、frontend本体一回準備・最終sealは継続する。既知の再帰本体6＋2失敗、Native／AWBC・Native／Webの追加受入を完了扱いにしない。Generic Match、caller-bound recursion、共有prefix、完了値capture、header portの既受入と、過去の実測・full SHAを保持する。全体cargo cleanは9:08の履行を維持した。
+
+[最新owner原本](acceptance-evidence/task-future-effect-functions.raw.zip)は41 entry、展開時9972678 bytes、ZIP 968322 bytes、SHA-256 `87e9d91930f897a1b7507331e2ddee093df4a3a219f58adcf231fdeec0e80a2d`。全entryの長さ・hash・portable pathとmanifestを読み戻して照合。[再利用したconsumer／workspace品質原本](acceptance-evidence/task-scoped-effect-functions.raw.zip)のSourceとhashは別に保持する。
