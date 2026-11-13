@@ -1139,6 +1139,7 @@ struct AnalyzerCallActiveFactScope {
 pub(crate) struct AnalyzerCallExpressionClient<'a, 'project, 'catalog, 'control> {
     analyzer: &'a mut super::super::Analyzer<'project, 'catalog, 'control>,
     context: &'a AnalyzerExpressionContext<'a>,
+    original: crate::types::constraints::OriginalProducerContext,
     application: Option<ExprId>,
     candidate: Option<Arc<PreparedResolvedCallable>>,
     consumer: Option<AnalyzerCallConsumerAdmission>,
@@ -1158,6 +1159,7 @@ impl<'a, 'project, 'catalog, 'control>
     fn new(
         analyzer: &'a mut super::super::Analyzer<'project, 'catalog, 'control>,
         context: &'a AnalyzerExpressionContext<'a>,
+        original: crate::types::constraints::OriginalProducerContext,
         application: Option<ExprId>,
         candidate: Option<Arc<PreparedResolvedCallable>>,
         consumer: Option<AnalyzerCallConsumerAdmission>,
@@ -1180,6 +1182,7 @@ impl<'a, 'project, 'catalog, 'control>
         Self {
             analyzer,
             context,
+            original,
             application,
             candidate,
             consumer,
@@ -1439,6 +1442,9 @@ impl<'a, 'project, 'catalog, 'control>
         >,
     ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure> {
         let source = source_id.local();
+        let original = application_context
+            .map_or(&self.original, |recipe| &recipe.source_preparation.original)
+            .clone();
         let origin = match parent_probe.as_ref() {
             Some(probe) => AnalyzerObservedSourceOrigin::Probe(probe.receipt()),
             None => AnalyzerObservedSourceOrigin::Check(source_id),
@@ -1486,7 +1492,7 @@ impl<'a, 'project, 'catalog, 'control>
                     ),
                 ));
             }
-            let actual = AnalyzerObservedSourceValue::prepared(origin, prepared.clone())
+            let actual = AnalyzerObservedSourceValue::prepared(origin, original, prepared.clone())
                 .ok_or(AnalyzerCallCheckFailure::Mismatch)?;
             return Ok(AnalyzerCallObservedSource::checked(
                 actual,
@@ -1816,7 +1822,7 @@ impl<'a, 'project, 'catalog, 'control>
                         payload,
                     },
                 );
-                let actual = AnalyzerObservedSourceValue::expression(origin, checked)
+                let actual = AnalyzerObservedSourceValue::expression(origin, original, checked)
                     .ok_or(AnalyzerCallCheckFailure::Mismatch)?;
                 Ok(AnalyzerCallObservedSource::checked(actual, evidence))
             }
@@ -3175,6 +3181,7 @@ impl PreparedCalleeProjectionOwners {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AnalyzerCallApplicationSources {
     application: ExprId,
+    original: crate::types::constraints::OriginalProducerContext,
     prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
@@ -3188,6 +3195,7 @@ impl PreparedCallConstraintSet {
     ) -> AnalyzerCallApplicationSources {
         AnalyzerCallApplicationSources {
             application,
+            original: self.original.clone(),
             prepared_source_actuals: self.prepared_source_actuals.clone(),
             dialogue_patch_admissions: self.dialogue_patch_admissions.clone(),
             source_admissions: self.source_admissions.clone(),
@@ -5781,6 +5789,7 @@ pub(crate) fn run_prepared_candidate(
     let operations = AnalyzerCallExpressionClient::new(
         analyzer,
         context,
+        original.clone(),
         Some(application),
         Some(Arc::clone(&candidate)),
         Some(consumer.clone()),
@@ -6623,7 +6632,7 @@ pub(crate) fn run_prepared_child_candidate(
     set: PreparedCallConstraintSet,
 ) -> Result<PreparedChildCandidateRun, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
-        original: _,
+        original,
         enclosing: _,
         candidate,
         consumer,
@@ -6665,6 +6674,7 @@ pub(crate) fn run_prepared_child_candidate(
     let operations = AnalyzerCallExpressionClient::new(
         analyzer,
         context,
+        original.clone(),
         Some(application),
         Some(Arc::clone(&candidate)),
         Some(consumer),
@@ -7009,6 +7019,7 @@ mod tests {
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
             &context,
+            source_value::fixture_original_context(),
             None,
             None,
             None,
@@ -7135,6 +7146,7 @@ mod tests {
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
             &context,
+            source_value::fixture_original_context(),
             None,
             None,
             None,
@@ -7217,6 +7229,7 @@ mod tests {
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
             &context,
+            source_value::fixture_original_context(),
             None,
             None,
             None,
@@ -7278,6 +7291,7 @@ mod tests {
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
             &context,
+            source_value::fixture_original_context(),
             None,
             None,
             None,

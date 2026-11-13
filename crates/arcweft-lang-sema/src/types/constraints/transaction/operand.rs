@@ -34,6 +34,19 @@ impl<D: ConstraintDomain> Clone for ResolvedConstraintSource<D> {
 }
 
 impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
+    pub(super) fn value<A: TypeConstraintAccounting>(
+        owner: Arc<dyn super::super::ConstraintSourceValueOwner<D>>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(TypeKind, Self), TypeConstraintError> {
+        use original_value::OriginalOperandValue;
+
+        let original = owner.original_context();
+        let value = owner
+            .value_type()
+            .admit(original.gamma(), original, context)?;
+        Ok((value, Self::Value(owner)))
+    }
+
     pub(super) fn projection(&self) -> Option<ConstraintResultProjection<D>> {
         match self {
             Self::Result(result) => Some(result.projection()),

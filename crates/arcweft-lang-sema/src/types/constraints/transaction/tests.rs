@@ -10,14 +10,16 @@ use super::*;
 use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectRow};
 use crate::effects::EffectSet;
 use crate::types::constraints::{
-    NoConstraintClient, TypeConstraintFailureInvariant, TypeConstraintParameterEligibility,
-    TypeConstraintParameterScope,
+    NoConstraintClient, OriginalProducerContext, TypeConstraintFailureInvariant,
+    TypeConstraintParameterEligibility, TypeConstraintParameterScope,
     context::{
         LocalConstraintAccounting, TypeConstraintContextIssuer, TypeConstraintEffectScope,
         TypeConstraintLimits, TypeConstraintWorkReport,
     },
 };
 use crate::types::{DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId};
+
+mod source_value_scope;
 
 pub(super) struct ApplicationSourceDomain;
 
@@ -55,6 +57,7 @@ type ApplicationSourceContext<'a> =
 
 struct OwnedSourceValue {
     source: ConstraintSourceId<u8>,
+    original: OriginalProducerContext,
     receipt: Option<ConstraintSourceReceipt<ApplicationSourceDomain>>,
     value: TypeKind,
 }
@@ -64,6 +67,9 @@ impl crate::types::constraints::ConstraintSourceValueOwner<ApplicationSourceDoma
 {
     fn source(&self) -> ConstraintSourceId<u8> {
         self.source
+    }
+    fn original_context(&self) -> &OriginalProducerContext {
+        &self.original
     }
     fn probe_receipt(&self) -> Option<&ConstraintSourceReceipt<ApplicationSourceDomain>> {
         self.receipt.as_ref()
@@ -109,6 +115,7 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
         let probe = transaction.next_probe(&mut context).unwrap().unwrap();
         let stale = Arc::new(OwnedSourceValue {
             source: probe.source(),
+            original: probe.original_context().unwrap().clone(),
             receipt: Some(probe.receipt()),
             value: TypeKind::I64,
         });
@@ -133,6 +140,7 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
         ));
         let foreign = Arc::new(OwnedSourceValue {
             source: ConstraintSourceId::new(probe.source().application(), 8),
+            original: probe.original_context().unwrap().clone(),
             receipt: Some(probe.receipt()),
             value: TypeKind::I64,
         });
@@ -146,6 +154,7 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
         ));
         let recheck = Arc::new(OwnedSourceValue {
             source: probe.source(),
+            original: probe.original_context().unwrap().clone(),
             receipt: None,
             value: TypeKind::I64,
         });
@@ -159,6 +168,7 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
         ));
         let value = Arc::new(OwnedSourceValue {
             source: probe.source(),
+            original: probe.original_context().unwrap().clone(),
             receipt: Some(probe.receipt()),
             value: TypeKind::I64,
         });

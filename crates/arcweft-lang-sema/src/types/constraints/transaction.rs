@@ -2544,10 +2544,7 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(TypeKind, ResolvedConstraintSource<D>), TypeConstraintError> {
     match term {
-        SourceProbeTerm::Value(owner) => Ok((
-            owner.value_type().clone(),
-            ResolvedConstraintSource::Value(owner),
-        )),
+        SourceProbeTerm::Value(owner) => ResolvedConstraintSource::value(owner, context),
         #[cfg(test)]
         SourceProbeTerm::Type(value) => Ok((value, ResolvedConstraintSource::Fixture)),
         SourceProbeTerm::Result(result) => {

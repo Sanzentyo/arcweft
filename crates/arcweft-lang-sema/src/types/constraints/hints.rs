@@ -583,6 +583,9 @@ pub(crate) struct SourceProbeResult<D: ConstraintDomain> {
 /// not an owning source value.
 pub(crate) trait ConstraintSourceValueOwner<D: ConstraintDomain>: 'static {
     fn source(&self) -> ConstraintSourceId<D::Source>;
+    /// The declaration and actual ambient environment in which this owned
+    /// value was checked. A receiving candidate's inventory is not this Γ.
+    fn original_context(&self) -> &super::OriginalProducerContext;
     /// Rechecks have no probe authority. A successful probe value retains the
     /// exact receipt under which its owner was checked, including its branch.
     fn probe_receipt(&self) -> Option<&super::ConstraintSourceReceipt<D>>;
