@@ -866,8 +866,12 @@ where
             .request_projection(&mut self.context, key, value, closure);
     }
 
-    fn finish(mut self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
-        self.lower.finish(&mut self.context)
+    fn finish(mut self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>>
+    where
+        D::SealedBranchValue: PartialEq,
+    {
+        self.lower
+            .finish(&mut self.context, |left, right| Ok(left == right))
     }
 }
 
@@ -1426,7 +1430,7 @@ fn a_rigid_actual_is_not_bound_to_a_concrete_pattern() {
     );
 
     assert!(matches!(
-        transaction.finish(&mut context),
+        transaction.finish(&mut context, |left, right| Ok(left == right)),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Constraint(_)
         ))
@@ -3289,7 +3293,7 @@ fn source_choice_alternatives() -> (
             .expect("submit materialization");
     }
     let alternatives = transaction
-        .finish_alternatives(&mut context)
+        .finish_alternatives(&mut context, |left, right| Ok(left == right))
         .expect("the completed frontier retains both distinct branches");
     (alternatives, probes, materializations)
 }
@@ -3385,7 +3389,7 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
             .submit_probe(&mut context, ticket.input(), submission)
             .expect("submit probe");
     }
-    let outcome = transaction.finish(&mut context);
+    let outcome = transaction.finish(&mut context, |left, right| Ok(left == right));
     assert_eq!(probes.load(Ordering::Relaxed), 1);
     assert!(matches!(
         outcome,
@@ -3492,7 +3496,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
             .expect("fatal materialization is retained");
     }
     assert_eq!(traces, 2, "fatal must not stop later trace materialization");
-    match transaction.finish(&mut context) {
+    match transaction.finish(&mut context, |left, right| Ok(left == right)) {
         Err(TypeConstraintFailure::FatalSource(error)) => {
             assert_eq!(error.source().local(), 10);
             assert_eq!(error.cause(), &"earlier source");
@@ -3604,7 +3608,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
             .expect("rejection is retained");
     }
     assert_eq!(traces, 3);
-    match transaction.finish(&mut context) {
+    match transaction.finish(&mut context, |left, right| Ok(left == right)) {
         Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Source(error))) => {
             assert_eq!(error.source().local(), 10);
             assert_eq!(error.cause().as_ref(), &["first cause", "second cause"]);
@@ -3945,7 +3949,7 @@ enum PreparedRule {
     Otherwise,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(PartialEq)]
 struct PreparedSealed(u8);
 
 #[derive(Debug)]
@@ -4092,7 +4096,7 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
             .expect("materialization accepted");
     }
     let solved = transaction
-        .finish(&mut context)
+        .finish(&mut context, |left, right| Ok(left == right))
         .expect("prepared source solves");
     assert_eq!(solved.component.sources().all().len(), 1);
     let row = &solved.component.sources().all()[0];
@@ -4155,7 +4159,7 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
 
     let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
         rejected,
-    ))) = transaction.finish(&mut context)
+    ))) = transaction.finish(&mut context, |left, right| Ok(left == right))
     else {
         panic!("source relation mismatch must retain a typed rejected projection")
     };
@@ -4247,7 +4251,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
             .expect("seal surviving sibling");
     }
     let solved = transaction
-        .finish(&mut context)
+        .finish(&mut context, |left, right| Ok(left == right))
         .expect("one live sibling must keep the ordinary candidate viable");
     assert_eq!(solved.component.sources().all().len(), 1);
     assert_eq!(
@@ -4321,7 +4325,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     assert_eq!(row, 2);
     let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
         rejected,
-    ))) = transaction.finish(&mut context)
+    ))) = transaction.finish(&mut context, |left, right| Ok(left == right))
     else {
         panic!("all rejected frontiers must retain the deterministic first row")
     };
@@ -4399,7 +4403,7 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
             .expect("unchecked materialization accepted");
     }
     let solved = transaction
-        .finish(&mut context)
+        .finish(&mut context, |left, right| Ok(left == right))
         .expect("unchecked source solves");
     let [row] = solved.component.sources().all() else {
         panic!("one unchecked closed source")
@@ -4491,7 +4495,9 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
     transaction
         .submit_closed_materialization(ticket, closed)
         .expect("rest materialization accepted");
-    let solved = transaction.finish(&mut context).expect("rest solves");
+    let solved = transaction
+        .finish(&mut context, |left, right| Ok(left == right))
+        .expect("rest solves");
     assert_eq!(
         solved.component.sources().all()[0].final_expected(),
         Some(&TypeKind::Array {
@@ -4611,7 +4617,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         .submit_closed_materialization(ticket, closed)
         .expect("generic rest materialization accepted");
     let solved = transaction
-        .finish(&mut context)
+        .finish(&mut context, |left, right| Ok(left == right))
         .expect("generic rest solves");
     let trace = &solved.component.sources().all()[0];
     assert_eq!(
@@ -4750,7 +4756,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .submit_closed_materialization(ticket, closed)
         .expect("generic map rest materialization accepted");
     let solved = transaction
-        .finish(&mut context)
+        .finish(&mut context, |left, right| Ok(left == right))
         .expect("generic map rest solves");
     let trace = &solved.component.sources().all()[0];
     assert_eq!(

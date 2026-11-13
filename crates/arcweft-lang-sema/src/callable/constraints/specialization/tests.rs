@@ -288,7 +288,15 @@ impl TypeConstraintClient<Domain> for Client<'_> {
     ) -> Result<Option<()>, SourceCheckpointFailure<Domain>> {
         Ok(sealed)
     }
-    fn finish(self) -> Result<(), SourceCheckpointFailure<Domain>> {
+    fn sealed_branches_equal(
+        &mut self,
+        left: &<Domain as crate::types::constraints::ConstraintDomain>::SealedBranchValue,
+        right: &<Domain as crate::types::constraints::ConstraintDomain>::SealedBranchValue,
+    ) -> Result<bool, SourceCheckpointFailure<Domain>> {
+        Ok(left == right)
+    }
+
+    fn finish(&mut self) -> Result<(), SourceCheckpointFailure<Domain>> {
         Ok(())
     }
 }

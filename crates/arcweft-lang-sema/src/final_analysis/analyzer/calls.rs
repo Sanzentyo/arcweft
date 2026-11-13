@@ -288,7 +288,7 @@ pub(super) struct PreparedCallCandidateRecipe {
     source_preparation: constraints::AnalyzerCallApplicationSources,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct PreparedCorrelatedCallRecipe {
     owner: ExprId,
     site: crate::callable::CheckedCallSite,
@@ -311,9 +311,14 @@ pub(super) struct PreparedCorrelatedCallRecipe {
 }
 
 impl PreparedCorrelatedCallRecipe {
-    /// Replay compares the selected source and preparation, not the nonce of
-    /// the physical evaluation that produced that preparation.
-    fn semantic_replay_eq(&self, other: &Self) -> bool {
+    /// Semantic replay ignores the physical attempt nonce. Frontier coalescing
+    /// uses Exact mode and retains that nonce and each projection's query trace.
+    fn replay_eq(
+        &self,
+        other: &Self,
+        facts: &super::state::SemanticFactState,
+        mode: super::state::CandidateFactReplayMode,
+    ) -> bool {
         self.owner == other.owner
             && self.site == other.site
             && self.parent_application == other.parent_application
@@ -326,7 +331,9 @@ impl PreparedCorrelatedCallRecipe {
             && self.inputs == other.inputs
             && self.source_preparation == other.source_preparation
             && match (&self.callee_prerequisites, &other.callee_prerequisites) {
-                (Some(left), Some(right)) => left.semantic_replay_mismatch(right).is_none(),
+                (Some(left), Some(right)) => facts
+                    .projection_replay_mismatch(left, right, mode)
+                    .is_none(),
                 (None, None) => true,
                 _ => false,
             }
@@ -334,12 +341,14 @@ impl PreparedCorrelatedCallRecipe {
             && self.function_value_origin == other.function_value_origin
             && self.dialogue_context == other.dialogue_context
             && self.accounting == other.accounting
+            && (mode == super::state::CandidateFactReplayMode::Semantic
+                || self.attempt == other.attempt)
             && self.descendants.len() == other.descendants.len()
             && self
                 .descendants
                 .iter()
                 .zip(other.descendants.iter())
-                .all(|(left, right)| left.semantic_replay_eq(right))
+                .all(|(left, right)| left.replay_eq(right, facts, mode))
     }
 
     fn matches_choice(&self, choice: &constraints::AnalyzerNestedCallChoice) -> bool {
@@ -355,12 +364,19 @@ impl PreparedCorrelatedCallRecipe {
         recipes: &'a [Self],
         parent_source: constraints::AnalyzerCallConstraintSource,
         choice: &constraints::AnalyzerNestedCallChoice,
+        facts: &super::state::SemanticFactState,
     ) -> Option<&'a Self> {
         let mut matches = recipes.iter().filter(|recipe| {
             recipe.parent_source == parent_source && recipe.matches_choice(choice)
         });
         let first = matches.next()?;
-        if matches.any(|recipe| !recipe.semantic_replay_eq(first)) {
+        if matches.any(|recipe| {
+            !recipe.replay_eq(
+                first,
+                facts,
+                super::state::CandidateFactReplayMode::Semantic,
+            )
+        }) {
             return None;
         }
         Some(first)
@@ -387,7 +403,7 @@ impl PreparedCorrelatedCallRecipe {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct PreparedSelectedNestedCall {
     recipe: PreparedCorrelatedCallRecipe,
     rank: AcceptedCandidateRank,
@@ -396,8 +412,13 @@ pub(super) struct PreparedSelectedNestedCall {
 }
 
 impl PreparedSelectedNestedCall {
-    fn semantic_replay_eq(&self, other: &Self) -> bool {
-        self.recipe.semantic_replay_eq(&other.recipe)
+    fn replay_eq(
+        &self,
+        other: &Self,
+        facts: &super::state::SemanticFactState,
+        mode: super::state::CandidateFactReplayMode,
+    ) -> bool {
+        self.recipe.replay_eq(&other.recipe, facts, mode)
             && self.rank == other.rank
             && self.selection == other.selection
             && self.specialization == other.specialization
@@ -3103,7 +3124,7 @@ impl Analyzer<'_, '_, '_> {
             let replay_mismatch = if selected_rank != replay_rank {
                 Some(crate::callable::CallConstraintInvariant::ReplayRankMismatch)
             } else {
-                selected_transaction.replay_mismatch(&replay_transaction)
+                selected_transaction.replay_mismatch(&replay_transaction, &self.facts)
             };
             if let Some(replay_mismatch) = replay_mismatch {
                 self.discard_prepared_call_transaction_projection(

@@ -413,7 +413,9 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
             },
         )
         .unwrap();
-    let solved = transaction.finish(&mut context).unwrap();
+    let solved = transaction
+        .finish(&mut context, |left, right| Ok(left == right))
+        .unwrap();
     let projected = solved
         .component
         .projection(1, &())

@@ -671,7 +671,9 @@ fn a_child_transaction_opens_projects_and_seals_its_own_parameters() {
             .unwrap()
             .is_none()
     );
-    let solved = transaction.finish(&mut context).unwrap();
+    let solved = transaction
+        .finish(&mut context, |left, right| Ok(left == right))
+        .unwrap();
     assert_eq!(solved.component.selected().projections().len(), 1);
     assert_eq!(
         solved.component.selected().projections()[0].value().value(),
@@ -805,7 +807,9 @@ fn inherited_child_bindings_restore_without_replacing_the_parent() {
         &child_array,
         crate::types::constraints::TypeConstraintProjectionClosure::Closed,
     );
-    let solved = transaction.finish(&mut context).unwrap();
+    let solved = transaction
+        .finish(&mut context, |left, right| Ok(left == right))
+        .unwrap();
     assert_eq!(
         solved.component.selected().projections()[0].value().value(),
         &value
@@ -1385,7 +1389,7 @@ fn equal_binding_values_do_not_erase_different_application_membership() {
             None,
         )
         .unwrap()
-        .finish(context)
+        .finish(context, |left, right| Ok(left == right))
         .unwrap()
         .component
     };

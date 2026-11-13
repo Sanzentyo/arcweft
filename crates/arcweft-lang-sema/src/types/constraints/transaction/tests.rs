@@ -203,7 +203,9 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
         transaction
             .submit_closed_materialization(ticket, submission)
             .unwrap();
-        let solved = transaction.finish(&mut context).unwrap();
+        let solved = transaction
+            .finish(&mut context, |left, right| Ok(left == right))
+            .unwrap();
         assert!(
             retained.upgrade().is_some(),
             "completed source trace retains the actual value owner"
@@ -356,7 +358,9 @@ fn application_local_source_coordinates_materialize_without_collisions() {
             .unwrap()
             .is_none()
     );
-    let solved = transaction.finish(&mut context).unwrap();
+    let solved = transaction
+        .finish(&mut context, |left, right| Ok(left == right))
+        .unwrap();
     assert_eq!(solved.component.sources().all().len(), 2);
     let selected = solved.component.sources().selected().collect::<Vec<_>>();
     assert_eq!(selected.len(), 1);
@@ -437,7 +441,9 @@ fn a_completed_projection_input_keeps_its_type_const_and_effect_environment() {
     transaction.request_value_use_projection(&mut context, (), &input, &TypeKind::I64);
     context.restore_binder_scope(outer);
     let unrelated = context.enter_binder_scope(binder);
-    let solved = transaction.finish(&mut context).unwrap();
+    let solved = transaction
+        .finish(&mut context, |left, right| Ok(left == right))
+        .unwrap();
     let projection = solved.component.projection(0, &()).unwrap();
     let actual = projection.projection().input_type().unwrap();
     assert_eq!(actual.scope().binders(), &[binder, binder]);
@@ -610,7 +616,10 @@ fn materialization_source_failures_keep_their_application() {
                 .unwrap()
                 .is_none()
         );
-        match transaction.finish(&mut context).unwrap_err() {
+        match transaction
+            .finish(&mut context, |left, right| Ok(left == right))
+            .unwrap_err()
+        {
             TypeConstraintFailure::FatalSource(error) if fatal => {
                 assert_eq!(*error.source(), source);
             }
@@ -647,7 +656,10 @@ fn completed_source_traces_compare_call_sites_across_fresh_openings() {
                 .unwrap()
                 .is_none()
         );
-        transaction.finish(&mut context).unwrap().component
+        transaction
+            .finish(&mut context, |left, right| Ok(left == right))
+            .unwrap()
+            .component
     };
     let first = complete(1);
     let replay = complete(1);
@@ -742,7 +754,9 @@ fn materialization_failures_follow_trace_order_across_applications() {
             .unwrap();
     }
     assert_eq!(attempts, 2);
-    let TypeConstraintFailure::FatalSource(error) = transaction.finish(&mut context).unwrap_err()
+    let TypeConstraintFailure::FatalSource(error) = transaction
+        .finish(&mut context, |left, right| Ok(left == right))
+        .unwrap_err()
     else {
         panic!("fatal source must retain precedence");
     };
@@ -1068,7 +1082,9 @@ fn rejecting_a_probe_cannot_publish_any_of_its_retained_paths() {
     assert!(fixture.transaction.frontier.is_empty());
     assert!(fixture.transaction.materialization.is_empty());
     assert!(matches!(
-        fixture.transaction.finish(&mut fixture.context),
+        fixture
+            .transaction
+            .finish(&mut fixture.context, |left, right| Ok(left == right)),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Source(_)
         ))
@@ -1194,7 +1210,7 @@ fn fixed_effect_evidence_survives_candidate_sealing() {
         &known,
     );
     let solved = transaction
-        .finish(&mut context)
+        .finish(&mut context, |left, right| Ok(left == right))
         .expect("fixed effect solution");
     assert_eq!(
         solved
@@ -1251,7 +1267,7 @@ fn fixed_effect_evidence_rejects_shrinking_and_expanding_function_relations() {
             ConstraintAcceptance::PatternAcceptsActual,
         );
         assert!(matches!(
-            transaction.finish(&mut context),
+            transaction.finish(&mut context, |left, right| Ok(left == right)),
             Err(TypeConstraintFailure::Rejected(
                 TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch)
             ))
@@ -1282,7 +1298,7 @@ fn fixed_effect_evidence_abort_cannot_publish_a_partial_equality() {
     assert!(transaction.materialization.is_empty());
     assert!(transaction.materialized.is_empty());
     assert!(matches!(
-        transaction.finish(&mut context),
+        transaction.finish(&mut context, |left, right| Ok(left == right)),
         Err(TypeConstraintFailure::Abort(
             TypeConstraintAbort::NodeLimit {
                 actual: 2,
@@ -1327,6 +1343,51 @@ fn source_frontier<A: TypeConstraintAccounting>(
         TypeConstraintTransaction::from_path(context, path.root_id(), first, None).unwrap();
     transaction.frontier.push(second);
     transaction
+}
+
+#[test]
+fn sealed_branch_equivalence_is_decided_by_its_live_owner_and_propagates_failure() {
+    for decision in [Some(true), Some(false), None] {
+        let cancellation = AtomicBool::new(false);
+        let (mut context, path) =
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+                TypeConstraintLimits::new(4096, 2048, 128, 128),
+                &cancellation,
+                scope(),
+            )
+            .into_path();
+        let mut transaction = source_frontier(&mut context, &path);
+        while let Some(mut ticket) = transaction
+            .next_materialization_ticket(&mut context)
+            .unwrap()
+        {
+            transaction
+                .validate_materialization_callback_begin(&ticket)
+                .unwrap();
+            let binding = ticket.bind_callback().unwrap();
+            ticket.validate_callback_binding(&binding).unwrap();
+            let closed = ticket
+                .bind_closed_submission(ClosedMaterializationSubmission::Sealed(()))
+                .unwrap();
+            transaction
+                .submit_closed_materialization(ticket, closed)
+                .unwrap();
+        }
+        let mut comparisons = 0;
+        let result = transaction.finish_alternatives(&mut context, |_, _| {
+            comparisons += 1;
+            decision.ok_or(TypeConstraintFailure::Abort(TypeConstraintAbort::Cancelled))
+        });
+        assert_eq!(comparisons, 1);
+        match decision {
+            Some(true) => assert_eq!(result.unwrap().len(), 1),
+            Some(false) => assert_eq!(result.unwrap().len(), 2),
+            None => assert!(matches!(
+                result,
+                Err(TypeConstraintFailure::Abort(TypeConstraintAbort::Cancelled))
+            )),
+        }
+    }
 }
 
 #[test]
@@ -1375,7 +1436,7 @@ fn advancing_materialization_preserves_the_queue_until_the_current_ticket_is_sub
             .is_none()
     );
     transaction
-        .finish(&mut context)
+        .finish(&mut context, |left, right| Ok(left == right))
         .expect("both equivalent paths completed");
 }
 
@@ -1406,7 +1467,7 @@ fn a_completed_alternative_cannot_hide_an_outstanding_materialization() {
         .unwrap()
         .unwrap();
     assert!(matches!(
-        transaction.finish(&mut context),
+        transaction.finish(&mut context, |left, right| Ok(left == right)),
         Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
                 TypeConstraintSourceProtocolInvariant::Outcome
@@ -1445,7 +1506,7 @@ fn completion_and_comparison_limits_prevent_partial_materialization_ticket_issua
                         .is_none()
                 );
                 assert!(
-                    matches!(transaction.finish(&mut context), Err(TypeConstraintFailure::Abort(
+                    matches!(transaction.finish(&mut context, |left, right| Ok(left == right)), Err(TypeConstraintFailure::Abort(
                     TypeConstraintAbort::NodeLimit { actual, limit: observed }
                 )) if actual == limit + 1 && observed == limit)
                 );
@@ -1511,7 +1572,7 @@ fn incomplete_alternatives_are_rejected_before_any_materialization() {
                     .is_none()
             );
             transaction
-                .finish(&mut context)
+                .finish(&mut context, |left, right| Ok(left == right))
                 .expect("complete alternative remains viable");
         } else {
             assert!(ticket.is_none());
@@ -1524,7 +1585,7 @@ fn incomplete_alternatives_are_rejected_before_any_materialization() {
                     .is_none()
             );
             assert!(matches!(
-                transaction.finish(&mut context),
+                transaction.finish(&mut context, |left, right| Ok(left == right)),
                 Err(TypeConstraintFailure::Rejected(
                     TypeConstraintCandidateFailure::Constraint(
                         TypeConstraintRejection::IncompleteInstantiation { .. }
@@ -1601,7 +1662,9 @@ fn transaction_completion_cannot_release_or_reset_the_surrounding_context() {
         )
         .unwrap();
         if complete {
-            first.finish(&mut context).unwrap();
+            first
+                .finish(&mut context, |left, right| Ok(left == right))
+                .unwrap();
         } else {
             drop(first);
         }

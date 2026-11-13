@@ -583,7 +583,7 @@ impl AnalyzerPreparedDialoguePatchAdmission {
 /// A zero-source path is a real, sealed empty branch.  A materialized path
 /// owns only the fact projection extracted at checkpoint close.  There is no
 /// optional projection state: callers must handle the two sealed outcomes.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
     Empty,
     Materialized {
@@ -593,7 +593,12 @@ pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
 }
 
 impl AnalyzerCallSealedBranch {
-    fn semantic_replay_mismatch(&self, other: &Self) -> Option<CallConstraintInvariant> {
+    fn replay_mismatch(
+        &self,
+        other: &Self,
+        facts: &super::super::state::SemanticFactState,
+        mode: super::super::state::CandidateFactReplayMode,
+    ) -> Option<CallConstraintInvariant> {
         let mismatch = match (self, other) {
             (Self::Empty, Self::Empty) => return None,
             (
@@ -610,11 +615,11 @@ impl AnalyzerCallSealedBranch {
                     || !left_calls
                         .iter()
                         .zip(right_calls.iter())
-                        .all(|(left, right)| left.semantic_replay_eq(right))
+                        .all(|(left, right)| left.replay_eq(right, facts, mode))
                 {
                     return Some(CallConstraintInvariant::ReplaySealedBranchShapeMismatch);
                 }
-                left.semantic_replay_mismatch(right)?
+                facts.projection_replay_mismatch(left, right, mode)?
             }
             (Self::Empty, Self::Materialized { .. }) | (Self::Materialized { .. }, Self::Empty) => {
                 return Some(CallConstraintInvariant::ReplaySealedBranchShapeMismatch);
@@ -642,17 +647,17 @@ impl AnalyzerCallSealedBranch {
             CandidateSemanticReplayMismatch::Iterations => {
                 CallConstraintInvariant::ReplayBranchIterationFactsMismatch
             }
-            CandidateSemanticReplayMismatch::ImplicitCaptureUses => {
-                CallConstraintInvariant::ReplayBranchImplicitCaptureMismatch
-            }
             CandidateSemanticReplayMismatch::PhysicalCandidateEvaluations => {
                 CallConstraintInvariant::ReplayBranchPhysicalTranscriptMismatch
+            }
+            CandidateSemanticReplayMismatch::ImplicitCaptureUses => {
+                CallConstraintInvariant::ReplayBranchImplicitCaptureMismatch
             }
         })
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub(crate) struct AnalyzerCallPreparedSealedBranch {
     nested_calls: Vec<super::PreparedSelectedNestedCall>,
 }
@@ -1992,8 +1997,14 @@ trait AnalyzerCallConstraintOperations {
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
     >;
 
+    fn sealed_branches_equal(
+        &mut self,
+        left: &AnalyzerCallSealedBranch,
+        right: &AnalyzerCallSealedBranch,
+    ) -> Result<bool, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>>;
+
     fn finish(
-        self,
+        &mut self,
     ) -> Result<(), crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>>;
 }
 
@@ -2440,6 +2451,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         }
         let mut visited_applications = BTreeSet::new();
         let (nested_calls, _) = collect_completed_nested_calls(
+            &self.analyzer.facts,
             self.application.ok_or_else(|| {
                 crate::callable::SourceCallbackFailure::invariant(
                     AnalyzerCallClientInvariant::constraint(
@@ -2757,8 +2769,37 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         }))
     }
 
+    fn sealed_branches_equal(
+        &mut self,
+        left: &AnalyzerCallSealedBranch,
+        right: &AnalyzerCallSealedBranch,
+    ) -> Result<bool, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
+        let mismatch = left.replay_mismatch(
+            right,
+            &self.analyzer.facts,
+            super::super::state::CandidateFactReplayMode::Exact,
+        );
+        if matches!(
+            mismatch,
+            Some(
+                CallConstraintInvariant::ReplayBranchProjectionAuthorityMismatch
+                    | CallConstraintInvariant::ReplayBranchPreparedGraphMismatch(
+                        crate::callable::PreparedCallGraphReplayMismatch::Issuer
+                    )
+            )
+        ) {
+            return Err(crate::callable::SourceCheckpointFailure::client(
+                AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    mismatch.expect("matched authority failure"),
+                ),
+            ));
+        }
+        Ok(mismatch.is_none())
+    }
+
     fn finish(
-        mut self,
+        &mut self,
     ) -> Result<(), crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
         let Some(active) = self.active_fact_scope.take() else {
             return Ok(());
@@ -2879,8 +2920,16 @@ impl<O: AnalyzerCallConstraintOperations>
             .close_materialization_checkpoint(checkpoint, sealed)
     }
 
+    fn sealed_branches_equal(
+        &mut self,
+        left: &AnalyzerCallSealedBranch,
+        right: &AnalyzerCallSealedBranch,
+    ) -> Result<bool, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
+        self.operations.sealed_branches_equal(left, right)
+    }
+
     fn finish(
-        self,
+        &mut self,
     ) -> Result<(), crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
         self.operations.finish()
     }
@@ -3622,7 +3671,11 @@ impl PreparedCallApplicationTransaction {
         })
     }
 
-    pub(crate) fn replay_mismatch(&self, other: &Self) -> Option<CallConstraintInvariant> {
+    pub(crate) fn replay_mismatch(
+        &self,
+        other: &Self,
+        facts: &super::super::state::SemanticFactState,
+    ) -> Option<CallConstraintInvariant> {
         if !self.data.application.replay_eq(&other.data.application) {
             return Some(CallConstraintInvariant::ReplayApplicationMismatch);
         }
@@ -3635,11 +3688,11 @@ impl PreparedCallApplicationTransaction {
         if self.data.inputs != other.data.inputs {
             return Some(CallConstraintInvariant::ReplayArgumentMappingMismatch);
         }
-        if let Some(mismatch) = self
-            .data
-            .sealed_branch
-            .semantic_replay_mismatch(&other.data.sealed_branch)
-        {
+        if let Some(mismatch) = self.data.sealed_branch.replay_mismatch(
+            &other.data.sealed_branch,
+            facts,
+            super::super::state::CandidateFactReplayMode::Semantic,
+        ) {
             return Some(mismatch);
         }
         if self.data.component != other.data.component {
@@ -6133,6 +6186,7 @@ fn seal_function_value_use(
 }
 
 fn collect_completed_nested_calls<'h>(
+    facts: &super::super::state::SemanticFactState,
     application: ExprId,
     recipes: &[super::PreparedCorrelatedCallRecipe],
     parent_recipe: Option<&super::PreparedCorrelatedCallRecipe>,
@@ -6203,6 +6257,7 @@ fn collect_completed_nested_calls<'h>(
                     recipes,
                     request.canonical_branch().source,
                     choice,
+                    facts,
                 )
                 .ok_or_else(|| {
                     crate::callable::SourceCallbackFailure::invariant(
@@ -6285,8 +6340,11 @@ fn collect_completed_nested_calls<'h>(
                     super::CheckedTypeSelection::Inferred
                 };
                 let child_index = if let Some(index) = child_indexes.get(&child_application) {
-                    if !children[*index].recipe.semantic_replay_eq(recipe)
-                        || children[*index].specialization != specialization
+                    if !children[*index].recipe.replay_eq(
+                        recipe,
+                        facts,
+                        super::super::state::CandidateFactReplayMode::Semantic,
+                    ) || children[*index].specialization != specialization
                     {
                         return Err(crate::callable::SourceCallbackFailure::invariant(
                             AnalyzerCallClientInvariant::constraint(
@@ -6370,6 +6428,7 @@ fn collect_completed_nested_calls<'h>(
     let mut completed = Vec::new();
     for mut child in children {
         let (descendants, rank) = collect_completed_nested_calls(
+            facts,
             child.recipe.owner,
             &child.recipe.descendants,
             Some(&child.recipe),

@@ -2108,22 +2108,30 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn finish<A>(
         self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        compare: impl FnMut(
+            &D::SealedBranchValue,
+            &D::SealedBranchValue,
+        ) -> Result<bool, TypeConstraintFailure<D>>,
     ) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>>
     where
         A: TypeConstraintAccounting,
     {
-        self.finish_alternatives(context)?.into_unique()
+        self.finish_alternatives(context, compare)?.into_unique()
     }
 
     pub(crate) fn finish_alternatives<A>(
         mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        mut compare: impl FnMut(
+            &D::SealedBranchValue,
+            &D::SealedBranchValue,
+        ) -> Result<bool, TypeConstraintFailure<D>>,
     ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
     where
         A: TypeConstraintAccounting,
     {
         match self.close(context) {
-            Ok(()) => self.finish_candidate_alternatives(context),
+            Ok(()) => self.finish_candidate_alternatives(context, &mut compare),
             Err(error) => Err(error.into()),
         }
     }
@@ -2270,6 +2278,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn finish_candidate_alternatives<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        compare: &mut impl FnMut(
+            &D::SealedBranchValue,
+            &D::SealedBranchValue,
+        ) -> Result<bool, TypeConstraintFailure<D>>,
     ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
     where
         A: TypeConstraintAccounting,
@@ -2317,7 +2329,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     let mut duplicate = false;
                     for (existing_component, existing_value) in &candidates {
                         if existing_component.equal_with(&component, context)?
-                            && existing_value == &value
+                            && compare(existing_value, &value)?
                         {
                             duplicate = true;
                             break;

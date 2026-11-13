@@ -548,13 +548,11 @@ impl std::fmt::Debug for CandidateSemanticProjection {
     }
 }
 
-impl PartialEq for CandidateSemanticProjection {
-    fn eq(&self, other: &Self) -> bool {
-        self.replay_eq(other)
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CandidateFactReplayMode {
+    Semantic,
+    Exact,
 }
-
-impl Eq for CandidateSemanticProjection {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CandidateSemanticReplayMismatch {
@@ -569,56 +567,55 @@ pub(super) enum CandidateSemanticReplayMismatch {
     PhysicalCandidateEvaluations,
 }
 
-impl CandidateSemanticProjection {
-    pub(super) fn replay_eq(&self, other: &Self) -> bool {
-        self.replay_mismatch(other).is_none()
-    }
-
-    pub(super) fn replay_mismatch(&self, other: &Self) -> Option<CandidateSemanticReplayMismatch> {
-        if let Some(mismatch) = self.semantic_replay_mismatch(other) {
-            return Some(mismatch);
-        }
-        if self.data.physical_candidate_argument_evaluations
-            != other.data.physical_candidate_argument_evaluations
-        {
-            return Some(CandidateSemanticReplayMismatch::PhysicalCandidateEvaluations);
-        }
-        None
-    }
-
-    pub(super) fn semantic_replay_mismatch(
+impl SemanticFactState {
+    /// Replay is an observation by the live fact owner, not context-free value
+    /// equality of two detached capabilities. Even two matching projections
+    /// must belong to this healthy generation and its actual prepared graph.
+    pub(super) fn projection_replay_mismatch(
         &self,
-        other: &Self,
+        left: &CandidateSemanticProjection,
+        right: &CandidateSemanticProjection,
+        mode: CandidateFactReplayMode,
     ) -> Option<CandidateSemanticReplayMismatch> {
-        if !Arc::ptr_eq(&self.data.authority.issuer, &other.data.authority.issuer)
-            || self.data.authority.epoch != other.data.authority.epoch
+        if self.ensure_healthy().is_err()
+            || !Arc::ptr_eq(&self.issuer, &left.data.authority.issuer)
+            || !Arc::ptr_eq(&self.issuer, &right.data.authority.issuer)
+            || self.epoch != left.data.authority.epoch
+            || self.epoch != right.data.authority.epoch
         {
             return Some(CandidateSemanticReplayMismatch::Authority);
         }
-        if let Some(mismatch) = self
-            .data
-            .graph_delta
-            .replay_mismatch(&other.data.graph_delta)
+        let Some(graph) = self.prepared_calls.as_ref() else {
+            return Some(CandidateSemanticReplayMismatch::Authority);
+        };
+        if let Some(mismatch) =
+            graph.replay_delta_mismatch(&left.data.graph_delta, &right.data.graph_delta)
         {
             return Some(CandidateSemanticReplayMismatch::PreparedGraph(mismatch));
         }
-        if self.data.locals != other.data.locals {
+        if left.data.locals != right.data.locals {
             return Some(CandidateSemanticReplayMismatch::Locals);
         }
-        if self.data.patterns != other.data.patterns {
+        if left.data.patterns != right.data.patterns {
             return Some(CandidateSemanticReplayMismatch::Patterns);
         }
-        if self.data.expressions != other.data.expressions {
+        if left.data.expressions != right.data.expressions {
             return Some(CandidateSemanticReplayMismatch::Expressions);
         }
-        if self.data.checked_content != other.data.checked_content {
+        if left.data.checked_content != right.data.checked_content {
             return Some(CandidateSemanticReplayMismatch::CheckedContent);
         }
-        if self.data.iterations != other.data.iterations {
+        if left.data.iterations != right.data.iterations {
             return Some(CandidateSemanticReplayMismatch::Iterations);
         }
-        if self.data.implicit_capture_uses != other.data.implicit_capture_uses {
+        if left.data.implicit_capture_uses != right.data.implicit_capture_uses {
             return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
+        }
+        if mode == CandidateFactReplayMode::Exact
+            && left.data.physical_candidate_argument_evaluations
+                != right.data.physical_candidate_argument_evaluations
+        {
+            return Some(CandidateSemanticReplayMismatch::PhysicalCandidateEvaluations);
         }
         None
     }
@@ -3240,6 +3237,89 @@ mod tests {
     }
 
     #[test]
+    fn replay_rejects_matching_projections_from_another_fact_owner() {
+        let mut origin = SemanticFactState::new();
+        let [left, right] = std::array::from_fn(|_| {
+            let checkpoint = origin.begin_candidate_transaction().unwrap();
+            origin.extract_and_rollback(checkpoint).unwrap()
+        });
+        assert_eq!(
+            origin.projection_replay_mismatch(&left, &right, CandidateFactReplayMode::Semantic),
+            None
+        );
+        let foreign = SemanticFactState::new();
+        assert_eq!(
+            foreign.projection_replay_mismatch(&left, &right, CandidateFactReplayMode::Semantic),
+            Some(CandidateSemanticReplayMismatch::Authority)
+        );
+        // A comparison does not consume or republish either affine payload.
+        let target = origin.begin_candidate_transaction().unwrap();
+        let authority = origin.transaction_authority(&target).unwrap();
+        origin.apply_candidate_projection(&authority, left).unwrap();
+        drop(authority);
+        origin.rollback_candidate_transaction(target).unwrap();
+        assert_eq!(
+            origin.projection_replay_mismatch(&right, &right, CandidateFactReplayMode::Semantic),
+            None
+        );
+    }
+
+    #[test]
+    fn replay_requires_the_actual_live_prepared_graph_owner() {
+        let mut origin = SemanticFactState::new();
+        let [left, right] = std::array::from_fn(|_| {
+            let checkpoint = origin.begin_candidate_transaction().unwrap();
+            origin.extract_and_rollback(checkpoint).unwrap()
+        });
+        let mut different_graph = SemanticFactState::new();
+        different_graph.issuer = Arc::clone(&origin.issuer);
+        assert_eq!(
+            different_graph.projection_replay_mismatch(
+                &left,
+                &right,
+                CandidateFactReplayMode::Semantic
+            ),
+            Some(CandidateSemanticReplayMismatch::PreparedGraph(
+                PreparedCallGraphReplayMismatch::Issuer
+            ))
+        );
+        let actual_graph = origin.prepared_calls.take().unwrap();
+        assert_eq!(
+            origin.projection_replay_mismatch(&left, &right, CandidateFactReplayMode::Semantic),
+            Some(CandidateSemanticReplayMismatch::Authority)
+        );
+        origin.prepared_calls = Some(actual_graph);
+        assert_eq!(
+            origin.projection_replay_mismatch(&left, &right, CandidateFactReplayMode::Semantic),
+            None
+        );
+    }
+
+    #[test]
+    fn replay_rejects_expired_and_poisoned_generations() {
+        let mut expired = SemanticFactState::new();
+        let [left, right] = std::array::from_fn(|_| {
+            let checkpoint = expired.begin_candidate_transaction().unwrap();
+            expired.extract_and_rollback(checkpoint).unwrap()
+        });
+        expired.epoch += 1;
+        assert_eq!(
+            expired.projection_replay_mismatch(&left, &right, CandidateFactReplayMode::Semantic),
+            Some(CandidateSemanticReplayMismatch::Authority)
+        );
+        let mut poisoned = SemanticFactState::new();
+        let [left, right] = std::array::from_fn(|_| {
+            let checkpoint = poisoned.begin_candidate_transaction().unwrap();
+            poisoned.extract_and_rollback(checkpoint).unwrap()
+        });
+        poisoned.poison = Some(CandidateFactTransactionViolation::UnrecoverableLedger);
+        assert_eq!(
+            poisoned.projection_replay_mismatch(&left, &right, CandidateFactReplayMode::Semantic),
+            Some(CandidateSemanticReplayMismatch::Authority)
+        );
+    }
+
+    #[test]
     fn capture_replay_compares_selected_sites_instead_of_probe_event_order() {
         use super::super::super::CheckedLocalUseSite;
         let (callable, first_local, _) = call_identity();
@@ -3280,7 +3360,11 @@ mod tests {
             projections[1].data.implicit_capture_journal_order
         );
         assert_eq!(
-            projections[0].semantic_replay_mismatch(&projections[1]),
+            state.projection_replay_mismatch(
+                &projections[0],
+                &projections[1],
+                CandidateFactReplayMode::Semantic
+            ),
             None
         );
         state

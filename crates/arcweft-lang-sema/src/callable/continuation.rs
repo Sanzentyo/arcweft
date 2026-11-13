@@ -724,7 +724,7 @@ impl<P: PreparedCallPrefixPayload> PreparedCallGraphDelta<P, P::Unselected> {
     /// semantic values.  Nodes owned by the delta are mapped by a canonical
     /// dependency-topological order with call-site tie breaks; dependencies
     /// outside the delta remain exact issuer/coordinate references.
-    pub(crate) fn replay_mismatch(&self, other: &Self) -> Option<PreparedCallGraphReplayMismatch> {
+    fn replay_mismatch(&self, other: &Self) -> Option<PreparedCallGraphReplayMismatch> {
         if !Arc::ptr_eq(&self.issuer, &other.issuer) {
             return Some(PreparedCallGraphReplayMismatch::Issuer);
         }
@@ -772,6 +772,21 @@ impl<P: PreparedCallPrefixPayload> PreparedCallGraphDelta<P, P::Unselected> {
             }
         }
         None
+    }
+}
+
+impl<P: PreparedCallPrefixPayload> PreparedCallGraph<P, P::Unselected> {
+    /// Detached evidence is compared only by its actual live graph owner.
+    /// Matching each other does not authorize two foreign graph capabilities.
+    pub(crate) fn replay_delta_mismatch(
+        &self,
+        left: &PreparedCallGraphDelta<P, P::Unselected>,
+        right: &PreparedCallGraphDelta<P, P::Unselected>,
+    ) -> Option<PreparedCallGraphReplayMismatch> {
+        if !Arc::ptr_eq(&self.issuer, &left.issuer) || !Arc::ptr_eq(&self.issuer, &right.issuer) {
+            return Some(PreparedCallGraphReplayMismatch::Issuer);
+        }
+        left.replay_mismatch(right)
     }
 }
 

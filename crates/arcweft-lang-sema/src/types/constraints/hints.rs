@@ -20,10 +20,10 @@ pub(crate) struct NoConstraintClient;
 
 /// Domain identities owned by the caller of the lower transaction.
 ///
-/// Semantic branch and sealed-value identities deliberately require only
-/// equality.  The lower transaction stores them behind private `Arc` trace
-/// cells, so a callback does not have to make semantic values `Copy`, `Clone`,
-/// or `Ord` merely to let a frontier fork.
+/// Probe branch identities require equality. Affine preparation and sealed
+/// callback values carry evidence owned by the client, which decides replay
+/// equivalence in its actual context. Lower storage does not require those
+/// values to implement `Eq`, `Copy`, `Clone` or `Ord` to let a frontier fork.
 pub(crate) trait ConstraintDomain: 'static {
     type Application: Copy + Ord;
     type Source: Copy + Ord;
@@ -35,7 +35,7 @@ pub(crate) trait ConstraintDomain: 'static {
     /// Affine source facts transferred by the callback's successful close.
     /// They are retained evidence, not a completed type/equivalence certificate.
     type ProbePreparation;
-    type SealedBranchValue: Eq;
+    type SealedBranchValue;
     type Projection: Eq + Ord;
     type SourceErrorCause;
     type ClientInvariant;
@@ -63,6 +63,9 @@ pub(crate) trait ConstraintDomain: 'static {
     /// interprets the invariant payload.
     fn client_invariant_source(invariant: &Self::ClientInvariant) -> Self::Source;
 
+    /// Absence of callback materialization. Every value returned here denotes
+    /// that same empty branch; a source-free application may coalesce them
+    /// after its completed components have been proved equal.
     fn empty_sealed_branch() -> Self::SealedBranchValue;
 }
 

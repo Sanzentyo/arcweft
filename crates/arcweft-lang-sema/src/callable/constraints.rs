@@ -90,7 +90,15 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
         sealed: Option<Self::PreparedSealedBranchValue>,
     ) -> Result<Option<D::SealedBranchValue>, SourceCheckpointFailure<D>>;
 
-    fn finish(self) -> Result<(), SourceCheckpointFailure<D>>
+    /// The live callback owner compares affine branch evidence after closing
+    /// its callbacks; lower never equates detached semantic capabilities.
+    fn sealed_branches_equal(
+        &mut self,
+        left: &D::SealedBranchValue,
+        right: &D::SealedBranchValue,
+    ) -> Result<bool, SourceCheckpointFailure<D>>;
+
+    fn finish(&mut self) -> Result<(), SourceCheckpointFailure<D>>
     where
         Self: Sized;
 }
@@ -1131,7 +1139,11 @@ where
         if let Err(failure) = self.client.finish() {
             self.lower.record_failure(Self::checkpoint_failure(failure));
         }
-        self.lower.finish_alternatives(self.context)
+        self.lower.finish_alternatives(self.context, |left, right| {
+            self.client
+                .sealed_branches_equal(left, right)
+                .map_err(Self::checkpoint_failure)
+        })
     }
 
     pub(crate) fn defer_child_result(
@@ -1268,7 +1280,15 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
         Ok(None)
     }
 
-    fn finish(self) -> Result<(), SourceCheckpointFailure<crate::types::NoConstraintClient>> {
+    fn sealed_branches_equal(
+        &mut self,
+        _: &(),
+        _: &(),
+    ) -> Result<bool, SourceCheckpointFailure<crate::types::NoConstraintClient>> {
+        Ok(true)
+    }
+
+    fn finish(&mut self) -> Result<(), SourceCheckpointFailure<crate::types::NoConstraintClient>> {
         Ok(())
     }
 }
@@ -1512,6 +1532,8 @@ pub(crate) mod tests {
 
     #[derive(Default)]
     struct Counts {
+        callback_finish: AtomicUsize,
+        sealed_compare: AtomicUsize,
         probe_begin: AtomicUsize,
         probe_close: AtomicUsize,
         probe_call: AtomicUsize,
@@ -1810,7 +1832,18 @@ pub(crate) mod tests {
             Ok(sealed.map(|_| Sealed))
         }
 
-        fn finish(self) -> Result<(), SourceCheckpointFailure<Domain>> {
+        fn sealed_branches_equal(
+            &mut self,
+            left: &Sealed,
+            right: &Sealed,
+        ) -> Result<bool, SourceCheckpointFailure<Domain>> {
+            assert_eq!(self.counts.callback_finish.load(Ordering::Relaxed), 1);
+            self.counts.sealed_compare.fetch_add(1, Ordering::Relaxed);
+            Ok(left == right)
+        }
+
+        fn finish(&mut self) -> Result<(), SourceCheckpointFailure<Domain>> {
+            self.counts.callback_finish.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
     }
@@ -1952,6 +1985,8 @@ pub(crate) mod tests {
             result.is_ok(),
             "equivalent observations coalesce after completion: {result:?}"
         );
+        assert_eq!(counts.callback_finish.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.sealed_compare.load(Ordering::Relaxed), 1);
         assert_eq!(work.branches, 2);
         assert_eq!(counts.probe_begin.load(Ordering::Relaxed), 1);
         assert_eq!(counts.probe_call.load(Ordering::Relaxed), 1);
