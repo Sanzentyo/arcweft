@@ -17434,3 +17434,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧の「条件付きcompletion」を一括した未完了表記から、検証した有限基底kernelと、未接続の外部support・残余条件・guarded importを区別した。旧Sourceの結果を新Sourceへ付け替えず、既受入Generic Match・caller-bound recursion・共有prefixは維持する。現在の残作業は[current-status.md](current-status.md)だけへ集約する。
 
 原本 [task-conditional-component.raw.zip](acceptance-evidence/task-conditional-component.raw.zip) は 243 entries、raw 37892989 bytes、ZIP 4542019 bytes、SHA-256 `2c03949f1e94da1b596912128e300e59b4fb15e28f72c99220bedd094537b42c`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Guarded scoped effect component imports
+
+2026-11-13。基点 `5bd9766961490f8bde94248e211e6aeac622db36`、実装・公開Source `c6baf6d4b75acbed2c3c0d5168f153e555a7686a`、tree `34000434a65a5aeb388436d688045c0e3f1dcd6c`。既存mainで11 Rust pathを通常commit／非force pushし、ownerが検証したdirty bytesと公開全blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- 元のdependency・domain・局所∀・式・Future identityを持つgraphを凍結し、実Parent Unknownへの結合を検査してguard付き関数を導入する。取り込み関数はderived variantであり、Parentの最小化座標にはしない。各child／受入基底の条件付き最小解を一度だけ計算し、複数outputと異なるFuture環境でも未代入の結果を共有する。Child K外のlabelは、実Future係数がdefaultと異なる条件の下だけでchildの例外supportとして許す。
+- 確定時は計算済みの係数・principal条件・全行共通witnessへ実Futureを代入し、元の子の式をcanonical algebraで独立再検証する。minimizationを再実行しない。loweringと子replayは明示stackで行う。Parent constraintで非principal childを救済しない、Parent labelを無条件に借りない、非単調なderived outputをParentの最小化座標に加えない条件を含む新10件がPASS。依存順の移送、Scheme domain、foreign／重複／arity／予算0／rollback後のstale拒否、独立環境、32段の入れ子、Parentと整合させた不正なcached childの拒否も検証した。
+- 最終ownerは1,711件／1,705 PASS／6 FAIL／0 SKIP、84.132秒、5 suite。直前1,701 IDを維持し新10件PASS、選択・終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。開発checkのImported未網羅と、開発test buildのcheckpoint mutable参照エラーを修復し、raw logを保持した。最終前の対象9件は9 PASS、最終は全ownerで照合した。
+- 今回の実行はowner全target／全feature Clippy、workspace fmt、Sema doctest 2件、構造gateが終了0。現在のfull metadata／全target treeでSemaを含む逆依存22 packageを再確認した。既存producerは従来variantを保持し、新importはprivate owner外からまだ導入されない。cross-crate API・codec・syntax・fixture・manifest・feature・生成物変更がないため、後続21 package／107 targetの2,507 PASS／2 FAIL／1 SKIPとworkspace check／ClippyはSource `0691efa11175cadc7c0850278cd1a7ef4be45f62` の記録を再利用した。現在Sourceの再実行とは扱わない。
+- 11 pathで1,202物理LOC増。completion.rs 148 LOCは凍結とguarded handle、imports.rs 301 LOCは条件付きlowering・supportと確定replay、独立test owner 513 LOCが反例と拒否条件を所有する。既存componentは332 LOC、root closureは457 LOC。fan-in 12／fan-out 19で不変。二つ目のsolver、Source再構築、別Γ表、依存、unsafe、公開互換readerは追加しない。
+- Supersedes: 現状一覧の有限基底kernelだけの途中説明を、検証済みの凍結・guarded import・support・独立replayへ整理した。全supportで検査・部分簡約できる量化済み残余条件とfrontend接続まで完了したとは扱わない。過去の全SHA・実測・frozen原本、Generic Match・caller-bound recursion・共有prefixの受入を保持する。現在の残作業は[current-status.md](current-status.md)へ集約する。
+
+原本 [task-guarded-effect-import.raw.zip](acceptance-evidence/task-guarded-effect-import.raw.zip) は 68 entries、raw 14927991 bytes、ZIP 1425582 bytes、SHA-256 `6650f66f489dd58452a6e48a5564db5c5cb3f80f317973aeb682ef8bf6b009fe`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
