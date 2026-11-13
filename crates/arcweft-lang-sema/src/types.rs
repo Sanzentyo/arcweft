@@ -23,6 +23,7 @@ mod openness;
 mod order;
 mod project_nominal_visit;
 mod projection_control;
+mod structural_projection;
 mod style;
 mod substitution;
 mod variant_payload;

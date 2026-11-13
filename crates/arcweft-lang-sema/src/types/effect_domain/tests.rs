@@ -4,8 +4,8 @@ use crate::{
     effects::EffectSet,
     types::{
         AcceptedNominalType, ArrayLength, EntityKind, EntityType, FixedVectorType, GenericBinder,
-        GenericEffectReference, TypePoisonId, VariantPayloadOwnerFamily, VariantPayloadType,
-        VariantPayloadTypeShape,
+        GenericEffectReference, TypeInstantiationError, TypePoisonId, VariantPayloadOwnerFamily,
+        VariantPayloadType, VariantPayloadTypeShape,
     },
 };
 use std::convert::Infallible;

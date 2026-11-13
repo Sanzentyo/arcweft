@@ -2,15 +2,15 @@
 
 use crate::effect_row::{EffectPredicate, EffectRow};
 use crate::types::{
-    ArrayLength, GenericBinder, GenericConstReference, GenericDeclarationBinder,
+    ArrayLength, CanonicalEffects, GenericBinder, GenericConstReference, GenericDeclarationBinder,
     GenericEffectReference, GenericParameterKind, GenericScope, GenericScopeError,
     GenericTypeReference, ScopedType, ScopedTypeView, TypeKind, TypeProjectionControl,
     TypeProjectionError, TypeProjectionNodeKind,
 };
 
-use super::super::shape::{TypeConstraintChildren, TypeConstraintShape};
 use crate::types::projection_control::{EffectProjectionControl, UnmeteredTypeProjection};
 use crate::types::projection_control::{visit_effect_predicate, visit_effect_row};
+use crate::types::structural_projection::{ScopedTypeProjection, child_depth};
 
 use super::{TypeConstraintSolution, TypeInstantiationError};
 
@@ -1103,13 +1103,11 @@ pub(super) fn map_term(
     .map_err(TypeProjectionError::into_instantiation)
 }
 
-struct ProjectionFrame<'ty> {
-    shape: TypeConstraintShape<'ty>,
-    source: GenericScope,
-    target: GenericScope,
-    depth: u64,
-    children: TypeConstraintChildren<'ty>,
-    projected: Vec<TypeKind>,
+struct TemplateProjection<'a, C, Types, Consts, Effects> {
+    control: &'a mut C,
+    types: &'a Types,
+    consts: &'a Consts,
+    effects: &'a Effects,
 }
 
 #[expect(
@@ -1144,117 +1142,115 @@ pub(in crate::types::constraints) fn map_term_with_control<C: TypeProjectionCont
         &mut C,
     ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
 ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
-    control.check().map_err(TypeProjectionError::Control)?;
-    let mut frames = Vec::<ProjectionFrame<'_>>::new();
-    let mut current = (ty, source.clone(), target.clone(), depth);
-    loop {
-        let (ty, source, target, depth) = current;
-        control.check().map_err(TypeProjectionError::Control)?;
-        control
-            .visit_node(TypeProjectionNodeKind::Type, depth)
-            .map_err(TypeProjectionError::Control)?;
-        let mut value = if let TypeKind::GenericParam(reference) = ty {
-            types(reference, &source, &target, depth, control)?
-        } else {
-            let shape = ty.constraint_shape();
-            let mut frame = ProjectionFrame {
-                shape,
-                source: source.with_binder(shape.binder()),
-                target: target.with_binder(shape.binder()),
-                depth,
-                children: shape.children(),
-                projected: Vec::new(),
-            };
-            if let Some(child) = frame.children.next() {
-                current = (
-                    child,
-                    frame.source.clone(),
-                    frame.target.clone(),
-                    child_depth(depth)?,
-                );
-                frames.push(frame);
-                continue;
-            }
-            frame.finish(control, consts, effects)?
-        };
-        loop {
-            let Some(mut parent) = frames.pop() else {
-                return Ok(value);
-            };
-            parent.projected.push(value);
-            if let Some(child) = parent.children.next() {
-                current = (
-                    child,
-                    parent.source.clone(),
-                    parent.target.clone(),
-                    child_depth(parent.depth)?,
-                );
-                frames.push(parent);
-                break;
-            }
-            value = parent.finish(control, consts, effects)?;
-        }
+    ty.project_structure(
+        source,
+        target,
+        depth,
+        &mut TemplateProjection {
+            control,
+            types,
+            consts,
+            effects,
+        },
+    )
+}
+
+impl<C: TypeProjectionControl, Types, Consts, Effects> TypeProjectionControl
+    for TemplateProjection<'_, C, Types, Consts, Effects>
+{
+    type Error = C::Error;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.control.check()
+    }
+
+    fn visit_node(&mut self, kind: TypeProjectionNodeKind, depth: u64) -> Result<(), Self::Error> {
+        self.control.visit_node(kind, depth)
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.control.visit_binding()
     }
 }
 
-fn child_depth<E: std::error::Error + 'static>(depth: u64) -> Result<u64, TypeProjectionError<E>> {
-    depth
-        .checked_add(1)
-        .ok_or_else(|| TypeInstantiationError::DepthOverflow.into())
-}
+impl<C, Types, Consts, Effects> ScopedTypeProjection<CanonicalEffects, CanonicalEffects>
+    for TemplateProjection<'_, C, Types, Consts, Effects>
+where
+    C: TypeProjectionControl,
+    Types: Fn(
+        &GenericTypeReference,
+        &GenericScope,
+        &GenericScope,
+        u64,
+        &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<C::Error>>,
+    Consts: Fn(
+        &ArrayLength,
+        &GenericScope,
+        &GenericScope,
+        u64,
+        &mut C,
+    ) -> Result<ArrayLength, TypeProjectionError<C::Error>>,
+    Effects: Fn(
+        &EffectRow,
+        &GenericScope,
+        &GenericScope,
+        u64,
+        &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
+{
+    fn project_type_reference(
+        &mut self,
+        reference: &GenericTypeReference,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<TypeKind, TypeProjectionError<Self::Error>> {
+        (self.types)(reference, source, target, depth, self.control)
+    }
 
-impl ProjectionFrame<'_> {
-    fn finish<C: TypeProjectionControl>(
-        self,
-        control: &mut C,
-        consts: &impl Fn(
-            &ArrayLength,
-            &GenericScope,
-            &GenericScope,
-            u64,
-            &mut C,
-        ) -> Result<ArrayLength, TypeProjectionError<C::Error>>,
-        effects: &impl Fn(
-            &EffectRow,
-            &GenericScope,
-            &GenericScope,
-            u64,
-            &mut C,
-        ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
-    ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
-        self.shape.rebuild_with(
-            self.projected,
-            control,
-            |control, length| {
-                let depth = child_depth(self.depth)?;
-                control.check().map_err(TypeProjectionError::Control)?;
-                control
-                    .visit_node(TypeProjectionNodeKind::Const, depth)
-                    .map_err(TypeProjectionError::Control)?;
-                consts(length, &self.source, &self.target, depth, control)
-            },
-            |control, row| {
-                effects(
-                    row,
-                    &self.source,
-                    &self.target,
-                    child_depth(self.depth)?,
-                    control,
-                )
-            },
-            |control, predicate| {
-                let depth = child_depth(self.depth)?;
-                map_predicate_with_control(predicate, depth, control, &|reference, control| {
-                    effects(
-                        &EffectRow::open(crate::effects::EffectSet::new(), reference.clone()),
-                        &self.source,
-                        &self.target,
-                        depth,
-                        control,
-                    )
-                })
-            },
-        )
+    fn project_length(
+        &mut self,
+        length: &ArrayLength,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<ArrayLength, TypeProjectionError<Self::Error>> {
+        let depth = child_depth(depth)?;
+        self.control.check().map_err(TypeProjectionError::Control)?;
+        self.control
+            .visit_node(TypeProjectionNodeKind::Const, depth)
+            .map_err(TypeProjectionError::Control)?;
+        (self.consts)(length, source, target, depth, self.control)
+    }
+
+    fn project_row(
+        &mut self,
+        row: &EffectRow,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<EffectRow, TypeProjectionError<Self::Error>> {
+        (self.effects)(row, source, target, child_depth(depth)?, self.control)
+    }
+
+    fn project_predicate(
+        &mut self,
+        predicate: &EffectPredicate,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<EffectPredicate, TypeProjectionError<Self::Error>> {
+        let depth = child_depth(depth)?;
+        map_predicate_with_control(predicate, depth, self.control, &|reference, control| {
+            (self.effects)(
+                &EffectRow::open(crate::effects::EffectSet::new(), reference.clone()),
+                source,
+                target,
+                depth,
+                control,
+            )
+        })
     }
 }
 
