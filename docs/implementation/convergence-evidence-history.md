@@ -17447,3 +17447,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧の有限基底kernelだけの途中説明を、検証済みの凍結・guarded import・support・独立replayへ整理した。全supportで検査・部分簡約できる量化済み残余条件とfrontend接続まで完了したとは扱わない。過去の全SHA・実測・frozen原本、Generic Match・caller-bound recursion・共有prefixの受入を保持する。現在の残作業は[current-status.md](current-status.md)へ集約する。
 
 原本 [task-guarded-effect-import.raw.zip](acceptance-evidence/task-guarded-effect-import.raw.zip) は 68 entries、raw 14927991 bytes、ZIP 1425582 bytes、SHA-256 `6650f66f489dd58452a6e48a5564db5c5cb3f80f317973aeb682ef8bf6b009fe`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Quantified effect residuals and partial Future inputs
+
+2026-11-13。基点 `38fc2868c803302e4ebaca61f8459b0c9d4d0c29`、実装・公開Source `270a7c8daf9883da35b2de52f093ccebd0c89e7b`、tree `854b8540a78d24262b000be397b8dc8af35d10a8`。既存mainの7 Rust pathを通常commit／非force pushし、ownerが検証したdirty bytesと公開全blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- 残余programへ元のR、局所関数とchoiceの存在量化、有限行の局所∀、satisfiable、下限comprehension、下限を一括代入したwitnessとprincipalを明示した。Source predicateとbodyは元のtyped定義を参照し、コピーした別catalogを作らない。有限基底backendの手書きR構築を削除し、同じprogramを読むiterative compilerへ置換した。scopeごとにbodyとadmissionを共有し、元graphによるcanonical replayは独立に維持する。
+- borrowed cursorは実依存引数・scope・whole domain⇒consequence・実operand・一様choice・固定／自由Future・元の関数・下限代入を露出する。下限のlabel probeはEffectIdと別の論理変数である。部分Future代入は元graphとprogramのArcを共有し、実signatureに含まれる参照だけを許して、新label supportと既固定値を保持する。未固定FutureだけをParentへ結合し、独立replayにも固定値を渡す。
+- 新5件は量化順とscope、下限のglobal satisfiable gateとlabel binder、部分固定＋残る自由入力、全入力固定、identity／依存範囲／重複／予算0／再固定拒否と失敗原子性、固定identityへ新labelを渡す投影、残余Rを改変しても元の式の独立replayが拒否する条件を検証する。先行対象15件は15 PASS。最終全feature ownerは1,716件／1,710 PASS／6 FAIL／0 SKIP、114.197秒、5 suite。直前1,711 ID保持・新5件PASS・選択／終端ID一致・重複0、既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。
+- 今回のowner全target／全feature Clippy、workspace fmt、Sema doctest 2件と構造gateは終了0。full metadata／全target treeで逆依存22 packageを再確認した。private owner内のR生成・検査・部分代入で、既存producer、cross-crate API、codec、syntax、fixture、Cargo入力と生成物は不変。後続21 package／107 targetの2,507 PASS／2 FAIL／1 SKIP、workspace check／ClippyはSource `0691efa11175cadc7c0850278cd1a7ef4be45f62` の記録を再利用し、現在Sourceの実行へ付け替えない。
+- 7 pathで1,510物理LOC増。residual.rs 317 LOCが量化program、view.rs 607 LOCがborrowed inspection、独立test owner 428 LOCが契約と改変拒否を所有する。既存componentは379 LOCで、同じRを読むbackendとscope cacheを持つ。fan-in 12／fan-out 19で不変。新solver、Source再構築、別Γ表、依存、unsafe、公開互換readerは追加しない。
+- Supersedes: 現状一覧の残余表現全体を未実装とした途中説明を、実装済みの量化表現・検査・Futureの部分代入と、未実装の論理簡約・真偽判定へ分けた。部分入力の代入だけで一般の論理簡約やfrontend接続が完了したとはしない。過去の全SHA・実測・原本とGeneric Match・caller-bound recursion・共有prefixの受入を維持し、現在の残作業は[current-status.md](current-status.md)へ集約する。
+
+原本 [task-effect-residual-program.raw.zip](acceptance-evidence/task-effect-residual-program.raw.zip) は 61 entries、raw 15083109 bytes、ZIP 1433752 bytes、SHA-256 `99c398d2d9b73da35b49ec1c080cc9bfd9bc171f446daf99bede0cb7281c5891`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
