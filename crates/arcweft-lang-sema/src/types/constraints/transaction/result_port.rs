@@ -33,16 +33,14 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
             .into_iter()
             .map(|alternative| {
                 context.enter_node()?;
+                let scope = Arc::new(context.capture_lexical_scope()?);
                 let (opened, result) = resolve_probe_term(
                     SourceProbeTerm::Result(alternative.result.clone()),
                     &alternative.path,
+                    &scope,
                     context,
                 )?;
-                let source = super::ConstraintOperand::result(
-                    opened,
-                    Arc::new(context.capture_lexical_scope()?),
-                    result.into_result()?,
-                );
+                let source = super::ConstraintOperand::result(opened, scope, result.into_result()?);
                 let source = Arc::new(seal_type_operand(
                     source.view(),
                     alternative.path.projection_view(),
@@ -164,10 +162,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let mut advanced = Vec::new();
         for mut path in core::mem::take(&mut self.frontier) {
             context.enter_node()?;
-            let (opened, resolved) =
-                resolve_probe_term(SourceProbeTerm::Result(origin.clone()), &path, context)?;
-            let resolved = resolved.into_result()?;
             let scope = Arc::new(context.capture_lexical_scope()?);
+            let (opened, resolved) = resolve_probe_term(
+                SourceProbeTerm::Result(origin.clone()),
+                &path,
+                &scope,
+                context,
+            )?;
+            let resolved = resolved.into_result()?;
             let original_source =
                 super::ConstraintOperand::result(opened, Arc::clone(&scope), resolved);
             let source = Arc::new(seal_type_operand(
@@ -198,7 +200,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 },
                 direction: crate::types::ConstraintAcceptance::ActualAcceptsPattern,
                 pattern: pattern.clone(),
-                actual: super::ConstraintOperand::original(
+                actual: super::ConstraintOperand::from_original_in(
                     expected,
                     scope,
                     path.lineage.original.clone(),

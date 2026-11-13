@@ -39,6 +39,7 @@ impl<D: ConstraintDomain> Clone for ResolvedConstraintSource<D> {
 impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
     pub(super) fn value<A: TypeConstraintAccounting>(
         owner: Arc<dyn super::super::ConstraintSourceValueOwner<D>>,
+        target: &ConstraintLexicalScope,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(TypeKind, Self), TypeConstraintError> {
         use original_value::OriginalOperandValue;
@@ -51,9 +52,7 @@ impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
             // its root; no Γ traversal or recursive copy is needed here.
             super::super::TypeConstraintShape::Leaf(_)
             | super::super::TypeConstraintShape::Never => owner.value_type().clone(),
-            _ => owner
-                .value_type()
-                .admit(original.gamma(), original, context)?,
+            _ => owner.value_type().admit(target, original, context)?,
         };
         Ok((value, Self::Value(owner)))
     }

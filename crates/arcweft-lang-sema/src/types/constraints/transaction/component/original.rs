@@ -243,7 +243,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                             parameter: parameter.clone().into(),
                         })
                     })?;
-                let reference = super::super::ConstraintOperand::original(
+                let reference = super::super::ConstraintOperand::from_original_in(
                     &TypeKind::GenericParam(parameter.clone()),
                     Arc::clone(&operand_scope),
                     owner.original.clone(),
@@ -279,7 +279,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                             parameter: parameter.clone().into(),
                         })
                     })?;
-                let reference = super::super::ConstraintOperand::original(
+                let reference = super::super::ConstraintOperand::from_original_in(
                     &ArrayLength::Generic(parameter.clone()),
                     Arc::clone(&operand_scope),
                     owner.original.clone(),

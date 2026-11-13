@@ -199,8 +199,13 @@ fn a_candidates_rigid_inventory_cannot_admit_a_foreign_original_value() {
     );
     let value = TypeKind::GenericParam(candidate.types[0].clone());
     assert_eq!(
-        ConstraintOperand::<NoConstraintClient>::original(&value, scope, original, &mut context)
-            .err(),
+        ConstraintOperand::<NoConstraintClient>::from_original_in(
+            &value,
+            scope,
+            original,
+            &mut context
+        )
+        .err(),
         Some(references::type_out_of_scope(&candidate.types[0]))
     );
 }
@@ -217,7 +222,7 @@ fn original_value_admission_stops_before_copying_when_its_budget_is_exhausted() 
         LocalConstraintAccounting::new(TypeConstraintLimits::new(0, 0, 0, 0), &cancellation),
     );
     assert!(matches!(
-        ConstraintOperand::<NoConstraintClient>::original(
+        ConstraintOperand::<NoConstraintClient>::from_original_in(
             &TypeKind::Tuple(vec![TypeKind::I64]),
             scope,
             original,
@@ -295,4 +300,131 @@ fn fixture_operands_retain_the_declared_original_frames_instead_of_current_same_
         Err(TypeConstraintError::Abort(_))
     ));
     context.restore_binder_scope(other);
+}
+
+#[test]
+fn original_admission_rejects_equally_shaped_foreign_ambient_frames() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let binder = GenericBinder::new(1, 1, 1);
+    let previous = context.enter_binder_scope(binder);
+    let original = context
+        .original_producer_context(&Source::new(9013))
+        .unwrap();
+    context.restore_binder_scope(previous);
+    let foreign = context.enter_binder_scope(binder);
+    let target = Arc::new(context.capture_lexical_scope().unwrap());
+    let reference = original.scope().bound_type(0, 0).unwrap();
+    let length = original.scope().bound_const(0, 0).unwrap();
+    let effect = original.scope().bound_effect(0, 0).unwrap();
+    let cases = [
+        (TypeKind::GenericParam(reference.clone()), reference.into()),
+        (
+            TypeKind::Array {
+                item: Box::new(TypeKind::I64),
+                len: ArrayLength::Generic(length.clone()),
+            },
+            length.clone().into(),
+        ),
+        (
+            TypeKind::function_with_effects(
+                [],
+                TypeKind::I64,
+                EffectRow::open(EffectSet::new(), effect.clone()),
+            ),
+            effect.into(),
+        ),
+    ];
+    for (value, parameter) in cases {
+        let admitted = ConstraintOperand::<NoConstraintClient>::from_original_in(
+            &value,
+            Arc::clone(&target),
+            original.clone(),
+            &mut context,
+        );
+        assert_eq!(
+            admitted.err(),
+            Some(TypeConstraintRejection::EscapingInstantiation { parameter }.into())
+        );
+    }
+    let admitted = ConstraintOperand::<NoConstraintClient, ArrayLength>::from_original_in(
+        &ArrayLength::Generic(length.clone()),
+        target,
+        original,
+        &mut context,
+    );
+    assert_eq!(
+        admitted.err(),
+        Some(
+            TypeConstraintRejection::EscapingInstantiation {
+                parameter: length.into()
+            }
+            .into()
+        )
+    );
+    context.restore_binder_scope(foreign);
+}
+
+#[test]
+fn original_admission_lifts_ambient_type_const_effect_and_predicate_but_keeps_local_binders() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let previous = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
+    let original = context
+        .original_producer_context(&Source::new(9014))
+        .unwrap();
+    let target = Arc::new(original.gamma().with_binder(GenericBinder::new(1, 1, 1)));
+    let local = GenericBinder::new(1, 1, 1);
+    let make = |outer: &GenericScope,
+                context: &mut TypeConstraintContext<
+        '_,
+        LocalConstraintAccounting<'_>,
+        NoConstraintClient,
+    >| {
+        let contents = outer.with_binder(local);
+        let depth = u32::try_from(outer.binders().len()).unwrap();
+        let predicate = crate::effect_row::EffectFormula::variable(
+            contents.bound_effect(depth, 0).unwrap(),
+            context,
+        )
+        .unwrap()
+        .subset(
+            &crate::effect_row::EffectFormula::variable(
+                contents.bound_effect(0, 0).unwrap(),
+                context,
+            )
+            .unwrap(),
+            context,
+        )
+        .unwrap();
+        TypeKind::function_with_contract(
+            local,
+            predicate,
+            [TypeKind::Array {
+                item: Box::new(TypeKind::Tuple(vec![
+                    TypeKind::GenericParam(contents.bound_type(depth, 0).unwrap()),
+                    TypeKind::GenericParam(contents.bound_type(0, 0).unwrap()),
+                ])),
+                len: ArrayLength::Generic(contents.bound_const(depth, 0).unwrap()),
+            }],
+            TypeKind::Array {
+                item: Box::new(TypeKind::I64),
+                len: ArrayLength::Generic(contents.bound_const(0, 0).unwrap()),
+            },
+            EffectRow::open(EffectSet::new(), contents.bound_effect(depth, 0).unwrap()),
+        )
+    };
+    let value = make(original.scope(), &mut context);
+    let expected = make(target.shape(), &mut context);
+    let admitted = ConstraintOperand::<NoConstraintClient>::from_original_in(
+        &value,
+        Arc::clone(&target),
+        original.clone(),
+        &mut context,
+    )
+    .unwrap();
+    assert_eq!(admitted.value(), &expected);
+    assert_eq!(admitted.scope(), target.as_ref());
+    assert_eq!(admitted.original_context(), &original);
+    context.restore_binder_scope(previous);
 }

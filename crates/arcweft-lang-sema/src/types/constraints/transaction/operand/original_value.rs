@@ -8,7 +8,7 @@ use crate::types::constraints::{
     context::{TypeConstraintAccounting, TypeConstraintContext},
     lexical::ConstraintLexicalScope,
     references,
-    solution::map_term_with_control,
+    solution::{map_effects_with_control, map_term_with_control},
 };
 use crate::types::{
     ArrayLength, GenericConstReference, GenericTypeReference, TypeKind, TypeProjectionError,
@@ -22,14 +22,16 @@ pub(in crate::types::constraints) trait OriginalOperandValue:
 {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
-        scope: &ConstraintLexicalScope,
+        target: &ConstraintLexicalScope,
         original: &OriginalProducerContext,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>;
 }
 
 impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
-    pub(in crate::types::constraints) fn original<A: TypeConstraintAccounting>(
+    /// Admit in the owning source Γ and transport into the requested actual
+    /// frames in one controlled fold. The target never reinterprets the input.
+    pub(in crate::types::constraints) fn from_original_in<A: TypeConstraintAccounting>(
         value: &T,
         scope: Arc<ConstraintLexicalScope>,
         original: OriginalProducerContext,
@@ -58,7 +60,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
         for _ in original.scope().binders() {
             self.enter_node()?;
         }
-        ConstraintOperand::original(
+        ConstraintOperand::from_original_in(
             value,
             Arc::new(original.gamma().clone()),
             original.clone(),
@@ -87,19 +89,19 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 impl OriginalOperandValue for TypeKind {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
-        scope: &ConstraintLexicalScope,
+        target_scope: &ConstraintLexicalScope,
         original: &OriginalProducerContext,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
         map_term_with_control(
             self,
-            scope.shape(),
-            scope.shape(),
+            original.scope(),
+            target_scope.shape(),
             1,
             context,
-            &|reference, scope, _, _, _| {
+            &|reference, source, target, _, context| {
                 if let GenericTypeReference::Bound(bound) = reference {
-                    scope.bound_type(bound.depth(), bound.slot())?;
+                    source.bound_type(bound.depth(), bound.slot())?;
                 }
                 if reference.free_parameter().is_some()
                     && !original.admits_parameter(&reference.clone().into())
@@ -108,18 +110,25 @@ impl OriginalOperandValue for TypeKind {
                         reference,
                     )));
                 }
-                Ok(TypeKind::GenericParam(reference.clone()))
+                let mapped = target_scope
+                    .type_reference(original.gamma(), source, target, reference, context)
+                    .map_err(|error| {
+                        TypeProjectionError::Control(
+                            TypeConstraintContext::<A, D>::binding_transport_error(
+                                error,
+                                reference.clone().into(),
+                            ),
+                        )
+                    })?;
+                Ok(TypeKind::GenericParam(mapped))
             },
-            &|length, scope, _, _, context| {
-                length
-                    .admit_in_scope(scope, original, context)
-                    .map_err(TypeProjectionError::Control)
+            &|length, source, target, _, context| {
+                length.admit_in_scopes(source, target, target_scope, original, context)
             },
-            &|row, scope, _, depth, context| {
-                crate::types::projection_control::visit_effect_row(context, row, depth)?;
-                for reference in row.variables().into_iter().flatten() {
+            &|row, source, target, depth, context| {
+                map_effects_with_control(row, depth, context, &|reference, context| {
                     if let crate::types::GenericEffectReference::Bound(bound) = reference {
-                        scope.bound_effect(bound.depth(), bound.slot())?;
+                        source.bound_effect(bound.depth(), bound.slot())?;
                     }
                     if reference.free_parameter().is_some()
                         && !original.admits_parameter(&reference.clone().into())
@@ -128,8 +137,21 @@ impl OriginalOperandValue for TypeKind {
                             references::effect_out_of_scope(reference),
                         ));
                     }
-                }
-                Ok(row.clone())
+                    let mapped = target_scope
+                        .effect_reference(original.gamma(), source, target, reference, context)
+                        .map_err(|error| {
+                            TypeProjectionError::Control(
+                                TypeConstraintContext::<A, D>::binding_transport_error(
+                                    error,
+                                    reference.clone().into(),
+                                ),
+                            )
+                        })?;
+                    Ok(crate::effect_row::EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        mapped,
+                    ))
+                })
             },
         )
         .map_err(|error| match error {
@@ -143,22 +165,39 @@ impl OriginalOperandValue for TypeKind {
 }
 
 impl ArrayLength {
-    fn admit_in_scope<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn admit_in_scopes<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
-        scope: &crate::types::GenericScope,
+        source: &crate::types::GenericScope,
+        target: &crate::types::GenericScope,
+        target_scope: &ConstraintLexicalScope,
         original: &OriginalProducerContext,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Self, TypeConstraintError> {
-        context.check_cancelled()?;
+    ) -> Result<Self, TypeProjectionError<TypeConstraintError>> {
+        context
+            .check_cancelled()
+            .map_err(TypeProjectionError::Control)?;
         if let Self::Generic(reference) = self {
             if let GenericConstReference::Bound(bound) = reference {
-                scope.bound_const(bound.depth(), bound.slot())?;
+                source.bound_const(bound.depth(), bound.slot())?;
             }
             if reference.free_parameter().is_some()
                 && !original.admits_parameter(&reference.clone().into())
             {
-                return Err(references::const_out_of_scope(reference));
+                return Err(TypeProjectionError::Control(
+                    references::const_out_of_scope(reference),
+                ));
             }
+            let mapped = target_scope
+                .const_reference(original.gamma(), source, target, reference, context)
+                .map_err(|error| {
+                    TypeProjectionError::Control(
+                        TypeConstraintContext::<A, D>::binding_transport_error(
+                            error,
+                            reference.clone().into(),
+                        ),
+                    )
+                })?;
+            return Ok(Self::Generic(mapped));
         }
         Ok(self.clone())
     }
@@ -167,11 +206,20 @@ impl ArrayLength {
 impl OriginalOperandValue for ArrayLength {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
-        scope: &ConstraintLexicalScope,
+        target: &ConstraintLexicalScope,
         original: &OriginalProducerContext,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
         context.enter_node()?;
-        self.admit_in_scope(scope.shape(), original, context)
+        self.admit_in_scopes(original.scope(), target.shape(), target, original, context)
+            .map_err(|error| match error {
+                TypeProjectionError::Control(error) => error,
+                TypeProjectionError::Instantiation(
+                    crate::types::TypeInstantiationError::Scope(error),
+                ) => error.into(),
+                TypeProjectionError::Instantiation(_) => {
+                    TypeConstraintRejection::UnresolvedType.into()
+                }
+            })
     }
 }

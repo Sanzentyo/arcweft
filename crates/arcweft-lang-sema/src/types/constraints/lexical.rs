@@ -65,7 +65,47 @@ impl ConstraintLexicalScope {
         })
     }
 
-    fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        original: &Self,
+        source: &GenericScope,
+        target: &GenericScope,
+        reference: &GenericTypeReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<GenericTypeReference, TypeProjectionError<TypeConstraintError>> {
+        match reference {
+            GenericTypeReference::Bound(bound) => {
+                source.bound_type(bound.depth(), bound.slot())?;
+                Ok(target.bound_type(
+                    self.depth(original, source, bound.depth(), context)?,
+                    bound.slot(),
+                )?)
+            }
+            _ => Ok(reference.clone()),
+        }
+    }
+
+    pub(super) fn const_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        original: &Self,
+        source: &GenericScope,
+        target: &GenericScope,
+        reference: &GenericConstReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<GenericConstReference, TypeProjectionError<TypeConstraintError>> {
+        match reference {
+            GenericConstReference::Bound(bound) => {
+                source.bound_const(bound.depth(), bound.slot())?;
+                Ok(target.bound_const(
+                    self.depth(original, source, bound.depth(), context)?,
+                    bound.slot(),
+                )?)
+            }
+            _ => Ok(reference.clone()),
+        }
+    }
+
+    pub(super) fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         original: &Self,
         source: &GenericScope,
@@ -93,14 +133,14 @@ impl ConstraintLexicalScope {
     ) -> Result<ArrayLength, TypeProjectionError<TypeConstraintError>> {
         context.enter_node().map_err(TypeProjectionError::Control)?;
         match length {
-            ArrayLength::Generic(GenericConstReference::Bound(bound)) => {
-                original.shape.bound_const(bound.depth(), bound.slot())?;
-                Ok(ArrayLength::Generic(self.shape.bound_const(
-                    self.depth(original, original.shape(), bound.depth(), context)?,
-                    bound.slot(),
-                )?))
-            }
-            ArrayLength::Generic(_) | ArrayLength::Const(_) => Ok(length.clone()),
+            ArrayLength::Generic(reference) => Ok(ArrayLength::Generic(self.const_reference(
+                original,
+                original.shape(),
+                self.shape(),
+                reference,
+                context,
+            )?)),
+            ArrayLength::Const(_) => Ok(length.clone()),
             ArrayLength::Error(_) | ArrayLength::Inferred => {
                 Err(TypeInstantiationError::UnresolvedType.into())
             }
@@ -255,26 +295,15 @@ impl ConstraintLexicalScope {
             1,
             context,
             &|reference, source, target, _, context| {
-                Ok(TypeKind::GenericParam(match reference {
-                    GenericTypeReference::Bound(bound) => {
-                        source.bound_type(bound.depth(), bound.slot())?;
-                        target.bound_type(
-                            self.depth(original, source, bound.depth(), context)?,
-                            bound.slot(),
-                        )?
-                    }
-                    _ => reference.clone(),
-                }))
+                Ok(TypeKind::GenericParam(self.type_reference(
+                    original, source, target, reference, context,
+                )?))
             },
             &|length, source, target, _, context| match length {
-                ArrayLength::Generic(GenericConstReference::Bound(bound)) => {
-                    source.bound_const(bound.depth(), bound.slot())?;
-                    Ok(ArrayLength::Generic(target.bound_const(
-                        self.depth(original, source, bound.depth(), context)?,
-                        bound.slot(),
-                    )?))
-                }
-                ArrayLength::Generic(_) | ArrayLength::Const(_) => Ok(length.clone()),
+                ArrayLength::Generic(reference) => Ok(ArrayLength::Generic(
+                    self.const_reference(original, source, target, reference, context)?,
+                )),
+                ArrayLength::Const(_) => Ok(length.clone()),
                 ArrayLength::Error(_) | ArrayLength::Inferred => {
                     Err(TypeInstantiationError::UnresolvedType.into())
                 }

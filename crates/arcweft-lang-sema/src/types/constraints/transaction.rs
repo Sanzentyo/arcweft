@@ -1238,7 +1238,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     path.applications
                         .require_application_owner(self.application)?,
                 ),
-                actual: ConstraintOperand::original(
+                actual: ConstraintOperand::from_original_in(
                     actual,
                     scope,
                     path.lineage.original.clone(),
@@ -1403,7 +1403,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             let input = match input {
                 Some(input) => match context.capture_lexical_scope() {
-                    Ok(scope) => match ConstraintOperand::original(
+                    Ok(scope) => match ConstraintOperand::from_original_in(
                         input,
                         Arc::new(scope),
                         self.original.clone(),
@@ -1703,7 +1703,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 operation.active_input = None;
                 for ObservedProbeAlternative { mut path, result } in contribution.alternatives {
                     let (actual_term, branch, callback_selection) = result.into_parts();
-                    let (actual, result_origin) = resolve_probe_term(actual_term, &path, context)?;
+                    let scope = Arc::new(context.capture_lexical_scope()?);
+                    let (actual, result_origin) =
+                        resolve_probe_term(actual_term, &path, &scope, context)?;
                     let callback_selection = match callback_selection {
                         SourceProbeSelection::Unchecked => SourceProbeSelection::Unchecked,
                         SourceProbeSelection::Checked {
@@ -1790,7 +1792,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             }
                         };
 
-                    let scope = Arc::new(context.capture_lexical_scope()?);
                     let actual_operand = ConstraintOperand::source(
                         actual.clone(),
                         Arc::clone(&scope),
@@ -2542,10 +2543,11 @@ fn projection_error(error: TypeConstraintError) -> TypeConstraintError {
 fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
     term: SourceProbeTerm<D>,
     path: &ConstraintPath<D>,
+    target: &super::lexical::ConstraintLexicalScope,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(TypeKind, ResolvedConstraintSource<D>), TypeConstraintError> {
     match term {
-        SourceProbeTerm::Value(owner) => ResolvedConstraintSource::value(owner, context),
+        SourceProbeTerm::Value(owner) => ResolvedConstraintSource::value(owner, target, context),
         #[cfg(test)]
         SourceProbeTerm::Type(value) => Ok((value, ResolvedConstraintSource::Fixture)),
         SourceProbeTerm::Result(result) => {

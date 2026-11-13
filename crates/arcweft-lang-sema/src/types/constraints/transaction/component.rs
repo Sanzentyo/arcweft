@@ -445,6 +445,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         let (opened, _) = resolve_probe_term(
                             SourceProbeTerm::Result(root.result.clone()),
                             path,
+                            &path.lineage.scope,
                             context,
                         )?;
                         project_type(

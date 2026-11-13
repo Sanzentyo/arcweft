@@ -137,7 +137,13 @@ fn source_values_cannot_borrow_free_references_from_the_receiving_inventory() {
             _ => references::effect_out_of_scope(&parameters.effect),
         };
         assert_eq!(
-            resolve_probe_term(SourceProbeTerm::Value(owner), &path, &mut context).err(),
+            resolve_probe_term(
+                SourceProbeTerm::Value(owner),
+                &path,
+                &path.lineage.scope,
+                &mut context
+            )
+            .err(),
             Some(expected)
         );
     }
@@ -176,8 +182,13 @@ fn source_values_keep_their_own_declaration_and_explicit_import_authority() {
                     value,
                 });
             let retained = Arc::downgrade(&owner);
-            let (actual, resolved) =
-                resolve_probe_term(SourceProbeTerm::Value(owner), &path, &mut context).unwrap();
+            let (actual, resolved) = resolve_probe_term(
+                SourceProbeTerm::Value(owner),
+                &path,
+                &path.lineage.scope,
+                &mut context,
+            )
+            .unwrap();
             assert_eq!(actual, expected);
             let ResolvedConstraintSource::Value(owner) = resolved else {
                 panic!("the checked source value keeps its actual owner");
@@ -206,7 +217,12 @@ fn source_value_admission_checks_budget_before_copying_the_owned_type() {
         LocalConstraintAccounting::new(TypeConstraintLimits::new(0, 0, 0, 0), &cancellation),
     );
     assert!(matches!(
-        resolve_probe_term(SourceProbeTerm::Value(owner), &path, &mut exhausted),
+        resolve_probe_term(
+            SourceProbeTerm::Value(owner),
+            &path,
+            &path.lineage.scope,
+            &mut exhausted
+        ),
         Err(TypeConstraintError::Abort(_))
     ));
 }
@@ -227,7 +243,80 @@ fn source_value_admission_checks_cancellation_for_closed_grammar_leaves() {
     });
     cancellation.store(true, Ordering::Release);
     assert!(matches!(
-        resolve_probe_term(SourceProbeTerm::Value(owner), &path, &mut context),
+        resolve_probe_term(
+            SourceProbeTerm::Value(owner),
+            &path,
+            &path.lineage.scope,
+            &mut context
+        ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
+}
+
+#[test]
+fn checked_source_values_reject_a_same_shape_foreign_frame_at_the_receiving_port() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let binder = GenericBinder::new(1, 0, 0);
+    let previous = context.enter_binder_scope(binder);
+    let original = SourceParameters::new().original(&mut context);
+    let parameter = original.scope().bound_type(0, 0).unwrap();
+    let application = context
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .unwrap();
+    let path = context.start_path(application).unwrap();
+    context.restore_binder_scope(previous);
+    let foreign = context.enter_binder_scope(binder);
+    let target = context.capture_lexical_scope().unwrap();
+    let owner = Arc::new(OwnedSourceValue {
+        source: ConstraintSourceId::new(path.root_id(), 7),
+        original,
+        receipt: None,
+        value: TypeKind::GenericParam(parameter.clone()),
+    });
+    assert_eq!(
+        resolve_probe_term(SourceProbeTerm::Value(owner), &path, &target, &mut context).err(),
+        Some(
+            TypeConstraintRejection::EscapingInstantiation {
+                parameter: parameter.into()
+            }
+            .into()
+        )
+    );
+    context.restore_binder_scope(foreign);
+}
+
+#[test]
+fn checked_source_values_transport_their_own_bound_reference_before_port_selection() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let binder = GenericBinder::new(1, 0, 0);
+    let previous = context.enter_binder_scope(binder);
+    let original = SourceParameters::new().original(&mut context);
+    let parameter = original.scope().bound_type(0, 0).unwrap();
+    let application = context
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .unwrap();
+    let path = context.start_path(application).unwrap();
+    let nested = context.enter_binder_scope(binder);
+    let target = context.capture_lexical_scope().unwrap();
+    let expected = TypeKind::GenericParam(target.shape().bound_type(1, 0).unwrap());
+    let owner: Arc<dyn ConstraintSourceValueOwner<ApplicationSourceDomain>> =
+        Arc::new(OwnedSourceValue {
+            source: ConstraintSourceId::new(path.root_id(), 7),
+            original: original.clone(),
+            receipt: None,
+            value: TypeKind::GenericParam(parameter),
+        });
+    let retained = Arc::downgrade(&owner);
+    let (actual, resolved) =
+        resolve_probe_term(SourceProbeTerm::Value(owner), &path, &target, &mut context).unwrap();
+    assert_eq!(actual, expected);
+    let ResolvedConstraintSource::Value(owner) = resolved else {
+        panic!("checked value owner");
+    };
+    assert!(Arc::ptr_eq(&owner, &retained.upgrade().unwrap()));
+    assert_eq!(owner.original_context(), &original);
+    context.restore_binder_scope(nested);
+    context.restore_binder_scope(previous);
 }

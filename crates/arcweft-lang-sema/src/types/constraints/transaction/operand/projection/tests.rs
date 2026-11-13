@@ -58,7 +58,7 @@ fn tuple_children_borrow_the_root_and_retain_distinct_exact_addresses() {
     let mut context = context(&cancellation);
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     let original = context.fixture_original_context(None).unwrap();
-    let root = ConstraintOperand::<NoConstraintClient>::original(
+    let root = ConstraintOperand::<NoConstraintClient>::from_original_in(
         &TypeKind::Tuple(vec![TypeKind::I64, TypeKind::String]),
         Arc::clone(&scope),
         original,
@@ -112,7 +112,7 @@ fn an_array_item_and_its_length_have_distinct_type_and_const_projections() {
     let original = context.fixture_original_context(None).unwrap();
     let ty = context.lexical_scope().bound_type(0, 0).unwrap();
     let length = ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap());
-    let root = ConstraintOperand::<NoConstraintClient>::original(
+    let root = ConstraintOperand::<NoConstraintClient>::from_original_in(
         &TypeKind::Array {
             item: Box::new(TypeKind::GenericParam(ty.clone())),
             len: length.clone(),
@@ -155,7 +155,7 @@ fn a_stored_constant_has_its_own_borrowed_view_without_a_synthetic_type() {
     let outer = context.enter_binder_scope(binder);
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     let original = context.fixture_original_context(None).unwrap();
-    let root = ConstraintOperand::<NoConstraintClient, ArrayLength>::original(
+    let root = ConstraintOperand::<NoConstraintClient, ArrayLength>::from_original_in(
         &ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap()),
         Arc::clone(&scope),
         original,
@@ -187,7 +187,7 @@ fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_fore
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     let original = context.fixture_original_context(None).unwrap();
     let nested = scope.shape().with_binder(ambient);
-    let root = ConstraintOperand::<NoConstraintClient>::original(
+    let root = ConstraintOperand::<NoConstraintClient>::from_original_in(
         &TypeKind::function_with_binder(
             ambient,
             [TypeKind::GenericParam(nested.bound_type(0, 0).unwrap())],
