@@ -124,7 +124,7 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
                 },
             ) => {
                 let scope = std::sync::Arc::new(context.capture_lexical_scope()?);
-                owner.project_header(&scope, effects, predicate, context)?.0
+                owner.project_inspected_header(&scope, effects, predicate, context)?
             }
             _ => super::super::ConstraintProjectedEffectHeader::Original,
         };

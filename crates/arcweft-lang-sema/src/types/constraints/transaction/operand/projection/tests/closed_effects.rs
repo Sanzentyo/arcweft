@@ -117,6 +117,17 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
     assert_eq!(proof.row_keys.as_ref(), &[keys[0].clone()]);
     assert_eq!(proof.predicate_keys.as_ref(), &[keys[0].clone()]);
     assert_eq!(contents_scope.shape(), &contents);
+    assert!(Arc::ptr_eq(&proof.input.contents_scope, contents_scope));
+    assert!(Arc::ptr_eq(&proof.input.source.scope, &input.scope));
+    let ConstraintOperandOrigin::Projection {
+        root,
+        address: None,
+        ..
+    } = proof.input.source.origin.as_ref()
+    else {
+        panic!("the header retains its exact original operand port")
+    };
+    assert!(Arc::ptr_eq(root, &input.value));
     assert!(effects.completion().substitution.get(&keys[1]).is_some());
     drop(input);
     drop(path);
@@ -127,6 +138,119 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
     assert!(retained_input.upgrade().is_none());
     assert!(retained_effects.upgrade().is_none());
     context.restore_binder_scope(ambient);
+}
+
+#[test]
+fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_before_finish() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let (mut path, keys) = path(&mut context);
+    let expected = ["fs.read", "ui.write"].map(|label| EffectSet::from_labels([label]).unwrap());
+    for (key, effects) in keys.iter().zip(&expected) {
+        path.effects
+            .constrain_subset(
+                &EffectRow::closed(effects.clone()),
+                &EffectRow::open(EffectSet::new(), key.clone()),
+                &mut context,
+            )
+            .unwrap();
+    }
+    let input = context.fixture_operand(TypeKind::Tuple(
+        keys.iter()
+            .map(|key| {
+                TypeKind::function_with_effects(
+                    [],
+                    TypeKind::Unit,
+                    EffectRow::open(EffectSet::new(), key.clone()),
+                )
+            })
+            .collect(),
+    ));
+    let mut children = input.view().children(&mut context).unwrap();
+    let left = children.next().unwrap().unwrap();
+    let right = children.next().unwrap().unwrap();
+    let left_header = left
+        .children(&mut context)
+        .unwrap()
+        .function_header()
+        .unwrap()
+        .unwrap();
+    let right_header = right
+        .children(&mut context)
+        .unwrap()
+        .function_header()
+        .unwrap()
+        .unwrap();
+    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let mut incomplete = effects.project_header(&left_header, &mut context).unwrap();
+    assert_eq!(
+        incomplete.take_row(left_header.row()),
+        EffectRow::closed(expected[0].clone())
+    );
+    assert!(matches!(
+        incomplete.finish(),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::OriginalProducer
+        ))
+    ));
+    for (index, header) in [left_header, right_header].iter().enumerate() {
+        let mut projected = effects.project_header(header, &mut context).unwrap();
+        assert_eq!(
+            projected.take_row(header.row()),
+            EffectRow::closed(expected[index].clone())
+        );
+        assert_eq!(
+            projected.take_predicate(header.predicate()),
+            *header.predicate()
+        );
+        let proof = projected.finish().unwrap().unwrap();
+        assert_eq!(proof.row_keys.as_ref(), &[keys[index].clone()]);
+        assert!(proof.predicate_keys.is_empty());
+        let ConstraintOperandOrigin::Projection {
+            root,
+            address: Some(address),
+            ..
+        } = proof.input.source.origin.as_ref()
+        else {
+            panic!("the header retains its selected function occurrence")
+        };
+        assert!(Arc::ptr_eq(root, &input.value));
+        assert_eq!(
+            address.steps(),
+            [ConstraintOperandProjectionStep::TypeChild(index)]
+        );
+        assert!(Arc::ptr_eq(&proof.input.contents_scope, &input.scope));
+    }
+}
+
+#[test]
+fn a_function_header_rejects_an_equally_shaped_foreign_contents_scope() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let binder = GenericBinder::new(0, 0, 1);
+    let enclosing = context.enter_binder_scope(binder);
+    let input = context.fixture_operand(TypeKind::function_with_effects(
+        [],
+        TypeKind::Unit,
+        EffectRow::closed(EffectSet::new()),
+    ));
+    let own = input
+        .view()
+        .function_header_in_scope(&input.scope)
+        .unwrap()
+        .unwrap();
+    assert!(Arc::ptr_eq(own.lexical_scope(), &input.scope));
+    context.restore_binder_scope(enclosing);
+    let foreign = context.enter_binder_scope(binder);
+    let contents_scope = Arc::new(context.capture_lexical_scope().unwrap());
+    assert_eq!(input.scope.shape(), contents_scope.shape());
+    assert!(matches!(
+        input.view().function_header_in_scope(&contents_scope),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::OriginalProducer
+        ))
+    ));
+    context.restore_binder_scope(foreign);
 }
 
 #[test]

@@ -34,11 +34,12 @@ use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 mod operand;
 pub(in crate::types::constraints) use operand::ConstraintAliasStep;
 pub(in crate::types) use operand::{
-    ConstraintConstOperandView, ConstraintOperand, ConstraintOperandView,
+    ConstraintConstOperandView, ConstraintFunctionHeaderView, ConstraintOperand,
+    ConstraintOperandView,
 };
 pub(in crate::types::constraints) use operand::{
-    ConstraintOperandChildren, ConstraintOperandEffects, ConstraintOperandRebuild,
-    ConstraintProjectedOperand,
+    ConstraintEffectHeaderDerivation, ConstraintOperandChildren, ConstraintOperandEffects,
+    ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
 use operand::{ResolvedConstraintResult, ResolvedConstraintSource};
 

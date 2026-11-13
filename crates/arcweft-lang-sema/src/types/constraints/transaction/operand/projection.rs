@@ -4,8 +4,11 @@ use super::*;
 use crate::types::constraints::shape::TypeConstraintChildren;
 
 mod authority;
+mod header;
 mod rebuild;
 mod source_expectation;
+pub(in crate::types::constraints) use header::ConstraintEffectHeaderDerivation;
+pub(in crate::types) use header::ConstraintFunctionHeaderView;
 pub(in crate::types::constraints) use rebuild::{
     ConstraintOperandDerivation, ConstraintOperandEffects, ConstraintOperandRebuild,
     ConstraintProjectedOperand,
@@ -213,6 +216,17 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
             producer: Arc::clone(&self.root.origin),
             selected,
             address: Some(address),
+        })
+    }
+
+    fn occurrence_origin(&self) -> Arc<ConstraintOperandOrigin<D>> {
+        Arc::new(ConstraintOperandOrigin::Projection {
+            root: Arc::clone(&self.root.value),
+            root_scope: Arc::clone(&self.root.scope),
+            occurrence_scope: Arc::clone(&self.scope),
+            producer: Arc::clone(&self.root.origin),
+            selected: Arc::clone(&self.value_origin),
+            address: self.address.clone(),
         })
     }
 

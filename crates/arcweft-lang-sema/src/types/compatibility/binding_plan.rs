@@ -808,25 +808,28 @@ where
         (
             TypeConstraintShape::Function {
                 binder: expected_binder,
-                predicate: expected_predicate,
                 params: expected_params,
-                effects: expected_effects,
                 ..
             },
             TypeConstraintShape::Function {
                 binder: found_binder,
-                predicate: found_predicate,
                 params: found_params,
-                effects: found_effects,
                 ..
             },
         ) if expected_binder == found_binder && expected_params.len() == found_params.len() => {
             context.with_binder(*expected_binder, |context| {
-                if !expected_predicate.equal_with(found_predicate, context)? {
-                    return Ok(Vec::new());
-                }
                 let mut expected_children = pattern.children(context)?;
                 let mut found_children = actual.children(context)?;
+                let expected_header = expected_children
+                    .function_header()?
+                    .expect("function header");
+                let found_header = found_children.function_header()?.expect("function header");
+                if !expected_header
+                    .predicate()
+                    .equal_with(found_header.predicate(), context)?
+                {
+                    return Ok(Vec::new());
+                }
                 let expected_params = expected_children
                     .by_ref()
                     .take(expected_params.len())
@@ -852,10 +855,10 @@ where
                 for mut path in paths {
                     let (actual_effects, permitted_effects) = match relation.direction() {
                         ConstraintAcceptance::PatternAcceptsActual => {
-                            (found_effects, expected_effects)
+                            (found_header.row(), expected_header.row())
                         }
                         ConstraintAcceptance::ActualAcceptsPattern => {
-                            (expected_effects, found_effects)
+                            (expected_header.row(), found_header.row())
                         }
                     };
                     match path

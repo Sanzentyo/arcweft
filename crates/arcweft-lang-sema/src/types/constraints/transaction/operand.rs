@@ -10,9 +10,12 @@ pub(crate) use function_scheme::{ConstraintResultUseSource, PreparedConstraintFu
 pub(in crate::types::constraints) use projection::ConstraintOperandChildren;
 use projection::ConstraintOperandDerivation;
 use projection::ConstraintOperandProjection;
-pub(in crate::types) use projection::{ConstraintConstOperandView, ConstraintOperandView};
+pub(in crate::types) use projection::{
+    ConstraintConstOperandView, ConstraintFunctionHeaderView, ConstraintOperandView,
+};
 pub(in crate::types::constraints) use projection::{
-    ConstraintOperandEffects, ConstraintOperandRebuild, ConstraintProjectedOperand,
+    ConstraintEffectHeaderDerivation, ConstraintOperandEffects, ConstraintOperandRebuild,
+    ConstraintProjectedOperand,
 };
 
 pub(super) enum ResolvedConstraintSource<D: ConstraintDomain> {

@@ -3,7 +3,10 @@
 use super::super::{
     OriginalProducerContext,
     lexical::ConstraintLexicalScope,
-    transaction::{ConstraintInferenceBranch, ConstraintPath},
+    transaction::{
+        ConstraintEffectHeaderDerivation, ConstraintFunctionHeaderView, ConstraintInferenceBranch,
+        ConstraintPath,
+    },
 };
 use super::*;
 use crate::effect_row::{
@@ -29,20 +32,22 @@ enum ConstraintEffectCompletionOrigin {
 /// A header refers only to the completion rows it actually substituted.
 /// This retains algebraic derivation, not graph-wide Free authorization.
 pub(in crate::types::constraints) struct ConstraintClosedEffectHeader<D: ConstraintDomain> {
+    pub(in crate::types::constraints) input: ConstraintEffectHeaderDerivation<D>,
     pub(in crate::types::constraints) owner: Arc<ConstraintClosedEffects<D>>,
     pub(in crate::types::constraints) row_keys: Box<[GenericEffectReference]>,
     pub(in crate::types::constraints) predicate_keys: Box<[GenericEffectReference]>,
 }
 
-pub(in crate::types::constraints) enum ConstraintProjectedEffectHeader {
+pub(in crate::types::constraints) enum ConstraintProjectedEffectHeader<P = ()> {
     Original,
     Closed {
         row: Option<EffectRow>,
         predicate: Option<EffectPredicate>,
+        proof: P,
     },
 }
 
-impl ConstraintProjectedEffectHeader {
+impl<P> ConstraintProjectedEffectHeader<P> {
     pub(in crate::types::constraints) fn take_row(&mut self, original: &EffectRow) -> EffectRow {
         match self {
             Self::Original => original.clone(),
@@ -61,6 +66,24 @@ impl ConstraintProjectedEffectHeader {
             Self::Closed { predicate, .. } => predicate
                 .take()
                 .expect("the closed function predicate is consumed once"),
+        }
+    }
+}
+
+impl<D: ConstraintDomain> ConstraintProjectedEffectHeader<Option<ConstraintClosedEffectHeader<D>>> {
+    /// Publishing the derivation requires consuming both fields through the
+    /// corresponding function header rebuild.
+    pub(in crate::types::constraints) fn finish(
+        self,
+    ) -> Result<Option<ConstraintClosedEffectHeader<D>>, TypeConstraintError> {
+        match self {
+            Self::Original => Ok(None),
+            Self::Closed {
+                row: None,
+                predicate: None,
+                proof,
+            } => Ok(proof),
+            Self::Closed { .. } => Err(TypeConstraintInvariant::OriginalProducer.into()),
         }
     }
 }
@@ -148,17 +171,51 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
 
     pub(in crate::types::constraints) fn project_header<A: TypeConstraintAccounting>(
         self: &Arc<Self>,
+        header: &ConstraintFunctionHeaderView<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        ConstraintProjectedEffectHeader<Option<ConstraintClosedEffectHeader<D>>>,
+        TypeConstraintError,
+    > {
+        self.project_header_values(
+            header.lexical_scope(),
+            header.row(),
+            header.predicate(),
+            context,
+            |row_keys, predicate_keys| {
+                (!row_keys.is_empty() || !predicate_keys.is_empty()).then(|| {
+                    ConstraintClosedEffectHeader {
+                        input: header.derivation(),
+                        owner: Arc::clone(self),
+                        row_keys: row_keys.into_iter().collect(),
+                        predicate_keys: predicate_keys.into_iter().collect(),
+                    }
+                })
+            },
+        )
+    }
+
+    /// Inspection returns values only; it cannot issue a retained derivation.
+    pub(in crate::types::constraints::normalization) fn project_inspected_header<
+        A: TypeConstraintAccounting,
+    >(
+        &self,
         scope: &Arc<ConstraintLexicalScope>,
         row: &EffectRow,
         predicate: &EffectPredicate,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<
-        (
-            ConstraintProjectedEffectHeader,
-            Option<ConstraintClosedEffectHeader<D>>,
-        ),
-        TypeConstraintError,
-    > {
+    ) -> Result<ConstraintProjectedEffectHeader, TypeConstraintError> {
+        self.project_header_values(scope, row, predicate, context, |_, _| ())
+    }
+
+    fn project_header_values<A: TypeConstraintAccounting, P>(
+        &self,
+        scope: &Arc<ConstraintLexicalScope>,
+        row: &EffectRow,
+        predicate: &EffectPredicate,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        proof: impl FnOnce(BTreeSet<GenericEffectReference>, BTreeSet<GenericEffectReference>) -> P,
+    ) -> Result<ConstraintProjectedEffectHeader<P>, TypeConstraintError> {
         let mut row_keys = BTreeSet::new();
         let row = row.try_substitute_variables(context, &mut |key, context| {
             self.replacement(key, scope, &mut row_keys, context)
@@ -171,20 +228,11 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 self.replacement(key, scope, &mut predicate_keys, context)
             })?
         };
-        let proof = (!row_keys.is_empty() || !predicate_keys.is_empty()).then(|| {
-            ConstraintClosedEffectHeader {
-                owner: Arc::clone(self),
-                row_keys: row_keys.into_iter().collect(),
-                predicate_keys: predicate_keys.into_iter().collect(),
-            }
-        });
-        Ok((
-            ConstraintProjectedEffectHeader::Closed {
-                row: Some(row),
-                predicate: Some(predicate),
-            },
-            proof,
-        ))
+        Ok(ConstraintProjectedEffectHeader::Closed {
+            row: Some(row),
+            predicate: Some(predicate),
+            proof: proof(row_keys, predicate_keys),
+        })
     }
 
     fn replacement<A: TypeConstraintAccounting>(

@@ -1,7 +1,6 @@
 //! Move-only projection results keep a proof at every corresponding value port.
 
 use super::*;
-use crate::types::constraints::TypeConstraintShape;
 use crate::types::constraints::normalization::{
     ConstraintClosedEffects, ConstraintProjectedEffectHeader,
 };
@@ -25,7 +24,10 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 }
 
 impl<D: ConstraintDomain, T> ConstraintOperandDerivation<D, T> {
-    fn new(origin: Arc<ConstraintOperandOrigin<D>>, scope: Arc<ConstraintLexicalScope>) -> Self {
+    pub(super) fn new(
+        origin: Arc<ConstraintOperandOrigin<D>>,
+        scope: Arc<ConstraintLexicalScope>,
+    ) -> Self {
         Self {
             origin,
             scope,
@@ -82,17 +84,6 @@ impl<D: ConstraintDomain, T> ConstraintProjectedOperand<D, T> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperandView<'_, D> {
-    fn occurrence_origin(&self) -> Arc<ConstraintOperandOrigin<D>> {
-        Arc::new(ConstraintOperandOrigin::Projection {
-            root: Arc::clone(&self.root.value),
-            root_scope: Arc::clone(&self.root.scope),
-            occurrence_scope: Arc::clone(&self.scope),
-            producer: Arc::clone(&self.root.origin),
-            selected: Arc::clone(&self.value_origin),
-            address: self.address.clone(),
-        })
-    }
-
     pub(in crate::types::constraints) fn projected_leaf(
         &self,
     ) -> ConstraintProjectedOperand<D, TypeKind> {
@@ -167,18 +158,19 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             }
             None => (None, None),
         };
-        let (header, header_proof) = match (effects, self.source.value().constraint_shape()) {
-            (
-                ConstraintOperandEffects::Closed(owner),
-                TypeConstraintShape::Function {
-                    effects, predicate, ..
-                },
-            ) => owner.project_header(&self.contents_scope, effects, predicate, context)?,
-            _ => (ConstraintProjectedEffectHeader::Original, None),
+        let header = match effects {
+            ConstraintOperandEffects::Closed(owner) => {
+                match self.source.function_header_in_scope(&self.contents_scope)? {
+                    Some(header) => owner.project_header(&header, context)?,
+                    None => ConstraintProjectedEffectHeader::Original,
+                }
+            }
+            ConstraintOperandEffects::Original => ConstraintProjectedEffectHeader::Original,
         };
+        let mut fields = (length_value, header);
         let value = self.source.value().constraint_shape().rebuild_with(
             values,
-            &mut (length_value, header),
+            &mut fields,
             |(length, _), _| {
                 Ok::<_, TypeConstraintError>(
                     length.take().expect("array length was projected first"),
@@ -187,6 +179,7 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             |(_, header), row| Ok(header.take_row(row)),
             |(_, header), predicate| Ok(header.take_predicate(predicate)),
         )?;
+        let header_proof = fields.1.finish()?;
         let scope = Arc::clone(&self.source.scope);
         let origin = Arc::new(ConstraintOperandOrigin::Rebuilt {
             source: self.source.occurrence_origin(),
