@@ -12,7 +12,13 @@ fn an_outer_unknown_has_the_uniform_least_row_required_by_all_inner_valuations()
     let mut control = budget();
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let f = parameter(&scope, 0);
-    let x = graph.declare_unknown(vec![], &mut control).unwrap();
+    let x = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
     let application = graph.unknown_application(&x, vec![], &mut control).unwrap();
     let allowed = crate::effects::EffectSet::from_labels(["log.write"]).unwrap();
     let required = EffectFormula::literal(allowed.clone(), None)
@@ -45,7 +51,11 @@ fn declared_recursion_and_unknown_functions_share_one_joint_closure() {
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let f = parameter(&scope, 0);
     let unknown = graph
-        .declare_unknown(vec![f.clone()], &mut control)
+        .declare_unknown(
+            vec![f.clone()],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
         .unwrap();
     let scheme = graph
         .declare(
@@ -100,7 +110,11 @@ fn failed_unknown_and_obligation_admission_preserves_the_graph() {
     let mut graph = PreparedEffectGraph::default();
     let mut exhausted = Budget(0);
     assert!(matches!(
-        graph.declare_unknown(vec![], &mut exhausted),
+        graph.declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut exhausted
+        ),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
     assert!(graph.functions.is_empty());
@@ -113,12 +127,22 @@ fn failed_unknown_and_obligation_admission_preserves_the_graph() {
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let f = parameter(&scope, 0);
     assert!(matches!(
-        graph.declare_unknown(vec![f.clone(), f.clone()], &mut control),
+        graph.declare_unknown(
+            vec![f.clone(), f.clone()],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control
+        ),
         Err(PreparedEffectFailure::Invariant(
             PreparedEffectInvariant::DuplicateParameter
         ))
     ));
-    let unknown = graph.declare_unknown(vec![f], &mut control).unwrap();
+    let unknown = graph
+        .declare_unknown(
+            vec![f],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
     assert!(matches!(
         graph.unknown_application(&unknown, vec![], &mut control),
         Err(PreparedEffectFailure::Invariant(
@@ -135,7 +159,11 @@ fn an_inner_unknown_can_depend_on_its_introduction_parameter() {
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let f = parameter(&scope, 0);
     let e = graph
-        .declare_unknown(vec![f.clone()], &mut control)
+        .declare_unknown(
+            vec![f.clone()],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
         .unwrap();
     let application = graph
         .unknown_application(&e, vec![open(&f)], &mut control)
@@ -164,7 +192,13 @@ fn an_outer_unknown_cannot_acquire_a_later_universal_parameter() {
     let mut control = budget();
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let f = parameter(&scope, 0);
-    let x = graph.declare_unknown(vec![], &mut control).unwrap();
+    let x = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
     let application = graph.unknown_application(&x, vec![], &mut control).unwrap();
     let equal = graph
         .relate(
@@ -189,9 +223,19 @@ fn jointly_minimized_outer_and_inner_unknowns_reject_incomparable_solutions() {
     let mut control = budget();
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let f = parameter(&scope, 0);
-    let x = graph.declare_unknown(vec![], &mut control).unwrap();
+    let x = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
     let y = graph
-        .declare_unknown(vec![f.clone()], &mut control)
+        .declare_unknown(
+            vec![f.clone()],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
         .unwrap();
     let x = graph.unknown_application(&x, vec![], &mut control).unwrap();
     let y = graph
@@ -269,7 +313,13 @@ fn rollback_removes_scoped_obligations_and_never_reuses_unknown_identity() {
     let mut graph = PreparedEffectGraph::default();
     let mut control = budget();
     let mut checkpoint = graph.checkpoint(&mut control).unwrap();
-    let stale = graph.declare_unknown(vec![], &mut control).unwrap();
+    let stale = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
     let impossible = graph
         .relate(
             PreparedEffectRelation::Equal,
@@ -282,7 +332,13 @@ fn rollback_removes_scoped_obligations_and_never_reuses_unknown_identity() {
         .add_scoped_obligation(vec![], truth(), impossible, &mut control)
         .unwrap();
     graph.rollback(&mut checkpoint).unwrap();
-    let fresh = graph.declare_unknown(vec![], &mut control).unwrap();
+    let fresh = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
     assert_ne!(stale, fresh);
     assert!(matches!(
         graph.unknown_application(&stale, vec![], &mut control),

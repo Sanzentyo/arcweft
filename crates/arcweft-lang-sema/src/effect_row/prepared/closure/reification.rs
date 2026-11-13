@@ -87,6 +87,12 @@ impl PrincipalEffectClosure<'_> {
             };
             if let Function::Scheme(scheme) = function.as_ref() {
                 canonical::CanonicalReplay::new(self, scope).confirm(id, scheme, work)?;
+            } else if function.is_future() {
+                let row = self
+                    .future_bindings
+                    .get(&id)
+                    .ok_or(PreparedEffectInvariant::UnresolvedFuture)?;
+                canonical::CanonicalReplay::new(self, scope).confirm_fixed(id, row, work)?;
             }
         }
         for (id, obligation) in self.graph.obligations.iter().enumerate() {

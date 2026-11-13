@@ -20,8 +20,8 @@ use crate::types::GenericEffectReference;
 mod closure;
 mod declaration;
 mod functions;
-pub(crate) use functions::PreparedEffectUnknownRef;
 use functions::{Function, FunctionRef};
+pub(crate) use functions::{PreparedEffectUnknownEligibility, PreparedEffectUnknownRef};
 mod scoped;
 pub(crate) use closure::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
@@ -115,6 +115,12 @@ pub(crate) enum PreparedEffectInvariant {
     PrincipalConfirmation,
     #[error("a failed effect-term edit cannot be resumed or committed")]
     TermEditState,
+    #[error("a future effect function still needs its actual row function")]
+    UnresolvedFuture,
+    #[error("a completed effect binding does not designate a future function")]
+    FutureBinding,
+    #[error("a future effect function is bound more than once")]
+    DuplicateFutureBinding,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -319,7 +325,7 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::StaleReference)?
         {
             Function::Scheme(scheme) => Ok(scheme),
-            Function::Unknown(_) => Err(PreparedEffectInvariant::StaleReference),
+            Function::Unknown { .. } => Err(PreparedEffectInvariant::StaleReference),
         }
     }
 
@@ -359,7 +365,7 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectSchemeRef, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        let unique = self.validate_parameters(&parameters, &mut work)?;
+        let unique = Self::validate_parameters(&parameters, &mut work)?;
         for parameter in domain.variables() {
             work.charge(DecisionWork::Visit)?;
             if !unique.contains(parameter) {

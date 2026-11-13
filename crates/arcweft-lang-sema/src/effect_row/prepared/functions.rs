@@ -5,6 +5,12 @@ use super::*;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PreparedEffectUnknownRef(PreparedEffectReference);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedEffectUnknownEligibility {
+    Bindable,
+    Future,
+}
+
 #[derive(Clone, Debug)]
 pub(super) enum FunctionRef {
     Scheme(PreparedEffectSchemeRef),
@@ -24,28 +30,40 @@ impl FunctionRef {
 pub(super) enum Function {
     Scheme(Scheme),
     /// Exactly the dependencies available when this unknown was introduced.
-    Unknown(Box<[GenericEffectReference]>),
+    Unknown {
+        parameters: Box<[GenericEffectReference]>,
+        eligibility: PreparedEffectUnknownEligibility,
+    },
 }
 
 impl Function {
     pub(super) fn parameters(&self) -> &[GenericEffectReference] {
         match self {
             Self::Scheme(scheme) => &scheme.header.parameters,
-            Self::Unknown(dependencies) => dependencies,
+            Self::Unknown { parameters, .. } => parameters,
         }
     }
 
     pub(super) fn domain(&self) -> Option<&EffectPredicate> {
         match self {
             Self::Scheme(scheme) => Some(&scheme.header.domain),
-            Self::Unknown(_) => None,
+            Self::Unknown { .. } => None,
         }
+    }
+
+    pub(super) fn is_future(&self) -> bool {
+        matches!(
+            self,
+            Self::Unknown {
+                eligibility: PreparedEffectUnknownEligibility::Future,
+                ..
+            }
+        )
     }
 }
 
 impl PreparedEffectGraph {
     pub(super) fn validate_parameters<'p, C: DecisionControl>(
-        &self,
         parameters: &'p [GenericEffectReference],
         work: &mut Work<'_, C>,
     ) -> Result<BTreeSet<&'p GenericEffectReference>, PreparedEffectFailure<C::Error>> {
@@ -73,17 +91,21 @@ impl PreparedEffectGraph {
         Ok(id)
     }
 
-    /// Unknowns have no declaration domain or body equation. They are minimized
-    /// jointly with every other function, subject to scoped obligations.
+    /// Unknowns have no declaration domain or body equation. Only bindable
+    /// unknowns participate in this scope's joint minimization.
     pub(crate) fn declare_unknown<C: DecisionControl>(
         &mut self,
         dependencies: Vec<GenericEffectReference>,
+        eligibility: PreparedEffectUnknownEligibility,
         control: &mut C,
     ) -> Result<PreparedEffectUnknownRef, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        self.validate_parameters(&dependencies, &mut work)?;
+        Self::validate_parameters(&dependencies, &mut work)?;
         let id = self.insert_function(
-            Function::Unknown(dependencies.into_boxed_slice()),
+            Function::Unknown {
+                parameters: dependencies.into_boxed_slice(),
+                eligibility,
+            },
             &mut work,
         )?;
         Ok(PreparedEffectUnknownRef(self.reference(id)))
@@ -100,7 +122,7 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         match (reference, function) {
             (FunctionRef::Scheme(_), Function::Scheme(_))
-            | (FunctionRef::Unknown(_), Function::Unknown(_)) => Ok(function),
+            | (FunctionRef::Unknown(_), Function::Unknown { .. }) => Ok(function),
             _ => Err(PreparedEffectInvariant::StaleReference),
         }
     }

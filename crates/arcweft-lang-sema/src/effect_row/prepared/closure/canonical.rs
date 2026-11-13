@@ -545,4 +545,27 @@ impl<'a> CanonicalReplay<'a> {
         }
         Ok(())
     }
+
+    pub(super) fn confirm_fixed<C: DecisionControl>(
+        &mut self,
+        id: u64,
+        row: &EffectRow,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let actual = self.formula(&self.principal.functions[&id], work)?;
+        let expected = self.formula(row, work)?;
+        self.finite(&expected, work)?;
+        let equal = actual
+            .subset(&expected, work)?
+            .and(&expected.subset(&actual, work)?, work)?;
+        if !self
+            .principal
+            .witnesses
+            .and(&self.guard(&equal, work)?.not(work)?, work)?
+            .is_constant(false)
+        {
+            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+        }
+        Ok(())
+    }
 }

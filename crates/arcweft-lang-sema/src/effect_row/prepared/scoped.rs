@@ -23,7 +23,7 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        self.validate_parameters(&parameters, &mut work)?;
+        Self::validate_parameters(&parameters, &mut work)?;
         self.validate_predicate(&domain)?;
         self.validate_predicate(&predicate)?;
         work.charge(DecisionWork::Node)?;

@@ -9,6 +9,8 @@ use crate::effects::EffectId;
 
 mod canonical;
 mod compilation;
+mod component;
+use component::CompiledComponent;
 mod observation;
 mod reification;
 pub(crate) use observation::{
@@ -75,6 +77,7 @@ struct LabelClasses<'a> {
 impl Layout {
     fn new<C: DecisionControl>(
         graph: &PreparedEffectGraph,
+        fixed: &BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let mut labels = BTreeSet::new();
@@ -89,6 +92,9 @@ impl Layout {
             if let Some(domain) = function.domain() {
                 support(domain.membership())?;
             }
+        }
+        for row in fixed.values() {
+            support(row.known()?.membership())?;
         }
         // Include all retained alternatives, not just unconditional constants.
         for term in graph.rows.values() {
@@ -287,6 +293,7 @@ pub(crate) struct PrincipalEffectClosure<'a> {
     completion: ConditionalDecisionCompletion<Atom>,
     choices: BTreeSet<Atom>,
     witnesses: Decision,
+    future_bindings: BTreeMap<u64, EffectRow>,
 }
 
 impl PreparedEffectGraph {
@@ -294,80 +301,23 @@ impl PreparedEffectGraph {
         &self,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+        self.solve_with_bindings(BTreeMap::new(), control)
+    }
+
+    fn solve_with_bindings<C: DecisionControl>(
+        &self,
+        fixed: BTreeMap<u64, EffectRow>,
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        for function in self.functions.values() {
-            work.charge(DecisionWork::Visit)?;
-            if matches!(
-                function.as_ref(),
-                Function::Scheme(Scheme {
-                    state: SchemeState::Declared,
-                    ..
-                })
-            ) {
-                return Err(PreparedEffectInvariant::SchemeState.into());
-            }
-        }
-        let layout = Layout::new(self, &mut work)?;
-        let mut relation = Decision::constant(true);
         for (&id, function) in &self.functions {
-            if let Function::Scheme(scheme) = function.as_ref() {
-                let SchemeState::BodyPrepared { body, obligations } = &scheme.state else {
-                    return Err(PreparedEffectInvariant::SchemeState.into());
-                };
-                let mut compilation = Compilation::new(
-                    self,
-                    layout.view(),
-                    FormalOwner::Scheme(id),
-                    &scheme.header.parameters,
-                );
-                let body = compilation.row(body, &mut work)?;
-                let parameters = compilation.parameters(&mut work)?;
-                let own = compilation.application(id, &parameters, &mut work)?;
-                let mut members = Vec::new();
-                for (left, right) in own.iter().zip(&body.membership) {
-                    work.charge(DecisionWork::Node)?;
-                    members.push(left.conditional(right, &right.not(&mut work)?, &mut work)?);
-                }
-                let mut equation = compilation.whole(&members, &mut work)?;
-                equation = equation.and(&body.admitted, &mut work)?;
-                for predicate in obligations {
-                    equation =
-                        equation.and(&compilation.predicate(predicate, &mut work)?, &mut work)?;
-                }
-                let domain = compilation.canonical_predicate(&scheme.header.domain, &mut work)?;
-                equation = domain.conditional(&equation, &Decision::constant(true), &mut work)?;
-                // Choices stay outside this universal quantifier: one candidate
-                // must work for every row-parameter valuation and every label.
-                equation = equation.forall(&compilation.formals(&mut work)?, &mut work)?;
-                relation = relation.and(&equation, &mut work)?;
+            work.charge(DecisionWork::Visit)?;
+            if function.is_future() && !fixed.contains_key(&id) {
+                return Err(PreparedEffectInvariant::UnresolvedFuture.into());
             }
-            // Finite row functions are false outside support on empty inputs.
-            relation = relation.and(
-                &Decision::variable(
-                    Atom::Cell {
-                        scheme: id,
-                        class: 0,
-                        mask: 0,
-                    },
-                    &mut work,
-                )?
-                .not(&mut work)?,
-                &mut work,
-            )?;
         }
-        for (id, obligation) in self.obligations.iter().enumerate() {
-            let mut compilation = Compilation::new(
-                self,
-                layout.view(),
-                FormalOwner::Obligation(id),
-                &obligation.parameters,
-            );
-            let domain = compilation.predicate(&obligation.domain, &mut work)?;
-            let predicate = compilation.predicate(&obligation.predicate, &mut work)?;
-            let guarded = domain.conditional(&predicate, &Decision::constant(true), &mut work)?;
-            let equation = guarded.forall(&compilation.formals(&mut work)?, &mut work)?;
-            relation = relation.and(&equation, &mut work)?;
-        }
+        let CompiledComponent { layout, relation } =
+            CompiledComponent::new(self, &fixed, &mut work)?;
         let mut choices = BTreeSet::new();
         for &id in &self.choices {
             work.charge(DecisionWork::Visit)?;
@@ -440,6 +390,7 @@ impl PreparedEffectGraph {
             completion,
             choices,
             witnesses: choice_relation,
+            future_bindings: fixed,
         };
         // Recheck original typed terms against the canonical scheme projection
         // under every retained witness, without choosing a discrete alternative.
