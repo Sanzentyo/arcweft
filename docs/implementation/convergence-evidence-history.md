@@ -17512,3 +17512,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧のeffect-only reify・effectのFree許可・完成primitive Γ保持の未完了列挙を、今回検証した境界の完了へ訂正した。一般量化消去・MGU／rank・Fn局所∀・prepared型を含む全portのΓ統合・frontend本体一回準備と一括sealは残る。以前の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持する。現在の一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-effect-primitive-gamma.raw.zip](acceptance-evidence/task-effect-primitive-gamma.raw.zip) は 287 entries、raw 43282851 bytes、ZIP 5276126 bytes、SHA-256 `e0ad7791d61c647c6f009551a054609de3881132652bd312cd6aaa6b82f17e57`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Affine prepared effect candidate transfer
+
+2026-11-14。基点 `e06267763cfe2e4eb39562b03e5145db674ff784`、実装・公開Source `c70a9548710bc7523e90dba3ae908d128e937bd0`、tree `53e59eea3634a52d4891d8fabdff2ad8569a59dc`。既存mainの6 Rust pathを通常commit／非force pushし、検証したdirty bytesと公開blobを照合した。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- prepared effect graphの候補を、function定義の変更・row・predicate・choice・whole-row scoped obligationを含む一つのmove-only差分として取り出す。元のissuerとbase stateを確認し、preflightの失敗時には元graphと差分を保持する。bodyは同じimmutableな宣言headerを保持し、再帰する2宣言を再適用して元の最小効果が復元されることを検証した。operational state IDはすべての実mutationに対応し、semantic equality・overload exactness・永続contract versionには使わない。
+- 再適用されるtermのordinalは、新たな外側checkpointより古い場合がある。このため従来のordinal上限だけによる削除を、実際の挿入journalへ置換した。nested commit後の外側rollbackでも、再適用row・predicate・choice・新declarationとbody更新・obligationをすべて失効／復元する。途中失敗したterm editの破棄も、そのjournalと元stateを復元する。新7件はこれらと別issuer・変更base・取消し後のpayload再試行・extract失敗のcheckpoint保持を検証する。
+- prepared effect対象90件は全PASS。開発時のselect API名によるcompile拒否を原本に保持する。最初の全1,739件は1,733 PASS／6 FAIL、94.806秒。Clippyで直接所有する返却errorが大きいことを確認し、差分を取り出し時からheapに所有させた。最終ownerは全1,739件／1,733 PASS／6 FAIL／0 SKIP、94.467秒、5 suite。直前1,732 ID保持・新7件PASS、選択／終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。最初のrun・入力hash・Clippy警告も保持する。
+- Sema全target／全feature Clippy、workspace fmt、構造gateは今回実行して終了0。6 path・555物理LOC増。transactionの実状態とrollbackを既存prepared graph ownerへ置き、rowの意味やcompleted型の別authorityを追加しない。98 package・3509 files・3378 Rust files・1903573 Rust LOC・396 review・blocking 0。
+- private準備graph内の変更であり、最終canonical型／call producer・public API・Cargo feature・codec・runtimeは変更していない。fresh full metadata／全target reverse treeの22 package、fan-in 12／fan-out 19とCargo入力の不変を確認した。Source `04d196e6ac47db99a8fbfe16bdaf77227630550a` の後続21 package／107 target・2,507 PASS／2 FAIL／1 SKIP、workspace全target／全feature check・ClippyとSema doctest 2件を再利用する。新Sourceでの全consumer再実行やworkspace runとは記載しない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- Supersedes: 現状一覧のowner件数・品質の入力Sourceを更新し、今回の新規実行と前回の再利用を区別した。Frontend owner・候補のsemantic replay・prepared型の実producer／consumerへの接続は未完了で、再帰本体推論6件の完了とはしない。Generic Match・caller-bound recursion・共有prefixと、型／定数／effectのFree許可・reifyの受入を保持し、既存履歴と全SHAを変更しない。現在の一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-effect-delta.raw.zip](acceptance-evidence/task-effect-delta.raw.zip) は 62 entries、raw 22865425 bytes、ZIP 2100979 bytes、SHA-256 `e0f2db8b5cbe0c9dcc7f1cc7d8304653e681ad05609ee00acedafd8e4089cfdf`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
