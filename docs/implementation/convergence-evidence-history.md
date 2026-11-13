@@ -17473,3 +17473,15 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧で論理簡約全体を未実装とした記述と、nullaryの消去・Future Coverage保持・uniqueな局所解の代入を残作業とした列挙を、今回の具体的な実装・検証を根拠に置換した。一般量化消去やfrontend接続の完了とはしない。以前の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持し、現在の項目別一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-effect-residual-reduction.raw.zip](acceptance-evidence/task-effect-residual-reduction.raw.zip) は 58 entries、raw 14754027 bytes、ZIP 1390524 bytes、SHA-256 `82a1fcb9f202faf075f6cdfa8af876f6c38a30a26a061dc78aa364a9a65521cf`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Operand derivations through type reification
+
+2026-11-13。基点 `44a92a42e08ec4498fa9d11f1489dc47bbb04b32`、実装・公開Source `5e1720660622986fde917f76fc91c65215abe6e5`、tree `21358d60acebfa417469c97b8503a7e9f89f0f83`。既存mainの6 Rust pathを通常commit／非force pushし、ownerが検証したdirty bytesと公開全blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- projection入力をraw TypeKindへ取り出して閉じていた経路を削除した。入力は元のoperand.view()、出力は実applicationが開いたtemplate operandとして、既存project_closed_operand／RetainOrigins foldへ渡す。Source・child・alias・effect headerの導出を対応するportで保持し、型束縛も同じoperandのままreifyする。TypeConstraintSolutionとCompletedGenericContextの型reify入口を全producerでConstraintOperandへ置換し、raw型の並行入口は残さない。
+- reifyの既存移送foldはoperandの実lexical scopeをsourceとして用い、成功・取消しの双方で受け手scopeを復元する。新たな型walker、Source Γの再構築や許可表を作らない。追加1件はambientとFn-localのtype／effect参照、等形だが別の受け手binder、取消し復元と元applicationへのreopenを検証した。先行対象runの8 PASS／1 FAILは、fixtureがapplicationをambientより先に作っていた正当なescaping拒否であり、実導入順へfixtureを訂正した結果を全件runで確認した。
+- 最終locked・全feature Sema lib／testsは1,725件／1,719 PASS／6 FAIL／0 SKIP、93.503秒、5 suite。直前1,724 ID保持・新1件PASS・選択／終端ID一致・重複0、既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。残余簡約の8件と64入力照合も同じ全件runに含む。
+- producerが変わるため今回は下流結果を再利用せず、full all-feature metadata／全target reverse treeの22 packageから、後続21 package／107 targetを同じSourceで再実行した。全2,510件／2,507 PASS／2 FAIL／1 SKIP、選択／終端ID一致・重複0。Compiler既知2失敗のExpressionCycle slot 17／19、CLI規定226 PASS、compile-only 3 targetを照合した。workspace全target／全feature checkとClippy、workspace fmt、Sema doctest 2件、構造gateは終了0。Cargo graph、fan-in 12／fan-out 19は不変。
+- 6 path・74物理LOC増。既存の型閉包foldが導出保持を、既存のcompleted transportが実フレーム移送と出力ごとのcaptureを所有する。Supersedes: 現状一覧の「reify入力の元operand導出」を今回の型入口の実装・検証に基づき残作業から除き、constant／effect-only reify、Free許可の実導出による判定とprimitive effect行のΓ sealを別の未完了境界として明記した。全portのΓ統合、一般量化消去、frontend再帰本体推論の完了とはしない。過去の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持し、現在の一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-operand-reification.raw.zip](acceptance-evidence/task-operand-reification.raw.zip) は 243 entries、raw 41111353 bytes、ZIP 4929063 bytes、SHA-256 `f7b1c4fca2410ba4622f22c980fbf3aa861244f517691ac315364d6bc28b1080`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
