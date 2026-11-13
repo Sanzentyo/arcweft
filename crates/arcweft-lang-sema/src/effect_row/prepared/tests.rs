@@ -165,7 +165,7 @@ fn exponential_cell_admission_fails_before_building_a_truth_table() {
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
     assert_eq!(graph.rows.len(), 0);
-    assert_eq!(graph.schemes.len(), 1);
+    assert_eq!(graph.functions.len(), 1);
 }
 
 #[test]
@@ -656,7 +656,7 @@ fn closure_budget_boundary_preserves_the_original_graph_on_failure() {
             .unwrap(),
         &expected
     );
-    assert_eq!(graph.schemes.len(), 1);
+    assert_eq!(graph.functions.len(), 1);
     assert_eq!(graph.rows.len(), 2);
 }
 

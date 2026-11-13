@@ -23,7 +23,7 @@ fn confirmation_rejects_a_larger_fixed_point_than_the_retained_least_tuple() {
             principal.scheme(&scheme).unwrap(),
             &EffectRow::closed(EffectSet::new())
         );
-        principal.schemes.insert(
+        principal.functions.insert(
             scheme.0.ordinal,
             EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap()),
         );

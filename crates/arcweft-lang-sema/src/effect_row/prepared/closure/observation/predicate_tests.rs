@@ -241,5 +241,5 @@ fn extension_has_an_exact_inclusive_budget_without_mutating_the_graph() {
         source
     );
     assert_eq!(graph.retained_terms(), (0, 0));
-    assert!(graph.schemes.is_empty());
+    assert!(graph.functions.is_empty());
 }

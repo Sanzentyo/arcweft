@@ -46,6 +46,7 @@ enum Atom {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum FormalOwner {
     Scheme(u64),
+    Obligation(usize),
     Observation,
 }
 
@@ -84,8 +85,10 @@ impl Layout {
             }
             Ok(())
         };
-        for scheme in graph.schemes.values() {
-            support(scheme.header.domain.membership())?;
+        for function in graph.functions.values() {
+            if let Some(domain) = function.domain() {
+                support(domain.membership())?;
+            }
         }
         // Include all retained alternatives, not just unconditional constants.
         for term in graph.rows.values() {
@@ -114,7 +117,10 @@ impl Layout {
                 }
             }
         }
-        for scheme in graph.schemes.values() {
+        for function in graph.functions.values() {
+            let Function::Scheme(scheme) = function.as_ref() else {
+                continue;
+            };
             if let SchemeState::BodyPrepared {
                 body: PreparedEffectRow::Canonical(row),
                 ..
@@ -127,6 +133,13 @@ impl Layout {
                     if let PreparedEffectPredicate::Canonical(predicate) = predicate {
                         support(predicate.membership())?;
                     }
+                }
+            }
+        }
+        for obligation in &graph.obligations {
+            for predicate in [&obligation.domain, &obligation.predicate] {
+                if let PreparedEffectPredicate::Canonical(predicate) = predicate {
+                    support(predicate.membership())?;
                 }
             }
         }
@@ -179,9 +192,9 @@ impl Layout {
             .ok_or(PreparedEffectInvariant::TruthTableOverflow)?;
         let mut total = 0usize;
         // Admit the entire exponential shape before allocating any cell table.
-        for scheme in graph.schemes.values() {
+        for function in graph.functions.values() {
             work.charge(DecisionWork::Visit)?;
-            let shift = u32::try_from(scheme.header.parameters.len())
+            let shift = u32::try_from(function.parameters().len())
                 .map_err(|_| PreparedEffectInvariant::TruthTableOverflow)?;
             let table = 1usize
                 .checked_shl(shift)
@@ -199,8 +212,8 @@ impl Layout {
         }
         let mut tables = BTreeMap::new();
         let mut cells = BTreeSet::new();
-        for (&id, scheme) in &graph.schemes {
-            let table = 1usize << scheme.header.parameters.len();
+        for (&id, function) in &graph.functions {
+            let table = 1usize << function.parameters().len();
             tables.insert(id, table);
             for class in 0..classes {
                 for mask in 0..table {
@@ -270,7 +283,7 @@ impl LabelClasses<'_> {
 pub(crate) struct PrincipalEffectClosure<'a> {
     graph: &'a PreparedEffectGraph,
     layout: Layout,
-    schemes: BTreeMap<u64, EffectRow>,
+    functions: BTreeMap<u64, EffectRow>,
     completion: ConditionalDecisionCompletion<Atom>,
     choices: BTreeSet<Atom>,
     witnesses: Decision,
@@ -282,44 +295,52 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        for scheme in self.schemes.values() {
+        for function in self.functions.values() {
             work.charge(DecisionWork::Visit)?;
-            if matches!(scheme.state, SchemeState::Declared) {
+            if matches!(
+                function.as_ref(),
+                Function::Scheme(Scheme {
+                    state: SchemeState::Declared,
+                    ..
+                })
+            ) {
                 return Err(PreparedEffectInvariant::SchemeState.into());
             }
         }
         let layout = Layout::new(self, &mut work)?;
         let mut relation = Decision::constant(true);
-        for (&id, scheme) in &self.schemes {
-            let SchemeState::BodyPrepared { body, obligations } = &scheme.state else {
-                return Err(PreparedEffectInvariant::SchemeState.into());
-            };
-            let mut compilation = Compilation::new(
-                self,
-                layout.view(),
-                FormalOwner::Scheme(id),
-                &scheme.header.parameters,
-            );
-            let body = compilation.row(body, &mut work)?;
-            let parameters = compilation.parameters(&mut work)?;
-            let own = compilation.application(id, &parameters, &mut work)?;
-            let mut members = Vec::new();
-            for (left, right) in own.iter().zip(&body.membership) {
-                work.charge(DecisionWork::Node)?;
-                members.push(left.conditional(right, &right.not(&mut work)?, &mut work)?);
+        for (&id, function) in &self.functions {
+            if let Function::Scheme(scheme) = function.as_ref() {
+                let SchemeState::BodyPrepared { body, obligations } = &scheme.state else {
+                    return Err(PreparedEffectInvariant::SchemeState.into());
+                };
+                let mut compilation = Compilation::new(
+                    self,
+                    layout.view(),
+                    FormalOwner::Scheme(id),
+                    &scheme.header.parameters,
+                );
+                let body = compilation.row(body, &mut work)?;
+                let parameters = compilation.parameters(&mut work)?;
+                let own = compilation.application(id, &parameters, &mut work)?;
+                let mut members = Vec::new();
+                for (left, right) in own.iter().zip(&body.membership) {
+                    work.charge(DecisionWork::Node)?;
+                    members.push(left.conditional(right, &right.not(&mut work)?, &mut work)?);
+                }
+                let mut equation = compilation.whole(&members, &mut work)?;
+                equation = equation.and(&body.admitted, &mut work)?;
+                for predicate in obligations {
+                    equation =
+                        equation.and(&compilation.predicate(predicate, &mut work)?, &mut work)?;
+                }
+                let domain = compilation.canonical_predicate(&scheme.header.domain, &mut work)?;
+                equation = domain.conditional(&equation, &Decision::constant(true), &mut work)?;
+                // Choices stay outside this universal quantifier: one candidate
+                // must work for every row-parameter valuation and every label.
+                equation = equation.forall(&compilation.formals(&mut work)?, &mut work)?;
+                relation = relation.and(&equation, &mut work)?;
             }
-            let mut equation = compilation.whole(&members, &mut work)?;
-            equation = equation.and(&body.admitted, &mut work)?;
-            for predicate in obligations {
-                equation =
-                    equation.and(&compilation.predicate(predicate, &mut work)?, &mut work)?;
-            }
-            let domain = compilation.canonical_predicate(&scheme.header.domain, &mut work)?;
-            equation = domain.conditional(&equation, &Decision::constant(true), &mut work)?;
-            // Choices stay outside this universal quantifier: one candidate
-            // must work for every row-parameter valuation and every label.
-            equation = equation.forall(&compilation.formals(&mut work)?, &mut work)?;
-            relation = relation.and(&equation, &mut work)?;
             // Finite row functions are false outside support on empty inputs.
             relation = relation.and(
                 &Decision::variable(
@@ -333,6 +354,19 @@ impl PreparedEffectGraph {
                 .not(&mut work)?,
                 &mut work,
             )?;
+        }
+        for (id, obligation) in self.obligations.iter().enumerate() {
+            let mut compilation = Compilation::new(
+                self,
+                layout.view(),
+                FormalOwner::Obligation(id),
+                &obligation.parameters,
+            );
+            let domain = compilation.predicate(&obligation.domain, &mut work)?;
+            let predicate = compilation.predicate(&obligation.predicate, &mut work)?;
+            let guarded = domain.conditional(&predicate, &Decision::constant(true), &mut work)?;
+            let equation = guarded.forall(&compilation.formals(&mut work)?, &mut work)?;
+            relation = relation.and(&equation, &mut work)?;
         }
         let mut choices = BTreeSet::new();
         for &id in &self.choices {
@@ -360,25 +394,25 @@ impl PreparedEffectGraph {
         {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
-        let mut schemes = BTreeMap::new();
-        for (&id, scheme) in &self.schemes {
+        let mut functions = BTreeMap::new();
+        for (&id, function) in &self.functions {
             let compilation = Compilation::new(
                 self,
                 layout.view(),
                 FormalOwner::Scheme(id),
-                &scheme.header.parameters,
+                function.parameters(),
             );
             let parameters = compilation.parameters(&mut work)?;
-            let function = compilation.application(id, &parameters, &mut work)?;
+            let membership = compilation.application(id, &parameters, &mut work)?;
             let mut output = Vec::new();
-            for decision in function {
+            for decision in membership {
                 let decision = decision.substitute(completion.lower_envelope(), &mut work)?;
                 let mapped = decision.map_references(&mut work, &mut |atom, _| match atom {
                     Atom::Formal {
                         owner: FormalOwner::Scheme(owner),
                         parameter,
                         ..
-                    } if *owner == id => Ok(scheme.header.parameters[*parameter].clone()),
+                    } if *owner == id => Ok(function.parameters()[*parameter].clone()),
                     _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
                 })?;
                 work.charge(DecisionWork::Node)?;
@@ -392,7 +426,7 @@ impl PreparedEffectGraph {
                 overrides.insert(label.clone(), decision);
             }
             let formula = EffectFormula::try_from_decisions(default, overrides, &mut work)?;
-            schemes.insert(
+            functions.insert(
                 id,
                 EffectRow {
                     formula: Some(formula),
@@ -402,7 +436,7 @@ impl PreparedEffectGraph {
         let closed = PrincipalEffectClosure {
             graph: self,
             layout,
-            schemes,
+            functions,
             completion,
             choices,
             witnesses: choice_relation,

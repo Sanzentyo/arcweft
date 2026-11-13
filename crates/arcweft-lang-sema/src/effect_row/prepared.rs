@@ -1,8 +1,10 @@
 //! Issuer-owned effect schemes and immutable terms used before callable closure.
 //!
-//! Schemes are functions of declared row parameters, never caller-bindable row
-//! variables. Terms retain applications and simultaneous substitution until the
-//! complete component can be solved. No term issues a semantic type identity.
+//! Schemes are functions of declared row parameters. Inference unknowns are
+//! separate functions of their introduction dependencies, with no declaration
+//! body. Both share joint closure under whole-row scoped obligations. Terms
+//! retain applications and simultaneous substitution until closure; no term
+//! issues a semantic type identity.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -17,11 +19,16 @@ use crate::types::GenericEffectReference;
 
 mod closure;
 mod declaration;
+mod functions;
+pub(crate) use functions::PreparedEffectUnknownRef;
+use functions::{Function, FunctionRef};
+mod scoped;
 pub(crate) use closure::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
     GuardedEffectPredicate, GuardedEffectRow, PrincipalEffectClosure,
 };
 pub(crate) use declaration::PreparedEffectDeclaration;
+use scoped::ScopedObligation;
 mod substitution;
 pub(crate) use substitution::PreparedEffectTermEdit;
 #[cfg(test)]
@@ -162,7 +169,7 @@ struct Scheme {
 #[derive(Debug)]
 enum RowTerm {
     Application {
-        scheme: PreparedEffectSchemeRef,
+        function: FunctionRef,
         arguments: Box<[PreparedEffectRow]>,
     },
     Substitution {
@@ -217,7 +224,8 @@ enum PredicateTerm {
 /// A rollback snapshot shares immutable definitions. Ordinals are never restored.
 pub(crate) struct PreparedEffectCheckpoint {
     issuer: Arc<PreparedEffectIssuer>,
-    schemes: BTreeMap<u64, Arc<Scheme>>,
+    functions: BTreeMap<u64, Arc<Function>>,
+    obligation_limit: usize,
     row_limit: u64,
     predicate_limit: u64,
     choice_limit: u64,
@@ -226,14 +234,15 @@ pub(crate) struct PreparedEffectCheckpoint {
 
 pub(crate) struct PreparedEffectGraph {
     issuer: Arc<PreparedEffectIssuer>,
-    next_scheme: u64,
+    next_function: u64,
     next_row: u64,
     next_predicate: u64,
     next_choice: u64,
     next_checkpoint: u64,
     checkpoints: Vec<u64>,
     choices: BTreeSet<u64>,
-    schemes: BTreeMap<u64, Arc<Scheme>>,
+    functions: BTreeMap<u64, Arc<Function>>,
+    obligations: Vec<ScopedObligation>,
     rows: BTreeMap<u64, Arc<RowTerm>>,
     predicates: BTreeMap<u64, Arc<PredicateTerm>>,
 }
@@ -242,14 +251,15 @@ impl Default for PreparedEffectGraph {
     fn default() -> Self {
         Self {
             issuer: Arc::new(PreparedEffectIssuer),
-            next_scheme: 0,
+            next_function: 0,
             next_row: 0,
             next_predicate: 0,
             next_choice: 0,
             next_checkpoint: 0,
             checkpoints: Vec::new(),
             choices: BTreeSet::new(),
-            schemes: BTreeMap::new(),
+            functions: BTreeMap::new(),
+            obligations: Vec::new(),
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
         }
@@ -302,10 +312,15 @@ impl PreparedEffectGraph {
         &self,
         reference: &PreparedEffectSchemeRef,
     ) -> Result<&Scheme, PreparedEffectInvariant> {
-        self.schemes
+        match self
+            .functions
             .get(&self.validate(&reference.0)?)
             .map(Arc::as_ref)
-            .ok_or(PreparedEffectInvariant::StaleReference)
+            .ok_or(PreparedEffectInvariant::StaleReference)?
+        {
+            Function::Scheme(scheme) => Ok(scheme),
+            Function::Unknown(_) => Err(PreparedEffectInvariant::StaleReference),
+        }
     }
 
     fn row(&self, reference: &PreparedEffectRowRef) -> Result<&RowTerm, PreparedEffectInvariant> {
@@ -344,34 +359,23 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectSchemeRef, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        let mut unique = BTreeSet::new();
-        for parameter in &parameters {
-            work.charge(DecisionWork::Visit)?;
-            if !unique.insert(parameter) {
-                return Err(PreparedEffectInvariant::DuplicateParameter.into());
-            }
-        }
+        let unique = self.validate_parameters(&parameters, &mut work)?;
         for parameter in domain.variables() {
             work.charge(DecisionWork::Visit)?;
             if !unique.contains(parameter) {
                 return Err(PreparedEffectInvariant::UndeclaredParameter(parameter.clone()).into());
             }
         }
-        work.charge(DecisionWork::Node)?;
-        let id = self.next_scheme;
-        self.next_scheme = id
-            .checked_add(1)
-            .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
-        self.schemes.insert(
-            id,
-            Arc::new(Scheme {
+        let id = self.insert_function(
+            Function::Scheme(Scheme {
                 header: Arc::new(SchemeHeader {
                     parameters: parameters.into_boxed_slice(),
                     domain,
                 }),
                 state: SchemeState::Declared,
             }),
-        );
+            &mut work,
+        )?;
         Ok(PreparedEffectSchemeRef(self.reference(id)))
     }
 
@@ -399,22 +403,7 @@ impl PreparedEffectGraph {
         arguments: Vec<PreparedEffectRow>,
         control: &mut C,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
-        if self.scheme(scheme)?.header.parameters.len() != arguments.len() {
-            return Err(PreparedEffectInvariant::ApplicationArity.into());
-        }
-        for row in &arguments {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
-            self.validate_row(row)?;
-        }
-        self.insert_row(
-            RowTerm::Application {
-                scheme: scheme.clone(),
-                arguments: arguments.into_boxed_slice(),
-            },
-            control,
-        )
+        self.apply_function(FunctionRef::Scheme(scheme.clone()), arguments, control)
     }
 
     pub(crate) fn union<C: DecisionControl>(
@@ -489,15 +478,15 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         let header = Arc::clone(&previous.header);
-        self.schemes.insert(
+        self.functions.insert(
             scheme.0.ordinal,
-            Arc::new(Scheme {
+            Arc::new(Function::Scheme(Scheme {
                 header,
                 state: SchemeState::BodyPrepared {
                     body,
                     obligations: obligations.into_boxed_slice(),
                 },
-            }),
+            })),
         );
         Ok(())
     }
@@ -657,7 +646,12 @@ impl PreparedEffectGraph {
         &mut self,
         control: &mut C,
     ) -> Result<PreparedEffectCheckpoint, PreparedEffectFailure<C::Error>> {
-        for _ in &self.schemes {
+        for _ in self
+            .functions
+            .iter()
+            .map(|_| ())
+            .chain(self.obligations.iter().map(|_| ()))
+        {
             control
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?;
@@ -672,7 +666,8 @@ impl PreparedEffectGraph {
         self.checkpoints.push(ordinal);
         Ok(PreparedEffectCheckpoint {
             issuer: Arc::clone(&self.issuer),
-            schemes: self.schemes.clone(),
+            functions: self.functions.clone(),
+            obligation_limit: self.obligations.len(),
             row_limit: self.next_row,
             predicate_limit: self.next_predicate,
             choice_limit: self.next_choice,
@@ -708,7 +703,8 @@ impl PreparedEffectGraph {
     ) -> Result<(), PreparedEffectInvariant> {
         self.validate_checkpoint(checkpoint)?;
         self.checkpoints.pop();
-        self.schemes = std::mem::take(&mut checkpoint.schemes);
+        self.functions = std::mem::take(&mut checkpoint.functions);
+        self.obligations.truncate(checkpoint.obligation_limit);
         self.rows.retain(|id, _| *id < checkpoint.row_limit);
         self.predicates
             .retain(|id, _| *id < checkpoint.predicate_limit);

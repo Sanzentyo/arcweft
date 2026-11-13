@@ -145,13 +145,17 @@ where
             self.charge(DecisionWork::Visit)?;
             let term = Arc::clone(&self.graph.rows[&id]);
             let mapped = match term.as_ref() {
-                RowTerm::Application { scheme, arguments } => {
+                RowTerm::Application {
+                    function,
+                    arguments,
+                } => {
                     let mut mapped = Vec::new();
                     for argument in arguments {
                         self.charge(DecisionWork::Node)?;
                         mapped.push(self.read_row(argument)?);
                     }
-                    self.graph.application(scheme, mapped, self.control)?
+                    self.graph
+                        .apply_function(function.clone(), mapped, self.control)?
                 }
                 RowTerm::Union(children) => {
                     let mut mapped = Vec::new();

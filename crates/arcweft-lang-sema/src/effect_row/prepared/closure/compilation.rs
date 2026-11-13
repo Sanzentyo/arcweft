@@ -243,32 +243,43 @@ impl<'a> Compilation<'a> {
         for id in reachable {
             let term = self.graph.rows[&id].as_ref();
             let value = match term {
-                RowTerm::Application { scheme, arguments } => {
+                RowTerm::Application {
+                    function,
+                    arguments,
+                } => {
                     let mut compiled = Vec::new();
                     let mut substitutions = BTreeMap::new();
                     let mut admitted = Decision::constant(true);
-                    let header = &self.graph.scheme(scheme)?.header;
-                    for (parameter, argument) in header.parameters.iter().zip(arguments.iter()) {
+                    let definition = self.graph.function(function)?;
+                    for (parameter, argument) in
+                        definition.parameters().iter().zip(arguments.iter())
+                    {
                         let argument = self.read_row(argument, work)?;
                         admitted = admitted.and(&argument.admitted, work)?;
                         compiled.push(self.read_row(&arguments[compiled.len()], work)?);
                         work.charge(DecisionWork::Node)?;
                         substitutions.insert(parameter.clone(), argument);
                     }
-                    let mut domains = Vec::new();
-                    for class in 0..self.layout.classes() {
-                        let domain = self.member(
-                            self.layout.at(header.domain.membership(), class),
-                            class,
-                            &substitutions,
-                            work,
-                        )?;
-                        work.charge(DecisionWork::Node)?;
-                        domains.push(domain);
+                    if let Some(domain) = definition.domain() {
+                        let mut domains = Vec::new();
+                        for class in 0..self.layout.classes() {
+                            let domain = self.member(
+                                self.layout.at(domain.membership(), class),
+                                class,
+                                &substitutions,
+                                work,
+                            )?;
+                            work.charge(DecisionWork::Node)?;
+                            domains.push(domain);
+                        }
+                        admitted = admitted.and(&self.whole(&domains, work)?, work)?;
                     }
-                    admitted = admitted.and(&self.whole(&domains, work)?, work)?;
                     CompiledRow {
-                        membership: self.application(scheme.0.ordinal, &compiled, work)?,
+                        membership: self.application(
+                            function.reference().ordinal,
+                            &compiled,
+                            work,
+                        )?,
                         admitted,
                     }
                 }

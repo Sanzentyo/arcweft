@@ -460,7 +460,7 @@ fn failed_observation_preserves_the_graph_and_has_an_exact_inclusive_work_bounda
         &EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap())
     );
     assert_eq!(graph.retained_terms(), (0, 0));
-    assert!(graph.schemes.is_empty());
+    assert!(graph.functions.is_empty());
     assert!(graph.choices.is_empty());
 }
 

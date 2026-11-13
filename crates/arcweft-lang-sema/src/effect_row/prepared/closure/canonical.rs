@@ -177,23 +177,33 @@ impl<'a> CanonicalReplay<'a> {
         for id in reachable {
             let term = self.principal.graph.rows[&id].as_ref();
             let row = match term {
-                RowTerm::Application { scheme, arguments } => {
-                    let header = &self.principal.graph.scheme(scheme)?.header;
+                RowTerm::Application {
+                    function,
+                    arguments,
+                } => {
+                    let definition = self.principal.graph.function(function)?;
                     let mut substitutions = BTreeMap::new();
                     let mut admitted = Decision::constant(true);
-                    for (parameter, argument) in header.parameters.iter().zip(arguments.iter()) {
+                    for (parameter, argument) in
+                        definition.parameters().iter().zip(arguments.iter())
+                    {
                         let argument = self.read_row(argument, work)?;
                         admitted = admitted.and(&argument.admitted, work)?;
                         work.charge(DecisionWork::Node)?;
                         substitutions
                             .insert(Variable::Parameter(parameter.clone()), argument.formula);
                     }
-                    let domain = self
-                        .canonical_predicate(&header.domain, work)?
-                        .substitute(&substitutions, work)?;
-                    admitted = admitted.and(&self.guard(&domain, work)?, work)?;
+                    if let Some(domain) = definition.domain() {
+                        let domain = self
+                            .canonical_predicate(domain, work)?
+                            .substitute(&substitutions, work)?;
+                        admitted = admitted.and(&self.guard(&domain, work)?, work)?;
+                    }
                     let formula = self
-                        .formula(&self.principal.schemes[&scheme.0.ordinal], work)?
+                        .formula(
+                            &self.principal.functions[&function.reference().ordinal],
+                            work,
+                        )?
                         .substitute(&substitutions, work)?;
                     Row { formula, admitted }
                 }
@@ -493,7 +503,7 @@ impl<'a> CanonicalReplay<'a> {
             return Err(PreparedEffectInvariant::SchemeState.into());
         };
         let body = self.row(body, work)?;
-        let own = self.formula(&self.principal.schemes[&id], work)?;
+        let own = self.formula(&self.principal.functions[&id], work)?;
         let equal = own
             .subset(&body.formula, work)?
             .and(&body.formula.subset(&own, work)?, work)?;
@@ -506,6 +516,25 @@ impl<'a> CanonicalReplay<'a> {
             work,
         )?;
         let expected = domain.conditional(&expected, &Decision::constant(true), work)?;
+        if !self
+            .principal
+            .witnesses
+            .and(&expected.not(work)?, work)?
+            .is_constant(false)
+        {
+            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+        }
+        Ok(())
+    }
+
+    pub(super) fn confirm_obligation<C: DecisionControl>(
+        &mut self,
+        obligation: &ScopedObligation,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let domain = self.predicate(&obligation.domain, work)?;
+        let predicate = self.predicate(&obligation.predicate, work)?;
+        let expected = domain.conditional(&predicate, &Decision::constant(true), work)?;
         if !self
             .principal
             .witnesses
