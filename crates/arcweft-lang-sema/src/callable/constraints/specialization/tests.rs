@@ -292,7 +292,8 @@ impl TypeConstraintClient<Domain> for Client<'_> {
         &mut self,
         left: &<Domain as crate::types::constraints::ConstraintDomain>::SealedBranchValue,
         right: &<Domain as crate::types::constraints::ConstraintDomain>::SealedBranchValue,
-    ) -> Result<bool, SourceCheckpointFailure<Domain>> {
+        _: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+    ) -> Result<bool, crate::callable::SealedBranchComparisonFailure<Domain>> {
         Ok(left == right)
     }
 

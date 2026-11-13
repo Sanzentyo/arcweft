@@ -74,7 +74,7 @@ fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_op
     );
     assert_eq!(resumed.next_equation, equation + 1);
     let solved = resumed
-        .finish(&mut context, |left, right| Ok(left == right))
+        .finish(&mut context, |left, right, _| Ok(left == right))
         .unwrap();
     assert_eq!(
         solved

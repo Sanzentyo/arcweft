@@ -515,6 +515,20 @@ impl Drop for CandidateConstraintWorkSession<'_> {
     }
 }
 
+impl crate::effect_row::DecisionControl for CandidateConstraintWorkSession<'_> {
+    type Error = TypeConstraintError;
+
+    fn charge(&mut self, _: crate::effect_row::DecisionWork) -> Result<(), Self::Error> {
+        // Effect graph operations and type projection share the callback's
+        // existing lower-node accounting, including its cancellation signal.
+        crate::types::TypeProjectionControl::visit_node(
+            self,
+            crate::types::TypeProjectionNodeKind::Effect,
+            1,
+        )
+    }
+}
+
 impl crate::types::TypeProjectionControl for CandidateConstraintWorkSession<'_> {
     type Error = TypeConstraintError;
 

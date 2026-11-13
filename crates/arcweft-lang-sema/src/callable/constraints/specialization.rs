@@ -245,7 +245,7 @@ impl CandidateConstraintWorkSession<'_> {
         let completed = lower
             // This source-free application never opens callback materialization.
             // Every branch value is the domain's actual empty sealed branch.
-            .finish(&mut context, |_, _| Ok(true))
+            .finish(&mut context, |_, _, _| Ok(true))
             .map_err(FunctionSpecializationFailure::Constraint)?;
         let result = completed.component.projection(application, &result).ok_or(
             FunctionSpecializationFailure::Prepared(

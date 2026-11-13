@@ -103,8 +103,8 @@ pub(crate) use checked_catalog::{
 pub(crate) use constraints::{
     CandidateConstraintDriverStartFailure, CandidateConstraintSourceContext,
     CandidateConstraintWorkSession, FunctionSpecializationFailure, PreparedSourceConstraintGroup,
-    ProbeCheckpointDisposition, SourceCallbackFailure, SourceCheckpointFailure,
-    TypeConstraintClient,
+    ProbeCheckpointDisposition, SealedBranchComparisonFailure, SourceCallbackFailure,
+    SourceCheckpointFailure, TypeConstraintClient,
 };
 pub(crate) use continuation::{
     CallConstraintInvariant, CallableConstraintApplication, EnclosingGenericParameterScope,

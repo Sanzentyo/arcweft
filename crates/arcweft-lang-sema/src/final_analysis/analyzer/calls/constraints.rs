@@ -2001,7 +2001,8 @@ trait AnalyzerCallConstraintOperations {
         &mut self,
         left: &AnalyzerCallSealedBranch,
         right: &AnalyzerCallSealedBranch,
-    ) -> Result<bool, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>>;
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+    ) -> Result<bool, crate::callable::SealedBranchComparisonFailure<AnalyzerCallConstraintDomain>>;
 
     fn finish(
         &mut self,
@@ -2773,7 +2774,10 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         &mut self,
         left: &AnalyzerCallSealedBranch,
         right: &AnalyzerCallSealedBranch,
-    ) -> Result<bool, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+    ) -> Result<bool, crate::callable::SealedBranchComparisonFailure<AnalyzerCallConstraintDomain>>
+    {
+        work.check_cancelled()?;
         let mismatch = left.replay_mismatch(
             right,
             &self.analyzer.facts,
@@ -2788,11 +2792,11 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     )
             )
         ) {
-            return Err(crate::callable::SourceCheckpointFailure::client(
-                AnalyzerCallClientInvariant::constraint(
+            return Err(crate::callable::SealedBranchComparisonFailure::Client(
+                Box::new(AnalyzerCallClientInvariant::constraint(
                     AnalyzerCallConstraintSource::BaseInstantiation,
                     mismatch.expect("matched authority failure"),
-                ),
+                )),
             ));
         }
         Ok(mismatch.is_none())
@@ -2924,8 +2928,10 @@ impl<O: AnalyzerCallConstraintOperations>
         &mut self,
         left: &AnalyzerCallSealedBranch,
         right: &AnalyzerCallSealedBranch,
-    ) -> Result<bool, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
-        self.operations.sealed_branches_equal(left, right)
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+    ) -> Result<bool, crate::callable::SealedBranchComparisonFailure<AnalyzerCallConstraintDomain>>
+    {
+        self.operations.sealed_branches_equal(left, right, work)
     }
 
     fn finish(

@@ -171,7 +171,7 @@ impl CheckedDeclarationDefault {
             actual,
             ConstraintAcceptance::PatternAcceptsActual,
         );
-        match relation.finish(&mut context, |left, right| Ok(left == right)) {
+        match relation.finish(&mut context, |left, right, _| Ok(left == right)) {
             Ok(_) => Ok(true),
             Err(TypeConstraintFailure::Rejected(_)) => Ok(false),
             Err(TypeConstraintFailure::Abort(error)) => {

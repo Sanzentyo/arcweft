@@ -91,12 +91,14 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
     ) -> Result<Option<D::SealedBranchValue>, SourceCheckpointFailure<D>>;
 
     /// The live callback owner compares affine branch evidence after closing
-    /// its callbacks; lower never equates detached semantic capabilities.
+    /// its callbacks, borrowing the component's original work reservation.
+    /// Comparison aborts retain their typed cancellation or budget cause.
     fn sealed_branches_equal(
         &mut self,
         left: &D::SealedBranchValue,
         right: &D::SealedBranchValue,
-    ) -> Result<bool, SourceCheckpointFailure<D>>;
+        work: &mut CandidateConstraintWorkSession<'_>,
+    ) -> Result<bool, crate::callable::SealedBranchComparisonFailure<D>>;
 
     fn finish(&mut self) -> Result<(), SourceCheckpointFailure<D>>
     where
@@ -297,6 +299,36 @@ pub(crate) enum SourceCallbackFailure<D: ConstraintDomain> {
 pub(crate) enum SourceCheckpointFailure<D: ConstraintDomain> {
     Protocol(TypeConstraintSourceProtocolInvariant),
     Client(Box<D::ClientInvariant>),
+}
+
+/// Comparison has no source ticket and cannot mint or promote a fatal source
+/// error. It may report a controlled constraint failure or its owner's invariant.
+pub(crate) enum SealedBranchComparisonFailure<D: ConstraintDomain> {
+    Constraint(crate::types::constraints::TypeConstraintError),
+    Client(Box<D::ClientInvariant>),
+}
+
+impl<D: ConstraintDomain> From<crate::types::constraints::TypeConstraintError>
+    for SealedBranchComparisonFailure<D>
+{
+    fn from(error: crate::types::constraints::TypeConstraintError) -> Self {
+        Self::Constraint(error)
+    }
+}
+
+impl<D: ConstraintDomain> From<TypeConstraintAbort> for SealedBranchComparisonFailure<D> {
+    fn from(error: TypeConstraintAbort) -> Self {
+        crate::types::constraints::TypeConstraintError::Abort(error).into()
+    }
+}
+
+impl<D: ConstraintDomain> std::fmt::Debug for SealedBranchComparisonFailure<D> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Constraint(error) => formatter.debug_tuple("Constraint").field(error).finish(),
+            Self::Client(_) => formatter.write_str("Client(..)"),
+        }
+    }
 }
 
 impl<D: ConstraintDomain> SourceCallbackFailure<D> {
@@ -1139,11 +1171,19 @@ where
         if let Err(failure) = self.client.finish() {
             self.lower.record_failure(Self::checkpoint_failure(failure));
         }
-        self.lower.finish_alternatives(self.context, |left, right| {
-            self.client
-                .sealed_branches_equal(left, right)
-                .map_err(Self::checkpoint_failure)
-        })
+        self.lower
+            .finish_alternatives(self.context, |left, right, work| {
+                self.client
+                    .sealed_branches_equal(left, right, work)
+                    .map_err(|failure| match failure {
+                        SealedBranchComparisonFailure::Constraint(error) => error.into(),
+                        SealedBranchComparisonFailure::Client(error) => {
+                            TypeConstraintFailure::Invariant(
+                                TypeConstraintFailureInvariant::Client(error),
+                            )
+                        }
+                    })
+            })
     }
 
     pub(crate) fn defer_child_result(
@@ -1284,7 +1324,11 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
         &mut self,
         _: &(),
         _: &(),
-    ) -> Result<bool, SourceCheckpointFailure<crate::types::NoConstraintClient>> {
+        _: &mut CandidateConstraintWorkSession<'_>,
+    ) -> Result<
+        bool,
+        crate::callable::SealedBranchComparisonFailure<crate::types::NoConstraintClient>,
+    > {
         Ok(true)
     }
 
@@ -1297,6 +1341,10 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 pub(crate) mod tests {
     use super::*;
     use crate::callable::limits::{PRODUCTION_CALLABLE_LIMITS, ResolverWork};
+    use crate::effect_row::prepared::{
+        PreparedEffectDelta, PreparedEffectFailure, PreparedEffectGraph, PreparedEffectReplayRoot,
+        PreparedEffectSchemeRef,
+    };
     use crate::env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId};
     use crate::types::constraints::context::TypeConstraintWorkReport;
     use crate::types::constraints::{
@@ -1305,8 +1353,8 @@ pub(crate) mod tests {
     };
     use crate::types::{GenericParameterOwnerId, GenericTypeParameterId, TypeKind};
     use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     };
 
     fn accepted_owner(owner: u64) -> AcceptedNominalId {
@@ -1540,6 +1588,84 @@ pub(crate) mod tests {
         materialize_begin: AtomicUsize,
         materialize_close: AtomicUsize,
         materialize_call: AtomicUsize,
+        probe_reservation: AtomicUsize,
+        comparison_reservation: AtomicUsize,
+        comparison_graph: Mutex<Option<ComparisonGraph>>,
+    }
+
+    struct ComparisonGraph {
+        graph: PreparedEffectGraph,
+        left: (PreparedEffectSchemeRef, PreparedEffectDelta),
+        right: (PreparedEffectSchemeRef, PreparedEffectDelta),
+        cancel: Option<Arc<AtomicBool>>,
+    }
+
+    impl ComparisonGraph {
+        fn new(cancel: Option<Arc<AtomicBool>>) -> Self {
+            let cancellation = AtomicBool::new(false);
+            let mut resolver = ResolverWork::new(4_096);
+            let mut work = resolver
+                .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+                .unwrap();
+            let mut graph = PreparedEffectGraph::default();
+            let mut candidate = || {
+                let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+                let scheme = graph
+                    .declare(
+                        vec![],
+                        crate::effect_row::EffectPredicate::unconstrained(),
+                        &mut work,
+                    )
+                    .unwrap();
+                let recursive = graph.application(&scheme, vec![], &mut work).unwrap();
+                graph
+                    .prepare_body(&scheme, recursive, vec![], &mut work)
+                    .unwrap();
+                let delta = graph.extract_delta(&mut checkpoint, &mut work).unwrap();
+                (scheme, delta)
+            };
+            let left = candidate();
+            let right = candidate();
+            Self {
+                graph,
+                left,
+                right,
+                cancel,
+            }
+        }
+
+        fn compare(
+            &self,
+            work: &mut CandidateConstraintWorkSession<'_>,
+        ) -> Result<bool, crate::callable::SealedBranchComparisonFailure<Domain>> {
+            if let Some(cancellation) = &self.cancel {
+                cancellation.store(true, Ordering::Release);
+            }
+            match self.graph.replay_delta_mismatch(
+                &self.left.1,
+                &self.right.1,
+                [PreparedEffectReplayRoot::Scheme(
+                    &self.left.0,
+                    &self.right.0,
+                )],
+                work,
+            ) {
+                Ok(mismatch) => Ok(mismatch.is_none()),
+                Err(PreparedEffectFailure::Control(error)) => Err(error.into()),
+                Err(error) => panic!("valid recursive comparison fixture: {error:?}"),
+            }
+        }
+
+        fn required_nodes(&self) -> u64 {
+            let cancellation = AtomicBool::new(false);
+            let mut resolver = ResolverWork::new(4_096);
+            let mut work = resolver
+                .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+                .unwrap();
+            assert!(self.compare(&mut work).unwrap());
+            drop(work);
+            resolver.type_constraint_report().nodes
+        }
     }
 
     struct Client {
@@ -1559,6 +1685,9 @@ pub(crate) mod tests {
         ) -> Result<SourceProbeOutcome<Domain>, SourceCallbackFailure<Domain>> {
             let source = probe.source();
             self.counts.probe_call.fetch_add(1, Ordering::Relaxed);
+            self.counts
+                .probe_reservation
+                .store(std::ptr::from_mut(probe.work()) as usize, Ordering::Relaxed);
             if matches!(
                 self.mode,
                 CallbackMode::GroupRejectedThenSuccess
@@ -1836,9 +1965,17 @@ pub(crate) mod tests {
             &mut self,
             left: &Sealed,
             right: &Sealed,
-        ) -> Result<bool, SourceCheckpointFailure<Domain>> {
+            work: &mut CandidateConstraintWorkSession<'_>,
+        ) -> Result<bool, crate::callable::SealedBranchComparisonFailure<Domain>> {
             assert_eq!(self.counts.callback_finish.load(Ordering::Relaxed), 1);
             self.counts.sealed_compare.fetch_add(1, Ordering::Relaxed);
+            work.check_cancelled()?;
+            self.counts
+                .comparison_reservation
+                .store(std::ptr::from_mut(work) as usize, Ordering::Relaxed);
+            if let Some(graph) = &*self.counts.comparison_graph.lock().unwrap() {
+                return graph.compare(work);
+            }
             Ok(left == right)
         }
 
@@ -1888,10 +2025,21 @@ pub(crate) mod tests {
         Result<(), TypeConstraintFailure<Domain>>,
         TypeConstraintWorkReport,
     ) {
-        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        run_with_control(mode, counts, limits, &AtomicBool::new(false))
+    }
+
+    fn run_with_control(
+        mode: CallbackMode,
+        counts: Arc<Counts>,
+        limits: crate::callable::limits::CallableLimits,
+        cancellation: &AtomicBool,
+    ) -> (
+        Result<(), TypeConstraintFailure<Domain>>,
+        TypeConstraintWorkReport,
+    ) {
         let mut work = ResolverWork::new(4_096);
         let session = work
-            .begin_candidate_constraint_session(limits, &cancellation)
+            .begin_candidate_constraint_session(limits, cancellation)
             .expect("candidate session");
         let result = session
             .with_fixture_driver::<Domain, _, _>(
@@ -1994,6 +2142,124 @@ pub(crate) mod tests {
         assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 2);
         assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 2);
         assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn sealed_comparison_borrows_the_source_reservation_for_recursive_effect_replay() {
+        let (baseline, baseline_report) = run_with_limits(
+            CallbackMode::SourceAlternatives,
+            Arc::new(Counts::default()),
+            PRODUCTION_CALLABLE_LIMITS,
+        );
+        baseline.unwrap();
+        let graph = ComparisonGraph::new(None);
+        let nodes = graph.required_nodes();
+        assert!(nodes > 0);
+        let counts = Arc::new(Counts {
+            comparison_graph: Mutex::new(Some(graph)),
+            ..Counts::default()
+        });
+        let (result, report) = run_with_limits(
+            CallbackMode::SourceAlternatives,
+            Arc::clone(&counts),
+            PRODUCTION_CALLABLE_LIMITS,
+        );
+        result.unwrap();
+        let source_reservation = counts.probe_reservation.load(Ordering::Relaxed);
+        assert_ne!(source_reservation, 0);
+        assert_eq!(
+            source_reservation,
+            counts.comparison_reservation.load(Ordering::Relaxed)
+        );
+        assert_eq!(report.nodes, baseline_report.nodes + nodes);
+        assert_eq!(report.work(), baseline_report.work() + nodes);
+        assert_eq!(report.source_probes(), baseline_report.source_probes());
+        assert_eq!(
+            report.materializations(),
+            baseline_report.materializations()
+        );
+        assert_eq!(counts.callback_finish.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.sealed_compare.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn every_effect_comparison_node_boundary_preserves_cleanup_and_typed_abort() {
+        let (baseline, baseline_report) = run_with_limits(
+            CallbackMode::SourceAlternatives,
+            Arc::new(Counts::default()),
+            PRODUCTION_CALLABLE_LIMITS,
+        );
+        baseline.unwrap();
+        let required = ComparisonGraph::new(None).required_nodes();
+        for limit in baseline_report.nodes..baseline_report.nodes + required {
+            let counts = Arc::new(Counts {
+                comparison_graph: Mutex::new(Some(ComparisonGraph::new(None))),
+                ..Counts::default()
+            });
+            let (result, report) = run_with_limits(
+                CallbackMode::SourceAlternatives,
+                Arc::clone(&counts),
+                PRODUCTION_CALLABLE_LIMITS.with_type_constraint_limits(256, limit, 128),
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(TypeConstraintFailure::Abort(TypeConstraintAbort::NodeLimit {
+                        actual,
+                        limit: reported,
+                    })) if actual == limit + 1 && reported == limit
+                ),
+                "comparison limit {limit}: {result:?}"
+            );
+            assert_eq!(report.nodes, limit);
+            assert_eq!(counts.sealed_compare.load(Ordering::Relaxed), 1);
+            assert_eq!(counts.callback_finish.load(Ordering::Relaxed), 1);
+            assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 2);
+            assert_eq!(
+                counts
+                    .comparison_graph
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .required_nodes(),
+                required
+            );
+        }
+    }
+
+    #[test]
+    fn cancellation_inside_effect_comparison_uses_the_original_signal_after_cleanup() {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let counts = Arc::new(Counts {
+            comparison_graph: Mutex::new(Some(ComparisonGraph::new(Some(Arc::clone(
+                &cancellation,
+            ))))),
+            ..Counts::default()
+        });
+        let (result, report) = run_with_control(
+            CallbackMode::SourceAlternatives,
+            Arc::clone(&counts),
+            PRODUCTION_CALLABLE_LIMITS,
+            &cancellation,
+        );
+        assert!(matches!(
+            result,
+            Err(TypeConstraintFailure::Abort(TypeConstraintAbort::Cancelled))
+        ));
+        assert_eq!(report.source_probes(), 1);
+        assert_eq!(report.materializations(), 2);
+        assert_eq!(counts.sealed_compare.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.callback_finish.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 2);
+        cancellation.store(false, Ordering::Release);
+        let mut graph = counts.comparison_graph.lock().unwrap();
+        let graph = graph.as_mut().unwrap();
+        graph.cancel = None;
+        assert!(
+            graph.required_nodes() > 0,
+            "comparison retained both affine deltas"
+        );
     }
 
     fn run_group(

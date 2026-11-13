@@ -2111,6 +2111,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         compare: impl FnMut(
             &D::SealedBranchValue,
             &D::SealedBranchValue,
+            &mut A,
         ) -> Result<bool, TypeConstraintFailure<D>>,
     ) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>>
     where
@@ -2125,6 +2126,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         mut compare: impl FnMut(
             &D::SealedBranchValue,
             &D::SealedBranchValue,
+            &mut A,
         ) -> Result<bool, TypeConstraintFailure<D>>,
     ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
     where
@@ -2281,6 +2283,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         compare: &mut impl FnMut(
             &D::SealedBranchValue,
             &D::SealedBranchValue,
+            &mut A,
         ) -> Result<bool, TypeConstraintFailure<D>>,
     ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
     where
@@ -2328,11 +2331,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 MaterializedRecord::Sealed { component, value } => {
                     let mut duplicate = false;
                     for (existing_component, existing_value) in &candidates {
-                        if existing_component.equal_with(&component, context)?
-                            && compare(existing_value, &value)?
-                        {
-                            duplicate = true;
-                            break;
+                        if existing_component.equal_with(&component, context)? {
+                            // The opaque owner observes the same running reservation.
+                            // Dispatch itself is bounded even for an empty payload;
+                            // any controlled traversal consumes that reservation too.
+                            context.enter_node()?;
+                            if compare(existing_value, &value, context.accounting_mut())? {
+                                duplicate = true;
+                                break;
+                            }
                         }
                     }
                     if !duplicate {
