@@ -17301,3 +17301,29 @@ workspace全target／全feature・locked check／Clippy、Sema全feature doctest
 現状行の訂正理由はchecked source値のΓ保持とコピー前のFree検査が実装・検証されたためであり、導出後のsource／result／Completed転送やeffect置換の値ごとの許可、実出力capture seal、引数全体の実Γ、条件付きMGU／rank／局所∀、frontendのprepared接続・body一回準備・一括sealまで完成したとはしない。Generic Match、caller-bound recursion、共有prefixの受入は維持し、その行を未完了へ戻していない。実測・中間失敗・公開full SHAは履歴と原本へ保持し、現状一覧はcurrent-status.mdの一か所とする。今回のhost検証を新しい再帰本体のNative／AWBC・Tier 2／Wasm・Native／Web表示の受入とはしない。全体cargo cleanは前回の履行記録を保持し、今回は再実行していない。
 
 [全原本](acceptance-evidence/task-checked-source-value-scope.raw.zip)は260 entry、展開時49317778 bytes、ZIP 5591697 bytes、SHA-256 `0b5168536c60e33d218007ae807c1d391d5364d5f40239c136daa5b2f24d4820`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
+
+## Completed output capture support
+
+2026-11-13。Source `289d5bdd4892f6dfc924894e5d2a7d9d18f13097`、tree `a5eeac36d589a5a38c7246aef1b7021a15eb430e`、親・変更基点 `c7f84f3f363b8bb5bf8391d1a0f2e453d5badf12`。既存mainで通常commit／non-forced pushし、remoteのhead・tree・変更10 blobを照合した。限定7件PASSの後、全件前の区切りで公開し、同じSourceに固定して全owner／consumer／品質を検証した。既存の未追跡 `%SystemDrive%/` を保持した。
+
+訂正の具体的根拠は、未使用の子宣言をadmitした空の親を完了・復元すると、その子の宣言からimport leaseを発行できたこと。修正前の新regression 1件は実際にFAILし、最初の型参照で不正なlease発行を観測した。従来のCompletedGenericContextは全application・import・過去captureのrigid Free集合を保持していたため、出力されない参照まで次の継続へ移していた。
+
+CompletedValue<T>は値と、その値のreify foldが保持したFree supportを一緒に持つ不変・opaque carrierである。型binding・const binding・effect binding・残余predicate・投影結果／保持入力をこのcarrierへ移行した。共有contextは実ambient frame・formal契約・residual binderだけを所有する。reopenは特定CompletedValueを受け取り、共有contextやpath inventoryからFree許可を補わない。restoreは実際のbindingとpredicateのsupportだけをreadonlyでimportし、全applicationのretain_rigid_capturesを削除した。ClosedTypeInstantiationは従来の閉じた値を所有し、共通binding grammarのvalue型引数で完了値と区別する。別のbinding→capture表やAST walkerを増やしていない。
+
+結果関数のpredicate挿入は、CompletedValueを構築する前のreify ownerへ移した。共通fold内でroot headerと子のsupportを一時的に区別し、元predicateと残余predicateを実scopeで合成してから、簡約後のroot row／predicateに現れるFreeだけを保持する。子にも同じFreeが残る場合は消さない。完成済みcarrierを後からraw typeへ書き換える経路はない。実frameの同一性、残余だけの量化、局所Fnのbinder変換は維持した。
+
+全feature Sema lib／testsは1,667件中1,661 PASS／6 FAIL／0 SKIP、73.323秒、slow 0。5 binaryの選択と終端の全IDが一致・重複0。前回Source `0d42831c0085b414c3bd7f6351473291f7d85a4f` の1,662 IDをすべて維持し、新5件がPASSした。未使用の子宣言がtype／const／effectのimport権限を残さないこと、兄弟の値のcaptureではtype／const／effect row／predicateをreopenできないこと、挿入predicateのFree保持と簡約後のsupportを検証した。private ownerのfault injection以外にcarrier fieldの書換えを公開しない。既受入のselected-child captureのreadonly継続、同形の別frame拒否、ambient／residual／局所Fn保持、256候補を各probe 1回＋選択replay 1回・4,096予算の元assertionもPASS。既知6失敗のIDと実診断は前回どおり5 ExpressionCycle／1 PendingCallableEffectProjectionである。
+
+中間listのcompile失敗は、新fixtureのeffect ordinalにu16を渡した型違いと、Directionをreopen seal付きenumへ移す際に残った旧Option引数を修復した。失敗ログを保持し、成功に置換しない。最終限定7件は新5件・既受入の子capture・元の256候補境界で全PASS。上限・assertion・選択範囲を変更せず、取消しやΓ検査を省略していない。
+
+同じSourceの他21 package・既定feature・規定107 targetは2,510 IDを選択し、2,507 PASS／2 FAIL／1 SKIP、選択と終端が一致・重複0。20 package／76 targetはpackage単位、Compilerの31 targetは逐次実行した。Compilerの既知2失敗は同じflow_wait IDとExpressionCycle（slot 17／19）。3 targetはcompile-only。CLI library 196件と統合6 target 30件は226 PASS、Compiler callable_executionは376 PASS。前回の22 package依存graphはCargo入力差分0を確認して再利用し、実行結果は新規採取した。
+
+locked workspace全target／全feature check／Clippy、Sema全feature doctest 2件、owner Clippy、workspace fmt check、canonical構造gateは終了0。各step前後のcommit／tree／tracked差分0と全10 pathのbyte pin、公開blob、出力hashを照合した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。警告は保持し、owner lib test Clippyは1,892 warningsである。canonical gateは98 package・3,488 files・3,357 Rust files・1,894,435 Rust physical LOC、review trigger 396・blocking 0。Sema fan-in／outは8／15、dev 4／0で変更がない。
+
+所有者レビュー: 全10 pathの合計成長は453 physical LOC。solution.rsは1,212 LOC（旧1,228）で完了seal・不変な解と復元の調整を所有し、一般projectionは従来の別ownerへ置く。completed_context 119 LOCは実scopeとCompletedValueの保持、transport 679 LOCは同じscope変換foldと構築中supportを所有し、別の状態権限やI/Oを加えていない。新286 LOCのprivate testsはこの完了値境界へ閉じる。application/tests 1,379 LOCとtemplate 1,361 LOCの既存責務も維持し、後者の変更はcarrierからのreadonly view取得だけである。物理LOC・bytes・差分・graph原本を保持する。公開API、依存edge、unsafe、version、製品budgetを変更しない。
+
+当該Sourceの保証範囲は完了値のsupport分離と復元境界である。reify入力のinventory eligibility、effectのraw primitive／置換、const／結果／保持入力のraw projectionが残るため、この結果を上流Γの証明完了とはしない。CをFree許可やcallerのDへ転用せず、既知再帰本体の6＋2失敗も修復済みとしない。
+
+現状行から「実出力capture seal一式が未実装」という古い列挙を置換した理由は、上記のcarrier・support・復元が実装・検証されたためである。未達は残る上流Γ境界へ限定し、完了した範囲を戻さない。Generic Match、caller-bound recursion、共有prefixの既受入も維持する。現状一覧はcurrent-status.md一か所、過去の実測・公開full SHAはこの履歴と凍結原本へ保持する。hostの結果を新しい再帰本体のNative／AWBC、Tier 2／Wasm、Native／Web表示の受入へ拡張しない。9:08の全体cargo clean履行は既存履歴を維持し、今回繰り返していない。
+
+[全原本](acceptance-evidence/task-completed-output-support.raw.zip)は249 entry、展開時40726303 bytes、ZIP 4796113 bytes、SHA-256 `4d4ca619b73d493f86e76f42e17c084f1abe9500787960bc6ee989a6a921f6fa`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
