@@ -17485,3 +17485,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - 6 path・74物理LOC増。既存の型閉包foldが導出保持を、既存のcompleted transportが実フレーム移送と出力ごとのcaptureを所有する。Supersedes: 現状一覧の「reify入力の元operand導出」を今回の型入口の実装・検証に基づき残作業から除き、constant／effect-only reify、Free許可の実導出による判定とprimitive effect行のΓ sealを別の未完了境界として明記した。全portのΓ統合、一般量化消去、frontend再帰本体推論の完了とはしない。過去の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持し、現在の一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-operand-reification.raw.zip](acceptance-evidence/task-operand-reification.raw.zip) は 243 entries、raw 41111353 bytes、ZIP 4929063 bytes、SHA-256 `f7b1c4fca2410ba4622f22c980fbf3aa861244f517691ac315364d6bc28b1080`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Free type and constant admission from operand derivations
+
+2026-11-14。基点 `4fa21c359e526d280d11f2c508ef8138dce729d4`、実装・公開Source `aec9b9bd339a44244eafaddd7586891425422ec6`、tree `91cf98fff71f513000f14b797995972a63123cfb`。既存mainの16 Rust pathを通常commit／非force pushし、ownerが検証したdirty bytesと公開全blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- 既存RetainOrigins foldでFreeの型・定数参照をalias lookup前に検証する。対応するportのOriginal Source、実template owner、introduced parameter lease、selected child、alias終端、completed bindingの個別captureを辿る。受け手に見えるRigid参照だけでは許可を発行しない。completed captureは正規化済みのbinding keyで検索し、共有contextのcaptureを借りない。
+- 定数completionとreifyも元operandを受ける入口へ置換した。型・定数とも実フレームをsourceにして、成功・取消し時に受け手scopeを復元する。既存constant foldにclosure policyを渡して再利用し、旧raw project_const_argumentを削除した。10,000 aliasの既存テストを実際の型付きfoldへ移し、元の10,001 node上限と次nodeの拒否を保持した。型・定数・effectのframe移送を含む既存テストもassertionを追加した。
+- 新3件は、両参照が受け手でRigidでも別Sourceの許可交換を拒否すること、異なるSourceのitem／lengthを各portの証拠で合成できること、完成した2 bindingを実continuationへ復元しても互いのcaptureを借りられないことを検証する。Source宣言とtemplate契約の役割を区別してfixtureを修復し、ground Sourceを許可源へ拡張しない。
+- 初回の全1,727件は1,710 PASS／17 FAIL／0 SKIP。既知6件に加わった11件は、数学的templateやcaller captureをground Sourceとして作っていたfixtureだった。明示的なSource宣言・実import lease・template ownerへ移行し、対象300件、追加後301件を全PASSにした。続く全1,728件は1,722 PASS／6 FAIL、旧raw helper削除前の検証入力15 pathも全bytesを別snapshotへ保持した。最終の全feature ownerは1,728件／1,722 PASS／6 FAIL／0 SKIP、93.545秒、5 suite。直前1,725 ID保持・新3件PASS・選択／終端ID一致・重複0、既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。devの空effect-scope APIとfixtureの変数shadowingによるcompile拒否も保持した。
+- producerが変わるため、fresh full metadata／全target reverse treeの22 packageから、後続21 package／107 targetを同じSourceで再実行した。全2,510件／2,507 PASS／2 FAIL／1 SKIP、選択／終端ID一致・重複0。Compiler既知2失敗のExpressionCycle slot 17／19、CLI規定226 PASS、compile-only 3 targetを照合した。workspace全target／全feature checkとClippy、workspace fmt、Sema doctest 2件、構造gateは終了0。Cargo graph、fan-in 12／fan-out 19は不変。
+- 16 path・492物理LOC増。許可判断は既存operandの導出が、正規化は既存foldが、実フレームと出力ごとのcaptureは既存completed transportが所有する。Supersedes: 現状一覧の定数reifyとFree許可全体の未完了列挙を、検証済みの型・定数の境界と、effect-only reify／effect参照の許可／primitive行のΓ sealへ分けて訂正した。一般量化消去・全portのΓ統合・frontend再帰本体推論の完了とはしない。以前の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持し、現在の一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-free-port-admission.raw.zip](acceptance-evidence/task-free-port-admission.raw.zip) は 286 entries、raw 45307020 bytes、ZIP 5507614 bytes、SHA-256 `9fe1367a1a62c737a096dd81975ae43c4c6cae215a1ff3cfae224f15b82078b2`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
