@@ -40,10 +40,18 @@ impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
     ) -> Result<(TypeKind, Self), TypeConstraintError> {
         use original_value::OriginalOperandValue;
 
+        context.check_cancelled()?;
         let original = owner.original_context();
-        let value = owner
-            .value_type()
-            .admit(original.gamma(), original, context)?;
+        let value = match owner.value_type().constraint_shape() {
+            // These exhaustive grammar leaves have no parameter occurrences
+            // or recursive semantic type storage. The probe already charged
+            // its root; no Γ traversal or recursive copy is needed here.
+            super::super::TypeConstraintShape::Leaf(_)
+            | super::super::TypeConstraintShape::Never => owner.value_type().clone(),
+            _ => owner
+                .value_type()
+                .admit(original.gamma(), original, context)?,
+        };
         Ok((value, Self::Value(owner)))
     }
 

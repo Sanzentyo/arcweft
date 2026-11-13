@@ -8,7 +8,7 @@ use crate::{
         GenericBinder, GenericConstParameterId, GenericConstReference, GenericEffectParameterId,
         GenericEffectReference, GenericScope, GenericTypeReference,
         constraints::{
-            ConstraintGenericParameterId, ConstraintSourceValueOwner,
+            ConstraintGenericParameterId, ConstraintSourceValueOwner, TypeConstraintAbort,
             TypeConstraintConstEligibility,
             context::{TypeConstraintConstParameterScopeRow, TypeConstraintTypeParameterScopeRow},
             references,
@@ -208,5 +208,26 @@ fn source_value_admission_checks_budget_before_copying_the_owned_type() {
     assert!(matches!(
         resolve_probe_term(SourceProbeTerm::Value(owner), &path, &mut exhausted),
         Err(TypeConstraintError::Abort(_))
+    ));
+}
+
+#[test]
+fn source_value_admission_checks_cancellation_for_closed_grammar_leaves() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let application = context
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .unwrap();
+    let path = context.start_path(application).unwrap();
+    let owner = Arc::new(OwnedSourceValue {
+        source: ConstraintSourceId::new(path.root_id(), 7),
+        original: context.fixture_original_context(None).unwrap(),
+        receipt: None,
+        value: TypeKind::I64,
+    });
+    cancellation.store(true, Ordering::Release);
+    assert!(matches!(
+        resolve_probe_term(SourceProbeTerm::Value(owner), &path, &mut context),
+        Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
 }
