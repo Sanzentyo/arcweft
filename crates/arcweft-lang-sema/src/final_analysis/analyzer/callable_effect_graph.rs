@@ -1,6 +1,6 @@
 //! Callable-body call inventory, recursion rejection, and effect closure.
 
-use std::{borrow::Cow, collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 use super::{
     BTreeMap, BTreeSet, CallableDeclarationOwner, CallableEffectSchema, CheckedCallableId, ExprId,
@@ -12,6 +12,7 @@ use crate::{
         CheckedCallSite, CheckedCallableDeclaration, PreparedCallableApplication,
         PreparedCallableEffectProjection, PreparedResolvedCallable,
     },
+    effect_row::prepared::{PreparedEffectGraph, PreparedEffectRow},
     effect_row::{DecisionControl, DecisionWork, EffectRow},
     final_analysis::statement_effects::PreparedExecutionEffectCatalog,
     types::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind},
@@ -633,11 +634,12 @@ impl CallableEffectGraph {
         &self,
         rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
         bounded_call_rows: &BTreeMap<CheckedCallableId, EffectRow>,
+        catalog: &crate::callable::CheckedCallableCatalogBuilder,
         work_limit: u64,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.equations
-            .close(rows, bounded_call_rows, work_limit, control)
+            .close(rows, bounded_call_rows, catalog, work_limit, control)
     }
 
     pub(super) fn close_selected_expression_effects(
@@ -669,6 +671,7 @@ impl CallableEffectEquations {
         &self,
         rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
         boundary: &BTreeMap<CheckedCallableId, EffectRow>,
+        catalog: &crate::callable::CheckedCallableCatalogBuilder,
         work_limit: u64,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
@@ -678,39 +681,40 @@ impl CallableEffectEquations {
             limit: work_limit,
             remaining: work_limit,
         };
-        let mut dependents = BTreeMap::<_, Vec<_>>::new();
-        let mut pending = VecDeque::new();
-        let mut queued = BTreeSet::new();
-        for (caller, targets) in &self.edges {
-            if targets.is_empty() {
-                continue;
-            }
-            work.charge(DecisionWork::Visit)?;
-            pending.push_back(caller);
-            queued.insert(caller);
-            for target in targets.keys() {
-                work.charge(DecisionWork::Visit)?;
-                if !boundary.contains_key(target) {
-                    dependents.entry(target).or_default().push(caller);
-                }
-            }
+        if rows.len() != self.edges.len()
+            || rows.keys().any(|owner| !self.edges.contains_key(owner))
+        {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
-
-        // A recursive application can permute callback rows, so one body may
-        // grow more than once. Every change is a union of exact projected rows;
-        // only callers of a changed non-boundary row need another visit.
-        while let Some(caller) = pending.pop_front() {
+        let mut graph = PreparedEffectGraph::default();
+        let mut declarations = BTreeMap::new();
+        // Register the actual headers before preparing any body. Recursive
+        // applications refer to these declarations, never a guessed row.
+        for owner in rows.keys() {
             work.charge(DecisionWork::Visit)?;
-            queued.remove(caller);
-            let previous = rows
+            let schema = catalog
+                .pending_by_id(owner)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                .record()
+                .schema();
+            let mut parameters = Vec::new();
+            for parameter in schema.generic_inventory().effects() {
+                work.charge(DecisionWork::Visit)?;
+                parameters.push(parameter.parameter().clone());
+            }
+            let scheme = graph.declare(parameters, schema.effect_predicate().clone(), &mut work)?;
+            let declaration = graph.declaration(&scheme, &mut work)?;
+            declarations.insert(owner.clone(), declaration);
+        }
+        for (caller, targets) in &self.edges {
+            work.charge(DecisionWork::Visit)?;
+            let original = rows
                 .get(caller)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            let mut row = Cow::Borrowed(previous);
-            for (target, expressions) in &self.edges[caller] {
-                let target_row = boundary
-                    .get(target)
-                    .or_else(|| rows.get(target))
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            let mut terms = vec![PreparedEffectRow::Canonical(
+                original.clone_with_control(&mut work)?,
+            )];
+            for (target, expressions) in targets {
                 for expression in expressions {
                     work.charge(DecisionWork::Visit)?;
                     let call = self
@@ -720,31 +724,60 @@ impl CallableEffectEquations {
                     if call.target() != target {
                         return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
                     }
-                    let projected = call
-                        .projection
-                        .specialize_with_control(target_row, &mut work)
-                        .map_err(|error| match error {
-                            TypeProjectionError::Control(error) => error,
-                            TypeProjectionError::Instantiation(_) => {
-                                FinalSemanticAnalysisError::CallResolutionFailed {
-                                    owner: *expression,
+                    let specialize = |row: &EffectRow, work: &mut CallableEffectClosureWork<'_>| {
+                        call.projection
+                            .specialize_with_control(row, work)
+                            .map_err(|error| match error {
+                                TypeProjectionError::Control(error) => error,
+                                TypeProjectionError::Instantiation(_) => {
+                                    FinalSemanticAnalysisError::CallResolutionFailed {
+                                        owner: *expression,
+                                    }
                                 }
-                            }
-                        })?;
-                    row = Cow::Owned(row.union(&projected, &mut work)?);
+                            })
+                    };
+                    let term = if let Some(row) = boundary.get(target) {
+                        PreparedEffectRow::Canonical(specialize(row, &mut work)?)
+                    } else {
+                        let declaration = declarations
+                            .get(target)
+                            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                        let mut arguments = Vec::new();
+                        for parameter in declaration.parameters() {
+                            work.charge(DecisionWork::Visit)?;
+                            let row = EffectRow::open(
+                                crate::effects::EffectSet::new(),
+                                parameter.clone(),
+                            );
+                            arguments
+                                .push(PreparedEffectRow::Canonical(specialize(&row, &mut work)?));
+                        }
+                        graph.application(declaration.scheme(), arguments, &mut work)?
+                    };
+                    terms.push(term);
                 }
             }
-            if row.as_ref() != previous {
-                let row = row.into_owned();
-                rows.insert(caller.clone(), row);
-                for dependent in dependents.get(caller).into_iter().flatten().copied() {
-                    work.charge(DecisionWork::Visit)?;
-                    if queued.insert(dependent) {
-                        pending.push_back(dependent);
-                    }
-                }
-            }
+            let body = graph.union(terms, &mut work)?;
+            graph.prepare_body(declarations[caller].scheme(), body, vec![], &mut work)?;
         }
+        let closure = graph.solve_principal(&mut work)?;
+        let mut completed = BTreeMap::new();
+        for (owner, declaration) in declarations {
+            work.charge(DecisionWork::Visit)?;
+            let row =
+                closure
+                    .scheme(declaration.scheme())
+                    .map_err(
+                        crate::effect_row::prepared::PreparedEffectFailure::<
+                            FinalSemanticAnalysisError,
+                        >::from,
+                    )?
+                    .clone_with_control(&mut work)?;
+            completed.insert(owner, row);
+        }
+        // All rows become observable together. Failure or cancellation above
+        // leaves the caller's original typed body inputs untouched.
+        *rows = completed;
         Ok(())
     }
 }
@@ -844,4 +877,133 @@ fn strongly_connected_components(edges: &CallableEdges) -> Vec<BTreeSet<CheckedC
         components.push(component);
     }
     components
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn staged_fixture(source: &str) -> super::super::StagedCheckedCallables {
+        let fixture = crate::final_analysis::tests::fixture(source, None);
+        let cancellation = AtomicBool::new(false);
+        let mut analyzer = super::super::Analyzer::new(
+            fixture.project.analysis_view().unwrap(),
+            &fixture.symbols,
+            super::super::FinalSemanticCatalogs::production(&fixture.registered),
+            FinalSemanticAnalysisControl::new(&cancellation),
+        )
+        .unwrap();
+        analyzer.resolve_region_types(None).unwrap();
+        analyzer.seed_local_types(None).unwrap();
+        analyzer.stage_checked_callables().unwrap()
+    }
+
+    #[test]
+    fn declaration_closure_retains_unused_formals_and_publishes_rows_atomically() {
+        let staged =
+            staged_fixture("fn choose(used: i64 -> i64, unused: i64 -> i64) -> i64 { used(0i64) }");
+        let [body] = staged.bodies.as_slice() else {
+            panic!("one actual declaration");
+        };
+        let schema = staged
+            .builder
+            .pending_by_id(&body.id)
+            .unwrap()
+            .record()
+            .schema();
+        assert_eq!(schema.generic_inventory().effects().len(), 2);
+        let crate::types::TypeKind::Function { effects, .. } =
+            schema.groups()[0].parameters()[0].declared_type().unwrap()
+        else {
+            panic!("used callback has its actual declaration-owned effect row");
+        };
+        let original = BTreeMap::from([(body.id.clone(), effects.clone())]);
+        let mut equations = CallableEffectEquations::default();
+        equations.insert_body(body.id.clone(), []).unwrap();
+        let cancellation = AtomicBool::new(false);
+        let control = FinalSemanticAnalysisControl::new(&cancellation);
+        let boundary = BTreeMap::new();
+        let production_limit = crate::callable::PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work();
+        let mut full = original.clone();
+        equations
+            .close(
+                &mut full,
+                &boundary,
+                &staged.builder,
+                production_limit,
+                control,
+            )
+            .unwrap();
+        assert_eq!(full, original);
+        // Determine this real declaration's required closure work. The query
+        // budget is a different owner; do not substitute it for catalog closure.
+        let (mut low, mut high) = (0, production_limit);
+        while low < high {
+            let limit = low + (high - low) / 2;
+            let mut rows = original.clone();
+            match equations.close(&mut rows, &boundary, &staged.builder, limit, control) {
+                Ok(()) => {
+                    assert_eq!(rows, original);
+                    high = limit;
+                }
+                Err(FinalSemanticAnalysisError::CallableEffectClosureWorkLimit {
+                    limit: actual,
+                }) => {
+                    assert_eq!(actual, limit);
+                    assert_eq!(rows, original);
+                    low = limit + 1;
+                }
+                Err(error) => panic!("valid production declaration closure: {error:?}"),
+            }
+        }
+        let required = low;
+        let mut succeeded = false;
+        for limit in 0..=required {
+            let mut rows = original.clone();
+            match equations.close(&mut rows, &boundary, &staged.builder, limit, control) {
+                Ok(()) => {
+                    assert_eq!(rows, original);
+                    assert_eq!(limit, required);
+                    succeeded = true;
+                    break;
+                }
+                Err(FinalSemanticAnalysisError::CallableEffectClosureWorkLimit {
+                    limit: actual,
+                }) => {
+                    assert_eq!(actual, limit);
+                    assert_eq!(rows, original, "no publication at budget {limit}");
+                }
+                Err(error) => panic!("valid declaration closure at budget {limit}: {error:?}"),
+            }
+        }
+        assert!(succeeded, "the full bounded preparation executes");
+        cancellation.store(true, Ordering::Release);
+        let mut rows = original.clone();
+        assert_eq!(
+            equations.close(
+                &mut rows,
+                &boundary,
+                &staged.builder,
+                production_limit,
+                control
+            ),
+            Err(FinalSemanticAnalysisError::Cancelled)
+        );
+        assert_eq!(rows, original);
+        cancellation.store(false, Ordering::Release);
+        let foreign =
+            staged_fixture("fn other(used: i64 -> i64, unused: i64 -> i64) -> i64 { used(0i64) }");
+        assert_eq!(
+            equations.close(
+                &mut rows,
+                &boundary,
+                &foreign.builder,
+                production_limit,
+                control
+            ),
+            Err(FinalSemanticAnalysisError::CheckedCallableCatalog)
+        );
+        assert_eq!(rows, original);
+    }
 }

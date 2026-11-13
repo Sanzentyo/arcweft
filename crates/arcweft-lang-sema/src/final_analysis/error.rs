@@ -255,6 +255,29 @@ pub enum CandidateFactTransactionViolation {
     PreparedCallGraph(crate::callable::PreparedCallGraphInvariant),
 }
 
+/// The actual algebra failure retained by callable-body closure. Its private
+/// source is available through the standard error chain without exposing
+/// preparation references as a public semantic capability.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("callable effect closure failed: {source}")]
+pub struct CallableEffectClosureError {
+    #[source]
+    source: crate::effect_row::prepared::PreparedEffectFailure<FinalSemanticAnalysisError>,
+}
+
+impl From<crate::effect_row::prepared::PreparedEffectFailure<FinalSemanticAnalysisError>>
+    for FinalSemanticAnalysisError
+{
+    fn from(error: crate::effect_row::prepared::PreparedEffectFailure<Self>) -> Self {
+        use crate::effect_row::prepared::PreparedEffectFailure;
+        match error {
+            PreparedEffectFailure::Control(error) => error,
+            PreparedEffectFailure::Row(error) => Self::EffectRow(error),
+            source => Self::CallableEffectClosure(Box::new(CallableEffectClosureError { source })),
+        }
+    }
+}
+
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
@@ -301,6 +324,8 @@ pub enum FinalSemanticAnalysisError {
     AccountingOverflow,
     #[error("callable effect closure exceeded its work limit of {limit}")]
     CallableEffectClosureWorkLimit { limit: u64 },
+    #[error(transparent)]
+    CallableEffectClosure(Box<CallableEffectClosureError>),
     #[error("project symbol authority does not match the executable HIR generation")]
     SymbolGenerationMismatch,
     #[error("semantic analysis contains duplicate {family:?} fact")]
@@ -1322,6 +1347,42 @@ fn character_dialogue_not_clearable_diagnostic(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn callable_effect_closure_preserves_control_and_algebra_error_causes() {
+        use crate::effect_row::prepared::{PreparedEffectFailure, PreparedEffectInvariant};
+        use std::error::Error;
+
+        for original in [
+            FinalSemanticAnalysisError::Cancelled,
+            FinalSemanticAnalysisError::CallableEffectClosureWorkLimit { limit: 37 },
+        ] {
+            assert_eq!(
+                FinalSemanticAnalysisError::from(PreparedEffectFailure::Control(original.clone())),
+                original,
+            );
+        }
+        assert_eq!(
+            FinalSemanticAnalysisError::from(PreparedEffectFailure::Row(
+                crate::effect_row::EffectRowError::UnknownRow
+            )),
+            FinalSemanticAnalysisError::EffectRow(crate::effect_row::EffectRowError::UnknownRow),
+        );
+        let error = FinalSemanticAnalysisError::from(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::SchemeState,
+        ));
+        assert_eq!(error, error.clone());
+        let FinalSemanticAnalysisError::CallableEffectClosure(carrier) = error else {
+            panic!("algebra invariant has its own public failure carrier");
+        };
+        let source = carrier.source().unwrap();
+        assert!(matches!(
+            source.downcast_ref::<PreparedEffectFailure<FinalSemanticAnalysisError>>(),
+            Some(PreparedEffectFailure::Invariant(
+                PreparedEffectInvariant::SchemeState
+            )),
+        ));
+    }
 
     #[test]
     fn public_call_failure_carrier_retains_exact_abort_payload() {

@@ -215,6 +215,11 @@ impl Analyzer<'_, '_, '_> {
         equations.close(
             &mut rows,
             &boundary,
+            &self
+                .staged_callables
+                .as_ref()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                .builder,
             self.catalogs.callable_limits.max_catalog_build_work(),
             self.control,
         )?;

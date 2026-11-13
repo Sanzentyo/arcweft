@@ -213,6 +213,15 @@ impl EffectConstraintVariable {
 }
 
 impl EffectRow {
+    /// Admits the canonical graph before copying its retained row storage.
+    pub(crate) fn clone_with_control<C: DecisionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        self.encode(&mut EffectEqualityControl(control))?;
+        Ok(self.clone())
+    }
+
     pub(crate) fn equal_with<C: DecisionControl>(
         &self,
         other: &Self,

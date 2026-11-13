@@ -105,7 +105,7 @@ pub(crate) enum PreparedEffectRelation {
     AdmittedSubset,
 }
 
-#[derive(Debug, thiserror::Error, Eq, PartialEq)]
+#[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
 pub(crate) enum PreparedEffectInvariant {
     #[error("effect term belongs to another preparation issuer")]
     ForeignIssuer,
@@ -141,7 +141,7 @@ pub(crate) enum PreparedEffectInvariant {
     DuplicateFutureBinding,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum PreparedEffectFailure<E> {
     #[error("effect preparation aborted")]
     Control(#[source] E),

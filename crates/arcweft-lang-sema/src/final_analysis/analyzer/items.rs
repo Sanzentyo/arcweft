@@ -746,6 +746,7 @@ impl Analyzer<'_, '_, '_> {
         graph.close_effect_rows(
             &mut rows,
             &bounded_call_effect_rows,
+            &staged.builder,
             self.catalogs.callable_limits.max_catalog_build_work(),
             self.control,
         )?;
