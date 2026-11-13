@@ -103,7 +103,7 @@ impl OriginalOperandValue for TypeKind {
                 if let GenericTypeReference::Bound(bound) = reference {
                     source.bound_type(bound.depth(), bound.slot())?;
                 }
-                if reference.free_parameter().is_some()
+                if !matches!(reference, GenericTypeReference::Bound(_))
                     && !original.admits_parameter(&reference.clone().into())
                 {
                     return Err(TypeProjectionError::Control(references::type_out_of_scope(
@@ -130,7 +130,7 @@ impl OriginalOperandValue for TypeKind {
                     if let crate::types::GenericEffectReference::Bound(bound) = reference {
                         source.bound_effect(bound.depth(), bound.slot())?;
                     }
-                    if reference.free_parameter().is_some()
+                    if !matches!(reference, crate::types::GenericEffectReference::Bound(_))
                         && !original.admits_parameter(&reference.clone().into())
                     {
                         return Err(TypeProjectionError::Control(
@@ -180,7 +180,7 @@ impl ArrayLength {
             if let GenericConstReference::Bound(bound) = reference {
                 source.bound_const(bound.depth(), bound.slot())?;
             }
-            if reference.free_parameter().is_some()
+            if !matches!(reference, GenericConstReference::Bound(_))
                 && !original.admits_parameter(&reference.clone().into())
             {
                 return Err(TypeProjectionError::Control(

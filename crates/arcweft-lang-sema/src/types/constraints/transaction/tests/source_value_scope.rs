@@ -320,3 +320,65 @@ fn checked_source_values_transport_their_own_bound_reference_before_port_selecti
     context.restore_binder_scope(nested);
     context.restore_binder_scope(previous);
 }
+
+#[test]
+fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_import() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let source = SourceParameters::new();
+    let original = source.original(&mut context);
+    let parameters = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [TypeConstraintTypeParameterScopeRow::new(
+            source.ty.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )],
+        [],
+        TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+        [],
+        [],
+    )
+    .unwrap();
+    let parameter = parameters.type_reference(&source.ty).unwrap();
+    let application = context
+        .application_scope(0, parameters, original.clone())
+        .unwrap();
+    let path = context
+        .start_path_with_imported(application, None, original.clone())
+        .unwrap();
+    let lease = path
+        .applications
+        .import_parameters(&[parameter.clone().into()])
+        .unwrap();
+    let imported = context.fixture_original_context(Some(&lease)).unwrap();
+    for (original, admitted) in [(original, false), (imported, true)] {
+        let owner: Arc<dyn ConstraintSourceValueOwner<ApplicationSourceDomain>> =
+            Arc::new(OwnedSourceValue {
+                source: ConstraintSourceId::new(path.root_id(), 7),
+                original: original.clone(),
+                receipt: None,
+                value: TypeKind::GenericParam(parameter.clone()),
+            });
+        let retained = Arc::downgrade(&owner);
+        let result = resolve_probe_term(
+            SourceProbeTerm::Value(owner),
+            &path,
+            &path.lineage.scope,
+            &mut context,
+        );
+        if admitted {
+            let (value, resolved) = result.unwrap();
+            assert_eq!(value, TypeKind::GenericParam(parameter.clone()));
+            let ResolvedConstraintSource::Value(owner) = resolved else {
+                panic!("source value keeps its actual owner")
+            };
+            assert!(Arc::ptr_eq(&owner, &retained.upgrade().unwrap()));
+            assert_eq!(owner.original_context(), &original);
+        } else {
+            assert_eq!(
+                result.err(),
+                Some(references::type_out_of_scope(&parameter))
+            );
+        }
+    }
+}

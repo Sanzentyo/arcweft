@@ -1213,6 +1213,38 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         acceptance: ConstraintAcceptance,
         timing: ConstraintEquationTiming,
     ) -> Result<(), TypeConstraintError> {
+        self.constrain_equation_from(
+            context,
+            pattern,
+            actual,
+            acceptance,
+            timing,
+            |path, scope, context| {
+                ConstraintOperand::from_original_in(
+                    actual,
+                    scope,
+                    path.lineage.original.clone(),
+                    context,
+                )
+            },
+        )
+    }
+
+    /// Equation processing consumes the producer's checked operand. Source
+    /// admission and already-owned application terms share this consumer.
+    fn constrain_equation_from<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+        timing: ConstraintEquationTiming,
+        mut admit: impl FnMut(
+            &ConstraintPath<D>,
+            Arc<super::lexical::ConstraintLexicalScope>,
+            &mut TypeConstraintContext<'_, A, D>,
+        ) -> Result<ConstraintOperand<D>, TypeConstraintError>,
+    ) -> Result<(), TypeConstraintError> {
         if self.first_failure.is_some() || self.closed {
             return Ok(());
         }
@@ -1226,24 +1258,21 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         for mut path in frontier {
             let pattern = context.open_template_type(pattern, &path, self.application)?;
             let scope = Arc::new(context.capture_lexical_scope()?);
+            let pattern_operand = ConstraintOperand::template(
+                pattern.clone(),
+                Arc::clone(&scope),
+                path.applications
+                    .require_application_owner(self.application)?,
+            );
+            let actual_operand = admit(&path, scope, context)?;
             path.equations.push(PendingEquation {
                 ordinal: ConstraintEquationId {
                     application: self.application,
                     ordinal,
                 },
                 direction: acceptance,
-                pattern: ConstraintOperand::template(
-                    pattern.clone(),
-                    Arc::clone(&scope),
-                    path.applications
-                        .require_application_owner(self.application)?,
-                ),
-                actual: ConstraintOperand::from_original_in(
-                    actual,
-                    scope,
-                    path.lineage.original.clone(),
-                    context,
-                )?,
+                pattern: pattern_operand,
+                actual: actual_operand,
                 source_ordinal: None,
                 final_expected: None,
                 timing,
@@ -1266,7 +1295,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         context,
                     )?;
                     let actual_hint = project_type(
-                        actual,
+                        path.equations
+                            .last()
+                            .expect("the current equation is retained")
+                            .actual
+                            .value(),
                         path.projection_view(),
                         ConstraintClosurePolicy::Hint,
                         context,

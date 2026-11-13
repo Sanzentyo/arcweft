@@ -14,7 +14,7 @@ use crate::{
                 TypeConstraintLimits, TypeConstraintTypeParameterScopeRow,
             },
             test_support::ConstraintTestSetup,
-            transaction::TypeConstraintTransaction,
+            transaction::{ConstraintEquationTiming, ConstraintOperand, TypeConstraintTransaction},
         },
     },
 };
@@ -100,12 +100,24 @@ fn frontier_with_imported(
     )
     .unwrap();
     for (pattern, actual) in equations {
-        lower.constrain(
-            context,
-            pattern,
-            actual,
-            ConstraintAcceptance::PatternAcceptsActual,
-        );
+        let application = lower.application;
+        lower
+            .constrain_equation_from(
+                context,
+                pattern,
+                actual,
+                ConstraintAcceptance::PatternAcceptsActual,
+                ConstraintEquationTiming::Immediate,
+                |path, scope, context| {
+                    let value = context.open_template_type(actual, path, application)?;
+                    Ok(ConstraintOperand::template(
+                        value,
+                        scope,
+                        path.applications.require_application_owner(application)?,
+                    ))
+                },
+            )
+            .unwrap();
     }
     lower.request_projection(
         context,

@@ -428,3 +428,267 @@ fn original_admission_lifts_ambient_type_const_effect_and_predicate_but_keeps_lo
     assert_eq!(admitted.original_context(), &original);
     context.restore_binder_scope(previous);
 }
+
+fn inference_parameters(
+    source: &Source,
+) -> crate::types::constraints::TypeConstraintParameterScope {
+    use crate::{
+        effect_row::{EffectConstraintEligibility, EffectConstraintVariable},
+        types::constraints::{
+            TypeConstraintConstEligibility, TypeConstraintEffectScope,
+            TypeConstraintParameterEligibility, TypeConstraintParameterScope,
+            context::{TypeConstraintConstParameterScopeRow, TypeConstraintTypeParameterScopeRow},
+        },
+    };
+    TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [TypeConstraintTypeParameterScopeRow::new(
+            source.types[0].clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )],
+        [TypeConstraintConstParameterScopeRow::new(
+            source.consts[0].clone(),
+            TypeConstraintConstEligibility::Bindable,
+        )],
+        TypeConstraintEffectScope::seal_call_scope(
+            [EffectConstraintVariable::new(
+                source.effects[0].clone(),
+                EffectConstraintEligibility::Bindable,
+            )],
+            [],
+        )
+        .unwrap(),
+        [],
+        [],
+    )
+    .unwrap()
+}
+
+#[test]
+fn original_inference_references_require_the_sources_actual_import_lease() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let source = Source::new(9015);
+    let original = context.original_producer_context(&source).unwrap();
+    let parameters = inference_parameters(&source);
+    let ty = parameters.type_reference(&source.types[0]).unwrap();
+    let length = parameters.const_reference(&source.consts[0]).unwrap();
+    let effect = parameters.effect_reference(&source.effects[0]).unwrap();
+    let application = context
+        .application_scope((), parameters, original.clone())
+        .unwrap();
+    let path = context
+        .start_path_with_imported(application, None, original.clone())
+        .unwrap();
+    let predicate = crate::effect_row::EffectFormula::variable(effect.clone(), &mut context)
+        .unwrap()
+        .subset(&crate::effect_row::EffectFormula::empty(), &mut context)
+        .unwrap();
+    let cases = [
+        (
+            TypeKind::GenericParam(ty.clone()),
+            references::type_out_of_scope(&ty),
+        ),
+        (
+            TypeKind::Array {
+                item: Box::new(TypeKind::I64),
+                len: ArrayLength::Generic(length.clone()),
+            },
+            references::const_out_of_scope(&length),
+        ),
+        (
+            TypeKind::function_with_effects(
+                [],
+                TypeKind::I64,
+                EffectRow::open(EffectSet::new(), effect.clone()),
+            ),
+            references::effect_out_of_scope(&effect),
+        ),
+        (
+            TypeKind::function_with_contract(
+                GenericBinder::EMPTY,
+                predicate,
+                [],
+                TypeKind::I64,
+                EffectRow::closed(EffectSet::new()),
+            ),
+            references::effect_out_of_scope(&effect),
+        ),
+    ];
+    let mut keys = vec![ty.into(), length.clone().into(), effect.into()];
+    keys.sort();
+    let lease = path.applications.import_parameters(&keys).unwrap();
+    let imported = context.fixture_original_context(Some(&lease)).unwrap();
+    for (value, rejected) in cases {
+        assert_eq!(
+            context.fixture_operand_in(&original, &value).err(),
+            Some(rejected)
+        );
+        let admitted = context.fixture_operand_in(&imported, &value).unwrap();
+        assert_eq!(admitted.value(), &value);
+    }
+    let value = ArrayLength::Generic(length.clone());
+    assert_eq!(
+        context.fixture_operand_in(&original, &value).err(),
+        Some(references::const_out_of_scope(&length))
+    );
+    assert_eq!(
+        context
+            .fixture_operand_in(&imported, &value)
+            .unwrap()
+            .value(),
+        &value
+    );
+}
+
+#[test]
+fn introduced_parameter_operands_keep_the_exact_lease_across_child_imports() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let source = Source::new(9016);
+    let original = context.original_producer_context(&source).unwrap();
+    let parameters = inference_parameters(&source);
+    let ty = parameters.type_reference(&source.types[0]).unwrap();
+    let length = parameters.const_reference(&source.consts[0]).unwrap();
+    let application = context
+        .application_scope((), parameters, original.clone())
+        .unwrap();
+    let path = context
+        .start_path_with_imported(application, None, original.clone())
+        .unwrap();
+    let imported = path
+        .applications
+        .import_parameters(&[ty.clone().into()])
+        .unwrap();
+    let child_original = context.fixture_original_context(Some(&imported)).unwrap();
+    let child_owner = context
+        .application_scope(
+            (),
+            crate::types::constraints::TypeConstraintParameterScope::empty(),
+            child_original.clone(),
+        )
+        .unwrap();
+    let child = context
+        .start_path_with_imported(child_owner, Some(imported), child_original)
+        .unwrap();
+    let target = Arc::new(context.capture_lexical_scope().unwrap());
+    let owner = child
+        .applications
+        .owner_for_parameter(&ty.clone().into())
+        .unwrap();
+    assert!(
+        child
+            .applications
+            .owner_for_parameter(&length.clone().into())
+            .is_none()
+    );
+    assert_eq!(
+        ConstraintOperand::<NoConstraintClient, ArrayLength>::introduced_const(
+            &length,
+            Arc::clone(&target),
+            owner.clone(),
+            &mut context
+        )
+        .err(),
+        Some(references::const_out_of_scope(&length))
+    );
+    let operand = ConstraintOperand::<NoConstraintClient>::introduced_type(
+        &ty,
+        Arc::clone(&target),
+        owner,
+        &mut context,
+    )
+    .unwrap();
+    drop(child);
+    drop(path);
+    assert_eq!(operand.value(), &TypeKind::GenericParam(ty));
+    assert_eq!(operand.scope(), target.as_ref());
+    assert_eq!(operand.original_context(), &original);
+    assert!(matches!(
+        operand.origin.as_ref(),
+        ConstraintOperandOrigin::Parameter(_)
+    ));
+}
+
+#[test]
+fn introduced_parameter_admission_observes_budget_and_cancellation() {
+    use crate::types::constraints::TypeConstraintAbort;
+    use std::sync::atomic::Ordering;
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let source = Source::new(9017);
+    let parameters = inference_parameters(&source);
+    let ty = parameters.type_reference(&source.types[0]).unwrap();
+    let length = parameters.const_reference(&source.consts[0]).unwrap();
+    let application = context.fixture_application_scope((), parameters).unwrap();
+    let path = context.start_path(application).unwrap();
+    let target = Arc::new(context.capture_lexical_scope().unwrap());
+    for cancelled in [false, true] {
+        let mut stopped = TypeConstraintContext::with_accounting(LocalConstraintAccounting::new(
+            TypeConstraintLimits::new(0, 0, 0, 0),
+            &cancellation,
+        ));
+        cancellation.store(cancelled, Ordering::Release);
+        let ty_result = ConstraintOperand::<NoConstraintClient>::introduced_type(
+            &ty,
+            Arc::clone(&target),
+            path.applications
+                .owner_for_parameter(&ty.clone().into())
+                .unwrap(),
+            &mut stopped,
+        );
+        let const_result = ConstraintOperand::<NoConstraintClient, ArrayLength>::introduced_const(
+            &length,
+            Arc::clone(&target),
+            path.applications
+                .owner_for_parameter(&length.clone().into())
+                .unwrap(),
+            &mut stopped,
+        );
+        for result in [ty_result.err(), const_result.err()] {
+            assert!(matches!(result, Some(TypeConstraintError::Abort(_))));
+            if cancelled {
+                assert_eq!(
+                    result,
+                    Some(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn result_equation_hints_read_the_checked_operands_receiving_frames() {
+    use crate::types::constraints::{ConstraintAcceptance, transaction::TypeConstraintTransaction};
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
+    let source = Source::new(9018);
+    let original = context.original_producer_context(&source).unwrap();
+    let parameters = inference_parameters(&source);
+    let parameter = parameters.type_reference(&source.types[0]).unwrap();
+    let actual = TypeKind::GenericParam(original.scope().bound_type(0, 0).unwrap());
+    let mut transaction =
+        TypeConstraintTransaction::initialize(&mut context, original, (), parameters, None)
+            .unwrap();
+    let nested = context.enter_binder_scope(GenericBinder::new(0, 1, 0));
+    let expected = TypeKind::GenericParam(context.lexical_scope().bound_type(1, 0).unwrap());
+    transaction.constrain_result(
+        &mut context,
+        &TypeKind::GenericParam(parameter),
+        &actual,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    assert!(
+        transaction.first_failure.is_none(),
+        "{:?}",
+        transaction.first_failure
+    );
+    let equation = transaction.frontier[0].equations.last().unwrap();
+    assert_eq!(equation.actual.value(), &expected);
+    assert_eq!(equation.actual.scope().shape(), context.lexical_scope());
+    context.restore_binder_scope(nested);
+    context.restore_binder_scope(outer);
+}

@@ -237,16 +237,16 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 context.enter_node()?;
                 let owner = original
                     .applications
-                    .binding_owner(&parameter.clone().into())
+                    .owner_for_parameter(&parameter.clone().into())
                     .ok_or_else(|| {
                         TypeConstraintError::from(TypeConstraintRejection::EscapingInstantiation {
                             parameter: parameter.clone().into(),
                         })
                     })?;
-                let reference = super::super::ConstraintOperand::from_original_in(
-                    &TypeKind::GenericParam(parameter.clone()),
+                let reference = super::super::ConstraintOperand::introduced_type(
+                    parameter,
                     Arc::clone(&operand_scope),
-                    owner.original.clone(),
+                    owner,
                     context,
                 )?;
                 let value = value
@@ -273,16 +273,16 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 context.enter_node()?;
                 let owner = original
                     .applications
-                    .binding_owner(&parameter.clone().into())
+                    .owner_for_parameter(&parameter.clone().into())
                     .ok_or_else(|| {
                         TypeConstraintError::from(TypeConstraintRejection::EscapingInstantiation {
                             parameter: parameter.clone().into(),
                         })
                     })?;
-                let reference = super::super::ConstraintOperand::from_original_in(
-                    &ArrayLength::Generic(parameter.clone()),
+                let reference = super::super::ConstraintOperand::introduced_const(
+                    parameter,
                     Arc::clone(&operand_scope),
-                    owner.original.clone(),
+                    owner,
                     context,
                 )?;
                 let value = value

@@ -5,6 +5,7 @@ use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexi
 
 mod function_scheme;
 mod original_value;
+mod parameter;
 mod projection;
 pub(crate) use function_scheme::{ConstraintResultUseSource, PreparedConstraintFunctionScheme};
 pub(in crate::types::constraints) use projection::ConstraintOperandChildren;
@@ -134,6 +135,7 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
 /// authorization also requires the checked value and binding-flow migration.
 enum ConstraintOperandOrigin<D: ConstraintDomain> {
     Original(OriginalProducerContext),
+    Parameter(super::super::application::ApplicationParameterScopeLease),
     Template(Arc<ConstraintApplicationScope<D>>),
     Source {
         original: OriginalProducerContext,
@@ -410,6 +412,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
             ConstraintOperandOrigin::Original(original)
             | ConstraintOperandOrigin::Source { original, .. }
             | ConstraintOperandOrigin::Completed { original, .. } => original,
+            ConstraintOperandOrigin::Parameter(owner) => owner.original_context(),
             ConstraintOperandOrigin::Template(owner) => owner.original_context(),
             ConstraintOperandOrigin::Result(result) => result.owner.original_context(),
             ConstraintOperandOrigin::FunctionSchemeInstantiation { instance, .. } => {

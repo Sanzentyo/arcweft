@@ -44,7 +44,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
                 | Self::Source { .. }
                 | Self::Result(_)
                 | Self::Completed { .. } => return Ok(Arc::clone(current)),
-                Self::ConstOccurrence(_) | Self::ConstAlias { .. } => {
+                Self::Parameter(_) | Self::ConstOccurrence(_) | Self::ConstAlias { .. } => {
                     return Err(TypeConstraintInvariant::OriginalProducer.into());
                 }
             }

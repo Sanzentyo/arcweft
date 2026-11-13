@@ -34,14 +34,18 @@ trait ImportedApplicationScopeAuthority {
 
 /// One exact application owner and the parameters that owner admitted.
 #[derive(Clone)]
-struct ImportedApplicationScopeLease {
+pub(super) struct ApplicationParameterScopeLease {
     owner: Arc<dyn ImportedApplicationScopeAuthority>,
     parameters: Box<[super::ConstraintGenericParameterId]>,
 }
 
-impl ImportedApplicationScopeLease {
-    fn contains(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
+impl ApplicationParameterScopeLease {
+    pub(super) fn contains(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
         self.parameters.binary_search(parameter).is_ok() && self.owner.admits(parameter)
+    }
+
+    pub(super) fn original_context(&self) -> &super::OriginalProducerContext {
+        self.owner.original_context()
     }
 
     fn id(&self) -> ConstraintApplicationId {
@@ -60,7 +64,7 @@ impl ImportedApplicationScopeLease {
 /// to a nested source callback. Owners are opaque and retain their admitted
 /// scopes across child constraint transactions.
 pub(crate) struct ImportedGenericParameterScopeLease {
-    applications: Box<[ImportedApplicationScopeLease]>,
+    applications: Box<[ApplicationParameterScopeLease]>,
     parameters: Box<[super::ConstraintGenericParameterId]>,
     captures: RetainedRigidGenericScope,
 }
@@ -343,7 +347,7 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
 /// inventory cannot manufacture a parent by selecting one admitted member.
 pub(super) struct ConstraintApplicationInventory<D: ConstraintDomain> {
     applications: BTreeMap<ConstraintApplicationId, Arc<ConstraintApplicationScope<D>>>,
-    imported: Box<[ImportedApplicationScopeLease]>,
+    imported: Box<[ApplicationParameterScopeLease]>,
     captures: RetainedRigidGenericScope,
 }
 
@@ -395,7 +399,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             }
         }
         let mut imported =
-            BTreeMap::<ConstraintApplicationId, ImportedApplicationScopeLease>::new();
+            BTreeMap::<ConstraintApplicationId, ApplicationParameterScopeLease>::new();
         for owner in self.imported.iter().chain(original.imported.iter()) {
             context.enter_node()?;
             if let Some(application) = self.applications.get(&owner.id())
@@ -616,7 +620,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         Ok(ImportedGenericParameterScopeLease {
             applications: imported
                 .into_values()
-                .map(|(owner, parameters)| ImportedApplicationScopeLease {
+                .map(|(owner, parameters)| ApplicationParameterScopeLease {
                     owner,
                     parameters: parameters.into_iter().collect(),
                 })
@@ -626,10 +630,10 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         })
     }
 
-    fn owner_for_parameter(
+    pub(super) fn owner_for_parameter(
         &self,
         parameter: &super::ConstraintGenericParameterId,
-    ) -> Option<ImportedApplicationScopeLease> {
+    ) -> Option<ApplicationParameterScopeLease> {
         self.imported
             .iter()
             .find_map(|owner| owner.narrowed(parameter))
@@ -716,7 +720,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
     fn scope_for_type(
         &self,
         reference: &GenericTypeReference,
-    ) -> Option<ImportedApplicationScopeLease>
+    ) -> Option<ApplicationParameterScopeLease>
     where
         D: 'static,
     {
@@ -743,7 +747,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             GenericTypeReference::Bound(_) => None,
         }?;
         let owner: Arc<dyn ImportedApplicationScopeAuthority> = scope;
-        Some(ImportedApplicationScopeLease {
+        Some(ApplicationParameterScopeLease {
             owner,
             parameters: Box::new([parameter]),
         })
@@ -752,7 +756,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
     fn scope_for_const(
         &self,
         reference: &GenericConstReference,
-    ) -> Option<ImportedApplicationScopeLease>
+    ) -> Option<ApplicationParameterScopeLease>
     where
         D: 'static,
     {
@@ -784,7 +788,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             GenericConstReference::Bound(_) => None,
         }?;
         let owner: Arc<dyn ImportedApplicationScopeAuthority> = scope;
-        Some(ImportedApplicationScopeLease {
+        Some(ApplicationParameterScopeLease {
             owner,
             parameters: Box::new([parameter]),
         })
@@ -793,7 +797,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
     fn scope_for_effect(
         &self,
         reference: &GenericEffectReference,
-    ) -> Option<ImportedApplicationScopeLease>
+    ) -> Option<ApplicationParameterScopeLease>
     where
         D: 'static,
     {
@@ -825,7 +829,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             GenericEffectReference::Bound(_) => None,
         }?;
         let owner: Arc<dyn ImportedApplicationScopeAuthority> = scope;
-        Some(ImportedApplicationScopeLease {
+        Some(ApplicationParameterScopeLease {
             owner,
             parameters: Box::new([parameter]),
         })
