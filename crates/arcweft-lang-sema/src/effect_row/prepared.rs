@@ -44,7 +44,8 @@ mod substitution;
 pub(crate) use substitution::PreparedEffectTermEdit;
 mod transaction;
 pub(crate) use transaction::{
-    PreparedEffectCheckpoint, PreparedEffectDelta, PreparedEffectRestoreFailure,
+    PreparedEffectCheckpoint, PreparedEffectDelta, PreparedEffectReplayMismatch,
+    PreparedEffectReplayRoot, PreparedEffectRestoreFailure,
 };
 #[cfg(test)]
 mod test_support;

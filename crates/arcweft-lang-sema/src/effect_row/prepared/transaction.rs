@@ -6,6 +6,9 @@ use super::{
     RowTerm, ScopedObligation,
 };
 
+mod replay;
+pub(crate) use replay::{PreparedEffectReplayMismatch, PreparedEffectReplayRoot};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct PreparedEffectStateId(u64);
 
@@ -43,6 +46,7 @@ struct PreparedEffectDeltaData {
     issuer: Arc<PreparedEffectIssuer>,
     base: PreparedEffectStateId,
     result: PreparedEffectStateId,
+    baseline_functions: BTreeSet<u64>,
     functions: BTreeMap<u64, Arc<Function>>,
     obligations: Vec<ScopedObligation>,
     rows: BTreeMap<u64, Arc<RowTerm>>,
@@ -191,6 +195,13 @@ impl PreparedEffectGraph {
                 functions.insert(*id, Arc::clone(function));
             }
         }
+        let mut baseline_functions = BTreeSet::new();
+        for id in checkpoint.functions.keys() {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+            baseline_functions.insert(*id);
+        }
         for () in self.insertions[checkpoint.journal_start..]
             .iter()
             .map(|_| ())
@@ -211,6 +222,7 @@ impl PreparedEffectGraph {
             issuer: Arc::clone(&self.issuer),
             base: checkpoint.state,
             result: self.state,
+            baseline_functions,
             functions,
             obligations: self.obligations.split_off(checkpoint.obligation_limit),
             rows: BTreeMap::new(),

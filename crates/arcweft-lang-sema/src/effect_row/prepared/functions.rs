@@ -5,6 +5,12 @@ use super::*;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PreparedEffectUnknownRef(PreparedEffectReference);
 
+impl PreparedEffectUnknownRef {
+    pub(super) fn reference(&self) -> &PreparedEffectReference {
+        &self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedEffectUnknownEligibility {
     Bindable,
