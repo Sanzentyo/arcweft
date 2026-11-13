@@ -199,6 +199,18 @@ impl<'a> CanonicalReplay<'a> {
                             .substitute(&substitutions, work)?;
                         admitted = admitted.and(&self.guard(&domain, work)?, work)?;
                     }
+                    if let Function::Imported(_) = definition {
+                        let imported = self
+                            .principal
+                            .layout
+                            .imports
+                            .get(&function.reference().ordinal)
+                            .ok_or(PreparedEffectInvariant::PrincipalConfirmation)?;
+                        let guard = imported
+                            .principal(self.principal.layout.view(), work)?
+                            .substitute(&self.principal.coefficients, work)?;
+                        admitted = admitted.and(&guard, work)?;
+                    }
                     let formula = self
                         .formula(
                             &self.principal.functions[&function.reference().ordinal],

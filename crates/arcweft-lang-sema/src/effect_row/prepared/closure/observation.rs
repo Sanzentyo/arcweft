@@ -420,6 +420,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         let layout = ClassLayout {
             labels: &labels,
             tables: &self.layout.tables,
+            imports: &self.layout.imports,
         };
         let mut compilation =
             Compilation::new(self.graph, layout, FormalOwner::Observation, &parameters);
@@ -500,6 +501,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         let layout = ClassLayout {
             labels: &labels,
             tables: &self.layout.tables,
+            imports: &self.layout.imports,
         };
         let mut compilation =
             Compilation::new(self.graph, layout, FormalOwner::Observation, &parameters);

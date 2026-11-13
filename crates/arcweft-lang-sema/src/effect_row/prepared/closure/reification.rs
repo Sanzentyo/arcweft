@@ -28,6 +28,23 @@ impl PrincipalEffectClosure<'_> {
         &self,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        self.confirm_local(work)?;
+        let mut todo = self.imported_closures(work)?;
+        while let Some(child) = todo.pop() {
+            work.charge(DecisionWork::Visit)?;
+            child.confirm_local(work)?;
+            for nested in child.imported_closures(work)? {
+                work.charge(DecisionWork::Node)?;
+                todo.push(nested);
+            }
+        }
+        Ok(())
+    }
+
+    fn confirm_local<C: DecisionControl>(
+        &self,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
         for (&id, function) in &self.graph.functions {
             let row = self.functions[&id].known()?;
             for (label, _) in row.membership().overrides() {
@@ -66,14 +83,21 @@ impl PrincipalEffectClosure<'_> {
                             },
                             work,
                         )?;
-                    let least = self
-                        .coefficients
-                        .get(&Atom::Cell {
-                            scheme: id,
-                            class,
-                            mask,
-                        })
-                        .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+                    let imported;
+                    let least = if matches!(function.as_ref(), Function::Imported(_)) {
+                        imported = self.layout.imports[&id]
+                            .coefficient(self.layout.view(), class, mask, work)?
+                            .substitute(&self.coefficients, work)?;
+                        &imported
+                    } else {
+                        self.coefficients
+                            .get(&Atom::Cell {
+                                scheme: id,
+                                class,
+                                mask,
+                            })
+                            .ok_or(PreparedEffectInvariant::UnclosedCell)?
+                    };
                     if !least.is_constant(value) {
                         return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
                     }
@@ -103,5 +127,29 @@ impl PrincipalEffectClosure<'_> {
             canonical::CanonicalReplay::new(self, scope).confirm_obligation(obligation, work)?;
         }
         Ok(())
+    }
+}
+
+impl<'g> PrincipalEffectClosure<'g> {
+    fn imported_closures<C: DecisionControl>(
+        &self,
+        work: &mut Work<'_, C>,
+    ) -> Result<Vec<PrincipalEffectClosure<'g>>, PreparedEffectFailure<C::Error>> {
+        let graph: &'g PreparedEffectGraph = self.graph;
+        let mut children = Vec::new();
+        for (&id, function) in &graph.functions {
+            if let Function::Imported(imported) = function.as_ref() {
+                let table = self
+                    .layout
+                    .imports
+                    .get(&id)
+                    .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+                if let Some(child) = table.specialize(imported, self, work)? {
+                    work.charge(DecisionWork::Node)?;
+                    children.push(child);
+                }
+            }
+        }
+        Ok(children)
     }
 }

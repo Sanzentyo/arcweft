@@ -21,6 +21,10 @@ mod closure;
 mod declaration;
 mod functions;
 use functions::{Function, FunctionRef};
+mod completion;
+pub(crate) use completion::{
+    GuardedEffectFunction, PreparedEffectImportedRef, ScopedEffectCompletion,
+};
 pub(crate) use functions::{PreparedEffectUnknownEligibility, PreparedEffectUnknownRef};
 mod scoped;
 pub(crate) use closure::{
@@ -238,6 +242,7 @@ pub(crate) struct PreparedEffectCheckpoint {
     ordinal: u64,
 }
 
+#[derive(Debug)]
 pub(crate) struct PreparedEffectGraph {
     issuer: Arc<PreparedEffectIssuer>,
     next_function: u64,
@@ -325,7 +330,9 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::StaleReference)?
         {
             Function::Scheme(scheme) => Ok(scheme),
-            Function::Unknown { .. } => Err(PreparedEffectInvariant::StaleReference),
+            Function::Unknown { .. } | Function::Imported(_) => {
+                Err(PreparedEffectInvariant::StaleReference)
+            }
         }
     }
 

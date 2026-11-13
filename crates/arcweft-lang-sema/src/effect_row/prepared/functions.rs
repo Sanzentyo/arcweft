@@ -15,6 +15,7 @@ pub(crate) enum PreparedEffectUnknownEligibility {
 pub(super) enum FunctionRef {
     Scheme(PreparedEffectSchemeRef),
     Unknown(PreparedEffectUnknownRef),
+    Imported(PreparedEffectImportedRef),
 }
 
 impl FunctionRef {
@@ -22,6 +23,7 @@ impl FunctionRef {
         match self {
             Self::Scheme(reference) => &reference.0,
             Self::Unknown(reference) => &reference.0,
+            Self::Imported(reference) => &reference.0,
         }
     }
 }
@@ -29,6 +31,7 @@ impl FunctionRef {
 #[derive(Debug)]
 pub(super) enum Function {
     Scheme(Scheme),
+    Imported(completion::ImportedEffectFunction),
     /// Exactly the dependencies available when this unknown was introduced.
     Unknown {
         parameters: Box<[GenericEffectReference]>,
@@ -40,6 +43,7 @@ impl Function {
     pub(super) fn parameters(&self) -> &[GenericEffectReference] {
         match self {
             Self::Scheme(scheme) => &scheme.header.parameters,
+            Self::Imported(imported) => imported.definition().parameters(),
             Self::Unknown { parameters, .. } => parameters,
         }
     }
@@ -47,6 +51,7 @@ impl Function {
     pub(super) fn domain(&self) -> Option<&EffectPredicate> {
         match self {
             Self::Scheme(scheme) => Some(&scheme.header.domain),
+            Self::Imported(imported) => imported.definition().domain(),
             Self::Unknown { .. } => None,
         }
     }
@@ -122,7 +127,8 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         match (reference, function) {
             (FunctionRef::Scheme(_), Function::Scheme(_))
-            | (FunctionRef::Unknown(_), Function::Unknown { .. }) => Ok(function),
+            | (FunctionRef::Unknown(_), Function::Unknown { .. })
+            | (FunctionRef::Imported(_), Function::Imported(_)) => Ok(function),
             _ => Err(PreparedEffectInvariant::StaleReference),
         }
     }

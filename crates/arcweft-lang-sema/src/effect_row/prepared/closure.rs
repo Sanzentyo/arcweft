@@ -11,6 +11,8 @@ mod canonical;
 mod compilation;
 mod component;
 use component::{CompiledComponent, ComponentCompletion};
+mod imports;
+use imports::ImportedFunctionTable;
 mod observation;
 mod reification;
 pub(crate) use observation::{
@@ -58,6 +60,7 @@ struct Layout {
     labels: Box<[EffectId]>,
     tables: BTreeMap<u64, usize>,
     cells: BTreeSet<Atom>,
+    imports: BTreeMap<u64, ImportedFunctionTable>,
 }
 
 /// Compilation reads a class partition, not the solver's cell inventory. An
@@ -66,6 +69,7 @@ struct Layout {
 struct ClassLayout<'a> {
     labels: &'a [EffectId],
     tables: &'a BTreeMap<u64, usize>,
+    imports: &'a BTreeMap<u64, ImportedFunctionTable>,
 }
 
 /// Label classes are independent of the solver's scheme-cell tables.
@@ -80,6 +84,15 @@ impl Layout {
         fixed: &BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let labels = Self::support(graph, fixed, work)?;
+        Self::with_labels(graph, labels, work)
+    }
+
+    fn support<C: DecisionControl>(
+        graph: &PreparedEffectGraph,
+        fixed: &BTreeMap<u64, EffectRow>,
+        work: &mut Work<'_, C>,
+    ) -> Result<BTreeSet<EffectId>, PreparedEffectFailure<C::Error>> {
         let mut labels = BTreeSet::new();
         let mut support = |membership: EffectMembershipView<'_, GenericEffectReference>| -> Result<(), PreparedEffectFailure<C::Error>> {
             for (label, _) in membership.overrides() {
@@ -192,6 +205,22 @@ impl Layout {
                 }
             }
         }
+        for function in graph.functions.values() {
+            if let Function::Imported(imported) = function.as_ref() {
+                for label in &imported.completion.support {
+                    work.charge(DecisionWork::Node)?;
+                    labels.insert(label.clone());
+                }
+            }
+        }
+        Ok(labels)
+    }
+
+    fn with_labels<C: DecisionControl>(
+        graph: &PreparedEffectGraph,
+        labels: BTreeSet<EffectId>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let classes = labels
             .len()
             .checked_add(1)
@@ -221,6 +250,9 @@ impl Layout {
         for (&id, function) in &graph.functions {
             let table = 1usize << function.parameters().len();
             tables.insert(id, table);
+            if matches!(function.as_ref(), Function::Imported(_)) {
+                continue;
+            }
             for class in 0..classes {
                 for mask in 0..table {
                     cells.insert(Atom::Cell {
@@ -235,6 +267,7 @@ impl Layout {
             labels: labels.into_iter().collect(),
             tables,
             cells,
+            imports: BTreeMap::new(),
         })
     }
 
@@ -242,6 +275,7 @@ impl Layout {
         ClassLayout {
             labels: &self.labels,
             tables: &self.tables,
+            imports: &self.imports,
         }
     }
 }
@@ -288,7 +322,7 @@ impl LabelClasses<'_> {
 /// mathematical result, not a selected-call or semantic-equivalence certificate.
 pub(crate) struct PrincipalEffectClosure<'a> {
     graph: &'a PreparedEffectGraph,
-    layout: Layout,
+    layout: Arc<Layout>,
     functions: BTreeMap<u64, EffectRow>,
     coefficients: BTreeMap<Atom, Decision>,
     choices: BTreeSet<Atom>,
@@ -297,6 +331,13 @@ pub(crate) struct PrincipalEffectClosure<'a> {
 }
 
 impl PreparedEffectGraph {
+    pub(super) fn label_support<C: DecisionControl>(
+        &self,
+        work: &mut Work<'_, C>,
+    ) -> Result<BTreeSet<EffectId>, PreparedEffectFailure<C::Error>> {
+        Layout::support(self, &BTreeMap::new(), work)
+    }
+
     pub(crate) fn solve_principal<C: DecisionControl>(
         &self,
         control: &mut C,
@@ -338,20 +379,46 @@ impl PreparedEffectGraph {
         if !witnesses.exists(&choices, &mut work)?.is_constant(true) {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
+        let closed = PrincipalEffectClosure::reify(
+            self,
+            layout,
+            coefficients,
+            choices,
+            witnesses,
+            fixed,
+            &mut work,
+        )?;
+        // Recheck original typed terms against the canonical scheme projection
+        // under every retained witness, without choosing a discrete alternative.
+        closed.confirm(&mut work)?;
+        Ok(closed)
+    }
+}
+
+impl<'a> PrincipalEffectClosure<'a> {
+    fn reify<C: DecisionControl>(
+        graph: &'a PreparedEffectGraph,
+        layout: Arc<Layout>,
+        coefficients: BTreeMap<Atom, Decision>,
+        choices: BTreeSet<Atom>,
+        witnesses: Decision,
+        future_bindings: BTreeMap<u64, EffectRow>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let mut functions = BTreeMap::new();
-        for (&id, function) in &self.functions {
+        for (&id, function) in &graph.functions {
             let compilation = Compilation::new(
-                self,
+                graph,
                 layout.view(),
                 FormalOwner::Scheme(id),
                 function.parameters(),
             );
-            let parameters = compilation.parameters(&mut work)?;
-            let membership = compilation.application(id, &parameters, &mut work)?;
+            let parameters = compilation.parameters(work)?;
+            let membership = compilation.application(id, &parameters, work)?;
             let mut output = Vec::new();
             for decision in membership {
-                let decision = decision.substitute(&coefficients, &mut work)?;
-                let mapped = decision.map_references(&mut work, &mut |atom, _| match atom {
+                let decision = decision.substitute(&coefficients, work)?;
+                let mapped = decision.map_references(work, &mut |atom, _| match atom {
                     Atom::Formal {
                         owner: FormalOwner::Scheme(owner),
                         parameter,
@@ -369,7 +436,7 @@ impl PreparedEffectGraph {
                 work.charge(DecisionWork::Node)?;
                 overrides.insert(label.clone(), decision);
             }
-            let formula = EffectFormula::try_from_decisions(default, overrides, &mut work)?;
+            let formula = EffectFormula::try_from_decisions(default, overrides, work)?;
             functions.insert(
                 id,
                 EffectRow {
@@ -377,18 +444,14 @@ impl PreparedEffectGraph {
                 },
             );
         }
-        let closed = PrincipalEffectClosure {
-            graph: self,
+        Ok(PrincipalEffectClosure {
+            graph,
             layout,
             functions,
             coefficients,
             choices,
             witnesses,
-            future_bindings: fixed,
-        };
-        // Recheck original typed terms against the canonical scheme projection
-        // under every retained witness, without choosing a discrete alternative.
-        closed.confirm(&mut work)?;
-        Ok(closed)
+            future_bindings,
+        })
     }
 }

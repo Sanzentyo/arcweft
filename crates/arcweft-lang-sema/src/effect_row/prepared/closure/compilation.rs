@@ -188,18 +188,31 @@ impl<'a> Compilation<'a> {
         work: &mut Work<'_, C>,
     ) -> Result<Vec<Decision>, PreparedEffectFailure<C::Error>> {
         let table = self.layout.tables[&scheme];
+        let imported = match self.graph.functions[&scheme].as_ref() {
+            Function::Imported(_) => Some(
+                self.layout
+                    .imports
+                    .get(&scheme)
+                    .ok_or(PreparedEffectInvariant::UnclosedCell)?,
+            ),
+            _ => None,
+        };
         let mut result = Vec::new();
         for class in 0..self.layout.classes() {
             let mut frontier = Vec::new();
             for mask in 0..table {
-                frontier.push(Decision::variable(
-                    Atom::Cell {
-                        scheme,
-                        class,
-                        mask,
-                    },
-                    work,
-                )?);
+                frontier.push(if let Some(imported) = imported {
+                    imported.coefficient(self.layout, class, mask, work)?
+                } else {
+                    Decision::variable(
+                        Atom::Cell {
+                            scheme,
+                            class,
+                            mask,
+                        },
+                        work,
+                    )?
+                });
             }
             for argument in arguments {
                 let mut next = Vec::new();
@@ -273,6 +286,14 @@ impl<'a> Compilation<'a> {
                             domains.push(domain);
                         }
                         admitted = admitted.and(&self.whole(&domains, work)?, work)?;
+                    }
+                    if let Function::Imported(_) = definition {
+                        let imported = self
+                            .layout
+                            .imports
+                            .get(&function.reference().ordinal)
+                            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+                        admitted = admitted.and(&imported.principal(self.layout, work)?, work)?;
                     }
                     CompiledRow {
                         membership: self.application(

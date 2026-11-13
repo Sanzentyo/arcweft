@@ -16,7 +16,7 @@ pub(super) struct CompiledComponent {
 /// One completion boundary. Future coefficients remain parameters of both the
 /// least tuple and its principal domain; they are never minimized with locals.
 pub(super) struct ComponentCompletion {
-    pub(super) layout: Layout,
+    pub(super) layout: Arc<Layout>,
     pub(super) completion: ConditionalDecisionCompletion<Atom>,
     pub(super) coefficients: BTreeMap<Atom, Decision>,
     pub(super) choices: BTreeSet<Atom>,
@@ -27,6 +27,17 @@ impl CompiledComponent {
     pub(super) fn new<C: DecisionControl>(
         graph: &PreparedEffectGraph,
         fixed: &BTreeMap<u64, EffectRow>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let mut layout = Layout::new(graph, fixed, work)?;
+        layout.imports = imports::lower_imports(graph, &layout.labels, work)?;
+        Self::compile(graph, fixed, layout, work)
+    }
+
+    pub(super) fn compile<C: DecisionControl>(
+        graph: &PreparedEffectGraph,
+        fixed: &BTreeMap<u64, EffectRow>,
+        layout: Layout,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         for function in graph.functions.values() {
@@ -41,9 +52,11 @@ impl CompiledComponent {
                 return Err(PreparedEffectInvariant::SchemeState.into());
             }
         }
-        let layout = Layout::new(graph, fixed, work)?;
         let mut relation = Decision::constant(true);
         for (&id, function) in &graph.functions {
+            if matches!(function.as_ref(), Function::Imported(_)) {
+                continue;
+            }
             let mut compilation = Compilation::new(
                 graph,
                 layout.view(),
@@ -60,6 +73,7 @@ impl CompiledComponent {
                     .get(&id)
                     .map(|row| compilation.canonical_row(row, work))
                     .transpose()?,
+                Function::Imported(_) => unreachable!("derived imports have no cell equation"),
             };
             if let Some(body) = body {
                 let parameters = compilation.parameters(work)?;
@@ -177,9 +191,8 @@ impl CompiledComponent {
         let witnesses = relation.substitute(completion.lower_envelope(), work)?;
         for atom in witnesses.variables() {
             work.charge(DecisionWork::Visit)?;
-            if !self.choices.contains(atom)
-                && !(self.layout.cells.contains(atom) && !self.minimized.contains(atom))
-            {
+            let future = self.layout.cells.contains(atom) && !self.minimized.contains(atom);
+            if !self.choices.contains(atom) && !future {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             }
         }
@@ -194,12 +207,80 @@ impl CompiledComponent {
             coefficients.insert(cell.clone(), compilation::copy(decision, work)?);
         }
         Ok(ComponentCompletion {
-            layout: self.layout,
+            layout: Arc::new(self.layout),
             completion,
             coefficients,
             choices: self.choices,
             witnesses,
         })
+    }
+
+    /// A larger receiving basis does not grant extra exceptions to this child.
+    /// A new class is available only when an actual Future coefficient differs
+    /// from its outside/default coefficient at that class.
+    pub(super) fn restrict_support<C: DecisionControl>(
+        &mut self,
+        graph: &PreparedEffectGraph,
+        support: &BTreeSet<EffectId>,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        for (index, label) in self.layout.labels.iter().enumerate() {
+            if support.contains(label) {
+                continue;
+            }
+            let class = index + 1;
+            let mut admitted = Decision::constant(false);
+            for (&id, function) in &graph.functions {
+                if !function.is_future() {
+                    continue;
+                }
+                for mask in 0..self.layout.tables[&id] {
+                    let named = Decision::variable(
+                        Atom::Cell {
+                            scheme: id,
+                            class,
+                            mask,
+                        },
+                        work,
+                    )?;
+                    let default = Decision::variable(
+                        Atom::Cell {
+                            scheme: id,
+                            class: 0,
+                            mask,
+                        },
+                        work,
+                    )?;
+                    let differs = named.conditional(&default.not(work)?, &default, work)?;
+                    admitted = admitted.or(&differs, work)?;
+                }
+            }
+            for cell in &self.minimized {
+                let Atom::Cell {
+                    scheme,
+                    class: selected,
+                    mask,
+                } = cell
+                else {
+                    return Err(PreparedEffectInvariant::UnclosedCell.into());
+                };
+                if *selected != class {
+                    continue;
+                }
+                let named = Decision::variable(cell.clone(), work)?;
+                let default = Decision::variable(
+                    Atom::Cell {
+                        scheme: *scheme,
+                        class: 0,
+                        mask: *mask,
+                    },
+                    work,
+                )?;
+                let same = named.conditional(&default, &default.not(work)?, work)?;
+                self.relation = self.relation.and(&admitted.or(&same, work)?, work)?;
+            }
+        }
+        Ok(())
     }
 }
 
