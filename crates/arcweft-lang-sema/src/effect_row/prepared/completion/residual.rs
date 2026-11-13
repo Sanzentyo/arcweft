@@ -9,6 +9,11 @@ use super::*;
 
 mod view;
 pub(crate) use view::*;
+mod reduction;
+pub(crate) use reduction::{
+    ReducedEffectCompletion, ReducedEffectFunction, ReducedEffectPredicate,
+    ReducedEffectPredicateView, ResidualFunctionVariable, ResidualRowExpression,
+};
 #[cfg(test)]
 mod tests;
 

@@ -110,6 +110,9 @@ impl<'a> Iterator for ResidualImportBindings<'a> {
 }
 
 impl<'a> ResidualFunction<'a> {
+    pub(super) fn at(source: &'a ScopedEffectCompletion, id: u64) -> Self {
+        Self { source, id }
+    }
     pub(crate) fn parameters(self) -> &'a [GenericEffectReference] {
         self.source.graph.functions[&self.id].parameters()
     }
@@ -374,22 +377,19 @@ pub(crate) struct ResidualFunctionBody<'a> {
 }
 impl GuardedEffectFunction {
     pub(crate) fn residual(&self) -> ResidualFunctionBody<'_> {
-        let id = self.selected.reference().ordinal;
-        ResidualFunctionBody {
-            function: ResidualFunction {
-                source: &self.completion,
-                id,
-            },
-            principal: self.completion.principal(),
-            lower: self
-                .completion
+        ResidualFunctionBody::at(&self.completion, self.selected.reference().ordinal)
+    }
+}
+impl<'a> ResidualFunctionBody<'a> {
+    pub(super) fn at(source: &'a ScopedEffectCompletion, id: u64) -> Self {
+        Self {
+            function: ResidualFunction::at(source, id),
+            principal: source.principal(),
+            lower: source
                 .program
                 .lower
                 .get(&id)
-                .map(|&node| EffectResidualPredicate {
-                    source: &self.completion,
-                    node,
-                }),
+                .map(|&node| EffectResidualPredicate { source, node }),
         }
     }
 }

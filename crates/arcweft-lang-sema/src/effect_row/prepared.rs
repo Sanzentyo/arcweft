@@ -23,9 +23,11 @@ mod functions;
 use functions::{Function, FunctionRef};
 mod completion;
 pub(crate) use completion::residual::{
-    EffectResidualPredicate, EffectResidualPredicateView, ResidualFunction, ResidualFunctionBody,
-    ResidualFunctionRole, ResidualPreparedPredicate, ResidualPreparedPredicateView,
-    ResidualPreparedRow, ResidualPreparedRowView, ResidualRowScope,
+    EffectResidualPredicate, EffectResidualPredicateView, ReducedEffectCompletion,
+    ReducedEffectFunction, ReducedEffectPredicate, ReducedEffectPredicateView, ResidualFunction,
+    ResidualFunctionBody, ResidualFunctionRole, ResidualFunctionVariable,
+    ResidualPreparedPredicate, ResidualPreparedPredicateView, ResidualPreparedRow,
+    ResidualPreparedRowView, ResidualRowExpression, ResidualRowScope,
 };
 pub(crate) use completion::{
     GuardedEffectFunction, PreparedEffectImportedRef, ScopedEffectCompletion,
