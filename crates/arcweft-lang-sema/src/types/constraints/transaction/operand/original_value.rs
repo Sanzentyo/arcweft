@@ -8,10 +8,14 @@ use crate::types::constraints::{
     context::{TypeConstraintAccounting, TypeConstraintContext},
     lexical::ConstraintLexicalScope,
     references,
-    solution::{map_effects_with_control, map_term_with_control},
+    solution::{map_effects_with_control, map_predicate_with_control, map_term_with_control},
 };
 use crate::types::{
     ArrayLength, GenericConstReference, GenericTypeReference, TypeKind, TypeProjectionError,
+};
+use crate::{
+    effect_row::{EffectPredicate, EffectRow},
+    types::GenericEffectReference,
 };
 
 #[cfg(test)]
@@ -221,5 +225,79 @@ impl OriginalOperandValue for ArrayLength {
                     TypeConstraintRejection::UnresolvedType.into()
                 }
             })
+    }
+}
+
+impl OriginalProducerContext {
+    fn admit_primitive_effect<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        target: &ConstraintLexicalScope,
+        reference: &GenericEffectReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<EffectRow, TypeProjectionError<TypeConstraintError>> {
+        if let GenericEffectReference::Bound(bound) = reference {
+            self.scope().bound_effect(bound.depth(), bound.slot())?;
+        } else if !self.admits_parameter(&reference.clone().into()) {
+            return Err(TypeProjectionError::Control(
+                references::effect_out_of_scope(reference),
+            ));
+        }
+        let mapped = target
+            .effect_reference(
+                self.gamma(),
+                self.scope(),
+                target.shape(),
+                reference,
+                context,
+            )
+            .map_err(|error| {
+                TypeProjectionError::Control(
+                    TypeConstraintContext::<A, D>::binding_transport_error(
+                        error,
+                        reference.clone().into(),
+                    ),
+                )
+            })?;
+        Ok(EffectRow::open(crate::effects::EffectSet::new(), mapped))
+    }
+}
+
+impl OriginalOperandValue for EffectRow {
+    fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        target: &ConstraintLexicalScope,
+        original: &OriginalProducerContext,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        map_effects_with_control(self, 1, context, &|reference, context| {
+            original.admit_primitive_effect(target, reference, context)
+        })
+        .map_err(|error| match error {
+            TypeProjectionError::Control(error) => error,
+            TypeProjectionError::Instantiation(crate::types::TypeInstantiationError::Scope(
+                error,
+            )) => error.into(),
+            TypeProjectionError::Instantiation(_) => TypeConstraintRejection::UnresolvedType.into(),
+        })
+    }
+}
+
+impl OriginalOperandValue for EffectPredicate {
+    fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        target: &ConstraintLexicalScope,
+        original: &OriginalProducerContext,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        map_predicate_with_control(self, 1, context, &|reference, context| {
+            original.admit_primitive_effect(target, reference, context)
+        })
+        .map_err(|error| match error {
+            TypeProjectionError::Control(error) => error,
+            TypeProjectionError::Instantiation(crate::types::TypeInstantiationError::Scope(
+                error,
+            )) => error.into(),
+            TypeProjectionError::Instantiation(_) => TypeConstraintRejection::UnresolvedType.into(),
+        })
     }
 }

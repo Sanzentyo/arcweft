@@ -481,7 +481,6 @@ impl TypeConstraintSolution {
         D: ConstraintDomain,
     {
         effects.require_path(path)?;
-        let completed_effects = effects.completion();
         let source_bindings = path
             .bindings
             .iter()
@@ -655,7 +654,7 @@ impl TypeConstraintSolution {
         context.validate_type_and_const_completion(path)?;
 
         let effect_predicate = generic_context.reify_effect_predicate(
-            &completed_effects.predicate,
+            effects.predicate(),
             path,
             application,
             context,
@@ -669,16 +668,13 @@ impl TypeConstraintSolution {
                 .parameters()
                 .effect_reference(row.variable())
                 .expect("sealed effect parameter opening");
-            let value = completed_effects
-                .substitution
-                .get(&reference)
-                .ok_or_else(|| {
-                    super::effect_invariant(
-                        super::TypeConstraintEffectInvariantKind::MissingInherited,
-                        Some(row.variable().clone()),
-                    )
-                })?;
-            context.validate_effect_row(value, path.projection_view())?;
+            let value = effects.row(&reference).ok_or_else(|| {
+                super::effect_invariant(
+                    super::TypeConstraintEffectInvariantKind::MissingInherited,
+                    Some(row.variable().clone()),
+                )
+            })?;
+            context.validate_effect_row(value.value(), path.projection_view())?;
             let value = generic_context.reify_effect_row(value, path, application, context)?;
             effect_bindings.push((row.variable().clone(), value));
         }

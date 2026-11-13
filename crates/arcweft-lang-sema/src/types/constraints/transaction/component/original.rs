@@ -429,7 +429,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 }
             }
             for parameter in original.effects.original_variables() {
-                let Some(value) = effects.completion().substitution.get(parameter) else {
+                let Some(value) = effects.row(parameter) else {
                     continue;
                 };
                 context.enter_node()?;
@@ -442,7 +442,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 let value = original
                     .lineage
                     .scope
-                    .transport_row(scope, value, context)
+                    .transport_row(scope, value.value(), context)
                     .map_err(|error| {
                         scope_projection_failure(check.clone(), kind.clone(), error)
                     })?;

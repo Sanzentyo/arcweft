@@ -1062,6 +1062,10 @@ impl EffectSubstitution {
         self.0.get(variable)
     }
 
+    pub(crate) fn into_rows(self) -> impl Iterator<Item = (GenericEffectReference, EffectRow)> {
+        self.0.into_iter()
+    }
+
     /// The declaration substitution API has no work lease. It still uses the
     /// same transitive row resolution and simultaneous predicate substitution;
     /// bounded application/type folds supply their own DecisionControl instead.

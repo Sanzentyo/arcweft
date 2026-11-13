@@ -3,8 +3,14 @@
 use super::*;
 use crate::effect_row::{EffectPredicate, EffectRow};
 
+#[derive(Clone, Copy)]
+pub(in crate::types::constraints) enum ConstraintEffectField {
+    Row,
+    Predicate,
+}
+
 pub(in crate::types) struct ConstraintFunctionHeaderView<'a, D: ConstraintDomain> {
-    source: ConstraintOperandView<'a, D>,
+    pub(super) source: ConstraintOperandView<'a, D>,
     contents_scope: Arc<ConstraintLexicalScope>,
     row: &'a EffectRow,
     predicate: &'a EffectPredicate,

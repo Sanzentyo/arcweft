@@ -158,14 +158,18 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             }
             None => (None, None),
         };
+        let input_header = self.source.function_header_in_scope(&self.contents_scope)?;
         let header = match effects {
-            ConstraintOperandEffects::Closed(owner) => {
-                match self.source.function_header_in_scope(&self.contents_scope)? {
-                    Some(header) => owner.project_header(&header, context)?,
-                    None => ConstraintProjectedEffectHeader::Original,
+            ConstraintOperandEffects::Closed(owner) => match input_header {
+                Some(header) => owner.project_header(&header, context)?,
+                None => ConstraintProjectedEffectHeader::Original,
+            },
+            ConstraintOperandEffects::Original => {
+                if let Some(header) = input_header {
+                    header.admit(context)?;
                 }
+                ConstraintProjectedEffectHeader::Original
             }
-            ConstraintOperandEffects::Original => ConstraintProjectedEffectHeader::Original,
         };
         let mut fields = (length_value, header);
         let value = self.source.value().constraint_shape().rebuild_with(

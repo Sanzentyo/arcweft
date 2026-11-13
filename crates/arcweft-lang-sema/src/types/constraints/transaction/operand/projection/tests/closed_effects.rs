@@ -128,7 +128,7 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
         panic!("the header retains its exact original operand port")
     };
     assert!(Arc::ptr_eq(root, &input.value));
-    assert!(effects.completion().substitution.get(&keys[1]).is_some());
+    assert!(effects.row(&keys[1]).is_some());
     drop(input);
     drop(path);
     drop(effects);

@@ -8,8 +8,10 @@ mod authority;
 mod header;
 mod rebuild;
 mod source_expectation;
-pub(in crate::types::constraints) use header::ConstraintEffectHeaderDerivation;
 pub(in crate::types) use header::ConstraintFunctionHeaderView;
+pub(in crate::types::constraints) use header::{
+    ConstraintEffectField, ConstraintEffectHeaderDerivation,
+};
 pub(in crate::types::constraints) use rebuild::{
     ConstraintOperandDerivation, ConstraintOperandEffects, ConstraintOperandRebuild,
     ConstraintProjectedOperand,

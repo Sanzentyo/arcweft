@@ -11,6 +11,7 @@ mod admission;
 mod authority;
 mod bindings;
 mod closed_effects;
+mod effect_admission;
 mod normalization;
 mod result_uses;
 mod source_expectations;

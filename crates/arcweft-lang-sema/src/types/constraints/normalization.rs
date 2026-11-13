@@ -158,6 +158,9 @@ pub(in crate::types) use effects::ConstraintClosedEffects;
 pub(in crate::types::constraints) use effects::{
     ConstraintClosedEffectHeader, ConstraintProjectedEffectHeader,
 };
+pub(in crate::types::constraints) use effects::{
+    ConstraintEffectCompletionContext, ConstraintEffectPrimitive,
+};
 pub(in crate::types) use projection::project_closed_operand;
 pub(in crate::types::constraints) use projection::project_closed_type;
 pub(super) use projection::project_type;

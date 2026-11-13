@@ -565,7 +565,18 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
                 .parameters()
                 .type_reference(&parameter(0).into())
                 .expect("callee type");
-            path.bindings.insert(key, context.fixture_operand(ty));
+            let original = context
+                .fixture_original_context_with_rigid(
+                    crate::types::constraints::OriginalRigidScope {
+                        types: &[],
+                        consts: &[],
+                        effects: std::slice::from_ref(&reference),
+                        imported: None,
+                    },
+                )
+                .unwrap();
+            path.bindings
+                .insert(key, context.fixture_operand_in(&original, &ty).unwrap());
         }
         let effect_key = path
             .root_scope()

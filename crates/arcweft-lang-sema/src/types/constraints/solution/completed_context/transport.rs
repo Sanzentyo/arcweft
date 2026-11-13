@@ -147,14 +147,20 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        row: &EffectRow,
+        row: &super::super::ConstraintOperand<D, EffectRow>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<EffectRow>, TypeConstraintError> {
-        let mapping = self.reference_map(application, context, Direction::Reify)?;
-        let value = mapping.map_row(row, path, application, context)?;
-        Ok(mapping.finish(value))
+        context.with_original_scope(row.scope().clone(), |context| {
+            for reference in row.value().variables()? {
+                context.enter_node()?;
+                row.admit_effect_reference(reference, context)?;
+            }
+            let mapping = self.reference_map(application, context, Direction::Reify)?;
+            let value = mapping.map_row(row.value(), path, application, context)?;
+            Ok(mapping.finish(value))
+        })
     }
 
     pub(in crate::types::constraints::solution) fn reopen_effect_row<
@@ -176,14 +182,20 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        predicate: &EffectPredicate,
+        predicate: &super::super::ConstraintOperand<D, EffectPredicate>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<EffectPredicate>, TypeConstraintError> {
-        let mapping = self.reference_map(application, context, Direction::Reify)?;
-        let value = mapping.map_predicate(predicate, path, application, context)?;
-        Ok(mapping.finish(value))
+        context.with_original_scope(predicate.scope().clone(), |context| {
+            for reference in predicate.value().variables() {
+                context.enter_node()?;
+                predicate.admit_effect_reference(reference, context)?;
+            }
+            let mapping = self.reference_map(application, context, Direction::Reify)?;
+            let value = mapping.map_predicate(predicate.value(), path, application, context)?;
+            Ok(mapping.finish(value))
+        })
     }
 
     pub(in crate::types::constraints::solution) fn reopen_effect_predicate<

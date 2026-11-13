@@ -173,6 +173,10 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
     ]);
     let operand = context.fixture_operand(original.clone());
     let length_operand = context.fixture_operand(length.clone());
+    let effect = context.lexical_scope().bound_effect(0, 0).unwrap();
+    let row_operand = context.fixture_operand(EffectRow::open(EffectSet::new(), effect.clone()));
+    let predicate_value = predicate(&effect, &mut context);
+    let predicate_operand = context.fixture_operand(predicate_value);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
     let receiving = context.capture_lexical_scope().unwrap();
     let completed = generic
@@ -184,6 +188,14 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
         .reify_length(&length_operand, &path, application, &mut context)
         .unwrap();
     assert_eq!(completed_length.value(), &length);
+    let completed_row = generic
+        .reify_effect_row(&row_operand, &path, application, &mut context)
+        .unwrap();
+    assert_eq!(completed_row.value(), row_operand.value());
+    let completed_predicate = generic
+        .reify_effect_predicate(&predicate_operand, &path, application, &mut context)
+        .unwrap();
+    assert_eq!(completed_predicate.value(), predicate_operand.value());
     assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
     cancellation.store(true, std::sync::atomic::Ordering::Relaxed);
     assert!(
@@ -196,9 +208,31 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
             .reify_length(&length_operand, &path, application, &mut context)
             .is_err()
     );
+    assert!(
+        generic
+            .reify_effect_row(&row_operand, &path, application, &mut context)
+            .is_err()
+    );
+    assert!(
+        generic
+            .reify_effect_predicate(&predicate_operand, &path, application, &mut context)
+            .is_err()
+    );
     cancellation.store(false, std::sync::atomic::Ordering::Relaxed);
     assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
     context.restore_binder_scope(enclosing);
+    assert_eq!(
+        generic
+            .reopen_effect_row(&completed_row, &path, application, &mut context)
+            .unwrap(),
+        *row_operand.value()
+    );
+    assert_eq!(
+        generic
+            .reopen_effect_predicate(&completed_predicate, &path, application, &mut context)
+            .unwrap(),
+        *predicate_operand.value()
+    );
     assert_eq!(
         generic
             .reopen_length(&completed_length, &path, application, &mut context)
@@ -221,16 +255,55 @@ fn predicate(reference: &GenericEffectReference, context: &mut Context<'_>) -> E
 }
 
 #[test]
-fn completed_effect_rows_and_predicates_cannot_reopen_with_a_siblings_capture() {
+fn effect_reification_rejects_receiver_visible_references_without_operand_gamma() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path, references) = fixture(&cancellation);
     let application = path.root_scope();
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
+    let row = context.fixture_operand(EffectRow::open(
+        EffectSet::new(),
+        references[0].effect.clone(),
+    ));
+    let predicate_value = predicate(&references[0].effect, &mut context);
+    let predicate = context.fixture_operand(predicate_value);
+    let receiving = context.capture_lexical_scope().unwrap();
+    assert_eq!(
+        generic.reify_effect_row(&row, &path, application, &mut context),
+        Err(references::effect_out_of_scope(&references[0].effect))
+    );
+    assert_eq!(
+        generic.reify_effect_predicate(&predicate, &path, application, &mut context),
+        Err(references::effect_out_of_scope(&references[0].effect))
+    );
+    assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
+}
+
+#[test]
+fn completed_effect_rows_and_predicates_cannot_reopen_with_a_siblings_capture() {
+    let cancellation = AtomicBool::new(false);
+    let (mut context, path, references) = fixture(&cancellation);
+    let application = path.root_scope();
+    let declared_effects = references.each_ref().map(|r| r.effect.clone());
+    let original = context
+        .fixture_original_context_with_rigid(crate::types::constraints::OriginalRigidScope {
+            types: &[],
+            consts: &[],
+            effects: &declared_effects,
+            imported: None,
+        })
+        .unwrap();
+    let generic =
+        CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
     let rows = references.each_ref().map(|r| {
         generic
             .reify_effect_row(
-                &EffectRow::open(EffectSet::new(), r.effect.clone()),
+                &context
+                    .fixture_operand_in(
+                        &original,
+                        &EffectRow::open(EffectSet::new(), r.effect.clone()),
+                    )
+                    .unwrap(),
                 &path,
                 application,
                 &mut context,
@@ -256,7 +329,12 @@ fn completed_effect_rows_and_predicates_cannot_reopen_with_a_siblings_capture() 
     let predicates = references.each_ref().map(|r| {
         let predicate = predicate(&r.effect, &mut context);
         generic
-            .reify_effect_predicate(&predicate, &path, application, &mut context)
+            .reify_effect_predicate(
+                &context.fixture_operand_in(&original, &predicate).unwrap(),
+                &path,
+                application,
+                &mut context,
+            )
             .unwrap()
     });
     for value in &predicates {
@@ -282,11 +360,25 @@ fn inserted_result_predicate_seals_its_own_free_references() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path, references) = fixture(&cancellation);
     let application = path.root_scope();
+    let declared_effects = references.each_ref().map(|r| r.effect.clone());
+    let original = context
+        .fixture_original_context_with_rigid(crate::types::constraints::OriginalRigidScope {
+            types: &[],
+            consts: &[],
+            effects: &declared_effects,
+            imported: None,
+        })
+        .unwrap();
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
     let predicate = predicate(&references[0].effect, &mut context);
     let incoming = generic
-        .reify_effect_predicate(&predicate, &path, application, &mut context)
+        .reify_effect_predicate(
+            &context.fixture_operand_in(&original, &predicate).unwrap(),
+            &path,
+            application,
+            &mut context,
+        )
         .unwrap();
     let value = generic
         .reify_type(
@@ -322,11 +414,22 @@ fn canonical_result_predicate_prunes_only_the_root_header_captures() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path, references) = fixture(&cancellation);
     let application = path.root_scope();
+    let declared_effects = references.each_ref().map(|r| r.effect.clone());
+    let original = context
+        .fixture_original_context_with_rigid(crate::types::constraints::OriginalRigidScope {
+            types: &[],
+            consts: &[],
+            effects: &declared_effects,
+            imported: None,
+        })
+        .unwrap();
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
     let incoming = generic
         .reify_effect_predicate(
-            &EffectPredicate::impossible(),
+            &context
+                .fixture_operand_in(&original, &EffectPredicate::impossible())
+                .unwrap(),
             &path,
             application,
             &mut context,

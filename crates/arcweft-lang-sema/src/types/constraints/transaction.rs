@@ -39,8 +39,8 @@ pub(in crate::types) use operand::{
     ConstraintOperandView,
 };
 pub(in crate::types::constraints) use operand::{
-    ConstraintEffectHeaderDerivation, ConstraintOperandChildren, ConstraintOperandEffects,
-    ConstraintOperandRebuild, ConstraintProjectedOperand,
+    ConstraintEffectField, ConstraintEffectHeaderDerivation, ConstraintOperandChildren,
+    ConstraintOperandEffects, ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
 use operand::{ResolvedConstraintResult, ResolvedConstraintSource};
 

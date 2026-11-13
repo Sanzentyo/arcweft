@@ -15,8 +15,8 @@ pub(in crate::types) use projection::{
     ConstraintConstOperandView, ConstraintFunctionHeaderView, ConstraintOperandView,
 };
 pub(in crate::types::constraints) use projection::{
-    ConstraintEffectHeaderDerivation, ConstraintOperandEffects, ConstraintOperandRebuild,
-    ConstraintProjectedOperand,
+    ConstraintEffectField, ConstraintEffectHeaderDerivation, ConstraintOperandEffects,
+    ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
 
 pub(super) enum ResolvedConstraintSource<D: ConstraintDomain> {
@@ -135,6 +135,10 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
 /// authorization also requires the checked value and binding-flow migration.
 enum ConstraintOperandOrigin<D: ConstraintDomain> {
     Original(OriginalProducerContext),
+    ComputedEffect {
+        context: Arc<super::super::normalization::ConstraintEffectCompletionContext<D>>,
+        support: super::super::application::ImportedGenericParameterScopeLease,
+    },
     Parameter(super::super::application::ApplicationParameterScopeLease),
     Template(Arc<ConstraintApplicationScope<D>>),
     Source {
@@ -207,6 +211,17 @@ impl<D: ConstraintDomain, T> Clone for ConstraintOperand<D, T> {
 }
 
 impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
+    pub(in crate::types::constraints) fn from_effect_primitive(
+        primitive: super::super::normalization::ConstraintEffectPrimitive<D, T>,
+    ) -> Self {
+        let (value, context, support) = primitive.into_parts();
+        Self {
+            value,
+            scope: Arc::clone(context.scope()),
+            origin: Arc::new(ConstraintOperandOrigin::ComputedEffect { context, support }),
+        }
+    }
+
     pub(in crate::types::constraints::transaction) fn template(
         value: T,
         scope: Arc<ConstraintLexicalScope>,
@@ -418,6 +433,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
     fn original_context(&self) -> &OriginalProducerContext {
         match self {
+            ConstraintOperandOrigin::ComputedEffect { context, .. } => context.original_context(),
             ConstraintOperandOrigin::Original(original)
             | ConstraintOperandOrigin::Source { original, .. }
             | ConstraintOperandOrigin::Completed { original, .. } => original,
