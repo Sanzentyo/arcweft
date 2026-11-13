@@ -80,7 +80,20 @@ fn recursive_binding_to_the_same_declaration_is_free_and_issuer_independent() {
         let caller = GenericTypeReference::Free(parameter(0));
         assert_ne!(callee, caller);
         {
-            path.bindings = context.fixture_bindings([(callee, TypeKind::GenericParam(caller))]);
+            let original = context
+                .fixture_original_context_with_rigid(
+                    crate::types::constraints::OriginalRigidScope {
+                        types: &[caller.clone()],
+                        consts: &[],
+                        effects: &[],
+                        imported: None,
+                    },
+                )
+                .unwrap();
+            let value = context
+                .fixture_operand_in(&original, &TypeKind::GenericParam(caller))
+                .unwrap();
+            path.bindings = [(callee, value)].into();
             path.const_bindings = BTreeMap::new();
             TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
         }
@@ -167,13 +180,25 @@ fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
         EffectRow::closed(crate::effects::EffectSet::new()),
     );
     {
-        path.bindings = context.fixture_bindings([(
+        // This prepared template's contract independently declares its caller
+        // capture and the actual application's future parameters.
+        let owner = path
+            .applications
+            .require_application_owner(path.root_id())
+            .unwrap();
+        let value = crate::types::constraints::transaction::ConstraintOperand::fixture_template(
+            value,
+            std::sync::Arc::new(context.capture_lexical_scope().unwrap()),
+            owner,
+        );
+        path.bindings = [(
             path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("bound type"),
             value,
-        )]);
+        )]
+        .into();
         path.const_bindings = BTreeMap::new();
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }

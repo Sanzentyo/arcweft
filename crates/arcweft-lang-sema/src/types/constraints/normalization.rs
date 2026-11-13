@@ -151,6 +151,7 @@ pub(in crate::types) use alias::{
 };
 
 mod projection;
+pub(in crate::types::constraints) use projection::project_const_operand;
 pub(in crate::types::constraints) use projection::{close_type_operand, seal_type_operand};
 mod effects;
 pub(in crate::types) use effects::ConstraintClosedEffects;
@@ -159,8 +160,8 @@ pub(in crate::types::constraints) use effects::{
 };
 pub(in crate::types) use projection::project_closed_operand;
 pub(in crate::types::constraints) use projection::project_closed_type;
+pub(super) use projection::project_type;
 use projection::{project_array_length, project_type_inner};
-pub(super) use projection::{project_const_argument, project_type};
 
 pub(crate) fn const_occurs_in<A, D>(
     value: &ArrayLength,
@@ -639,8 +640,13 @@ where
         let mut visiting = BTreeSet::new();
         source_view.const_binding(parameter)?;
         context.with_original_scope(value.scope().clone(), |context| {
-            let projected =
-                projection::seal_const_operand(value.view(), source_view, &mut visiting, context)?;
+            let projected = projection::project_const_operand(
+                value.view(),
+                source_view,
+                ConstraintClosurePolicy::Hint,
+                &mut visiting,
+                context,
+            )?;
             context.add_sealed_const_binding(&mut sealed, parameter.clone(), projected)
         })?;
     }

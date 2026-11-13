@@ -161,9 +161,10 @@ where
     )
 }
 
-pub(super) fn seal_const_operand<'ty, A, D>(
+pub(in crate::types::constraints) fn project_const_operand<'ty, A, D>(
     input: ConstraintConstOperandView<'ty, D>,
     view: ConstraintProjectionView<'ty, D>,
+    policy: ConstraintClosurePolicy,
     visiting: &mut BTreeSet<GenericConstReference>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintOperand<D, ArrayLength>, TypeConstraintError>
@@ -176,7 +177,7 @@ where
         project_length_fold::<A, D, RetainOrigins>(
             input,
             view,
-            ConstraintClosurePolicy::Hint,
+            policy,
             context,
             visiting,
             &mut BTreeSet::new(),
@@ -232,6 +233,7 @@ where
                     return Err(TypeConstraintRejection::UnresolvedType.into());
                 }
                 TypeConstraintShape::Generic(parameter) => {
+                    M::admit_type_reference(&current, parameter, context)?;
                     let eligibility = context.parameter_eligibility(parameter, view).ok_or_else(
                         || {
                             TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
@@ -446,26 +448,6 @@ fn allows_unbound_type(
     }
 }
 
-pub(in crate::types::constraints) fn project_const_argument<A, D>(
-    value: &ArrayLength,
-    view: ConstraintProjectionView<'_, D>,
-    policy: ConstraintClosurePolicy,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ArrayLength, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    project_array_length(
-        value,
-        view,
-        policy,
-        context,
-        &mut BTreeSet::new(),
-        &mut BTreeSet::new(),
-    )
-}
-
 pub(super) fn project_array_length<'ty, A, D>(
     length: &'ty ArrayLength,
     view: ConstraintProjectionView<'ty, D>,
@@ -502,6 +484,7 @@ where
             match M::length(&current) {
                 ArrayLength::Const(_) => return Ok(M::const_leaf(&current)),
                 ArrayLength::Generic(parameter) => {
+                    M::admit_const_reference(&current, parameter, context)?;
                     let eligibility = context
                         .const_parameter_eligibility(parameter, view)
                         .ok_or_else(|| {

@@ -7,6 +7,7 @@ use crate::types::constraints::{
 use crate::types::{GenericBinder, GenericTypeReference};
 use std::sync::atomic::AtomicBool;
 
+mod admission;
 mod authority;
 mod bindings;
 mod closed_effects;

@@ -18,6 +18,16 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind;
     fn length(input: &Self::ConstInput) -> &'ty ArrayLength;
+    fn admit_type_reference<A: TypeConstraintAccounting>(
+        input: &Self::TypeInput,
+        reference: &GenericTypeReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError>;
+    fn admit_const_reference<A: TypeConstraintAccounting>(
+        input: &Self::ConstInput,
+        reference: &GenericConstReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError>;
     fn type_binding(binding: &'ty ConstraintOperand<D>) -> Self::TypeInput;
     fn const_binding(binding: &'ty ConstraintOperand<D, ArrayLength>) -> Self::ConstInput;
     fn array_length(
@@ -70,6 +80,21 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     type TypeOutput = TypeKind;
     type ConstOutput = ArrayLength;
     type Effects = ConstraintOperandEffects<D>;
+
+    fn admit_type_reference<A: TypeConstraintAccounting>(
+        _: &Self::TypeInput,
+        _: &GenericTypeReference,
+        _: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        Ok(())
+    }
+    fn admit_const_reference<A: TypeConstraintAccounting>(
+        _: &Self::ConstInput,
+        _: &GenericConstReference,
+        _: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        Ok(())
+    }
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind {
         input
@@ -174,6 +199,21 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
     type TypeOutput = ConstraintProjectedOperand<D, TypeKind>;
     type ConstOutput = ConstraintProjectedOperand<D, ArrayLength>;
     type Effects = ConstraintOperandEffects<D>;
+
+    fn admit_type_reference<A: TypeConstraintAccounting>(
+        input: &Self::TypeInput,
+        reference: &GenericTypeReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        input.admit_type_reference(reference, context)
+    }
+    fn admit_const_reference<A: TypeConstraintAccounting>(
+        input: &Self::ConstInput,
+        reference: &GenericConstReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        input.admit_const_reference(reference, context)
+    }
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind {
         input.value()

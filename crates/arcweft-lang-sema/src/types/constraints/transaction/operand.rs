@@ -207,6 +207,27 @@ impl<D: ConstraintDomain, T> Clone for ConstraintOperand<D, T> {
 }
 
 impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
+    pub(in crate::types::constraints::transaction) fn template(
+        value: T,
+        scope: Arc<ConstraintLexicalScope>,
+        owner: &Arc<ConstraintApplicationScope<D>>,
+    ) -> Self {
+        Self {
+            value: Arc::new(value),
+            scope,
+            origin: Arc::new(ConstraintOperandOrigin::Template(Arc::clone(owner))),
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::types::constraints) fn fixture_template(
+        value: T,
+        scope: Arc<ConstraintLexicalScope>,
+        owner: &Arc<ConstraintApplicationScope<D>>,
+    ) -> Self {
+        Self::template(value, scope, owner)
+    }
+
     fn valid_alias_steps(
         steps: &[ConstraintAliasStep<D, T>],
         terminal: &Self,
@@ -280,18 +301,6 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
         });
         Ok(self)
     }
-    pub(super) fn template(
-        value: TypeKind,
-        scope: Arc<ConstraintLexicalScope>,
-        owner: &Arc<ConstraintApplicationScope<D>>,
-    ) -> Self {
-        Self {
-            value: Arc::new(value),
-            scope,
-            origin: Arc::new(ConstraintOperandOrigin::Template(Arc::clone(owner))),
-        }
-    }
-
     pub(super) fn source(
         value: TypeKind,
         scope: Arc<ConstraintLexicalScope>,

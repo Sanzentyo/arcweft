@@ -107,7 +107,7 @@ fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
     let lengths = references.each_ref().map(|r| {
         generic
             .reify_length(
-                &ArrayLength::Generic(r.length.clone()),
+                &context.fixture_operand(ArrayLength::Generic(r.length.clone())),
                 &path,
                 application,
                 &mut context,
@@ -143,17 +143,22 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
         &cancellation,
     )
     .into_parts();
-    let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 1));
+    let outer = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
     let application = context.fixture_application_scope((), parameters).unwrap();
     let path = context.start_path(application).unwrap();
     let application = path.root_scope();
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
     let ambient = context.lexical_scope().bound_type(0, 0).unwrap();
-    let own = GenericBinder::new(1, 0, 1);
+    let length = ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap());
+    let own = GenericBinder::new(1, 1, 1);
     let nested = context.lexical_scope().with_binder(own);
     let original = TypeKind::Tuple(vec![
         TypeKind::GenericParam(ambient),
+        TypeKind::Array {
+            item: Box::new(TypeKind::Unit),
+            len: length.clone(),
+        },
         TypeKind::function_with_binder(
             own,
             [TypeKind::GenericParam(nested.bound_type(0, 0).unwrap())],
@@ -167,13 +172,18 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
         ),
     ]);
     let operand = context.fixture_operand(original.clone());
-    let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 1));
+    let length_operand = context.fixture_operand(length.clone());
+    let enclosing = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
     let receiving = context.capture_lexical_scope().unwrap();
     let completed = generic
         .reify_type(&operand, &path, application, None, &mut context)
         .unwrap();
     assert_eq!(completed.value(), &original);
     assert!(completed.captures().parameters().is_empty());
+    let completed_length = generic
+        .reify_length(&length_operand, &path, application, &mut context)
+        .unwrap();
+    assert_eq!(completed_length.value(), &length);
     assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
     cancellation.store(true, std::sync::atomic::Ordering::Relaxed);
     assert!(
@@ -181,9 +191,20 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
             .reify_type(&operand, &path, application, None, &mut context)
             .is_err()
     );
+    assert!(
+        generic
+            .reify_length(&length_operand, &path, application, &mut context)
+            .is_err()
+    );
     cancellation.store(false, std::sync::atomic::Ordering::Relaxed);
     assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
     context.restore_binder_scope(enclosing);
+    assert_eq!(
+        generic
+            .reopen_length(&completed_length, &path, application, &mut context)
+            .unwrap(),
+        length
+    );
     assert_eq!(
         generic
             .reopen_type(&completed, &path, application, &mut context)

@@ -3,6 +3,7 @@
 use super::*;
 use crate::types::constraints::shape::TypeConstraintChildren;
 
+mod admission;
 mod authority;
 mod header;
 mod rebuild;

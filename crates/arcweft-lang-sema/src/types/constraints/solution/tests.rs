@@ -136,21 +136,31 @@ pub(super) fn complete(
 ) -> TypeConstraintSolution {
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path) = context(scope, &cancellation).into_path();
+    let original = context
+        .fixture_original_context_with_rigid(crate::types::constraints::OriginalRigidScope {
+            types: &[parameter(0).into(), parameter(1).into()],
+            consts: &[constant().into()],
+            effects: &[],
+            imported: None,
+        })
+        .unwrap();
     {
-        path.bindings = context.fixture_bindings([(
+        path.bindings = [(
             path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("callee type"),
-            ty,
-        )]);
-        path.const_bindings = context.fixture_bindings([(
+            context.fixture_operand_in(&original, &ty).unwrap(),
+        )]
+        .into();
+        path.const_bindings = [(
             path.root_scope()
                 .parameters()
                 .const_reference(&(constant()).clone().into())
                 .expect("callee constant"),
-            length,
-        )]);
+            context.fixture_operand_in(&original, &length).unwrap(),
+        )]
+        .into();
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
     }
     .expect("completed application")

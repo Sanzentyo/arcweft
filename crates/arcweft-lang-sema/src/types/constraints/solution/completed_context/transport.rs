@@ -101,21 +101,23 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        length: &ArrayLength,
+        length: &super::super::ConstraintOperand<D, ArrayLength>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<ArrayLength>, TypeConstraintError> {
-        let mapping = self.reference_map(application, context, Direction::Reify)?;
-        let value = mapping.length(
-            length,
-            mapping.source_scope(),
-            mapping.target_scope(),
-            path,
-            application,
-            context,
-        )?;
-        Ok(mapping.finish(value))
+        context.with_original_scope(length.scope().clone(), |context| {
+            let mapping = self.reference_map(application, context, Direction::Reify)?;
+            let value = mapping.length(
+                length.value(),
+                mapping.source_scope(),
+                mapping.target_scope(),
+                path,
+                application,
+                context,
+            )?;
+            Ok(mapping.finish(value))
+        })
     }
 
     pub(in crate::types::constraints::solution) fn reopen_length<

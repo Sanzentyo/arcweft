@@ -184,14 +184,20 @@ fn project_specialization_composes_residual_rows_and_recursive_caller_values_sim
     let length = opening.const_reference(&constant().into()).unwrap();
     path.bindings.insert(
         first,
-        context.fixture_operand(TypeKind::Tuple(vec![
-            TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter(0)))),
-            TypeKind::GenericParam(future),
-            TypeKind::Array {
-                item: Box::new(TypeKind::Bool),
-                len: ArrayLength::Generic(length),
-            },
-        ])),
+        crate::types::constraints::transaction::ConstraintOperand::fixture_template(
+            TypeKind::Tuple(vec![
+                TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter(0)))),
+                TypeKind::GenericParam(future),
+                TypeKind::Array {
+                    item: Box::new(TypeKind::Bool),
+                    len: ArrayLength::Generic(length),
+                },
+            ]),
+            std::sync::Arc::new(context.capture_lexical_scope().unwrap()),
+            path.applications
+                .require_application_owner(path.root_id())
+                .unwrap(),
+        ),
     );
     let prefix =
         TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context).unwrap();

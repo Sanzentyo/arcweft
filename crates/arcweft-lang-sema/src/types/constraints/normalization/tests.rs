@@ -340,14 +340,16 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
     let (mut const_context, mut const_context_path) =
         context(scope, &cancellation, 10_001).into_path();
     const_context_path.const_bindings = const_context.fixture_bindings(bindings);
-    let projected = super::project_const_argument(
-        &ArrayLength::Generic(parameters[0].clone()),
+    let input = const_context.fixture_operand(ArrayLength::Generic(parameters[0].clone()));
+    let projected = super::project_const_operand(
+        input.view(),
         const_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
+        &mut BTreeSet::new(),
         &mut const_context,
     )
     .expect("transitive constant aliases do not consume the Rust call stack");
-    assert_eq!(projected, ArrayLength::Const(37));
+    assert_eq!(projected.value(), &ArrayLength::Const(37));
     assert_eq!(const_context.enter_node(), exhausted);
 }
 

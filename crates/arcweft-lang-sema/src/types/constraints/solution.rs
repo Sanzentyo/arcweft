@@ -18,7 +18,7 @@ use super::super::{
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
 use super::context::{CompletedParameterScope, TypeConstraintAccounting, TypeConstraintContext};
 use super::normalization::{
-    ConstraintClosedEffects, project_closed_operand, project_const_argument, project_type,
+    ConstraintClosedEffects, project_closed_operand, project_const_operand, project_type,
     validate_selected_call_self,
 };
 use super::{
@@ -113,6 +113,28 @@ pub(crate) struct TypeConstraintSolution {
 }
 
 impl TypeConstraintSolution {
+    pub(in crate::types::constraints) fn binding_captures(
+        &self,
+        binding: &super::ConstraintGenericParameterId,
+    ) -> Option<&super::application::RetainedRigidGenericScope> {
+        match binding {
+            super::ConstraintGenericParameterId::Type(key) => self
+                .bindings
+                .binary_search_by(|row| row.parameter.cmp(key))
+                .ok()
+                .map(|index| self.bindings[index].value.captures()),
+            super::ConstraintGenericParameterId::Const(key) => self
+                .const_bindings
+                .binary_search_by(|row| row.parameter.cmp(key))
+                .ok()
+                .map(|index| self.const_bindings[index].value.captures()),
+            super::ConstraintGenericParameterId::Effect(key) => self
+                .effect_bindings
+                .binary_search_by(|row| row.variable.cmp(key))
+                .ok()
+                .map(|index| self.effect_bindings[index].value.captures()),
+        }
+    }
     pub(crate) fn residual_scope(&self) -> &GenericScope {
         self.context.residual.scope()
     }
@@ -415,13 +437,27 @@ impl TypeConstraintSolution {
                 ));
             }
         }
+        // Claimed-completed seeds are templates of this explicitly supplied
+        // application contract, rather than values of a ground source Γ.
+        let operand_scope = Arc::new(context.capture_lexical_scope()?);
+        let owner = applications.require_application_owner(application.id())?;
         path.bindings = bindings
             .into_iter()
-            .map(|(key, value)| (key, context.fixture_operand(value)))
+            .map(|(key, value)| {
+                (
+                    key,
+                    ConstraintOperand::fixture_template(value, Arc::clone(&operand_scope), owner),
+                )
+            })
             .collect();
         path.const_bindings = const_bindings
             .into_iter()
-            .map(|(key, value)| (key, context.fixture_operand(value)))
+            .map(|(key, value)| {
+                (
+                    key,
+                    ConstraintOperand::fixture_template(value, Arc::clone(&operand_scope), owner),
+                )
+            })
             .collect();
         let effects = ConstraintClosedEffects::for_path(path, context)?;
         Self::seal_application(
@@ -587,22 +623,26 @@ impl TypeConstraintSolution {
                 ));
             }
             let reified = context.with_original_scope(owner, |context| {
-                let projected = project_const_argument(
-                    value.value(),
+                let projected = project_const_operand(
+                    value.view(),
                     path.projection_view(),
                     ConstraintClosurePolicy::SolutionCompletion,
+                    &mut std::collections::BTreeSet::new(),
                     context,
                 )
                 .map_err(|error| {
                     map_completed_canonical_error(error, parameter.clone().into(), input)
                 })?;
-                if input.requires_canonical_claim() && &projected != value.value() {
+                if input.requires_canonical_claim() && projected.value() != value.value() {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::NonCanonical,
                         Some(parameter.clone().into()),
                     ));
                 }
-                if matches!(projected, ArrayLength::Error(_) | ArrayLength::Inferred) {
+                if matches!(
+                    projected.value(),
+                    ArrayLength::Error(_) | ArrayLength::Inferred
+                ) {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::Forbidden,
                         Some(parameter.clone().into()),

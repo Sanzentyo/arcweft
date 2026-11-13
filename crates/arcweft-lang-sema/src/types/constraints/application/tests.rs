@@ -403,10 +403,13 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
                 ),
             ),
         ] {
+            let original = child.lineage.original.clone();
+            let expected = context.fixture_operand_in(&original, &expected).unwrap();
+            let actual = context.fixture_operand_in(&original, &actual).unwrap();
             assert!(
-                fixture_relate_selected_call(
-                    &expected,
-                    &actual,
+                crate::types::constraints::relate_selected_call(
+                    &expected.view(),
+                    &actual.view(),
                     context.fork_path(&child).unwrap(),
                     &mut context,
                     ConstraintAcceptance::ActualAcceptsPattern
@@ -1081,7 +1084,26 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
     let captured_effect = EffectRow::open(EffectSet::new(), row.clone());
     let parent = context.start_path(parent).unwrap();
     let parent = context.admit_application(parent, child).unwrap();
-    let mut parent = relation(parent, &parent_array, &captured, &mut context);
+    let original = context
+        .fixture_original_context_with_rigid(crate::types::constraints::OriginalRigidScope {
+            types: &[ty.clone()],
+            consts: &[length.clone()],
+            effects: &[row.clone()],
+            imported: None,
+        })
+        .unwrap();
+    let captured_operand = context.fixture_operand_in(&original, &captured).unwrap();
+    let pattern = context.fixture_operand(parent_array);
+    let mut paths = crate::types::constraints::relate_selected_call(
+        &pattern.view(),
+        &captured_operand.view(),
+        parent,
+        &mut context,
+        ConstraintAcceptance::PatternAcceptsActual,
+    )
+    .unwrap();
+    assert_eq!(paths.len(), 1);
+    let mut parent = paths.pop().unwrap();
     parent
         .effects
         .constrain_subset(&parent_effect, &captured_effect, &mut context)
