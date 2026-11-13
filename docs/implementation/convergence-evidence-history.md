@@ -17569,3 +17569,20 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 候補比較へ元の制御が渡らなかった境界と最新の実測一覧を更新した。prepared effect graphのfrontend owner化、prepared型の全producer／consumerとΓ統合、body一回準備・一括seal、eager経路の置換、一般量化消去・MGU／rank・Fn局所∀と既知の再帰本体6件は、この比較制御だけで完了にしない。Generic Match、caller-bound recursion、共有prefix、Free許可／reifyと各既受入は維持する。過去の全SHA・実測・失敗・原本は変更せず、現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-comparison-control.raw.zip](acceptance-evidence/task-comparison-control.raw.zip) は 245 entries、raw 42458073 bytes、ZIP 5090271 bytes、SHA-256 `90600139dbdf44654e67235c2280826127f22173767e7da1a3636ac3a5fc440b`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+
+## Callable-body declaration scheme closure
+
+2026-11-14。基点 `64cde9b34d653cb185ac338db3f1f4a33b6c56d5`、実装・公開Source `898b007aa9e43187d4cb5b9fa52f3bed59750f4a`、tree `b7adfdd704efe5d5a4232751e176a1323550990a`。既存mainの7 Rust pathを通常commit／非force pushし、検証dirty bytes・commit・公開blobを照合した。owner・workspace品質の完了後、consumer 4／20 group完了・Compiler未開始の途中でSourceをpushした時点もcheckpoint原本に保持した。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- 本体効果を集約する実CallableEffectEquationsが、共有PreparedEffectGraphを使うよう変更した。実checked catalogのheaderから未使用を含む全効果formalと元のDを登録し、その後に実際の型検査済み本体行を一度ずつ設定する。登録はclosure内の本体方程式より先であり、式の型検査前に登録する移行まで済んだという意味ではない。
+- 各呼び出しの元のprojectionが実formalを実引数行へ投影し、実schemeへのapplicationを作る。明示された効果boundは従来どおりcall interfaceとして使う。裸のsource走査、例固有の分岐、fakeなFree ID／Source Γ／型／pure bodyは作らない。本体効果の旧row-growth queueは削除した。SCCの走査は別責務である禁止再帰contractの検査へ残す。
+- 同じclosure work予算でgraphの最小解と全出力行を確認し、最後に行mapを一度で置き換える。失敗・予算超過・取消しでは入力行を変更しない。rowのコピーも既存のcanonical encoding grammarを通して事前に課金する。
+- publicなopaque CallableEffectClosureErrorが元のprivate algebra causeをstandard error chainへ保持する。取消し・work limit・row errorは既存の公開variantへ直接戻し、別の拒否原因に置き換えない。診断値に必要なClone／Eqはimmutable errorだけへ追加し、affine graph／checkpoint／deltaの複製には使わない。
+- 新2件は、実Sourceからstageしたschemaの未使用formal保持、実測した成功境界までの全work budget点での原子性、元取消信号、foreign catalog拒否、診断のexact causeを検証する。初回のnullary-arrow fixtureのrecoveryと余分なBoxによるsource chainの失敗、その後のquery予算4096とcatalog closure予算の取り違えによるテスト失敗も原本に保持した。productionの予算は変更せず、最後の検証は元のclosure上限内で成功境界を測って全点を検査した。
+- 最終ownerは1,760件／1,754 PASS／6 FAIL／0 SKIP、94.317秒、5 suite。直前1,758 ID保持・新2件PASS、選択／終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。開発中の27件／19 PASS／8 FAIL、1760件／1753 PASS／7 FAILや初回checkを最終Sourceの合格へ読み替えない。
+- fresh full metadata／全target reverse treeの22 packageから後続21 package／107 targetを再実行した。全2,510件／2,507 PASS／2 FAIL／1 SKIP、選択／終端ID一致・重複0。Compiler既知2失敗、CLI規定226 PASSとcompile-only 3 targetを照合した。全20 groupとCompiler 31 targetが終端であり、過去のconsumer実測を今回の実行として流用していない。
+- workspace全target／全feature check・Clippy、Sema doctest 2件、workspace fmt、構造gateは今回Sourceで終了0。98 package・3511 files・3380 Rust files・1905732 Rust LOC・396 review・blocking 0。7 path・239物理LOC増。本体closureとactual call inventory、row algebra、公開診断という既存ownerを維持し、依存・I/O・codec・versionは変更しない。public error carrier追加の理由、実LOC・byte size・embedded test LOCとfan-in 12／fan-out 19を原本へ記録した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- Supersedes: 本体効果closureの実producerにprepared scheme graphが未接続だった境界を、当該producerの接続済みへ訂正した。型検査前の宣言scheme登録、prepared型の全関数値port／Γ統合、body一回準備・一括sealとeager経路の置換、一般量化消去・MGU／rank・Fn局所∀と再帰本体6件は今回だけで完了にしない。Generic Match、caller-bound recursion、共有prefix、Free許可／reifyと各既受入は維持する。過去の全SHA・実測・失敗・原本を変更せず、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-declaration-scheme-closure.raw.zip](acceptance-evidence/task-declaration-scheme-closure.raw.zip) は 251 entries、raw 42184153 bytes、ZIP 5094091 bytes、SHA-256 `3207ce5e75076d0bc43ee0da29814aedde4d5db591b0527c952b3ce72c1d650b`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
