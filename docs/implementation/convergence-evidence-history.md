@@ -17347,3 +17347,19 @@ locked workspace全target／全feature check／Clippy、Sema全feature doctest 2
 このSourceで閉じたのはheader入力portと投影値／導出の対応境界である。Freeの元Γ検査と、検査済みprimitiveから計算したeffect rowをsealするownerは未移行であり、この証拠をその完了とはしない。既知の再帰本体6＋2失敗も修復済みとはしない。現状一覧の訂正は実装・検証されたport保持だけに限定し、完了値capture、Generic Match、caller-bound recursion、共有prefixの受入を戻さない。過去の実測・full SHAは履歴と凍結原本、現状はcurrent-status.md一か所とする。新しい再帰本体のNative／AWBC、Tier 2／Wasm、Native／Web表示の受入へ拡張しない。全体cargo cleanは9:08の履行を維持し、今回再実行していない。
 
 [実装・検証原本](acceptance-evidence/task-effect-header-ports.raw.zip)は239 entry、展開時39867609 bytes、ZIP 4676793 bytes、SHA-256 `349586319921467fc3f7ec4e855febb44da94c60f54c320899ef476b15bb1035`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
+
+## Scoped effect row functions
+
+2026-11-13。Source `1914f17ba506ea591ed49cd5690bc31c27b332d3`、tree `be0f851d2cbaae549a16f4ab2a71f8cfb549d473`、親・変更基点 `334a0ee7decbbe741de71703cc289fec48e3c4fc`。既存mainで通常commit／non-forced pushし、変更13 blobを照合した。50件の限定PASS後に公開し、引数検査の集合lookupを維持した最終Sourceで全owner／consumer／品質を検証した。未追跡 `%SystemDrive%/` は保持した。
+
+PreparedEffectGraphの単一function registryに、実宣言のschemeと、導入時の依存引数だけを持つUnknownを区別して保持する。unknownに宣言domainや本体式を作らず、共同のcell集合と既存のprincipal completionを使う。Application、同時置換、canonical replay、rollbackを同じgrammarへ移行した。宣言headerの不変なleaseは維持する。scope付きの条件はDとCを別々に保持し、双方をwhole有限行の命題としてcompileしてD⇒Cを作り、その後に当該scopeの形式引数を∀量化する。すべての行関数を共同で最小化し、内外を順に最小化する処理は入れていない。独立したcanonical replayでも新しい条件を確認する。
+
+新9件は、内側e(F)=Fの受理、外側x=Fの拒否、{a}∩F⊆xの一様最小解x={a}、x∪y(F)={a}の比較不能解の拒否、whole-rowで偽のDと真のDの区別、実再帰schemeとunknownの共同closure・具体的なapplication、rollbackの条件破棄とidentity非再利用・別issuer拒否、予算不足・重複依存・arityの原子拒否を確認する。既存41件を含む限定50件はPASS。最初のcompileではローカル変数名がfunction定義を隠していたE0599を修復し、失敗logを保持した。元のbudget、候補数、probe／replay、取消し条件は変更していない。
+
+最終Sourceの全feature Sema lib／testsは1,678件中1,672 PASS／6 FAIL／0 SKIP、102.502秒。5 binaryの選択と終端が全IDで一致・重複0。前回Source `6c515904c38bda8228f5839eb5053f54a2804963` の1,669 IDをすべて維持し、新9件はPASS。失敗IDと実診断は前回と同じ5 ExpressionCycle／1 PendingCallableEffectProjectionである。同じSourceの他21 package・既定feature・規定107 targetは2,510 ID、2,507 PASS／2 FAIL／1 SKIP、選択と終端が一致・重複0。Compilerの既知2失敗は同じflow_wait IDとExpressionCycle（slot 17／19）。3 targetはcompile-only。CLI226件とCompiler callable_execution376件はPASS。Cargo入力差分0を確認し22 packageのgraphを再利用、実行結果は新規採取した。
+
+locked workspace全target／全feature check／Clippy、Sema全feature doctest 2件、owner Clippy、workspace fmt check、canonical構造gateは終了0。各stepのSource／tree／tracked差分0と変更13 pathのbyte pin・公開blobを照合した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。警告を保持した。構造gateは98 package・3,492 files・3,361 Rust files・1,895,271 Rust physical LOC、review trigger396・blocking0。合計成長574 physical LOCのうち、新functions module140、scoped module37、専用test302 LOC。所有者レビュー: registryとintroduction dependencyは既存の準備済み数学層、scope付き条件はその同じgraphの条件集合であり、別solver・source walker・権限catalogを作らない。既存closure／compilation／canonical replayを利用し、型ownerや外部APIへ責務を移さない。Semaの依存fan-in／out 8／15、dev4／0は変わらない。各pathのbytes・LOC・基点差を原本へ保持した。
+
+このcutは、全unknownが今回の共同最小化に参加する数学的な入口を閉じた。futureを未解決の行関数として残すscope付き条件付きcompletion、元Γからのchecked primitive／計算済み行seal、型ownerの実frameへの接続、frontendの本体一回準備と最終sealは継続する。既知の再帰本体6＋2失敗の修復、Native／AWBC・Native／Webの追加受入とはしない。現状一覧の長い実装経緯を現在の責務と境界へ整理した理由は、この新旧基盤と未接続範囲を混同しないためである。以前の実測・full SHAは履歴と原本を保持し、Generic Match・caller-bound recursion・共有prefix・完了値capture・header portの既受入を戻さない。全体cargo cleanは9:08の履行を維持し、今回再実行していない。
+
+[実装・検証原本](acceptance-evidence/task-scoped-effect-functions.raw.zip)は236 entry、展開時39579173 bytes、ZIP 4654649 bytes、SHA-256 `b84e5d7e43f423efd9148503a6aa0e9df1ba63e4189eb52b191ac23890596d53`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
