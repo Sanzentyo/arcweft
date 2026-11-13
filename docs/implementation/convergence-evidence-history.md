@@ -17498,3 +17498,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - 16 path・492物理LOC増。許可判断は既存operandの導出が、正規化は既存foldが、実フレームと出力ごとのcaptureは既存completed transportが所有する。Supersedes: 現状一覧の定数reifyとFree許可全体の未完了列挙を、検証済みの型・定数の境界と、effect-only reify／effect参照の許可／primitive行のΓ sealへ分けて訂正した。一般量化消去・全portのΓ統合・frontend再帰本体推論の完了とはしない。以前の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持し、現在の一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-free-port-admission.raw.zip](acceptance-evidence/task-free-port-admission.raw.zip) は 286 entries、raw 45307020 bytes、ZIP 5507614 bytes、SHA-256 `9fe1367a1a62c737a096dd81975ae43c4c6cae215a1ff3cfae224f15b82078b2`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Scoped effect primitive Gamma and header admission
+
+2026-11-14。基点 `e7ab2d2c610881638b9bfce80f9029307787adf4`、実装・公開Source `04d196e6ac47db99a8fbfe16bdaf77227630550a`、tree `31ecf27a69ad38189ccdede3d690601f12f4d3ba`。既存mainの20 Rust pathを通常commit／非force pushし、ownerが検証したdirty bytesと公開全blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- 数学的effect completionを消費し、行・predicateを既存ConstraintOperandへ一度だけ移す。move-only issuanceは値・実計算context・各値が使う参照だけの実owner／import leaseを結び付ける。contextは実scope・元の制約・計算domainとSource／ScopedRelationの区別を保持し、operandへの逆参照を持たない。共同relationへ架空のSource ΓやDを発行せず、raw completion accessorと全consumerを置換した。
+- 元の関数ヘッダのFree参照を代数操作前に対応portの導出で検証する。canonicalな最終行とpredicateには、対応する元フィールドまたはそのフィールドが実際に使ったΓ保持完成行だけを根拠に、個別の許可を発行する。再投影もそのフィールドの許可を使う。省略行を空行やΓ検証済み行に変えない。
+- effect-only reifyは型付きoperandを受け、元の実フレームと許可を確認してから既存controlled mapperへ渡す。行・predicateの元Source admissionにも同じmapperを使う。新4件は、共有inventory内の兄弟完成値の許可交換、行とpredicateの許可混同、canonical消去前の不許可参照、受け手にだけ見える参照を検証する。既存の実ambient／local frame・保存・再開・取消し後の受け手scope復元条件も拡張した。
+- 開発時の全1,732件は1,725 PASS／7 FAIL／0 SKIP。既知6件に加わった1件は、caller effectの宣言を持たないground Source fixtureであり、明示的な元Source Γへ修復した。当時の19 path全bytesと失敗原本、テスト追加時のborrow-check拒否も保持する。最終ownerは1,732件／1,726 PASS／6 FAIL／0 SKIP、52.844秒、5 suite。直前1,728 ID保持・新4件PASS・選択／終端ID一致・重複0。既知6失敗の5 ExpressionCycle／1 PendingCallableEffectProjectionは不変で、再帰本体の推論の完了とはしない。
+- producer変更のためfresh full metadata／全target reverse treeの22 packageから後続21 package／107 targetを再実行した。全2,510件／2,507 PASS／2 FAIL／1 SKIP、選択／終端ID一致・重複0。Compiler既知2失敗のExpressionCycle slot 17／19、CLI規定226 PASS、compile-only 3 targetを照合した。workspace全target／全feature check・Clippy、workspace fmt、Sema doctest 2件、構造gateは終了0。全consumerの実行を過去の実測で代用していない。
+- 20 path・765物理LOC増。Γ issuanceは実計算context、port許可は既存operand導出、代数操作は既存projection fold、scopeとcaptureは既存completed transportの責務とした。Cargo graphとfan-in 12／fan-out 19は不変。CARGO_INCREMENTAL=0、jobs／profile上書きなし。2026-11-14のcargo clean後にtarget消失と再確認の終了0を観測し、D空き137467404288 bytesを記録した。最初の削除ログ取得に失敗したため、正確な削除ファイル数・削除bytesは記載しない。
+- Supersedes: 現状一覧のeffect-only reify・effectのFree許可・完成primitive Γ保持の未完了列挙を、今回検証した境界の完了へ訂正した。一般量化消去・MGU／rank・Fn局所∀・prepared型を含む全portのΓ統合・frontend本体一回準備と一括sealは残る。以前の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持する。現在の一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-effect-primitive-gamma.raw.zip](acceptance-evidence/task-effect-primitive-gamma.raw.zip) は 287 entries、raw 43282851 bytes、ZIP 5276126 bytes、SHA-256 `e0ad7791d61c647c6f009551a054609de3881132652bd312cd6aaa6b82f17e57`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
