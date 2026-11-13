@@ -17460,3 +17460,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧の残余表現全体を未実装とした途中説明を、実装済みの量化表現・検査・Futureの部分代入と、未実装の論理簡約・真偽判定へ分けた。部分入力の代入だけで一般の論理簡約やfrontend接続が完了したとはしない。過去の全SHA・実測・原本とGeneric Match・caller-bound recursion・共有prefixの受入を維持し、現在の残作業は[current-status.md](current-status.md)へ集約する。
 
 原本 [task-effect-residual-program.raw.zip](acceptance-evidence/task-effect-residual-program.raw.zip) は 61 entries、raw 15083109 bytes、ZIP 1433752 bytes、SHA-256 `99c398d2d9b73da35b49ec1c080cc9bfd9bc171f446daf99bede0cb7281c5891`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Nullary effect residual reduction
+
+2026-11-13。基点 `a3412af9449550334657dcfd91b84c540e0f17c6`、実装・公開Source `643fec5b62fd4f3eb1d648214e65c4123c2430dd`、tree `632ee5f8a6919897745d68436c88f30347d4c167`。既存mainの6 Rust pathを通常commit／非force pushし、検証入力の全bytesと公開blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- 残余ownerへnullary・choiceなしの正確な部分簡約を実装した。元の量化Rを反復loweringし、点ごとに独立な条件から局所関数を同時消去して、未固定Future上のsatisfiable／principalと各下限行を保持する。Kの外のmembershipは実Future入力の和集合をsupportとし、架空のlabelやGeneric参照を作らない。全行のAnd／Or／Not／domain⇒consequenceはscalar DAGで保持し、pointwiseな論理へ誤変換しない。
+- FutureだけのCoverageは元の能力包含として保持する。局所関数を含む他のscalar条件へは、点ごとの関係の全モデルが下限と等しいことをcountermodel消去で証明した場合だけ代入する。単に最小解が存在するだけではこの代入を許さない。非一意なcross-label条件・choice・有効な局所∀・非nullary関数・importは元の正確な量化表現を保持する。未対応をUnsatisfiable／NonPrincipalへ変換しない。簡約行はprincipal条件・実Future参照・元issuerと結び付き、canonical EffectRowやSource Γを発行しない。
+- 新8件がPASS。x=F、x∪y=Fの条件付きjoint minimum、x=FとCoverage(x,G)の一意代入、部分固定と親能力grant、非一意cross-label・global choice・∀・全行implicationの保持、制御予算0とforeign issuer拒否を確認した。4つの関係×2 Futureの各4部分集合の64入力で、symbolic条件・下限行・全入力固定の簡約を元の有限基底solver／独立replayと照合し、K外の実入力labelも含めた。
+- 最終locked・全feature Sema lib／testsは1,724件／1,718 PASS／6 FAIL／0 SKIP、97.044秒、5 suite。直前1,716 ID保持・新8件PASS・選択／終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。先行dev checkのprivate field参照とEffectId constructorのcompile拒否、先行対象runの不正な単一成分labelによる5失敗を原本に保持し、実装の参照accessorとテスト入力を既存契約へ訂正した。
+- 今回のowner全target／全feature Clippy、workspace fmt、Sema doctest 2件と構造gateは終了0。full metadata／全target reverse treeは22 package、fan-in 12／fan-out 19で不変。6 Rust pathで1769物理LOC増。制御付き反復lowering、scalar DAGとpointwise消去、一意性証明、元ownerに結び付いたborrowed検査を残余ownerが所有する。既存producer・有限基底solver・公開cross-crate API・codec・syntax・fixture・Cargo入力と生成物は不変で、このAPIをowner外のproducerへまだ接続していない。後続21 package／107 targetの2,507 PASS／2 FAIL／1 SKIPとworkspace check／ClippyはSource `0691efa11175cadc7c0850278cd1a7ef4be45f62` の実測を元SHAのまま再利用する。
+- Supersedes: 現状一覧で論理簡約全体を未実装とした記述と、nullaryの消去・Future Coverage保持・uniqueな局所解の代入を残作業とした列挙を、今回の具体的な実装・検証を根拠に置換した。一般量化消去やfrontend接続の完了とはしない。以前の全SHA・実測・失敗・原本とGeneric Match・caller-bound recursion・共有prefixの受入を保持し、現在の項目別一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-effect-residual-reduction.raw.zip](acceptance-evidence/task-effect-residual-reduction.raw.zip) は 58 entries、raw 14754027 bytes、ZIP 1390524 bytes、SHA-256 `82a1fcb9f202faf075f6cdfa8af876f6c38a30a26a061dc78aa364a9a65521cf`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
