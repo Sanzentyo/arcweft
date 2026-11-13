@@ -17393,3 +17393,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 このため、調査済み22 package graphと他21 package・規定107 targetのSource `1914f17ba506ea591ed49cd5690bc31c27b332d3` の2,510 ID（2,507 PASS／2 FAIL／1 SKIP）、同Sourceのworkspace check／Clippy・workspace fmt・Sema doctest2件を再利用する。構造gateはSource `72df8edc204aec4009fd04884f8b46dd4dbc5a15` のreview trigger396・blocking0を再利用。元SHAを保持し、新規実行へ読み替えない。Γの全producerへの適用、checked primitive effect owner、条件付きcompletionとfrontend接続は継続し、このfixture準備をその受入とはしない。Generic Match、caller-bound recursion、共有prefix、完了値capture、header portの既受入を戻さず、過去の実測・full SHAを保持する。全体cargo cleanは9:08の履行を維持した。
 
 [最新owner原本](acceptance-evidence/task-fixture-source-gamma.raw.zip)は32 entry、展開時9564873 bytes、ZIP 906951 bytes、SHA-256 `130d0c4a66851257e7c00f7003e7aa13ec756e2e58885d22b08ebd3edd37e3a0`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。再利用のSourceと理由も原本へ区別して保持する。
+
+## Original gamma admission and transport
+
+2026-11-13。実装・公開 Source `78a8bbdc9acdb22af80da952b5934e883d1bdac2`、tree `1adab8c0a7c70700884269b4552095824e5f4b34`、parent `f5e349331e68cee20d784ad5ea247953fef33f91`。既存mainで10 Rust pathをcommit／非force pushし、公開headと全変更blobを照合。tracked差分0、未追跡 `%SystemDrive%/` を保持した。
+
+- 元のΓを受取scopeの形で読み直す不具合を修復した。実frame identityを所有するlexical transportへ型・const・効果の参照変換を集約し、元Γでのadmissionと受取scopeへの変換を一つの制御付きfoldにした。Fnの局所binderは保持し、ambient参照だけを移す。checked source値もport選択の前に同じ境界へ通す。旧constructorを置換し、別readerを残さない。
+- 開発時の旧Sourceでは初期2回帰が0 PASS／2 FAIL。修復過程の7件の引数不足compile error、修復後16件、正しい256候補selectorを含む最終17件PASSを区別して原本に保持した。最初のnegative回帰は最終版でconst・効果・単独length拒否も検査するよう拡張した。旧runを最終test sourceの実行とは扱わない。
+- 全feature ownerは1,691件／1,685 PASS／6 FAIL／0 SKIP、71.556秒、slow 0。直前1,687 IDをすべて保持し、新4件PASS。選択・終端ID一致、重複0。既知6失敗と実診断5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。
+- 現在のCargo metadataとinvertから全22 packageを確認し、後続21 package・107 targetを同じSourceで実行した。2,510 ID／2,507 PASS／2 FAIL／1 SKIP。Compilerの既知2失敗は同じExpressionCycle slot 17／19。CLI 226、callable_execution 376がPASS。3 targetはcompile-only。過去のconsumer runへ最新Sourceを付け替えていない。
+- locked workspace全target／全feature check／Clippy、fmt、Sema doctest 2件は終了0。structure-audit-gateも終了0。変更10 pathは302物理LOC増。lexical.rsは328 LOCで実frame対応の唯一のowner、original_value.rsは225 LOCで元値のadmission、operand.rsは498 LOCで由来を保持する。transaction.rsは2,741 LOCだがこのcutは既存probe orchestrationのscope捕捉位置を2 LOC増で移すだけで、新しい状態や別の責務を加えない。テストは各ownerへ配置し、型walker・frame表・権限表の複製を追加しない。Cargo依存・公開API・layer方向・unsafe・依存追加なし。サイズだけを理由とする分割は行わない。実寸・fan-in／fan-out・全警告は原本に保持する。
+- Supersedes: 現状一覧の「consumerとworkspace品質は過去Sourceの実測を再利用」という説明は、今回production ingressを変更して同じSourceで再実行したため置換した。以前の実測・full SHA・原本は履歴として保持する。Generic Match、caller-bound recursion、共有prefixの受入判定は維持する。
+- 本cutの受入範囲は元値・checked source値のBound参照admissionと実frame間の移送である。項目別の現状・残作業は[current-status.md](current-status.md)の一か所へ集約する。
+
+原本 [task-original-gamma-transport.raw.zip](acceptance-evidence/task-original-gamma-transport.raw.zip) は 240 entries、raw 38430688 bytes、ZIP 4625375 bytes、SHA-256 `5787ba23050dc9e61865ffbfa7b3eee838717cadbb94de30f205a1cc6f589c0a`。全entryのpath・長さ・SHA-256をreadback検証した。
