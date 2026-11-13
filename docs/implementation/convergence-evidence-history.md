@@ -17255,3 +17255,27 @@ ownerはOriginalProducerContextとoperand/original_valueであり、sourceは実
 現状行を置換した理由はOriginal値のFree admissionの実装と新しい同一Sourceの横断実測であり、残るtemplate／source／result／Completedやeffect置換の権限・実出力capture sealを完了とはしていない。旧件数・失敗・full SHAをこの履歴と凍結原本へ保持し、現状一覧はcurrent-status.mdの一か所とする。Generic Match、caller-bound recursion、同group prefixの受入を変更しない。Wasm・Tier 2・新しい再帰本体のNative／AWBC・Native／Web表示を今回のhost検証から受入とはしない。履行済みの全体cargo cleanは繰り返していない。
 
 [検証原本](acceptance-evidence/task-original-value-admission.raw.zip)は253 entry、展開時48072460 bytes、ZIP 5427016 bytes、SHA-256 `11399c3d61ea59cc47b2a0ffbf7b4a3254873806a0e6acb6bcc5e1daa704b18c`。manifestと全entryの長さ・hash・portable pathを読み戻し照合した。
+
+## Template opening authority
+
+2026-11-13。最終Source `0b60adcc2b24ad580822753c163df9c43d5344b9`、tree `dcc45e6de916b6f3b342b5569c2bc5efdeb09d43`、親 `7fdf10f128dc3c6bc956cec60301681f67924959`、移行基点 `8b1df9fc3eba915f185773fab29ae2d06a71f519`。既存mainで各変更を通常commit／non-forced pushし、公開head・tree・変更blobを照合した。全件前のcheckpoint公開は途中commitの正常動作保証を不要とするユーザー指示による。既存の未追跡 `%SystemDrive%/` は保持した。
+
+OpenTemplateReferencesは従来、formalの対応がなければFreeを、literal Inferenceはそのまま受け取り、候補全体のinventoryで見えることだけを検査していた。このため別applicationのrigid／推論変数を同じ経路に置くだけでtemplateから借用できた。開放は当該applicationの型・定数・効果contract、または実OriginalProducerContextの宣言Γ／明示import leaseの許可を必要とし、その後に経路上の可視性を検査する。別applicationのinventoryと数学的Cを許可の根拠にはしない。型の独立した再帰walkerを削除し、map_term_with_controlの共通grammarで配列長・効果・局所Fnのbinder／predicateを検査・計上する。
+
+宣言templateのcoordinate scopeはapplicationのcompleted contractからfoldへ明示して渡す。callerのConstraintLexicalScopeを一時的に架空のtemplate frameへ差し替えるwith_template_scopeとConstraintLexicalScope::templateを削除した。局所Boundは明示scopeで検査し、実ambient frameのidentityは成功／拒否の両方で保持する。OriginalProducerContextの判定名はFree以外の明示importも扱うadmits_parameterへ揃え、元値admissionの3 consumerも移行した。
+
+最終Sourceの全feature Sema lib／testsは1,658件中1,652 PASS／6 FAIL／0 SKIP、179.326秒、slow 1件。5 binaryの選択と終端の全IDが一致・重複0。直前Source `2b0d95bdc89402992e75790aaf5a7c0bcf6be409` の全1,655 IDを維持し、新3 IDが全件PASS。rigid／bindable／futureの型・const・effectとpredicateで別applicationの借用を正確なerrorとして拒否し、同じ値を本来のapplicationや明示importでは受理する。局所Fnの形式引数と実ambient frameを保持する。既知6失敗のIDと実診断は前回と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。clean後の公開API compile-fail fixtureの再構築を含む。既受入のcaller-bound recursionと共有prefix、既存のscope／alias／scheme／probe／replay／branch予算を未完了へ戻さない。
+
+checkpoint `7fdf10f128dc3c6bc956cec60301681f67924959`（tree `d2d0e2307700de5bc7f29d66400cfde0c5c69176`）の全件結果は1,658件中1,650 PASS／8 FAIL／0 SKIP、73.877秒。追加2失敗は新しいtestがNoConstraintClientの単一application ID `()` を2回使い、目的の検査より前にApplicationAlreadyAdmittedで拒否されたためである。独立したu8 application identityを持つtest専用domainで0／1を明示し、productionの権限検査や重複拒否を緩めなかった。別test moduleのprivate domainを再利用しようとした開発時listはE0603で終了101となった。そのmoduleの可視性を広げず、testを所有するmodule内のdomainへ修復した。これらの中間失敗と開発ログを最終Sourceの結果と混ぜず保存する。
+
+同じ最終Sourceで他21 package・既定feature・規定107 targetを今回実行し、2,510 IDの選択と終端が一致・重複0、2,507 PASS／2 FAIL／1 SKIP。20 package／76 targetをpackage単位でgroup化し、Compilerの31 targetを逐次実行した。Compilerの既知2失敗はflow_waitの同じIDとExpressionCycle（slot 17／19）。0 runnableの3 targetはcompileとして記録する。CLI library 196件と統合6 target 30件は226 PASS。Compiler callable_executionの376件もPASS。owner全featureとconsumer既定featureは別sliceであり、一つの合算runとはしない。22 packageの推移的逆依存graphは前回の実測と今回のCargo入力差分0を照合して再利用し、テストは今回のSourceで新たに実行した。
+
+workspace全target／全feature・locked check／Clippy、Sema全feature doctest 2件、owner全target／全feature Clippy、workspace fmt check、canonical構造gateは終了0。各step前後のcommit／tree／tracked差分0、owner全8 pathのbyte pinと公開blob、選択・出力hashを照合した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。警告はログへ保持した。canonical gateは98 package・3,486 files・3,355 Rust files・1,893,680 Rust physical LOC、review trigger 396・blocking 0。Semaのfan-in／outは8／15、devは4／0でCargo edgeに変更はない。
+
+所有者はapplication（自分のcontractと実Sourceの権限）、references（共通grammarを使う開放）、lexical（実frame identity）である。独立walker・架空frame・global inventoryの許可fallbackを除去し、追加の許可side tableやAST再構成、API公開範囲の拡張を導入しなかった。contextの既存大規模ownerには開放の協調だけを残し、偽のframeを作る責務を削除した。新test moduleはこの開放境界に閉じ、source域・layer方向・I/O・unsafe・version・予算を変えていない。各pathのbytes・physical LOC・基点との差は原本へ記録した。
+
+今回の明示指示「cargo clean で全体を削除する」に従い、D:\git\arcweft\targetをCargo metadataで確認した上でcargo cleanを再実行した。2026-11-13 09:08:33〜09:08:49 JST、終了0、30,761 files・87.2 GiBを削除した。ソース・Git・検証原本は対象外で、別作業のcargo processは停止していない。clean前の空き容量は57,946,783,744 bytes、直後は148,008,071,168 bytes。PSDriveInfoの遅延property読み出しによる最初のreceiptのFreeBeforeを、実行前の取得済みtool出力に基づき訂正し、理由もreceiptへ保持した。
+
+現状行の訂正理由はtemplate開放境界の実装と同一Sourceの検証であり、この完成した境界を残作業のtemplate列挙から除外した。source／result／Completedの値転送・effect置換の値ごとのFree許可と実出力capture seal、caller実Γの引数全体転送、条件付きMGU／rank／局所∀、frontendのprepared接続・body一回準備・一括sealを完了とはしていない。以前の件数・失敗・full SHAをこの履歴と原本へ保持し、現状一覧はcurrent-status.mdの一か所に限る。Generic Matchの行を変更していない。新しい再帰本体のNative／AWBC、Tier 2／Wasm、Native／Web表示は今回のhost検証から受入とはしない。
+
+[全原本](acceptance-evidence/task-template-authority.raw.zip)は249 entry、展開時47589267 bytes、ZIP 5374508 bytes、SHA-256 `37ccabe2ea6b57a470c22f86748084f904f9ef19aab0bc76f332ac217ee75401`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
