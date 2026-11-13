@@ -31,7 +31,7 @@ mod residual;
 use residual::ResidualGenericBinder;
 mod completed_context;
 pub(super) use completed_context::CompletedConstraintType;
-use completed_context::CompletedGenericContext;
+use completed_context::{CompletedGenericContext, CompletedValue};
 mod instantiation;
 #[cfg(test)]
 mod predicate_tests;
@@ -46,37 +46,37 @@ pub(crate) use instantiation::ClosedTypeInstantiation;
 pub use instantiation::TypeInstantiationError;
 
 #[derive(Debug, Eq, PartialEq)]
-struct CheckedTypeArgumentBinding {
+struct CheckedTypeArgumentBinding<V = TypeKind> {
     parameter: GenericTypeReference,
-    value: TypeKind,
+    value: V,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct CheckedConstArgumentBinding {
+struct CheckedConstArgumentBinding<V = ArrayLength> {
     parameter: GenericConstReference,
-    value: ArrayLength,
+    value: V,
 }
 
-impl CheckedConstArgumentBinding {
-    fn new(parameter: GenericConstReference, value: ArrayLength) -> Self {
+impl<V> CheckedConstArgumentBinding<V> {
+    fn new(parameter: GenericConstReference, value: V) -> Self {
         Self { parameter, value }
     }
 }
 
-impl CheckedTypeArgumentBinding {
-    fn new(parameter: GenericTypeReference, value: TypeKind) -> Self {
+impl<V> CheckedTypeArgumentBinding<V> {
+    fn new(parameter: GenericTypeReference, value: V) -> Self {
         Self { parameter, value }
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct CheckedEffectArgumentBinding {
+struct CheckedEffectArgumentBinding<V = EffectRow> {
     variable: GenericEffectReference,
-    value: EffectRow,
+    value: V,
 }
 
-impl CheckedEffectArgumentBinding {
-    fn new(variable: GenericEffectReference, value: EffectRow) -> Self {
+impl<V> CheckedEffectArgumentBinding<V> {
+    fn new(variable: GenericEffectReference, value: V) -> Self {
         Self { variable, value }
     }
 }
@@ -105,10 +105,10 @@ impl CompletedSolutionInput {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintSolution {
     context: Arc<CompletedGenericContext>,
-    bindings: Box<[CheckedTypeArgumentBinding]>,
-    const_bindings: Box<[CheckedConstArgumentBinding]>,
-    effect_bindings: Box<[CheckedEffectArgumentBinding]>,
-    effect_predicate: crate::effect_row::EffectPredicate,
+    bindings: Box<[CheckedTypeArgumentBinding<CompletedValue<TypeKind>>]>,
+    const_bindings: Box<[CheckedConstArgumentBinding<CompletedValue<ArrayLength>>]>,
+    effect_bindings: Box<[CheckedEffectArgumentBinding<CompletedValue<EffectRow>>]>,
+    effect_predicate: CompletedValue<crate::effect_row::EffectPredicate>,
 }
 
 impl TypeConstraintSolution {
@@ -150,7 +150,12 @@ impl TypeConstraintSolution {
         for (left, right) in self.bindings.iter().zip(&other.bindings) {
             context.enter_node()?;
             if left.parameter != right.parameter
-                || !super::normalization::completed_types_equal(&left.value, &right.value, context)?
+                || left.value.captures() != right.value.captures()
+                || !super::normalization::completed_types_equal(
+                    left.value.value(),
+                    right.value.value(),
+                    context,
+                )?
             {
                 return Ok(false);
             }
@@ -163,17 +168,27 @@ impl TypeConstraintSolution {
         }
         for (left, right) in self.effect_bindings.iter().zip(&other.effect_bindings) {
             context.enter_node()?;
-            if left.variable != right.variable || !left.value.equal_with(&right.value, context)? {
+            if left.variable != right.variable
+                || left.value.captures() != right.value.captures()
+                || !left
+                    .value
+                    .value()
+                    .equal_with(right.value.value(), context)?
+            {
                 return Ok(false);
             }
         }
+        if self.effect_predicate.captures() != other.effect_predicate.captures() {
+            return Ok(false);
+        }
         self.effect_predicate
-            .equal_with(&other.effect_predicate, context)
+            .value()
+            .equal_with(other.effect_predicate.value(), context)
     }
 
     pub(crate) fn effect_predicate(&self) -> crate::types::ScopedEffectPredicateView<'_> {
         crate::types::ScopedEffectPredicateView::sealed(
-            &self.effect_predicate,
+            self.effect_predicate.value(),
             self.context.value_scope(),
         )
     }
@@ -243,11 +258,17 @@ impl TypeConstraintSolution {
                         super::TypeConstraintParameterScopeInvariant::ApplicationOutOfScope,
                     ),
                 ))?;
-        let mut value = self.context.reify_type(ty, path, application, context)?;
+        let value = self.context.reify_type(
+            ty,
+            path,
+            application,
+            (closure == ConstraintClosurePolicy::ProjectionFuture)
+                .then_some(&self.effect_predicate),
+            context,
+        )?;
         if closure == ConstraintClosurePolicy::ProjectionFuture {
-            self.retain_result_predicate(&mut value, context)?;
             self.context
-                .validate_reified_future_type(&value, path, context)?;
+                .validate_reified_future_type(value.value(), path, context)?;
         }
         Ok(super::KeyedConstraintProjection::new(
             key,
@@ -265,62 +286,11 @@ impl TypeConstraintSolution {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedConstraintType, TypeConstraintError> {
         let owner = path.applications.require_application(application)?;
-        let value = self.context.reify_type(ty, path, owner, context)?;
+        let value = self.context.reify_type(ty, path, owner, None, context)?;
         Ok(CompletedConstraintType::new(
             value,
             Arc::clone(&self.context),
         ))
-    }
-
-    /// The result function owns the residual relation before a completed
-    /// projection leaves this solution. Its local binder shifts only incoming
-    /// predicate references; references already owned by that function stay put.
-    fn retain_result_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
-        &self,
-        value: &mut TypeKind,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(), TypeConstraintError> {
-        let TypeKind::Function {
-            binder, predicate, ..
-        } = value
-        else {
-            return Ok(());
-        };
-        if self.effect_predicate.is_unconstrained() {
-            return Ok(());
-        }
-        let source = self.context.value_scope();
-        let target = source.with_binder(*binder);
-        let inserted = u32::from(!binder.is_empty());
-        let lifted = self
-            .effect_predicate
-            .map_references(context, &mut |reference, _| match reference {
-                GenericEffectReference::Bound(parameter) => {
-                    source
-                        .bound_effect(parameter.depth(), parameter.slot())
-                        .map_err(TypeConstraintInvariant::GenericScope)?;
-                    let depth = parameter.depth().checked_add(inserted).ok_or(
-                        TypeConstraintInvariant::GenericScope(
-                            super::super::GenericScopeError::UnknownDepth {
-                                depth: parameter.depth(),
-                            },
-                        ),
-                    )?;
-                    target
-                        .bound_effect(depth, parameter.slot())
-                        .map_err(TypeConstraintInvariant::GenericScope)
-                        .map_err(Into::into)
-                }
-                GenericEffectReference::Free(_) => Ok(reference.clone()),
-                GenericEffectReference::Inference(_) => Err(TypeConstraintInvariant::GenericScope(
-                    super::super::GenericScopeError::EscapedInference {
-                        kind: super::super::GenericParameterKind::Effect,
-                    },
-                )
-                .into()),
-            })?;
-        *predicate = predicate.and(&lifted, context)?;
-        Ok(())
     }
 
     #[cfg(test)]
@@ -571,7 +541,7 @@ impl TypeConstraintSolution {
                 validate_selected_call_self(projected.value(), context).map_err(|error| {
                     map_completed_self_error(error, parameter.clone().into(), input)
                 })?;
-                generic_context.reify_type(projected.value(), path, application, context)
+                generic_context.reify_type(projected.value(), path, application, None, context)
             })?;
             bindings.push((declaration, reified));
         }
@@ -778,10 +748,24 @@ impl TypeConstraintSolution {
         for _ in 0..path.applications.len() {
             context.enter_node()?;
         }
-        Arc::make_mut(&mut path.applications)
-            .restore_rigid_captures(&self.context.captures, context)?;
+        let mut captures = std::collections::BTreeSet::new();
+        for scope in self
+            .bindings
+            .iter()
+            .map(|row| row.value.captures())
+            .chain(self.const_bindings.iter().map(|row| row.value.captures()))
+            .chain(self.effect_bindings.iter().map(|row| row.value.captures()))
+            .chain(std::iter::once(self.effect_predicate.captures()))
+        {
+            for parameter in scope.parameters() {
+                context.enter_node()?;
+                captures.insert(parameter.clone());
+            }
+        }
+        let captures = super::application::RetainedRigidGenericScope::from_admitted(captures);
+        Arc::make_mut(&mut path.applications).restore_rigid_captures(&captures, context)?;
         let mut rigid_effects = Vec::new();
-        for parameter in self.context.captures.parameters() {
+        for parameter in captures.parameters() {
             context.enter_node()?;
             if let super::ConstraintGenericParameterId::Effect(reference) = parameter {
                 rigid_effects.push(crate::effect_row::EffectConstraintVariable::new(
@@ -800,47 +784,47 @@ impl TypeConstraintSolution {
         path.effects.restore_predicate(&predicate, context)?;
 
         let operand_scope = Arc::new(context.capture_lexical_scope()?);
-        for (parameter, value) in self.bindings() {
+        for row in &self.bindings {
             let value = self
                 .context
-                .reopen_type(value.value(), &path, application, context)?;
+                .reopen_type(&row.value, &path, application, context)?;
             context.restore_completed_binding(
                 &mut path,
                 application.id(),
-                parameter.value().clone(),
+                row.parameter.clone(),
                 super::transaction::ConstraintOperand::completed(
                     value,
                     Arc::clone(&operand_scope),
                     application.original_context().clone(),
                     Arc::clone(self),
-                    parameter.value().clone().into(),
+                    row.parameter.clone().into(),
                 ),
             )?;
         }
-        for (parameter, value) in self.const_bindings() {
+        for row in &self.const_bindings {
             let value = self
                 .context
-                .reopen_length(value.value(), &path, application, context)?;
+                .reopen_length(&row.value, &path, application, context)?;
             context.restore_completed_const_binding(
                 &mut path,
                 application.id(),
-                parameter.value().clone(),
+                row.parameter.clone(),
                 super::transaction::ConstraintOperand::completed(
                     value,
                     Arc::clone(&operand_scope),
                     application.original_context().clone(),
                     Arc::clone(self),
-                    parameter.value().clone().into(),
+                    row.parameter.clone().into(),
                 ),
             )?;
         }
-        for (variable, value) in self.effect_bindings() {
+        for row in &self.effect_bindings {
             let reference = parameters
-                .effect_reference(variable.value())
+                .effect_reference(&row.variable)
                 .expect("the inherited contract retains each effect parameter");
-            let value =
-                self.context
-                    .reopen_effect_row(value.value(), &path, application, context)?;
+            let value = self
+                .context
+                .reopen_effect_row(&row.value, &path, application, context)?;
             path.effects
                 .restore_completed_inherited(reference, &value, context)?;
         }
@@ -1048,19 +1032,19 @@ fn map_completed_self_error(
 }
 
 pub(crate) struct TypeConstraintBindingIter<'a> {
-    rows: slice::Iter<'a, CheckedTypeArgumentBinding>,
+    rows: slice::Iter<'a, CheckedTypeArgumentBinding<CompletedValue<TypeKind>>>,
     scope: &'a GenericScope,
     template_scope: &'a GenericScope,
 }
 
 pub(crate) struct TypeConstraintConstBindingIter<'a> {
-    rows: slice::Iter<'a, CheckedConstArgumentBinding>,
+    rows: slice::Iter<'a, CheckedConstArgumentBinding<CompletedValue<ArrayLength>>>,
     scope: &'a GenericScope,
     template_scope: &'a GenericScope,
 }
 
 pub(crate) struct TypeConstraintEffectBindingIter<'a> {
-    rows: slice::Iter<'a, CheckedEffectArgumentBinding>,
+    rows: slice::Iter<'a, CheckedEffectArgumentBinding<CompletedValue<EffectRow>>>,
     scope: &'a GenericScope,
     template_scope: &'a GenericScope,
 }
@@ -1071,7 +1055,7 @@ impl<'a> Iterator for TypeConstraintBindingIter<'a> {
         self.rows.next().map(|binding| {
             (
                 ScopedTypeReferenceView::sealed(&binding.parameter, self.template_scope),
-                ScopedTypeView::sealed(&binding.value, self.scope),
+                ScopedTypeView::sealed(binding.value.value(), self.scope),
             )
         })
     }
@@ -1084,7 +1068,7 @@ impl DoubleEndedIterator for TypeConstraintBindingIter<'_> {
         self.rows.next_back().map(|binding| {
             (
                 ScopedTypeReferenceView::sealed(&binding.parameter, self.template_scope),
-                ScopedTypeView::sealed(&binding.value, self.scope),
+                ScopedTypeView::sealed(binding.value.value(), self.scope),
             )
         })
     }
@@ -1101,7 +1085,7 @@ impl<'a> Iterator for TypeConstraintConstBindingIter<'a> {
         self.rows.next().map(|binding| {
             (
                 ScopedConstReferenceView::sealed(&binding.parameter, self.template_scope),
-                ScopedArrayLengthView::sealed(&binding.value, self.scope),
+                ScopedArrayLengthView::sealed(binding.value.value(), self.scope),
             )
         })
     }
@@ -1114,7 +1098,7 @@ impl DoubleEndedIterator for TypeConstraintConstBindingIter<'_> {
         self.rows.next_back().map(|binding| {
             (
                 ScopedConstReferenceView::sealed(&binding.parameter, self.template_scope),
-                ScopedArrayLengthView::sealed(&binding.value, self.scope),
+                ScopedArrayLengthView::sealed(binding.value.value(), self.scope),
             )
         })
     }
@@ -1131,7 +1115,7 @@ impl<'a> Iterator for TypeConstraintEffectBindingIter<'a> {
         self.rows.next().map(|binding| {
             (
                 ScopedEffectReferenceView::sealed(&binding.variable, self.template_scope),
-                ScopedEffectRowView::sealed(&binding.value, self.scope),
+                ScopedEffectRowView::sealed(binding.value.value(), self.scope),
             )
         })
     }
@@ -1146,7 +1130,7 @@ impl DoubleEndedIterator for TypeConstraintEffectBindingIter<'_> {
         self.rows.next_back().map(|binding| {
             (
                 ScopedEffectReferenceView::sealed(&binding.variable, self.template_scope),
-                ScopedEffectRowView::sealed(&binding.value, self.scope),
+                ScopedEffectRowView::sealed(binding.value.value(), self.scope),
             )
         })
     }

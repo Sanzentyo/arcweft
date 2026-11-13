@@ -32,7 +32,7 @@ impl TypeConstraintSolution {
         }
         let environment = arguments.with_enclosing_parameters(enclosing, control)?;
         let predicate = template::map_predicate_with_control(
-            &self.effect_predicate,
+            self.effect_predicate.value(),
             1,
             control,
             &|reference, control| {
@@ -57,7 +57,7 @@ impl TypeConstraintSolution {
             types.insert(
                 row.parameter.clone(),
                 environment.project_type_with_control(
-                    &row.value,
+                    row.value.value(),
                     self.context.residual.scope(),
                     control,
                 )?,
@@ -81,7 +81,7 @@ impl TypeConstraintSolution {
                 .map_err(TypeProjectionError::Control)?;
             consts.insert(
                 row.parameter.clone(),
-                environment.instantiate_array_length_with_control(&row.value, control)?,
+                environment.instantiate_array_length_with_control(row.value.value(), control)?,
             );
         }
         for (slot, parameter) in (0u16..).zip(self.context.residual.const_origins()) {
@@ -102,9 +102,11 @@ impl TypeConstraintSolution {
                 .map_err(TypeProjectionError::Control)?;
             effects.insert(
                 row.variable.clone(),
-                EffectRow::closed(
-                    environment.project_effect_row_with_control(&row.value, 1, control)?,
-                ),
+                EffectRow::closed(environment.project_effect_row_with_control(
+                    row.value.value(),
+                    1,
+                    control,
+                )?),
             );
         }
         for (slot, parameter) in (0u32..).zip(self.context.residual.effect_origins()) {

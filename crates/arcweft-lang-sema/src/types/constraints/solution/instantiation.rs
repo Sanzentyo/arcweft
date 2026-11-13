@@ -90,9 +90,9 @@ impl TypeConstraintSolution {
         let empty = ClosedTypeInstantiation::default();
         let caller = enclosing.unwrap_or(&empty);
         let root = GenericScope::default();
-        if !self.effect_predicate.is_unconstrained() {
-            visit_effect_predicate(control, &self.effect_predicate, 1)?;
-            let predicate = self.effect_predicate.try_substitute_variables(
+        if !self.effect_predicate.value().is_unconstrained() {
+            visit_effect_predicate(control, self.effect_predicate.value(), 1)?;
+            let predicate = self.effect_predicate.value().try_substitute_variables(
                 &mut EffectProjectionControl { control, depth: 1 },
                 &mut |reference, adapter| {
                     let reference = super::template::keep_effect(reference, &root)?;

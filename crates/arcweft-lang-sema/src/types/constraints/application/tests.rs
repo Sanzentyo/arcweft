@@ -1176,6 +1176,86 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
 }
 
 #[test]
+fn completed_parent_does_not_export_unused_child_declarations() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation, 8192);
+    let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(90_103));
+    let ty = GenericTypeReference::Free(GenericTypeParameterId::new(owner.clone(), 0));
+    let length = GenericConstReference::Free(GenericConstParameterId::new(owner.clone(), 0));
+    let row = GenericEffectReference::Free(GenericEffectParameterId::new(owner, 0));
+    let child = ConstraintApplicationScope::test_root(
+        1,
+        TypeConstraintParameterScope::seal_call_scope(
+            GenericBinder::EMPTY,
+            [TypeConstraintTypeParameterScopeRow::new(
+                ty.clone(),
+                TypeConstraintParameterEligibility::Rigid,
+            )],
+            [TypeConstraintConstParameterScopeRow::new(
+                length.clone(),
+                TypeConstraintConstEligibility::Rigid,
+            )],
+            TypeConstraintEffectScope::seal_call_scope(
+                [EffectConstraintVariable::new(
+                    row.clone(),
+                    EffectConstraintEligibility::Rigid,
+                )],
+                [],
+            )
+            .unwrap(),
+            [],
+            [],
+        )
+        .unwrap(),
+    );
+    let parent = context
+        .start_path(ConstraintApplicationScope::test_root(
+            0,
+            TypeConstraintParameterScope::empty(),
+        ))
+        .unwrap();
+    let parent = context.admit_application(parent, child).unwrap();
+    let parameters = [ty.clone().into(), length.clone().into(), row.clone().into()];
+    assert!(parent.applications.import_parameters(&parameters).is_ok());
+    let solution = Arc::new(
+        TypeConstraintSolution::complete_application(&parent, parent.root_id(), &mut context)
+            .unwrap(),
+    );
+    let next = context
+        .start_path(ConstraintApplicationScope::test_root(
+            2,
+            TypeConstraintParameterScope::empty(),
+        ))
+        .unwrap();
+    let next = solution
+        .restore_inherited_path(next.root_id(), next, &mut context)
+        .unwrap();
+    for parameter in parameters {
+        assert!(
+            next.applications.import_parameters(&[parameter]).is_err(),
+            "a completed value cannot issue a lease for an unused child declaration"
+        );
+    }
+    assert_eq!(
+        context.parameter_eligibility(&ty, next.projection_view()),
+        None
+    );
+    assert_eq!(
+        context.const_parameter_eligibility(&length, next.projection_view()),
+        None
+    );
+    assert_eq!(
+        context.effect_eligibility(&row, next.projection_view()),
+        None
+    );
+    assert!(
+        next.effects
+            .validate_row(&EffectRow::open(EffectSet::new(), row))
+            .is_err()
+    );
+}
+
+#[test]
 fn application_identity_and_live_opening_cannot_be_admitted_twice() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 2048);

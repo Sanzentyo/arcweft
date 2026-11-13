@@ -160,21 +160,21 @@ pub(super) struct TemplateProjection<'a> {
 impl TemplateProjection<'_> {
     pub(super) fn type_value(&self, index: usize) -> &TypeKind {
         self.values.map_or_else(
-            || &self.solution.bindings[index].value,
+            || self.solution.bindings[index].value.value(),
             |values| &values.types[index],
         )
     }
 
     pub(super) fn const_value(&self, index: usize) -> &ArrayLength {
         self.values.map_or_else(
-            || &self.solution.const_bindings[index].value,
+            || self.solution.const_bindings[index].value.value(),
             |values| &values.consts[index],
         )
     }
 
     pub(super) fn effect_value(&self, index: usize) -> &EffectRow {
         self.values.map_or_else(
-            || &self.solution.effect_bindings[index].value,
+            || self.solution.effect_bindings[index].value.value(),
             |values| &values.effects[index],
         )
     }

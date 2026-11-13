@@ -60,7 +60,7 @@ impl TypeConstraintSolution {
         self.apply_template_with_control(ty, control)?
             .view()
             .quantify_suffix_with_predicate_and_control(
-                &self.effect_predicate,
+                self.effect_predicate.value(),
                 self.context.ambient.shape(),
                 control,
             )
@@ -113,7 +113,7 @@ impl TypeConstraintSolution {
         }
         let result = ScopedTypeView::sealed(&return_type, &scope)
             .quantify_suffix_with_predicate_and_control(
-                &self.effect_predicate,
+                self.effect_predicate.value(),
                 self.context.ambient.shape(),
                 control,
             )?;

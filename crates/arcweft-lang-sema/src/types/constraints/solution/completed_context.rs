@@ -6,6 +6,8 @@ use crate::types::constraints::{
     lexical::ConstraintLexicalScope,
 };
 
+#[cfg(test)]
+mod tests;
 mod transport;
 
 /// Ambient frames are retained, never generalized. Only `residual` introduces
@@ -15,7 +17,6 @@ pub(super) struct CompletedGenericContext {
     pub(super) parameter_scope: CompletedParameterScope,
     pub(super) ambient: ConstraintLexicalScope,
     pub(super) residual: ResidualGenericBinder,
-    pub(super) captures: RetainedRigidGenericScope,
     value_scope: ConstraintLexicalScope,
 }
 
@@ -26,7 +27,6 @@ impl PartialEq for CompletedGenericContext {
         self.parameter_scope == other.parameter_scope
             && self.ambient == other.ambient
             && self.residual == other.residual
-            && self.captures == other.captures
     }
 }
 
@@ -36,20 +36,20 @@ impl Eq for CompletedGenericContext {}
 /// captures from the quantifiers it is allowed to transfer to a function.
 #[derive(Debug, Eq, PartialEq)]
 pub(in crate::types::constraints) struct CompletedConstraintType {
-    value: TypeKind,
+    value: CompletedValue<TypeKind>,
     context: Arc<CompletedGenericContext>,
 }
 
 impl CompletedConstraintType {
     pub(in crate::types::constraints::solution) fn new(
-        value: TypeKind,
+        value: CompletedValue<TypeKind>,
         context: Arc<CompletedGenericContext>,
     ) -> Self {
         Self { value, context }
     }
 
     pub(in crate::types::constraints) fn view(&self) -> ScopedTypeView<'_> {
-        ScopedTypeView::sealed(&self.value, self.context.value_scope())
+        ScopedTypeView::sealed(self.value.value(), self.context.value_scope())
     }
 
     pub(in crate::types::constraints) fn quantify(
@@ -80,14 +80,12 @@ impl CompletedGenericContext {
         ambient.merge(application.introduction_scope(), context)?;
         path.applications
             .merge_lexical_scopes(&mut ambient, context)?;
-        let captures = path.applications.retain_rigid_captures(context)?;
         let residual = ResidualGenericBinder::for_application(path, application)?;
         let value_scope = ambient.with_binder(residual.binder());
         Ok(Self {
             parameter_scope: application.parameters().completed_contract().clone(),
             ambient,
             residual,
-            captures,
             value_scope,
         })
     }
@@ -98,5 +96,24 @@ impl CompletedGenericContext {
 
     pub(super) fn value_lexical_scope(&self) -> &ConstraintLexicalScope {
         &self.value_scope
+    }
+}
+
+/// A completed value and the Free references its own transport retained.
+/// Construction belongs to the controlled reification fold. A shared ambient
+/// context or another output cannot supply this value's retained references.
+#[derive(Debug, Eq, PartialEq)]
+pub(in crate::types::constraints::solution) struct CompletedValue<T> {
+    value: T,
+    captures: RetainedRigidGenericScope,
+}
+
+impl<T> CompletedValue<T> {
+    pub(in crate::types::constraints::solution) fn value(&self) -> &T {
+        &self.value
+    }
+
+    pub(in crate::types::constraints::solution) fn captures(&self) -> &RetainedRigidGenericScope {
+        &self.captures
     }
 }

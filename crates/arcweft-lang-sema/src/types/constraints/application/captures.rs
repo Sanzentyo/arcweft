@@ -14,7 +14,9 @@ pub(in crate::types::constraints) struct RetainedRigidGenericScope {
 }
 
 impl RetainedRigidGenericScope {
-    pub(super) fn from_admitted(parameters: BTreeSet<ConstraintGenericParameterId>) -> Self {
+    pub(in crate::types::constraints) fn from_admitted(
+        parameters: BTreeSet<ConstraintGenericParameterId>,
+    ) -> Self {
         Self {
             parameters: parameters.into_iter().collect(),
         }
@@ -55,59 +57,7 @@ impl RetainedRigidGenericScope {
     }
 }
 
-fn is_free(parameter: &ConstraintGenericParameterId) -> bool {
-    matches!(
-        parameter,
-        ConstraintGenericParameterId::Type(GenericTypeReference::Free(_))
-            | ConstraintGenericParameterId::Const(GenericConstReference::Free(_))
-            | ConstraintGenericParameterId::Effect(GenericEffectReference::Free(_))
-    )
-}
-
 impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
-    pub(in crate::types::constraints) fn retain_rigid_captures<A: TypeConstraintAccounting>(
-        &self,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<RetainedRigidGenericScope, TypeConstraintError> {
-        let mut parameters = BTreeSet::new();
-        for application in self.applications() {
-            let scope = application.parameters().completed_contract();
-            for reference in scope.rigid_type_references() {
-                if matches!(reference, GenericTypeReference::Free(_)) {
-                    context.enter_node()?;
-                    parameters.insert(ConstraintGenericParameterId::Type(reference.clone()));
-                }
-            }
-            for reference in scope.rigid_const_references() {
-                if matches!(reference, GenericConstReference::Free(_)) {
-                    context.enter_node()?;
-                    parameters.insert(ConstraintGenericParameterId::Const(reference.clone()));
-                }
-            }
-            for row in application.effects().variables() {
-                if row.eligibility() == EffectConstraintEligibility::Rigid
-                    && matches!(row.variable(), GenericEffectReference::Free(_))
-                {
-                    context.enter_node()?;
-                    parameters.insert(ConstraintGenericParameterId::Effect(row.variable().clone()));
-                }
-            }
-        }
-        for lease in self.imported.iter() {
-            for parameter in &lease.parameters {
-                if is_free(parameter) && lease.contains(parameter) {
-                    context.enter_node()?;
-                    parameters.insert(parameter.clone());
-                }
-            }
-        }
-        for parameter in self.captures.parameters() {
-            context.enter_node()?;
-            parameters.insert(parameter.clone());
-        }
-        Ok(RetainedRigidGenericScope::from_admitted(parameters))
-    }
-
     pub(in crate::types::constraints) fn restore_rigid_captures<A: TypeConstraintAccounting>(
         &mut self,
         captures: &RetainedRigidGenericScope,

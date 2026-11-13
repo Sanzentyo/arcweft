@@ -9,18 +9,21 @@ use crate::{
     effects::EffectSet,
     types::{GenericScopeError, TypeProjectionError},
 };
+use std::{cell::RefCell, collections::BTreeSet};
 
 #[derive(Clone, Copy)]
-enum Direction {
+enum Direction<'a> {
     Reify,
-    Reopen,
+    Reopen(&'a RetainedRigidGenericScope),
 }
 
 struct ContextReferenceMap<'a> {
     generic: &'a CompletedGenericContext,
     source: ConstraintLexicalScope,
     target: ConstraintLexicalScope,
-    direction: Direction,
+    direction: Direction<'a>,
+    captures: RefCell<BTreeSet<ConstraintGenericParameterId>>,
+    root_header: RefCell<BTreeSet<ConstraintGenericParameterId>>,
 }
 
 fn fold_error(error: TypeProjectionError<TypeConstraintError>) -> TypeConstraintError {
@@ -33,12 +36,12 @@ fn fold_error(error: TypeProjectionError<TypeConstraintError>) -> TypeConstraint
 }
 
 impl CompletedGenericContext {
-    fn reference_map<A: TypeConstraintAccounting, D: ConstraintDomain>(
-        &self,
+    fn reference_map<'a, A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &'a self,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-        direction: Direction,
-    ) -> Result<ContextReferenceMap<'_>, TypeConstraintError> {
+        direction: Direction<'a>,
+    ) -> Result<ContextReferenceMap<'a>, TypeConstraintError> {
         let occurrence = context.capture_lexical_scope()?;
         Ok(match direction {
             Direction::Reify => ContextReferenceMap {
@@ -46,12 +49,16 @@ impl CompletedGenericContext {
                 source: occurrence,
                 target: self.ambient.clone(),
                 direction,
+                captures: RefCell::new(BTreeSet::new()),
+                root_header: RefCell::new(BTreeSet::new()),
             },
-            Direction::Reopen => ContextReferenceMap {
+            Direction::Reopen(_) => ContextReferenceMap {
                 generic: self,
                 source: self.ambient.clone(),
                 target: application.introduction_scope().clone(),
                 direction,
+                captures: RefCell::new(BTreeSet::new()),
+                root_header: RefCell::new(BTreeSet::new()),
             },
         })
     }
@@ -64,10 +71,13 @@ impl CompletedGenericContext {
         ty: &TypeKind,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
+        retained_predicate: Option<&CompletedValue<EffectPredicate>>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeConstraintError> {
-        self.reference_map(application, context, Direction::Reify)?
-            .map_type(ty, path, application, context)
+    ) -> Result<CompletedValue<TypeKind>, TypeConstraintError> {
+        let mapping = self.reference_map(application, context, Direction::Reify)?;
+        let mut value = mapping.map_type(ty, path, application, context)?;
+        mapping.retain_result_predicate(&mut value, retained_predicate, context)?;
+        Ok(mapping.finish(value))
     }
 
     pub(in crate::types::constraints::solution) fn reopen_type<
@@ -75,13 +85,13 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        ty: &TypeKind,
+        ty: &CompletedValue<TypeKind>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
-        self.reference_map(application, context, Direction::Reopen)?
-            .map_type(ty, path, application, context)
+        self.reference_map(application, context, Direction::Reopen(ty.captures()))?
+            .map_type(ty.value(), path, application, context)
     }
 
     pub(in crate::types::constraints::solution) fn reify_length<
@@ -93,16 +103,17 @@ impl CompletedGenericContext {
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<ArrayLength, TypeConstraintError> {
+    ) -> Result<CompletedValue<ArrayLength>, TypeConstraintError> {
         let mapping = self.reference_map(application, context, Direction::Reify)?;
-        mapping.length(
+        let value = mapping.length(
             length,
             mapping.source_scope(),
             mapping.target_scope(),
             path,
             application,
             context,
-        )
+        )?;
+        Ok(mapping.finish(value))
     }
 
     pub(in crate::types::constraints::solution) fn reopen_length<
@@ -110,14 +121,15 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        length: &ArrayLength,
+        length: &CompletedValue<ArrayLength>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ArrayLength, TypeConstraintError> {
-        let mapping = self.reference_map(application, context, Direction::Reopen)?;
+        let mapping =
+            self.reference_map(application, context, Direction::Reopen(length.captures()))?;
         mapping.length(
-            length,
+            length.value(),
             mapping.source_scope(),
             mapping.target_scope(),
             path,
@@ -135,9 +147,10 @@ impl CompletedGenericContext {
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<EffectRow, TypeConstraintError> {
-        self.reference_map(application, context, Direction::Reify)?
-            .map_row(row, path, application, context)
+    ) -> Result<CompletedValue<EffectRow>, TypeConstraintError> {
+        let mapping = self.reference_map(application, context, Direction::Reify)?;
+        let value = mapping.map_row(row, path, application, context)?;
+        Ok(mapping.finish(value))
     }
 
     pub(in crate::types::constraints::solution) fn reopen_effect_row<
@@ -145,13 +158,13 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        row: &EffectRow,
+        row: &CompletedValue<EffectRow>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectRow, TypeConstraintError> {
-        self.reference_map(application, context, Direction::Reopen)?
-            .map_row(row, path, application, context)
+        self.reference_map(application, context, Direction::Reopen(row.captures()))?
+            .map_row(row.value(), path, application, context)
     }
 
     pub(in crate::types::constraints::solution) fn reify_effect_predicate<
@@ -163,9 +176,10 @@ impl CompletedGenericContext {
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<EffectPredicate, TypeConstraintError> {
-        self.reference_map(application, context, Direction::Reify)?
-            .map_predicate(predicate, path, application, context)
+    ) -> Result<CompletedValue<EffectPredicate>, TypeConstraintError> {
+        let mapping = self.reference_map(application, context, Direction::Reify)?;
+        let value = mapping.map_predicate(predicate, path, application, context)?;
+        Ok(mapping.finish(value))
     }
 
     pub(in crate::types::constraints::solution) fn reopen_effect_predicate<
@@ -173,13 +187,17 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        predicate: &EffectPredicate,
+        predicate: &CompletedValue<EffectPredicate>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectPredicate, TypeConstraintError> {
-        self.reference_map(application, context, Direction::Reopen)?
-            .map_predicate(predicate, path, application, context)
+        self.reference_map(
+            application,
+            context,
+            Direction::Reopen(predicate.captures()),
+        )?
+        .map_predicate(predicate.value(), path, application, context)
     }
 
     pub(in crate::types::constraints::solution) fn validate_reified_future_type<
@@ -207,16 +225,111 @@ impl CompletedGenericContext {
 }
 
 impl ContextReferenceMap<'_> {
+    fn admits_free(&self, parameter: &ConstraintGenericParameterId, visible: bool) -> bool {
+        match self.direction {
+            Direction::Reify => visible,
+            Direction::Reopen(scope) => scope.contains(parameter),
+        }
+    }
+
+    fn retain_free(&self, parameter: ConstraintGenericParameterId, root_header: bool) {
+        if matches!(self.direction, Direction::Reify) {
+            if root_header {
+                self.root_header.borrow_mut().insert(parameter);
+            } else {
+                self.captures.borrow_mut().insert(parameter);
+            }
+        }
+    }
+
+    fn finish<T>(self, value: T) -> CompletedValue<T> {
+        let mut captures = self.captures.into_inner();
+        captures.extend(self.root_header.into_inner());
+        CompletedValue {
+            value,
+            captures: RetainedRigidGenericScope::from_admitted(captures),
+        }
+    }
+
+    /// Finish the root header before issuing an immutable completed value.
+    /// Canonical conjunction may erase references, so retain the final header's
+    /// support rather than unioning every input predicate's references.
+    fn retain_result_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        value: &mut TypeKind,
+        incoming: Option<&CompletedValue<EffectPredicate>>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        let Some(incoming) = incoming.filter(|value| !value.value().is_unconstrained()) else {
+            return Ok(());
+        };
+        let TypeKind::Function {
+            binder,
+            effects,
+            predicate,
+            ..
+        } = value
+        else {
+            return Ok(());
+        };
+        let source = self.generic.value_scope();
+        let target = source.with_binder(*binder);
+        let inserted = u32::from(!binder.is_empty());
+        let lifted =
+            incoming
+                .value()
+                .map_references(context, &mut |reference, _| match reference {
+                    GenericEffectReference::Bound(parameter) => {
+                        source.bound_effect(parameter.depth(), parameter.slot())?;
+                        let depth = parameter.depth().checked_add(inserted).ok_or(
+                            TypeConstraintInvariant::GenericScope(
+                                GenericScopeError::UnknownDepth {
+                                    depth: parameter.depth(),
+                                },
+                            ),
+                        )?;
+                        target
+                            .bound_effect(depth, parameter.slot())
+                            .map_err(Into::into)
+                    }
+                    GenericEffectReference::Free(_) => Ok(reference.clone()),
+                    GenericEffectReference::Inference(_) => {
+                        Err(TypeConstraintInvariant::GenericScope(
+                            GenericScopeError::EscapedInference {
+                                kind: crate::types::GenericParameterKind::Effect,
+                            },
+                        )
+                        .into())
+                    }
+                })?;
+        *predicate = predicate.and(&lifted, context)?;
+        let mut final_header = BTreeSet::new();
+        for reference in effects.variables()?.chain(predicate.variables()) {
+            if matches!(reference, GenericEffectReference::Free(_)) {
+                context.enter_node()?;
+                let parameter = reference.clone().into();
+                if !self.root_header.borrow().contains(&parameter)
+                    && !incoming.captures().contains(&parameter)
+                {
+                    return Err(references::effect_out_of_scope(reference));
+                }
+                final_header.insert(parameter);
+            }
+        }
+        self.root_header.replace(final_header);
+        Ok(())
+    }
+
     fn source_scope(&self) -> &GenericScope {
         match self.direction {
             Direction::Reify => self.source.shape(),
-            Direction::Reopen => self.generic.value_scope(),
+            Direction::Reopen(_) => self.generic.value_scope(),
         }
     }
     fn target_scope(&self) -> &GenericScope {
         match self.direction {
             Direction::Reify => self.generic.value_scope(),
-            Direction::Reopen => self.target.shape(),
+            Direction::Reopen(_) => self.target.shape(),
         }
     }
     fn nested(&self, source: &GenericScope) -> Result<usize, TypeConstraintError> {
@@ -242,12 +355,13 @@ impl ContextReferenceMap<'_> {
             return Ok(Some(depth));
         }
         let residual = usize::from(!self.generic.residual.binder().is_empty());
-        if matches!(self.direction, Direction::Reopen) && residual != 0 && depth_index == nested {
+        if matches!(self.direction, Direction::Reopen(_)) && residual != 0 && depth_index == nested
+        {
             return Ok(None);
         }
         let (source_inner, target_inner) = match self.direction {
             Direction::Reify => (nested, nested.checked_add(residual)),
-            Direction::Reopen => (
+            Direction::Reopen(_) => (
                 nested
                     .checked_add(residual)
                     .ok_or(TypeConstraintAbort::ArithmeticOverflow)?,
@@ -312,12 +426,15 @@ impl ContextReferenceMap<'_> {
             }
             GenericTypeReference::Inference(_) => Err(references::type_out_of_scope(reference)),
             GenericTypeReference::Free(_) => {
-                if path.applications.parameter_eligibility(reference)
-                    != Some(TypeConstraintParameterEligibility::Rigid)
-                    && !self.generic.captures.contains(&reference.clone().into())
-                {
+                let parameter = reference.clone().into();
+                if !self.admits_free(
+                    &parameter,
+                    path.applications.parameter_eligibility(reference)
+                        == Some(TypeConstraintParameterEligibility::Rigid),
+                ) {
                     return Err(references::type_out_of_scope(reference));
                 }
+                self.retain_free(parameter, false);
                 Ok(reference.clone())
             }
         }
@@ -369,12 +486,15 @@ impl ContextReferenceMap<'_> {
             }
             GenericConstReference::Inference(_) => Err(references::const_out_of_scope(reference)),
             GenericConstReference::Free(_) => {
-                if path.applications.const_parameter_eligibility(reference)
-                    != Some(TypeConstraintConstEligibility::Rigid)
-                    && !self.generic.captures.contains(&reference.clone().into())
-                {
+                let parameter = reference.clone().into();
+                if !self.admits_free(
+                    &parameter,
+                    path.applications.const_parameter_eligibility(reference)
+                        == Some(TypeConstraintConstEligibility::Rigid),
+                ) {
                     return Err(references::const_out_of_scope(reference));
                 }
+                self.retain_free(parameter, false);
                 Ok(reference.clone())
             }
         }
@@ -387,6 +507,7 @@ impl ContextReferenceMap<'_> {
         target: &GenericScope,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
+        root_header: bool,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericEffectReference, TypeConstraintError> {
         match reference {
@@ -429,12 +550,15 @@ impl ContextReferenceMap<'_> {
             }
             GenericEffectReference::Inference(_) => Err(references::effect_out_of_scope(reference)),
             GenericEffectReference::Free(_) => {
-                if path.applications.effect_eligibility(reference)
-                    != Some(EffectConstraintEligibility::Rigid)
-                    && !self.generic.captures.contains(&reference.clone().into())
-                {
+                let parameter = reference.clone().into();
+                if !self.admits_free(
+                    &parameter,
+                    path.applications.effect_eligibility(reference)
+                        == Some(EffectConstraintEligibility::Rigid),
+                ) {
                     return Err(references::effect_out_of_scope(reference));
                 }
+                self.retain_free(parameter, root_header);
                 Ok(reference.clone())
             }
         }
@@ -489,9 +613,17 @@ impl ContextReferenceMap<'_> {
                     depth,
                     context,
                     &|reference, context| {
-                        self.effect_reference(reference, source, target, path, application, context)
-                            .map(|reference| EffectRow::open(EffectSet::new(), reference))
-                            .map_err(TypeProjectionError::Control)
+                        self.effect_reference(
+                            reference,
+                            source,
+                            target,
+                            path,
+                            application,
+                            depth == 2,
+                            context,
+                        )
+                        .map(|reference| EffectRow::open(EffectSet::new(), reference))
+                        .map_err(TypeProjectionError::Control)
                     },
                 )
             },
@@ -513,6 +645,7 @@ impl ContextReferenceMap<'_> {
                 self.target_scope(),
                 path,
                 application,
+                false,
                 context,
             )
             .map(|reference| EffectRow::open(EffectSet::new(), reference))
@@ -535,6 +668,7 @@ impl ContextReferenceMap<'_> {
                 self.target_scope(),
                 path,
                 application,
+                false,
                 context,
             )
             .map(|reference| EffectRow::open(EffectSet::new(), reference))
