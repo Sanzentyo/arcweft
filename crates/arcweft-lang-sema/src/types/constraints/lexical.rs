@@ -156,17 +156,6 @@ impl ConstraintLexicalScope {
                 .all(|(left, right)| Arc::ptr_eq(left, right))
     }
 
-    /// A template traversal is isolated from the actual operands. Its arities
-    /// cannot certify an alignment with an independently retained actual scope.
-    pub(super) fn template(shape: GenericScope) -> Self {
-        let frames = shape
-            .binders()
-            .iter()
-            .map(|_| Arc::new(LexicalFrame))
-            .collect();
-        Self { shape, frames }
-    }
-
     pub(super) fn merge<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &mut self,
         original: &Self,

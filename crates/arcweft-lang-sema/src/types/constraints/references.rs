@@ -54,11 +54,14 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    let scope = context.lexical_scope().clone();
+    let scope = application
+        .parameters()
+        .completed_contract()
+        .template_scope();
     super::solution::map_term_with_control(
         ty,
-        &scope,
-        &scope,
+        scope,
+        scope,
         1,
         context,
         &|reference, scope, _, _, context| {
@@ -112,7 +115,10 @@ where
         ArrayLength::Generic(reference) => mapping
             .const_reference(
                 reference,
-                &context.lexical_scope().clone(),
+                application
+                    .parameters()
+                    .completed_contract()
+                    .template_scope(),
                 application,
                 path,
                 context,

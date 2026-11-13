@@ -9,7 +9,7 @@ use crate::{
         GenericParameterOwnerId, GenericScope, GenericTypeParameterId, GenericTypeReference,
         TypeKind,
         constraints::{
-            ConstraintGenericParameterId, NoConstraintClient, TypeConstraintConstEligibility,
+            ConstraintDomain, ConstraintGenericParameterId, TypeConstraintConstEligibility,
             TypeConstraintEffectScope, TypeConstraintParameterEligibility,
             TypeConstraintParameterScope,
             application::ConstraintApplicationScope,
@@ -22,7 +22,40 @@ use crate::{
     },
 };
 
-type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
+struct TemplateDomain;
+
+impl ConstraintDomain for TemplateDomain {
+    type Application = u8;
+    type Source = ();
+    type AlternativeIndex = ();
+    type EvidenceRule = ();
+    type ObservedEvidence = ();
+    type CheckedEvidence = ();
+    type ProbeSemanticBranch = ();
+    type ProbePreparation = ();
+    type SealedBranchValue = ();
+    type Projection = ();
+    type SourceErrorCause = ();
+    type ClientInvariant = ();
+
+    fn evidence_accepts(_: &(), _: &()) -> bool {
+        false
+    }
+
+    fn project_checked_evidence(_: &(), _: &TypeKind) -> Option<()> {
+        Some(())
+    }
+
+    fn alternative_ordinal(_: &()) -> u32 {
+        0
+    }
+
+    fn client_invariant_source(_: &()) {}
+
+    fn empty_sealed_branch() {}
+}
+
+type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, TemplateDomain>;
 
 fn context(cancellation: &AtomicBool) -> Context<'_> {
     TypeConstraintContext::with_accounting(LocalConstraintAccounting::new(
@@ -149,13 +182,13 @@ fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() 
         let cancellation = AtomicBool::new(false);
         let mut context = context(&cancellation);
         let root = context
-            .fixture_application_scope((), TypeConstraintParameterScope::empty())
+            .fixture_application_scope(0, TypeConstraintParameterScope::empty())
             .unwrap();
         let root_id = root.id();
         let mut path = context.start_path(root).unwrap();
         let (parameters, keys) = scope(eligibility);
         let expected = opened(&parameters, &keys, eligibility);
-        let child = context.fixture_application_scope((), parameters).unwrap();
+        let child = context.fixture_application_scope(1, parameters).unwrap();
         let child_id = child.id();
         path = context.admit_application(path, child).unwrap();
         for (index, value) in values(&expected, &mut context).into_iter().enumerate() {
@@ -196,13 +229,12 @@ fn a_template_can_read_its_original_sources_exact_imported_scope() {
         let mut context = context(&cancellation);
         let (parameters, keys) = scope(eligibility);
         let expected = opened(&parameters, &keys, eligibility);
-        let root = context.fixture_application_scope((), parameters).unwrap();
+        let root = context.fixture_application_scope(0, parameters).unwrap();
         let mut path = context.start_path(root).unwrap();
         let lease = path.applications.import_parameters(&expected).unwrap();
         let original = context.fixture_original_context(Some(&lease)).unwrap();
-        let child =
-            ConstraintApplicationScope::test_root((), TypeConstraintParameterScope::empty())
-                .with_fixture_original(original);
+        let child = ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty())
+            .with_fixture_original(original);
         let child_id = child.id();
         path = context.admit_application(path, child).unwrap();
         for value in values(&expected, &mut context) {
@@ -222,7 +254,7 @@ fn template_opening_retains_function_local_binders_and_restores_actual_ambient_f
     let outer = context.enter_binder_scope(binder);
     let ambient = context.lexical_frames().clone();
     let root = context
-        .fixture_application_scope((), TypeConstraintParameterScope::empty())
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
         .unwrap();
     let path = context.start_path(root).unwrap();
     let local = GenericScope::default().with_binder(binder);

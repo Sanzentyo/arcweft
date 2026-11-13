@@ -1386,15 +1386,13 @@ where
         application: ConstraintApplicationId,
     ) -> Result<TypeKind, TypeConstraintError> {
         let application = path.applications.require_application(application)?;
-        self.with_template_scope(application, |context| {
-            super::references::map_type(
-                ty,
-                &super::references::OpenTemplateReferences,
-                application,
-                path,
-                context,
-            )
-        })
+        super::references::map_type(
+            ty,
+            &super::references::OpenTemplateReferences,
+            application,
+            path,
+            self,
+        )
     }
 
     #[cfg(test)]
@@ -1405,34 +1403,13 @@ where
         application: ConstraintApplicationId,
     ) -> Result<super::super::ArrayLength, TypeConstraintError> {
         let application = path.applications.require_application(application)?;
-        self.with_template_scope(application, |context| {
-            super::references::map_length(
-                length,
-                &super::references::OpenTemplateReferences,
-                application,
-                path,
-                context,
-            )
-        })
-    }
-
-    fn with_template_scope<R>(
-        &mut self,
-        application: &ConstraintApplicationScope<D>,
-        operation: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        let template = application
-            .parameters()
-            .completed_contract()
-            .template_scope()
-            .clone();
-        let enclosing = std::mem::replace(
-            &mut self.lexical_scope,
-            ConstraintLexicalScope::template(template),
-        );
-        let result = operation(self);
-        self.lexical_scope = enclosing;
-        result
+        super::references::map_length(
+            length,
+            &super::references::OpenTemplateReferences,
+            application,
+            path,
+            self,
+        )
     }
 
     pub(super) fn lexical_scope(&self) -> &GenericScope {
