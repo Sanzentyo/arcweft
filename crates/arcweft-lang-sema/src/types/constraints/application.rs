@@ -116,6 +116,26 @@ impl std::fmt::Debug for ImportedGenericParameterScopeLease {
 }
 
 impl ImportedGenericParameterScopeLease {
+    /// Child Γ may retain only a loan already owned by its exact parent path.
+    /// Re-exporting the declared keys compares real owners and narrowed
+    /// captures, not just membership in a receiving parameter inventory.
+    pub(super) fn validate_in<A: super::context::TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        inventory: &ConstraintApplicationInventory<D>,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), super::TypeConstraintError> {
+        for _ in &self.parameters {
+            context.enter_node()?;
+        }
+        if &inventory.import_parameters(&self.parameters)? != self {
+            return Err(TypeConstraintInvariant::ParameterScope(
+                TypeConstraintParameterScopeInvariant::ApplicationContractConflict,
+            )
+            .into());
+        }
+        Ok(())
+    }
+
     pub(super) fn admits_original_parameter(
         &self,
         parameter: &super::ConstraintGenericParameterId,

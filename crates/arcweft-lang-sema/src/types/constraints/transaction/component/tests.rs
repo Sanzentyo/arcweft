@@ -965,6 +965,7 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
     let nested = ticket.fork_for_child(&mut context).unwrap();
     let mut child = TypeConstraintTransaction::initialize_from_nested_path(
         &mut context,
+        nested.original_context().unwrap().clone(),
         3,
         TypeConstraintParameterScope::empty(),
         None,

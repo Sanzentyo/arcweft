@@ -5136,14 +5136,7 @@ impl Analyzer<'_, '_, '_> {
                 )
             }
         };
-        let enclosing = self.enclosing_constraint_scope(
-            module,
-            owner,
-            parent_source
-                .is_none()
-                .then_some(expected_result_scope)
-                .flatten(),
-        )?;
+        let enclosing = self.enclosing_constraint_scope(module, owner, expected_result_scope)?;
         let constraint_set = validate_and_prepare_call_constraints(
             self.facts
                 .prepared_calls()

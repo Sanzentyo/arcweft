@@ -492,6 +492,7 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
     let nested = ticket.fork_for_child(&mut context).unwrap();
     let mut child = TypeConstraintTransaction::initialize_from_nested_path(
         &mut context,
+        nested.original_context().unwrap().clone(),
         2,
         TypeConstraintParameterScope::empty(),
         None,
@@ -1243,7 +1244,7 @@ fn fixed_effect_evidence_rejects_shrinking_and_expanding_function_relations() {
         } else {
             (&projected, &incompatible)
         };
-        transaction.constrain(
+        transaction.constrain_application_template(
             &mut context,
             pattern,
             actual,

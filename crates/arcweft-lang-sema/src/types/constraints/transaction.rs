@@ -403,6 +403,18 @@ pub(crate) struct NestedConstraintPath<D: ConstraintDomain> {
     path: ConstraintPath<D>,
 }
 
+impl<D: ConstraintDomain> NestedConstraintPath<D> {
+    pub(crate) fn original_context(
+        &self,
+    ) -> Result<&super::OriginalProducerContext, TypeConstraintError> {
+        Ok(self
+            .path
+            .applications
+            .require_application(self.receipt.input.source.application())?
+            .original_context())
+    }
+}
+
 /// Owner-bound handle to a result projection registered on one admitted child
 /// application.  It carries no open `TypeKind`; the lower transaction opens
 /// the schema term on the matching path when it submits the parent source.
@@ -587,8 +599,11 @@ impl<D: ConstraintDomain> ProbeTicket<D> {
     ) -> Result<&super::OriginalProducerContext, TypeConstraintError> {
         self.path
             .as_ref()
-            .map(|path| &path.lineage.original)
-            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::WrongPhase))
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::WrongPhase))?
+            .applications
+            .require_application(self.input.source.application())
+            .map(|owner| owner.original_context())
+            .map_err(Into::into)
     }
     #[cfg(test)]
     pub(super) fn test_path(&self) -> &ConstraintPath<D> {
@@ -1037,7 +1052,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         parent_receipt: Option<ConstraintSourceReceipt<D>>,
     ) -> Result<Self, TypeConstraintError> {
         let path = Self::prepare_application(context, application, path, inherited)?;
-        let original = path.lineage.original.clone();
+        let original = path
+            .applications
+            .require_application(application)?
+            .original_context()
+            .clone();
         Ok(Self {
             application,
             original,
@@ -1062,6 +1081,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn initialize_from_nested_path<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        original: super::OriginalProducerContext,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
         inherited: Option<Arc<TypeConstraintSolution>>,
@@ -1070,12 +1090,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        let result = context
-            .application_scope(
-                application,
-                parameters,
-                nested.path.lineage.original.clone(),
-            )
+        let result = original
+            .validate_imported_in(&nested.path.applications, context)
+            .and_then(|()| context.application_scope(application, parameters, original))
             .and_then(|scope| {
                 let application = scope.id();
                 context
@@ -1213,19 +1230,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         acceptance: ConstraintAcceptance,
         timing: ConstraintEquationTiming,
     ) -> Result<(), TypeConstraintError> {
+        let original = self.original.clone();
         self.constrain_equation_from(
             context,
             pattern,
             actual,
             acceptance,
             timing,
-            |path, scope, context| {
-                ConstraintOperand::from_original_in(
-                    actual,
-                    scope,
-                    path.lineage.original.clone(),
-                    context,
-                )
+            |_, scope, context| {
+                ConstraintOperand::from_original_in(actual, scope, original.clone(), context)
             },
         )
     }
@@ -1339,6 +1352,34 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
         self.frontier = advanced;
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn constrain_application_template<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+    ) {
+        let application = self.application;
+        if let Err(error) = self.constrain_equation_from(
+            context,
+            pattern,
+            actual,
+            acceptance,
+            ConstraintEquationTiming::Immediate,
+            |path, scope, context| {
+                let value = context.open_template_type(actual, path, application)?;
+                Ok(ConstraintOperand::template(
+                    value,
+                    scope,
+                    path.applications.require_application_owner(application)?,
+                ))
+            },
+        ) {
+            self.first_failure = Some(error.into());
+        }
     }
 
     /// Adds fixed row evidence to the same path-local effect environment used
@@ -1828,7 +1869,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     let actual_operand = ConstraintOperand::source(
                         actual.clone(),
                         Arc::clone(&scope),
-                        path.lineage.original.clone(),
+                        self.original.clone(),
                         ConstraintSourceReceipt {
                             input: Arc::clone(&input),
                         },

@@ -229,8 +229,14 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
         let (authority, parameters, inherited) = initialization
             .into_lower_parts()
             .map_err(CandidateConstraintDriverStartFailure::Prepared)?;
+        let original = authority.original_context(self.context).map_err(|error| {
+            CandidateConstraintDriverStartFailure::Lower(
+                TypeConstraintInitializationFailure::original_context(error),
+            )
+        })?;
         let lower = TypeConstraintTransaction::initialize_from_nested_path(
             self.context,
+            original,
             application,
             parameters,
             inherited,

@@ -2706,11 +2706,10 @@ impl<D: crate::types::constraints::ConstraintDomain> PreparedChildConstraintInit
         ),
         CallConstraintInvariant,
     > {
-        let (authority, parameters, inherited, imported) =
-            self.initialization.into_lower_parts()?;
-        if imported.is_some() {
-            return Err(CallConstraintInvariant::MalformedSchemaInventory);
-        }
+        let (authority, parameters, inherited, _) = self.initialization.into_lower_parts()?;
+        // The authority retains its source Γ imports. The lower initializer
+        // validates their exact owners against the chosen parent path; a
+        // child does not import a second application inventory.
         Ok((authority, parameters, inherited))
     }
 }

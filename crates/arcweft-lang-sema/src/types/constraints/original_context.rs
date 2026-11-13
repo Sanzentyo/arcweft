@@ -70,6 +70,17 @@ impl Debug for OriginalProducerContext {
 }
 
 impl OriginalProducerContext {
+    pub(super) fn validate_imported_in<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        inventory: &super::application::ConstraintApplicationInventory<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        match self.0.source.rigid_scope().imported {
+            Some(imported) => imported.validate_in(inventory, context),
+            None => Ok(()),
+        }
+    }
+
     pub(super) fn admits_parameter(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
         let rigid = self.0.source.rigid_scope();
         let declared = match parameter {

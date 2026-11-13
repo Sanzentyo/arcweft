@@ -847,6 +847,15 @@ where
             .constrain(&mut self.context, pattern, actual, acceptance);
     }
 
+    fn constrain_opened(
+        &mut self,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+    ) {
+        self.lower
+            .constrain_application_template(&mut self.context, pattern, actual, acceptance);
+    }
     fn request_projection(
         &mut self,
         key: D::Projection,
@@ -1151,7 +1160,7 @@ fn transitive_bindings_are_sealed_and_move_only() {
                 transaction.lower.test_single_path().root_id(),
             )
             .expect("equation RHS uses the same active parameter namespace");
-        transaction.constrain(
+        transaction.constrain_opened(
             &pattern,
             &actual,
             ConstraintAcceptance::PatternAcceptsActual,
@@ -1253,17 +1262,17 @@ fn reciprocal_type_alias_constraints_share_one_representative_before_later_bindi
         None,
     );
 
-    transaction.constrain(
+    transaction.constrain_opened(
         &first_type,
         &second_type,
         ConstraintAcceptance::PatternAcceptsActual,
     );
-    transaction.constrain(
+    transaction.constrain_opened(
         &second_type,
         &first_type,
         ConstraintAcceptance::PatternAcceptsActual,
     );
-    transaction.constrain(
+    transaction.constrain_opened(
         &first_type,
         &TypeKind::I64,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -1319,18 +1328,18 @@ fn reciprocal_const_alias_constraints_share_one_representative_before_later_bind
         None,
     );
 
-    transaction.constrain(
+    transaction.constrain_opened(
         &first_type,
         &second_type,
         ConstraintAcceptance::PatternAcceptsActual,
     );
-    transaction.constrain(
+    transaction.constrain_opened(
         &second_type,
         &first_type,
         ConstraintAcceptance::PatternAcceptsActual,
     );
     let concrete = array(ArrayLength::Const(7));
-    transaction.constrain(
+    transaction.constrain_opened(
         &first_type,
         &concrete,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -1370,7 +1379,7 @@ fn directional_relation_binds_the_active_actual_when_pattern_is_concrete() {
         None,
     );
 
-    transaction.constrain(
+    transaction.constrain_opened(
         &TypeKind::I64,
         &active,
         ConstraintAcceptance::ActualAcceptsPattern,
@@ -1474,17 +1483,17 @@ fn complementary_result_constraints_bind_the_active_actual_side() {
         None,
     );
 
-    transaction.constrain(
+    transaction.constrain_opened(
         &child_a,
         &TypeKind::I64,
         ConstraintAcceptance::PatternAcceptsActual,
     );
-    transaction.constrain(
+    transaction.constrain_opened(
         &result(child_a.clone(), child_b.clone()),
         &result(parent_a.clone(), parent_b.clone()),
         ConstraintAcceptance::ActualAcceptsPattern,
     );
-    transaction.constrain(
+    transaction.constrain_opened(
         &parent_b,
         &TypeKind::String,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -1545,12 +1554,12 @@ fn array_length_relation_binds_active_variables_on_either_source_side() {
     let concrete_right = array(right.clone());
     let concrete_left = array(left.clone());
 
-    transaction.constrain(
+    transaction.constrain_opened(
         &array(ArrayLength::Const(7)),
         &concrete_right,
         ConstraintAcceptance::ActualAcceptsPattern,
     );
-    transaction.constrain(
+    transaction.constrain_opened(
         &concrete_left,
         &array(ArrayLength::Const(9)),
         ConstraintAcceptance::PatternAcceptsActual,
@@ -1780,7 +1789,7 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
             transaction.lower.test_single_path().root_id(),
         )
         .expect("equation RHS uses the same active parameter namespace");
-    transaction.constrain(
+    transaction.constrain_opened(
         &pattern,
         &actual,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -3912,7 +3921,7 @@ fn deferred_cycle_is_reported_only_after_close() {
             transaction.lower.test_single_path().root_id(),
         )
         .expect("equation RHS uses the same active parameter namespace");
-    transaction.constrain(
+    transaction.constrain_opened(
         &pattern,
         &actual,
         ConstraintAcceptance::PatternAcceptsActual,

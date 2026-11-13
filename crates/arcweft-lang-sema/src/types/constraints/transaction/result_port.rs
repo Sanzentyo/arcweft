@@ -84,8 +84,17 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
         D::Projection: Clone,
     {
         context.enter_node()?;
+        let original = self
+            .alternative
+            .path
+            .applications
+            .require_application(self.alternative.result.application())
+            .map_err(TypeConstraintError::from)?
+            .original_context()
+            .clone();
         let mut transaction = TypeConstraintTransaction::initialize_from_nested_path(
             context,
+            original,
             application,
             parameters,
             None,
@@ -203,7 +212,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 actual: super::ConstraintOperand::from_original_in(
                     expected,
                     scope,
-                    path.lineage.original.clone(),
+                    self.original.clone(),
                     context,
                 )?,
                 source_ordinal: None,

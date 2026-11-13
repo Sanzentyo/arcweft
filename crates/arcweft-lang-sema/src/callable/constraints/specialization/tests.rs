@@ -126,6 +126,7 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                         let nested = probe.ticket.fork_for_child(probe.context).unwrap();
                         let mut child = TypeConstraintTransaction::initialize_from_nested_path(
                             probe.context,
+                            nested.original_context().unwrap().clone(),
                             CallableConstraintApplication::Call(owner),
                             parameters,
                             None,

@@ -14,7 +14,7 @@ use crate::{
                 TypeConstraintLimits, TypeConstraintTypeParameterScopeRow,
             },
             test_support::ConstraintTestSetup,
-            transaction::{ConstraintEquationTiming, ConstraintOperand, TypeConstraintTransaction},
+            transaction::TypeConstraintTransaction,
         },
     },
 };
@@ -91,6 +91,35 @@ fn frontier_with_imported(
     equations: &[(TypeKind, TypeKind)],
     imported: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
+    frontier_equations(
+        context,
+        scope,
+        equations,
+        imported,
+        EquationOrigin::Original,
+    )
+}
+
+enum EquationOrigin {
+    Original,
+    Application,
+}
+
+fn frontier_application(
+    context: &mut Context<'_>,
+    scope: TypeConstraintParameterScope,
+    equations: &[(TypeKind, TypeKind)],
+) -> SuspendedConstraintFrontier<NoConstraintClient> {
+    frontier_equations(context, scope, equations, None, EquationOrigin::Application)
+}
+
+fn frontier_equations(
+    context: &mut Context<'_>,
+    scope: TypeConstraintParameterScope,
+    equations: &[(TypeKind, TypeKind)],
+    imported: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
+    origin: EquationOrigin,
+) -> SuspendedConstraintFrontier<NoConstraintClient> {
     let mut lower = TypeConstraintTransaction::initialize_with_imported_fixture(
         context,
         (),
@@ -100,24 +129,20 @@ fn frontier_with_imported(
     )
     .unwrap();
     for (pattern, actual) in equations {
-        let application = lower.application;
-        lower
-            .constrain_equation_from(
+        match origin {
+            EquationOrigin::Original => lower.constrain(
                 context,
                 pattern,
                 actual,
                 ConstraintAcceptance::PatternAcceptsActual,
-                ConstraintEquationTiming::Immediate,
-                |path, scope, context| {
-                    let value = context.open_template_type(actual, path, application)?;
-                    Ok(ConstraintOperand::template(
-                        value,
-                        scope,
-                        path.applications.require_application_owner(application)?,
-                    ))
-                },
-            )
-            .unwrap();
+            ),
+            EquationOrigin::Application => lower.constrain_application_template(
+                context,
+                pattern,
+                actual,
+                ConstraintAcceptance::PatternAcceptsActual,
+            ),
+        }
     }
     lower.request_projection(
         context,
@@ -141,7 +166,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context).unwrap();
     let (scope, ty, length) = parameters(2, 2);
-    let first = frontier(
+    let first = frontier_application(
         &mut context,
         scope.clone(),
         &[
@@ -158,7 +183,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
     let first = component
         .admit_fixture_roots(&mut context, vec![first], "T=U,N=M")
         .unwrap();
-    let second = frontier(
+    let second = frontier_application(
         &mut context,
         scope,
         &[
@@ -278,13 +303,15 @@ fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
     let mut component = Component::new(&mut context).unwrap();
     let (scope, ty, _) = parameters(2, 0);
     for (left, right) in [(0, 1), (1, 0)] {
-        let root = frontier(
+        let root = frontier_equations(
             &mut context,
             scope.clone(),
             &[(
                 TypeKind::GenericParam(ty[left].clone()),
                 TypeKind::Tuple(vec![TypeKind::GenericParam(ty[right].clone())]),
             )],
+            None,
+            EquationOrigin::Application,
         );
         component
             .admit_fixture_roots(&mut context, vec![root], "acyclic original")
@@ -632,7 +659,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     let row = |index: usize| EffectRow::open(EffectSet::new(), effects[index].clone());
     let function = |row| TypeKind::function_with_effects([], TypeKind::Bool, row);
     let log = EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap());
-    let mut first = frontier(
+    let mut first = frontier_application(
         &mut context,
         scope.clone(),
         &[(TypeKind::GenericParam(ty.clone()), function(row(0)))],
@@ -649,7 +676,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     let first = component
         .admit_fixture_roots(&mut context, vec![first], "original disjunction")
         .unwrap();
-    let second = frontier(
+    let second = frontier_application(
         &mut context,
         scope,
         &[(TypeKind::GenericParam(ty), function(log.clone()))],

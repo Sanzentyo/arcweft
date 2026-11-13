@@ -382,3 +382,131 @@ fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_impor
         }
     }
 }
+
+#[test]
+fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let source = SourceParameters::new();
+    let root_original = source.original(&mut context);
+    let parameters = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [TypeConstraintTypeParameterScopeRow::new(
+            source.ty.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )],
+        [],
+        TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+        [],
+        [],
+    )
+    .unwrap();
+    let parent_key = parameters.type_reference(&source.ty).unwrap();
+    let mut parent = TypeConstraintTransaction::initialize(
+        &mut context,
+        root_original.clone(),
+        1,
+        parameters.clone(),
+        None,
+    )
+    .unwrap();
+    let lease = parent.frontier[0]
+        .applications
+        .import_parameters(&[parent_key.clone().into()])
+        .unwrap();
+    let child_original = context.fixture_original_context(Some(&lease)).unwrap();
+    parent
+        .begin_prepared_probe(
+            &mut context,
+            PreparedSourceConstraint::unchecked(7, PreparedConstraintSourceProjection::Scalar),
+            ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+    let ticket = parent.next_probe(&mut context).unwrap().unwrap();
+    assert_eq!(ticket.original_context().unwrap(), &root_original);
+    let foreign_scope = context.fixture_application_scope(1, parameters).unwrap();
+    let foreign = context.start_path(foreign_scope).unwrap();
+    let foreign_lease = foreign
+        .applications
+        .import_parameters(&[parent_key.clone().into()])
+        .unwrap();
+    let foreign_original = context
+        .fixture_original_context(Some(&foreign_lease))
+        .unwrap();
+    let foreign_nested = ticket.fork_for_child(&mut context).unwrap();
+    let rejected = TypeConstraintTransaction::initialize_from_nested_path(
+        &mut context,
+        foreign_original,
+        2,
+        TypeConstraintParameterScope::empty(),
+        None,
+        foreign_nested,
+    );
+    assert!(matches!(rejected,
+        Err(crate::types::constraints::TypeConstraintInitializationFailure::Invariant(
+            TypeConstraintInvariant::ParameterScope(
+                crate::types::constraints::TypeConstraintParameterScopeInvariant::ApplicationContractConflict
+            )
+        ))
+    ));
+    let nested = ticket.fork_for_child(&mut context).unwrap();
+    let child_parameters = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [TypeConstraintTypeParameterScopeRow::new(
+            source.ty.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )],
+        [],
+        TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+        [],
+        [],
+    )
+    .unwrap();
+    let child_key = child_parameters.type_reference(&source.ty).unwrap();
+    let mut child = TypeConstraintTransaction::initialize_from_nested_path(
+        &mut context,
+        child_original.clone(),
+        2,
+        child_parameters,
+        None,
+        nested,
+    )
+    .unwrap();
+    assert_eq!(child.original, child_original);
+    assert_eq!(child.frontier[0].lineage.original, root_original);
+    child.constrain(
+        &mut context,
+        &TypeKind::GenericParam(child_key),
+        &TypeKind::GenericParam(parent_key),
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    assert!(child.first_failure.is_none(), "{:?}", child.first_failure);
+    let negative_path = context.fork_path(&child.frontier[0]).unwrap();
+    let mut negative =
+        TypeConstraintTransaction::from_path(&mut context, child.application, negative_path, None)
+            .unwrap();
+    child
+        .begin_prepared_probe(
+            &mut context,
+            PreparedSourceConstraint::unchecked(8, PreparedConstraintSourceProjection::Scalar),
+            ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+    let ticket = child.next_probe(&mut context).unwrap().unwrap();
+    assert_eq!(ticket.original_context().unwrap(), &child_original);
+    drop(ticket);
+    negative.constrain(
+        &mut context,
+        &TypeKind::I64,
+        &TypeKind::GenericParam(source.ty.clone()),
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    match negative.first_failure.unwrap() {
+        TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+            TypeConstraintInvariant::ParameterScope(
+                crate::types::constraints::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope { parameter }
+            )
+        )) => assert_eq!(parameter, source.ty),
+        other => panic!("the child must not borrow root-only permissions: {other:?}"),
+    }
+}

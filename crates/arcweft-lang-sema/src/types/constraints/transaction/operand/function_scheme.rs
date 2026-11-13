@@ -109,7 +109,10 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
         let scope = context.application_scope(
             self.application,
             self.parameters,
-            path.lineage.original.clone(),
+            path.applications
+                .require_application(source_projection.application())?
+                .original_context()
+                .clone(),
         )?;
         let application = scope.id();
         path = context.admit_application(path, scope)?;

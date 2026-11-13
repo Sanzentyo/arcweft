@@ -142,6 +142,10 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
             .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?;
         let mut lower = TypeConstraintTransaction::initialize_from_nested_path(
             self.context,
+            nested
+                .original_context()
+                .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?
+                .clone(),
             application,
             parameters,
             None,
