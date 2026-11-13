@@ -17279,3 +17279,25 @@ workspace全target／全feature・locked check／Clippy、Sema全feature doctest
 現状行の訂正理由はtemplate開放境界の実装と同一Sourceの検証であり、この完成した境界を残作業のtemplate列挙から除外した。source／result／Completedの値転送・effect置換の値ごとのFree許可と実出力capture seal、caller実Γの引数全体転送、条件付きMGU／rank／局所∀、frontendのprepared接続・body一回準備・一括sealを完了とはしていない。以前の件数・失敗・full SHAをこの履歴と原本へ保持し、現状一覧はcurrent-status.mdの一か所に限る。Generic Matchの行を変更していない。新しい再帰本体のNative／AWBC、Tier 2／Wasm、Native／Web表示は今回のhost検証から受入とはしない。
 
 [全原本](acceptance-evidence/task-template-authority.raw.zip)は249 entry、展開時47589267 bytes、ZIP 5374508 bytes、SHA-256 `37ccabe2ea6b57a470c22f86748084f904f9ef19aab0bc76f332ac217ee75401`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
+
+## Checked source value scope
+
+2026-11-13。最終Source `0d42831c0085b414c3bd7f6351473291f7d85a4f`、tree `9005cfd42b06f7350726b50be42eeb196b1461d0`、親 `40b9243879c03c8d6af8537bc81be469eb7d3b8a`、移行基点・前回資料公開 `e9298da171d4bfc796b7f2a2dde3b3b27dd5ddc0`。既存mainで通常commit／non-forced pushし、head・tree・全変更blobを照合した。checkpointの全件前の公開は、途中commitの正常動作保証を不要とするユーザー指示による。既存の未追跡 `%SystemDrive%/` を保持した。
+
+ConstraintSourceValueOwnerは実際に保持するchecked／staged valueと、その値を検査したOriginalProducerContextを一緒に公開する。AnalyzerObservedSourceValueの2 factoryへ、候補を調べる前に確定したSourceコンテキストを渡す。root clientだけでなくcorrelated childの再生用AnalyzerCallApplicationSourcesにも同じコンテキストを保持し、以前破棄していたchildのコンテキストも転送する。SourceProbeTerm::Valueの解決は、値のownerが持つ実宣言Γと明示import leaseでtype／const／effect／predicateのFreeを検査してコピーする。receiving inventory、候補のD、数学的C、型から収集した許可一覧をΓの代用にしない。opaque value ownerとprobe receipt／Source identityの検査は維持した。
+
+最終Sourceの全feature Sema lib／testsは1,662件中1,656 PASS／6 FAIL／0 SKIP、73.063秒、slow 0。5 binaryの選択と終端の全IDが一致・重複0。Source `0b60adcc2b24ad580822753c163df9c43d5344b9` の全1,658 IDを維持し、新4 IDがPASS。別ΓのFreeがreceiving inventoryでrigidとして見えていても正確なout-of-scope errorで拒否し、値自身の宣言Γ／明示importを受理する。局所Fnの型・const・effect binderとpredicate、元value ownerの保持、コピー前の予算拒否、closed grammar leafでも取消しを確認した。既知6失敗のIDと実診断は前回と一致（5 ExpressionCycle、1 PendingCallableEffectProjection）。
+
+checkpoint `40b9243879c03c8d6af8537bc81be469eb7d3b8a`（tree `ce64a3702a7a2a24042ed281ad5c5a67c41a602a`）は1,661件中1,654 PASS／7 FAIL／0 SKIP、71.820秒。新3件はPASSしたが、既存t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_onceが追加で失敗した。4,096予算を維持した診断用runではSOURCE_SCOPE_LOWER total=4097 previous=4096 delta=1 limit=4096を観測した。診断にはlimits.rsへのcfg(test)出力だけを一時追加し、counter／上限／selector／assertionを変更していない。出力を取り除き、同ファイルのblobがcheckpointと最終Sourceで完全一致することを照合した。最初の開発時checkは欠けたOriginalProducerContext importとcorrelated source carrierの未移行fieldを、次のlistは新testの宣言parameter ID／Result／function factoryの型違いを修復した。これらを最終Sourceの結果と混ぜず原本へ保持する。
+
+追加失敗の原因は、パラメーターを含まない既存のTypeConstraintShape::Leaf／NeverにもΓ検査用の再帰walkを重ねたことだった。この文法classは参照出現も再帰的なsemantic type storageもなく、source probeでrootを既に計上している。Sourceのownerを保持したままそのmetadataをコピーし、参照／複合型は従来の共通controlled foldで検査・コピーする。全経路で取消しを先に確認する。型名やfixtureごとの例外、unmeteredな複合型walk、上限引上げ、probe／replayの省略は導入しなかった。修復後の限定runは新3件＋元の境界1件の4 PASS。最終Sourceの全件runでも、元の256候補・全候補のprobe各1回・選択replay 1回・物理257評価・4,096上限の全assertionがPASSした。
+
+同じ最終Sourceで他21 package・既定feature・規定107 targetを実行し、選択2,510 IDと終端が一致・重複0、2,507 PASS／2 FAIL／1 SKIP。20 package／76 targetはpackageごと、Compilerの31 targetは逐次実行した。Compilerの既知2失敗はflow_waitの同じIDとExpressionCycle（slot 17／19）。3 targetはcompile-only。CLI library 196件と統合6 target 30件は226 PASS、Compiler callable_executionの376件もPASS。owner全featureとconsumer既定featureは別slice。22 packageの推移的逆依存graphはCargo入力差分0を照合して再利用し、テストは今回のSourceで新たに実行した。
+
+workspace全target／全feature・locked check／Clippy、Sema全feature doctest 2件、owner Clippy、workspace fmt check、canonical構造gateは終了0。各step前後のcommit／tree／tracked差分0、owner全7 pathのbyte pinと公開blob、出力hashを照合した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。警告も保持する。canonical gateは98 package・3,487 files・3,356 Rust files・1,893,982 Rust physical LOC、review trigger 396・blocking 0。Sema fan-in／outは8／15、devは4／0でCargo edgeの変更はない。
+
+所有者はchecked source valueとSource preparationであり、Γを候補のside tableへ置かなかった。lowerはSource解決時のΓ検査と保持を所有し、既存の共通foldを再利用する。大きなanalyzer/calls/constraintsは既存のcallback・replay調整にSourceコンテキストを渡す責務を加えたもので、別のΓ resolverやAST walker、独立state clusterを増やしていない。新test moduleはこのSource境界に閉じる。各pathのbytes・physical LOC・基点との差を原本へ保持した。公開API・layer方向・I/O・unsafe・version・製品予算を変更しない。
+
+現状行の訂正理由はchecked source値のΓ保持とコピー前のFree検査が実装・検証されたためであり、導出後のsource／result／Completed転送やeffect置換の値ごとの許可、実出力capture seal、引数全体の実Γ、条件付きMGU／rank／局所∀、frontendのprepared接続・body一回準備・一括sealまで完成したとはしない。Generic Match、caller-bound recursion、共有prefixの受入は維持し、その行を未完了へ戻していない。実測・中間失敗・公開full SHAは履歴と原本へ保持し、現状一覧はcurrent-status.mdの一か所とする。今回のhost検証を新しい再帰本体のNative／AWBC・Tier 2／Wasm・Native／Web表示の受入とはしない。全体cargo cleanは前回の履行記録を保持し、今回は再実行していない。
+
+[全原本](acceptance-evidence/task-checked-source-value-scope.raw.zip)は260 entry、展開時49317778 bytes、ZIP 5591697 bytes、SHA-256 `0b5168536c60e33d218007ae807c1d391d5364d5f40239c136daa5b2f24d4820`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
