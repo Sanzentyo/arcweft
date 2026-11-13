@@ -17553,3 +17553,19 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: frontendの候補比較が実ownerを通していなかった境界と、最新owner／consumer／品質の一覧を今回の実装・実測へ更新した。prepared effect graph自体のfrontend owner化、prepared型の全producer／consumer、Γ統合、body一回準備・一括sealとeager経路の置換、一般量化消去・MGU／rank・Fn局所∀は今回の候補比較だけで完了にしない。Generic Match、caller-bound recursion、共有prefix、Free許可／reifyと各既受入を保持する。過去の全SHA・実測・失敗・原本を変更せず、現在の一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-projection-replay-owner.raw.zip](acceptance-evidence/task-projection-replay-owner.raw.zip) は 266 entries、raw 50832152 bytes、ZIP 5885051 bytes、SHA-256 `3db5b92c2d083abaa3dce4a50a0fcac71ca4bba09474d8a80bfffa1404708efc`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+
+## Sealed-branch comparison control
+
+2026-11-14。基点 `edc875389525efd30e9dac095690b94e3e8d46d6`、実装・公開Source `8a1619eb8505032e01ef99255fe42b9494f4647f`、tree `4f1131c29d8d7fb10fa4ccf26b899ed5e628b6fe`。既存mainの13 Rust pathを通常commit／非force pushし、検証dirty bytes・commit・公開blobを照合した。owner・workspace品質の完了後、consumer 4／20 group完了・Compiler未開始の途中でSourceをpushした時点もcheckpoint原本に保持した。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- lowerは完成componentが等しい場合、比較dispatchの1 nodeを課金してから元のaccounting reservationをlive clientへ貸す。clientのfinish／callback cleanupを先に一度だけ実施する順序を維持した。CandidateConstraintWorkSessionのDecisionControlと型投影は同じnode／work予算・取消信号を使い、比較のために予算を作り直さない。
+- 比較専用failureはconstraint failureとclient invariantだけを保持し、source ticketなしにFatalSourceを作れない。予算超過と取消しを同値・通常不一致・client invariantへ変換しない。従来のcanonical fact／Exact・Semantic replayの比較規則と物理評価記録は保持した。その全内部走査を今回制御化したという主張はしない。
+- 新3件は、実driver内の再帰する効果graph relation比較で、source probeと同じreservation、正確な追加node／work量、比較の全node予算境界、cleanup各1回、比較中の元信号による取消し、失敗後も使用可能な両affine deltaを検証した。assertion・既定budget・評価量・選択filterは弱めていない。
+- ownerは1,758件／1,752 PASS／6 FAIL／0 SKIP、98.016秒、5 suite。直前1,755 ID保持・新3件PASS、選択／終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。開発途中のcheck記録は最終Sourceの品質証拠に流用していない。
+- fresh full metadata／全target reverse treeの22 packageから後続21 package／107 targetを再実行した。全2,510件／2,507 PASS／2 FAIL／1 SKIP、選択／終端ID一致・重複0。Compiler既知2失敗、CLI規定226 PASSとcompile-only 3 targetを照合した。実行中の検証を完了扱いせず、全20 group・Compiler 31 targetの終端を確認した。
+- workspace全target／全feature check・Clippy、Sema doctest 2件、workspace fmt、構造gateは今回Sourceで終了0。98 package・3511 files・3380 Rust files・1905493 Rust LOC・396 review・blocking 0。13 path・294物理LOC増。lower frontierの完了、clientのlifecycle、candidate accountingという既存ownerを維持し、別state owner・public API・依存・I/O・codec・versionは追加しない。大きな既存moduleもこの責務を保ち、実LOC・byte size・embedded test LOCとfan-in 12／fan-out 19を原本へ記録した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 資料追記の初回空白検査はCRLFのCRをtrailing whitespaceとして拒否した。追記部分だけLFへ修復し、元の履歴prefixをGit blobと照合してバイト列不変を確認した。Rust入力・テスト結果・過去のSHAは変更していない。
+- Supersedes: 候補比較へ元の制御が渡らなかった境界と最新の実測一覧を更新した。prepared effect graphのfrontend owner化、prepared型の全producer／consumerとΓ統合、body一回準備・一括seal、eager経路の置換、一般量化消去・MGU／rank・Fn局所∀と既知の再帰本体6件は、この比較制御だけで完了にしない。Generic Match、caller-bound recursion、共有prefix、Free許可／reifyと各既受入は維持する。過去の全SHA・実測・失敗・原本は変更せず、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-comparison-control.raw.zip](acceptance-evidence/task-comparison-control.raw.zip) は 245 entries、raw 42458073 bytes、ZIP 5090271 bytes、SHA-256 `90600139dbdf44654e67235c2280826127f22173767e7da1a3636ac3a5fc440b`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
