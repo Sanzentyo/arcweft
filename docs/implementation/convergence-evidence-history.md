@@ -17327,3 +17327,23 @@ locked workspace全target／全feature check／Clippy、Sema全feature doctest 2
 現状行から「実出力capture seal一式が未実装」という古い列挙を置換した理由は、上記のcarrier・support・復元が実装・検証されたためである。未達は残る上流Γ境界へ限定し、完了した範囲を戻さない。Generic Match、caller-bound recursion、共有prefixの既受入も維持する。現状一覧はcurrent-status.md一か所、過去の実測・公開full SHAはこの履歴と凍結原本へ保持する。hostの結果を新しい再帰本体のNative／AWBC、Tier 2／Wasm、Native／Web表示の受入へ拡張しない。9:08の全体cargo clean履行は既存履歴を維持し、今回繰り返していない。
 
 [全原本](acceptance-evidence/task-completed-output-support.raw.zip)は249 entry、展開時40726303 bytes、ZIP 4796113 bytes、SHA-256 `4d4ca619b73d493f86e76f42e17c084f1abe9500787960bc6ee989a6a921f6fa`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
+
+## Typed effect header ports
+
+2026-11-13。Source `6c515904c38bda8228f5839eb5053f54a2804963`、tree `dae70c18af2df2afe37091dd6080b38340cc0a2a`、親・変更基点 `126c558c284fdd7c651d665661cc53925fb7485a`。既存mainで通常commit／non-forced pushし、head・tree・変更9 blobを照合した。限定10件PASSの区切りで公開した後、同じSourceで全owner／consumer／品質を検証した。未追跡 `%SystemDrive%/` を保持した。
+
+ConstraintFunctionHeaderViewは、実operandの該当する関数occurrenceと、その関数の実contents scopeからだけ構築する。関数照合と保持するheaderの投影をこのportへ移行した。scopeはbinderの形だけでなく実frameで検査し、Sourceの値、対応する子のaddress、外側と内側のscopeを導出へ保持する。候補のCをこの入力Γの証明とする処理は加えていない。
+
+保持するproject_headerのraw row／predicate／scope引数と、投影値・証拠を別々に返すtupleを削除した。投影値と導出を同じgeneric header carrierへ持たせ、共通shape再構築がrowとpredicateを各一回消費してからfinishで証拠を取り出す。消費前の公開は型付きinvariant errorとなる。readonlyの投影は同じ演算foldを使うがproof型はunitで、保持する導出を発行できない。scalarや配列長など他のportの導出は変更しない。
+
+全feature Sema lib／testsは1,669件中1,663 PASS／6 FAIL／0 SKIP、72.400秒、slow 0。5 binaryの選択と終端の全IDが一致・重複0。前回Source `289d5bdd4892f6dfc924894e5d2a7d9d18f13097` の1,667 IDをすべて維持し、新2件がPASSした。兄弟関数のheaderごとに実row・Sourceの子address・scopeと置換keyを保持すること、同形の別frameを拒否すること、片方のfieldだけを消費した状態でfinishできないことを検証した。既存の局所binder positiveにも入力Source／scopeの保持assertionを加え、元値とcompletionの生存・解放を維持した。既知6失敗のIDと実診断は同じ5 ExpressionCycle／1 PendingCallableEffectProjectionである。全10件の限定runは既存7 header関連・新2件・256候補境界でPASS。上限、assertion、probe／replayの回数、取消し条件を弱めていない。開発時checkと最初のtargeted listはcompileを通過した。
+
+同じSourceの他21 package・既定feature・規定107 targetは2,510 IDを選択し、2,507 PASS／2 FAIL／1 SKIP、選択と終端が一致・重複0。20 package／76 targetはpackage単位、Compilerの31 targetは逐次実行した。Compilerの既知2失敗は同じflow_wait IDとExpressionCycle（slot 17／19）。3 targetはcompile-only。CLI library 196件と統合6 target 30件は226 PASS、Compiler callable_executionは376 PASS。22 packageの依存graphはCargo入力差分0を確認して再利用し、実行結果は新規採取した。
+
+locked workspace全target／全feature check／Clippy、Sema全feature doctest 2件、owner Clippy、workspace fmt check、canonical構造gateは終了0。各step前後のcommit／tree／tracked差分0、全9 pathのbyte pin・公開blob・出力hashを照合した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。警告も原本へ保持する。canonical gateは98 package・3,489 files・3,358 Rust files・1,894,697 Rust physical LOC、review trigger 396・blocking 0。Sema fan-in／outは8／15、dev 4／0で変更がない。
+
+所有者レビュー: 合計成長は262 physical LOC。新header module 76 LOCは既存のoperand projection ownerへ閉じ、独立catalogやAST walkerを作らない。effects 261 LOCは同じcompletionのheader投影、rebuild 282 LOCは既存shapeへの値と導出の再構築を所有する。binding_plan 1,125 LOCでは、実scopeを持つportのadmissionをpredicate比較より前に行う。transaction 2,739 LOCの変更は既存責務のtyped reexportのみで、調整状態やconsumerを追加していない。前回のcohesion判断を維持する。閉じた検証は既存closed_effectsの574 LOCへ集約した。各pathのbytes・LOC・基点との差を原本に保持し、公開API、依存edge、unsafe、versionを変更しない。
+
+このSourceで閉じたのはheader入力portと投影値／導出の対応境界である。Freeの元Γ検査と、検査済みprimitiveから計算したeffect rowをsealするownerは未移行であり、この証拠をその完了とはしない。既知の再帰本体6＋2失敗も修復済みとはしない。現状一覧の訂正は実装・検証されたport保持だけに限定し、完了値capture、Generic Match、caller-bound recursion、共有prefixの受入を戻さない。過去の実測・full SHAは履歴と凍結原本、現状はcurrent-status.md一か所とする。新しい再帰本体のNative／AWBC、Tier 2／Wasm、Native／Web表示の受入へ拡張しない。全体cargo cleanは9:08の履行を維持し、今回再実行していない。
+
+[実装・検証原本](acceptance-evidence/task-effect-header-ports.raw.zip)は239 entry、展開時39867609 bytes、ZIP 4676793 bytes、SHA-256 `349586319921467fc3f7ec4e855febb44da94c60f54c320899ef476b15bb1035`。manifestと全entryの長さ・hash・portable pathを読み戻して照合した。
