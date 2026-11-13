@@ -3,13 +3,18 @@
 use super::*;
 use crate::effects::EffectId;
 
+pub(super) mod residual;
+use residual::EffectResidualProgram;
+
 /// The immutable original relation, including dependency signatures, lexical
 /// quantifiers, declaration domains, alternatives and Future input identities.
 /// Freezing does not assert that its satisfiable or principal domain is total.
 #[derive(Debug)]
 pub(crate) struct ScopedEffectCompletion {
-    pub(super) graph: PreparedEffectGraph,
+    pub(super) graph: Arc<PreparedEffectGraph>,
     pub(super) support: BTreeSet<EffectId>,
+    pub(super) fixed: BTreeMap<u64, EffectRow>,
+    pub(super) program: Arc<EffectResidualProgram>,
 }
 
 #[derive(Clone, Debug)]
@@ -57,10 +62,15 @@ impl PreparedEffectGraph {
             }
         }
         let support = self.label_support(&mut work)?;
+        let program = EffectResidualProgram::new(&self, &mut work)?;
+        work.charge(DecisionWork::Node)?;
+        work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
         Ok(Arc::new(ScopedEffectCompletion {
-            graph: self,
+            graph: Arc::new(self),
             support,
+            fixed: BTreeMap::new(),
+            program: Arc::new(program),
         }))
     }
 
@@ -82,6 +92,13 @@ impl PreparedEffectGraph {
             if !declaration.is_future() {
                 return Err(PreparedEffectInvariant::FutureBinding.into());
             }
+            if function
+                .completion
+                .fixed
+                .contains_key(&future.reference().ordinal)
+            {
+                return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
+            }
             let actual_ref = FunctionRef::Unknown((*actual).clone());
             if declaration.parameters().len() != self.function(&actual_ref)?.parameters().len() {
                 return Err(PreparedEffectInvariant::ApplicationArity.into());
@@ -96,7 +113,10 @@ impl PreparedEffectGraph {
         }
         for (&id, declaration) in &function.completion.graph.functions {
             work.charge(DecisionWork::Visit)?;
-            if declaration.is_future() && !futures.contains_key(&id) {
+            if declaration.is_future()
+                && !function.completion.fixed.contains_key(&id)
+                && !futures.contains_key(&id)
+            {
                 return Err(PreparedEffectInvariant::UnresolvedFuture.into());
             }
         }
@@ -122,6 +142,75 @@ impl PreparedEffectGraph {
 }
 
 impl ScopedEffectCompletion {
+    /// Substitute only supplied Future inputs. Every other Future stays free,
+    /// and the immutable original program is shared with the previous value.
+    pub(crate) fn specialize_partial<C: DecisionControl>(
+        self: &Arc<Self>,
+        bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        control: &mut C,
+    ) -> Result<Arc<Self>, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        let mut fixed = BTreeMap::new();
+        for (&id, row) in &self.fixed {
+            let formula = row
+                .known()?
+                .map_references(&mut work, &mut |reference, _| Ok(reference.clone()))?;
+            work.charge(DecisionWork::Node)?;
+            fixed.insert(
+                id,
+                EffectRow {
+                    formula: Some(formula),
+                },
+            );
+        }
+        let mut support = BTreeSet::new();
+        for label in &self.support {
+            work.charge(DecisionWork::Node)?;
+            support.insert(label.clone());
+        }
+        for (reference, row) in bindings {
+            work.charge(DecisionWork::Visit)?;
+            let reference = FunctionRef::Unknown((*reference).clone());
+            let definition = self.graph.function(&reference)?;
+            if !definition.is_future() {
+                return Err(PreparedEffectInvariant::FutureBinding.into());
+            }
+            let id = reference.reference().ordinal;
+            if fixed.contains_key(&id) {
+                return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
+            }
+            for reference in row.known()?.variables() {
+                work.charge(DecisionWork::Visit)?;
+                if !definition.parameters().contains(reference) {
+                    return Err(
+                        PreparedEffectInvariant::UndeclaredParameter(reference.clone()).into(),
+                    );
+                }
+            }
+            let formula = row
+                .known()?
+                .map_references(&mut work, &mut |reference, _| Ok(reference.clone()))?;
+            for (label, _) in formula.membership().overrides() {
+                work.charge(DecisionWork::Node)?;
+                support.insert(label.clone());
+            }
+            work.charge(DecisionWork::Node)?;
+            fixed.insert(
+                id,
+                EffectRow {
+                    formula: Some(formula),
+                },
+            );
+        }
+        work.charge(DecisionWork::Node)?;
+        Ok(Arc::new(Self {
+            graph: Arc::clone(&self.graph),
+            support,
+            fixed,
+            program: Arc::clone(&self.program),
+        }))
+    }
+
     pub(crate) fn unknown(
         self: &Arc<Self>,
         reference: &PreparedEffectUnknownRef,

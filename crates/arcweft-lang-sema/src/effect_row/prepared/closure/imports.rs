@@ -67,8 +67,13 @@ pub(super) fn lower_imports<C: DecisionControl>(
         }
         let mut layout = Layout::with_labels(&source.graph, basis, work)?;
         layout.imports = assemble(&source.graph, &cache, work)?;
-        let mut component =
-            CompiledComponent::compile(&source.graph, &BTreeMap::new(), layout, work)?;
+        let mut component = CompiledComponent::compile(
+            &source.graph,
+            &source.program,
+            &source.fixed,
+            layout,
+            work,
+        )?;
         component.restrict_support(&source.graph, &source.support, work)?;
         let completed = component.complete(work)?;
         work.charge(DecisionWork::Node)?;
@@ -169,6 +174,18 @@ impl ImportedFunctionTable {
         }
         let graph = &imported.completion.graph;
         let mut fixed = BTreeMap::new();
+        for (&future, row) in &imported.completion.fixed {
+            let formula = row
+                .known()?
+                .map_references(work, &mut |reference, _| Ok(reference.clone()))?;
+            work.charge(DecisionWork::Node)?;
+            fixed.insert(
+                future,
+                EffectRow {
+                    formula: Some(formula),
+                },
+            );
+        }
         let mut coefficients = BTreeMap::new();
         for (&future, actual) in &imported.futures {
             let actual = FunctionRef::Unknown(actual.clone());

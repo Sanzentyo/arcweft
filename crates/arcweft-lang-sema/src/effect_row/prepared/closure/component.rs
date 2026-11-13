@@ -1,6 +1,9 @@
 //! Joint closure with dependency-preserving late row-function bindings.
 
 use super::*;
+use crate::effect_row::prepared::completion::residual::{
+    EffectResidualProgram, ResidualNode, ResidualRowScope, ResidualSourcePredicate, source_body,
+};
 
 #[cfg(test)]
 mod tests;
@@ -23,6 +26,132 @@ pub(super) struct ComponentCompletion {
     pub(super) witnesses: Decision,
 }
 
+struct RelationScope<'a> {
+    compiler: Compilation<'a>,
+    body: Option<compilation::CompiledRow>,
+}
+
+fn relation_scope<'g, 's, C: DecisionControl>(
+    scopes: &'s mut BTreeMap<ResidualRowScope, RelationScope<'g>>,
+    graph: &'g PreparedEffectGraph,
+    layout: ClassLayout<'g>,
+    scope: ResidualRowScope,
+    work: &mut Work<'_, C>,
+) -> Result<&'s mut RelationScope<'g>, PreparedEffectFailure<C::Error>> {
+    if let std::collections::btree_map::Entry::Vacant(entry) = scopes.entry(scope) {
+        let owner = match scope {
+            ResidualRowScope::Scheme(id) => FormalOwner::Scheme(id),
+            ResidualRowScope::Obligation(id) => FormalOwner::Obligation(id),
+            ResidualRowScope::Output(_) => {
+                return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+            }
+        };
+        work.charge(DecisionWork::Node)?;
+        entry.insert(RelationScope {
+            compiler: Compilation::new(graph, layout, owner, scope.parameters(graph)),
+            body: None,
+        });
+    }
+    Ok(scopes
+        .get_mut(&scope)
+        .expect("the actual relation scope was inserted"))
+}
+
+fn compile_relation<C: DecisionControl>(
+    graph: &PreparedEffectGraph,
+    program: &EffectResidualProgram,
+    layout: ClassLayout<'_>,
+    work: &mut Work<'_, C>,
+) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+    let mut scopes = BTreeMap::new();
+    let mut values: Vec<Decision> = Vec::new();
+    for node in program.relation_nodes() {
+        work.charge(DecisionWork::Visit)?;
+        let value = match node {
+            ResidualNode::True => Decision::constant(true),
+            ResidualNode::And(children) => {
+                let mut result = Decision::constant(true);
+                for child in children {
+                    result = result.and(&values[child.index()], work)?;
+                }
+                result
+            }
+            ResidualNode::Not(child) => values[child.index()].not(work)?,
+            ResidualNode::Implies {
+                domain,
+                consequence,
+            } => values[domain.index()].conditional(
+                &values[consequence.index()],
+                &Decision::constant(true),
+                work,
+            )?,
+            ResidualNode::ForAllFiniteRows { scope, body } => {
+                let scoped = relation_scope(&mut scopes, graph, layout, *scope, work)?;
+                values[body.index()].forall(&scoped.compiler.formals(work)?, work)?
+            }
+            ResidualNode::SourcePredicate(source) => {
+                let scoped = relation_scope(&mut scopes, graph, layout, source.scope(), work)?;
+                match source.value(graph)? {
+                    ResidualSourcePredicate::Canonical(value) => {
+                        scoped.compiler.canonical_predicate(value, work)?
+                    }
+                    ResidualSourcePredicate::Prepared(value) => {
+                        scoped.compiler.predicate(value, work)?
+                    }
+                }
+            }
+            ResidualNode::BodyEquation { scheme } | ResidualNode::BodyAdmitted { scheme } => {
+                let scoped = relation_scope(
+                    &mut scopes,
+                    graph,
+                    layout,
+                    ResidualRowScope::Scheme(*scheme),
+                    work,
+                )?;
+                if scoped.body.is_none() {
+                    scoped.body = Some(scoped.compiler.row(source_body(graph, *scheme)?, work)?);
+                }
+                let body = scoped
+                    .body
+                    .as_ref()
+                    .expect("the original prepared body was compiled");
+                if matches!(node, ResidualNode::BodyAdmitted { .. }) {
+                    compilation::copy(&body.admitted, work)?
+                } else {
+                    let parameters = scoped.compiler.parameters(work)?;
+                    let own = scoped.compiler.application(*scheme, &parameters, work)?;
+                    let mut members = Vec::new();
+                    for (left, right) in own.iter().zip(&body.membership) {
+                        work.charge(DecisionWork::Node)?;
+                        members.push(left.conditional(right, &right.not(work)?, work)?);
+                    }
+                    scoped.compiler.whole(&members, work)?
+                }
+            }
+            ResidualNode::FiniteFunction(scheme) => Decision::variable(
+                Atom::Cell {
+                    scheme: *scheme,
+                    class: 0,
+                    mask: 0,
+                },
+                work,
+            )?
+            .not(work)?,
+            ResidualNode::ExistsLocalFunctions { .. }
+            | ResidualNode::ExistsChoices { .. }
+            | ResidualNode::OutputMembership { .. }
+            | ResidualNode::SubstituteLower { .. } => {
+                return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+            }
+        };
+        work.charge(DecisionWork::Node)?;
+        values.push(value);
+    }
+    values
+        .pop()
+        .ok_or_else(|| PreparedEffectInvariant::PrincipalConfirmation.into())
+}
+
 impl CompiledComponent {
     pub(super) fn new<C: DecisionControl>(
         graph: &PreparedEffectGraph,
@@ -31,100 +160,18 @@ impl CompiledComponent {
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let mut layout = Layout::new(graph, fixed, work)?;
         layout.imports = imports::lower_imports(graph, &layout.labels, work)?;
-        Self::compile(graph, fixed, layout, work)
+        let program = EffectResidualProgram::new(graph, work)?;
+        Self::compile(graph, &program, fixed, layout, work)
     }
 
     pub(super) fn compile<C: DecisionControl>(
         graph: &PreparedEffectGraph,
+        program: &EffectResidualProgram,
         fixed: &BTreeMap<u64, EffectRow>,
         layout: Layout,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        for function in graph.functions.values() {
-            work.charge(DecisionWork::Visit)?;
-            if matches!(
-                function.as_ref(),
-                Function::Scheme(Scheme {
-                    state: SchemeState::Declared,
-                    ..
-                })
-            ) {
-                return Err(PreparedEffectInvariant::SchemeState.into());
-            }
-        }
-        let mut relation = Decision::constant(true);
-        for (&id, function) in &graph.functions {
-            if matches!(function.as_ref(), Function::Imported(_)) {
-                continue;
-            }
-            let mut compilation = Compilation::new(
-                graph,
-                layout.view(),
-                FormalOwner::Scheme(id),
-                function.parameters(),
-            );
-            let body = match function.as_ref() {
-                Function::Scheme(Scheme {
-                    state: SchemeState::BodyPrepared { body, .. },
-                    ..
-                }) => Some(compilation.row(body, work)?),
-                Function::Scheme(_) => return Err(PreparedEffectInvariant::SchemeState.into()),
-                Function::Unknown { .. } => fixed
-                    .get(&id)
-                    .map(|row| compilation.canonical_row(row, work))
-                    .transpose()?,
-                Function::Imported(_) => unreachable!("derived imports have no cell equation"),
-            };
-            if let Some(body) = body {
-                let parameters = compilation.parameters(work)?;
-                let own = compilation.application(id, &parameters, work)?;
-                let mut members = Vec::new();
-                for (left, right) in own.iter().zip(&body.membership) {
-                    work.charge(DecisionWork::Node)?;
-                    members.push(left.conditional(right, &right.not(work)?, work)?);
-                }
-                let mut equation = compilation
-                    .whole(&members, work)?
-                    .and(&body.admitted, work)?;
-                if let Function::Scheme(scheme) = function.as_ref() {
-                    let SchemeState::BodyPrepared { obligations, .. } = &scheme.state else {
-                        return Err(PreparedEffectInvariant::SchemeState.into());
-                    };
-                    for predicate in obligations {
-                        equation = equation.and(&compilation.predicate(predicate, work)?, work)?;
-                    }
-                    let domain = compilation.canonical_predicate(&scheme.header.domain, work)?;
-                    equation = domain.conditional(&equation, &Decision::constant(true), work)?;
-                }
-                // Every function keeps its declared dependency signature. A
-                // future function is fixed only by its supplied actual row.
-                equation = equation.forall(&compilation.formals(work)?, work)?;
-                relation = relation.and(&equation, work)?;
-            }
-            let finite = Decision::variable(
-                Atom::Cell {
-                    scheme: id,
-                    class: 0,
-                    mask: 0,
-                },
-                work,
-            )?
-            .not(work)?;
-            relation = relation.and(&finite, work)?;
-        }
-        for (id, obligation) in graph.obligations.iter().enumerate() {
-            let mut compilation = Compilation::new(
-                graph,
-                layout.view(),
-                FormalOwner::Obligation(id),
-                &obligation.parameters,
-            );
-            let domain = compilation.predicate(&obligation.domain, work)?;
-            let predicate = compilation.predicate(&obligation.predicate, work)?;
-            let guarded = domain.conditional(&predicate, &Decision::constant(true), work)?;
-            let equation = guarded.forall(&compilation.formals(work)?, work)?;
-            relation = relation.and(&equation, work)?;
-        }
+        let relation = compile_relation(graph, program, layout.view(), work)?;
         let mut fixed_cells = BTreeMap::new();
         for (&id, row) in fixed {
             let parameters = graph.functions[&id].parameters();
