@@ -17421,3 +17421,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧のfixture化・Bound移送の途中説明は、現在の元値Γ／導入owner／子Source Γの契約へ統合した。過去の全SHA、実測、失敗、frozen原本は保持する。Generic Match、caller-bound recursion、共有prefixの受入を維持する。本cutの範囲と全体の残作業は[current-status.md](current-status.md)だけに集約する。
 
 原本 [task-inference-source-gamma.raw.zip](acceptance-evidence/task-inference-source-gamma.raw.zip) は 284 entries、raw 48426552 bytes、ZIP 5752911 bytes、SHA-256 `0dd539fad19e7fe031b7e3a9fa89da2d5872151294d860c23ca67f13f1ce7564`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Conditional component minimization
+
+2026-11-13。基点 `01817aebfe66e9729f2576d77dbca458ed32dcdf`、実装・公開Source `0691efa11175cadc7c0850278cd1a7ef4be45f62`、tree `3c5be812c6c89ae3365c2b8033acbb8de2d4344d`。既存mainの6 Rust pathを通常commit／非force pushし、ownerが検証したdirty bytesとcommit全blobの一致を照合した。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- Scheme／Bindableの係数だけを一度に最小化する共通component kernelへ、既存の全Future実値specializationと通常solveを移した。確定Futureはminimization前に代入する。有限基底内の未確定Futureは外部係数のまま残し、最小解・satisfiable／principal domain・全行で共有する離散witnessを同時に保持する。最終closure・observation・独立canonical replayは同じ確定係数を読む。任意の外部supportを閉じたと主張するAPIは公開していない。
+- 新4件はFuture依存の最小解、x∪y=fで親がxを選んでも子の非principalを救済しない反例、行全体で共通のchoice、予算0後の元graphの再利用を検証する。既存の新label・依存引数・capability closedness・whole-row D⇒C・局所∀・独立replayの条件を弱めない。
+- ownerは1,701件／1,695 PASS／6 FAIL／0 SKIP、74.220秒、5 suite。直前1,697 IDを維持し新4件PASS、選択・終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。初回開発buildのprivate field参照エラーは正当なFunctionRefの照会へ直し、失敗原本を保持した。途中の非pin listを最終owner証拠として扱わない。
+- 全featureのresolved Cargo graphはSemaを含む22 package。後続21 package／107 targetを同じSourceで再実行し、2,510 ID／2,507 PASS／2 FAIL／1 SKIP、選択・終端ID一致。Compiler既知2失敗とExpressionCycle slot 17／19は不変。CLI 226・callable_execution 376 PASS、3 targetはcompile-only。locked workspace全target／全feature check／Clippy、fmt、Sema doctest 2件と構造gateは終了0。
+- 6 pathは合計305物理LOC増。component.rsは251 LOC（101増）、独立test ownerは456 LOC（212増）。同じrelation／completionの責務を維持し、二つ目のsolver・型walker・依存・unsafe・公開互換readerは追加しない。fan-in 12／fan-out 19、全pathの寸法と分類は原本へ保持する。
+- Supersedes: 現状一覧の「条件付きcompletion」を一括した未完了表記から、検証した有限基底kernelと、未接続の外部support・残余条件・guarded importを区別した。旧Sourceの結果を新Sourceへ付け替えず、既受入Generic Match・caller-bound recursion・共有prefixは維持する。現在の残作業は[current-status.md](current-status.md)だけへ集約する。
+
+原本 [task-conditional-component.raw.zip](acceptance-evidence/task-conditional-component.raw.zip) は 243 entries、raw 37892989 bytes、ZIP 4542019 bytes、SHA-256 `2c03949f1e94da1b596912128e300e59b4fb15e28f72c99220bedd094537b42c`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
