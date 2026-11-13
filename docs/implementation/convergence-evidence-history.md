@@ -17539,3 +17539,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: prepared graph自体の候補relation比較の未完了列挙を、この範囲の検証済みへ訂正した。frontend owner、prepared型の実producer／consumer、body一回準備と一括sealへの接続は未完了。一般量化消去・MGU／rank・Fn局所∀・全portのΓ統合も今回の比較だけで完了としない。Generic Match、caller-bound recursion、共有prefixと、Free許可／reifyの受入を保持する。過去の全SHA・実測・失敗・原本を変更せず、現在の一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-effect-replay.raw.zip](acceptance-evidence/task-effect-replay.raw.zip) は 83 entries、raw 24259863 bytes、ZIP 2277761 bytes、SHA-256 `65bb5a7014cc8e9cb88959e28febb730a961a8480e36354dca56ed482ef8dde7`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Live-owner candidate replay and sealed-branch equivalence
+
+2026-11-14。基点 `3f371a4607efe2a5a52997ad6ae882de92be20da`、実装・公開Source `224f00ca0457cbd06b872df4aa33ce0771a4d40e`、tree `9879912d6851f0d69368ce1b6d987187ea9d66f8`。既存mainの15 Rust pathを通常commit／非force pushし、テストしたdirty bytesと公開blobを照合した。owner・workspace品質通過後、consumer実行中のpushはcheckpoint原本にも区別して記録した。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- 候補projectionとそれを保持するrecipe／sealed branchの文脈なしPartialEq／Eqを削除した。実SemanticFactStateがissuer・epoch・健全性・live graphを確認し、実call graph ownerが自分のdeltaであることを確認してから比較する。同じ2候補が相互に一致しても、別owner、別graph、失効世代、poison後、graph消費後は証明にしない。比較後も元のaffine payloadをapply／rollbackできる。
+- lowerはsealed callback値へEqを要求しない。完成componentの比較後に実clientの比較を呼び、callbackのfinish／scope cleanupを先に完了する。重複統合はExact modeで従来のphysical attempt・query traceまで比較し、通常のsemantic replayでは従来どおり物理nonceを意味へ含めない。比較の不一致を重複へ変えず、取消しを成功へ変えない。source-free specializationだけは、実際にcallbackがない完成pathのdomain empty branchを使う。未準備body・型・効果のplaceholderは発行しない。
+- 新4 test IDは、matchingな候補のforeign owner／graph拒否、graph消費後、expired／poisoned世代、payloadの継続使用と、lower比較の同値／別値／取消しの3条件を検証する。既存driverテストもcallback finish 1回の後にowner比較1回となるassertionを追加した。下位fixtureのsealed値はPartialEqだけを持ち、実analyzer branchはPartialEq／Eqの両方を持たずに動作する。物理記録、評価量、既定budget、assertion、選択filterを弱めていない。
+- 開発中のEq bound／呼出し側移行のcompile拒否を原本に保持する。最終ownerは1,755件／1,749 PASS／6 FAIL／0 SKIP、93.106秒、5 suite。直前1,751 ID保持・新4件PASS、選択／終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。再帰本体推論6件の修復とはしない。
+- 実frontendと共有lower契約の変更なので、fresh full metadata／全target reverse treeの22 packageから後続21 package／107 targetを再実行した。全2,510件／2,507 PASS／2 FAIL／1 SKIP、全選択／終端ID一致・重複0。Compiler既知2失敗のExpressionCycle slot 17／19、CLI規定226 PASS、compile-only 3 targetも照合した。20 package groupとCompiler 31 targetはすべて終端であり、過去のconsumer実測を新Sourceの実行として流用していない。
+- workspace全target／全feature check・Clippy、Sema doctest 2件、workspace fmt、構造gateは新Sourceで終了0。先行owner Clippyの終了0と警告も保持する。15 path・316物理LOC増。98 package・3511 files・3380 Rust files・1905199 Rust LOC・396 review・blocking 0。既存fact state、call graph、clientのlifecycleとlowerのopaque branch境界に責務を置き、依存方向・public export・I/O・codec・version markerは変更しない。大きな既存moduleはこの責務を維持し、物理LOC・byte size・embedded test LOCとfan-in 12／fan-out 19を原本に記録した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- Supersedes: frontendの候補比較が実ownerを通していなかった境界と、最新owner／consumer／品質の一覧を今回の実装・実測へ更新した。prepared effect graph自体のfrontend owner化、prepared型の全producer／consumer、Γ統合、body一回準備・一括sealとeager経路の置換、一般量化消去・MGU／rank・Fn局所∀は今回の候補比較だけで完了にしない。Generic Match、caller-bound recursion、共有prefix、Free許可／reifyと各既受入を保持する。過去の全SHA・実測・失敗・原本を変更せず、現在の一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-projection-replay-owner.raw.zip](acceptance-evidence/task-projection-replay-owner.raw.zip) は 266 entries、raw 50832152 bytes、ZIP 5885051 bytes、SHA-256 `3db5b92c2d083abaa3dce4a50a0fcac71ca4bba09474d8a80bfffa1404708efc`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
