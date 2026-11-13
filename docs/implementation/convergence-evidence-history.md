@@ -17407,3 +17407,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - 本cutの受入範囲は元値・checked source値のBound参照admissionと実frame間の移送である。項目別の現状・残作業は[current-status.md](current-status.md)の一か所へ集約する。
 
 原本 [task-original-gamma-transport.raw.zip](acceptance-evidence/task-original-gamma-transport.raw.zip) は 240 entries、raw 38430688 bytes、ZIP 4625375 bytes、SHA-256 `5787ba23050dc9e61865ffbfa7b3eee838717cadbb94de30f205a1cc6f589c0a`。全entryのpath・長さ・SHA-256をreadback検証した。
+
+## Inference references and application leases
+
+2026-11-13。cut基点 `35af9d0545e7d0d9f50778cac7bd6ba922e6aa4f`、中間Source `1fcbe61ef8417cd8834168121244e0b24d748c0e`（tree `e1401d798490ab9533f2ad889f32c3a1b1b25c39`）、最終実装・公開 Source `4c6e76d8faf23d2806db0cb5dd3fc0112914f603`（tree `ac69699377b29566a3184d7b3bbf22096082c386`、parent `1fcbe61ef8417cd8834168121244e0b24d748c0e`）。既存mainで21 Rust pathを通常commit／非force pushした。最終Sourceのtracked差分0、既存の未追跡 `%SystemDrive%/` を保持する。
+
+- 元値のnon-Bound参照はFree／Inferenceとも実宣言Γ・import leaseで検査する。実applicationとキーの限定を保持する既存leaseを導入参照operandへ保持し、Original Productの左辺をraw original値として作る経路を置換した。型・const・効果・predicate・単独length、正当なimport、異種キー拒否、owner存続、予算0／取消しを検証。結果hintは移送済みoperandの座標を使う。
+- 子applicationは準備済みauthorityのSource Γを保持し、root lineageと区別する。nested callでも期待型の既存leaseをSource Γへ渡し、実親pathからの再貸出と同じowner・限定captureかを、メーター付きで照合してからadmitする。同じキーと形を持つ別ownerを拒否する新条件を含む。ticket・通常制約・結果使用・関数instance／transformも実applicationの元Γを読む。権限を型から集める処理、別catalog、旧reader、pureへのfallbackは追加しない。
+- 開発baselineは旧Source `35af9d0545e7d0d9f50778cac7bd6ba922e6aa4f`＋初期test patchで1件／0 PASS／1 FAIL。中間Sourceは対象40 PASSの後、全owner 1,696件／1,672 PASS／24 FAIL／0 SKIPで追加18失敗を観測し、後続検証前に停止した。Source Γ検査を緩めず、application型を元値として渡していた数学fixtureを実template producerへ移し、ambient frame値は元Sourceのまま維持した。frontendのroot Γ流用・nested期待lease除外と、実owner検査を修復した。中間のcompile error、2件・9件・7件の失敗、診断用backtrace、最終313件PASSを原本に保持する。診断用コードは除去済みで、assertion・budget・既存test IDを弱めていない。
+- 最終全feature ownerは1,697件／1,691 PASS／6 FAIL／0 SKIP、70.609秒、slow 0。直前1,691 IDを保持し、新6件PASS、選択・終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。実行ごとのSourceを区別し、中間24失敗を最終結果へ読み替えない。
+- 現在のCargo graphの全22 packageを確認し、後続21 package・107 targetは同じ最終Sourceで2,510 ID／2,507 PASS／2 FAIL／1 SKIP。既知Compiler 2失敗とExpressionCycle slot 17／19は不変。CLI 226・callable_execution 376がPASS、3 targetはcompile-only。locked workspace全target／全feature check／Clippy、fmt、Sema doctest 2件、構造gateは終了0。旧runのSHAを最新へ付け替えていない。
+- 21 path・684物理LOC増。application.rsの既存loan authorityとoriginal_context.rsの元Γが検査を所有し、53 LOCのparameter.rsが導入leafだけを構築する。transaction.rsは2,815 LOCで74増だが、同じfrontier／式state machineのSource producerとchecked operand消費を接続し、root lineageの役割を保持する。callable/constraints.rsは2,935 LOCで6増、continuation.rsは2,847 LOCで1減、analyzer/calls.rsは5,969 LOCで7減であり、既存の準備・呼出し責務を跨いだ別stateを追加しない。寸法・分類・fan-in／fan-outは原本へ保持。新しい型walker、Γ表、I/O owner、Cargo依存、unsafe、公開互換readerを追加しない。
+- Supersedes: 現状一覧のfixture化・Bound移送の途中説明は、現在の元値Γ／導入owner／子Source Γの契約へ統合した。過去の全SHA、実測、失敗、frozen原本は保持する。Generic Match、caller-bound recursion、共有prefixの受入を維持する。本cutの範囲と全体の残作業は[current-status.md](current-status.md)だけに集約する。
+
+原本 [task-inference-source-gamma.raw.zip](acceptance-evidence/task-inference-source-gamma.raw.zip) は 284 entries、raw 48426552 bytes、ZIP 5752911 bytes、SHA-256 `0dd539fad19e7fe031b7e3a9fa89da2d5872151294d860c23ca67f13f1ce7564`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
