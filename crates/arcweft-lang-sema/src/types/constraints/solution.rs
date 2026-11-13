@@ -30,6 +30,7 @@ use super::{
 mod residual;
 use residual::ResidualGenericBinder;
 mod completed_context;
+use super::transaction::ConstraintOperand;
 pub(super) use completed_context::CompletedConstraintType;
 use completed_context::{CompletedGenericContext, CompletedValue};
 mod instantiation;
@@ -244,7 +245,7 @@ impl TypeConstraintSolution {
     pub(super) fn reify_projection<A: TypeConstraintAccounting, D: ConstraintDomain, P>(
         &self,
         key: Arc<P>,
-        ty: &TypeKind,
+        ty: &ConstraintOperand<D>,
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
         closure: ConstraintClosurePolicy,
@@ -280,7 +281,7 @@ impl TypeConstraintSolution {
     /// context as the projection. It introduces no result quantifiers.
     pub(super) fn reify_projection_input<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
-        ty: &TypeKind,
+        ty: &ConstraintOperand<D>,
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -541,7 +542,7 @@ impl TypeConstraintSolution {
                 validate_selected_call_self(projected.value(), context).map_err(|error| {
                     map_completed_self_error(error, parameter.clone().into(), input)
                 })?;
-                generic_context.reify_type(projected.value(), path, application, None, context)
+                generic_context.reify_type(&projected, path, application, None, context)
             })?;
             bindings.push((declaration, reified));
         }

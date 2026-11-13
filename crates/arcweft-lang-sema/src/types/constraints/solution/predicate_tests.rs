@@ -341,7 +341,7 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
     let projection = solution
         .reify_projection(
             Arc::new(()),
-            &opened,
+            &context.fixture_operand(opened),
             &path,
             application,
             ConstraintClosurePolicy::ProjectionFuture,

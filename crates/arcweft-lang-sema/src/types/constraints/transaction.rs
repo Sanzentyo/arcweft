@@ -15,7 +15,8 @@ use super::application::{
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::hints::SourceProbeTerm;
 use super::normalization::{
-    ConstraintClosedEffects, project_closed_type, project_type, validate_selected_call_self,
+    ConstraintClosedEffects, project_closed_operand, project_closed_type, project_type,
+    validate_selected_call_self,
 };
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
@@ -2480,28 +2481,31 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let opened = context
                 .open_template_type(&request.value, path, application)
                 .map_err(projection_error)?;
-            let value = project_closed_type(&opened, path, policy, effects, context)
+            let opened = ConstraintOperand::template(
+                opened,
+                Arc::new(context.capture_lexical_scope()?),
+                path.applications.require_application_owner(application)?,
+            );
+            let value = project_closed_operand(opened.view(), path, policy, effects, context)
                 .map_err(projection_error)?;
             if policy != ConstraintClosurePolicy::ProjectionFuture {
-                validate_selected_call_self(&value, context).map_err(projection_error)?;
+                validate_selected_call_self(value.value(), context).map_err(projection_error)?;
             }
             let input = request
                 .input
                 .as_ref()
                 .map(|input| {
-                    context.with_original_scope(input.scope().clone(), |context| {
-                        let projected = project_closed_type(
-                            input.value(),
-                            path,
-                            ConstraintClosurePolicy::ProjectionClosed,
-                            effects,
-                            context,
-                        )
-                        .map_err(projection_error)?;
-                        solution
-                            .reify_projection_input(&projected, path, application, context)
-                            .map_err(projection_error)
-                    })
+                    let projected = project_closed_operand(
+                        input.view(),
+                        path,
+                        ConstraintClosurePolicy::ProjectionClosed,
+                        effects,
+                        context,
+                    )
+                    .map_err(projection_error)?;
+                    solution
+                        .reify_projection_input(&projected, path, application, context)
+                        .map_err(projection_error)
                 })
                 .transpose()?;
             projections.push(

@@ -361,7 +361,7 @@ fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
     let projection = solution
         .reify_projection(
             std::sync::Arc::new(()),
-            &value,
+            &work.fixture_operand(value),
             &path,
             path.root_id(),
             ConstraintClosurePolicy::ProjectionFuture,

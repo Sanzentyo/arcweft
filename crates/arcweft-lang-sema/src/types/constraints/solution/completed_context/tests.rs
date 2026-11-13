@@ -77,7 +77,7 @@ fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
     let types = references.each_ref().map(|r| {
         generic
             .reify_type(
-                &TypeKind::GenericParam(r.ty.clone()),
+                &context.fixture_operand(TypeKind::GenericParam(r.ty.clone())),
                 &path,
                 application,
                 None,
@@ -130,6 +130,67 @@ fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
         generic.reopen_length(&wrong_length, &path, application, &mut context),
         Err(references::const_out_of_scope(&references[1].length))
     );
+}
+
+#[test]
+fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
+    let cancellation = AtomicBool::new(false);
+    let (mut context, parameters) = crate::types::constraints::test_support::ConstraintTestSetup::<
+        LocalConstraintAccounting<'_>,
+        NoConstraintClient,
+    >::new(
+        TypeConstraintLimits::new(65_536, 32_768, 1024, 1024),
+        &cancellation,
+    )
+    .into_parts();
+    let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 1));
+    let application = context.fixture_application_scope((), parameters).unwrap();
+    let path = context.start_path(application).unwrap();
+    let application = path.root_scope();
+    let generic =
+        CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
+    let ambient = context.lexical_scope().bound_type(0, 0).unwrap();
+    let own = GenericBinder::new(1, 0, 1);
+    let nested = context.lexical_scope().with_binder(own);
+    let original = TypeKind::Tuple(vec![
+        TypeKind::GenericParam(ambient),
+        TypeKind::function_with_binder(
+            own,
+            [TypeKind::GenericParam(nested.bound_type(0, 0).unwrap())],
+            TypeKind::GenericParam(nested.bound_type(1, 0).unwrap()),
+            EffectRow::open(EffectSet::new(), nested.bound_effect(0, 0).unwrap())
+                .union(
+                    &EffectRow::open(EffectSet::new(), nested.bound_effect(1, 0).unwrap()),
+                    &mut context,
+                )
+                .unwrap(),
+        ),
+    ]);
+    let operand = context.fixture_operand(original.clone());
+    let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 1));
+    let receiving = context.capture_lexical_scope().unwrap();
+    let completed = generic
+        .reify_type(&operand, &path, application, None, &mut context)
+        .unwrap();
+    assert_eq!(completed.value(), &original);
+    assert!(completed.captures().parameters().is_empty());
+    assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
+    cancellation.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(
+        generic
+            .reify_type(&operand, &path, application, None, &mut context)
+            .is_err()
+    );
+    cancellation.store(false, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
+    context.restore_binder_scope(enclosing);
+    assert_eq!(
+        generic
+            .reopen_type(&completed, &path, application, &mut context)
+            .unwrap(),
+        original
+    );
+    context.restore_binder_scope(outer);
 }
 
 fn predicate(reference: &GenericEffectReference, context: &mut Context<'_>) -> EffectPredicate {
@@ -208,11 +269,11 @@ fn inserted_result_predicate_seals_its_own_free_references() {
         .unwrap();
     let value = generic
         .reify_type(
-            &TypeKind::function_with_effects(
+            &context.fixture_operand(TypeKind::function_with_effects(
                 [],
                 TypeKind::Unit,
                 EffectRow::closed(EffectSet::new()),
-            ),
+            )),
             &path,
             application,
             Some(&incoming),
@@ -267,7 +328,13 @@ fn canonical_result_predicate_prunes_only_the_root_header_captures() {
             EffectRow::closed(EffectSet::new()),
         );
         let value = generic
-            .reify_type(&original, &path, application, Some(&incoming), &mut context)
+            .reify_type(
+                &context.fixture_operand(original),
+                &path,
+                application,
+                Some(&incoming),
+                &mut context,
+            )
             .unwrap();
         assert_eq!(
             value

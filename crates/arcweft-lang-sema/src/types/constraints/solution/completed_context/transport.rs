@@ -68,16 +68,18 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        ty: &TypeKind,
+        ty: &super::super::ConstraintOperand<D>,
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         retained_predicate: Option<&CompletedValue<EffectPredicate>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<TypeKind>, TypeConstraintError> {
-        let mapping = self.reference_map(application, context, Direction::Reify)?;
-        let mut value = mapping.map_type(ty, path, application, context)?;
-        mapping.retain_result_predicate(&mut value, retained_predicate, context)?;
-        Ok(mapping.finish(value))
+        context.with_original_scope(ty.scope().clone(), |context| {
+            let mapping = self.reference_map(application, context, Direction::Reify)?;
+            let mut value = mapping.map_type(ty.value(), path, application, context)?;
+            mapping.retain_result_predicate(&mut value, retained_predicate, context)?;
+            Ok(mapping.finish(value))
+        })
     }
 
     pub(in crate::types::constraints::solution) fn reopen_type<
