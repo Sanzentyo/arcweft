@@ -17525,3 +17525,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧のowner件数・品質の入力Sourceを更新し、今回の新規実行と前回の再利用を区別した。Frontend owner・候補のsemantic replay・prepared型の実producer／consumerへの接続は未完了で、再帰本体推論6件の完了とはしない。Generic Match・caller-bound recursion・共有prefixと、型／定数／effectのFree許可・reifyの受入を保持し、既存履歴と全SHAを変更しない。現在の一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-effect-delta.raw.zip](acceptance-evidence/task-effect-delta.raw.zip) は 62 entries、raw 22865425 bytes、ZIP 2100979 bytes、SHA-256 `e0f2db8b5cbe0c9dcc7f1cc7d8304653e681ad05609ee00acedafd8e4089cfdf`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+## Prepared effect candidate replay
+
+2026-11-14。基点 `eab7e1a778cff9cfbb90b9f4c23b3df4d6f5c226`、実装・公開Source `5941e2eefb6b132741d0489cac602acb205671f8`、tree `29b4613a59f0f9972cf87232967dfe50a846bacb`。既存mainの5 Rust pathを通常commit／非force pushし、検証したdirty bytesと公開blobを照合した。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- 同じ実baseに属する候補を、実際に対応するowner portから比較する。新functionとglobal choiceは共有関係を保つ一対一対応とし、基点の宣言identity、宣言D、再帰body、未知効果の依存signature・Bindable／Future、whole-rowのDとCを保持する。未対応のfunctionを観測されないという理由で消さず、ordinal順でownerを推測しない。
+- 行／predicateのimmutable DAG共有は意味上のidentityとしない。基点の既存term、候補の新term、生成順や破棄された未観測termに依存せず、同じ文法で反復比較する。最初の全件実行後のレビューで既存termをID一致としていた比較を修正し、基点の2ノードと新ノードの再利用を追加検証した。importは同じ元のfrozen relation owner・選択functionと実際の固定入力／Future bindingを比較し、別のpartial-specialization wrapperでも同じ元relationと値なら受理する。任意の別ownerの量化relation同値判定を主張しない。
+- canonical row／predicate／formulaの等価比較、パラメーター走査と一時割当も周囲のDecisionControlで課金する。8,000段の反復比較、比較に必要な予算の各境界での失敗、候補2個と元graphの不変・再適用、choice相関、未対応owner、役割変更、Dの保持、importの固定入力変更、全prepared row／predicate文法を検証する。開発時のprivate fieldアクセスとfixture API誤用のcompile拒否を原本に保持した。
+- 最初の対象18件は18 PASS。最初の全件は1,750件／1,744 PASS／6 FAIL、228.134秒、品質・構造は終了0。その当時の全5 pathのbytesと実測を保持する。修正後の最終ownerは1,751件／1,745 PASS／6 FAIL／0 SKIP、91.891秒、5 suite。直前1,739 ID保持・新12件PASS、選択／終端ID一致・重複0。既知6失敗と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変で、再帰本体推論の完了とはしない。
+- 最終Sema全target／全feature Clippy、workspace fmt、構造gateは今回実行して終了0。警告は保持する。5 path・1310物理LOC増。98 package・3511 files・3380 Rust files・1904883 Rust LOC・396 review・blocking 0。比較は既存prepared graph transactionの一つの文法とstate ownerに置き、public API、別の型／effect authority、I/O、Cargo依存を追加しない。module 701 LOCはこの網羅的比較を所有し、専用childが振る舞いテストを所有する。
+- fresh full metadata／全target reverse treeの22 packageとfan-in 12／fan-out 19は不変。private準備graphの変更であり、最終canonical型／call producer・public API・Cargo feature・codec・runtimeは変更していない。Source `04d196e6ac47db99a8fbfe16bdaf77227630550a` の後続21 package／107 target・2,507 PASS／2 FAIL／1 SKIP、workspace全target／全feature check・Clippy、Sema doctest 2件を再利用し、新Sourceでの再実行とはしない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。2026-11-14 03:13の全体cargo cleanは終了0、30,600 files／87.3 GiBを削除してtarget消失を確認した。その後の必要な検証でtargetを再生成した。
+- Supersedes: prepared graph自体の候補relation比較の未完了列挙を、この範囲の検証済みへ訂正した。frontend owner、prepared型の実producer／consumer、body一回準備と一括sealへの接続は未完了。一般量化消去・MGU／rank・Fn局所∀・全portのΓ統合も今回の比較だけで完了としない。Generic Match、caller-bound recursion、共有prefixと、Free許可／reifyの受入を保持する。過去の全SHA・実測・失敗・原本を変更せず、現在の一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-effect-replay.raw.zip](acceptance-evidence/task-effect-replay.raw.zip) は 83 entries、raw 24259863 bytes、ZIP 2277761 bytes、SHA-256 `65bb5a7014cc8e9cb88959e28febb730a961a8480e36354dca56ed482ef8dde7`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
