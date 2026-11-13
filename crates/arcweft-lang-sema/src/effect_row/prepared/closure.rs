@@ -10,7 +10,7 @@ use crate::effects::EffectId;
 mod canonical;
 mod compilation;
 mod component;
-use component::CompiledComponent;
+use component::{CompiledComponent, ComponentCompletion};
 mod observation;
 mod reification;
 pub(crate) use observation::{
@@ -290,7 +290,7 @@ pub(crate) struct PrincipalEffectClosure<'a> {
     graph: &'a PreparedEffectGraph,
     layout: Layout,
     functions: BTreeMap<u64, EffectRow>,
-    completion: ConditionalDecisionCompletion<Atom>,
+    coefficients: BTreeMap<Atom, Decision>,
     choices: BTreeSet<Atom>,
     witnesses: Decision,
     future_bindings: BTreeMap<u64, EffectRow>,
@@ -316,32 +316,26 @@ impl PreparedEffectGraph {
                 return Err(PreparedEffectInvariant::UnresolvedFuture.into());
             }
         }
-        let CompiledComponent { layout, relation } =
-            CompiledComponent::new(self, &fixed, &mut work)?;
-        let mut choices = BTreeSet::new();
-        for &id in &self.choices {
-            work.charge(DecisionWork::Visit)?;
-            choices.insert(Atom::Choice(id));
-        }
-        let projected = relation.exists(&choices, &mut work)?;
-        let completion = projected.complete_conditionally(&layout.cells, &mut work)?;
+        let ComponentCompletion {
+            layout,
+            completion,
+            coefficients,
+            choices,
+            witnesses,
+        } = CompiledComponent::new(self, &fixed, &mut work)?.complete(&mut work)?;
         if !completion.satisfiable().is_constant(true) {
             return Err(PreparedEffectFailure::Unsatisfiable);
         }
         if !completion.principal().is_constant(true) {
             return Err(PreparedEffectFailure::NonPrincipal);
         }
-        let choice_relation = relation.substitute(completion.lower_envelope(), &mut work)?;
-        for atom in choice_relation.variables() {
+        for atom in witnesses.variables() {
             work.charge(DecisionWork::Visit)?;
             if !choices.contains(atom) {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             }
         }
-        if !choice_relation
-            .exists(&choices, &mut work)?
-            .is_constant(true)
-        {
+        if !witnesses.exists(&choices, &mut work)?.is_constant(true) {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
         let mut functions = BTreeMap::new();
@@ -356,7 +350,7 @@ impl PreparedEffectGraph {
             let membership = compilation.application(id, &parameters, &mut work)?;
             let mut output = Vec::new();
             for decision in membership {
-                let decision = decision.substitute(completion.lower_envelope(), &mut work)?;
+                let decision = decision.substitute(&coefficients, &mut work)?;
                 let mapped = decision.map_references(&mut work, &mut |atom, _| match atom {
                     Atom::Formal {
                         owner: FormalOwner::Scheme(owner),
@@ -387,9 +381,9 @@ impl PreparedEffectGraph {
             graph: self,
             layout,
             functions,
-            completion,
+            coefficients,
             choices,
-            witnesses: choice_relation,
+            witnesses,
             future_bindings: fixed,
         };
         // Recheck original typed terms against the canonical scheme projection

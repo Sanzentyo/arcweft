@@ -16,7 +16,7 @@ pub(super) struct Compilation<'a> {
     predicates: BTreeMap<u64, Decision>,
 }
 
-fn copy<C: DecisionControl>(
+pub(super) fn copy<C: DecisionControl>(
     decision: &Decision,
     work: &mut Work<'_, C>,
 ) -> Result<Decision, PreparedEffectFailure<C::Error>> {

@@ -67,8 +67,7 @@ impl PrincipalEffectClosure<'_> {
                             work,
                         )?;
                     let least = self
-                        .completion
-                        .lower_envelope()
+                        .coefficients
                         .get(&Atom::Cell {
                             scheme: id,
                             class,

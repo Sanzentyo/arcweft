@@ -377,8 +377,7 @@ impl<'g> PrincipalEffectClosure<'g> {
                         .map_or(0, |index| index + 1)
                 };
                 let value = self
-                    .completion
-                    .lower_envelope()
+                    .coefficients
                     .get(&Atom::Cell {
                         scheme: *scheme,
                         class: original,

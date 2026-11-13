@@ -8,6 +8,19 @@ mod tests;
 pub(super) struct CompiledComponent {
     pub(super) layout: Layout,
     pub(super) relation: Decision,
+    fixed: BTreeMap<Atom, Decision>,
+    minimized: BTreeSet<Atom>,
+    choices: BTreeSet<Atom>,
+}
+
+/// One completion boundary. Future coefficients remain parameters of both the
+/// least tuple and its principal domain; they are never minimized with locals.
+pub(super) struct ComponentCompletion {
+    pub(super) layout: Layout,
+    pub(super) completion: ConditionalDecisionCompletion<Atom>,
+    pub(super) coefficients: BTreeMap<Atom, Decision>,
+    pub(super) choices: BTreeSet<Atom>,
+    pub(super) witnesses: Decision,
 }
 
 impl CompiledComponent {
@@ -98,7 +111,95 @@ impl CompiledComponent {
             let equation = guarded.forall(&compilation.formals(work)?, work)?;
             relation = relation.and(&equation, work)?;
         }
-        Ok(Self { layout, relation })
+        let mut fixed_cells = BTreeMap::new();
+        for (&id, row) in fixed {
+            let parameters = graph.functions[&id].parameters();
+            for class in 0..layout.view().classes() {
+                for mask in 0..layout.tables[&id] {
+                    let value = layout
+                        .view()
+                        .at(row.known()?.membership(), class)
+                        .evaluate_with_control(
+                            |reference| {
+                                let parameter = parameters
+                                    .iter()
+                                    .position(|parameter| parameter == reference)
+                                    .expect("future binding dependencies were validated");
+                                mask & (1usize << parameter) != 0
+                            },
+                            work,
+                        )?;
+                    work.charge(DecisionWork::Node)?;
+                    fixed_cells.insert(
+                        Atom::Cell {
+                            scheme: id,
+                            class,
+                            mask,
+                        },
+                        Decision::constant(value),
+                    );
+                }
+            }
+        }
+        let mut minimized = BTreeSet::new();
+        for cell in &layout.cells {
+            let Atom::Cell { scheme, .. } = cell else {
+                return Err(PreparedEffectInvariant::UnclosedCell.into());
+            };
+            work.charge(DecisionWork::Visit)?;
+            if !graph.functions[scheme].is_future() {
+                minimized.insert(cell.clone());
+            }
+        }
+        let mut choices = BTreeSet::new();
+        for &id in &graph.choices {
+            work.charge(DecisionWork::Visit)?;
+            choices.insert(Atom::Choice(id));
+        }
+        Ok(Self {
+            layout,
+            relation,
+            fixed: fixed_cells,
+            minimized,
+            choices,
+        })
+    }
+
+    pub(super) fn complete<C: DecisionControl>(
+        self,
+        work: &mut Work<'_, C>,
+    ) -> Result<ComponentCompletion, PreparedEffectFailure<C::Error>> {
+        // Substitute actual Future functions before minimization. Unresolved
+        // Future cells stay free in the conditional result, including guards.
+        let relation = self.relation.substitute(&self.fixed, work)?;
+        let projected = relation.exists(&self.choices, work)?;
+        let completion = projected.complete_conditionally(&self.minimized, work)?;
+        let witnesses = relation.substitute(completion.lower_envelope(), work)?;
+        for atom in witnesses.variables() {
+            work.charge(DecisionWork::Visit)?;
+            if !self.choices.contains(atom)
+                && !(self.layout.cells.contains(atom) && !self.minimized.contains(atom))
+            {
+                return Err(PreparedEffectInvariant::UnclosedCell.into());
+            }
+        }
+        // The guard and all remaining discrete witnesses describe the same
+        // region. A caller may restrict that region, never re-minimize locals.
+        if witnesses.exists(&self.choices, work)? != *completion.principal() {
+            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+        }
+        let mut coefficients = self.fixed;
+        for (cell, decision) in completion.lower_envelope() {
+            work.charge(DecisionWork::Node)?;
+            coefficients.insert(cell.clone(), compilation::copy(decision, work)?);
+        }
+        Ok(ComponentCompletion {
+            layout: self.layout,
+            completion,
+            coefficients,
+            choices: self.choices,
+            witnesses,
+        })
     }
 }
 
