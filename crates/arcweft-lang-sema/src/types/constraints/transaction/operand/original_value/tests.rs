@@ -80,8 +80,9 @@ fn original_values_admit_only_their_actual_sources_free_type_const_and_effect() 
     let mut context = context(&cancellation);
     let source = Source::new(9001);
     let foreign = Source::new(9002);
-    let original = context.original_producer_context(&source).unwrap();
-    let scope = Arc::new(context.capture_lexical_scope().unwrap());
+    let original = context
+        .fixture_original_context_with_rigid(source.rigid_scope())
+        .unwrap();
     for owner in [&source, &foreign] {
         let values = [
             TypeKind::Tuple(vec![TypeKind::GenericParam(owner.types[0].clone())]),
@@ -96,12 +97,7 @@ fn original_values_admit_only_their_actual_sources_free_type_const_and_effect() 
             ),
         ];
         for (index, value) in values.into_iter().enumerate() {
-            let admitted = ConstraintOperand::<NoConstraintClient>::original(
-                &value,
-                Arc::clone(&scope),
-                original.clone(),
-                &mut context,
-            );
+            let admitted = context.fixture_operand_in(&original, &value);
             if Arc::ptr_eq(owner, &source) {
                 assert_eq!(admitted.unwrap().value(), &value);
             } else {
@@ -115,12 +111,7 @@ fn original_values_admit_only_their_actual_sources_free_type_const_and_effect() 
             }
         }
         let length = ArrayLength::Generic(owner.consts[0].clone());
-        let admitted = ConstraintOperand::<NoConstraintClient, ArrayLength>::original(
-            &length,
-            Arc::clone(&scope),
-            original.clone(),
-            &mut context,
-        );
+        let admitted = context.fixture_operand_in(&original, &length);
         if Arc::ptr_eq(owner, &source) {
             assert_eq!(admitted.unwrap().value(), &length);
         } else {
@@ -138,10 +129,11 @@ fn a_nested_function_keeps_local_quantifiers_and_checks_free_predicate_variables
     let mut context = context(&cancellation);
     let source = Source::new(9003);
     let foreign = Source::new(9004);
-    let original = context.original_producer_context(&source).unwrap();
-    let scope = Arc::new(context.capture_lexical_scope().unwrap());
+    let original = context
+        .fixture_original_context_with_rigid(source.rigid_scope())
+        .unwrap();
     let binder = GenericBinder::new(1, 1, 1);
-    let nested = scope.shape().with_binder(binder);
+    let nested = original.scope().with_binder(binder);
     for owner in [&source, &foreign] {
         let predicate =
             crate::effect_row::EffectFormula::variable(owner.effects[0].clone(), &mut context)
@@ -158,12 +150,7 @@ fn a_nested_function_keeps_local_quantifiers_and_checks_free_predicate_variables
             TypeKind::GenericParam(source.types[0].clone()),
             EffectRow::open(EffectSet::new(), nested.bound_effect(0, 0).unwrap()),
         );
-        let admitted = ConstraintOperand::<NoConstraintClient>::original(
-            &value,
-            Arc::clone(&scope),
-            original.clone(),
-            &mut context,
-        );
+        let admitted = context.fixture_operand_in(&original, &value);
         if Arc::ptr_eq(owner, &source) {
             assert_eq!(admitted.unwrap().value(), &value);
         } else {
@@ -238,4 +225,74 @@ fn original_value_admission_stops_before_copying_when_its_budget_is_exhausted() 
         ),
         Err(TypeConstraintError::Abort(_))
     ));
+}
+
+#[test]
+fn fixture_gamma_rejection_is_distinct_from_lower_effect_environment_rejection() {
+    use crate::effect_row::{
+        EffectConstraintEligibility, EffectConstraintEnvironment, EffectConstraintEnvironmentError,
+        EffectConstraintVariable,
+    };
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let declarations = Source::new(9010);
+    let row = EffectRow::open(EffectSet::new(), declarations.effects[0].clone());
+    let value = TypeKind::function_with_effects([], TypeKind::I64, row.clone());
+    let ground = context.fixture_original_context(None).unwrap();
+    let candidate = EffectConstraintEnvironment::new(&[EffectConstraintVariable::new(
+        declarations.effects[0].clone(),
+        EffectConstraintEligibility::Rigid,
+    )])
+    .unwrap();
+    candidate.validate_row(&row).unwrap();
+    assert_eq!(
+        context.fixture_operand_in(&ground, &value).err(),
+        Some(references::effect_out_of_scope(&declarations.effects[0]))
+    );
+
+    let original = context
+        .fixture_original_context_with_rigid(declarations.rigid_scope())
+        .unwrap();
+    let admitted = context.fixture_operand_in(&original, &value).unwrap();
+    let TypeKind::Function { effects, .. } = admitted.value() else {
+        panic!("function input");
+    };
+    let lower = EffectConstraintEnvironment::new(&[]).unwrap();
+    assert_eq!(
+        lower.validate_row(effects),
+        Err(EffectConstraintEnvironmentError::ForeignVariable {
+            variable: declarations.effects[0].clone(),
+        })
+    );
+}
+
+#[test]
+fn fixture_operands_retain_the_declared_original_frames_instead_of_current_same_shape_frames() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let binder = GenericBinder::new(1, 0, 0);
+    let previous = context.enter_binder_scope(binder);
+    let declarations = Source::new(9011);
+    let original = context
+        .fixture_original_context_with_rigid(declarations.rigid_scope())
+        .unwrap();
+    let reference = original.scope().bound_type(0, 0).unwrap();
+    context.restore_binder_scope(previous);
+    let other = context.enter_binder_scope(binder);
+    let current = context.capture_lexical_scope().unwrap();
+    assert_eq!(original.scope(), current.shape());
+    assert_ne!(original.gamma(), &current);
+    let value = context
+        .fixture_operand_in(&original, &TypeKind::GenericParam(reference))
+        .unwrap();
+    assert_eq!(value.scope(), original.gamma());
+    assert_ne!(value.scope(), &current);
+    let mut exhausted = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+        LocalConstraintAccounting::new(TypeConstraintLimits::new(0, 0, 0, 0), &cancellation),
+    );
+    assert!(matches!(
+        exhausted.fixture_operand_in(&original, &TypeKind::I64),
+        Err(TypeConstraintError::Abort(_))
+    ));
+    context.restore_binder_scope(other);
 }

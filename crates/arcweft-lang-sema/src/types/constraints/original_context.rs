@@ -95,7 +95,7 @@ impl OriginalProducerContext {
     #[cfg(test)]
     pub(super) fn ground_fixture(gamma: ConstraintLexicalScope) -> Self {
         Self(Arc::new(OriginalProducer {
-            source: Arc::new(GroundFixtureSource { imported: None }),
+            source: Arc::new(FixtureOriginalSource::Ground { imported: None }),
             formals: GenericDeclarationBinder::new(
                 GenericScope::default(),
                 Box::new([]),
@@ -129,8 +129,24 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
         &mut self,
         imported: Option<&ImportedGenericParameterScopeLease>,
     ) -> Result<OriginalProducerContext, TypeConstraintError> {
-        self.original_producer_context(&Arc::new(GroundFixtureSource {
+        self.original_producer_context(&Arc::new(FixtureOriginalSource::Ground {
             imported: imported.cloned(),
+        }))
+    }
+
+    /// Fixture declarations are supplied independently of the value being
+    /// admitted and of the receiving candidate's application inventory.
+    #[cfg(test)]
+    pub(crate) fn fixture_original_context_with_rigid(
+        &mut self,
+        rigid: OriginalRigidScope<'_>,
+    ) -> Result<OriginalProducerContext, TypeConstraintError> {
+        self.original_producer_context(&Arc::new(FixtureOriginalSource::Declared {
+            identity: Arc::new(()),
+            types: rigid.types.into(),
+            consts: rigid.consts.into(),
+            effects: rigid.effects.into(),
+            imported: rigid.imported.cloned(),
         }))
     }
     /// Reserve the source/header and frame work before projecting or sharing
@@ -211,31 +227,62 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
     }
 }
 
-/// Explicit ground source used by lower fixtures without a source catalog.
-/// Production initializers must receive an accepted source-layer authority.
+/// Explicit declarations and imports are test inputs, never inferred from
+/// the value or from a candidate that happens to admit the same reference.
 #[cfg(test)]
 #[derive(Debug)]
-struct GroundFixtureSource {
-    imported: Option<ImportedGenericParameterScopeLease>,
+enum FixtureOriginalSource {
+    Ground {
+        imported: Option<ImportedGenericParameterScopeLease>,
+    },
+    Declared {
+        identity: Arc<()>,
+        types: Box<[GenericTypeReference]>,
+        consts: Box<[GenericConstReference]>,
+        effects: Box<[GenericEffectReference]>,
+        imported: Option<ImportedGenericParameterScopeLease>,
+    },
 }
 
 #[cfg(test)]
-impl OriginalProducerSource for GroundFixtureSource {
+impl OriginalProducerSource for FixtureOriginalSource {
     fn as_any(&self) -> &dyn Any {
         self
     }
     fn same_source(&self, other: &dyn OriginalProducerSource) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|other| self.imported == other.imported)
+        match (self, other.as_any().downcast_ref::<Self>()) {
+            (Self::Ground { imported }, Some(Self::Ground { imported: other })) => {
+                imported == other
+            }
+            (
+                Self::Declared { identity, .. },
+                Some(Self::Declared {
+                    identity: other, ..
+                }),
+            ) => Arc::ptr_eq(identity, other),
+            _ => false,
+        }
     }
     fn rigid_scope(&self) -> OriginalRigidScope<'_> {
-        OriginalRigidScope {
-            types: &[],
-            consts: &[],
-            effects: &[],
-            imported: self.imported.as_ref(),
+        match self {
+            Self::Ground { imported } => OriginalRigidScope {
+                types: &[],
+                consts: &[],
+                effects: &[],
+                imported: imported.as_ref(),
+            },
+            Self::Declared {
+                types,
+                consts,
+                effects,
+                imported,
+                ..
+            } => OriginalRigidScope {
+                types,
+                consts,
+                effects,
+                imported: imported.as_ref(),
+            },
         }
     }
     fn declaration_formals(&self) -> Result<GenericDeclarationBinder, GenericScopeError> {
@@ -323,5 +370,67 @@ mod tests {
         let context = allowed.original_producer_context(&source).unwrap();
         assert_eq!(projections.load(Ordering::Relaxed), 1);
         assert!(context.domain().is_unconstrained());
+    }
+
+    #[test]
+    fn explicit_fixture_declarations_preserve_identity_and_reject_invalid_rigid_inputs() {
+        use crate::types::{
+            DetachedGenericOwnerId, GenericBinder, GenericParameterOwnerId, GenericTypeParameterId,
+        };
+        let cancellation = AtomicBool::new(false);
+        let mut context = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+            LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(100, 100, 100, 100),
+                &cancellation,
+            ),
+        );
+        let reference: GenericTypeReference = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(9012)),
+            0,
+        )
+        .into();
+        let declarations = [reference.clone()];
+        let rigid = || OriginalRigidScope {
+            types: &declarations,
+            consts: &[],
+            effects: &[],
+            imported: None,
+        };
+        let first = context
+            .fixture_original_context_with_rigid(rigid())
+            .unwrap();
+        let second = context
+            .fixture_original_context_with_rigid(rigid())
+            .unwrap();
+        assert_eq!(first, first.clone());
+        assert_ne!(first, second);
+        assert!(first.admits_parameter(&reference.clone().into()));
+        let duplicates = [reference.clone(), reference];
+        assert_eq!(
+            context
+                .fixture_original_context_with_rigid(OriginalRigidScope {
+                    types: &duplicates,
+                    consts: &[],
+                    effects: &[],
+                    imported: None,
+                })
+                .unwrap_err(),
+            TypeConstraintError::Invariant(TypeConstraintInvariant::OriginalProducer)
+        );
+        let bound = GenericScope::default()
+            .with_binder(GenericBinder::new(0, 0, 1))
+            .bound_effect(0, 0)
+            .unwrap();
+        assert_eq!(
+            context
+                .fixture_original_context_with_rigid(OriginalRigidScope {
+                    types: &[],
+                    consts: &[],
+                    effects: &[bound],
+                    imported: None,
+                })
+                .unwrap_err(),
+            TypeConstraintError::Invariant(TypeConstraintInvariant::OriginalProducer)
+        );
     }
 }

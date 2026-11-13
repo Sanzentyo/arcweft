@@ -48,6 +48,26 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 }
 
 #[cfg(test)]
+impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_, A, D> {
+    pub(in crate::types::constraints) fn fixture_operand_in<T: OriginalOperandValue>(
+        &mut self,
+        original: &OriginalProducerContext,
+        value: &T,
+    ) -> Result<ConstraintOperand<D, T>, TypeConstraintError> {
+        self.check_cancelled()?;
+        for _ in original.scope().binders() {
+            self.enter_node()?;
+        }
+        ConstraintOperand::original(
+            value,
+            Arc::new(original.gamma().clone()),
+            original.clone(),
+            self,
+        )
+    }
+}
+
+#[cfg(test)]
 impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     /// Deliberately raw terms for lower solver fixtures. Source admission tests
     /// use the production constructor with an explicit source authority.
