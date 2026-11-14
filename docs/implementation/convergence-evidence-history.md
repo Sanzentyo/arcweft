@@ -17629,3 +17629,19 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 型の保持がlive graphだけを読んでいた境界を、元baseと抽出済み準備を公開せず読める境界へ訂正する。現状行に重ねていたcut別の説明は、共通fold・scheme代数・graph所有／転送・read admissionという現在の仕組みへまとめ、過去のSHA・実測・訂正理由は履歴に保持した。今回の失敗6件は未解消であり、Generic Match、本体効果closure、型移送、caller-bound recursion、共有prefix、Free許可／reifyの各受入を戻さない。残作業は[current-status.md](current-status.md)の該当行だけへ集約する。
 
 原本 [task-extracted-effect-read.raw.zip](acceptance-evidence/task-extracted-effect-read.raw.zip) は 54 entries、raw 14613760 bytes、ZIP 1362609 bytes、SHA-256 `122e64e8aa8c11c388a410629e1e4fdd45fa915d5d66878372b75eb47273c6e4`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+
+## Scoped effect edits and affine dependency publication
+
+2026-11-14。基点 `02e88c378db3cace53246511876e501d84dd6524`、実装・公開Source `1cd0ce187798be75011ca452488d8731c9dca33a`、tree `2852b70a9a9e80a843e6f09937b6ce5257d7eead`。既存mainの13 Rust pathを通常commit／非force pushし、検証したdirty bytesとcommit・公開blobを照合した。未追跡 `%SystemDrive%/` は保持した。
+
+- read scopeは同じissuer／exact baseの元source定義と元Cをimmutableに共有し、公開用affine delta tokenは所有しない。scope editはその入力をrestoreせずに読み、自分のfunction／row／predicate／choice／obligationだけをjournalへ記録し、finishで自分の差分を抽出して元baseへ戻す。失敗・取消・dropも巻き戻す。source chunkと依存IDはflatな所有関係で、深い依存が再帰的なArc解放にならない。
+- 単独／一括restoreは同じpreflightと確定処理を使う。推移的な全source chunkに対応する元affine permitを要求し、元headerの因果的なDeclared→BodyPrepared以外の競合を拒否する。全検査・control chargeより前にlive graphを変えない。元のC／formal／Dを保持し、readonly scopeから確定権限を作らない。replayは元入力のoriginを検証してから実際の新しい関係を比較し、ordinal順を意味上の同値性には使わない。
+- 既存のterm substitutionを同じread viewへ移し、prepared型の効果投影はaffine term editを受け取る。これにより既存の共通structural foldが未公開sourceを読める。新8件は、実closureとcanonical型への投影、未使用formalとD、全予算点の原子性、元の取消エラー、nested edit／outer rollback、依存不足とsibling競合、元入力を固定したreplay、256段の推移的依存を検証する。これは数学ownerと型投影の境界であり、Analyzerのprepared値portを接続した証拠ではない。
+- 最終ownerは1,776件／1,770 PASS／6 FAIL／0 SKIP、275.711秒、5 suite。直前1,768 ID保持・新8件PASS、選択／終端ID一致・重複0。失敗IDと5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。Sema全target／全feature check・Clippy、workspace fmt、構造gateは終了0。98 package・3517 files・3386 Rust files・1907963 Rust LOC・396 review・blocking 0。13 path・1153物理LOC増。各pathの実byte／物理LOCと分類、ownerの責任分離、fan-in／out 12／19を記録した。unsafe・公開契約・Cargo入力・I/O・version・既定予算は変更せず、CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- fresh full metadata／全target reverse treeの22 packageは不変。privateなownerとSema内consumerの変更として全ownerと品質を選定した。Source `20a847545961e185230491ee3de9e4d256d2db32` の後続21 package／107 target・2,510件／2,507 PASS／2 FAIL／1 SKIP、workspace品質、doctest 2件は元入力の実測として保持し、今回の再実行へ合算しない。Tier 2と新しい実機受入は未実行。
+- 開発checkの最初のE0609と、初回owner-listのtest import不足6件／終了101を原本に保持した。後者はproductionの不要なimportを除いた際にtest側の暗黙importが失われたもので、testの明示importを修復してから全ownerを再実行した。開発check終了0は最新変更前の開発証拠で、最終の固定入力検証と区別する。
+- ユーザーの全体削除指定に従い、11:17:57–11:18:11 JSTにworkspace rootで `cargo clean` を実行し終了0。30,600 files／88.1 GiBを削除し、target不存在と作業ツリーstatus不変を確認した。ビルド生成物の移動・退避は行わず、その後の検証で再ビルドした。前のcleanの実測は書き換えない。
+- Supersedes: 読取りが抽出delta一つの借用までだった説明を、元入力のreadonly scope上で差分だけを作り、全affine依存を一括確定する現在の境界へ更新する。重複したcut別説明は現状行から除き、過去のSHA・検証結果・訂正理由を履歴に保持した。保持6失敗は未解消であり、Generic Matchや再帰・共有prefix・型移送の既受入を未完了へ戻さない。残作業の現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-effect-scope.raw.zip](acceptance-evidence/task-prepared-effect-scope.raw.zip) は 64 entries、raw 14964325 bytes、ZIP 1422570 bytes、SHA-256 `3893cc67b2550c5b8cd06db5856001a00063702e1f7c4ac532d5dd293d0b9a42`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
