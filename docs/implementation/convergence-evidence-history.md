@@ -17600,3 +17600,18 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 型の構造移送をcanonical用とeffect-domain用の別walkで維持していた状態を、共通foldへの統合済みへ訂正する。このcutの受入境界は移送処理の統合であり、上記の失敗6件を解消した判定ではない。残作業の列挙は履歴に重ねず、現状一覧の該当行へ集約する。Generic Match、本体効果closure、caller-bound recursion、共有prefix、Free許可／reifyと各既受入は維持する。過去の全SHA・実測・失敗・原本は変更せず、現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-scoped-structural-fold.raw.zip](acceptance-evidence/task-scoped-structural-fold.raw.zip) は 238 entries、raw 39788317 bytes、ZIP 4762872 bytes、SHA-256 `89b385bca9683e4e8c6838548b7d3d5ff4ca8eb35e1838b89729599406fd15b1`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+
+## Shared prepared-effect owner and mutation journal
+
+2026-11-14。基点 `6254e1e39e3ed9aea9b30cfec7c17bdea4f07744`、実装・公開Source `a22de6967d0d18517ab916d355f7fe87174e6316`、tree `e3645ad2725e29fd49e38a31598605a292f019eb`。既存mainの9 Rust pathを通常commit／非force pushし、検証dirty bytes・commit・公開blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- PreparedEffectCheckpointは元の全function mapを複製せず、候補のmutation frontierを保持する。immutable functionの新規追加と置換前定義、row／predicate／choiceを一つのaffine journalに記録し、逆順のrollbackで元の定義へ戻す。extractは変更した定義だけを元のcontrolで事前に課金して共有し、失敗ならlive checkpointを保持する。restoreも書込みをjournalへ記録するため、checkpointより古いordinalの復元と内側commitを含めて外側rollbackが戻す。allocatorは巻き戻さない。
+- replayは同じ実issuer・実base stampを検証し、そのlive baseで変更前から存在した宣言を認証する。全baseline ID集合の複製・走査を削除したが、元宣言identity、全predicate／obligation、新しい関数の対応と相関を捨てない。ordinal順や一つの効果観測からownerを推定しない。
+- OpenConstraintComponentから独立したPreparedEffectGraphの生成・所有・effects_mutを削除した。元graphのread-only owner leaseを保持し、admission・guard・conditional useの公開は、そのgraphを借りて行う。leaseは定義やcheckpoint／deltaを複製せず、公開権限にもならない。値／useのissuer、元Source Γ、元producerの制約と相関は別の既存authorityとして保持する。このcomponentはまだAnalyzerの関数値portへ接続されておらず、今回のprivate境界の修復をfrontendの完了に読み替えない。
+- 新3件は、数学graphの4,096個の未変更headerを増やしてもcheckpoint／extract／replayの仕事量と元functionのArc参照数が増えないこと、入れ子commit後の転送／rollback、独立した値componentが同じ未完了宣言を保持し、元の本体を一度設定した後に同じ効果を読めることを検証する。foreign graphはcanonical値でも拒否し、同じgraphを使うcomponent間でも別の値issuerを拒否する。開発subset 21 PASS、移行途中のテストでの変数shadow／引数不足によるcheck失敗、修正後の55 PASSも原本に保持し、完全入力snapshotのない開発runを最終Sourceの証拠にしない。
+- 最終ownerは1,765件／1,759 PASS／6 FAIL／0 SKIP、117.315秒、5 suite。直前1,762 ID保持・新3件PASS、選択／終端ID一致・重複0。既知6件と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。Sema全target／全feature check・Clippy、workspace fmt、構造gateは終了0。98 package・3513 files・3382 Rust files・1906383 Rust LOC・396 review・blocking 0。9 path・264物理LOC増。元graphが数学的な状態と転送を所有し、private componentは値・元制約・useだけを所有する。実LOC・byte size・test分類、fan-in 12／fan-out 19を保持した。公開API・依存・I/O・codec・version・既定予算は変更しない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- fresh full metadata／全target reverse treeの22 packageとCargo入力が不変であることを照合した。変更されたAPIとそのconsumerはSema内のprivateな所有・転送機構に限り、full ownerで確認した。後続21 package／107 targetのSource `20a847545961e185230491ee3de9e4d256d2db32` の実測は2,510件／2,507 PASS／2 FAIL／1 SKIPとして保持し、今回の再実行へ合算しない。workspace全target／全feature品質とdoctest 2件も同じ前cutの実測であり、今回のfresh runはowner品質・fmt・構造である。Tier 2と新しい実機受入は未実行。
+- Supersedes: componentの別graph所有とcheckpointでの全基点map複製を、元graphの借用と変更journalへ訂正する。元issuer／exact base／原子的転送という受入条件は維持する。今回の失敗6件を解消した判定ではない。Generic Match、本体効果closure、型移送、caller-bound recursion、共有prefix、Free許可／reifyの各既受入を保持し、残作業は[current-status.md](current-status.md)の該当行だけへ集約する。過去の全SHA・実測・失敗・原本を変更しない。
+
+原本 [task-shared-effect-owner-journal.raw.zip](acceptance-evidence/task-shared-effect-owner-journal.raw.zip) は 55 entries、raw 15054281 bytes、ZIP 1423435 bytes、SHA-256 `ddf017facf49c0ae85df73696a20be4bff76e6a19ca88c7fe37ba0d4f22fc0af`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
