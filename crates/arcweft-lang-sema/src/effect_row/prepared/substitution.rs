@@ -143,7 +143,12 @@ where
         }
         for id in reachable {
             self.charge(DecisionWork::Visit)?;
-            let term = Arc::clone(&self.graph.rows[&id]);
+            let term = Arc::clone(
+                self.graph
+                    .read()
+                    .row_definition(id)
+                    .ok_or(PreparedEffectInvariant::StaleReference)?,
+            );
             let mapped = match term.as_ref() {
                 RowTerm::Application {
                     function,
@@ -268,7 +273,12 @@ where
         }
         for id in reachable {
             self.charge(DecisionWork::Visit)?;
-            let term = Arc::clone(&self.graph.predicates[&id]);
+            let term = Arc::clone(
+                self.graph
+                    .read()
+                    .predicate_definition(id)
+                    .ok_or(PreparedEffectInvariant::StaleReference)?,
+            );
             let mapped = match term.as_ref() {
                 PredicateTerm::Relation {
                     relation,

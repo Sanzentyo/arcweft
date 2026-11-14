@@ -13,6 +13,7 @@ mod tests;
 pub(crate) struct PreparedEffectReadView<'a> {
     graph: &'a PreparedEffectGraph,
     extracted: Option<&'a PreparedEffectDeltaData>,
+    dependencies: Option<&'a PreparedEffectReadScope>,
 }
 
 impl PreparedEffectGraph {
@@ -20,6 +21,7 @@ impl PreparedEffectGraph {
         PreparedEffectReadView {
             graph: self,
             extracted: None,
+            dependencies: None,
         }
     }
 
@@ -32,11 +34,85 @@ impl PreparedEffectGraph {
         Ok(PreparedEffectReadView {
             graph: self,
             extracted: Some(&delta.data),
+            dependencies: delta.dependencies.as_ref(),
         })
     }
 }
 
 impl<'a> PreparedEffectReadView<'a> {
+    pub(in crate::effect_row::prepared) fn function_definition(
+        self,
+        id: u64,
+    ) -> Option<&'a Arc<Function>> {
+        self.extracted
+            .and_then(|delta| delta.functions.get(&id))
+            .or_else(|| {
+                self.dependencies
+                    .and_then(|scope| scope.data.functions.get(&id))
+            })
+            .or_else(|| {
+                self.graph
+                    .active_scope
+                    .as_ref()
+                    .and_then(|scope| scope.functions.get(&id))
+            })
+            .or_else(|| {
+                self.graph
+                    .active_scope
+                    .as_ref()
+                    .and_then(|scope| scope.input.data.functions.get(&id))
+            })
+            .or_else(|| self.graph.functions.get(&id))
+    }
+
+    pub(in crate::effect_row::prepared) fn row_definition(
+        self,
+        id: u64,
+    ) -> Option<&'a Arc<RowTerm>> {
+        self.extracted
+            .and_then(|delta| delta.rows.get(&id))
+            .or_else(|| self.dependencies.and_then(|scope| scope.data.rows.get(&id)))
+            .or_else(|| self.graph.rows.get(&id))
+            .or_else(|| {
+                self.graph
+                    .active_scope
+                    .as_ref()
+                    .and_then(|scope| scope.input.data.rows.get(&id))
+            })
+    }
+
+    pub(in crate::effect_row::prepared) fn predicate_definition(
+        self,
+        id: u64,
+    ) -> Option<&'a Arc<PredicateTerm>> {
+        self.extracted
+            .and_then(|delta| delta.predicates.get(&id))
+            .or_else(|| {
+                self.dependencies
+                    .and_then(|scope| scope.data.predicates.get(&id))
+            })
+            .or_else(|| self.graph.predicates.get(&id))
+            .or_else(|| {
+                self.graph
+                    .active_scope
+                    .as_ref()
+                    .and_then(|scope| scope.input.data.predicates.get(&id))
+            })
+    }
+
+    pub(in crate::effect_row::prepared) fn contains_choice(self, id: u64) -> bool {
+        self.extracted
+            .is_some_and(|delta| delta.choices.contains(&id))
+            || self
+                .dependencies
+                .is_some_and(|scope| scope.data.choices.contains(&id))
+            || self.graph.choices.contains(&id)
+            || self
+                .graph
+                .active_scope
+                .as_ref()
+                .is_some_and(|scope| scope.input.data.choices.contains(&id))
+    }
     pub(crate) fn validate_owner(
         self,
         owner: &PreparedEffectGraphOwner,
@@ -70,9 +146,7 @@ impl<'a> PreparedEffectReadView<'a> {
     ) -> Result<&'a Function, PreparedEffectInvariant> {
         let id = self.graph.validate(reference.reference())?;
         let value = self
-            .extracted
-            .and_then(|delta| delta.functions.get(&id))
-            .or_else(|| self.graph.functions.get(&id))
+            .function_definition(id)
             .map(Arc::as_ref)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         match (reference, value) {
@@ -98,9 +172,7 @@ impl<'a> PreparedEffectReadView<'a> {
         reference: &PreparedEffectRowRef,
     ) -> Result<&'a RowTerm, PreparedEffectInvariant> {
         let id = self.graph.validate(&reference.0)?;
-        self.extracted
-            .and_then(|delta| delta.rows.get(&id))
-            .or_else(|| self.graph.rows.get(&id))
+        self.row_definition(id)
             .map(Arc::as_ref)
             .ok_or(PreparedEffectInvariant::StaleReference)
     }
@@ -110,9 +182,7 @@ impl<'a> PreparedEffectReadView<'a> {
         reference: &PreparedEffectPredicateRef,
     ) -> Result<&'a PredicateTerm, PreparedEffectInvariant> {
         let id = self.graph.validate(&reference.0)?;
-        self.extracted
-            .and_then(|delta| delta.predicates.get(&id))
-            .or_else(|| self.graph.predicates.get(&id))
+        self.predicate_definition(id)
             .map(Arc::as_ref)
             .ok_or(PreparedEffectInvariant::StaleReference)
     }

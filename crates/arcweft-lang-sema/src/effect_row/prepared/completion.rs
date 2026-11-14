@@ -45,6 +45,9 @@ impl PreparedEffectGraph {
         self,
         control: &mut C,
     ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
+        if self.active_scope.is_some() {
+            return Err(PreparedEffectInvariant::ReadScopeActive.into());
+        }
         if !self.checkpoints.is_empty() {
             return Err(PreparedEffectInvariant::CheckpointOrder.into());
         }

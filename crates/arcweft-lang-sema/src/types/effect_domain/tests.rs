@@ -435,7 +435,7 @@ fn prepared_parameter_projection_keeps_inner_binders_and_projects_pending_predic
     let projected = source
         .project_effect_parameters(
             &incoming,
-            &mut graph,
+            graph.edit_terms(),
             &mut Projection::new(),
             &mut |reference, scope, control| {
                 occurrences.push((reference.clone(), scope.binders().len()));
@@ -578,7 +578,7 @@ fn prepared_type_projection_rolls_back_earlier_rows_and_keeps_scope_errors_typed
     let mut calls = 0;
     let failed = source.project_effect_parameters(
         &incoming,
-        &mut graph,
+        graph.edit_terms(),
         &mut Projection::new(),
         &mut |reference, scope, control| {
             reference.template_key(&incoming, scope)?;
@@ -634,7 +634,7 @@ fn prepared_type_projection_preserves_unknown_rows_and_the_control_failure() {
     let projected = source
         .project_effect_parameters(
             &GenericScope::default(),
-            &mut graph,
+            graph.edit_terms(),
             &mut projection,
             &mut |_, _, _| {
                 calls += 1;
@@ -650,7 +650,7 @@ fn prepared_type_projection_preserves_unknown_rows_and_the_control_failure() {
     assert!(matches!(
         source.project_effect_parameters(
             &GenericScope::default(),
-            &mut graph,
+            graph.edit_terms(),
             &mut short,
             &mut |_, _, _| Ok(None)
         ),
@@ -663,7 +663,7 @@ fn prepared_type_projection_preserves_unknown_rows_and_the_control_failure() {
     assert!(matches!(
         source.project_effect_parameters(
             &GenericScope::default(),
-            &mut graph,
+            graph.edit_terms(),
             &mut cancelled,
             &mut |_, _, _| Ok(None)
         ),
@@ -671,4 +671,88 @@ fn prepared_type_projection_preserves_unknown_rows_and_the_control_failure() {
             PreparedTypeEffectProjectionFailure::Control(Stopped)
         ))
     ));
+}
+
+#[test]
+fn prepared_type_projection_reads_an_unpublished_source_and_retains_its_affine_dependencies() {
+    use crate::effect_row::prepared::{
+        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    };
+
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let formal = scope.bound_effect(0, 0).unwrap();
+    let mut graph = PreparedEffectGraph::default();
+    let mut checkpoint = graph.checkpoint(&mut Decisions).unwrap();
+    let scheme = graph
+        .declare(
+            vec![formal.clone()],
+            EffectPredicate::unconstrained(),
+            &mut Decisions,
+        )
+        .unwrap();
+    let input = graph
+        .application(
+            &scheme,
+            vec![PreparedEffectRow::Canonical(EffectRow::open(
+                EffectSet::new(),
+                formal.clone(),
+            ))],
+            &mut Decisions,
+        )
+        .unwrap();
+    let source_delta = graph
+        .extract_delta(&mut checkpoint, &mut Decisions)
+        .unwrap();
+    let source = TypeKind::<PreparedEffects>::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![TypeKind::I64],
+        return_type: Box::new(TypeKind::I64),
+        effects: input.clone(),
+    };
+    let reads = graph.read_scope([&source_delta], &mut Decisions).unwrap();
+    let mut edit = graph.edit_scope(&reads, &mut Decisions).unwrap();
+    edit.prepare_body(
+        &scheme,
+        PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), formal)),
+        vec![],
+        &mut Decisions,
+    )
+    .unwrap();
+    let projected = source
+        .project_effect_parameters(
+            &scope,
+            edit.edit_terms(),
+            &mut Projection::new(),
+            &mut |_, _, _| {
+                Ok(Some(PreparedEffectRow::Canonical(EffectRow::closed(
+                    EffectSet::from_labels(["fs.read"]).unwrap(),
+                ))))
+            },
+        )
+        .unwrap();
+    let result_delta = edit.finish(&mut Decisions).unwrap();
+    assert!(graph.validate_retained_row(&input).is_err());
+    let TypeKind::Function { effects, .. } = &projected else {
+        panic!("expected a prepared function")
+    };
+    graph
+        .read_extracted(&result_delta, &mut Decisions)
+        .unwrap()
+        .validate_retained_row(effects)
+        .unwrap();
+    graph
+        .restore_deltas(vec![result_delta, source_delta], &mut Decisions)
+        .unwrap();
+    let closed = graph.solve_principal(&mut Decisions).unwrap();
+    let canonical = projected
+        .project_canonical_effects(&scope, &closed, &mut Projection::new())
+        .unwrap();
+    let TypeKind::Function { effects, .. } = canonical else {
+        panic!("expected a canonical function")
+    };
+    assert_eq!(
+        effects,
+        EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap())
+    );
 }

@@ -350,6 +350,9 @@ impl PreparedEffectGraph {
         fixed: BTreeMap<u64, EffectRow>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+        if self.active_scope.is_some() {
+            return Err(PreparedEffectInvariant::ReadScopeActive.into());
+        }
         let mut work = Work(control);
         for (&id, function) in &self.functions {
             work.charge(DecisionWork::Visit)?;

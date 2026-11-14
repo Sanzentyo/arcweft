@@ -5,8 +5,9 @@ use super::{PreparedEffectDelta, PreparedEffectDeltaData};
 use crate::effect_row::prepared::{
     Arc, BTreeMap, BTreeSet, DecisionControl, DecisionWork, Function, FunctionRef, PredicateTerm,
     PreparedEffectChoice, PreparedEffectFailure, PreparedEffectGraph, PreparedEffectImportedRef,
-    PreparedEffectInvariant, PreparedEffectPredicate, PreparedEffectReference, PreparedEffectRow,
-    PreparedEffectSchemeRef, PreparedEffectUnknownRef, RowTerm, SchemeState,
+    PreparedEffectInvariant, PreparedEffectPredicate, PreparedEffectReadScope,
+    PreparedEffectReadView, PreparedEffectReference, PreparedEffectRow, PreparedEffectSchemeRef,
+    PreparedEffectUnknownRef, RowTerm, SchemeState,
 };
 
 /// The consumer pairs ports by their real expression/declaration ownership.
@@ -24,6 +25,7 @@ pub(crate) enum PreparedEffectReplayRoot<'a> {
 pub(crate) enum PreparedEffectReplayMismatch {
     Issuer,
     Base,
+    ReadScopeOrigin,
     FunctionInventory,
     FunctionIdentity,
     FunctionDefinition,
@@ -82,6 +84,9 @@ struct Replay<'a, 'c, C> {
     base: &'a PreparedEffectGraph,
     left: &'a PreparedEffectDeltaData,
     right: &'a PreparedEffectDeltaData,
+    inputs: Option<&'a PreparedEffectReadScope>,
+    left_view: PreparedEffectReadView<'a>,
+    right_view: PreparedEffectReadView<'a>,
     control: &'c mut C,
     functions: Correspondence,
     choices: Correspondence,
@@ -112,12 +117,31 @@ impl PreparedEffectGraph {
         if left.base != right.base || self.state != left.base {
             return Ok(Some(PreparedEffectReplayMismatch::Base));
         }
-        self.validate_delta(left_delta, control)?;
-        self.validate_delta(right_delta, control)?;
+        let left_view = self.read_extracted(left_delta, control)?;
+        let right_view = self.read_extracted(right_delta, control)?;
+        let inputs = left_delta
+            .dependencies
+            .as_ref()
+            .filter(|scope| !scope.data.layers.is_empty());
+        let right_inputs = right_delta
+            .dependencies
+            .as_ref()
+            .filter(|scope| !scope.data.layers.is_empty());
+        let same_inputs = match (inputs, right_inputs) {
+            (None, None) => true,
+            (Some(left), Some(right)) => left.same_origin(right, control)?,
+            _ => false,
+        };
+        if !same_inputs {
+            return Ok(Some(PreparedEffectReplayMismatch::ReadScopeOrigin));
+        }
         let mut replay = Replay {
             base: self,
             left,
             right,
+            inputs,
+            left_view,
+            right_view,
             control,
             functions: Correspondence::default(),
             choices: Correspondence::default(),
@@ -130,7 +154,7 @@ impl PreparedEffectGraph {
         // by that original declaration, even if no expression observes it.
         for id in left.functions.keys() {
             replay.visit()?;
-            if self.functions.contains_key(id) {
+            if replay.input_function(*id) {
                 if !right.functions.contains_key(id) {
                     return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
                 }
@@ -139,7 +163,7 @@ impl PreparedEffectGraph {
         }
         for id in right.functions.keys() {
             replay.visit()?;
-            if self.functions.contains_key(id) && !left.functions.contains_key(id) {
+            if replay.input_function(*id) && !left.functions.contains_key(id) {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
@@ -207,13 +231,13 @@ impl PreparedEffectGraph {
         // Never infer its owner from ordinal order or matching row observations.
         for id in left.functions.keys() {
             replay.visit()?;
-            if !self.functions.contains_key(id) && !replay.functions.forward.contains_key(id) {
+            if !replay.input_function(*id) && !replay.functions.forward.contains_key(id) {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
         for id in right.functions.keys() {
             replay.visit()?;
-            if !self.functions.contains_key(id) && !replay.functions.backward.contains_key(id) {
+            if !replay.input_function(*id) && !replay.functions.backward.contains_key(id) {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
@@ -222,6 +246,19 @@ impl PreparedEffectGraph {
 }
 
 impl<'a, C: DecisionControl> Replay<'a, '_, C> {
+    fn input_function(&self, id: u64) -> bool {
+        self.base.functions.contains_key(&id)
+            || self
+                .inputs
+                .is_some_and(|scope| scope.data.functions.contains_key(&id))
+    }
+
+    fn input_choice(&self, id: u64) -> bool {
+        self.base.choices.contains(&id)
+            || self
+                .inputs
+                .is_some_and(|scope| scope.data.choices.contains(&id))
+    }
     fn visit(&mut self) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.control
             .charge(DecisionWork::Visit)
@@ -285,10 +322,7 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             self.validate_reference(left)?,
             self.validate_reference(right)?,
         );
-        let (left_base, right_base) = (
-            self.base.functions.contains_key(&left),
-            self.base.functions.contains_key(&right),
-        );
+        let (left_base, right_base) = (self.input_function(left), self.input_function(right));
         if left_base || right_base {
             return Ok((!left_base || !right_base || left != right)
                 .then_some(PreparedEffectReplayMismatch::FunctionIdentity));
@@ -313,16 +347,8 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             self.validate_reference(left)?,
             self.validate_reference(right)?,
         );
-        let left_definition = self
-            .left
-            .functions
-            .get(&left_id)
-            .or_else(|| self.base.functions.get(&left_id));
-        let right_definition = self
-            .right
-            .functions
-            .get(&right_id)
-            .or_else(|| self.base.functions.get(&right_id));
+        let left_definition = self.left_view.function_definition(left_id);
+        let right_definition = self.right_view.function_definition(right_id);
         if !left_definition.is_some_and(|value| has_role(value))
             || !right_definition.is_some_and(|value| has_role(value))
         {
@@ -447,7 +473,7 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             self.right.choices.contains(&right),
         ) {
             (false, false) => {
-                if !self.base.choices.contains(&left) || !self.base.choices.contains(&right) {
+                if !self.input_choice(left) || !self.input_choice(right) {
                     return Err(PreparedEffectInvariant::StaleReference.into());
                 }
                 Ok(left == right)
@@ -523,16 +549,12 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             self.validate_reference(&right.0)?,
         );
         let left_term = self
-            .left
-            .rows
-            .get(&left)
-            .or_else(|| self.base.rows.get(&left))
+            .left_view
+            .row_definition(left)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         let right_term = self
-            .right
-            .rows
-            .get(&right)
-            .or_else(|| self.base.rows.get(&right))
+            .right_view
+            .row_definition(right)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         if self.rows.contains(&(left, right)) {
             return Ok(None);
@@ -615,16 +637,12 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             self.validate_reference(&right.0)?,
         );
         let left_term = self
-            .left
-            .predicates
-            .get(&left)
-            .or_else(|| self.base.predicates.get(&left))
+            .left_view
+            .predicate_definition(left)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         let right_term = self
-            .right
-            .predicates
-            .get(&right)
-            .or_else(|| self.base.predicates.get(&right))
+            .right_view
+            .predicate_definition(right)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         if self.predicates.contains(&(left, right)) {
             return Ok(None);

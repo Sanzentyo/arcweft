@@ -42,19 +42,22 @@ pub(crate) struct PreparedEffectCheckpoint {
 /// References are operational capabilities and remain unchanged on transfer.
 #[derive(Debug)]
 pub(crate) struct PreparedEffectDelta {
-    pub(in crate::effect_row::prepared) data: Box<PreparedEffectDeltaData>,
+    pub(in crate::effect_row::prepared) data: Arc<PreparedEffectDeltaData>,
+    pub(in crate::effect_row::prepared) dependencies: Option<super::PreparedEffectReadScope>,
 }
 
 #[derive(Debug)]
 pub(in crate::effect_row::prepared) struct PreparedEffectDeltaData {
-    issuer: Arc<PreparedEffectIssuer>,
-    base: PreparedEffectStateId,
+    pub(in crate::effect_row::prepared) issuer: Arc<PreparedEffectIssuer>,
+    pub(in crate::effect_row::prepared) base: PreparedEffectStateId,
     result: PreparedEffectStateId,
+    pub(in crate::effect_row::prepared) ordinal: u64,
+    pub(in crate::effect_row::prepared) inputs: Option<Arc<[u64]>>,
     pub(in crate::effect_row::prepared) functions: BTreeMap<u64, Arc<Function>>,
-    obligations: Vec<ScopedObligation>,
+    obligations: Vec<Arc<ScopedObligation>>,
     pub(in crate::effect_row::prepared) rows: BTreeMap<u64, Arc<RowTerm>>,
     pub(in crate::effect_row::prepared) predicates: BTreeMap<u64, Arc<PredicateTerm>>,
-    choices: BTreeSet<u64>,
+    pub(in crate::effect_row::prepared) choices: BTreeSet<u64>,
 }
 
 /// A failed preflight returns the original affine payload for retry or discard.
@@ -68,6 +71,25 @@ impl<E> PreparedEffectRestoreFailure<E> {
     pub(crate) fn into_parts(self) -> (PreparedEffectFailure<E>, PreparedEffectDelta) {
         (self.error, self.delta)
     }
+}
+
+/// Publication failure returns every original affine permit, including parents.
+#[derive(Debug)]
+pub(crate) struct PreparedEffectRestoreBatchFailure<E> {
+    error: PreparedEffectFailure<E>,
+    deltas: Vec<PreparedEffectDelta>,
+}
+
+impl<E> PreparedEffectRestoreBatchFailure<E> {
+    pub(crate) fn into_parts(self) -> (PreparedEffectFailure<E>, Vec<PreparedEffectDelta>) {
+        (self.error, self.deltas)
+    }
+}
+
+struct PreparedEffectPublication {
+    scope: super::PreparedEffectReadScope,
+    result: PreparedEffectStateId,
+    next_state: u64,
 }
 
 impl PreparedEffectGraph {
@@ -100,8 +122,16 @@ impl PreparedEffectGraph {
     }
 
     pub(super) fn publish_function(&mut self, id: u64, function: Arc<Function>) {
-        let previous = self.functions.insert(id, function);
+        let previous = self.function_writes().insert(id, function);
         self.record_mutation(EffectMutation::Function { id, previous });
+    }
+
+    fn function_writes(&mut self) -> &mut BTreeMap<u64, Arc<Function>> {
+        if let Some(scope) = &mut self.active_scope {
+            &mut scope.functions
+        } else {
+            &mut self.functions
+        }
     }
 
     pub(crate) fn checkpoint<C: DecisionControl>(
@@ -159,13 +189,14 @@ impl PreparedEffectGraph {
     ) -> Result<(), PreparedEffectInvariant> {
         self.validate_checkpoint(checkpoint)?;
         self.obligations.truncate(checkpoint.obligation_limit);
-        for insertion in self.journal.drain(checkpoint.journal_start..).rev() {
+        while self.journal.len() > checkpoint.journal_start {
+            let insertion = self.journal.pop().expect("validated journal frontier");
             match insertion {
                 EffectMutation::Function { id, previous } => {
                     if let Some(previous) = previous {
-                        self.functions.insert(id, previous);
+                        self.function_writes().insert(id, previous);
                     } else {
-                        self.functions.remove(&id);
+                        self.function_writes().remove(&id);
                     }
                 }
                 EffectMutation::Row(id) => {
@@ -209,7 +240,14 @@ impl PreparedEffectGraph {
                 control
                     .charge(DecisionWork::Node)
                     .map_err(PreparedEffectFailure::Control)?;
-                functions.insert(*id, Arc::clone(&self.functions[id]));
+                functions.insert(
+                    *id,
+                    Arc::clone(
+                        self.read()
+                            .function_definition(*id)
+                            .expect("journal owns a function"),
+                    ),
+                );
             }
         }
         for () in self.journal[checkpoint.journal_start..]
@@ -228,23 +266,34 @@ impl PreparedEffectGraph {
         control
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
-        let mut delta = Box::new(PreparedEffectDeltaData {
+        let ordinal = self.next_delta;
+        let next_delta = ordinal
+            .checked_add(1)
+            .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
+        let mut delta = PreparedEffectDeltaData {
             issuer: Arc::clone(&self.issuer),
             base: checkpoint.state,
             result: self.state,
+            ordinal,
+            inputs: self
+                .active_scope
+                .as_ref()
+                .map(|scope| Arc::clone(&scope.input.data.ids)),
             functions,
             obligations: self.obligations.split_off(checkpoint.obligation_limit),
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
             choices: BTreeSet::new(),
-        });
-        for insertion in self.journal.drain(checkpoint.journal_start..).rev() {
+        };
+        self.next_delta = next_delta;
+        while self.journal.len() > checkpoint.journal_start {
+            let insertion = self.journal.pop().expect("validated journal frontier");
             match insertion {
                 EffectMutation::Function { id, previous } => {
                     if let Some(previous) = previous {
-                        self.functions.insert(id, previous);
+                        self.function_writes().insert(id, previous);
                     } else {
-                        self.functions.remove(&id);
+                        self.function_writes().remove(&id);
                     }
                 }
                 EffectMutation::Row(id) => {
@@ -271,7 +320,10 @@ impl PreparedEffectGraph {
         if self.checkpoints.is_empty() {
             self.journal.clear();
         }
-        Ok(PreparedEffectDelta { data: delta })
+        Ok(PreparedEffectDelta {
+            data: Arc::new(delta),
+            dependencies: self.active_scope.as_ref().map(|scope| scope.input.clone()),
+        })
     }
 
     pub(in crate::effect_row::prepared) fn validate_delta<C: DecisionControl>(
@@ -279,16 +331,19 @@ impl PreparedEffectGraph {
         delta: &PreparedEffectDelta,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        let delta = &delta.data;
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
-        if !Arc::ptr_eq(&self.issuer, &delta.issuer) {
+        if !Arc::ptr_eq(&self.issuer, &delta.data.issuer) {
             return Err(PreparedEffectInvariant::ForeignIssuer.into());
         }
-        if self.state != delta.base {
+        if self.state != delta.data.base {
             return Err(PreparedEffectInvariant::DeltaBase.into());
         }
+        if let Some(scope) = &delta.dependencies {
+            scope.validate(self, control)?;
+        }
+        let delta = &delta.data;
         for () in delta
             .functions
             .iter()
@@ -310,36 +365,129 @@ impl PreparedEffectGraph {
         delta: PreparedEffectDelta,
         control: &mut C,
     ) -> Result<(), PreparedEffectRestoreFailure<C::Error>> {
-        if let Err(error) = self.validate_delta(&delta, control) {
-            return Err(PreparedEffectRestoreFailure { error, delta });
+        match self.prepare_publication(std::iter::once(&delta), control) {
+            Ok(publication) => {
+                self.publish_preflight(publication);
+                Ok(())
+            }
+            Err(error) => Err(PreparedEffectRestoreFailure { error, delta }),
         }
-        let PreparedEffectDeltaData {
+    }
+
+    /// Read leases never authorize publication. Every transitive source layer
+    /// must be supplied with its original affine permit in this one operation.
+    pub(crate) fn restore_deltas<C: DecisionControl>(
+        &mut self,
+        deltas: Vec<PreparedEffectDelta>,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectRestoreBatchFailure<C::Error>> {
+        match self.prepare_publication(deltas.iter(), control) {
+            Ok(publication) => {
+                self.publish_preflight(publication);
+                Ok(())
+            }
+            Err(error) => Err(PreparedEffectRestoreBatchFailure { error, deltas }),
+        }
+    }
+
+    fn prepare_publication<'a, C: DecisionControl>(
+        &self,
+        inputs: impl Iterator<Item = &'a PreparedEffectDelta> + Clone,
+        control: &mut C,
+    ) -> Result<PreparedEffectPublication, PreparedEffectFailure<C::Error>> {
+        if self.active_scope.is_some() {
+            return Err(PreparedEffectInvariant::ReadScopeActive.into());
+        }
+        let scope = self.read_scope(inputs.clone(), control)?;
+        let mut permits = BTreeSet::new();
+        let mut result = None;
+        for delta in inputs {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+            if !permits.insert(delta.data.ordinal) {
+                return Err(PreparedEffectInvariant::ReadScopeConflict.into());
+            }
+            result = Some(delta.data.result);
+        }
+        if permits.is_empty() || permits.len() != scope.data.layers.len() {
+            return Err(PreparedEffectInvariant::ReadScopeDependencies.into());
+        }
+        for () in scope
+            .data
+            .functions
+            .iter()
+            .map(|_| ())
+            .chain(scope.data.rows.iter().map(|_| ()))
+            .chain(scope.data.predicates.iter().map(|_| ()))
+            .chain(scope.data.choices.iter().map(|_| ()))
+            .chain(
+                scope
+                    .data
+                    .layers
+                    .values()
+                    .flat_map(|layer| layer.obligations.iter().map(|_| ())),
+            )
+        {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+        }
+        let (result, next_state) = if permits.len() == 1 {
+            (result.expect("one publication permit"), self.next_state)
+        } else {
+            (
+                PreparedEffectStateId(self.next_state),
+                self.next_state
+                    .checked_add(1)
+                    .ok_or(PreparedEffectInvariant::OrdinalExhausted)?,
+            )
+        };
+        Ok(PreparedEffectPublication {
+            scope,
+            result,
+            next_state,
+        })
+    }
+
+    /// All fallible work, dependency checks and allocation charges precede the
+    /// first live mutation. The journal retains only changes to this live base.
+    fn publish_preflight(&mut self, publication: PreparedEffectPublication) {
+        let super::scope::ReadScopeData {
             functions,
-            mut obligations,
             rows,
             predicates,
             choices,
-            result,
+            layers,
             ..
-        } = *delta.data;
+        } = &*publication.scope.data;
         for id in rows.keys() {
             self.record_mutation(EffectMutation::Row(*id));
         }
         for id in predicates.keys() {
             self.record_mutation(EffectMutation::Predicate(*id));
         }
-        for id in &choices {
+        for id in choices {
             self.record_mutation(EffectMutation::Choice(*id));
         }
         for (id, function) in functions {
-            self.publish_function(id, function);
+            self.publish_function(*id, Arc::clone(function));
         }
-        self.rows.extend(rows);
-        self.predicates.extend(predicates);
-        self.choices.extend(choices);
-        self.obligations.append(&mut obligations);
-        self.state = result;
-        Ok(())
+        self.rows
+            .extend(rows.iter().map(|(id, value)| (*id, Arc::clone(value))));
+        self.predicates.extend(
+            predicates
+                .iter()
+                .map(|(id, value)| (*id, Arc::clone(value))),
+        );
+        self.choices.extend(choices.iter().copied());
+        self.obligations.extend(
+            layers
+                .values()
+                .flat_map(|layer| layer.obligations.iter().map(Arc::clone)),
+        );
+        self.state = publication.result;
+        self.next_state = publication.next_state;
     }
 }
 

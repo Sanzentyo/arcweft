@@ -21,6 +21,8 @@ mod closure;
 mod declaration;
 mod read;
 pub(crate) use read::PreparedEffectReadView;
+mod scope;
+pub(crate) use scope::{PreparedEffectReadScope, PreparedEffectScopeEdit};
 mod functions;
 use functions::{Function, FunctionRef};
 mod completion;
@@ -159,6 +161,12 @@ pub(crate) enum PreparedEffectInvariant {
     FutureBinding,
     #[error("a future effect function is bound more than once")]
     DuplicateFutureBinding,
+    #[error("an effect read scope is already active")]
+    ReadScopeActive,
+    #[error("the original effect read dependencies were not supplied for publication")]
+    ReadScopeDependencies,
+    #[error("effect read scopes contain conflicting definitions")]
+    ReadScopeConflict,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -273,13 +281,15 @@ pub(crate) struct PreparedEffectGraph {
     next_predicate: u64,
     next_choice: u64,
     next_checkpoint: u64,
+    next_delta: u64,
+    active_scope: Option<scope::ActiveEffectScope>,
     checkpoints: Vec<u64>,
     state: transaction::PreparedEffectStateId,
     next_state: u64,
     journal: Vec<transaction::EffectMutation>,
     choices: BTreeSet<u64>,
     functions: BTreeMap<u64, Arc<Function>>,
-    obligations: Vec<ScopedObligation>,
+    obligations: Vec<Arc<ScopedObligation>>,
     rows: BTreeMap<u64, Arc<RowTerm>>,
     predicates: BTreeMap<u64, Arc<PredicateTerm>>,
 }
@@ -293,6 +303,8 @@ impl Default for PreparedEffectGraph {
             next_predicate: 0,
             next_choice: 0,
             next_checkpoint: 0,
+            next_delta: 0,
+            active_scope: None,
             checkpoints: Vec::new(),
             state: transaction::PreparedEffectStateId::INITIAL,
             next_state: 1,
@@ -626,7 +638,7 @@ impl PreparedEffectGraph {
         &self,
         choice: &PreparedEffectChoice,
     ) -> Result<(), PreparedEffectInvariant> {
-        if !self.choices.contains(&self.validate(&choice.0)?) {
+        if !self.read().contains_choice(self.validate(&choice.0)?) {
             return Err(PreparedEffectInvariant::StaleReference);
         }
         Ok(())

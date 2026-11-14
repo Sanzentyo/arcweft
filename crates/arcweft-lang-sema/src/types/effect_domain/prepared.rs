@@ -1,8 +1,7 @@
 //! Controlled entry into the effect evidence retained during body preparation.
 
 use crate::effect_row::prepared::{
-    PreparedEffectFailure, PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
-    PreparedEffectTermEdit,
+    PreparedEffectFailure, PreparedEffectPredicate, PreparedEffectRow, PreparedEffectTermEdit,
 };
 
 use super::*;
@@ -207,7 +206,7 @@ impl TypeKind<PreparedEffects> {
     pub(crate) fn project_effect_parameters<C, P>(
         &self,
         scope: &GenericScope,
-        graph: &mut PreparedEffectGraph,
+        edit: PreparedEffectTermEdit<'_>,
         control: &mut C,
         project: &mut P,
     ) -> Result<Self, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>>
@@ -220,7 +219,7 @@ impl TypeKind<PreparedEffects> {
         ) -> Result<Option<PreparedEffectRow>, TypeProjectionError<C::Error>>,
     {
         let mut projection = EffectParameterProjection {
-            edit: graph.edit_terms(),
+            edit,
             control,
             project,
             depth: 1,
