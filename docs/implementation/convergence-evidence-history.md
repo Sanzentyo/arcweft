@@ -17586,3 +17586,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 本体効果closureの実producerにprepared scheme graphが未接続だった境界を、当該producerの接続済みへ訂正した。型検査前の宣言scheme登録、prepared型の全関数値port／Γ統合、body一回準備・一括sealとeager経路の置換、一般量化消去・MGU／rank・Fn局所∀と再帰本体6件は今回だけで完了にしない。Generic Match、caller-bound recursion、共有prefix、Free許可／reifyと各既受入は維持する。過去の全SHA・実測・失敗・原本を変更せず、現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-declaration-scheme-closure.raw.zip](acceptance-evidence/task-declaration-scheme-closure.raw.zip) は 251 entries、raw 42184153 bytes、ZIP 5094091 bytes、SHA-256 `3207ce5e75076d0bc43ee0da29814aedde4d5db591b0527c952b3ce72c1d650b`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+
+## Shared scoped type projection
+
+2026-11-14。基点 `5fd02d22939e1a6b4630fdff51f51bc5cfcf5659`、実装・公開Source `20a847545961e185230491ee3de9e4d256d2db32`、tree `3129fd71f8c811b6a5238afc38c793e20cebecde`。既存mainの6 Rust pathを通常commit／非force pushし、検証dirty bytes・commit・公開blobを照合した。Source push時点の完了consumer group数 1／20もcheckpointに保持した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- TypeKindのshared grammarであるTypeConstraintShapeを用い、canonical templateの型・const・効果・predicate移送と、prepared／canonical effect-domain変換を一つの反復structural foldへ移した。二つの旧反復walkと独自frameを削除し、新たな第三の走査は残さない。scalar portの解釈と従来のdepth計測はそれぞれのphase adapterへ保持する。依存方向・公開API・I/O・codec・契約version・既定予算は変更しない。
+- source／targetは別の字句scopeを保持し、各nested function binderで双方を拡張する。rootは借用し、子frameはimmutable scopeのleaseだけを共有する。非empty binderの実複製は、複製する既存bindingと新bindingを元のTypeProjectionControlで事前に課金する。同じscopeのstorage共有判定は最適化だけであり、意味的な型・効果の等値やowner認証には使わない。
+- GenericParamの置換値はscalar portが返した時点のtarget環境に属する。foldはその内部をsource環境で再訪しない。新2件は、異なるsource／targetとnested binder、実prepared効果domainへの全4 port移送、置換値のopacity、scopeコピー前の全予算点、取消し時の入力保全を確認した。既存の9件も含む開発subset 11 PASS。その前の開発checkは既存テストの親import依存で失敗し、テスト側の直接importへ修復した。開発logも保持し、完全snapshotのない開発runを最終Sourceの証拠にしない。
+- 最終ownerは1,762件／1,756 PASS／6 FAIL／0 SKIP、101.34秒、5 suite。直前1,760 ID保持・新2件PASS、選択／終端ID一致・重複0。既知6件の5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。fresh full metadata／全target reverse treeの22 packageから後続21 package／107 targetを今回実行し、2,510件／2,507 PASS／2 FAIL／1 SKIP。CLI規定226 PASS、Compiler既知2失敗、compile-only 3 targetと全終端IDを照合した。
+- workspace全target／全feature check・Clippy、Sema doctest 2件、workspace fmt、構造gateは今回Sourceで終了0。98 package・3513 files・3382 Rust files・1906119 Rust LOC・396 review・blocking 0。6 path・387物理LOC増。共通foldは既存の型ownerの構造とscopeを所有し、phase固有の置換・algebraをadapterへ残す。状態の二重authorityや公開範囲の拡大はない。実LOC・byte size・test分類とfan-in 12／fan-out 19を原本へ保持した。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- Supersedes: 型の構造移送をcanonical用とeffect-domain用の別walkで維持していた状態を、共通foldへの統合済みへ訂正する。このcutの受入境界は移送処理の統合であり、上記の失敗6件を解消した判定ではない。残作業の列挙は履歴に重ねず、現状一覧の該当行へ集約する。Generic Match、本体効果closure、caller-bound recursion、共有prefix、Free許可／reifyと各既受入は維持する。過去の全SHA・実測・失敗・原本は変更せず、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-scoped-structural-fold.raw.zip](acceptance-evidence/task-scoped-structural-fold.raw.zip) は 238 entries、raw 39788317 bytes、ZIP 4762872 bytes、SHA-256 `89b385bca9683e4e8c6838548b7d3d5ff4ca8eb35e1838b89729599406fd15b1`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
