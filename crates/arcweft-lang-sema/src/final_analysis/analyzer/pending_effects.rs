@@ -220,6 +220,9 @@ impl Analyzer<'_, '_, '_> {
                 .as_ref()
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
                 .builder,
+            self.facts
+                .effect_declarations_mut()
+                .map_err(FinalSemanticAnalysisError::from)?,
             self.catalogs.callable_limits.max_catalog_build_work(),
             self.control,
         )?;

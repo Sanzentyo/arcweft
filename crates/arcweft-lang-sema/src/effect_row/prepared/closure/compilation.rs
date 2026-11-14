@@ -187,7 +187,11 @@ impl<'a> Compilation<'a> {
         arguments: &[CompiledRow],
         work: &mut Work<'_, C>,
     ) -> Result<Vec<Decision>, PreparedEffectFailure<C::Error>> {
-        let table = self.layout.tables[&scheme];
+        let table = *self
+            .layout
+            .tables
+            .get(&scheme)
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
         let imported = match self.graph.functions[&scheme].as_ref() {
             Function::Imported(_) => Some(
                 self.layout

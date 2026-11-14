@@ -213,7 +213,10 @@ impl<'a> CanonicalReplay<'a> {
                     }
                     let formula = self
                         .formula(
-                            &self.principal.functions[&function.reference().ordinal],
+                            self.principal
+                                .functions
+                                .get(&function.reference().ordinal)
+                                .ok_or(PreparedEffectInvariant::StaleReference)?,
                             work,
                         )?
                         .substitute(&substitutions, work)?;

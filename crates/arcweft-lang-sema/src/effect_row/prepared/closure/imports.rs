@@ -36,9 +36,22 @@ pub(super) fn lower_imports<C: DecisionControl>(
     labels: &[EffectId],
     work: &mut Work<'_, C>,
 ) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
+    lower_selected_imports(graph, labels, FunctionInventory::All, work)
+}
+
+pub(super) fn lower_selected_imports<C: DecisionControl>(
+    graph: &PreparedEffectGraph,
+    labels: &[EffectId],
+    inventory: FunctionInventory<'_>,
+    work: &mut Work<'_, C>,
+) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
     let mut cache = Vec::new();
     let mut todo = Vec::new();
-    for function in graph.functions.values() {
+    for (_, function) in graph
+        .functions
+        .iter()
+        .filter(|(id, _)| inventory.contains(**id))
+    {
         if let Function::Imported(imported) = function.as_ref() {
             work.charge(DecisionWork::Node)?;
             todo.push((Arc::clone(&imported.completion), false));
@@ -79,7 +92,7 @@ pub(super) fn lower_imports<C: DecisionControl>(
         work.charge(DecisionWork::Node)?;
         cache.push((source, Arc::new(completed)));
     }
-    assemble(graph, &cache, work)
+    assemble_selected(graph, &cache, inventory, work)
 }
 
 fn assemble<C: DecisionControl>(
@@ -87,8 +100,20 @@ fn assemble<C: DecisionControl>(
     cache: &Cache,
     work: &mut Work<'_, C>,
 ) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
+    assemble_selected(graph, cache, FunctionInventory::All, work)
+}
+
+fn assemble_selected<C: DecisionControl>(
+    graph: &PreparedEffectGraph,
+    cache: &Cache,
+    inventory: FunctionInventory<'_>,
+    work: &mut Work<'_, C>,
+) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
     let mut result = BTreeMap::new();
     for (&id, function) in &graph.functions {
+        if !inventory.contains(id) {
+            continue;
+        }
         if let Function::Imported(imported) = function.as_ref() {
             let child = cached(cache, &imported.completion, work)?
                 .ok_or(PreparedEffectInvariant::UnclosedCell)?;

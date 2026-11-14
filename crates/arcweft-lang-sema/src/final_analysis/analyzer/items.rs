@@ -580,7 +580,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     pub(super) fn stage_checked_callables(
-        &self,
+        &mut self,
     ) -> Result<StagedCheckedCallables, FinalSemanticAnalysisError> {
         self.control.check()?;
         let accepted = Arc::clone(self.catalogs.world.environment().callable_catalog_arc());
@@ -665,6 +665,15 @@ impl Analyzer<'_, '_, '_> {
         }
 
         builder.begin_inference().map_err(checked_catalog_error)?;
+        let declarations = super::callable_effect_graph::prepare_declarations(
+            &bodies,
+            &builder,
+            self.catalogs.callable_limits.max_catalog_build_work(),
+            self.control,
+        )?;
+        self.facts
+            .initialize_effect_declarations(declarations)
+            .map_err(FinalSemanticAnalysisError::from)?;
         Ok(StagedCheckedCallables {
             builder,
             bodies,
@@ -674,7 +683,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     pub(super) fn finish_checked_callables(
-        &self,
+        &mut self,
         mut staged: StagedCheckedCallables,
         input: &FinalSemanticAnalysisInput,
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
@@ -747,6 +756,9 @@ impl Analyzer<'_, '_, '_> {
             &mut rows,
             &bounded_call_effect_rows,
             &staged.builder,
+            self.facts
+                .effect_declarations_mut()
+                .map_err(FinalSemanticAnalysisError::from)?,
             self.catalogs.callable_limits.max_catalog_build_work(),
             self.control,
         )?;
@@ -1143,11 +1155,12 @@ impl Analyzer<'_, '_, '_> {
 
     #[cfg(test)]
     pub(super) fn freeze_checked_callables(
-        &self,
+        &mut self,
         input: &FinalSemanticAnalysisInput,
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<Arc<CheckedCallableCatalog>, FinalSemanticAnalysisError> {
-        self.finish_checked_callables(self.stage_checked_callables()?, input, selected)
+        let staged = self.stage_checked_callables()?;
+        self.finish_checked_callables(staged, input, selected)
             .map(|(catalog, _, _, _)| catalog)
     }
 }

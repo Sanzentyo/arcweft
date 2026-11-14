@@ -189,6 +189,14 @@ impl EffectResidualProgram {
         graph: &PreparedEffectGraph,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        Self::with_inventory(graph, closure::FunctionInventory::All, work)
+    }
+
+    pub(in crate::effect_row::prepared) fn with_inventory<C: DecisionControl>(
+        graph: &PreparedEffectGraph,
+        inventory: closure::FunctionInventory<'_>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let mut program = Self {
             nodes: Vec::new(),
             relation: ResidualNodeId(0),
@@ -200,6 +208,9 @@ impl EffectResidualProgram {
         let truth = program.node(ResidualNode::True, work)?;
         let mut relation = Vec::new();
         for (&id, function) in &graph.functions {
+            if !inventory.contains(id) {
+                continue;
+            }
             work.charge(DecisionWork::Visit)?;
             if matches!(function.as_ref(), Function::Imported(_)) {
                 continue;
@@ -281,6 +292,9 @@ impl EffectResidualProgram {
         program.satisfiable =
             program.node(ResidualNode::ExistsLocalFunctions { body: witnesses }, work)?;
         for (&id, function) in &graph.functions {
+            if !inventory.contains(id) {
+                continue;
+            }
             if function.is_future() || matches!(function.as_ref(), Function::Imported(_)) {
                 continue;
             }

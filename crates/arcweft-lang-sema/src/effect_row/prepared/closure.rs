@@ -21,6 +21,22 @@ pub(crate) use observation::{
 };
 mod valuation;
 use valuation::FiniteRowValuation;
+mod reachable;
+
+#[derive(Clone, Copy)]
+pub(in crate::effect_row::prepared) enum FunctionInventory<'a> {
+    All,
+    Selected(&'a BTreeSet<u64>),
+}
+
+impl FunctionInventory<'_> {
+    pub(in crate::effect_row::prepared) fn contains(self, id: u64) -> bool {
+        match self {
+            Self::All => true,
+            Self::Selected(ids) => ids.contains(&id),
+        }
+    }
+}
 
 use compilation::Compilation;
 
@@ -82,10 +98,11 @@ impl Layout {
     fn new<C: DecisionControl>(
         graph: &PreparedEffectGraph,
         fixed: &BTreeMap<u64, EffectRow>,
+        inventory: FunctionInventory<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let labels = Self::support(graph, fixed, work)?;
-        Self::with_labels(graph, labels, work)
+        Self::with_inventory(graph, labels, inventory, work)
     }
 
     fn support<C: DecisionControl>(
@@ -221,13 +238,26 @@ impl Layout {
         labels: BTreeSet<EffectId>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        Self::with_inventory(graph, labels, FunctionInventory::All, work)
+    }
+
+    fn with_inventory<C: DecisionControl>(
+        graph: &PreparedEffectGraph,
+        labels: BTreeSet<EffectId>,
+        inventory: FunctionInventory<'_>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let classes = labels
             .len()
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::TruthTableOverflow)?;
         let mut total = 0usize;
         // Admit the entire exponential shape before allocating any cell table.
-        for function in graph.functions.values() {
+        for (_, function) in graph
+            .functions
+            .iter()
+            .filter(|(id, _)| inventory.contains(**id))
+        {
             work.charge(DecisionWork::Visit)?;
             let shift = u32::try_from(function.parameters().len())
                 .map_err(|_| PreparedEffectInvariant::TruthTableOverflow)?;
@@ -248,6 +278,9 @@ impl Layout {
         let mut tables = BTreeMap::new();
         let mut cells = BTreeSet::new();
         for (&id, function) in &graph.functions {
+            if !inventory.contains(id) {
+                continue;
+            }
             let table = 1usize << function.parameters().len();
             tables.insert(id, table);
             if matches!(function.as_ref(), Function::Imported(_)) {
@@ -350,11 +383,23 @@ impl PreparedEffectGraph {
         fixed: BTreeMap<u64, EffectRow>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+        self.solve_inventory(fixed, FunctionInventory::All, control)
+    }
+
+    fn solve_inventory<C: DecisionControl>(
+        &self,
+        fixed: BTreeMap<u64, EffectRow>,
+        inventory: FunctionInventory<'_>,
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
         if self.active_scope.is_some() {
             return Err(PreparedEffectInvariant::ReadScopeActive.into());
         }
         let mut work = Work(control);
         for (&id, function) in &self.functions {
+            if !inventory.contains(id) {
+                continue;
+            }
             work.charge(DecisionWork::Visit)?;
             if function.is_future() && !fixed.contains_key(&id) {
                 return Err(PreparedEffectInvariant::UnresolvedFuture.into());
@@ -366,7 +411,8 @@ impl PreparedEffectGraph {
             coefficients,
             choices,
             witnesses,
-        } = CompiledComponent::new(self, &fixed, &mut work)?.complete(&mut work)?;
+        } = CompiledComponent::with_inventory(self, &fixed, inventory, &mut work)?
+            .complete(&mut work)?;
         if !completion.satisfiable().is_constant(true) {
             return Err(PreparedEffectFailure::Unsatisfiable);
         }
@@ -410,6 +456,9 @@ impl<'a> PrincipalEffectClosure<'a> {
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let mut functions = BTreeMap::new();
         for (&id, function) in &graph.functions {
+            if !layout.tables.contains_key(&id) {
+                continue;
+            }
             let compilation = Compilation::new(
                 graph,
                 layout.view(),

@@ -10,9 +10,10 @@ use super::{
 use crate::{
     callable::{
         CheckedCallSite, CheckedCallableDeclaration, PreparedCallableApplication,
-        PreparedCallableEffectProjection, PreparedResolvedCallable,
+        PreparedCallableEffectDeclarations, PreparedCallableEffectProjection,
+        PreparedResolvedCallable,
     },
-    effect_row::prepared::{PreparedEffectGraph, PreparedEffectRow},
+    effect_row::prepared::PreparedEffectRow,
     effect_row::{DecisionControl, DecisionWork, EffectRow},
     final_analysis::statement_effects::PreparedExecutionEffectCatalog,
     types::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind},
@@ -635,11 +636,18 @@ impl CallableEffectGraph {
         rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
         bounded_call_rows: &BTreeMap<CheckedCallableId, EffectRow>,
         catalog: &crate::callable::CheckedCallableCatalogBuilder,
+        declarations: &mut PreparedCallableEffectDeclarations,
         work_limit: u64,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        self.equations
-            .close(rows, bounded_call_rows, catalog, work_limit, control)
+        self.equations.close(
+            rows,
+            bounded_call_rows,
+            catalog,
+            declarations,
+            work_limit,
+            control,
+        )
     }
 
     pub(super) fn close_selected_expression_effects(
@@ -672,6 +680,7 @@ impl CallableEffectEquations {
         rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
         boundary: &BTreeMap<CheckedCallableId, EffectRow>,
         catalog: &crate::callable::CheckedCallableCatalogBuilder,
+        source: &mut PreparedCallableEffectDeclarations,
         work_limit: u64,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
@@ -686,10 +695,10 @@ impl CallableEffectEquations {
         {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
-        let mut graph = PreparedEffectGraph::default();
+        let (graph, headers) = source.relation();
         let mut declarations = BTreeMap::new();
-        // Register the actual headers before preparing any body. Recursive
-        // applications refer to these declarations, never a guessed row.
+        // These are the exact headers installed before expression preparation.
+        // This query borrows them; it never reissues their declaration IDs.
         for owner in rows.keys() {
             work.charge(DecisionWork::Visit)?;
             let schema = catalog
@@ -697,75 +706,88 @@ impl CallableEffectEquations {
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
                 .record()
                 .schema();
-            let mut parameters = Vec::new();
-            for parameter in schema.generic_inventory().effects() {
-                work.charge(DecisionWork::Visit)?;
-                parameters.push(parameter.parameter().clone());
-            }
-            let scheme = graph.declare(parameters, schema.effect_predicate().clone(), &mut work)?;
-            let declaration = graph.declaration(&scheme, &mut work)?;
+            let declaration =
+                headers
+                    .get(owner)
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .validate_schema(schema)
+                    .map_err(
+                        crate::effect_row::prepared::PreparedEffectFailure::<
+                            FinalSemanticAnalysisError,
+                        >::from,
+                    )?;
+            declaration.validate(graph).map_err(crate::effect_row::prepared::PreparedEffectFailure::<FinalSemanticAnalysisError>::from)?;
+            work.charge(DecisionWork::Node)?;
             declarations.insert(owner.clone(), declaration);
         }
-        for (caller, targets) in &self.edges {
-            work.charge(DecisionWork::Visit)?;
-            let original = rows
-                .get(caller)
-                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            let mut terms = vec![PreparedEffectRow::Canonical(
-                original.clone_with_control(&mut work)?,
-            )];
-            for (target, expressions) in targets {
-                for expression in expressions {
-                    work.charge(DecisionWork::Visit)?;
-                    let call = self
-                        .calls
-                        .get(expression)
-                        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                    if call.target() != target {
-                        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-                    }
-                    let specialize = |row: &EffectRow, work: &mut CallableEffectClosureWork<'_>| {
-                        call.projection
-                            .specialize_with_control(row, work)
-                            .map_err(|error| match error {
-                                TypeProjectionError::Control(error) => error,
-                                TypeProjectionError::Instantiation(_) => {
-                                    FinalSemanticAnalysisError::CallResolutionFailed {
-                                        owner: *expression,
-                                    }
-                                }
-                            })
-                    };
-                    let term = if let Some(row) = boundary.get(target) {
-                        PreparedEffectRow::Canonical(specialize(row, &mut work)?)
-                    } else {
-                        let declaration = declarations
-                            .get(target)
+        let mut checkpoint = graph.checkpoint(&mut work)?;
+        let completed = (|| -> Result<_, FinalSemanticAnalysisError> {
+            for (caller, targets) in &self.edges {
+                work.charge(DecisionWork::Visit)?;
+                let original = rows
+                    .get(caller)
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                let mut terms = vec![PreparedEffectRow::Canonical(
+                    original.clone_with_control(&mut work)?,
+                )];
+                for (target, expressions) in targets {
+                    for expression in expressions {
+                        work.charge(DecisionWork::Visit)?;
+                        let call = self
+                            .calls
+                            .get(expression)
                             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                        let mut arguments = Vec::new();
-                        for parameter in declaration.parameters() {
-                            work.charge(DecisionWork::Visit)?;
-                            let row = EffectRow::open(
-                                crate::effects::EffectSet::new(),
-                                parameter.clone(),
-                            );
-                            arguments
-                                .push(PreparedEffectRow::Canonical(specialize(&row, &mut work)?));
+                        if call.target() != target {
+                            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
                         }
-                        graph.application(declaration.scheme(), arguments, &mut work)?
-                    };
-                    terms.push(term);
+                        let specialize =
+                            |row: &EffectRow, work: &mut CallableEffectClosureWork<'_>| {
+                                call.projection.specialize_with_control(row, work).map_err(
+                                    |error| match error {
+                                        TypeProjectionError::Control(error) => error,
+                                        TypeProjectionError::Instantiation(_) => {
+                                            FinalSemanticAnalysisError::CallResolutionFailed {
+                                                owner: *expression,
+                                            }
+                                        }
+                                    },
+                                )
+                            };
+                        let term = if let Some(row) = boundary.get(target) {
+                            PreparedEffectRow::Canonical(specialize(row, &mut work)?)
+                        } else {
+                            let declaration = declarations
+                                .get(target)
+                                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                            let mut arguments = Vec::new();
+                            for parameter in declaration.parameters() {
+                                work.charge(DecisionWork::Visit)?;
+                                let row = EffectRow::open(
+                                    crate::effects::EffectSet::new(),
+                                    parameter.clone(),
+                                );
+                                arguments.push(PreparedEffectRow::Canonical(specialize(
+                                    &row, &mut work,
+                                )?));
+                            }
+                            graph.application(declaration.scheme(), arguments, &mut work)?
+                        };
+                        terms.push(term);
+                    }
                 }
+                let body = graph.union(terms, &mut work)?;
+                graph.prepare_body(declarations[caller].scheme(), body, vec![], &mut work)?;
             }
-            let body = graph.union(terms, &mut work)?;
-            graph.prepare_body(declarations[caller].scheme(), body, vec![], &mut work)?;
-        }
-        let closure = graph.solve_principal(&mut work)?;
-        let mut completed = BTreeMap::new();
-        for (owner, declaration) in declarations {
-            work.charge(DecisionWork::Visit)?;
-            let row =
-                closure
+            let mut roots = Vec::new();
+            for declaration in declarations.values() {
+                work.charge(DecisionWork::Node)?;
+                roots.push(declaration.scheme());
+            }
+            let closure = graph.solve_reachable_principal(&roots, &mut work)?;
+            let mut completed = BTreeMap::new();
+            for (owner, declaration) in declarations {
+                work.charge(DecisionWork::Visit)?;
+                let row = closure
                     .scheme(declaration.scheme())
                     .map_err(
                         crate::effect_row::prepared::PreparedEffectFailure::<
@@ -773,13 +795,43 @@ impl CallableEffectEquations {
                         >::from,
                     )?
                     .clone_with_control(&mut work)?;
-            completed.insert(owner, row);
-        }
-        // All rows become observable together. Failure or cancellation above
-        // leaves the caller's original typed body inputs untouched.
-        *rows = completed;
+                completed.insert(owner, row);
+            }
+            Ok(completed)
+        })();
+        graph.rollback(&mut checkpoint).map_err(
+            crate::effect_row::prepared::PreparedEffectFailure::<FinalSemanticAnalysisError>::from,
+        )?;
+        // Both failure and success leave the original declaration relation in
+        // place. Only the complete canonical query result is published here.
+        *rows = completed?;
         Ok(())
     }
+}
+
+pub(super) fn prepare_declarations(
+    bodies: &[StagedCallableBody],
+    catalog: &crate::callable::CheckedCallableCatalogBuilder,
+    work_limit: u64,
+    control: FinalSemanticAnalysisControl<'_>,
+) -> Result<PreparedCallableEffectDeclarations, FinalSemanticAnalysisError> {
+    let mut work = CallableEffectClosureWork {
+        control,
+        limit: work_limit,
+        remaining: work_limit,
+    };
+    let mut inputs = Vec::new();
+    for body in bodies {
+        work.charge(DecisionWork::Node)?;
+        let schema = catalog
+            .pending_by_id(&body.id)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+            .record()
+            .schema();
+        inputs.push((&body.id, schema));
+    }
+    PreparedCallableEffectDeclarations::declare(inputs, &mut work)
+        .map_err(FinalSemanticAnalysisError::from)
 }
 
 struct CallableEffectClosureWork<'a> {
@@ -884,7 +936,12 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    fn staged_fixture(source: &str) -> super::super::StagedCheckedCallables {
+    fn staged_fixture(
+        source: &str,
+    ) -> (
+        super::super::StagedCheckedCallables,
+        AnalyzerPreparedCallGraph,
+    ) {
         let fixture = crate::final_analysis::tests::fixture(source, None);
         let cancellation = AtomicBool::new(false);
         let mut analyzer = super::super::Analyzer::new(
@@ -896,12 +953,105 @@ mod tests {
         .unwrap();
         analyzer.resolve_region_types(None).unwrap();
         analyzer.seed_local_types(None).unwrap();
-        analyzer.stage_checked_callables().unwrap()
+        let staged = analyzer.stage_checked_callables().unwrap();
+        let graph = analyzer.facts.take_prepared_calls().unwrap();
+        (staged, graph)
+    }
+
+    #[test]
+    fn source_headers_exist_before_body_typing_and_queries_reuse_the_same_original_schemes() {
+        let (staged, mut calls) = staged_fixture(
+            "fn first() -> i64 { 1i64 } fn unused(used: i64 -> i64, unused: i64 -> i64) -> i64 { true }",
+        );
+        let root = staged
+            .bodies
+            .iter()
+            .find(|body| {
+                staged
+                    .builder
+                    .pending_by_id(&body.id)
+                    .unwrap()
+                    .record()
+                    .schema()
+                    .generic_inventory()
+                    .effects()
+                    .is_empty()
+            })
+            .unwrap();
+        let unused = staged
+            .bodies
+            .iter()
+            .find(|body| body.id != root.id)
+            .unwrap();
+        let original = {
+            let (graph, declarations) = calls.effect_declarations_mut().unwrap().relation();
+            assert_eq!(declarations.len(), 2);
+            let schema = staged
+                .builder
+                .pending_by_id(&unused.id)
+                .unwrap()
+                .record()
+                .schema();
+            let header = declarations[&unused.id].validate_schema(schema).unwrap();
+            assert_eq!(header.parameters().len(), 2);
+            header.validate(graph).unwrap();
+            header.clone()
+        };
+        let cancellation = AtomicBool::new(false);
+        let control = FinalSemanticAnalysisControl::new(&cancellation);
+        let mut equations = CallableEffectEquations::default();
+        equations.insert_body(root.id.clone(), []).unwrap();
+        let limit = crate::callable::PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work();
+        for _ in 0..2 {
+            let mut rows = BTreeMap::from([(
+                root.id.clone(),
+                EffectRow::closed(crate::effects::EffectSet::new()),
+            )]);
+            equations
+                .close(
+                    &mut rows,
+                    &BTreeMap::new(),
+                    &staged.builder,
+                    calls.effect_declarations_mut().unwrap(),
+                    limit,
+                    control,
+                )
+                .unwrap();
+            assert_eq!(
+                rows[&root.id],
+                EffectRow::closed(crate::effects::EffectSet::new())
+            );
+            let (graph, declarations) = calls.effect_declarations_mut().unwrap().relation();
+            let schema = staged
+                .builder
+                .pending_by_id(&unused.id)
+                .unwrap()
+                .record()
+                .schema();
+            assert_eq!(
+                declarations[&unused.id].validate_schema(schema).unwrap(),
+                &original
+            );
+            original.validate(graph).unwrap();
+            assert_eq!(graph.retained_terms(), (0, 0));
+            assert!(matches!(
+                graph.solve_principal(&mut CallableEffectClosureWork {
+                    control,
+                    limit,
+                    remaining: limit
+                }),
+                Err(
+                    crate::effect_row::prepared::PreparedEffectFailure::Invariant(
+                        crate::effect_row::prepared::PreparedEffectInvariant::SchemeState
+                    )
+                )
+            ));
+        }
     }
 
     #[test]
     fn declaration_closure_retains_unused_formals_and_publishes_rows_atomically() {
-        let staged =
+        let (staged, mut declarations) =
             staged_fixture("fn choose(used: i64 -> i64, unused: i64 -> i64) -> i64 { used(0i64) }");
         let [body] = staged.bodies.as_slice() else {
             panic!("one actual declaration");
@@ -931,6 +1081,7 @@ mod tests {
                 &mut full,
                 &boundary,
                 &staged.builder,
+                declarations.effect_declarations_mut().unwrap(),
                 production_limit,
                 control,
             )
@@ -942,7 +1093,14 @@ mod tests {
         while low < high {
             let limit = low + (high - low) / 2;
             let mut rows = original.clone();
-            match equations.close(&mut rows, &boundary, &staged.builder, limit, control) {
+            match equations.close(
+                &mut rows,
+                &boundary,
+                &staged.builder,
+                declarations.effect_declarations_mut().unwrap(),
+                limit,
+                control,
+            ) {
                 Ok(()) => {
                     assert_eq!(rows, original);
                     high = limit;
@@ -961,7 +1119,14 @@ mod tests {
         let mut succeeded = false;
         for limit in 0..=required {
             let mut rows = original.clone();
-            match equations.close(&mut rows, &boundary, &staged.builder, limit, control) {
+            match equations.close(
+                &mut rows,
+                &boundary,
+                &staged.builder,
+                declarations.effect_declarations_mut().unwrap(),
+                limit,
+                control,
+            ) {
                 Ok(()) => {
                     assert_eq!(rows, original);
                     assert_eq!(limit, required);
@@ -985,6 +1150,7 @@ mod tests {
                 &mut rows,
                 &boundary,
                 &staged.builder,
+                declarations.effect_declarations_mut().unwrap(),
                 production_limit,
                 control
             ),
@@ -992,13 +1158,14 @@ mod tests {
         );
         assert_eq!(rows, original);
         cancellation.store(false, Ordering::Release);
-        let foreign =
+        let (foreign, _) =
             staged_fixture("fn other(used: i64 -> i64, unused: i64 -> i64) -> i64 { used(0i64) }");
         assert_eq!(
             equations.close(
                 &mut rows,
                 &boundary,
                 &foreign.builder,
+                declarations.effect_declarations_mut().unwrap(),
                 production_limit,
                 control
             ),

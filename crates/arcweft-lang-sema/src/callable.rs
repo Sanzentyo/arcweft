@@ -113,7 +113,8 @@ pub(crate) use continuation::{
     PreparedCallGraphReplayMismatch, PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey,
     PreparedCallGraphSealPayload, PreparedCallGraphSelectedNode, PreparedCallGraphSiteState,
     PreparedCallPrefixPayload, PreparedCallPrefixReplayMismatch, PreparedCallResultRef,
-    PreparedCallSiteDelivery, PreparedCallableEffectProjectionSite, PreparedCallableEffectView,
+    PreparedCallSiteDelivery, PreparedCallableEffectDeclarations,
+    PreparedCallableEffectProjectionSite, PreparedCallableEffectView,
     PreparedChildConstraintInitialization, PreparedConstraintInitialization,
 };
 pub use continuation::{

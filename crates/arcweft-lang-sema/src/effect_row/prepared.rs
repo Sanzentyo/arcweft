@@ -387,6 +387,19 @@ impl PreparedEffectGraph {
         }
     }
 
+    /// Admit a borrowed canonical domain before cloning its decision graph.
+    pub(crate) fn declare_borrowed_domain<C: DecisionControl>(
+        &mut self,
+        parameters: Vec<GenericEffectReference>,
+        domain: &EffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectSchemeRef, PreparedEffectFailure<C::Error>> {
+        domain
+            .encode(&mut super::EffectEqualityControl(control))
+            .map_err(PreparedEffectFailure::Control)?;
+        self.declare(parameters, domain.clone(), control)
+    }
+
     pub(crate) fn declare<C: DecisionControl>(
         &mut self,
         parameters: Vec<GenericEffectReference>,

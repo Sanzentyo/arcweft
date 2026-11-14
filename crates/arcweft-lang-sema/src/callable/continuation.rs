@@ -35,7 +35,9 @@ use super::{
 
 mod application_owner;
 pub(crate) use application_owner::CallableConstraintApplication;
+mod declarations;
 mod effects;
+pub(crate) use declarations::PreparedCallableEffectDeclarations;
 mod specialization;
 use effects::PreparedEffectDelta;
 pub(crate) use effects::{
@@ -1021,6 +1023,7 @@ pub(crate) struct PreparedCallGraph<P, U = ()> {
     sites: BTreeMap<CheckedCallSite, PreparedCallNodeId>,
     nodes: BTreeMap<PreparedCallNodeId, Box<PreparedCallNode<P, U>>>,
     effects: PreparedCallableEffectRows,
+    declarations: Option<PreparedCallableEffectDeclarations>,
 }
 
 pub(crate) struct PreparedCallGraphSelectedNode<'a, P> {
@@ -1208,6 +1211,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             sites: BTreeMap::new(),
             nodes: BTreeMap::new(),
             effects: PreparedCallableEffectRows::default(),
+            declarations: None,
         }
     }
 

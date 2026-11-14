@@ -177,7 +177,7 @@ pub(super) fn freeze_checked_callables_for_test(
     FinalSemanticAnalysisError,
 > {
     let cancellation = std::sync::atomic::AtomicBool::new(false);
-    let analyzer = Analyzer::new(
+    let mut analyzer = Analyzer::new(
         project,
         symbols,
         catalogs,

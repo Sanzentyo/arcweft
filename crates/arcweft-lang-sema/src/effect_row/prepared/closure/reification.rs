@@ -45,7 +45,8 @@ impl PrincipalEffectClosure<'_> {
         &self,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        for (&id, function) in &self.graph.functions {
+        for &id in self.functions.keys() {
+            let function = &self.graph.functions[&id];
             let row = self.functions[&id].known()?;
             for (label, _) in row.membership().overrides() {
                 work.charge(DecisionWork::Visit)?;
@@ -137,7 +138,8 @@ impl<'g> PrincipalEffectClosure<'g> {
     ) -> Result<Vec<PrincipalEffectClosure<'g>>, PreparedEffectFailure<C::Error>> {
         let graph: &'g PreparedEffectGraph = self.graph;
         let mut children = Vec::new();
-        for (&id, function) in &graph.functions {
+        for &id in self.functions.keys() {
+            let function = &graph.functions[&id];
             if let Function::Imported(imported) = function.as_ref() {
                 let table = self
                     .layout

@@ -892,6 +892,28 @@ impl SemanticFactState {
         })
     }
 
+    pub(super) fn initialize_effect_declarations(
+        &mut self,
+        declarations: crate::callable::PreparedCallableEffectDeclarations,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        self.prepared_calls_mut()?
+            .initialize_effect_declarations(declarations)
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
+    }
+
+    pub(super) fn effect_declarations_mut(
+        &mut self,
+    ) -> Result<
+        &mut crate::callable::PreparedCallableEffectDeclarations,
+        CandidateFactTransactionViolation,
+    > {
+        self.ensure_healthy()?;
+        self.prepared_calls_mut()?
+            .effect_declarations_mut()
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
+    }
+
     pub(super) fn request_effect_projection(
         &mut self,
         site: crate::callable::PreparedCallableEffectProjectionSite,

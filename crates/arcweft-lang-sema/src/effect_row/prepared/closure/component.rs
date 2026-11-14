@@ -158,9 +158,18 @@ impl CompiledComponent {
         fixed: &BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        let mut layout = Layout::new(graph, fixed, work)?;
-        layout.imports = imports::lower_imports(graph, &layout.labels, work)?;
-        let program = EffectResidualProgram::new(graph, work)?;
+        Self::with_inventory(graph, fixed, FunctionInventory::All, work)
+    }
+
+    pub(super) fn with_inventory<C: DecisionControl>(
+        graph: &PreparedEffectGraph,
+        fixed: &BTreeMap<u64, EffectRow>,
+        inventory: FunctionInventory<'_>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let mut layout = Layout::new(graph, fixed, inventory, work)?;
+        layout.imports = imports::lower_selected_imports(graph, &layout.labels, inventory, work)?;
+        let program = EffectResidualProgram::with_inventory(graph, inventory, work)?;
         Self::compile(graph, &program, fixed, layout, work)
     }
 
