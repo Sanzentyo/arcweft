@@ -1,7 +1,7 @@
 //! The shared scope fold admits a retained type under its effect-term issuer.
 
 use super::*;
-use crate::effect_row::prepared::PreparedEffectInvariant;
+use crate::effect_row::prepared::{PreparedEffectInvariant, PreparedEffectReadView};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum PreparedTypeRetentionFailure<E: std::error::Error + 'static> {
@@ -25,7 +25,7 @@ impl<E: std::error::Error + 'static> PreparedTypeRetentionFailure<E> {
 }
 
 struct Retention<'a, C> {
-    graph: &'a PreparedEffectGraph,
+    effects: PreparedEffectReadView<'a>,
     control: &'a mut C,
     depth: u64,
 }
@@ -62,7 +62,7 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, PreparedEff
         row: &PreparedEffectRow,
         _: &GenericScope,
     ) -> Result<PreparedEffectRow, TypeProjectionError<Self::Error>> {
-        self.graph
+        self.effects
             .validate_retained_row(row)
             .map_err(|error| TypeProjectionError::Control(error.into()))?;
         if let PreparedEffectRow::Canonical(row) = row {
@@ -77,7 +77,7 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, PreparedEff
         predicate: &PreparedEffectPredicate,
         _: &GenericScope,
     ) -> Result<PreparedEffectPredicate, TypeProjectionError<Self::Error>> {
-        self.graph
+        self.effects
             .validate_retained_predicate(predicate)
             .map_err(|error| TypeProjectionError::Control(error.into()))?;
         if let PreparedEffectPredicate::Canonical(predicate) = predicate {
@@ -89,16 +89,16 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, PreparedEff
 }
 
 impl TypeKind<PreparedEffects> {
-    pub(crate) fn retain_in_effect_graph<C: TypeProjectionControl>(
+    pub(crate) fn retain_effects<C: TypeProjectionControl>(
         &self,
         scope: &GenericScope,
-        graph: &PreparedEffectGraph,
+        effects: PreparedEffectReadView<'_>,
         control: &mut C,
     ) -> Result<Self, TypeProjectionError<PreparedTypeRetentionFailure<C::Error>>> {
         self.project_effect_domain(
             scope,
             &mut Retention {
-                graph,
+                effects,
                 control,
                 depth: 1,
             },

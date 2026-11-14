@@ -19,6 +19,8 @@ use crate::types::GenericEffectReference;
 
 mod closure;
 mod declaration;
+mod read;
+pub(crate) use read::PreparedEffectReadView;
 mod functions;
 use functions::{Function, FunctionRef};
 mod completion;
@@ -311,17 +313,14 @@ impl PreparedEffectGraph {
         &self,
         row: &PreparedEffectRow,
     ) -> Result<(), PreparedEffectInvariant> {
-        if let PreparedEffectRow::Term(reference) = row {
-            self.row(reference)?;
-        }
-        Ok(())
+        self.read().validate_retained_row(row)
     }
 
     pub(crate) fn validate_retained_predicate(
         &self,
         predicate: &PreparedEffectPredicate,
     ) -> Result<(), PreparedEffectInvariant> {
-        self.validate_predicate(predicate)
+        self.read().validate_retained_predicate(predicate)
     }
 
     #[cfg(test)]
@@ -350,34 +349,18 @@ impl PreparedEffectGraph {
         &self,
         reference: &PreparedEffectSchemeRef,
     ) -> Result<&Scheme, PreparedEffectInvariant> {
-        match self
-            .functions
-            .get(&self.validate(&reference.0)?)
-            .map(Arc::as_ref)
-            .ok_or(PreparedEffectInvariant::StaleReference)?
-        {
-            Function::Scheme(scheme) => Ok(scheme),
-            Function::Unknown { .. } | Function::Imported(_) => {
-                Err(PreparedEffectInvariant::StaleReference)
-            }
-        }
+        self.read().scheme(reference)
     }
 
     fn row(&self, reference: &PreparedEffectRowRef) -> Result<&RowTerm, PreparedEffectInvariant> {
-        self.rows
-            .get(&self.validate(&reference.0)?)
-            .map(Arc::as_ref)
-            .ok_or(PreparedEffectInvariant::StaleReference)
+        self.read().row(reference)
     }
 
     fn predicate(
         &self,
         reference: &PreparedEffectPredicateRef,
     ) -> Result<&PredicateTerm, PreparedEffectInvariant> {
-        self.predicates
-            .get(&self.validate(&reference.0)?)
-            .map(Arc::as_ref)
-            .ok_or(PreparedEffectInvariant::StaleReference)
+        self.read().predicate(reference)
     }
 
     fn validate_row<E>(&self, row: &PreparedEffectRow) -> Result<(), PreparedEffectFailure<E>> {

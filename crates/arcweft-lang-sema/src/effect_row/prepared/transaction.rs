@@ -42,18 +42,18 @@ pub(crate) struct PreparedEffectCheckpoint {
 /// References are operational capabilities and remain unchanged on transfer.
 #[derive(Debug)]
 pub(crate) struct PreparedEffectDelta {
-    data: Box<PreparedEffectDeltaData>,
+    pub(in crate::effect_row::prepared) data: Box<PreparedEffectDeltaData>,
 }
 
 #[derive(Debug)]
-struct PreparedEffectDeltaData {
+pub(in crate::effect_row::prepared) struct PreparedEffectDeltaData {
     issuer: Arc<PreparedEffectIssuer>,
     base: PreparedEffectStateId,
     result: PreparedEffectStateId,
-    functions: BTreeMap<u64, Arc<Function>>,
+    pub(in crate::effect_row::prepared) functions: BTreeMap<u64, Arc<Function>>,
     obligations: Vec<ScopedObligation>,
-    rows: BTreeMap<u64, Arc<RowTerm>>,
-    predicates: BTreeMap<u64, Arc<PredicateTerm>>,
+    pub(in crate::effect_row::prepared) rows: BTreeMap<u64, Arc<RowTerm>>,
+    pub(in crate::effect_row::prepared) predicates: BTreeMap<u64, Arc<PredicateTerm>>,
     choices: BTreeSet<u64>,
 }
 
@@ -274,7 +274,7 @@ impl PreparedEffectGraph {
         Ok(PreparedEffectDelta { data: delta })
     }
 
-    fn validate_delta<C: DecisionControl>(
+    pub(in crate::effect_row::prepared) fn validate_delta<C: DecisionControl>(
         &self,
         delta: &PreparedEffectDelta,
         control: &mut C,

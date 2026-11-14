@@ -270,7 +270,7 @@ fn intrinsic_values_retain_their_actual_type_const_and_effect_frames() {
             assert_eq!(unrelated.scope(), original.scope());
             assert_ne!(unrelated, original);
             let value = component
-                .admit_value(context, &mut effects, output)
+                .admit_value(context, effects.read(), output)
                 .unwrap();
             assert_eq!(component.value(&value).unwrap().original, original);
             let mut use_ = component.issue_use(context, unrelated, &[value]).unwrap();
@@ -504,7 +504,7 @@ fn foreign_references_and_ticket_misuse_do_not_create_checked_results() {
     let mut second = Component::new(&mut context, &effects).unwrap();
     let value_output = output(&mut context, &TypeKind::I32);
     let value = first
-        .admit_value(&mut context, &mut effects, value_output)
+        .admit_value(&mut context, effects.read(), value_output)
         .unwrap();
     assert!(matches!(
         second.issue_fixture_use(&mut context, &[value.clone()]),
@@ -547,7 +547,7 @@ fn conditional_use_keeps_rejection_without_constraining_the_producer_scheme() {
     let mut component = Component::new(&mut context, &effects).unwrap();
     let producer_output = output(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_value(&mut context, &mut effects, producer_output)
+        .admit_value(&mut context, effects.read(), producer_output)
         .unwrap();
     let graph = &mut effects;
     let scheme = graph
@@ -700,7 +700,7 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
     let value = component
         .admit_value(
             &mut context,
-            &mut effects,
+            effects.read(),
             arrow(
                 original.clone(),
                 PreparedEffectRow::Canonical(EffectRow::unknown()),
@@ -717,7 +717,11 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
         .union(vec![], &mut context)
         .unwrap();
     assert!(matches!(
-        component.admit_value(&mut context, &mut effects, arrow(original.clone(), foreign)),
+        component.admit_value(
+            &mut context,
+            effects.read(),
+            arrow(original.clone(), foreign)
+        ),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::ForeignIssuer)
         ))
@@ -726,7 +730,7 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
     let stale = effects.union(vec![], &mut context).unwrap();
     effects.rollback(&mut checkpoint).unwrap();
     assert!(matches!(
-        component.admit_value(&mut context, &mut effects, arrow(original, stale)),
+        component.admit_value(&mut context, effects.read(), arrow(original, stale)),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::StaleReference)
         ))
@@ -747,10 +751,14 @@ fn separate_value_components_share_the_actual_declaration_graph_without_sharing_
     let mut first = Component::new(&mut context, &effects).unwrap();
     let mut second = Component::new(&mut context, &effects).unwrap();
     let first_value = first
-        .admit_value(&mut context, &effects, arrow(original.clone(), row.clone()))
+        .admit_value(
+            &mut context,
+            effects.read(),
+            arrow(original.clone(), row.clone()),
+        )
         .unwrap();
     let second_value = second
-        .admit_value(&mut context, &effects, arrow(original.clone(), row))
+        .admit_value(&mut context, effects.read(), arrow(original.clone(), row))
         .unwrap();
     assert!(matches!(
         second.issue_fixture_use(&mut context, &[first_value.clone()]),
@@ -758,7 +766,7 @@ fn separate_value_components_share_the_actual_declaration_graph_without_sharing_
     ));
     let foreign = PreparedEffectGraph::default();
     assert!(matches!(
-        first.admit_value(&mut context, &foreign, arrow(original, literal(&[]))),
+        first.admit_value(&mut context, foreign.read(), arrow(original, literal(&[]))),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::ForeignIssuer)
         ))
@@ -780,6 +788,95 @@ fn separate_value_components_share_the_actual_declaration_graph_without_sharing_
             EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap())
         );
     }
+}
+
+#[test]
+fn extracted_function_value_admission_retains_its_original_affine_preparation_until_real_closure() {
+    use crate::effect_row::prepared::PreparedEffectDelta;
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut effects = PreparedEffectGraph::default();
+    let mut checkpoint = effects.checkpoint(&mut context).unwrap();
+    let scheme = effects
+        .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+        .unwrap();
+    let row = effects.application(&scheme, vec![], &mut context).unwrap();
+    let predicate = effects
+        .relate(
+            PreparedEffectRelation::Equal,
+            row.clone(),
+            literal(&["fs.read"]),
+            &mut context,
+        )
+        .unwrap();
+    effects
+        .add_scoped_obligation(
+            vec![],
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            predicate.clone(),
+            &mut context,
+        )
+        .unwrap();
+    let preparation = Arc::new(
+        effects
+            .extract_delta(&mut checkpoint, &mut context)
+            .unwrap(),
+    );
+    let mut component =
+        OpenConstraintComponent::<NoConstraintClient, Arc<PreparedEffectDelta>>::new(
+            &mut context,
+            &effects,
+        )
+        .unwrap();
+    let original = context.fixture_original_context(None).unwrap();
+    let output = PreparedValueOutput {
+        ty: TypeKind::Function {
+            binder: GenericBinder::EMPTY,
+            predicate,
+            params: vec![],
+            return_type: Box::new(TypeKind::I32),
+            effects: row.clone(),
+        },
+        original: original.clone(),
+        preparation: Arc::clone(&preparation),
+    };
+    let view = effects.read_extracted(&preparation, &mut context).unwrap();
+    let value = component.admit_value(&mut context, view, output).unwrap();
+    assert_eq!(Arc::strong_count(&preparation), 2);
+    assert_eq!(effects.retained_terms(), (0, 0));
+    assert_eq!(
+        effects.validate_retained_row(&row),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    let ValueContent::Available { ty } = &component.value(&value).unwrap().alternatives[0].value
+    else {
+        panic!("expected prepared function value")
+    };
+    let retained = ty.clone();
+    assert_eq!(component.value(&value).unwrap().original, original);
+    drop(component);
+    assert_eq!(Arc::strong_count(&preparation), 1);
+    let delta =
+        Arc::try_unwrap(preparation).expect("only the original publication payload remains");
+    effects.restore_delta(delta, &mut context).unwrap();
+    effects
+        .prepare_body(&scheme, literal(&["fs.read"]), vec![], &mut context)
+        .unwrap();
+    let principal = effects.solve_principal(&mut context).unwrap();
+    let canonical = retained
+        .project_canonical_effects(original.scope(), &principal, &mut context)
+        .unwrap();
+    assert_eq!(
+        canonical,
+        TypeKind::Function {
+            binder: GenericBinder::EMPTY,
+            predicate: EffectPredicate::unconstrained(),
+            params: vec![],
+            return_type: Box::new(TypeKind::I32),
+            effects: EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap()),
+        }
+    );
 }
 
 #[test]
@@ -866,7 +963,7 @@ fn fixed_component_allocations_and_cancelled_enumeration_obey_the_original_budge
     let mut component = Component::new(&mut context, &effects).unwrap();
     let producer_output = output(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_value(&mut context, &mut effects, producer_output)
+        .admit_value(&mut context, effects.read(), producer_output)
         .unwrap();
     let mut use_ = component
         .issue_fixture_use(&mut context, &[producer])
@@ -909,7 +1006,7 @@ fn aliases_do_not_copy_affine_preparation_facts() {
     let producer = component
         .admit_value(
             &mut context,
-            &mut effects,
+            effects.read(),
             PreparedValueOutput {
                 ty: TypeKind::I32,
                 original: original.clone(),

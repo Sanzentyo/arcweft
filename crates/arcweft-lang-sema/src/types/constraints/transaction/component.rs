@@ -13,7 +13,7 @@ use crate::{
         EffectPredicate,
         prepared::{
             PreparedEffectFailure, PreparedEffectGraph, PreparedEffectGraphOwner,
-            PreparedEffectPredicate,
+            PreparedEffectPredicate, PreparedEffectReadView,
         },
     },
     types::{
@@ -523,7 +523,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn admit_value<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        effects: &PreparedEffectGraph,
+        effects: PreparedEffectReadView<'_>,
         value: PreparedValueOutput<P>,
     ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
         let (ty, original, preparation) = self.retain_output(context, effects, value)?;
@@ -972,7 +972,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             };
             match recorded.outcome {
                 PreparedValueOutcome::Accepted(output) => {
-                    let (ty, _, preparation) = self.retain_output(context, effects, output)?;
+                    let (ty, _, preparation) =
+                        self.retain_output(context, effects.read(), output)?;
                     context.enter_node()?;
                     let index = preparations.len();
                     preparations.push(preparation);
@@ -1006,7 +1007,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     accepted,
                     rejected,
                 } => {
-                    let (ty, _, preparation) = self.retain_output(context, effects, accepted)?;
+                    let (ty, _, preparation) =
+                        self.retain_output(context, effects.read(), accepted)?;
                     effects
                         .validate_retained_predicate(&fits)
                         .map_err(|error| {
@@ -1059,15 +1061,15 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     fn retain_output<A: TypeConstraintAccounting>(
         &self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        effects: &PreparedEffectGraph,
+        effects: PreparedEffectReadView<'_>,
         output: PreparedValueOutput<P>,
     ) -> Result<(TypeKind<PreparedEffects>, OriginalProducerContext, P), PreparedValueFailure> {
-        self.effect_owner
-            .validate(effects)
+        effects
+            .validate_owner(&self.effect_owner)
             .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
         let ty = output
             .ty
-            .retain_in_effect_graph(output.original.scope(), effects, context)
+            .retain_effects(output.original.scope(), effects, context)
             .map_err(Self::retention_failure)?;
         context.enter_node()?;
         Ok((ty, output.original, output.preparation))

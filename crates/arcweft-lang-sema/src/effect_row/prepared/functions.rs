@@ -127,17 +127,7 @@ impl PreparedEffectGraph {
         &self,
         reference: &FunctionRef,
     ) -> Result<&Function, PreparedEffectInvariant> {
-        let function = self
-            .functions
-            .get(&self.validate(reference.reference())?)
-            .map(Arc::as_ref)
-            .ok_or(PreparedEffectInvariant::StaleReference)?;
-        match (reference, function) {
-            (FunctionRef::Scheme(_), Function::Scheme(_))
-            | (FunctionRef::Unknown(_), Function::Unknown { .. })
-            | (FunctionRef::Imported(_), Function::Imported(_)) => Ok(function),
-            _ => Err(PreparedEffectInvariant::StaleReference),
-        }
+        self.read().function(reference)
     }
 
     pub(super) fn apply_function<C: DecisionControl>(

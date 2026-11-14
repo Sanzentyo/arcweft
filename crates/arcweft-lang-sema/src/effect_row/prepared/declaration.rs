@@ -39,7 +39,14 @@ impl PreparedEffectDeclaration {
         &self,
         graph: &PreparedEffectGraph,
     ) -> Result<(), PreparedEffectInvariant> {
-        let current = graph.scheme(&self.reference)?;
+        self.validate_read(graph.read())
+    }
+
+    pub(crate) fn validate_read(
+        &self,
+        view: PreparedEffectReadView<'_>,
+    ) -> Result<(), PreparedEffectInvariant> {
+        let current = view.scheme(&self.reference)?;
         if !Arc::ptr_eq(&current.header, &self.header) {
             return Err(PreparedEffectInvariant::StaleReference);
         }
@@ -50,6 +57,16 @@ impl PreparedEffectDeclaration {
 impl PreparedEffectGraph {
     pub(crate) fn declaration<C: DecisionControl>(
         &self,
+        reference: &PreparedEffectSchemeRef,
+        control: &mut C,
+    ) -> Result<PreparedEffectDeclaration, PreparedEffectFailure<C::Error>> {
+        self.read().declaration(reference, control)
+    }
+}
+
+impl PreparedEffectReadView<'_> {
+    pub(crate) fn declaration<C: DecisionControl>(
+        self,
         reference: &PreparedEffectSchemeRef,
         control: &mut C,
     ) -> Result<PreparedEffectDeclaration, PreparedEffectFailure<C::Error>> {
