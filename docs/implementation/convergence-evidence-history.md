@@ -17615,3 +17615,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: componentの別graph所有とcheckpointでの全基点map複製を、元graphの借用と変更journalへ訂正する。元issuer／exact base／原子的転送という受入条件は維持する。今回の失敗6件を解消した判定ではない。Generic Match、本体効果closure、型移送、caller-bound recursion、共有prefix、Free許可／reifyの各既受入を保持し、残作業は[current-status.md](current-status.md)の該当行だけへ集約する。過去の全SHA・実測・失敗・原本を変更しない。
 
 原本 [task-shared-effect-owner-journal.raw.zip](acceptance-evidence/task-shared-effect-owner-journal.raw.zip) は 55 entries、raw 15054281 bytes、ZIP 1423435 bytes、SHA-256 `ddf017facf49c0ae85df73696a20be4bff76e6a19ca88c7fe37ba0d4f22fc0af`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+
+## Extracted effect reads and prepared value admission
+
+2026-11-14。基点 `63a5abba22b8a092abb8cdf7f930c7da1bd1061a`、実装・公開Source `c8baee3d82331cf67630832660203f7ab826d8cc`、tree `0672e725e8175aedacf2d8a8f8265ba3cb7b6212`。既存mainの9 Rust pathを通常commit／非force pushし、検証dirty bytes・commit・公開blobを照合した。既存の未追跡 `%SystemDrive%/` は保持した。
+
+- PreparedEffectReadViewは実graphと、必要な場合だけ元の抽出deltaを借りる。exact issuer／baseを元のDecisionControlで検証してから借用を発行し、immutable borrowの間は基点を変更できない。delta全体を保持したまま、そこで導入・変更したfunction／row／predicateと元baseを同じownerの参照として解決する。graph、定義map、checkpoint／deltaのcapabilityを複製せず、読取りのためのrestoreや公開を行わない。live graphの既存readerも同じlookupへ移した。
+- 元の宣言header leaseはviewで検証でき、未使用を含む全formalと元のDを保持する。Preparedな型の保持と値componentのadmissionはこのread capabilityを使い、sourceのrow／predicateが未公開でも保持する。元Source Γやproducerの相関は置き換えない。viewは効果の完成や候補の選択を証明せず、単独のborrowed readをAnalyzer全port・joint sealへ接続した判定でもない。
+- 新3件は、live baseではDeclaredの宣言が抽出候補内ではBodyPreparedである場合と、候補内で新規に宣言された未完了Sの元header、別候補／foreign issuer／metadataだけ変わったbaseの拒否、全preflight予算点と元の取消信号での原子性を検証する。値componentのケースは実affine payloadを準備として保持し、component解放後だけ元payloadを取り出して一度restoreし、実本体を確定して既存closureからcanonicalな関数型へ投影する。pure body、偽のFree ID、未知効果の代用品、Source復元による補完は作らない。開発check 0とsubset 155 PASSのlogも保持し、完全入力snapshotのない開発runを最終Sourceの証拠にしない。
+- 最終ownerは1,768件／1,762 PASS／6 FAIL／0 SKIP、119.125秒、5 suite。直前1,765 ID保持・新3件PASS、選択／終端ID一致・重複0。既知6件と5 ExpressionCycle／1 PendingCallableEffectProjectionは不変。Sema全target／全feature check・Clippy、workspace fmt、構造gateは終了0。98 package・3515 files・3384 Rust files・1906810 Rust LOC・396 review・blocking 0。9 path・427物理LOC増。read moduleは数学ownerの借用・参照解決を所有し、型保持は既存の共通foldとscalar admissionを使う。実LOC・byte size・test分類、fan-in 12／fan-out 19を保持した。公開API・依存・I/O・codec・version・既定予算は変更せず、CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- fresh full metadata／全target reverse treeの22 packageとCargo入力が不変であることを照合した。変更APIとconsumerはSema内のprivateな読取り・型保持・値admissionに限り、full ownerで確認した。Source `20a847545961e185230491ee3de9e4d256d2db32` の後続21 package／107 target・2,510件／2,507 PASS／2 FAIL／1 SKIP、workspace全target／全feature品質、doctest 2件を元入力の実測として保持し、今回の再実行へ合算しない。Tier 2と新しい実機受入は未実行。
+- Supersedes: 型の保持がlive graphだけを読んでいた境界を、元baseと抽出済み準備を公開せず読める境界へ訂正する。現状行に重ねていたcut別の説明は、共通fold・scheme代数・graph所有／転送・read admissionという現在の仕組みへまとめ、過去のSHA・実測・訂正理由は履歴に保持した。今回の失敗6件は未解消であり、Generic Match、本体効果closure、型移送、caller-bound recursion、共有prefix、Free許可／reifyの各受入を戻さない。残作業は[current-status.md](current-status.md)の該当行だけへ集約する。
+
+原本 [task-extracted-effect-read.raw.zip](acceptance-evidence/task-extracted-effect-read.raw.zip) は 54 entries、raw 14613760 bytes、ZIP 1362609 bytes、SHA-256 `122e64e8aa8c11c388a410629e1e4fdd45fa915d5d66878372b75eb47273c6e4`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
