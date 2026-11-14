@@ -54,9 +54,10 @@ fn output(context: &mut Context<'_>, ty: &TypeKind) -> PreparedValueOutput<&'sta
 
 #[test]
 fn original_source_context_is_retained_and_current_registration_scope_cannot_replace_it() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let binder = GenericBinder::new(1, 0, 0);
     let (original, first, second) = context
         .with_binder(binder, |context| {
@@ -134,10 +135,11 @@ fn original_source_context_is_retained_and_current_registration_scope_cannot_rep
 
 #[test]
 fn original_source_context_is_required_even_when_no_candidate_frontier_exists() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let original = context.fixture_original_context(None).unwrap();
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let value = component
         .admit_roots(&mut context, original.clone(), Vec::new(), "diagnostic")
         .unwrap();
@@ -158,9 +160,10 @@ fn original_source_context_is_required_even_when_no_candidate_frontier_exists() 
 
 #[test]
 fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let roots = vec![
         root(&mut context, &TypeKind::I32),
         root(&mut context, &TypeKind::String),
@@ -174,7 +177,7 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
     assert!(component.has_live_uses());
     let mut observed = Vec::new();
     while let Some(alternative) = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
     {
         let outcome = match (
@@ -209,7 +212,9 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
     assert_eq!(observed, [false, true]);
     let use_ = component.finish_use(use_).unwrap();
     assert!(component.has_live_uses());
-    let derived = component.retain_use(&mut context, use_).unwrap();
+    let derived = component
+        .retain_use(&mut context, &mut effects, use_)
+        .unwrap();
     assert!(!component.has_live_uses());
     assert_eq!(component.value(&value).unwrap().alternatives.len(), 4);
     assert_eq!(component.value(&derived).unwrap().alternatives.len(), 4);
@@ -230,6 +235,7 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
 
 #[test]
 fn intrinsic_values_retain_their_actual_type_const_and_effect_frames() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let binder = GenericBinder::new(1, 1, 1);
@@ -257,25 +263,30 @@ fn intrinsic_values_retain_their_actual_type_const_and_effect_frames() {
             Ok((original, output))
         })
         .unwrap();
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     context
         .with_binder(binder, |context| {
             let unrelated = context.fixture_original_context(None)?;
             assert_eq!(unrelated.scope(), original.scope());
             assert_ne!(unrelated, original);
-            let value = component.admit_value(context, output).unwrap();
+            let value = component
+                .admit_value(context, &mut effects, output)
+                .unwrap();
             assert_eq!(component.value(&value).unwrap().original, original);
             let mut use_ = component.issue_use(context, unrelated, &[value]).unwrap();
             let alternative = component
-                .next_use_alternative(context, &mut use_)
+                .next_use_alternative(context, &mut effects, &mut use_)
                 .unwrap()
                 .unwrap();
             let input = component.input(&use_, &alternative, 0).unwrap();
             assert_eq!(input.original_context(), &original);
             let PreparedValueInput::Available {
-                ty: TypeKind::Function {
-                    params, effects, ..
-                },
+                ty:
+                    TypeKind::Function {
+                        params,
+                        effects: retained_effects,
+                        ..
+                    },
                 ..
             } = input
             else {
@@ -291,7 +302,7 @@ fn intrinsic_values_retain_their_actual_type_const_and_effect_frames() {
                 }]
             );
             assert_eq!(
-                effects,
+                retained_effects,
                 &PreparedEffectRow::Canonical(EffectRow::open(
                     EffectSet::new(),
                     original.scope().bound_effect(0, 0).unwrap(),
@@ -307,7 +318,7 @@ fn intrinsic_values_retain_their_actual_type_const_and_effect_frames() {
                 .unwrap();
             assert!(
                 component
-                    .next_use_alternative(context, &mut use_)
+                    .next_use_alternative(context, &mut effects, &mut use_)
                     .unwrap()
                     .is_none()
             );
@@ -320,6 +331,7 @@ fn intrinsic_values_retain_their_actual_type_const_and_effect_frames() {
 
 #[test]
 fn accepted_and_conditional_use_outputs_cannot_substitute_an_equal_shaped_foreign_context() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let binder = GenericBinder::new(1, 0, 0);
@@ -331,13 +343,13 @@ fn accepted_and_conditional_use_outputs_cannot_substitute_an_equal_shaped_foreig
         .unwrap();
     assert_eq!(original.scope(), foreign.scope());
     assert_ne!(original, foreign);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     for conditional in [false, true] {
         let mut use_ = component
             .issue_use(&mut context, original.clone(), &[])
             .unwrap();
         let alternative = component
-            .next_use_alternative(&mut context, &mut use_)
+            .next_use_alternative(&mut context, &mut effects, &mut use_)
             .unwrap()
             .unwrap();
         let accepted = PreparedValueOutput {
@@ -370,6 +382,7 @@ fn accepted_and_conditional_use_outputs_cannot_substitute_an_equal_shaped_foreig
 
 #[test]
 fn derived_values_keep_the_use_context_for_both_available_and_diagnostic_outcomes() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let original = context
@@ -377,13 +390,13 @@ fn derived_values_keep_the_use_context_for_both_available_and_diagnostic_outcome
             context.fixture_original_context(None)
         })
         .unwrap();
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     for accepted in [true, false] {
         let mut use_ = component
             .issue_use(&mut context, original.clone(), &[])
             .unwrap();
         let alternative = component
-            .next_use_alternative(&mut context, &mut use_)
+            .next_use_alternative(&mut context, &mut effects, &mut use_)
             .unwrap()
             .unwrap();
         let outcome = if accepted {
@@ -400,17 +413,19 @@ fn derived_values_keep_the_use_context_for_both_available_and_diagnostic_outcome
             .unwrap();
         assert!(
             component
-                .next_use_alternative(&mut context, &mut use_)
+                .next_use_alternative(&mut context, &mut effects, &mut use_)
                 .unwrap()
                 .is_none()
         );
         let observed = component.finish_use(use_).unwrap();
-        let value = component.retain_use(&mut context, observed).unwrap();
+        let value = component
+            .retain_use(&mut context, &mut effects, observed)
+            .unwrap();
         assert_eq!(component.value(&value).unwrap().original, original);
         let reader = context.fixture_original_context(None).unwrap();
         let mut use_ = component.issue_use(&mut context, reader, &[value]).unwrap();
         let alternative = component
-            .next_use_alternative(&mut context, &mut use_)
+            .next_use_alternative(&mut context, &mut effects, &mut use_)
             .unwrap()
             .unwrap();
         let input = component.input(&use_, &alternative, 0).unwrap();
@@ -425,9 +440,10 @@ fn derived_values_keep_the_use_context_for_both_available_and_diagnostic_outcome
 
 #[test]
 fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let mut values = Vec::new();
     for _ in 0..2 {
         let roots = vec![root(&mut context, &TypeKind::I32)];
@@ -440,7 +456,7 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
     let mut use_ = component.issue_fixture_use(&mut context, &values).unwrap();
     let mut count = 0;
     while let Some(alternative) = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
     {
         count += 1;
@@ -455,13 +471,15 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
     }
     assert_eq!(count, 9);
     let observed = component.finish_use(use_).unwrap();
-    let derived = component.retain_use(&mut context, observed).unwrap();
+    let derived = component
+        .retain_use(&mut context, &mut effects, observed)
+        .unwrap();
     let mut use_ = component
         .issue_fixture_use(&mut context, &[values[0].clone(), derived])
         .unwrap();
     let mut correlated = 0;
     while let Some(alternative) = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
     {
         correlated += 1;
@@ -479,23 +497,26 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
 
 #[test]
 fn foreign_references_and_ticket_misuse_do_not_create_checked_results() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut first = Component::new(&mut context).unwrap();
-    let mut second = Component::new(&mut context).unwrap();
+    let mut first = Component::new(&mut context, &effects).unwrap();
+    let mut second = Component::new(&mut context, &effects).unwrap();
     let value_output = output(&mut context, &TypeKind::I32);
-    let value = first.admit_value(&mut context, value_output).unwrap();
+    let value = first
+        .admit_value(&mut context, &mut effects, value_output)
+        .unwrap();
     assert!(matches!(
         second.issue_fixture_use(&mut context, &[value.clone()]),
         Err(PreparedValueFailure::ForeignIssuer)
     ));
     let mut use_ = first.issue_fixture_use(&mut context, &[value]).unwrap();
     let alternative = first
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
         .unwrap();
     assert!(matches!(
-        first.next_use_alternative(&mut context, &mut use_),
+        first.next_use_alternative(&mut context, &mut effects, &mut use_),
         Err(PreparedValueFailure::UseState)
     ));
     let accepted = PreparedValueOutcome::Accepted(output(&mut context, &TypeKind::I32));
@@ -504,7 +525,7 @@ fn foreign_references_and_ticket_misuse_do_not_create_checked_results() {
         .unwrap();
     assert!(
         first
-            .next_use_alternative(&mut context, &mut use_)
+            .next_use_alternative(&mut context, &mut effects, &mut use_)
             .unwrap()
             .is_none()
     );
@@ -520,14 +541,15 @@ fn literal(labels: &[&str]) -> PreparedEffectRow {
 
 #[test]
 fn conditional_use_keeps_rejection_without_constraining_the_producer_scheme() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let producer_output = output(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_value(&mut context, producer_output)
+        .admit_value(&mut context, &mut effects, producer_output)
         .unwrap();
-    let graph = component.effects_mut();
+    let graph = &mut effects;
     let scheme = graph
         .declare(vec![], EffectPredicate::unconstrained(), &mut context)
         .unwrap();
@@ -547,7 +569,7 @@ fn conditional_use_keeps_rejection_without_constraining_the_producer_scheme() {
         .issue_fixture_use(&mut context, &[producer.clone()])
         .unwrap();
     let alternative = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
         .unwrap();
     let accepted = output(&mut context, &TypeKind::String);
@@ -565,12 +587,14 @@ fn conditional_use_keeps_rejection_without_constraining_the_producer_scheme() {
         .unwrap();
     assert!(
         component
-            .next_use_alternative(&mut context, &mut use_)
+            .next_use_alternative(&mut context, &mut effects, &mut use_)
             .unwrap()
             .is_none()
     );
     let observed = component.finish_use(use_).unwrap();
-    let derived = component.retain_use(&mut context, observed).unwrap();
+    let derived = component
+        .retain_use(&mut context, &mut effects, observed)
+        .unwrap();
     let alternatives = &component.value(&derived).unwrap().alternatives;
     assert_eq!(alternatives.len(), 2);
     assert_eq!(alternatives[0].origins, alternatives[1].origins);
@@ -591,15 +615,16 @@ fn conditional_use_keeps_rejection_without_constraining_the_producer_scheme() {
     ));
     // Requiring the successful member use would instead force fs.read into
     // S = S. Its least solution must remain empty, with the use rejected.
-    let closed = component.effects.solve_principal(&mut context).unwrap();
+    let closed = effects.solve_principal(&mut context).unwrap();
     assert!(closed.scheme(&scheme).unwrap().is_empty());
 }
 
 #[test]
 fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let roots = vec![
         root(&mut context, &TypeKind::I32),
         root(&mut context, &TypeKind::String),
@@ -607,10 +632,7 @@ fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
     let producer = component
         .admit_fixture_roots(&mut context, roots, "producer")
         .unwrap();
-    let local_fits = component
-        .effects
-        .not(Component::always(), &mut context)
-        .unwrap();
+    let local_fits = effects.not(Component::always(), &mut context).unwrap();
     let foreign_fits = PreparedEffectGraph::default()
         .not(Component::always(), &mut context)
         .unwrap();
@@ -619,7 +641,7 @@ fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
         .unwrap();
     let mut fits = [local_fits, foreign_fits].into_iter();
     while let Some(alternative) = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
     {
         let outcome = if alternative.blocked {
@@ -636,16 +658,16 @@ fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
             .unwrap();
     }
     let observed = component.finish_use(use_).unwrap();
-    let before_terms = component.effects.retained_terms();
+    let before_terms = effects.retained_terms();
     let before_values = component.values.len();
     let before_ordinal = component.next_value;
     assert!(matches!(
-        component.retain_use(&mut context, observed),
+        component.retain_use(&mut context, &mut effects, observed),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::ForeignIssuer)
         ))
     ));
-    assert_eq!(component.effects.retained_terms(), before_terms);
+    assert_eq!(effects.retained_terms(), before_terms);
     assert_eq!(component.values.len(), before_values);
     assert_eq!(component.next_value, before_ordinal);
     assert!(!component.has_live_uses());
@@ -670,13 +692,15 @@ fn arrow(
 
 #[test]
 fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_stale_terms() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let original = context.fixture_original_context(None).unwrap();
     let value = component
         .admit_value(
             &mut context,
+            &mut effects,
             arrow(
                 original.clone(),
                 PreparedEffectRow::Canonical(EffectRow::unknown()),
@@ -693,16 +717,16 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
         .union(vec![], &mut context)
         .unwrap();
     assert!(matches!(
-        component.admit_value(&mut context, arrow(original.clone(), foreign)),
+        component.admit_value(&mut context, &mut effects, arrow(original.clone(), foreign)),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::ForeignIssuer)
         ))
     ));
-    let mut checkpoint = component.effects.checkpoint(&mut context).unwrap();
-    let stale = component.effects.union(vec![], &mut context).unwrap();
-    component.effects.rollback(&mut checkpoint).unwrap();
+    let mut checkpoint = effects.checkpoint(&mut context).unwrap();
+    let stale = effects.union(vec![], &mut context).unwrap();
+    effects.rollback(&mut checkpoint).unwrap();
     assert!(matches!(
-        component.admit_value(&mut context, arrow(original, stale)),
+        component.admit_value(&mut context, &mut effects, arrow(original, stale)),
         Err(PreparedValueFailure::Effect(
             PreparedEffectFailure::Invariant(PreparedEffectInvariant::StaleReference)
         ))
@@ -711,13 +735,62 @@ fn retained_function_values_preserve_unknown_annotations_and_reject_foreign_or_s
 }
 
 #[test]
-fn empty_input_use_runs_once_and_a_failed_submission_cannot_be_resumed() {
+fn separate_value_components_share_the_actual_declaration_graph_without_sharing_value_issuers() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut effects = PreparedEffectGraph::default();
+    let scheme = effects
+        .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+        .unwrap();
+    let row = effects.application(&scheme, vec![], &mut context).unwrap();
+    let original = context.fixture_original_context(None).unwrap();
+    let mut first = Component::new(&mut context, &effects).unwrap();
+    let mut second = Component::new(&mut context, &effects).unwrap();
+    let first_value = first
+        .admit_value(&mut context, &effects, arrow(original.clone(), row.clone()))
+        .unwrap();
+    let second_value = second
+        .admit_value(&mut context, &effects, arrow(original.clone(), row))
+        .unwrap();
+    assert!(matches!(
+        second.issue_fixture_use(&mut context, &[first_value.clone()]),
+        Err(PreparedValueFailure::ForeignIssuer)
+    ));
+    let foreign = PreparedEffectGraph::default();
+    assert!(matches!(
+        first.admit_value(&mut context, &foreign, arrow(original, literal(&[]))),
+        Err(PreparedValueFailure::Effect(
+            PreparedEffectFailure::Invariant(PreparedEffectInvariant::ForeignIssuer)
+        ))
+    ));
+    assert_eq!(first.values.len(), 1);
+    effects
+        .prepare_body(&scheme, literal(&["fs.read"]), vec![], &mut context)
+        .unwrap();
+    let closed = effects.solve_principal(&mut context).unwrap();
+    for (component, value) in [(&first, &first_value), (&second, &second_value)] {
+        let ValueContent::Available {
+            ty: TypeKind::Function { effects, .. },
+        } = &component.value(value).unwrap().alternatives[0].value
+        else {
+            panic!("expected a retained function value")
+        };
+        assert_eq!(
+            closed.resolve_row(effects, &mut context).unwrap(),
+            EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap())
+        );
+    }
+}
+
+#[test]
+fn empty_input_use_runs_once_and_a_failed_submission_cannot_be_resumed() {
+    let mut effects = PreparedEffectGraph::default();
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let mut use_ = component.issue_fixture_use(&mut context, &[]).unwrap();
     let alternative = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -730,7 +803,7 @@ fn empty_input_use_runs_once_and_a_failed_submission_cannot_be_resumed() {
         Err(PreparedValueFailure::InputState)
     ));
     assert!(matches!(
-        component.next_use_alternative(&mut context, &mut use_),
+        component.next_use_alternative(&mut context, &mut effects, &mut use_),
         Err(PreparedValueFailure::UseState)
     ));
     assert!(matches!(
@@ -740,7 +813,7 @@ fn empty_input_use_runs_once_and_a_failed_submission_cannot_be_resumed() {
     assert!(!component.has_live_uses());
     let mut use_ = component.issue_fixture_use(&mut context, &[]).unwrap();
     let alternative = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
         .unwrap();
     let accepted = output(&mut context, &TypeKind::I32);
@@ -754,17 +827,20 @@ fn empty_input_use_runs_once_and_a_failed_submission_cannot_be_resumed() {
         .unwrap();
     assert!(
         component
-            .next_use_alternative(&mut context, &mut use_)
+            .next_use_alternative(&mut context, &mut effects, &mut use_)
             .unwrap()
             .is_none()
     );
     let observed = component.finish_use(use_).unwrap();
-    let value = component.retain_use(&mut context, observed).unwrap();
+    let value = component
+        .retain_use(&mut context, &mut effects, observed)
+        .unwrap();
     assert_eq!(component.value(&value).unwrap().alternatives.len(), 1);
 }
 
 #[test]
 fn fixed_component_allocations_and_cancelled_enumeration_obey_the_original_budget() {
+    let mut effects = PreparedEffectGraph::default();
     use crate::types::constraints::TypeConstraintError;
     use std::sync::atomic::Ordering;
 
@@ -774,7 +850,7 @@ fn fixed_component_allocations_and_cancelled_enumeration_obey_the_original_budge
             ConstraintTestSetup::new(TypeConstraintLimits::new(100, nodes, 16, 16), &cancellation)
                 .into_parts()
                 .0;
-        let result = Component::new(&mut bounded);
+        let result = Component::new(&mut bounded, &effects);
         if succeeds {
             assert!(result.is_ok());
         } else {
@@ -787,24 +863,24 @@ fn fixed_component_allocations_and_cancelled_enumeration_obey_the_original_budge
         }
     }
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let producer_output = output(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_value(&mut context, producer_output)
+        .admit_value(&mut context, &mut effects, producer_output)
         .unwrap();
     let mut use_ = component
         .issue_fixture_use(&mut context, &[producer])
         .unwrap();
     cancellation.store(true, Ordering::Relaxed);
     assert!(matches!(
-        component.next_use_alternative(&mut context, &mut use_),
+        component.next_use_alternative(&mut context, &mut effects, &mut use_),
         Err(PreparedValueFailure::Constraint(
             TypeConstraintError::Abort(_)
         ))
     ));
     cancellation.store(false, Ordering::Relaxed);
     assert!(matches!(
-        component.next_use_alternative(&mut context, &mut use_),
+        component.next_use_alternative(&mut context, &mut effects, &mut use_),
         Err(PreparedValueFailure::UseState)
     ));
     drop(use_);
@@ -814,6 +890,7 @@ fn fixed_component_allocations_and_cancelled_enumeration_obey_the_original_budge
 
 #[test]
 fn aliases_do_not_copy_affine_preparation_facts() {
+    let mut effects = PreparedEffectGraph::default();
     use std::cell::Cell;
     struct Preparation(Rc<Cell<usize>>);
     impl Drop for Preparation {
@@ -825,12 +902,14 @@ fn aliases_do_not_copy_affine_preparation_facts() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component =
-        OpenConstraintComponent::<NoConstraintClient, Preparation>::new(&mut context).unwrap();
+        OpenConstraintComponent::<NoConstraintClient, Preparation>::new(&mut context, &effects)
+            .unwrap();
     let dropped = Rc::new(Cell::new(0));
     let original = context.fixture_original_context(None).unwrap();
     let producer = component
         .admit_value(
             &mut context,
+            &mut effects,
             PreparedValueOutput {
                 ty: TypeKind::I32,
                 original: original.clone(),
@@ -842,7 +921,7 @@ fn aliases_do_not_copy_affine_preparation_facts() {
         .issue_fixture_use(&mut context, &[producer.clone(), producer])
         .unwrap();
     let alternative = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
         .unwrap();
     let (
@@ -874,12 +953,14 @@ fn aliases_do_not_copy_affine_preparation_facts() {
         .unwrap();
     assert!(
         component
-            .next_use_alternative(&mut context, &mut use_)
+            .next_use_alternative(&mut context, &mut effects, &mut use_)
             .unwrap()
             .is_none()
     );
     let observed = component.finish_use(use_).unwrap();
-    let _derived = component.retain_use(&mut context, observed).unwrap();
+    let _derived = component
+        .retain_use(&mut context, &mut effects, observed)
+        .unwrap();
     assert_eq!(dropped.get(), 0);
     drop(component);
     assert_eq!(dropped.get(), 2);
@@ -914,6 +995,7 @@ impl ConstraintDomain for Applications {
 
 #[test]
 fn producer_registration_preserves_parent_correlation_and_one_semantic_application() {
+    let effects = PreparedEffectGraph::default();
     use crate::types::constraints::{
         ConstraintAcceptance, PreparedConstraintSourceProjection, PreparedSourceConstraint,
     };
@@ -925,7 +1007,8 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
     )
     .into_parts()
     .0;
-    let mut component = OpenConstraintComponent::<Applications, ()>::new(&mut context).unwrap();
+    let mut component =
+        OpenConstraintComponent::<Applications, ()>::new(&mut context, &effects).unwrap();
     let mut roots = Vec::new();
     for application in [0, 1] {
         let mut root = TypeConstraintTransaction::initialize_fixture(
@@ -989,6 +1072,7 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
 
 #[test]
 fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root() {
+    let effects = PreparedEffectGraph::default();
     use crate::types::constraints::application::ConstraintApplicationScope;
 
     let cancellation = AtomicBool::new(false);
@@ -998,7 +1082,8 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
     )
     .into_parts()
     .0;
-    let mut component = OpenConstraintComponent::<Applications, ()>::new(&mut context).unwrap();
+    let mut component =
+        OpenConstraintComponent::<Applications, ()>::new(&mut context, &effects).unwrap();
     let parent = ConstraintApplicationScope::test_root(0, TypeConstraintParameterScope::empty());
     let parent_id = parent.id();
     let path = context.start_path(parent).unwrap();
@@ -1045,6 +1130,7 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
 
 #[test]
 fn imported_opening_cannot_change_semantic_application_when_original_roots_join() {
+    let effects = PreparedEffectGraph::default();
     use crate::types::{
         DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId,
         constraints::{
@@ -1062,7 +1148,8 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
         )
         .into_parts()
         .0;
-        let mut component = OpenConstraintComponent::<Applications, ()>::new(&mut context).unwrap();
+        let mut component =
+            OpenConstraintComponent::<Applications, ()>::new(&mut context, &effects).unwrap();
         let key = GenericTypeParameterId::new(
             GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(9492)),
             0,
@@ -1141,6 +1228,7 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
 
 #[test]
 fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() {
+    let mut effects = PreparedEffectGraph::default();
     use crate::types::{
         DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
         GenericTypeParameterId,
@@ -1152,7 +1240,7 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
     };
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(941));
     let bound = GenericTypeParameterId::new(owner.clone(), 0);
     let future = GenericTypeParameterId::new(owner.clone(), 1);
@@ -1219,7 +1307,7 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
         .issue_fixture_use(&mut context, &[value.clone(), value])
         .unwrap();
     let alternative = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -1279,9 +1367,10 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
 
 #[test]
 fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_paths() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let root = root(&mut context, &TypeKind::I32);
     let producer = component
         .admit_fixture_roots(&mut context, vec![root], "original")
@@ -1290,7 +1379,7 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
         .issue_fixture_use(&mut context, &[producer.clone()])
         .unwrap();
     while let Some(alternative) = component
-        .next_use_alternative(&mut context, &mut first)
+        .next_use_alternative(&mut context, &mut effects, &mut first)
         .unwrap()
     {
         let outcome = if alternative.blocked {
@@ -1303,14 +1392,16 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
             .unwrap();
     }
     let first = component.finish_use(first).unwrap();
-    let derived = component.retain_use(&mut context, first).unwrap();
+    let derived = component
+        .retain_use(&mut context, &mut effects, first)
+        .unwrap();
     let mut use_ = component
         .issue_fixture_use(&mut context, &[producer, derived.clone(), derived])
         .unwrap();
     let mut available = 0;
     let mut diagnostic = 0;
     while let Some(alternative) = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
     {
         let mut visits = 0;
@@ -1340,10 +1431,11 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
 
 #[test]
 fn original_constraint_observation_validates_authority_and_cancellation_before_visiting() {
+    let mut effects = PreparedEffectGraph::default();
     use std::sync::atomic::Ordering;
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let root = root(&mut context, &TypeKind::I32);
     let producer = component
         .admit_fixture_roots(&mut context, vec![root], "original")
@@ -1352,7 +1444,7 @@ fn original_constraint_observation_validates_authority_and_cancellation_before_v
         .issue_fixture_use(&mut context, &[producer])
         .unwrap();
     let alternative = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
         .unwrap();
     let mut calls = 0;
@@ -1368,7 +1460,7 @@ fn original_constraint_observation_validates_authority_and_cancellation_before_v
     ));
     assert_eq!(calls, 0);
     cancellation.store(false, Ordering::Relaxed);
-    let other = Component::new(&mut context).unwrap();
+    let other = Component::new(&mut context, &effects).unwrap();
     assert!(matches!(
         other.visit_original_constraints(&mut context, &use_, &alternative, |_, _| {
             calls += 1;

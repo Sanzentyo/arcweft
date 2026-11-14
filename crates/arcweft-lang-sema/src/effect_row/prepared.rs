@@ -55,6 +55,24 @@ mod tests;
 #[derive(Debug)]
 struct PreparedEffectIssuer;
 
+/// Read-only identity of the actual graph owner. Sharing this lease does not
+/// copy declarations, restore a candidate, or authorize publishing a delta.
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedEffectGraphOwner(Arc<PreparedEffectIssuer>);
+
+impl PreparedEffectGraphOwner {
+    pub(crate) fn validate(
+        &self,
+        graph: &PreparedEffectGraph,
+    ) -> Result<(), PreparedEffectInvariant> {
+        if Arc::ptr_eq(&self.0, &graph.issuer) {
+            Ok(())
+        } else {
+            Err(PreparedEffectInvariant::ForeignIssuer)
+        }
+    }
+}
+
 /// Operational reference only; equality never decides overload exactness.
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedEffectReference {
@@ -256,7 +274,7 @@ pub(crate) struct PreparedEffectGraph {
     checkpoints: Vec<u64>,
     state: transaction::PreparedEffectStateId,
     next_state: u64,
-    insertions: Vec<transaction::EffectInsertion>,
+    journal: Vec<transaction::EffectMutation>,
     choices: BTreeSet<u64>,
     functions: BTreeMap<u64, Arc<Function>>,
     obligations: Vec<ScopedObligation>,
@@ -276,7 +294,7 @@ impl Default for PreparedEffectGraph {
             checkpoints: Vec::new(),
             state: transaction::PreparedEffectStateId::INITIAL,
             next_state: 1,
-            insertions: Vec::new(),
+            journal: Vec::new(),
             choices: BTreeSet::new(),
             functions: BTreeMap::new(),
             obligations: Vec::new(),
@@ -414,7 +432,7 @@ impl PreparedEffectGraph {
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.changed()?;
-        self.record_insertion(transaction::EffectInsertion::Row(id));
+        self.record_mutation(transaction::EffectMutation::Row(id));
         self.rows.insert(id, Arc::new(term));
         Ok(PreparedEffectRow::Term(PreparedEffectRowRef(
             self.reference(id),
@@ -503,7 +521,7 @@ impl PreparedEffectGraph {
             .map_err(PreparedEffectFailure::Control)?;
         let header = Arc::clone(&previous.header);
         self.changed()?;
-        self.functions.insert(
+        self.publish_function(
             scheme.0.ordinal,
             Arc::new(Function::Scheme(Scheme {
                 header,
@@ -539,7 +557,7 @@ impl PreparedEffectGraph {
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.changed()?;
-        self.record_insertion(transaction::EffectInsertion::Predicate(id));
+        self.record_mutation(transaction::EffectMutation::Predicate(id));
         self.predicates.insert(id, Arc::new(term));
         Ok(PreparedEffectPredicate::Term(PreparedEffectPredicateRef(
             self.reference(id),
@@ -616,7 +634,7 @@ impl PreparedEffectGraph {
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.changed()?;
-        self.record_insertion(transaction::EffectInsertion::Choice(id));
+        self.record_mutation(transaction::EffectMutation::Choice(id));
         self.choices.insert(id);
         Ok(PreparedEffectChoice(self.reference(id)))
     }

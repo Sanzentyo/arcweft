@@ -99,7 +99,7 @@ impl PreparedEffectGraph {
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.changed()?;
-        self.functions.insert(id, Arc::new(function));
+        self.publish_function(id, Arc::new(function));
         Ok(id)
     }
 

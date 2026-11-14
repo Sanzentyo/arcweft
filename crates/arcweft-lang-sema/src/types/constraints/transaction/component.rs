@@ -11,7 +11,10 @@ use super::{
 use crate::{
     effect_row::{
         EffectPredicate,
-        prepared::{PreparedEffectFailure, PreparedEffectGraph, PreparedEffectPredicate},
+        prepared::{
+            PreparedEffectFailure, PreparedEffectGraph, PreparedEffectGraphOwner,
+            PreparedEffectPredicate,
+        },
     },
     types::{
         ArrayLength, GenericConstReference, GenericScope, GenericTypeReference, PreparedEffects,
@@ -308,7 +311,7 @@ pub(crate) struct PreparedValueUse<D, P> {
 pub(crate) struct OpenConstraintComponent<D: ConstraintDomain, P> {
     issuer: Rc<ValueIssuer>,
     use_lease: Rc<UseLease>,
-    effects: PreparedEffectGraph,
+    effect_owner: PreparedEffectGraphOwner,
     next_value: u64,
     next_use: u64,
     values: BTreeMap<u64, RegisteredValue<D, P>>,
@@ -342,23 +345,21 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     }
     pub(crate) fn new<A: TypeConstraintAccounting>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &PreparedEffectGraph,
     ) -> Result<Self, PreparedValueFailure> {
-        // Admit all three fixed issuer allocations before creating any.
-        for _ in 0..3 {
+        let effect_owner = effects.owner(context)?;
+        // The component owns its two value/use issuers, never another graph.
+        for _ in 0..2 {
             context.enter_node()?;
         }
         Ok(Self {
             issuer: Rc::new(ValueIssuer),
             use_lease: Rc::new(UseLease),
-            effects: PreparedEffectGraph::default(),
+            effect_owner,
             next_value: 0,
             next_use: 0,
             values: BTreeMap::new(),
         })
-    }
-
-    pub(crate) fn effects_mut(&mut self) -> &mut PreparedEffectGraph {
-        &mut self.effects
     }
 
     pub(crate) fn has_live_uses(&self) -> bool {
@@ -522,9 +523,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn admit_value<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &PreparedEffectGraph,
         value: PreparedValueOutput<P>,
     ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
-        let (ty, original, preparation) = self.retain_output(context, value)?;
+        let (ty, original, preparation) = self.retain_output(context, effects, value)?;
         context.enter_node()?;
         self.insert(
             context,
@@ -625,6 +627,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn next_use_alternative<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut PreparedEffectGraph,
         ticket: &mut PreparedValueUseTicket<D, P>,
     ) -> Result<Option<PreparedValueUseAlternative>, PreparedValueFailure> {
         self.validate_ticket(ticket)?;
@@ -634,7 +637,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         if ticket.phase != UsePhase::Open {
             return Err(PreparedValueFailure::UseState);
         }
-        let result = self.advance_use(context, ticket);
+        self.effect_owner
+            .validate(effects)
+            .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
+        let result = self.advance_use(context, effects, ticket);
         if result.is_err() {
             ticket.phase = UsePhase::Failed;
         }
@@ -644,6 +650,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     fn advance_use<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut PreparedEffectGraph,
         ticket: &mut PreparedValueUseTicket<D, P>,
     ) -> Result<Option<PreparedValueUseAlternative>, PreparedValueFailure> {
         if ticket.inputs.is_empty() {
@@ -725,7 +732,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         ticket.next_alternative = ordinal
             .checked_add(1)
             .ok_or(PreparedValueFailure::OrdinalOverflow)?;
-        let predicate = self.effects.and(predicates, context)?;
+        let predicate = effects.and(predicates, context)?;
         ticket.phase = UsePhase::Pending(ordinal);
         Ok(Some(PreparedValueUseAlternative {
             issuer: Rc::clone(&self.issuer),
@@ -902,6 +909,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn retain_use<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut PreparedEffectGraph,
         observed: PreparedValueUse<D, P>,
     ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
         if !Rc::ptr_eq(&self.issuer, &observed.issuer)
@@ -914,11 +922,14 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             .checked_add(1)
             .ok_or(PreparedValueFailure::OrdinalOverflow)?;
         context.enter_node()?;
-        let mut checkpoint = self.effects.checkpoint(context)?;
-        let built = self.build_use(context, observed);
+        self.effect_owner
+            .validate(effects)
+            .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
+        let mut checkpoint = effects.checkpoint(context)?;
+        let built = self.build_use(context, effects, observed);
         match built {
             Ok(value) => {
-                self.effects.commit(&checkpoint).map_err(|error| {
+                effects.commit(&checkpoint).map_err(|error| {
                     PreparedValueFailure::Effect(PreparedEffectFailure::Invariant(error))
                 })?;
                 self.values.insert(ordinal, value);
@@ -930,7 +941,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 })
             }
             Err(error) => {
-                self.effects.rollback(&mut checkpoint).map_err(|rollback| {
+                effects.rollback(&mut checkpoint).map_err(|rollback| {
                     PreparedValueFailure::Effect(PreparedEffectFailure::Invariant(rollback))
                 })?;
                 Err(error)
@@ -941,6 +952,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     fn build_use<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut PreparedEffectGraph,
         observed: PreparedValueUse<D, P>,
     ) -> Result<RegisteredValue<D, P>, PreparedValueFailure> {
         let mut alternatives = Vec::new();
@@ -960,7 +972,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             };
             match recorded.outcome {
                 PreparedValueOutcome::Accepted(output) => {
-                    let (ty, _, preparation) = self.retain_output(context, output)?;
+                    let (ty, _, preparation) = self.retain_output(context, effects, output)?;
                     context.enter_node()?;
                     let index = preparations.len();
                     preparations.push(preparation);
@@ -994,8 +1006,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     accepted,
                     rejected,
                 } => {
-                    let (ty, _, preparation) = self.retain_output(context, accepted)?;
-                    self.effects
+                    let (ty, _, preparation) = self.retain_output(context, effects, accepted)?;
+                    effects
                         .validate_retained_predicate(&fits)
                         .map_err(|error| {
                             PreparedValueFailure::Effect(PreparedEffectFailure::Invariant(error))
@@ -1004,13 +1016,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         context.enter_node()?;
                     }
                     let rejected_origins = recorded.origins.clone();
-                    let rejected_fits = self.effects.not(fits.clone(), context)?;
-                    let accepted_guard = self
-                        .effects
-                        .and(vec![recorded.predicate.clone(), fits], context)?;
-                    let rejected_guard = self
-                        .effects
-                        .and(vec![recorded.predicate, rejected_fits], context)?;
+                    let rejected_fits = effects.not(fits.clone(), context)?;
+                    let accepted_guard =
+                        effects.and(vec![recorded.predicate.clone(), fits], context)?;
+                    let rejected_guard =
+                        effects.and(vec![recorded.predicate, rejected_fits], context)?;
                     for (origins, predicate, value, preparation) in [
                         (
                             recorded.origins,
@@ -1049,11 +1059,15 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     fn retain_output<A: TypeConstraintAccounting>(
         &self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &PreparedEffectGraph,
         output: PreparedValueOutput<P>,
     ) -> Result<(TypeKind<PreparedEffects>, OriginalProducerContext, P), PreparedValueFailure> {
+        self.effect_owner
+            .validate(effects)
+            .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
         let ty = output
             .ty
-            .retain_in_effect_graph(output.original.scope(), &self.effects, context)
+            .retain_in_effect_graph(output.original.scope(), effects, context)
             .map_err(Self::retention_failure)?;
         context.enter_node()?;
         Ok((ty, output.original, output.preparation))

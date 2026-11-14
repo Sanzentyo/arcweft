@@ -162,9 +162,10 @@ fn array(length: ArrayLength) -> TypeKind {
 
 #[test]
 fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either_root() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, length) = parameters(2, 2);
     let first = frontier_application(
         &mut context,
@@ -249,9 +250,10 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
 
 #[test]
 fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, length) = parameters(1, 1);
     let equations = |value, count| {
         vec![
@@ -298,9 +300,10 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
 
 #[test]
 fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(2, 0);
     for (left, right) in [(0, 1), (1, 0)] {
         let root = frontier_equations(
@@ -328,9 +331,10 @@ fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
 
 #[test]
 fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let first = frontier(&mut context, TypeConstraintParameterScope::empty(), &[]);
     let first_id = first.transaction.application;
     let (scope, _, _) = parameters(1, 0);
@@ -349,7 +353,7 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
         matches!(&forest.products[1].result.as_ref().err().unwrap().reason,TypeConstraintRejection::IncompleteInstantiation {parameter: crate::types::constraints::ConstraintGenericParameterId::Type(parameter)} if parameter == &required)
     );
     let original = context.fixture_original_context(None).unwrap();
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     component
         .admit_roots(&mut context, original, Vec::new(), "rejected original")
         .unwrap();
@@ -364,9 +368,10 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
 
 #[test]
 fn one_application_opening_cannot_claim_independently_opened_ambient_binders() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(1, 0);
     for _ in 0..2 {
         let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
@@ -418,9 +423,10 @@ fn scoped_function(scope: &GenericScope, ambient_depth: u32) -> TypeKind {
 
 #[test]
 fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shapes() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(1, 0);
     let root_scope = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
     let value = scoped_function(context.lexical_scope(), 1);
@@ -481,9 +487,10 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
 
 #[test]
 fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let root = frontier(&mut context, TypeConstraintParameterScope::empty(), &[]);
     let value = component
         .admit_fixture_roots(&mut context, vec![root], "initializer")
@@ -494,7 +501,7 @@ fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() 
         Err(PreparedValueFailure::UseState)
     ));
     drop(use_);
-    let component = Component::new(&mut context).unwrap();
+    let component = Component::new(&mut context, &effects).unwrap();
     cancellation.store(true, Ordering::Relaxed);
     assert!(matches!(
         component.infer_original_products(&mut context),
@@ -508,12 +515,13 @@ fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() 
 
 #[test]
 fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_root() {
+    let effects = PreparedEffectGraph::default();
     use crate::types::constraints::{
         ConstraintGenericParameterId, application::ConstraintApplicationScope,
     };
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(2, 0);
     let parent = context
         .start_path(ConstraintApplicationScope::test_root((), scope))
@@ -580,6 +588,7 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
 
 #[test]
 fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let choice = TypeKind::Tuple(vec![TypeKind::Choice(vec![
         TypeKind::Bool,
@@ -592,7 +601,7 @@ fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
         (function(TypeKind::Never), function(TypeKind::Bool), false),
     ] {
         let mut context = context(&cancellation);
-        let mut component = Component::new(&mut context).unwrap();
+        let mut component = Component::new(&mut context, &effects).unwrap();
         let (scope, ty, _) = parameters(1, 0);
         for value in [left, right] {
             let root = frontier(
@@ -618,13 +627,14 @@ fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
 
 #[test]
 fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_completion() {
+    let effects = PreparedEffectGraph::default();
     use crate::{
         effect_row::{EffectConstraintEligibility, EffectConstraintVariable},
         types::GenericEffectParameterId,
     };
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(9482));
     let ty = GenericTypeParameterId::new(owner.clone(), 0);
     let effects: Vec<crate::types::GenericEffectReference> = (0..2)
@@ -713,9 +723,10 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
 
 #[test]
 fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inference() {
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(1, 0);
     let root = frontier(
         &mut context,
@@ -729,7 +740,7 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
         .issue_fixture_use(&mut context, &[producer])
         .unwrap();
     while let Some(alternative) = component
-        .next_use_alternative(&mut context, &mut use_)
+        .next_use_alternative(&mut context, &mut effects, &mut use_)
         .unwrap()
     {
         let outcome = if alternative.blocked {
@@ -752,7 +763,9 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
             .unwrap();
     }
     let use_ = component.finish_use(use_).unwrap();
-    component.retain_use(&mut context, use_).unwrap();
+    component
+        .retain_use(&mut context, &mut effects, use_)
+        .unwrap();
     let forest = component.infer_original_products(&mut context).unwrap();
     assert_eq!(forest.products.len(), 1);
     let solution = &forest.products[0].result.as_ref().ok().unwrap()[0];
@@ -769,6 +782,7 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
 
 #[test]
 fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
+    let effects = PreparedEffectGraph::default();
     use crate::types::constraints::context::{
         TypeConstraintAccounting, TypeConstraintContextIssuer, TypeConstraintWorkReport,
     };
@@ -806,7 +820,7 @@ fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
                 cancellation: &cancellation,
                 limits: TypeConstraintLimits::new(65536, limit, 1024, 1024),
             });
-        let component = Component::new(&mut context).unwrap();
+        let component = Component::new(&mut context, &effects).unwrap();
         let result = component.infer_original_products(&mut context);
         (nodes.get(), result)
     };
@@ -829,9 +843,10 @@ fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
 
 #[test]
 fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_original() {
+    let effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let mut component = Component::new(&mut context).unwrap();
+    let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(1, 0);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let first = frontier(&mut context, scope, &[]);

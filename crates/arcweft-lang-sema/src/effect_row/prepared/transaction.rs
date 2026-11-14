@@ -16,17 +16,21 @@ impl PreparedEffectStateId {
     pub(super) const INITIAL: Self = Self(0);
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(super) enum EffectInsertion {
+#[derive(Debug)]
+pub(super) enum EffectMutation {
+    Function {
+        id: u64,
+        previous: Option<Arc<Function>>,
+    },
     Row(u64),
     Predicate(u64),
     Choice(u64),
 }
 
-/// Immutable definitions are shared. Allocator ordinals are never restored.
+/// Only the mutation journal frontier is retained. Definitions outside the
+/// candidate are neither copied nor enumerated; allocators are never restored.
 pub(crate) struct PreparedEffectCheckpoint {
     issuer: Arc<PreparedEffectIssuer>,
-    functions: BTreeMap<u64, Arc<Function>>,
     obligation_limit: usize,
     journal_start: usize,
     state: PreparedEffectStateId,
@@ -46,7 +50,6 @@ struct PreparedEffectDeltaData {
     issuer: Arc<PreparedEffectIssuer>,
     base: PreparedEffectStateId,
     result: PreparedEffectStateId,
-    baseline_functions: BTreeSet<u64>,
     functions: BTreeMap<u64, Arc<Function>>,
     obligations: Vec<ScopedObligation>,
     rows: BTreeMap<u64, Arc<RowTerm>>,
@@ -68,6 +71,16 @@ impl<E> PreparedEffectRestoreFailure<E> {
 }
 
 impl PreparedEffectGraph {
+    pub(crate) fn owner<C: DecisionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<super::PreparedEffectGraphOwner, PreparedEffectFailure<C::Error>> {
+        control
+            .charge(DecisionWork::Visit)
+            .map_err(PreparedEffectFailure::Control)?;
+        Ok(super::PreparedEffectGraphOwner(Arc::clone(&self.issuer)))
+    }
+
     /// The stamp identifies mutable preparation state, never semantic equality.
     /// Rolling back restores the old state; the allocator never reuses a stamp.
     pub(super) fn changed(&mut self) -> Result<(), PreparedEffectInvariant> {
@@ -80,26 +93,24 @@ impl PreparedEffectGraph {
         Ok(())
     }
 
-    pub(super) fn record_insertion(&mut self, insertion: EffectInsertion) {
+    pub(super) fn record_mutation(&mut self, insertion: EffectMutation) {
         if !self.checkpoints.is_empty() {
-            self.insertions.push(insertion);
+            self.journal.push(insertion);
         }
+    }
+
+    pub(super) fn publish_function(&mut self, id: u64, function: Arc<Function>) {
+        let previous = self.functions.insert(id, function);
+        self.record_mutation(EffectMutation::Function { id, previous });
     }
 
     pub(crate) fn checkpoint<C: DecisionControl>(
         &mut self,
         control: &mut C,
     ) -> Result<PreparedEffectCheckpoint, PreparedEffectFailure<C::Error>> {
-        for () in self
-            .functions
-            .iter()
-            .map(|_| ())
-            .chain(self.obligations.iter().map(|_| ()))
-        {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
-        }
+        control
+            .charge(DecisionWork::Visit)
+            .map_err(PreparedEffectFailure::Control)?;
         control
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
@@ -110,9 +121,8 @@ impl PreparedEffectGraph {
         self.checkpoints.push(ordinal);
         Ok(PreparedEffectCheckpoint {
             issuer: Arc::clone(&self.issuer),
-            functions: self.functions.clone(),
             obligation_limit: self.obligations.len(),
-            journal_start: self.insertions.len(),
+            journal_start: self.journal.len(),
             state: self.state,
             ordinal,
         })
@@ -138,7 +148,7 @@ impl PreparedEffectGraph {
         self.validate_checkpoint(checkpoint)?;
         self.checkpoints.pop();
         if self.checkpoints.is_empty() {
-            self.insertions.clear();
+            self.journal.clear();
         }
         Ok(())
     }
@@ -148,17 +158,23 @@ impl PreparedEffectGraph {
         checkpoint: &mut PreparedEffectCheckpoint,
     ) -> Result<(), PreparedEffectInvariant> {
         self.validate_checkpoint(checkpoint)?;
-        self.functions = std::mem::take(&mut checkpoint.functions);
         self.obligations.truncate(checkpoint.obligation_limit);
-        for insertion in self.insertions.drain(checkpoint.journal_start..) {
+        for insertion in self.journal.drain(checkpoint.journal_start..).rev() {
             match insertion {
-                EffectInsertion::Row(id) => {
+                EffectMutation::Function { id, previous } => {
+                    if let Some(previous) = previous {
+                        self.functions.insert(id, previous);
+                    } else {
+                        self.functions.remove(&id);
+                    }
+                }
+                EffectMutation::Row(id) => {
                     self.rows.remove(&id);
                 }
-                EffectInsertion::Predicate(id) => {
+                EffectMutation::Predicate(id) => {
                     self.predicates.remove(&id);
                 }
-                EffectInsertion::Choice(id) => {
+                EffectMutation::Choice(id) => {
                     self.choices.remove(&id);
                 }
             }
@@ -166,7 +182,7 @@ impl PreparedEffectGraph {
         self.state = checkpoint.state;
         self.checkpoints.pop();
         if self.checkpoints.is_empty() {
-            self.insertions.clear();
+            self.journal.clear();
         }
         Ok(())
     }
@@ -183,26 +199,20 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
         let mut functions = BTreeMap::new();
-        for (id, function) in &self.functions {
+        for insertion in &self.journal[checkpoint.journal_start..] {
             control
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?;
-            if !checkpoint
-                .functions
-                .get(id)
-                .is_some_and(|base| Arc::ptr_eq(base, function))
+            if let EffectMutation::Function { id, .. } = insertion
+                && !functions.contains_key(id)
             {
-                functions.insert(*id, Arc::clone(function));
+                control
+                    .charge(DecisionWork::Node)
+                    .map_err(PreparedEffectFailure::Control)?;
+                functions.insert(*id, Arc::clone(&self.functions[id]));
             }
         }
-        let mut baseline_functions = BTreeSet::new();
-        for id in checkpoint.functions.keys() {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-            baseline_functions.insert(*id);
-        }
-        for () in self.insertions[checkpoint.journal_start..]
+        for () in self.journal[checkpoint.journal_start..]
             .iter()
             .map(|_| ())
             .chain(
@@ -222,21 +232,27 @@ impl PreparedEffectGraph {
             issuer: Arc::clone(&self.issuer),
             base: checkpoint.state,
             result: self.state,
-            baseline_functions,
             functions,
             obligations: self.obligations.split_off(checkpoint.obligation_limit),
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
             choices: BTreeSet::new(),
         });
-        for insertion in self.insertions.drain(checkpoint.journal_start..) {
+        for insertion in self.journal.drain(checkpoint.journal_start..).rev() {
             match insertion {
-                EffectInsertion::Row(id) => {
+                EffectMutation::Function { id, previous } => {
+                    if let Some(previous) = previous {
+                        self.functions.insert(id, previous);
+                    } else {
+                        self.functions.remove(&id);
+                    }
+                }
+                EffectMutation::Row(id) => {
                     delta
                         .rows
                         .insert(id, self.rows.remove(&id).expect("journal owns a live row"));
                 }
-                EffectInsertion::Predicate(id) => {
+                EffectMutation::Predicate(id) => {
                     delta.predicates.insert(
                         id,
                         self.predicates
@@ -244,17 +260,16 @@ impl PreparedEffectGraph {
                             .expect("journal owns a live predicate"),
                     );
                 }
-                EffectInsertion::Choice(id) => {
+                EffectMutation::Choice(id) => {
                     assert!(self.choices.remove(&id));
                     delta.choices.insert(id);
                 }
             }
         }
-        self.functions = std::mem::take(&mut checkpoint.functions);
         self.state = checkpoint.state;
         self.checkpoints.pop();
         if self.checkpoints.is_empty() {
-            self.insertions.clear();
+            self.journal.clear();
         }
         Ok(PreparedEffectDelta { data: delta })
     }
@@ -308,15 +323,17 @@ impl PreparedEffectGraph {
             ..
         } = *delta.data;
         for id in rows.keys() {
-            self.record_insertion(EffectInsertion::Row(*id));
+            self.record_mutation(EffectMutation::Row(*id));
         }
         for id in predicates.keys() {
-            self.record_insertion(EffectInsertion::Predicate(*id));
+            self.record_mutation(EffectMutation::Predicate(*id));
         }
         for id in &choices {
-            self.record_insertion(EffectInsertion::Choice(*id));
+            self.record_mutation(EffectMutation::Choice(*id));
         }
-        self.functions.extend(functions);
+        for (id, function) in functions {
+            self.publish_function(id, function);
+        }
         self.rows.extend(rows);
         self.predicates.extend(predicates);
         self.choices.extend(choices);

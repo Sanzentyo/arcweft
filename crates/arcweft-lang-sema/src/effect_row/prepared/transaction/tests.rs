@@ -152,7 +152,7 @@ fn outer_rollback_removes_restored_terms_whose_ordinals_precede_its_checkpoint()
         Err(PreparedEffectInvariant::StaleReference)
     ));
     assert!(graph.obligations.is_empty());
-    assert!(graph.insertions.is_empty());
+    assert!(graph.journal.is_empty());
 }
 
 #[test]
@@ -288,4 +288,109 @@ fn dropped_term_edit_restores_the_candidate_journal_and_base_stamp() {
         graph.validate_retained_row(&lost),
         Err(PreparedEffectInvariant::StaleReference)
     );
+}
+
+#[test]
+fn candidate_work_does_not_scan_or_copy_unmodified_declaration_headers() {
+    fn measure(unrelated: usize) -> usize {
+        let mut graph = PreparedEffectGraph::default();
+        let mut setup = budget();
+        let scheme = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut setup)
+            .unwrap();
+        for _ in 0..unrelated {
+            graph
+                .declare(vec![], EffectPredicate::unconstrained(), &mut setup)
+                .unwrap();
+        }
+        let references = Arc::strong_count(&graph.functions[&scheme.0.ordinal]);
+        let mut work = Budget(4096);
+        let mut first = graph.checkpoint(&mut work).unwrap();
+        assert_eq!(
+            Arc::strong_count(&graph.functions[&scheme.0.ordinal]),
+            references
+        );
+        graph
+            .prepare_body(&scheme, literal(&["fs.read"]), vec![], &mut work)
+            .unwrap();
+        let left = graph.extract_delta(&mut first, &mut work).unwrap();
+        let mut second = graph.checkpoint(&mut work).unwrap();
+        graph
+            .prepare_body(&scheme, literal(&["fs.read"]), vec![], &mut work)
+            .unwrap();
+        let right = graph.extract_delta(&mut second, &mut work).unwrap();
+        assert_eq!(graph.functions.len(), unrelated + 1);
+        assert_eq!(
+            Arc::strong_count(&graph.functions[&scheme.0.ordinal]),
+            references
+        );
+        assert_eq!(
+            graph
+                .replay_delta_mismatch(
+                    &left,
+                    &right,
+                    [PreparedEffectReplayRoot::Scheme(&scheme, &scheme)],
+                    &mut work
+                )
+                .unwrap(),
+            None
+        );
+        4096 - work.0
+    }
+
+    assert_eq!(measure(0), measure(4096));
+}
+
+#[test]
+fn nested_function_journal_restores_original_definitions_after_transfer_and_commit() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let original = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let original_definition = Arc::clone(&graph.functions[&original.0.ordinal]);
+    let mut outer = graph.checkpoint(&mut work).unwrap();
+    let added = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let inner = graph.checkpoint(&mut work).unwrap();
+    graph
+        .prepare_body(&original, literal(&["fs.read"]), vec![], &mut work)
+        .unwrap();
+    graph
+        .prepare_body(&added, literal(&["log.write"]), vec![], &mut work)
+        .unwrap();
+    graph.commit(&inner).unwrap();
+    let delta = graph.extract_delta(&mut outer, &mut work).unwrap();
+    assert!(Arc::ptr_eq(
+        &graph.functions[&original.0.ordinal],
+        &original_definition
+    ));
+    assert!(matches!(
+        graph.scheme(&added),
+        Err(PreparedEffectInvariant::StaleReference)
+    ));
+    let mut destination = graph.checkpoint(&mut work).unwrap();
+    let child = graph.checkpoint(&mut work).unwrap();
+    graph.restore_delta(delta, &mut work).unwrap();
+    graph.commit(&child).unwrap();
+    let closed = graph.solve_principal(&mut work).unwrap();
+    assert_eq!(
+        closed.scheme(&original).unwrap(),
+        &EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap())
+    );
+    assert_eq!(
+        closed.scheme(&added).unwrap(),
+        &EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap())
+    );
+    graph.rollback(&mut destination).unwrap();
+    assert!(Arc::ptr_eq(
+        &graph.functions[&original.0.ordinal],
+        &original_definition
+    ));
+    assert!(matches!(
+        graph.scheme(&added),
+        Err(PreparedEffectInvariant::StaleReference)
+    ));
+    assert!(graph.journal.is_empty());
 }

@@ -128,15 +128,19 @@ impl PreparedEffectGraph {
         };
         // A body installed on a declaration from the shared base is anchored
         // by that original declaration, even if no expression observes it.
-        for id in &left.baseline_functions {
+        for id in left.functions.keys() {
             replay.visit()?;
-            match (
-                left.functions.contains_key(id),
-                right.functions.contains_key(id),
-            ) {
-                (true, true) => replay.push(Pair::Definition(*id, *id))?,
-                (false, false) => {}
-                _ => return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory)),
+            if self.functions.contains_key(id) {
+                if !right.functions.contains_key(id) {
+                    return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
+                }
+                replay.push(Pair::Definition(*id, *id))?;
+            }
+        }
+        for id in right.functions.keys() {
+            replay.visit()?;
+            if self.functions.contains_key(id) && !left.functions.contains_key(id) {
+                return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
         if left.obligations.len() != right.obligations.len() {
@@ -203,14 +207,13 @@ impl PreparedEffectGraph {
         // Never infer its owner from ordinal order or matching row observations.
         for id in left.functions.keys() {
             replay.visit()?;
-            if !left.baseline_functions.contains(id) && !replay.functions.forward.contains_key(id) {
+            if !self.functions.contains_key(id) && !replay.functions.forward.contains_key(id) {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
         for id in right.functions.keys() {
             replay.visit()?;
-            if !right.baseline_functions.contains(id) && !replay.functions.backward.contains_key(id)
-            {
+            if !self.functions.contains_key(id) && !replay.functions.backward.contains_key(id) {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
@@ -283,8 +286,8 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             self.validate_reference(right)?,
         );
         let (left_base, right_base) = (
-            self.left.baseline_functions.contains(&left),
-            self.right.baseline_functions.contains(&right),
+            self.base.functions.contains_key(&left),
+            self.base.functions.contains_key(&right),
         );
         if left_base || right_base {
             return Ok((!left_base || !right_base || left != right)

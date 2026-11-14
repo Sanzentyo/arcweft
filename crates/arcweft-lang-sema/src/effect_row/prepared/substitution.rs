@@ -363,7 +363,7 @@ impl Drop for PreparedEffectTermEdit<'_> {
             {
                 self.graph.predicates.pop_last();
             }
-            self.graph.insertions.truncate(self.journal_start);
+            self.graph.journal.truncate(self.journal_start);
             self.graph.state = self.original_state;
         }
     }
@@ -448,7 +448,7 @@ impl PreparedEffectGraph {
         PreparedEffectTermEdit {
             row_limit: self.next_row,
             predicate_limit: self.next_predicate,
-            journal_start: self.insertions.len(),
+            journal_start: self.journal.len(),
             original_state: self.state,
             graph: self,
             state: TermEditState::Open,
