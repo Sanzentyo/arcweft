@@ -153,6 +153,7 @@ fn compile_relation<C: DecisionControl>(
 }
 
 impl CompiledComponent {
+    #[cfg(test)]
     pub(super) fn new<C: DecisionControl>(
         graph: &PreparedEffectGraph,
         fixed: &BTreeMap<u64, EffectRow>,

@@ -31,14 +31,6 @@ fn cached<'a, C: DecisionControl>(
 /// The root's public completion boundary has already admitted its full support
 /// (including every actual Future row). Child programs retain unbound Futures;
 /// only their lowering into this proven finite basis uses coefficient tables.
-pub(super) fn lower_imports<C: DecisionControl>(
-    graph: &PreparedEffectGraph,
-    labels: &[EffectId],
-    work: &mut Work<'_, C>,
-) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
-    lower_selected_imports(graph, labels, FunctionInventory::All, work)
-}
-
 pub(super) fn lower_selected_imports<C: DecisionControl>(
     graph: &PreparedEffectGraph,
     labels: &[EffectId],

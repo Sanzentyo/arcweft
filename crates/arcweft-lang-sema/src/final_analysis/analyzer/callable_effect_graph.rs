@@ -961,7 +961,7 @@ mod tests {
     #[test]
     fn source_headers_exist_before_body_typing_and_queries_reuse_the_same_original_schemes() {
         let (staged, mut calls) = staged_fixture(
-            "fn first() -> i64 { 1i64 } fn unused(used: i64 -> i64, unused: i64 -> i64) -> i64 { true }",
+            "fn first() -> i64 { 1i64 }\nfn unused(used: i64 -> i64, unused: i64 -> i64) -> i64 { true }",
         );
         let root = staged
             .bodies
