@@ -18314,3 +18314,23 @@ Supersedes: 直前Sourceのfinal projection readerでtemplateを再び開く経�
 差分9 Rust path、364追加／55削除、物理309 LOC増。投影要求・operand・元query freezeの既存ownerに帰属し、fixtureを子moduleへ置く。raw reviewにLOC／bytes／path分類・inline testを保持する。後続のmaterialization接続、frontend public switch、Fn局所∀／guarded header、body一回準備の最終受入は未完了。copy／allocationの全構築前検査・性能受入は主張しない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。既存resolved graph／逆依存証拠を再利用し、scannerの再実行とはしない。
 
 [検証原本・入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-prepared-projection-ports-checkpoint.raw.zip) は25 entry、455,540 bytes、SHA256 `8c155043a7add0e13e6661e6452a00f087fd1d5f7b244585164871c8da449e5a`。各entryの長さ／SHA256をZIP再読取で照合した。既存履歴の2,813,958 bytes（SHA256 `97a25b3c2e91c7e29b2d78ca7a36d5680f49f7d6807dd87b97333846fc2e7264`）をprefixとして保持する。
+
+<a id="closed-original-components-checkpoint"></a>
+## 2026-11-18 — closed original productからcanonical memberを構築
+
+確認した基点 `main`／`origin/main` は `78c4fa6aeecad419e99cb271dac31096a1358863`。Source `0c1adbae1f0a385e42ca0e6e601c7659614efa45` を既存mainへ通常commit／非forced pushし、公開mainと最終13入力のraw Git blob／作業ファイルSHA256一致を照合した。検証はcommit前の同一bytesを再利用し、commit後の再実行ではない。公開直後のtracked差分0、既存未追跡 `%SystemDrive%/` を保持した。
+
+Supersedes: 元forestの最終処理からcanonical componentを作る接続がないという現状を、今回の内部owner範囲で置き換える。各memberからcallback materializationへ渡すconsumerと旧eager transaction／frontendの移行は未完了であり、公開受入とはしない。唯一の[current-status](current-status.md)の既存4行へ反映し、以前の実測・full SHA・原本を保持する。Generic Matchの受入・公開と保護行bytesは不変。
+
+- `CompletedConstraintComponent::from_closed_original` は、元pathの各applicationが実joint branchの同じopeningであることを確認し、同じclosed-effects ownerからsource／equation／solution／登録済みprojectionを読む。graphは読取だけを渡し、templateの再opening・元Cの再推論・本体の再準備・effect minimumの再計算を行わない。重複domain keyや投影source owner欠落は、上書き／expect panicにせずtyped errorを返す。
+- `OriginalConstraintForest::close` は同じproduct member Arcを確認し、検証した各 `CompletedOriginalMember` にproducer／frontier／pathの実対応とcanonical componentを保持する。proof用joint branchとcanonicalな公開値は異なる役割である。すべてをstagingしてから閉じたforestを公開し、操作失敗は新graph metadataをrollbackして同じaffine forestを返す。member固有の拒否にはそのaddressを保持する。
+- 完了ownerはcanonical actual／expectedとともに `ClosedConstraintProbe` が所有する。元equationは元prepared Cだけを保持し、最終照合がclosed sourceのportを直接借用して正確なowner／source ordinalを確認する。別 `ClosedConstraintRelation`／field、source traceとequationを書き換える `close_source_rows`、未使用のwhole-equation transportを削除した。元traceをActive型だけ、完了traceをClosed型だけにし、旧共用 `ConstraintProbe` enum／reader／`into_closed` 経路も削除した。
+- 旧 `source_trace_cannot_skip_or_repeat_completion` のruntime状態検査は、旧enumでだけ表せた不正状態を対象としていたため削除し、`a_closed_source_keeps_its_exact_completion_owner` に置換した。型の分離はsource設計上の根拠であり、全体compile成功やcompile-failテスト実行を主張しない。元canonical source fixtureの実Named／局所binder／constructor・元C／operand identity・別owner拒否は新readerで保持し、完成componentの値も検査する。繰返しI64／String fixtureは自分の実graphとC receiptを使い、effect変数0を明示してfreezeする。不足Futureへ空値を足すhelperではない。
+
+新規2 fixtureは、実Named本体を後から一度準備し明示した非空Future値で閉じたsource／equationからcanonical memberを作ることと、前memberのcomponentをstagingした後で後memberが失敗した場合の同じforest／C／preparation保持・再試行を検査する。既存共同branch fixtureには自動構築したmemberの対応とcanonical projectionの検査を追加した。新規・置換・移行したfixtureはいずれも未実行。
+
+必須 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は5回すべて終了101。dev01／dev02はlibrary478エラー／25警告・lib test1,537エラー／45警告。旧whole-equation APIを削除しfixtureをoperand APIへ揃えたdev03は478／1,537・25／44警告。旧phase enum削除後のimport漏れが残ったdev04は479／1,533・25／44警告。その実不具合を修復した最終dev05は **library478エラー／25警告・lib test1,532エラー／44警告**。5回のowner fmt apply／checkは終了0。CARGO_INCREMENTAL=0、jobs／profile上書きなし。変更13 pathの一次診断は178件で、旧eager transactionの元original／Future入力1件、旧closed_effects fixture 57件、旧source fixture 28件、旧transaction fixture 92件。新canonical component owner・forest staging・直接source reader・新2 fixture／置換owner testの一次診断は0。ただしこの所在確認は全体コンパイル・テストPASSの証拠ではない。nextest／Clippy／doctest／全推移的逆依存／workspace・Native／AWBC・Native/Web最終受入は未実行。
+
+差分は13 Rust path、841追加／543削除、物理298 LOC増。既存の最終component factoryを正当な所有型へ移し、元forestのstagingとtyped source phaseへ統合した。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。allocation／copyの包括事前検査・single-pass／性能・body一回準備の公開受入は主張しない。旧eager adapterは実original／Future phase入力がなくcompile失敗のままで、成功する互換fallbackではない。callback queue consumer、frontend public switch、Fn局所∀／guarded契約などの残作業は現状一覧に保持する。既存resolved graph／逆依存証拠は再利用し、scannerの再実行とはしない。
+
+[検証原本・全入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-closed-original-components-checkpoint.raw.zip) は37 entry、756,700 bytes、SHA256 `a7cc77eec4eec798408a61e360dc25779a0b59303c926df9bf0c3ae89d69fe85`。各entryの長さ／SHA256をZIP再読取で照合した。旧履歴の2,818,691 bytes（SHA256 `9965292bdecce0b5a0b56d154317a31d5d8df08b027796845248f20c69b01aeb`）をprefixとして保持する。
