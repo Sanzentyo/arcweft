@@ -59,6 +59,52 @@ impl PreparedEffectDefinitions {
 }
 
 impl<'a> PreparedEffectReadView<'a> {
+    /// Enumerate the visible inventories without allocating a copied index.
+    /// The same immutable definition can occur in several retained layers.
+    pub(super) fn visible_function_ids(self) -> impl Iterator<Item = u64> + 'a {
+        self.relation
+            .functions
+            .keys()
+            .chain(
+                self.scope
+                    .into_iter()
+                    .flat_map(|scope| scope.functions.keys()),
+            )
+            .chain(
+                self.scope
+                    .into_iter()
+                    .flat_map(|scope| scope.input.data.functions.keys()),
+            )
+            .chain(
+                self.dependencies
+                    .into_iter()
+                    .flat_map(|scope| scope.data.functions.keys()),
+            )
+            .chain(
+                self.extracted
+                    .into_iter()
+                    .flat_map(|delta| delta.functions.keys()),
+            )
+            .copied()
+    }
+
+    pub(crate) fn validate_unknown(
+        self,
+        unknown: &PreparedEffectUnknownRef,
+    ) -> Result<(), PreparedEffectInvariant> {
+        self.function(&FunctionRef::Unknown(unknown.clone()))
+            .map(|_| ())
+    }
+
+    pub(crate) fn unknown_dependencies(
+        self,
+        unknown: &PreparedEffectUnknownRef,
+    ) -> Result<&'a [GenericEffectReference], PreparedEffectInvariant> {
+        Ok(self
+            .function(&FunctionRef::Unknown(unknown.clone()))?
+            .parameters())
+    }
+
     pub(crate) fn retain_row<C: DecisionControl>(
         self,
         row: &PreparedEffectRow,

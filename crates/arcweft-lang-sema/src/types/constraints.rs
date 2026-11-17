@@ -348,6 +348,15 @@ impl From<crate::effect_row::prepared::PreparedEffectFailure<Self>> for TypeCons
     }
 }
 
+impl From<crate::effect_row::prepared::PreparedEffectInvariant> for TypeConstraintError {
+    fn from(error: crate::effect_row::prepared::PreparedEffectInvariant) -> Self {
+        TypeConstraintInvariant::PreparedEffect(
+            crate::effect_row::prepared::PreparedEffectFailure::Invariant(error),
+        )
+        .into()
+    }
+}
+
 impl
     From<
         crate::effect_row::prepared::PreparedEffectFailure<

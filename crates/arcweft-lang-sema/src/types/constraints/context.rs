@@ -1439,13 +1439,115 @@ where
         application: D::Application,
         parameters: TypeConstraintParameterScope,
         original: super::OriginalProducerContext,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<ConstraintApplicationScope<D>, TypeConstraintError> {
-        Ok(ConstraintApplicationScope::new(
-            application,
-            parameters,
-            self.capture_lexical_scope()?,
-            original,
-        ))
+        self.with_effect_transaction(graph, |context, graph| {
+            use crate::effect_row::prepared::PreparedEffectUnknownEligibility;
+            use std::{collections::BTreeMap, sync::Arc};
+
+            let introduction = Arc::new(context.capture_lexical_scope()?);
+            let mut dependencies = std::collections::BTreeSet::new();
+            // The complete actual Γ is an input, independent of which effect
+            // variables happen to occur in a candidate's row or predicate.
+            let binders = introduction.shape().binders();
+            for (index, binder) in binders.iter().enumerate() {
+                let depth = u32::try_from(binders.len() - index - 1)
+                    .map_err(|_| TypeConstraintAbort::ArithmeticOverflow)?;
+                for slot in 0..binder.effects() {
+                    context.enter_node()?;
+                    dependencies.insert(introduction.shape().bound_effect(depth, slot)?);
+                }
+            }
+            let rigid = original.rigid_scope();
+            if let Some(imported) = rigid.imported {
+                for parameter in imported.parameters() {
+                    context.enter_node()?;
+                    if let super::ConstraintGenericParameterId::Effect(
+                        reference @ GenericEffectReference::Inference(_),
+                    ) = parameter
+                    {
+                        graph
+                            .read()
+                            .validate_unknown(imported.effect_function(reference).ok_or(
+                            crate::effect_row::prepared::PreparedEffectInvariant::ParameterContract,
+                        )?)?;
+                    }
+                }
+            }
+            for reference in rigid.effects.iter().chain(
+                rigid
+                    .imported
+                    .into_iter()
+                    .flat_map(|lease| lease.parameters())
+                    .filter_map(|parameter| match parameter {
+                        super::ConstraintGenericParameterId::Effect(reference) => Some(reference),
+                        _ => None,
+                    }),
+            ) {
+                context.enter_node()?;
+                let reference = original
+                    .admit_effect_reference(
+                        &introduction,
+                        reference,
+                        original.scope(),
+                        introduction.shape(),
+                        context,
+                    )
+                    .map_err(|error| {
+                        Self::binding_transport_error(error, reference.clone().into())
+                    })?;
+                dependencies.insert(reference);
+            }
+            // Reserve the declaration inventory before opening/cloning it.
+            for _ in parameters.effect_contract().variables() {
+                context.enter_node()?;
+            }
+            let variables = parameters.opened_effect_variables();
+            for variable in &variables {
+                if variable.eligibility() == EffectConstraintEligibility::Rigid {
+                    context.enter_node()?;
+                    dependencies.insert(variable.variable().clone());
+                }
+            }
+            let authority: Arc<dyn crate::effect_row::prepared::PreparedEffectParameterScope> =
+                Arc::new(super::application::ApplicationEffectParameterScope {
+                    application: (&parameters).into(),
+                    introduction: Arc::clone(&introduction),
+                });
+            let mut functions = BTreeMap::new();
+            for variable in variables {
+                let eligibility = match variable.eligibility() {
+                    EffectConstraintEligibility::Rigid => continue,
+                    EffectConstraintEligibility::Bindable => {
+                        PreparedEffectUnknownEligibility::Bindable
+                    }
+                    EffectConstraintEligibility::FutureEligible => {
+                        PreparedEffectUnknownEligibility::Future
+                    }
+                };
+                let mut signature = Vec::new();
+                for dependency in &dependencies {
+                    context.enter_node()?;
+                    signature.push(dependency.clone());
+                }
+                context.enter_node()?;
+                let reference = graph.declare_parameter(
+                    variable.variable().clone(),
+                    Arc::clone(&authority),
+                    signature,
+                    eligibility,
+                    context,
+                )?;
+                functions.insert(variable.variable().clone(), reference);
+            }
+            Ok(ConstraintApplicationScope::new(
+                application,
+                parameters,
+                introduction,
+                original,
+                functions,
+            ))
+        })
     }
 
     #[cfg(test)]
@@ -1453,15 +1555,11 @@ where
         &mut self,
         application: D::Application,
         parameters: TypeConstraintParameterScope,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<ConstraintApplicationScope<D>, TypeConstraintError> {
         let introduction = self.capture_lexical_scope()?;
         let original = super::OriginalProducerContext::ground_fixture(introduction.clone());
-        Ok(ConstraintApplicationScope::new(
-            application,
-            parameters,
-            introduction,
-            original,
-        ))
+        self.application_scope(application, parameters, original, graph)
     }
 
     pub(super) fn binding_scope<L>(
@@ -1674,13 +1772,10 @@ where
     pub(super) fn start_path(
         &mut self,
         application: ConstraintApplicationScope<D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
-        let original = self.fixture_original_context(None)?;
-        self.start_path_with_imported(
-            application.with_fixture_original(original.clone()),
-            None,
-            original,
-        )
+        let original = application.original_context().clone();
+        self.start_path_with_imported(application, None, original, graph.read())
     }
 
     #[cfg(test)]
@@ -1688,13 +1783,11 @@ where
         &mut self,
         application: ConstraintApplicationScope<D>,
         imported: Option<super::ImportedGenericParameterScopeLease>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         let original = self.fixture_original_context(imported.as_ref())?;
-        self.start_path_with_imported(
-            application.with_fixture_original(original.clone()),
-            imported,
-            original,
-        )
+        let application = application.with_fixture_original(original.clone(), graph, self)?;
+        self.start_path_with_imported(application, imported, original, graph.read())
     }
 
     pub(super) fn start_path_with_imported(
@@ -1702,6 +1795,7 @@ where
         application: ConstraintApplicationScope<D>,
         imported: Option<super::ImportedGenericParameterScopeLease>,
         original: super::OriginalProducerContext,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.check_cancelled()?;
         if application.original_context() != &original {
@@ -1710,11 +1804,20 @@ where
             ));
         }
         self.charge_counter(1, Counter::Branches)?;
+        application.validate_effect_functions(graph, self)?;
+        for _ in application.effects().variables() {
+            self.enter_node()?;
+        }
         let mut variables = application.parameters().opened_effect_variables();
         if let Some(imported) = &imported {
             for parameter in imported.parameters() {
                 self.enter_node()?;
                 if let super::ConstraintGenericParameterId::Effect(reference) = parameter {
+                    if matches!(reference, GenericEffectReference::Inference(_)) {
+                        graph.validate_unknown(imported.effect_function(reference).ok_or(
+                            crate::effect_row::prepared::PreparedEffectInvariant::ParameterContract,
+                        )?)?;
+                    }
                     variables.push(EffectConstraintVariable::new(
                         reference.clone(),
                         if imported.permits_local_inference(parameter) {
@@ -1761,6 +1864,7 @@ where
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.check_cancelled()?;
+        application.validate_effect_functions(graph.read(), self)?;
         path.applications
             .validate_admission(&application)
             .map_err(|error| {

@@ -437,7 +437,10 @@ impl OriginalProducerContext {
             })
     }
 
-    fn admit_effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(in crate::types::constraints) fn admit_effect_reference<
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+    >(
         &self,
         target_scope: &ConstraintLexicalScope,
         reference: &GenericEffectReference,

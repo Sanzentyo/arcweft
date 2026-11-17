@@ -407,13 +407,20 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
                 Function::Unknown {
                     parameters: left,
                     eligibility: left_role,
+                    origin: left_origin,
                 },
                 Function::Unknown {
                     parameters: right,
                     eligibility: right_role,
+                    origin: right_origin,
                 },
             ) => {
-                if !self.parameters(left, right)? || left_role != right_role {
+                let same_origin = match (left_origin, right_origin) {
+                    (None, None) => true,
+                    (Some(left), Some(right)) => left.same_origin(right, self.control)?,
+                    _ => false,
+                };
+                if !same_origin || !self.parameters(left, right)? || left_role != right_role {
                     return Ok(Some(PreparedEffectReplayMismatch::FunctionDefinition));
                 }
             }

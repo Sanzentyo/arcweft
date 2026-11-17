@@ -1151,7 +1151,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     {
         let result = context.with_effect_transaction(graph, |context, graph| {
             original.validate_imported_in(&nested.path.applications, context)?;
-            let scope = context.application_scope(application, parameters, original)?;
+            let scope = context.application_scope(application, parameters, original, graph)?;
             let application = scope.id();
             context
                 .admit_application(nested.path, scope, graph)
@@ -1221,10 +1221,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         A: TypeConstraintAccounting,
     {
         match context.with_effect_transaction(graph, |context, graph| {
-            let scope = context.application_scope(application, parameters, original.clone())?;
+            let scope =
+                context.application_scope(application, parameters, original.clone(), graph)?;
             let application = scope.id();
             context
-                .start_path_with_imported(scope, imported, original)
+                .start_path_with_imported(scope, imported, original, graph.read())
                 .and_then(|path| {
                     Self::from_path(context, graph, application, path, inherited.as_ref())
                 })

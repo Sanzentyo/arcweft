@@ -70,6 +70,10 @@ impl Debug for OriginalProducerContext {
 }
 
 impl OriginalProducerContext {
+    pub(super) fn rigid_scope(&self) -> OriginalRigidScope<'_> {
+        self.0.source.rigid_scope()
+    }
+
     pub(super) fn validate_imported_in<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         inventory: &super::application::ConstraintApplicationInventory<D>,

@@ -39,7 +39,9 @@ pub(crate) use completion::residual::{
 pub(crate) use completion::{
     GuardedEffectFunction, PreparedEffectImportedRef, ScopedEffectCompletion,
 };
-pub(crate) use functions::{PreparedEffectUnknownEligibility, PreparedEffectUnknownRef};
+pub(crate) use functions::{
+    PreparedEffectParameterScope, PreparedEffectUnknownEligibility, PreparedEffectUnknownRef,
+};
 mod scoped;
 pub(crate) use closure::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
@@ -140,6 +142,8 @@ pub(crate) enum PreparedEffectInvariant {
     SchemeState,
     #[error("effect scheme parameter occurs more than once")]
     DuplicateParameter,
+    #[error("effect parameter was registered with a different introduction contract")]
+    ParameterContract,
     #[error("effect scheme application has the wrong argument count")]
     ApplicationArity,
     #[error("effect scheme body refers to an undeclared parameter: {0:?}")]

@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 
 use super::{
     ConstraintDomain, TypeConstraintParameterScope,
-    application::ConstraintApplicationScope,
     context::{
         LocalConstraintAccounting, TypeConstraintAccounting, TypeConstraintContext,
         TypeConstraintContextIssuer, TypeConstraintLimits,
@@ -17,11 +16,8 @@ use super::{
 /// Standalone callback-protocol fixtures need an opening even when they do
 /// not execute a lower transaction. Tests that project a path use its real ID.
 pub(crate) fn source_id<S: Copy>(local: S) -> super::ConstraintSourceId<S> {
-    let scope = ConstraintApplicationScope::<super::NoConstraintClient>::test_root(
-        (),
-        TypeConstraintParameterScope::empty(),
-    );
-    super::ConstraintSourceId::new(scope.id(), local)
+    let parameters = TypeConstraintParameterScope::empty();
+    super::ConstraintSourceId::new((&parameters).into(), local)
 }
 
 pub(in crate::types) fn fixture_relate_selected_call<A, D, L: Clone>(
@@ -82,22 +78,21 @@ impl<'c, A: TypeConstraintAccounting, D: ConstraintDomain> ConstraintTestSetup<'
         (self.context, self.parameters)
     }
 
-    pub(crate) fn into_path(mut self) -> (TypeConstraintContext<'c, A, D>, ConstraintPath<D>)
+    pub(crate) fn into_path(
+        mut self,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    ) -> (TypeConstraintContext<'c, A, D>, ConstraintPath<D>)
     where
         D::Application: Default,
     {
-        let predicate = self
-            .parameters
-            .opened_effect_predicate(&mut self.context)
-            .expect("fixture predicate belongs to its actual opening");
-        let effects = crate::effect_row::EffectConstraintEnvironment::new_prepared(
-            &self.parameters.opened_effect_variables(),
-            &predicate,
-            &mut self.context,
-        )
-        .expect("fixture effect inventory is canonical");
-        let application =
-            ConstraintApplicationScope::test_root(D::Application::default(), self.parameters);
-        (self.context, ConstraintPath::empty(application, effects))
+        let application = self
+            .context
+            .fixture_application_scope(D::Application::default(), self.parameters, graph)
+            .expect("fixture application retains its original graph functions");
+        let path = self
+            .context
+            .start_path(application, graph)
+            .expect("fixture path admits the actual effect function handles");
+        (self.context, path)
     }
 }

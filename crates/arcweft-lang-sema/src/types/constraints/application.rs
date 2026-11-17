@@ -14,11 +14,15 @@ use super::{ConstraintDomain, TypeConstraintInvariant, TypeConstraintParameterSc
 use crate::types::generics::GenericApplicationIssuer;
 use crate::{
     effect_row::EffectConstraintEligibility,
+    effect_row::prepared::{PreparedEffectParameterScope, PreparedEffectUnknownRef},
     types::{GenericConstReference, GenericEffectReference, GenericTypeReference},
 };
 
 mod captures;
 pub(super) use captures::RetainedRigidGenericScope;
+
+#[cfg(test)]
+mod effect_functions_tests;
 
 /// Private owner contract retained by an imported scope lease. Only a real
 /// admitted application scope implements this trait.
@@ -30,6 +34,10 @@ trait ImportedApplicationScopeAuthority {
     fn original_context(&self) -> &super::OriginalProducerContext;
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
     fn permits_local_inference(&self, parameter: &super::ConstraintGenericParameterId) -> bool;
+    fn effect_function(
+        &self,
+        parameter: &GenericEffectReference,
+    ) -> Option<&PreparedEffectUnknownRef>;
 }
 
 /// One exact application owner and the parameters that owner admitted.
@@ -46,6 +54,17 @@ impl ApplicationParameterScopeLease {
 
     pub(super) fn original_context(&self) -> &super::OriginalProducerContext {
         self.owner.original_context()
+    }
+
+    fn effect_function(
+        &self,
+        parameter: &GenericEffectReference,
+    ) -> Option<&PreparedEffectUnknownRef> {
+        self.contains(&super::ConstraintGenericParameterId::Effect(
+            parameter.clone(),
+        ))
+        .then(|| self.owner.effect_function(parameter))
+        .flatten()
     }
 
     fn id(&self) -> ConstraintApplicationId {
@@ -116,6 +135,23 @@ impl std::fmt::Debug for ImportedGenericParameterScopeLease {
 }
 
 impl ImportedGenericParameterScopeLease {
+    pub(super) fn effect_function(
+        &self,
+        parameter: &GenericEffectReference,
+    ) -> Option<&PreparedEffectUnknownRef> {
+        let GenericEffectReference::Inference(inference) = parameter else {
+            return None;
+        };
+        let index = self
+            .applications
+            .binary_search_by_key(
+                &ConstraintApplicationId(inference.issuer()),
+                ApplicationParameterScopeLease::id,
+            )
+            .ok()?;
+        self.applications[index].effect_function(parameter)
+    }
+
     /// Child Γ may retain only a loan already owned by its exact parent path.
     /// Re-exporting the declared keys compares real owners and narrowed
     /// captures, not just membership in a receiving parameter inventory.
@@ -183,6 +219,12 @@ impl ImportedGenericParameterScopeLease {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct ConstraintApplicationId(GenericApplicationIssuer);
 
+impl From<&TypeConstraintParameterScope> for ConstraintApplicationId {
+    fn from(parameters: &TypeConstraintParameterScope) -> Self {
+        Self(parameters.application_issuer())
+    }
+}
+
 /// A domain source is local to one application. Keeping its opening here
 /// distinguishes repeated argument slots and declaration-authored defaults
 /// without requiring the domain to invent globally unique source coordinates.
@@ -210,8 +252,33 @@ impl<S: Copy> ConstraintSourceId<S> {
 pub(super) struct ConstraintApplicationScope<D: ConstraintDomain> {
     application: D::Application,
     parameters: TypeConstraintParameterScope,
-    introduction: ConstraintLexicalScope,
+    introduction: Arc<ConstraintLexicalScope>,
     original: super::OriginalProducerContext,
+    effect_functions: BTreeMap<GenericEffectReference, PreparedEffectUnknownRef>,
+}
+
+/// Share actual frame identity with the application while keeping the graph
+/// independent of source producers and their mutable inference machinery.
+#[derive(Debug)]
+pub(super) struct ApplicationEffectParameterScope {
+    pub(super) application: ConstraintApplicationId,
+    pub(super) introduction: Arc<ConstraintLexicalScope>,
+}
+
+impl PreparedEffectParameterScope for ApplicationEffectParameterScope {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn comparison_work(&self) -> usize {
+        self.introduction.shape().binders().len()
+    }
+
+    fn same_scope(&self, other: &dyn PreparedEffectParameterScope) -> bool {
+        other.as_any().downcast_ref::<Self>().is_some_and(|other| {
+            self.application == other.application && self.introduction == other.introduction
+        })
+    }
 }
 
 /// Read-only authority of the exact application that introduced a binding key.
@@ -227,26 +294,31 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
     pub(super) fn test_root(
         application: D::Application,
         parameters: TypeConstraintParameterScope,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut super::context::TypeConstraintContext<
+            '_,
+            impl super::context::TypeConstraintAccounting,
+            D,
+        >,
     ) -> Self {
-        Self::new(
-            application,
-            parameters,
-            ConstraintLexicalScope::default(),
-            super::OriginalProducerContext::ground_fixture(Default::default()),
-        )
+        context
+            .fixture_application_scope(application, parameters, graph)
+            .unwrap()
     }
 
     pub(super) fn new(
         application: D::Application,
         parameters: TypeConstraintParameterScope,
-        introduction: ConstraintLexicalScope,
+        introduction: Arc<ConstraintLexicalScope>,
         original: super::OriginalProducerContext,
+        effect_functions: BTreeMap<GenericEffectReference, PreparedEffectUnknownRef>,
     ) -> Self {
         Self {
             application,
             parameters,
             introduction,
             original,
+            effect_functions,
         }
     }
 
@@ -255,7 +327,7 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
     }
 
     pub(super) fn id(&self) -> ConstraintApplicationId {
-        ConstraintApplicationId(self.parameters.application_issuer())
+        (&self.parameters).into()
     }
 
     pub(super) const fn parameters(&self) -> &TypeConstraintParameterScope {
@@ -268,6 +340,38 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
 
     pub(super) fn original_context(&self) -> &super::OriginalProducerContext {
         &self.original
+    }
+
+    pub(super) fn effect_function(
+        &self,
+        parameter: &GenericEffectReference,
+    ) -> Option<&PreparedEffectUnknownRef> {
+        self.effect_functions.get(parameter)
+    }
+
+    pub(super) fn validate_effect_functions<A: super::context::TypeConstraintAccounting>(
+        &self,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), super::TypeConstraintError> {
+        for function in self.effect_functions.values() {
+            context.enter_node()?;
+            graph.validate_unknown(function)?;
+        }
+        Ok(())
+    }
+
+    /// Rebuild fixture source authority through the same checked declaration
+    /// boundary. An imported Γ cannot be installed after registration by merely
+    /// mutating the source lease.
+    #[cfg(test)]
+    pub(super) fn with_fixture_original<A: super::context::TypeConstraintAccounting>(
+        self,
+        original: super::OriginalProducerContext,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, super::TypeConstraintError> {
+        context.application_scope(self.application, self.parameters, original, graph)
     }
 
     pub(super) fn admits_template_parameter(
@@ -286,15 +390,6 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
             }
         };
         own || self.original.admits_parameter(parameter)
-    }
-
-    #[cfg(test)]
-    pub(super) fn with_fixture_original(
-        mut self,
-        original: super::OriginalProducerContext,
-    ) -> Self {
-        self.original = original;
-        self
     }
 
     pub(super) const fn effects(&self) -> &TypeConstraintEffectScope {
@@ -327,6 +422,7 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
                 && self.parameters() == other.parameters()
                 && self.introduction_scope() == other.introduction_scope()
                 && self.original_context() == other.original_context()
+                && self.effect_functions == other.effect_functions
         })
     }
 
@@ -360,6 +456,13 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
             }
         }
     }
+
+    fn effect_function(
+        &self,
+        parameter: &GenericEffectReference,
+    ) -> Option<&PreparedEffectUnknownRef> {
+        self.effect_function(parameter)
+    }
 }
 
 /// Admitted application membership, independent of source-path lineage.
@@ -382,6 +485,31 @@ impl<D: ConstraintDomain> Clone for ConstraintApplicationInventory<D> {
 }
 
 impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
+    pub(super) fn effect_function(
+        &self,
+        parameter: &GenericEffectReference,
+    ) -> Option<&PreparedEffectUnknownRef> {
+        let GenericEffectReference::Inference(inference) = parameter else {
+            return None;
+        };
+        match self
+            .applications
+            .get(&ConstraintApplicationId(inference.issuer()))
+        {
+            Some(owner) => owner.effect_function(parameter),
+            None => {
+                let index = self
+                    .imported
+                    .binary_search_by_key(
+                        &ConstraintApplicationId(inference.issuer()),
+                        ApplicationParameterScopeLease::id,
+                    )
+                    .ok()?;
+                self.imported[index].effect_function(parameter)
+            }
+        }
+    }
+
     pub(super) fn empty() -> Self {
         Self {
             applications: BTreeMap::new(),

@@ -2,6 +2,34 @@
 
 use super::*;
 
+/// Opaque authority for the actual lexical opening that introduced a Γ
+/// parameter. The graph retains identity, never a source-layer resolver.
+pub(crate) trait PreparedEffectParameterScope: std::fmt::Debug + Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn comparison_work(&self) -> usize;
+    fn same_scope(&self, other: &dyn PreparedEffectParameterScope) -> bool;
+}
+
+#[derive(Debug)]
+pub(super) struct ParameterOrigin {
+    variable: GenericEffectReference,
+    scope: Arc<dyn PreparedEffectParameterScope>,
+}
+
+impl ParameterOrigin {
+    pub(super) fn same_origin<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        for _ in 0..self.scope.comparison_work() {
+            work.charge(DecisionWork::Visit)?;
+        }
+        Ok(self.variable == other.variable && self.scope.same_scope(other.scope.as_ref()))
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PreparedEffectUnknownRef(PreparedEffectReference);
 
@@ -45,6 +73,7 @@ pub(super) enum Function {
     Unknown {
         parameters: Box<[GenericEffectReference]>,
         eligibility: PreparedEffectUnknownEligibility,
+        origin: Option<ParameterOrigin>,
     },
 }
 
@@ -126,6 +155,72 @@ impl PreparedEffectGraph {
             Function::Unknown {
                 parameters: dependencies.into_boxed_slice(),
                 eligibility,
+                origin: None,
+            },
+            &mut work,
+        )?;
+        Ok(PreparedEffectUnknownRef(self.reference(id)))
+    }
+
+    /// Register an actual opened Γ variable once. Repeated admissions of that
+    /// opening share its graph function; a changed scope/signature is an error.
+    /// Lookup happens only at declaration. Consumers retain the issued handle,
+    /// so a rolled-back handle cannot resolve to a later declaration by name.
+    pub(crate) fn declare_parameter<C: DecisionControl>(
+        &mut self,
+        variable: GenericEffectReference,
+        scope: Arc<dyn PreparedEffectParameterScope>,
+        dependencies: Vec<GenericEffectReference>,
+        eligibility: PreparedEffectUnknownEligibility,
+        control: &mut C,
+    ) -> Result<PreparedEffectUnknownRef, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        let unique = Self::validate_parameters(&dependencies, &mut work)?;
+        if !matches!(variable, GenericEffectReference::Inference(_)) || unique.contains(&variable) {
+            return Err(PreparedEffectInvariant::ParameterContract.into());
+        }
+        let mut existing = None;
+        let read = self.read();
+        for id in read.visible_function_ids() {
+            work.charge(DecisionWork::Visit)?;
+            let definition = read
+                .function_definition(id)
+                .ok_or(PreparedEffectInvariant::StaleReference)?;
+            let Function::Unknown {
+                parameters,
+                eligibility: previous_eligibility,
+                origin: Some(previous),
+            } = definition.as_ref()
+            else {
+                continue;
+            };
+            if previous.variable != variable {
+                continue;
+            }
+            // Bill the signature comparison before inspecting its elements.
+            for _ in parameters.iter() {
+                work.charge(DecisionWork::Visit)?;
+            }
+            for _ in 0..previous.scope.comparison_work() {
+                work.charge(DecisionWork::Visit)?;
+            }
+            if !previous.scope.same_scope(scope.as_ref())
+                || parameters.as_ref() != dependencies.as_slice()
+                || previous_eligibility != &eligibility
+                || existing.is_some_and(|previous_id| previous_id != id)
+            {
+                return Err(PreparedEffectInvariant::ParameterContract.into());
+            }
+            existing = Some(id);
+        }
+        if let Some(id) = existing {
+            return Ok(PreparedEffectUnknownRef(self.reference(id)));
+        }
+        let id = self.insert_function(
+            Function::Unknown {
+                parameters: dependencies.into_boxed_slice(),
+                eligibility,
+                origin: Some(ParameterOrigin { variable, scope }),
             },
             &mut work,
         )?;
