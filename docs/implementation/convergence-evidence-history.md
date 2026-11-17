@@ -18097,3 +18097,7 @@ Supersedes: 現状一覧の効果代数の「検証済み」は旧Sourceの実�
 原本 [task-relation-principal-import-checkpoint.raw.zip](acceptance-evidence/task-relation-principal-import-checkpoint.raw.zip) は29 entries、ZIP 582641 bytes、SHA-256 `91b3c3476ac2e6514693ab8a1c0ddcb2ade240871ff821f3d9f500bfb1dab064`。4回のCargo入力・失敗ログ・fmt、公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
 
 +訂正 2026-11-18、Source `628181d47da1fc3bf5f57d9c6007078e2ce1e4a1`：上の「Arc identityはcache共有だけに使い」は限定が不正確である。import_relation_functionは元ScopedEffectCompletionのsnapshot一致、readのvalidate_ownerはgraph issuerのprovenanceにもArc identityを使う。Cache共有とprovenance認証はいずれもsemantic equalityの証明ではない、という区別へ訂正する。原本ZIPの当時のreview記述・SHA、コード、実測は保持する。
+
+## Workspace clean 2026-11-18
+
+2026-11-18 02:09:42–02:09:43 JST、Source `76d9f9d451c6c5cc5d32114d3bd9d24885d13014`。ユーザーの回答「cargo clean で全体を削除する」に従い、既存mainのworkspace rootで全体の `cargo clean` を実行し、終了0、2,123 files／424.0 MiBを削除した。Cargo metadataで実targetが `D:\git\arcweft\target` と一致し、Cargo／rustcが停止していることを実行前に確認した。実行後のtarget不存在、HEAD・tracked差分・未追跡inventoryの不変を確認した。既存の未追跡 `%SystemDrive%/` は保持した。過去のclean実測とは別の今回の実施記録であり、以前のSHA・削除量・検証結果を書き換えない。この操作後のbuild／testは未実行。既受入機能の状態は変更しない。
