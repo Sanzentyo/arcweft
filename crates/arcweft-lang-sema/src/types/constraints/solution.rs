@@ -30,7 +30,7 @@ use super::{
 mod residual;
 use residual::ResidualGenericBinder;
 mod completed_context;
-use super::transaction::ConstraintOperand;
+use super::transaction::{ConstraintInferenceBranch, ConstraintOperand};
 pub(super) use completed_context::CompletedConstraintType;
 use completed_context::{CompletedGenericContext, CompletedValue};
 mod instantiation;
@@ -264,11 +264,11 @@ impl TypeConstraintSolution {
         }
     }
 
-    pub(super) fn reify_projection<A: TypeConstraintAccounting, D: ConstraintDomain, P>(
+    pub(super) fn reify_projection<A: TypeConstraintAccounting, D: ConstraintDomain, P, L>(
         &self,
         key: Arc<P>,
         ty: &ConstraintOperand<D>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: super::application::ConstraintApplicationId,
         closure: ConstraintClosurePolicy,
         effects: &Arc<ConstraintClosedEffects<D>>,
@@ -306,10 +306,10 @@ impl TypeConstraintSolution {
 
     /// An already evaluated input is closed in the same actual ambient
     /// context as the projection. It introduces no result quantifiers.
-    pub(super) fn reify_projection_input<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn reify_projection_input<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         ty: &ConstraintOperand<D>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: super::application::ConstraintApplicationId,
         effects: &Arc<ConstraintClosedEffects<D>>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
@@ -326,8 +326,8 @@ impl TypeConstraintSolution {
     }
 
     #[cfg(test)]
-    pub(super) fn complete_application<A, D>(
-        path: &ConstraintPath<D>,
+    pub(super) fn complete_application<A, D, L>(
+        path: &ConstraintInferenceBranch<D, L>,
         application: super::application::ConstraintApplicationId,
         effects: &Arc<ConstraintClosedEffects<D>>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
@@ -342,8 +342,8 @@ impl TypeConstraintSolution {
 
     /// Seal one application from the immutable effect completion shared by
     /// its source rows, selected equations, and sibling applications.
-    pub(super) fn complete_application_with_effects<A, D>(
-        path: &ConstraintPath<D>,
+    pub(super) fn complete_application_with_effects<A, D, L>(
+        path: &ConstraintInferenceBranch<D, L>,
         application: super::application::ConstraintApplicationId,
         effects: &Arc<ConstraintClosedEffects<D>>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
@@ -510,8 +510,8 @@ impl TypeConstraintSolution {
         )
     }
 
-    fn seal_application<A, D>(
-        path: &ConstraintPath<D>,
+    fn seal_application<A, D, L>(
+        path: &ConstraintInferenceBranch<D, L>,
         application: &super::application::ConstraintApplicationScope<D>,
         effects: &Arc<ConstraintClosedEffects<D>>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
@@ -522,7 +522,7 @@ impl TypeConstraintSolution {
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
-        effects.require_path(path)?;
+        effects.require_branch(path)?;
         let source_bindings = path
             .bindings
             .iter()

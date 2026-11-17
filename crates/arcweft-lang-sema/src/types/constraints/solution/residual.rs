@@ -8,8 +8,9 @@ use super::super::super::{
     GenericScope, GenericScopeError, GenericTypeReference,
 };
 use super::super::application::ConstraintApplicationScope;
+use super::super::transaction::ConstraintInferenceBranch;
 use super::super::{
-    ConstraintDomain, ConstraintPath, TypeConstraintConstEligibility, TypeConstraintError,
+    ConstraintDomain, TypeConstraintConstEligibility, TypeConstraintError,
     TypeConstraintParameterEligibility,
 };
 
@@ -25,8 +26,8 @@ pub(super) struct ResidualGenericBinder {
 }
 
 impl ResidualGenericBinder {
-    pub(super) fn for_application<D: ConstraintDomain>(
-        path: &ConstraintPath<D>,
+    pub(super) fn for_application<D: ConstraintDomain, L>(
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
     ) -> Result<Self, TypeConstraintError> {
         let scope = application.parameters();

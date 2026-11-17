@@ -69,17 +69,18 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reify_type<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         ty: &super::super::ConstraintOperand<D>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         retained_predicate: Option<&CompletedValue<EffectPredicate>>,
         effects: &Arc<ConstraintClosedEffects<D>>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<TypeKind>, TypeConstraintError> {
-        effects.require_path(path)?;
+        effects.require_branch(path)?;
         path.projection_view()
             .admit_operand(ty.view(), graph, context)?;
         context.with_original_scope(ty.scope().clone(), |context| {
@@ -97,10 +98,11 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reopen_type<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         ty: &CompletedValue<TypeKind>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
@@ -111,10 +113,11 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reify_length<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         length: &super::super::ConstraintOperand<D, ArrayLength>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<ArrayLength>, TypeConstraintError> {
@@ -135,10 +138,11 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reopen_length<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         length: &CompletedValue<ArrayLength>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ArrayLength, TypeConstraintError> {
@@ -157,10 +161,11 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reify_effect_row<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         row: &super::super::ConstraintOperand<D, EffectRow>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<EffectRow>, TypeConstraintError> {
@@ -178,10 +183,11 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reopen_effect_row<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         row: &CompletedValue<EffectRow>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectRow, TypeConstraintError> {
@@ -192,10 +198,11 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reify_effect_predicate<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         predicate: &super::super::ConstraintOperand<D, EffectPredicate>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<EffectPredicate>, TypeConstraintError> {
@@ -213,10 +220,11 @@ impl CompletedGenericContext {
     pub(in crate::types::constraints::solution) fn reopen_effect_predicate<
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
+        L,
     >(
         &self,
         predicate: &CompletedValue<EffectPredicate>,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectPredicate, TypeConstraintError> {
@@ -484,12 +492,12 @@ impl ContextReferenceMap<'_> {
             })
     }
 
-    fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         reference: &GenericTypeReference,
         source: &GenericScope,
         target: &GenericScope,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericTypeReference, TypeConstraintError> {
@@ -544,12 +552,12 @@ impl ContextReferenceMap<'_> {
         }
     }
 
-    fn const_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn const_reference<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         reference: &GenericConstReference,
         source: &GenericScope,
         target: &GenericScope,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericConstReference, TypeConstraintError> {
@@ -604,12 +612,12 @@ impl ContextReferenceMap<'_> {
         }
     }
 
-    fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         reference: &GenericEffectReference,
         source: &GenericScope,
         target: &GenericScope,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         root_header: bool,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -668,12 +676,12 @@ impl ContextReferenceMap<'_> {
         }
     }
 
-    fn length<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn length<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         length: &ArrayLength,
         source: &GenericScope,
         target: &GenericScope,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ArrayLength, TypeConstraintError> {
@@ -689,10 +697,10 @@ impl ContextReferenceMap<'_> {
         }
     }
 
-    fn map_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn map_type<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         ty: &TypeKind,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
@@ -735,10 +743,10 @@ impl ContextReferenceMap<'_> {
         .map_err(fold_error)
     }
 
-    fn map_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn map_row<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         row: &EffectRow,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectRow, TypeConstraintError> {
@@ -758,10 +766,10 @@ impl ContextReferenceMap<'_> {
         .map_err(fold_error)
     }
 
-    fn map_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn map_predicate<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
         &self,
         predicate: &EffectPredicate,
-        path: &ConstraintPath<D>,
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectPredicate, TypeConstraintError> {

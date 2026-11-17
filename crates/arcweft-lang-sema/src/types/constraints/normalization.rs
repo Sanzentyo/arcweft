@@ -264,7 +264,7 @@ impl<A, P> KeyedConstraintProjection<A, P> {
 
     pub(crate) fn to_quantified_type(
         &self,
-    ) -> Result<TypeKind<PreparedEffects>, super::solution::TypeInstantiationError> {
+    ) -> Result<TypeKind, super::solution::TypeInstantiationError> {
         self.value.quantify()
     }
 }
@@ -644,18 +644,24 @@ where
     // probe ownership stay in their consumed path, including on failure.
     let source = std::mem::take(&mut sealed.bindings);
     let const_source = std::mem::take(&mut sealed.const_bindings);
-    let source_view = ConstraintProjectionView {
-        applications: &source_applications,
-        effects: &sealed.effects,
-        bindings: &source,
-        const_bindings: &const_source,
-    };
     for (parameter, value) in &source {
         let mut visiting = BTreeSet::new();
         // Authenticate the stored root before entering its scope. The key
         // establishes the binding owner, never the replacement's provenance.
-        source_view.binding(parameter)?;
+        ConstraintProjectionView {
+            applications: &source_applications,
+            effects: &sealed.effects,
+            bindings: &source,
+            const_bindings: &const_source,
+        }
+        .binding(parameter)?;
         context.with_original_scope(value.scope().clone(), |context| {
+            let source_view = ConstraintProjectionView {
+                applications: &source_applications,
+                effects: &sealed.effects,
+                bindings: &source,
+                const_bindings: &const_source,
+            };
             let projected = projection::seal_type_operand(
                 value.view(),
                 source_view,
@@ -668,8 +674,20 @@ where
     }
     for (parameter, value) in &const_source {
         let mut visiting = BTreeSet::new();
-        source_view.const_binding(parameter)?;
+        ConstraintProjectionView {
+            applications: &source_applications,
+            effects: &sealed.effects,
+            bindings: &source,
+            const_bindings: &const_source,
+        }
+        .const_binding(parameter)?;
         context.with_original_scope(value.scope().clone(), |context| {
+            let source_view = ConstraintProjectionView {
+                applications: &source_applications,
+                effects: &sealed.effects,
+                bindings: &source,
+                const_bindings: &const_source,
+            };
             let projected = projection::project_const_operand(
                 value.view(),
                 source_view,

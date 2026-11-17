@@ -71,8 +71,8 @@ impl CompletedConstraintType {
 }
 
 impl CompletedGenericContext {
-    pub(super) fn for_application<A: TypeConstraintAccounting, D: ConstraintDomain>(
-        path: &ConstraintPath<D>,
+    pub(super) fn for_application<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
+        path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {

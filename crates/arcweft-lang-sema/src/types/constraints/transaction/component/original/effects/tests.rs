@@ -494,3 +494,89 @@ fn cancellation_does_not_consume_or_publish_a_prepared_forest() {
     assert!(Arc::ptr_eq(&members, &closed.products[0].members));
     assert!(closed.products[0].result.is_ok());
 }
+
+#[test]
+fn actual_closed_joint_products_seal_each_application_and_canonical_projection() {
+    use crate::types::constraints::{
+        ConstraintClosurePolicy, TypeConstraintSolution, normalization::project_closed_operand,
+        transaction::ConstraintOperand,
+    };
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let mut component = Component::new(&mut context, &graph).unwrap();
+    let members = [
+        root(
+            &mut component,
+            &mut context,
+            &mut graph,
+            EffectPredicate::unconstrained(),
+            false,
+        ),
+        root(
+            &mut component,
+            &mut context,
+            &mut graph,
+            EffectPredicate::unconstrained(),
+            false,
+        ),
+    ];
+    let forest = component
+        .infer_original_products(&mut context, &mut graph)
+        .unwrap();
+    let closed = forest.close(&[], &mut graph, &mut context).unwrap();
+    let product = &closed.products[0];
+    let joint = &product.result.as_ref().unwrap()[0];
+    assert!(Arc::ptr_eq(&joint.branch.lineage, &product.members));
+    let frames = context.lexical_frames().clone();
+    for member in members {
+        let source = closed.original.original_path(member).unwrap();
+        let application = source.root_id();
+        let request = &source.lineage.projections[0];
+        context
+            .with_original_scope(product.scope.clone(), |context| {
+                let solution = TypeConstraintSolution::complete_application_with_effects(
+                    &joint.branch,
+                    application,
+                    &joint.effects,
+                    graph.read(),
+                    context,
+                )?;
+                assert!(solution.bindings().next().is_none());
+                assert!(solution.effect_predicate().value().is_unconstrained());
+                context.enter_node()?;
+                let input = ConstraintOperand::template(
+                    request.value.clone(),
+                    Arc::new(product.scope.clone()),
+                    joint
+                        .branch
+                        .applications
+                        .require_application_owner(application)?,
+                );
+                let value = project_closed_operand(
+                    input.view(),
+                    &joint.branch,
+                    ConstraintClosurePolicy::ProjectionClosed,
+                    &joint.effects,
+                    graph.read(),
+                    context,
+                )?;
+                let projection = solution.reify_projection(
+                    Arc::clone(&request.key),
+                    &value,
+                    &joint.branch,
+                    application,
+                    ConstraintClosurePolicy::ProjectionClosed,
+                    &joint.effects,
+                    graph.read(),
+                    context,
+                )?;
+                let canonical: TypeKind = projection.to_quantified_type().unwrap();
+                assert_eq!(canonical, TypeKind::I64);
+                Ok::<_, TypeConstraintError>(())
+            })
+            .unwrap();
+    }
+    assert_eq!(context.lexical_frames(), &frames);
+    assert!(Arc::ptr_eq(&joint.branch.lineage, &product.members));
+}

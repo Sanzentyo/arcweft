@@ -76,9 +76,6 @@ fn completed_reification_uses_the_original_named_closure_and_actual_operand() {
     let named = graph
         .declare(vec![], EffectPredicate::unconstrained(), &mut context)
         .unwrap();
-    let untouched = graph
-        .declare(vec![], EffectPredicate::unconstrained(), &mut context)
-        .unwrap();
     let actual = EffectRow::closed(EffectSet::from_labels(["body.actual"]).unwrap());
     graph
         .prepare_body(
@@ -92,6 +89,12 @@ fn completed_reification_uses_the_original_named_closure_and_actual_operand() {
     let original = original(&path, &value, &mut graph, &mut context);
     let effects =
         ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, &mut context).unwrap();
+    // The original closure needs every original Named body. A declaration
+    // introduced afterwards is outside that immutable calculation, and this
+    // reader must not close the now-extended graph a second time.
+    let untouched = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+        .unwrap();
     let operand = context.fixture_operand(value);
     let closed =
         close_type_operand(operand.view(), &path, &effects, graph.read(), &mut context).unwrap();
