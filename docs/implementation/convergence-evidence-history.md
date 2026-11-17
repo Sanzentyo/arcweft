@@ -17901,3 +17901,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - 所有レビューでは、宣言field schemaとprepared nominalを既存のsource／phase owner、観測を元fact stateからの借用、型一致の義務を完了後の最終sealへ置いた。成長128 LOCにはfixture95 LOCを含む。公開facade・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更、graph／work残量・型表の複製はない。Supersedes: 前checkpointのproject record pattern入力側の未移行を更新し、最終completion／sealやregistry lookupの未達と区別した。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入を保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-record-pattern-checkpoint.raw.zip](acceptance-evidence/task-prepared-record-pattern-checkpoint.raw.zip) は15 entries、ZIP 119842 bytes、SHA-256 `2a019954485606068fc4cde3a1c844f42538cb83bded0e8b26c66ae9303f30d0`。2回の入力・失敗ログ・fmt、公開照合、最終sealのblob連続性を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Prepared nominal values migration checkpoint
+
+2026-11-17。基点 `fc7eeb396ebd3d4a720e4415a1bfd5793bea54f4`、移行Source `922ffe7b043a932e00b1bac9df8b9a433e60bed4`。10 Rust path、327追加／67削除を既存mainへ途中commit・非force pushし、全10検証入力のSHA-256と公開blobのbyte hashを照合した。動作未受入のcheckpoint。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- PreparedProjectNominalTypeValueExpressionとPreparedProjectRecordExpressionのnominal metadataを、canonicalなCheckedProjectNominalから既存PreparedProjectNominalへ移した。type value constructorは課金済みのmetatypeを受け取り、同じoperational rootがその内側にあるというmetadata整合だけを確認する。semantic digestを発行しない。record metadataのrootコピーも同じSourceNominalProjectionで行い、元term IDを保つ。
+- with_declared_project_nominalは、既存canonical source型を実source ownerのscopeと元workで保持し、実nominal宣言・arityを確認して元graphのeditへ渡す。record構築metadataとtext-proxyのtype valueをこの入口へ接続した。discriminatorにはHIRが保持する実type_expressionを使う。旧checked_project_nominal helper・re-export・使われなくなったimportと、discriminator準備時の直接CheckedProjectNominal構築を削除した。
+- metatypeの新しい保持操作をTypeKindの所有APIへ置いた。共通effect-domain投影へ開始深さを渡し、外側nodeを深さ1、元のroot以降を深さ2から元workへ課金する。子の保持が成功してから外側Boxを確保する。generic scopeのframeは追加せず、元のbound参照・live row／predicateのissuer・Unknownを保持する。SourceNominalProjection内の失敗は既存editをFailedにする。別のwalkerやwork残量、graphを複製しない。
+- 2 fixture、182 LOCを追加した。非空の実scopeと内側binderにあるtype／const参照、元body未準備のlive arrowとUnknownの保持、元body一回準備後のfs.read closure、裸の型なら許される深さ1でmetatypeが深さ2を拒否する条件、初期／途中の同じwork枯渇、取消しと消費済みworkの保持を対象にする。test targetのcompile・実行は未確認で、成功数へ加算しない。
+- locked Sema library／全feature checkはdev01・dev02とも終了101・531エラー。dev01は27警告、削除helperの不要importを整理した最終dev02は26警告。最終10入力と公開blobの一致に基づく証拠再利用で、commit後の再実行ではない。新fixtureのhashも入力に含むが、library checkでtest targetをcompileしたとはしない。両owner fmt checkは終了0。nextest・test target・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 最終nominal sealとrecord field推論の全blobが基点と公開Sourceで一致することを原本へ記録した。metadata ownerの移行を、canonicalなfield推論・text-proxy definition lookup／semantic operand・最終completion／sealの完了と混同しない。特にrecord推論は依然canonicalなsubstitutionを使い、最終consumerはCheckedProjectNominalを要求する。既受入機能の新たな不具合を示す検証結果ではなく、現在の型付きphase移行は未受入である。
+- 所有レビューでは、nominal metadataを既存のprepared root、source取り込みを既存context、metatype構築をTypeKind、深さを共通fold、原子性を元editへ置いた。成長260 LOCにはfixture182 LOCを含む。公開facade・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更はない。Supersedes: 前checkpointのrecord構築・type valueの未移行はmetadata ownerの範囲で更新し、fieldのR推論と登録lookup等を未達として具体化した。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入を保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-nominal-values-checkpoint.raw.zip](acceptance-evidence/task-prepared-nominal-values-checkpoint.raw.zip) は15 entries、ZIP 120569 bytes、SHA-256 `14918a8e230702fcc074e279d380e7d6eeaec9580ad38b3591ad86c16b6caea4`。2回の入力・失敗ログ・fmt、公開照合、最終sealとfield推論のblob連続性を保持し、全データentryの長さ・SHA-256をreadback照合した。
