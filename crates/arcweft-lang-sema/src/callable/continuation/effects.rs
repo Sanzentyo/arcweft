@@ -153,8 +153,17 @@ impl PreparedCallableEffectRows {
         self.requests.values().all(|request| request.row.is_some())
     }
 
-    pub(super) fn snapshot(&self) -> BTreeSet<u64> {
-        self.requests.keys().copied().collect()
+    pub(super) fn snapshot<C: crate::effect_row::DecisionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<BTreeSet<u64>, C::Error> {
+        let mut baseline = BTreeSet::new();
+        for key in self.requests.keys() {
+            control.charge(crate::effect_row::DecisionWork::Visit)?;
+            control.charge(crate::effect_row::DecisionWork::Node)?;
+            baseline.insert(*key);
+        }
+        Ok(baseline)
     }
 
     pub(super) fn request(

@@ -14,7 +14,10 @@ use std::{
 use arcweft_lang_hir::identity::{ExprId, LocalId};
 use thiserror::Error;
 
-use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable};
+use crate::effect_row::prepared::{
+    PreparedEffectCheckpoint, PreparedEffectDelta as PreparedRelationDelta, PreparedEffectFailure,
+};
+use crate::effect_row::{DecisionControl, EffectConstraintEligibility, EffectConstraintVariable};
 
 #[cfg(test)]
 use crate::types::{GenericConstParameterId, GenericTypeParameterId};
@@ -41,6 +44,8 @@ pub(crate) use declarations::{
     PreparedCallableEffectDeclarations, PreparedCallableValueTypeFailure,
 };
 mod specialization;
+#[cfg(test)]
+mod transaction_tests;
 use effects::PreparedEffectDelta;
 pub(crate) use effects::{
     PreparedCallResultRef, PreparedCallableEffectProjectionSite, PreparedCallableEffectRows,
@@ -106,6 +111,8 @@ pub(crate) enum CallConstraintInvariant {
     Instantiation(#[from] crate::types::TypeInstantiationError),
     #[error(transparent)]
     EffectRow(#[from] crate::effect_row::EffectRowError),
+    #[error("prepared effect relation transfer failed: {0}")]
+    EffectTransfer(PreparedEffectFailure<std::convert::Infallible>),
     #[error("call argument mapping was not sealed by its producer")]
     MalformedMapperSeal,
     #[error("fmt primary value type has no selected display witness: {actual:?}")]
@@ -638,6 +645,7 @@ enum PreparedCallNodePayload<P, U> {
 pub(crate) struct PreparedCallGraphCheckpoint {
     issuer: Arc<PreparedCallGraphIssuer>,
     id: u64,
+    relation: Option<PreparedEffectCheckpoint>,
 }
 
 pub(crate) struct PreparedCallGraphDelta<P, U = ()> {
@@ -647,6 +655,7 @@ pub(crate) struct PreparedCallGraphDelta<P, U = ()> {
     baseline_nodes: BTreeSet<PreparedCallNodeId>,
     nodes: BTreeMap<PreparedCallNodeId, Box<PreparedCallNode<P, U>>>,
     effects: PreparedEffectDelta,
+    relation: Option<PreparedRelationDelta>,
 }
 
 impl<P, U> PreparedCallGraphDelta<P, U> {
@@ -957,12 +966,51 @@ fn node_payload_replay_mismatch<P: PreparedCallPrefixPayload>(
     }
 }
 
-pub(crate) struct PreparedCallGraphCloseFailure {
-    violation: CallConstraintInvariant,
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum PreparedCallGraphMutationFailure<E> {
+    #[error("prepared call graph transfer aborted")]
+    Control(#[source] E),
+    #[error(transparent)]
+    Invariant(#[from] CallConstraintInvariant),
+}
+
+impl<E> PreparedCallGraphMutationFailure<E> {
+    fn effect(error: PreparedEffectFailure<E>) -> Self {
+        let failure = match error {
+            PreparedEffectFailure::Control(error) => return Self::Control(error),
+            PreparedEffectFailure::Invariant(error) => PreparedEffectFailure::Invariant(error),
+            PreparedEffectFailure::Row(error) => PreparedEffectFailure::Row(error),
+            PreparedEffectFailure::Declaration(error) => PreparedEffectFailure::Declaration(error),
+            PreparedEffectFailure::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
+            PreparedEffectFailure::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+            PreparedEffectFailure::ObservationNotTotal => {
+                PreparedEffectFailure::ObservationNotTotal
+            }
+            PreparedEffectFailure::NonPointwiseObservation => {
+                PreparedEffectFailure::NonPointwiseObservation
+            }
+        };
+        Self::Invariant(CallConstraintInvariant::EffectTransfer(failure))
+    }
+}
+
+impl From<PreparedCallGraphMutationFailure<std::convert::Infallible>>
+    for PreparedCallGraphInvariant
+{
+    fn from(error: PreparedCallGraphMutationFailure<std::convert::Infallible>) -> Self {
+        match error {
+            PreparedCallGraphMutationFailure::Control(never) => match never {},
+            PreparedCallGraphMutationFailure::Invariant(error) => error.into(),
+        }
+    }
+}
+
+pub(crate) struct PreparedCallGraphCloseFailure<E = std::convert::Infallible> {
+    violation: PreparedCallGraphMutationFailure<E>,
     checkpoint: PreparedCallGraphCheckpoint,
 }
 
-impl std::fmt::Debug for PreparedCallGraphCloseFailure {
+impl<E: std::fmt::Debug> std::fmt::Debug for PreparedCallGraphCloseFailure<E> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("PreparedCallGraphCloseFailure")
@@ -971,20 +1019,25 @@ impl std::fmt::Debug for PreparedCallGraphCloseFailure {
     }
 }
 
-impl PreparedCallGraphCloseFailure {
-    pub(crate) fn into_parts(self) -> (CallConstraintInvariant, PreparedCallGraphCheckpoint) {
+impl<E> PreparedCallGraphCloseFailure<E> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        PreparedCallGraphMutationFailure<E>,
+        PreparedCallGraphCheckpoint,
+    ) {
         (self.violation, self.checkpoint)
     }
 }
 
 /// A restore failure retains the move-only delta so the enclosing fact
 /// transaction can poison/rollback it without dropping semantic evidence.
-pub(crate) struct PreparedCallGraphRestoreFailure<P, U = ()> {
-    violation: CallConstraintInvariant,
+pub(crate) struct PreparedCallGraphRestoreFailure<P, U = (), E = std::convert::Infallible> {
+    violation: PreparedCallGraphMutationFailure<E>,
     delta: Box<PreparedCallGraphDelta<P, U>>,
 }
 
-impl<P, U> std::fmt::Debug for PreparedCallGraphRestoreFailure<P, U> {
+impl<P, U, E: std::fmt::Debug> std::fmt::Debug for PreparedCallGraphRestoreFailure<P, U, E> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("PreparedCallGraphRestoreFailure")
@@ -993,8 +1046,13 @@ impl<P, U> std::fmt::Debug for PreparedCallGraphRestoreFailure<P, U> {
     }
 }
 
-impl<P, U> PreparedCallGraphRestoreFailure<P, U> {
-    pub(crate) fn into_parts(self) -> (CallConstraintInvariant, PreparedCallGraphDelta<P, U>) {
+impl<P, U, E> PreparedCallGraphRestoreFailure<P, U, E> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        PreparedCallGraphMutationFailure<E>,
+        PreparedCallGraphDelta<P, U>,
+    ) {
         (self.violation, *self.delta)
     }
 }
@@ -1004,17 +1062,6 @@ struct PreparedCallGraphActiveDelta {
     touched_nodes: BTreeSet<PreparedCallNodeId>,
     touched_sites: BTreeSet<CheckedCallSite>,
     effect_baseline: BTreeSet<u64>,
-}
-
-impl Clone for PreparedCallGraphActiveDelta {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            touched_nodes: self.touched_nodes.clone(),
-            touched_sites: self.touched_sites.clone(),
-            effect_baseline: self.effect_baseline.clone(),
-        }
-    }
 }
 
 pub(crate) struct PreparedCallGraph<P, U = ()> {
@@ -1402,23 +1449,39 @@ impl<P, U> PreparedCallGraph<P, U> {
         Ok((authority, sealed.into_boxed_slice()))
     }
 
-    pub(crate) fn begin_delta(
+    pub(crate) fn begin_delta<C: DecisionControl>(
         &mut self,
-    ) -> Result<PreparedCallGraphCheckpoint, CallConstraintInvariant> {
+        control: &mut C,
+    ) -> Result<PreparedCallGraphCheckpoint, PreparedCallGraphMutationFailure<C::Error>> {
         let id = self.next_delta;
-        self.next_delta = self
+        let next_delta = self
             .next_delta
             .checked_add(1)
             .ok_or(CallConstraintInvariant::InvalidPreparedDependencyOrder)?;
+        let effect_baseline = self
+            .effects
+            .snapshot(control)
+            .map_err(PreparedCallGraphMutationFailure::Control)?;
+        control
+            .charge(crate::effect_row::DecisionWork::Node)
+            .map_err(PreparedCallGraphMutationFailure::Control)?;
+        let relation = self
+            .declarations
+            .as_mut()
+            .map(|declarations| declarations.relation().0.checkpoint(control))
+            .transpose()
+            .map_err(PreparedCallGraphMutationFailure::effect)?;
+        self.next_delta = next_delta;
         self.active_deltas.push(PreparedCallGraphActiveDelta {
             id,
             touched_nodes: BTreeSet::new(),
             touched_sites: BTreeSet::new(),
-            effect_baseline: self.effects.snapshot(),
+            effect_baseline,
         });
         Ok(PreparedCallGraphCheckpoint {
             issuer: Arc::clone(&self.issuer),
             id,
+            relation,
         })
     }
 
@@ -1440,6 +1503,11 @@ impl<P, U> PreparedCallGraph<P, U> {
                 Err(CallConstraintInvariant::PreparedGraphDeltaOrder)
             }
             Some(_) | None => Err(CallConstraintInvariant::PreparedGraphDeltaStale),
+        }?;
+        match (&self.declarations, &checkpoint.relation) {
+            (Some(declarations), Some(checkpoint)) => declarations.validate_checkpoint(checkpoint),
+            (None, None) => Ok(()),
+            _ => Err(CallConstraintInvariant::InvalidPreparedNodeState),
         }
     }
 
@@ -1490,27 +1558,17 @@ impl<P, U> PreparedCallGraph<P, U> {
         self.sites.clear();
         self.nodes.clear();
         self.effects.clear();
+        self.declarations = None;
         Ok(())
     }
 
     fn active_for_checkpoint(
         &self,
         checkpoint: &PreparedCallGraphCheckpoint,
-    ) -> Result<PreparedCallGraphActiveDelta, CallConstraintInvariant> {
+    ) -> Result<&PreparedCallGraphActiveDelta, CallConstraintInvariant> {
         self.close_position(checkpoint)?;
         self.active_deltas
             .last()
-            .cloned()
-            .ok_or(CallConstraintInvariant::PreparedGraphDeltaStale)
-    }
-
-    fn pop_active(
-        &mut self,
-        checkpoint: &PreparedCallGraphCheckpoint,
-    ) -> Result<PreparedCallGraphActiveDelta, CallConstraintInvariant> {
-        self.close_position(checkpoint)?;
-        self.active_deltas
-            .pop()
             .ok_or(CallConstraintInvariant::PreparedGraphDeltaStale)
     }
 
@@ -1533,12 +1591,11 @@ impl<P, U> PreparedCallGraph<P, U> {
             {
                 return Err(CallConstraintInvariant::MissingOrStalePreparedNode);
             }
-            let mut seen_dependencies = BTreeSet::new();
             let mut previous_dependency = None;
             for dependency in &node.dependencies {
                 if !Arc::ptr_eq(&dependency.0.issuer, &self.issuer)
                     || dependency.0.node == *node_id
-                    || !seen_dependencies.insert(dependency.0.node)
+                    || previous_dependency == Some(dependency.0.node)
                     || !self.nodes.contains_key(&dependency.0.node)
                 {
                     return Err(CallConstraintInvariant::MissingOrStalePreparedNode);
@@ -1569,29 +1626,36 @@ impl<P, U> PreparedCallGraph<P, U> {
 
     pub(crate) fn rollback_delta(
         &mut self,
-        checkpoint: PreparedCallGraphCheckpoint,
+        mut checkpoint: PreparedCallGraphCheckpoint,
     ) -> Result<(), PreparedCallGraphCloseFailure> {
         let active = match self.active_for_checkpoint(&checkpoint) {
             Ok(active) => active,
             Err(violation) => {
                 return Err(PreparedCallGraphCloseFailure {
-                    violation,
+                    violation: violation.into(),
                     checkpoint,
                 });
             }
         };
         if let Err(violation) = self.preflight_active_delta(&active) {
             return Err(PreparedCallGraphCloseFailure {
-                violation,
+                violation: violation.into(),
                 checkpoint,
             });
         }
-        if let Err(violation) = self.pop_active(&checkpoint) {
+        if let (Some(declarations), Some(relation)) =
+            (&mut self.declarations, &mut checkpoint.relation)
+            && let Err(error) = declarations.relation().0.rollback(relation)
+        {
             return Err(PreparedCallGraphCloseFailure {
-                violation,
+                violation: PreparedCallGraphMutationFailure::effect(error.into()),
                 checkpoint,
             });
         }
+        let active = self
+            .active_deltas
+            .pop()
+            .expect("validated active graph checkpoint");
         for site in active.touched_sites {
             self.sites.remove(&site);
         }
@@ -1610,23 +1674,29 @@ impl<P, U> PreparedCallGraph<P, U> {
             Ok(active) => active,
             Err(violation) => {
                 return Err(PreparedCallGraphCloseFailure {
-                    violation,
+                    violation: violation.into(),
                     checkpoint,
                 });
             }
         };
         if let Err(violation) = self.preflight_active_delta(&active) {
             return Err(PreparedCallGraphCloseFailure {
-                violation,
+                violation: violation.into(),
                 checkpoint,
             });
         }
-        if let Err(violation) = self.pop_active(&checkpoint) {
+        if let (Some(declarations), Some(relation)) = (&mut self.declarations, &checkpoint.relation)
+            && let Err(error) = declarations.relation().0.commit(relation)
+        {
             return Err(PreparedCallGraphCloseFailure {
-                violation,
+                violation: PreparedCallGraphMutationFailure::effect(error.into()),
                 checkpoint,
             });
         }
+        let active = self
+            .active_deltas
+            .pop()
+            .expect("validated active graph checkpoint");
         if let Some(parent) = self.active_deltas.last_mut() {
             parent.touched_nodes.extend(active.touched_nodes);
             parent.touched_sites.extend(active.touched_sites);
@@ -1634,75 +1704,102 @@ impl<P, U> PreparedCallGraph<P, U> {
         Ok(())
     }
 
-    pub(crate) fn extract_delta(
+    pub(crate) fn extract_delta<C: DecisionControl>(
         &mut self,
-        checkpoint: PreparedCallGraphCheckpoint,
-    ) -> Result<PreparedCallGraphDelta<P, U>, PreparedCallGraphCloseFailure> {
+        mut checkpoint: PreparedCallGraphCheckpoint,
+        control: &mut C,
+    ) -> Result<PreparedCallGraphDelta<P, U>, PreparedCallGraphCloseFailure<C::Error>> {
         let active = match self.active_for_checkpoint(&checkpoint) {
             Ok(active) => active,
             Err(violation) => {
                 return Err(PreparedCallGraphCloseFailure {
-                    violation,
+                    violation: violation.into(),
                     checkpoint,
                 });
             }
         };
         if let Err(violation) = self.preflight_active_delta(&active) {
             return Err(PreparedCallGraphCloseFailure {
-                violation,
+                violation: violation.into(),
                 checkpoint,
             });
         }
         let mut baseline_nodes = BTreeSet::new();
-        for node_id in &active.touched_nodes {
-            let Some(node) = self.nodes.get(node_id) else {
-                return Err(PreparedCallGraphCloseFailure {
-                    violation: CallConstraintInvariant::MissingOrStalePreparedNode,
-                    checkpoint,
-                });
-            };
-            for dependency in &node.dependencies {
-                if !active.touched_nodes.contains(&dependency.0.node) {
-                    baseline_nodes.insert(dependency.0.node);
+        let admitted = (|| {
+            for node_id in &active.touched_nodes {
+                control.charge(crate::effect_row::DecisionWork::Visit)?;
+                control.charge(crate::effect_row::DecisionWork::Node)?;
+                let node = self
+                    .nodes
+                    .get(node_id)
+                    .expect("preflight validated touched node");
+                for dependency in &node.dependencies {
+                    control.charge(crate::effect_row::DecisionWork::Visit)?;
+                    if !active.touched_nodes.contains(&dependency.0.node)
+                        && !baseline_nodes.contains(&dependency.0.node)
+                    {
+                        control.charge(crate::effect_row::DecisionWork::Node)?;
+                        baseline_nodes.insert(dependency.0.node);
+                    }
                 }
             }
-        }
-        if let Err(violation) = self.pop_active(&checkpoint) {
+            Ok::<_, C::Error>(())
+        })();
+        if let Err(error) = admitted {
             return Err(PreparedCallGraphCloseFailure {
-                violation,
+                violation: PreparedCallGraphMutationFailure::Control(error),
                 checkpoint,
             });
         }
-        let mut delta = PreparedCallGraphDelta {
-            issuer: Arc::clone(&checkpoint.issuer),
-            touched_nodes: active.touched_nodes.clone(),
-            touched_sites: active.touched_sites.clone(),
-            baseline_nodes,
-            nodes: BTreeMap::new(),
-            effects: self.effects.extract(active.effect_baseline),
+        let relation = if let (Some(declarations), Some(relation)) =
+            (&mut self.declarations, &mut checkpoint.relation)
+        {
+            match declarations.relation().0.extract_delta(relation, control) {
+                Ok(delta) => Some(delta),
+                Err(error) => {
+                    return Err(PreparedCallGraphCloseFailure {
+                        violation: PreparedCallGraphMutationFailure::effect(error),
+                        checkpoint,
+                    });
+                }
+            }
+        } else {
+            None
         };
+        let active = self
+            .active_deltas
+            .pop()
+            .expect("validated active graph checkpoint");
+        let mut nodes = BTreeMap::new();
         for site in &active.touched_sites {
             self.sites.remove(site);
         }
         for node in &active.touched_nodes {
             if let Some(value) = self.nodes.remove(node) {
-                delta.nodes.insert(*node, value);
+                nodes.insert(*node, value);
             }
         }
-        delta.touched_nodes = active.touched_nodes;
-        delta.touched_sites = active.touched_sites;
-        Ok(delta)
+        Ok(PreparedCallGraphDelta {
+            issuer: Arc::clone(&checkpoint.issuer),
+            touched_nodes: active.touched_nodes,
+            touched_sites: active.touched_sites,
+            baseline_nodes,
+            nodes,
+            effects: self.effects.extract(active.effect_baseline),
+            relation,
+        })
     }
 
-    pub(crate) fn restore_delta(
+    pub(crate) fn restore_delta<C: DecisionControl>(
         &mut self,
         target: &PreparedCallGraphCheckpoint,
         mut delta: PreparedCallGraphDelta<P, U>,
-    ) -> Result<(), PreparedCallGraphRestoreFailure<P, U>> {
+        control: &mut C,
+    ) -> Result<(), PreparedCallGraphRestoreFailure<P, U, C::Error>> {
         macro_rules! restore_error {
             ($violation:expr) => {
                 return Err(PreparedCallGraphRestoreFailure {
-                    violation: $violation,
+                    violation: ($violation).into(),
                     delta: Box::new(delta),
                 });
             };
@@ -1722,8 +1819,8 @@ impl<P, U> PreparedCallGraph<P, U> {
         if let Err(violation) = self.effects.validate_restore(&delta.effects) {
             restore_error!(violation);
         }
-        let touched_nodes = delta.touched_nodes.clone();
-        let touched_sites = delta.touched_sites.clone();
+        let touched_nodes = &delta.touched_nodes;
+        let touched_sites = &delta.touched_sites;
         if touched_nodes.len() != delta.nodes.len()
             || touched_sites.len() != delta.nodes.len()
             || touched_nodes
@@ -1744,11 +1841,27 @@ impl<P, U> PreparedCallGraph<P, U> {
         }
         let mut referenced_baseline_nodes = BTreeSet::new();
         for (node, value) in &delta.nodes {
+            // Node, site, and the active parent's two mutation indexes are
+            // admitted together before either relation publishes a change.
+            for work in [
+                crate::effect_row::DecisionWork::Visit,
+                crate::effect_row::DecisionWork::Node,
+                crate::effect_row::DecisionWork::Node,
+                crate::effect_row::DecisionWork::Node,
+                crate::effect_row::DecisionWork::Node,
+            ] {
+                if let Err(error) = control.charge(work) {
+                    restore_error!(PreparedCallGraphMutationFailure::Control(error));
+                }
+            }
             if self.nodes.contains_key(node) || self.sites.contains_key(&value.site) {
                 restore_error!(CallConstraintInvariant::PreparedGraphDuplicateSite);
             }
             let mut previous = None;
             for dependency in value.dependencies.iter() {
+                if let Err(error) = control.charge(crate::effect_row::DecisionWork::Visit) {
+                    restore_error!(PreparedCallGraphMutationFailure::Control(error));
+                }
                 if !Arc::ptr_eq(&self.issuer, &dependency.0.issuer)
                     || previous.is_some_and(|previous| previous >= dependency.0.node)
                     || dependency.0.node >= *node
@@ -1767,6 +1880,11 @@ impl<P, U> PreparedCallGraph<P, U> {
                     );
                 }
                 if !delta.nodes.contains_key(&dependency.0.node) {
+                    if !referenced_baseline_nodes.contains(&dependency.0.node)
+                        && let Err(error) = control.charge(crate::effect_row::DecisionWork::Node)
+                    {
+                        restore_error!(PreparedCallGraphMutationFailure::Control(error));
+                    }
                     referenced_baseline_nodes.insert(dependency.0.node);
                 }
                 previous = Some(dependency.0.node);
@@ -1782,7 +1900,23 @@ impl<P, U> PreparedCallGraph<P, U> {
             };
             next_node = next_node.max(after);
         }
+        match (&mut self.declarations, delta.relation.take()) {
+            (Some(declarations), Some(relation)) => {
+                if let Err(failure) = declarations.relation().0.restore_delta(relation, control) {
+                    let (error, relation) = failure.into_parts();
+                    delta.relation = Some(relation);
+                    restore_error!(PreparedCallGraphMutationFailure::effect(error));
+                }
+            }
+            (None, None) => {}
+            (_, relation) => {
+                delta.relation = relation;
+                restore_error!(CallConstraintInvariant::InvalidPreparedNodeState);
+            }
+        }
         self.next_node = next_node;
+        let touched_nodes = std::mem::take(&mut delta.touched_nodes);
+        let touched_sites = std::mem::take(&mut delta.touched_sites);
         let nodes = std::mem::take(&mut delta.nodes);
         for (node, value) in nodes {
             self.sites.insert(value.site, node);

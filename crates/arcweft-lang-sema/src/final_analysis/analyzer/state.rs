@@ -239,13 +239,51 @@ impl<'a> CandidateExpressionFactAuthority<'a> {
 }
 
 #[derive(Debug)]
-pub(super) struct CandidateFactCloseFailure {
-    violation: CandidateFactTransactionViolation,
+pub(super) enum CandidateFactMutationFailure<E> {
+    Control(E),
+    Invariant(CandidateFactTransactionViolation),
+}
+
+impl<E> From<CandidateFactTransactionViolation> for CandidateFactMutationFailure<E> {
+    fn from(error: CandidateFactTransactionViolation) -> Self {
+        Self::Invariant(error)
+    }
+}
+
+impl<E> From<crate::callable::PreparedCallGraphMutationFailure<E>>
+    for CandidateFactMutationFailure<E>
+{
+    fn from(error: crate::callable::PreparedCallGraphMutationFailure<E>) -> Self {
+        match error {
+            crate::callable::PreparedCallGraphMutationFailure::Control(error) => {
+                Self::Control(error)
+            }
+            crate::callable::PreparedCallGraphMutationFailure::Invariant(error) => Self::Invariant(
+                CandidateFactTransactionViolation::PreparedCallGraph(error.into()),
+            ),
+        }
+    }
+}
+
+impl From<CandidateFactMutationFailure<std::convert::Infallible>>
+    for CandidateFactTransactionViolation
+{
+    fn from(error: CandidateFactMutationFailure<std::convert::Infallible>) -> Self {
+        match error {
+            CandidateFactMutationFailure::Control(never) => match never {},
+            CandidateFactMutationFailure::Invariant(error) => error,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct CandidateFactCloseFailure<E = std::convert::Infallible> {
+    violation: CandidateFactMutationFailure<E>,
     checkpoint: Box<CandidateFactCheckpoint>,
 }
 
-impl CandidateFactCloseFailure {
-    pub(super) fn into_parts(self) -> (CandidateFactTransactionViolation, CandidateFactCheckpoint) {
+impl<E> CandidateFactCloseFailure<E> {
+    pub(super) fn into_parts(self) -> (CandidateFactMutationFailure<E>, CandidateFactCheckpoint) {
         (self.violation, *self.checkpoint)
     }
 }
@@ -269,8 +307,8 @@ struct ActiveCandidateCheckpoint {
 pub(super) type ImplicitCaptureUseKey = (ExprId, super::super::CheckedLocalUseSite);
 
 #[derive(Debug)]
-pub(super) struct CandidateProjectionApplyFailure {
-    violation: CandidateFactTransactionViolation,
+pub(super) struct CandidateProjectionApplyFailure<E = std::convert::Infallible> {
+    violation: CandidateFactMutationFailure<E>,
     projection: CandidateSemanticProjection,
 }
 
@@ -281,13 +319,10 @@ pub(super) enum ExpressionFactWriteViolation {
     Candidate(CandidateFactTransactionViolation),
 }
 
-impl CandidateProjectionApplyFailure {
+impl<E> CandidateProjectionApplyFailure<E> {
     pub(super) fn into_parts(
         self,
-    ) -> (
-        CandidateFactTransactionViolation,
-        CandidateSemanticProjection,
-    ) {
+    ) -> (CandidateFactMutationFailure<E>, CandidateSemanticProjection) {
         (self.violation, self.projection)
     }
 }
@@ -363,8 +398,8 @@ impl CandidateSemanticProjection {
 struct CandidateSemanticProjectionData {
     authority: CandidateProjectionAuthority,
     graph_delta: PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
-    locals: BTreeMap<LocalId, Option<TypeKind>>,
-    patterns: BTreeMap<PatternId, Option<TypeKind>>,
+    locals: BTreeMap<LocalId, Option<TypeKind<crate::types::PreparedEffects>>>,
+    patterns: BTreeMap<PatternId, Option<TypeKind<crate::types::PreparedEffects>>>,
     expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
     checked_content: BTreeMap<
         arcweft_lang_hir::dialogue_application::HirDialogueContentId,
@@ -469,7 +504,9 @@ pub(super) enum CandidateFactTransactionAction<T> {
 
 pub(super) enum CandidateFactOperationFailure {
     Expression(super::expression_error::AnalyzerExpressionError),
-    Projection(Box<CandidateProjectionApplyFailure>),
+    Projection(
+        Box<CandidateProjectionApplyFailure<crate::final_analysis::FinalSemanticAnalysisError>>,
+    ),
 }
 
 impl From<super::expression_error::AnalyzerExpressionError> for CandidateFactOperationFailure {
@@ -484,7 +521,14 @@ impl CandidateFactOperationFailure {
             Self::Expression(error) => error,
             Self::Projection(failure) => {
                 let (violation, _projection) = failure.into_parts();
-                super::expression_error::AnalyzerExpressionError::fact(violation)
+                match violation {
+                    CandidateFactMutationFailure::Control(error) => {
+                        super::expression_error::AnalyzerExpressionError::fatal(error)
+                    }
+                    CandidateFactMutationFailure::Invariant(error) => {
+                        super::expression_error::AnalyzerExpressionError::fact(error)
+                    }
+                }
             }
         }
     }
@@ -634,11 +678,11 @@ struct CandidateProjectionOwners {
 enum SemanticFactMutation {
     Local {
         owner: LocalId,
-        previous: Option<Box<TypeKind>>,
+        previous: Option<Box<TypeKind<crate::types::PreparedEffects>>>,
     },
     Pattern {
         owner: PatternId,
-        previous: Option<Box<TypeKind>>,
+        previous: Option<Box<TypeKind<crate::types::PreparedEffects>>>,
     },
     Expression {
         owner: ExprId,
@@ -720,10 +764,11 @@ impl SemanticFactState {
     /// Opens a purpose-specific callback fact scope.  Callers never receive
     /// the raw checkpoint; they receive only a phase-typed identity derived
     /// from the returned scope.
-    pub(super) fn open_callback_fact_scope(
+    pub(super) fn open_callback_fact_scope<C: crate::effect_row::DecisionControl>(
         &mut self,
-    ) -> Result<ActiveCallbackFactScope, CandidateFactTransactionViolation> {
-        let checkpoint = self.begin_candidate_transaction()?;
+        control: &mut C,
+    ) -> Result<ActiveCallbackFactScope, CandidateFactMutationFailure<C::Error>> {
+        let checkpoint = self.begin_candidate_transaction(control)?;
         Ok(ActiveCallbackFactScope { checkpoint })
     }
 
@@ -742,12 +787,13 @@ impl SemanticFactState {
         self.rollback_candidate_transaction(checkpoint)
     }
 
-    pub(super) fn extract_callback_fact_scope(
+    pub(super) fn extract_callback_fact_scope<C: crate::effect_row::DecisionControl>(
         &mut self,
         scope: ActiveCallbackFactScope,
-    ) -> Result<CandidateSemanticProjection, CandidateFactCloseFailure> {
+        control: &mut C,
+    ) -> Result<CandidateSemanticProjection, CandidateFactCloseFailure<C::Error>> {
         let checkpoint = scope.into_checkpoint();
-        self.extract_and_rollback(checkpoint)
+        self.extract_and_rollback(checkpoint, control)
     }
 
     pub(super) fn abort_callback_scope_close_failure(
@@ -755,6 +801,29 @@ impl SemanticFactState {
         failure: CandidateFactCloseFailure,
     ) -> CandidateFactTransactionViolation {
         self.abort_after_close_failure(failure)
+    }
+
+    /// Operational extraction failure leaves the original checkpoint live.
+    /// Roll it back before returning the exact incoming abort to its owner.
+    /// Only an invariant/recovery failure poisons the semantic ledger.
+    pub(super) fn recover_callback_scope_close_failure<E>(
+        &mut self,
+        failure: CandidateFactCloseFailure<E>,
+    ) -> Result<E, CandidateFactTransactionViolation> {
+        let (cause, checkpoint) = failure.into_parts();
+        match cause {
+            CandidateFactMutationFailure::Control(error) => {
+                match self.rollback_candidate_transaction(checkpoint) {
+                    Ok(()) => Ok(error),
+                    Err(failure) => Err(self.abort_after_close_failure(failure)),
+                }
+            }
+            CandidateFactMutationFailure::Invariant(violation) => Err(self
+                .abort_after_close_failure(CandidateFactCloseFailure {
+                    violation: violation.into(),
+                    checkpoint: Box::new(checkpoint),
+                })),
+        }
     }
 
     pub(super) fn transaction_authority<'a>(
@@ -1423,7 +1492,7 @@ impl SemanticFactState {
     pub(super) fn retain_physical_candidate_observed_type(
         &mut self,
         identity: PhysicalCandidateArgumentEvaluation,
-        actual: &TypeKind,
+        actual: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         let active = self
@@ -1472,9 +1541,10 @@ impl SemanticFactState {
     }
 
     /// Starts one candidate transaction and mints its move-only checkpoint.
-    fn begin_candidate_transaction(
+    fn begin_candidate_transaction<C: crate::effect_row::DecisionControl>(
         &mut self,
-    ) -> Result<CandidateFactCheckpoint, CandidateFactTransactionViolation> {
+        control: &mut C,
+    ) -> Result<CandidateFactCheckpoint, CandidateFactMutationFailure<C::Error>> {
         self.ensure_healthy()?;
         let opens_root = self.candidate_checkpoints.is_empty();
         if opens_root
@@ -1482,7 +1552,7 @@ impl SemanticFactState {
                 .active_physical_candidate_argument_evaluations
                 .is_none()
         {
-            return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
+            return Err(CandidateFactTransactionViolation::UnrecoverableLedger.into());
         }
         let id = CandidateFactCheckpointId(self.next_checkpoint_id);
         self.next_checkpoint_id = self
@@ -1491,10 +1561,8 @@ impl SemanticFactState {
             .ok_or(CandidateFactTransactionViolation::SequenceExhausted)?;
         let graph = self
             .prepared_calls_mut()?
-            .begin_delta()
-            .map_err(|violation| {
-                CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
-            })?;
+            .begin_delta(control)
+            .map_err(CandidateFactMutationFailure::from)?;
         let checkpoint = CandidateFactCheckpoint {
             issuer: Arc::clone(&self.issuer),
             id,
@@ -1519,7 +1587,7 @@ impl SemanticFactState {
     ) -> Result<(), CandidateFactCloseFailure> {
         if let Err(violation) = self.validate_checkpoint(&checkpoint) {
             return Err(CandidateFactCloseFailure {
-                violation,
+                violation: violation.into(),
                 checkpoint: Box::new(checkpoint),
             });
         }
@@ -1538,7 +1606,7 @@ impl SemanticFactState {
         {
             let (violation, graph) = failure.into_parts();
             return Err(CandidateFactCloseFailure {
-                violation: CandidateFactTransactionViolation::PreparedCallGraph(violation.into()),
+                violation: violation.into(),
                 checkpoint: Box::new(CandidateFactCheckpoint {
                     issuer,
                     id,
@@ -1570,7 +1638,7 @@ impl SemanticFactState {
     ) -> Result<(), CandidateFactCloseFailure> {
         if let Err(violation) = self.validate_checkpoint(&checkpoint) {
             return Err(CandidateFactCloseFailure {
-                violation,
+                violation: violation.into(),
                 checkpoint: Box::new(checkpoint),
             });
         }
@@ -1589,7 +1657,7 @@ impl SemanticFactState {
         {
             let (violation, graph) = failure.into_parts();
             return Err(CandidateFactCloseFailure {
-                violation: CandidateFactTransactionViolation::PreparedCallGraph(violation.into()),
+                violation: violation.into(),
                 checkpoint: Box::new(CandidateFactCheckpoint {
                     issuer,
                     id,
@@ -1610,13 +1678,14 @@ impl SemanticFactState {
 
     /// Extracts the final values touched by a candidate and rolls that
     /// candidate back in one move-only operation.
-    fn extract_and_rollback(
+    fn extract_and_rollback<C: crate::effect_row::DecisionControl>(
         &mut self,
         checkpoint: CandidateFactCheckpoint,
-    ) -> Result<CandidateSemanticProjection, CandidateFactCloseFailure> {
+        control: &mut C,
+    ) -> Result<CandidateSemanticProjection, CandidateFactCloseFailure<C::Error>> {
         if let Err(violation) = self.validate_checkpoint(&checkpoint) {
             return Err(CandidateFactCloseFailure {
-                violation,
+                violation: violation.into(),
                 checkpoint: Box::new(checkpoint),
             });
         }
@@ -1631,15 +1700,13 @@ impl SemanticFactState {
             .prepared_calls
             .as_mut()
             .expect("checkpoint validation proves the graph is live")
-            .extract_delta(graph)
+            .extract_delta(graph, control)
         {
             Ok(delta) => delta,
             Err(failure) => {
                 let (violation, graph) = failure.into_parts();
                 return Err(CandidateFactCloseFailure {
-                    violation: CandidateFactTransactionViolation::PreparedCallGraph(
-                        violation.into(),
-                    ),
+                    violation: violation.into(),
                     checkpoint: Box::new(CandidateFactCheckpoint {
                         issuer,
                         id,
@@ -1717,11 +1784,12 @@ impl SemanticFactState {
     /// Applies a probe projection while another candidate transaction is
     /// active.  Each transferred value is itself journaled, so an enclosing
     /// rollback also undoes the application.
-    pub(super) fn apply_candidate_projection(
+    pub(super) fn apply_candidate_projection<C: crate::effect_row::DecisionControl>(
         &mut self,
         target: &CandidateFactTransactionAuthority<'_>,
         projection: CandidateSemanticProjection,
-    ) -> Result<(), CandidateProjectionApplyFailure> {
+        control: &mut C,
+    ) -> Result<(), CandidateProjectionApplyFailure<C::Error>> {
         let violation = if let Err(error) = self.ensure_healthy() {
             Some(error)
         } else if !Arc::ptr_eq(&self.issuer, &target.checkpoint.issuer) {
@@ -1748,7 +1816,7 @@ impl SemanticFactState {
         };
         if let Some(violation) = violation {
             return Err(CandidateProjectionApplyFailure {
-                violation,
+                violation: violation.into(),
                 projection,
             });
         }
@@ -1757,7 +1825,7 @@ impl SemanticFactState {
             &projection.data.expressions,
         ) {
             return Err(CandidateProjectionApplyFailure {
-                violation,
+                violation: violation.into(),
                 projection,
             });
         }
@@ -1790,7 +1858,8 @@ impl SemanticFactState {
                     site: key.1,
                     existing,
                     proposed,
-                },
+                }
+                .into(),
                 projection: CandidateSemanticProjection::from(CandidateSemanticProjectionData {
                     authority,
                     graph_delta,
@@ -1809,15 +1878,13 @@ impl SemanticFactState {
             .prepared_calls
             .as_mut()
             .expect("prepared graph presence was validated above")
-            .restore_delta(&target.checkpoint.graph, graph_delta)
+            .restore_delta(&target.checkpoint.graph, graph_delta, control)
         {
             Ok(()) => {}
             Err(failure) => {
                 let (violation, graph_delta) = failure.into_parts();
                 return Err(CandidateProjectionApplyFailure {
-                    violation: CandidateFactTransactionViolation::PreparedCallGraph(
-                        violation.into(),
-                    ),
+                    violation: violation.into(),
                     projection: CandidateSemanticProjection::from(
                         CandidateSemanticProjectionData {
                             authority,
@@ -1878,13 +1945,17 @@ impl SemanticFactState {
     pub(super) fn set_local_type(
         &mut self,
         owner: LocalId,
-        value: TypeKind,
+        value: TypeKind<crate::types::PreparedEffects>,
     ) -> Result<bool, CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         Ok(self.set_local_type_unchecked(owner, value))
     }
 
-    fn set_local_type_unchecked(&mut self, owner: LocalId, value: TypeKind) -> bool {
+    fn set_local_type_unchecked(
+        &mut self,
+        owner: LocalId,
+        value: TypeKind<crate::types::PreparedEffects>,
+    ) -> bool {
         let previous = self.locals.insert(owner, value);
         let replaced = previous.is_some();
         if !self.candidate_checkpoints.is_empty() {
@@ -1899,13 +1970,17 @@ impl SemanticFactState {
     pub(super) fn set_pattern_type(
         &mut self,
         owner: PatternId,
-        value: TypeKind,
+        value: TypeKind<crate::types::PreparedEffects>,
     ) -> Result<bool, CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         Ok(self.set_pattern_type_unchecked(owner, value))
     }
 
-    fn set_pattern_type_unchecked(&mut self, owner: PatternId, value: TypeKind) -> bool {
+    fn set_pattern_type_unchecked(
+        &mut self,
+        owner: PatternId,
+        value: TypeKind<crate::types::PreparedEffects>,
+    ) -> bool {
         let previous = self.patterns.insert(owner, value);
         let replaced = previous.is_some();
         if !self.candidate_checkpoints.is_empty() {
@@ -2320,6 +2395,7 @@ impl SemanticFactState {
             return cause;
         }
         let (violation, checkpoint) = failure.into_parts();
+        let violation = CandidateFactTransactionViolation::from(violation);
         let CandidateFactCheckpoint { graph, .. } = checkpoint;
         let violation = match self.prepared_calls.as_mut() {
             Some(prepared_calls) => match prepared_calls.abort_after_close_failure(graph) {
@@ -2446,8 +2522,8 @@ impl SemanticFactState {
 
     fn apply_projection_entries(
         &mut self,
-        locals: BTreeMap<LocalId, Option<TypeKind>>,
-        patterns: BTreeMap<PatternId, Option<TypeKind>>,
+        locals: BTreeMap<LocalId, Option<TypeKind<crate::types::PreparedEffects>>>,
+        patterns: BTreeMap<PatternId, Option<TypeKind<crate::types::PreparedEffects>>>,
         expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
         checked_content: BTreeMap<
             arcweft_lang_hir::dialogue_application::HirDialogueContentId,
@@ -2483,7 +2559,11 @@ impl SemanticFactState {
         }
     }
 
-    fn apply_local(&mut self, owner: LocalId, value: Option<TypeKind>) {
+    fn apply_local(
+        &mut self,
+        owner: LocalId,
+        value: Option<TypeKind<crate::types::PreparedEffects>>,
+    ) {
         if let Some(value) = value {
             self.set_local_type_unchecked(owner, value);
         } else {
@@ -2491,7 +2571,11 @@ impl SemanticFactState {
         }
     }
 
-    fn apply_pattern(&mut self, owner: PatternId, value: Option<TypeKind>) {
+    fn apply_pattern(
+        &mut self,
+        owner: PatternId,
+        value: Option<TypeKind<crate::types::PreparedEffects>>,
+    ) {
         if let Some(value) = value {
             self.set_pattern_type_unchecked(owner, value);
         } else {
@@ -2596,23 +2680,35 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
     /// Sole owner of candidate checkpoint lifecycle.  Raw state operations stay
     /// private to this module so a callback cannot close a checkpoint without
     /// the trusted abort/recovery path.
-    pub(super) fn run_candidate_fact_transaction<T, E>(
+    pub(super) fn run_candidate_fact_transaction<C, T, E>(
         &mut self,
+        control: &mut C,
         operation: impl for<'a> FnOnce(
             &'a mut Self,
             CandidateExpressionFactAuthority<'a>,
             CandidateFactTransactionAuthority<'a>,
+            &mut C,
         ) -> Result<CandidateFactTransactionAction<T>, E>,
     ) -> Result<CandidateFactTransactionOutcome<T>, super::expression_error::AnalyzerExpressionError>
     where
         E: Into<CandidateFactOperationFailure>,
+        C: crate::effect_row::DecisionControl<
+                Error = crate::final_analysis::FinalSemanticAnalysisError,
+            >,
     {
         use super::expression_error::AnalyzerExpressionError;
 
         let checkpoint = self
             .facts
-            .begin_candidate_transaction()
-            .map_err(AnalyzerExpressionError::fact)?;
+            .begin_candidate_transaction(control)
+            .map_err(|failure| match failure {
+                CandidateFactMutationFailure::Control(error) => {
+                    AnalyzerExpressionError::fatal(error)
+                }
+                CandidateFactMutationFailure::Invariant(error) => {
+                    AnalyzerExpressionError::fact(error)
+                }
+            })?;
         let expression_authority = match self.facts.candidate_expression_authority(&checkpoint) {
             Ok(authority) => authority,
             Err(error) => return Err(self.rollback_candidate_authority_error(checkpoint, error)),
@@ -2621,8 +2717,8 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
             Ok(authority) => authority,
             Err(error) => return Err(self.rollback_candidate_authority_error(checkpoint, error)),
         };
-        let result = operation(self, expression_authority, transaction_authority);
-        self.finish_candidate_fact_transaction(checkpoint, result)
+        let result = operation(self, expression_authority, transaction_authority, control);
+        self.finish_candidate_fact_transaction(checkpoint, result, control)
     }
 
     fn rollback_candidate_authority_error(
@@ -2639,13 +2735,17 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
         }
     }
 
-    fn finish_candidate_fact_transaction<T, E>(
+    fn finish_candidate_fact_transaction<C, T, E>(
         &mut self,
         checkpoint: CandidateFactCheckpoint,
         result: Result<CandidateFactTransactionAction<T>, E>,
+        control: &mut C,
     ) -> Result<CandidateFactTransactionOutcome<T>, super::expression_error::AnalyzerExpressionError>
     where
         E: Into<CandidateFactOperationFailure>,
+        C: crate::effect_row::DecisionControl<
+                Error = crate::final_analysis::FinalSemanticAnalysisError,
+            >,
     {
         use super::expression_error::AnalyzerExpressionError;
         let action = match result {
@@ -2677,13 +2777,16 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
                 }
             }
             CandidateFactTransactionAction::Extract(value) => {
-                match self.facts.extract_and_rollback(checkpoint) {
+                match self.facts.extract_and_rollback(checkpoint, control) {
                     Ok(projection) => {
                         Ok(CandidateFactTransactionOutcome::Extracted { value, projection })
                     }
-                    Err(failure) => Err(AnalyzerExpressionError::fact(
-                        self.facts.abort_after_close_failure(failure),
-                    )),
+                    Err(failure) => Err(
+                        match self.facts.recover_callback_scope_close_failure(failure) {
+                            Ok(error) => AnalyzerExpressionError::fatal(error),
+                            Err(violation) => AnalyzerExpressionError::fact(violation),
+                        },
+                    ),
                 }
             }
         }

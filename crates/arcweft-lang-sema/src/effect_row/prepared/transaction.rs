@@ -160,7 +160,7 @@ impl PreparedEffectGraph {
         })
     }
 
-    fn validate_checkpoint(
+    pub(crate) fn validate_checkpoint(
         &self,
         checkpoint: &PreparedEffectCheckpoint,
     ) -> Result<(), PreparedEffectInvariant> {

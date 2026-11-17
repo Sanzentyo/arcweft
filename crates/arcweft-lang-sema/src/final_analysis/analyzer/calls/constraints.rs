@@ -1922,6 +1922,25 @@ impl<'a, 'project, 'catalog, 'control>
             AnalyzerCallClientInvariant::fact_transaction(coordinate.owner_source(), cause),
         )
     }
+
+    fn close_controlled_fact_failure(
+        &mut self,
+        failure: super::super::state::CandidateFactCloseFailure<
+            crate::types::constraints::TypeConstraintError,
+        >,
+        coordinate: AnalyzerCallScopeCoordinate,
+    ) -> crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain> {
+        match self
+            .analyzer
+            .facts
+            .recover_callback_scope_close_failure(failure)
+        {
+            Ok(error) => crate::callable::SourceCheckpointFailure::Constraint(error),
+            Err(violation) => crate::callable::SourceCheckpointFailure::client(
+                AnalyzerCallClientInvariant::fact_transaction(coordinate.owner_source(), violation),
+            ),
+        }
+    }
 }
 
 /// Client-side source operation capability.  It is intentionally narrower
@@ -1947,6 +1966,7 @@ trait AnalyzerCallConstraintOperations {
 
     fn open_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: AnalyzerCallConstraintSourceId,
     ) -> Result<
         Self::ProbeCheckpoint,
@@ -1955,6 +1975,7 @@ trait AnalyzerCallConstraintOperations {
 
     fn close_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::ProbeCheckpoint,
         disposition: crate::callable::ProbeCheckpointDisposition,
     ) -> Result<
@@ -1964,6 +1985,7 @@ trait AnalyzerCallConstraintOperations {
 
     fn open_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         sources: &[AnalyzerCallConstraintSourceId],
     ) -> Result<
         Self::MaterializationCheckpoint,
@@ -1990,6 +2012,7 @@ trait AnalyzerCallConstraintOperations {
 
     fn close_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::MaterializationCheckpoint,
         sealed: Option<Self::PreparedSealedBranchValue>,
     ) -> Result<
@@ -2293,6 +2316,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
 
     fn open_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: AnalyzerCallConstraintSourceId,
     ) -> Result<
         Self::ProbeCheckpoint,
@@ -2310,11 +2334,16 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         let scope = self
             .analyzer
             .facts
-            .open_callback_fact_scope()
-            .map_err(|violation| {
-                crate::callable::SourceCheckpointFailure::client(
-                    AnalyzerCallClientInvariant::fact_transaction(source.local(), violation),
-                )
+            .open_callback_fact_scope(work)
+            .map_err(|failure| match failure {
+                super::super::state::CandidateFactMutationFailure::Control(error) => {
+                    crate::callable::SourceCheckpointFailure::Constraint(error)
+                }
+                super::super::state::CandidateFactMutationFailure::Invariant(violation) => {
+                    crate::callable::SourceCheckpointFailure::client(
+                        AnalyzerCallClientInvariant::fact_transaction(source.local(), violation),
+                    )
+                }
             })?;
         let checkpoint = AnalyzerProbeCheckpoint {
             checkpoint: scope.probe_checkpoint(),
@@ -2329,6 +2358,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
 
     fn close_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::ProbeCheckpoint,
         disposition: crate::callable::ProbeCheckpointDisposition,
     ) -> Result<
@@ -2355,15 +2385,17 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         {
             self.analyzer
                 .facts
-                .extract_callback_fact_scope(active.scope)
+                .extract_callback_fact_scope(active.scope, work)
                 .map(Some)
+                .map_err(|failure| self.close_controlled_fact_failure(failure, coordinate.clone()))
         } else {
             self.analyzer
                 .facts
                 .rollback_callback_fact_scope(active.scope)
                 .map(|()| None)
+                .map_err(|failure| self.close_fact_failure(failure, coordinate.clone()))
         };
-        let preparation = close.map_err(|failure| self.close_fact_failure(failure, coordinate))?;
+        let preparation = close?;
         if !identity_ok {
             return Err(crate::callable::SourceCheckpointFailure::Protocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::Checkpoint,
@@ -2379,6 +2411,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
 
     fn open_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         sources: &[AnalyzerCallConstraintSourceId],
     ) -> Result<
         Self::MaterializationCheckpoint,
@@ -2402,15 +2435,19 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 ),
             ));
         }
-        let scope = self
-            .analyzer
-            .facts
-            .open_callback_fact_scope()
-            .map_err(|violation| {
-                crate::callable::SourceCheckpointFailure::client(
-                    AnalyzerCallClientInvariant::fact_transaction(owner.local(), violation),
-                )
-            })?;
+        let scope =
+            self.analyzer.facts.open_callback_fact_scope(work).map_err(
+                |failure| match failure {
+                    super::super::state::CandidateFactMutationFailure::Control(error) => {
+                        crate::callable::SourceCheckpointFailure::Constraint(error)
+                    }
+                    super::super::state::CandidateFactMutationFailure::Invariant(violation) => {
+                        crate::callable::SourceCheckpointFailure::client(
+                            AnalyzerCallClientInvariant::fact_transaction(owner.local(), violation),
+                        )
+                    }
+                },
+            )?;
         let checkpoint = AnalyzerMaterializationCheckpoint {
             checkpoint: scope.materialization_checkpoint(),
             sources: ordered_sources,
@@ -2717,6 +2754,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
 
     fn close_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::MaterializationCheckpoint,
         sealed: Option<Self::PreparedSealedBranchValue>,
     ) -> Result<
@@ -2762,11 +2800,11 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         let projection = match self
             .analyzer
             .facts
-            .extract_callback_fact_scope(active.scope)
+            .extract_callback_fact_scope(active.scope, work)
         {
             Ok(projection) => projection,
             Err(failure) => {
-                return Err(self.close_fact_failure(failure, coordinate));
+                return Err(self.close_controlled_fact_failure(failure, coordinate));
             }
         };
         let Some(sealed) = sealed else {
@@ -2868,16 +2906,18 @@ impl<O: AnalyzerCallConstraintOperations>
 
     fn open_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: AnalyzerCallConstraintSourceId,
     ) -> Result<
         Self::ProbeCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
     > {
-        self.operations.open_probe_checkpoint(source)
+        self.operations.open_probe_checkpoint(work, source)
     }
 
     fn close_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::ProbeCheckpoint,
         disposition: crate::callable::ProbeCheckpointDisposition,
     ) -> Result<
@@ -2885,17 +2925,19 @@ impl<O: AnalyzerCallConstraintOperations>
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
     > {
         self.operations
-            .close_probe_checkpoint(checkpoint, disposition)
+            .close_probe_checkpoint(work, checkpoint, disposition)
     }
 
     fn open_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         sources: &[AnalyzerCallConstraintSourceId],
     ) -> Result<
         Self::MaterializationCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
     > {
-        self.operations.open_materialization_checkpoint(sources)
+        self.operations
+            .open_materialization_checkpoint(work, sources)
     }
 
     fn materialize_sources<'h, I>(
@@ -2922,6 +2964,7 @@ impl<O: AnalyzerCallConstraintOperations>
 
     fn close_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::MaterializationCheckpoint,
         sealed: Option<Self::PreparedSealedBranchValue>,
     ) -> Result<
@@ -2929,7 +2972,7 @@ impl<O: AnalyzerCallConstraintOperations>
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
     > {
         self.operations
-            .close_materialization_checkpoint(checkpoint, sealed)
+            .close_materialization_checkpoint(work, checkpoint, sealed)
     }
 
     fn sealed_branches_equal(
@@ -6929,9 +6972,11 @@ mod tests {
                 ))
                 .expect("source observation");
             let mut preparation_owner = super::super::super::state::SemanticFactState::new();
-            let preparation_scope = preparation_owner.open_callback_fact_scope().unwrap();
+            let preparation_scope = preparation_owner
+                .open_callback_fact_scope(&mut context)
+                .unwrap();
             let preparation = preparation_owner
-                .extract_callback_fact_scope(preparation_scope)
+                .extract_callback_fact_scope(preparation_scope, &mut context)
                 .unwrap();
             transaction
                 .submit_probe(

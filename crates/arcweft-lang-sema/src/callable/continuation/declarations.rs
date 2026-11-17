@@ -46,6 +46,15 @@ impl PreparedCallableEffectDeclaration {
 }
 
 impl PreparedCallableEffectDeclarations {
+    pub(super) fn validate_checkpoint(
+        &self,
+        checkpoint: &crate::effect_row::prepared::PreparedEffectCheckpoint,
+    ) -> Result<(), CallConstraintInvariant> {
+        self.graph.validate_checkpoint(checkpoint).map_err(|error| {
+            CallConstraintInvariant::EffectTransfer(PreparedEffectFailure::Invariant(error))
+        })
+    }
+
     pub(crate) fn prepare_declared_value_type<C>(
         &mut self,
         owner: &CheckedCallableId,

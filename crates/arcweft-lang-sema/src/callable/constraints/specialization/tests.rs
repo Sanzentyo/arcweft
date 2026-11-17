@@ -196,12 +196,14 @@ impl TypeConstraintClient<Domain> for Client<'_> {
 
     fn open_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _: ConstraintSourceId<u8>,
     ) -> Result<(), SourceCheckpointFailure<Domain>> {
         Ok(())
     }
     fn close_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _: (),
         disposition: crate::callable::ProbeCheckpointDisposition,
     ) -> Result<Option<()>, SourceCheckpointFailure<Domain>> {
@@ -209,6 +211,7 @@ impl TypeConstraintClient<Domain> for Client<'_> {
     }
     fn open_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _: &[ConstraintSourceId<u8>],
     ) -> Result<(), SourceCheckpointFailure<Domain>> {
         Ok(())
@@ -283,6 +286,7 @@ impl TypeConstraintClient<Domain> for Client<'_> {
 
     fn close_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _: (),
         sealed: Option<()>,
     ) -> Result<Option<()>, SourceCheckpointFailure<Domain>> {

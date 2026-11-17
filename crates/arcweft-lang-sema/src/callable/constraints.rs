@@ -51,17 +51,20 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
 
     fn open_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: ConstraintSourceId<D::Source>,
     ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<D>>;
 
     fn close_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::ProbeCheckpoint,
         disposition: ProbeCheckpointDisposition,
     ) -> Result<Option<D::ProbePreparation>, SourceCheckpointFailure<D>>;
 
     fn open_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         sources: &[ConstraintSourceId<D::Source>],
     ) -> Result<Self::MaterializationCheckpoint, SourceCheckpointFailure<D>>;
 
@@ -86,6 +89,7 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
 
     fn close_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         checkpoint: Self::MaterializationCheckpoint,
         sealed: Option<Self::PreparedSealedBranchValue>,
     ) -> Result<Option<D::SealedBranchValue>, SourceCheckpointFailure<D>>;
@@ -299,6 +303,7 @@ pub(crate) enum SourceCallbackFailure<D: ConstraintDomain> {
 }
 
 pub(crate) enum SourceCheckpointFailure<D: ConstraintDomain> {
+    Constraint(crate::types::constraints::TypeConstraintError),
     Protocol(TypeConstraintSourceProtocolInvariant),
     Client(Box<D::ClientInvariant>),
 }
@@ -571,6 +576,7 @@ where
 
     fn checkpoint_failure(failure: SourceCheckpointFailure<D>) -> TypeConstraintFailure<D> {
         match failure {
+            SourceCheckpointFailure::Constraint(error) => error.into(),
             SourceCheckpointFailure::Protocol(kind) => Self::protocol_failure(kind),
             SourceCheckpointFailure::Client(invariant) => {
                 TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Client(invariant))
@@ -590,6 +596,21 @@ where
         failure: SourceCheckpointFailure<D>,
     ) -> MaterializationImmediateFailure<D> {
         match failure {
+            SourceCheckpointFailure::Constraint(error) => match error {
+                crate::types::constraints::TypeConstraintError::Abort(error) => {
+                    MaterializationImmediateFailure::Abort(error)
+                }
+                crate::types::constraints::TypeConstraintError::Invariant(error) => {
+                    MaterializationImmediateFailure::Invariant(
+                        TypeConstraintFailureInvariant::Constraint(error),
+                    )
+                }
+                crate::types::constraints::TypeConstraintError::Rejected(_) => {
+                    Self::materialization_protocol_failure(
+                        TypeConstraintSourceProtocolInvariant::Outcome,
+                    )
+                }
+            },
             SourceCheckpointFailure::Protocol(kind) => Self::materialization_protocol_failure(kind),
             SourceCheckpointFailure::Client(invariant) => {
                 MaterializationImmediateFailure::Invariant(TypeConstraintFailureInvariant::Client(
@@ -651,8 +672,9 @@ where
         checkpoint: C::ProbeCheckpoint,
         disposition: ProbeCheckpointDisposition,
     ) -> Result<Option<D::ProbePreparation>, SourceCheckpointFailure<D>> {
-        let result =
-            self.with_callback(|client, _| client.close_probe_checkpoint(checkpoint, disposition));
+        let result = self.with_callback(|client, work| {
+            client.close_probe_checkpoint(work, checkpoint, disposition)
+        });
         self.active_ticket = None;
         result
     }
@@ -662,8 +684,9 @@ where
         checkpoint: C::MaterializationCheckpoint,
         sealed: Option<C::PreparedSealedBranchValue>,
     ) -> Result<Option<D::SealedBranchValue>, SourceCheckpointFailure<D>> {
-        let result = self
-            .with_callback(|client, _| client.close_materialization_checkpoint(checkpoint, sealed));
+        let result = self.with_callback(|client, work| {
+            client.close_materialization_checkpoint(work, checkpoint, sealed)
+        });
         self.active_ticket = None;
         result
     }
@@ -701,7 +724,7 @@ where
             context.charge_source_probe()
         })?;
         let checkpoint = self
-            .with_callback(|client, _| client.open_probe_checkpoint(source))
+            .with_callback(|client, work| client.open_probe_checkpoint(work, source))
             .map_err(Self::checkpoint_failure)?;
         let identity = ticket.identity.clone();
         self.active_ticket = Some(ticket.identity.clone());
@@ -823,7 +846,9 @@ where
             .bind_callback()
             .map_err(Self::materialization_protocol_failure)?;
         let checkpoint = self
-            .with_callback(|client, _| client.open_materialization_checkpoint(binding.sources()))
+            .with_callback(|client, work| {
+                client.open_materialization_checkpoint(work, binding.sources())
+            })
             .map_err(Self::materialization_checkpoint_failure)?;
         let ticket =
             self.ticket_from_ordinal(ordinal, SourceCallbackAuthority::Materialize { binding });
@@ -1266,6 +1291,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 
     fn open_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _source: ConstraintSourceId<()>,
     ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<crate::types::NoConstraintClient>>
     {
@@ -1274,6 +1300,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 
     fn close_probe_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _checkpoint: Self::ProbeCheckpoint,
         disposition: ProbeCheckpointDisposition,
     ) -> Result<Option<()>, SourceCheckpointFailure<crate::types::NoConstraintClient>> {
@@ -1282,6 +1309,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 
     fn open_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _sources: &[ConstraintSourceId<()>],
     ) -> Result<
         Self::MaterializationCheckpoint,
@@ -1316,6 +1344,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 
     fn close_materialization_checkpoint(
         &mut self,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _checkpoint: Self::MaterializationCheckpoint,
         _sealed: Option<Self::PreparedSealedBranchValue>,
     ) -> Result<Option<()>, SourceCheckpointFailure<crate::types::NoConstraintClient>> {
@@ -1806,6 +1835,7 @@ pub(crate) mod tests {
 
         fn open_probe_checkpoint(
             &mut self,
+            work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
             _source: ConstraintSourceId<u8>,
         ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<Domain>> {
             self.counts.probe_begin.fetch_add(1, Ordering::Relaxed);
@@ -1820,6 +1850,7 @@ pub(crate) mod tests {
 
         fn close_probe_checkpoint(
             &mut self,
+            work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
             _checkpoint: Self::ProbeCheckpoint,
             disposition: ProbeCheckpointDisposition,
         ) -> Result<Option<()>, SourceCheckpointFailure<Domain>> {
@@ -1838,6 +1869,7 @@ pub(crate) mod tests {
 
         fn open_materialization_checkpoint(
             &mut self,
+            work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
             sources: &[ConstraintSourceId<u8>],
         ) -> Result<Self::MaterializationCheckpoint, SourceCheckpointFailure<Domain>> {
             self.counts
@@ -1951,6 +1983,7 @@ pub(crate) mod tests {
 
         fn close_materialization_checkpoint(
             &mut self,
+            work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
             _checkpoint: Self::MaterializationCheckpoint,
             sealed: Option<Self::PreparedSealedBranchValue>,
         ) -> Result<Option<Sealed>, SourceCheckpointFailure<Domain>> {
