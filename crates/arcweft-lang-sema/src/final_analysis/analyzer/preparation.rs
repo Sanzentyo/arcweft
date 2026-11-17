@@ -28,7 +28,7 @@ use super::{
     HirProofBody, HirStmtKind, NominalResolutionLimits, PatternId, ProjectNominalType, Rc,
     ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId, TypeId, TypeKind, TypeResolutionInput,
     expression_types::literal_type,
-    patterns::{PatternSeedContext, seed_item_parameter_types, seed_pattern_locals},
+    patterns::{seed_item_parameter_types, seed_pattern_locals},
     resolve_type_ref,
     statements::{enclosing_item, generic_scope},
 };
@@ -488,12 +488,7 @@ impl Analyzer<'_, '_, '_> {
                 seed_item_parameter_types(
                     owner,
                     item,
-                    PatternSeedContext {
-                        module,
-                        types: &self.types,
-                        symbols: self.symbols,
-                        environment: self.catalogs.world.environment().typecheck_env(),
-                    },
+                    self.pattern_seed_context(module, context.work())?,
                     self.catalogs.world.environment().callable_catalog(),
                     &mut locals,
                     &mut patterns,
@@ -529,12 +524,7 @@ impl Analyzer<'_, '_, '_> {
                             let mut locals = BTreeMap::new();
                             let mut patterns = BTreeMap::new();
                             seed_pattern_locals(
-                                PatternSeedContext {
-                                    module,
-                                    types: &self.types,
-                                    symbols: self.symbols,
-                                    environment: self.catalogs.world.environment().typecheck_env(),
-                                },
+                                self.pattern_seed_context(module, context.work())?,
                                 parameter.pattern(),
                                 &semantic,
                                 &mut locals,
@@ -556,12 +546,7 @@ impl Analyzer<'_, '_, '_> {
                             let mut locals = BTreeMap::new();
                             let mut patterns = BTreeMap::new();
                             seed_pattern_locals(
-                                PatternSeedContext {
-                                    module,
-                                    types: &self.types,
-                                    symbols: self.symbols,
-                                    environment: self.catalogs.world.environment().typecheck_env(),
-                                },
+                                self.pattern_seed_context(module, context.work())?,
                                 pattern,
                                 &TypeKind::Progress,
                                 &mut locals,
@@ -588,12 +573,7 @@ impl Analyzer<'_, '_, '_> {
                     let mut locals = BTreeMap::new();
                     let mut patterns = BTreeMap::new();
                     seed_pattern_locals(
-                        PatternSeedContext {
-                            module,
-                            types: &self.types,
-                            symbols: self.symbols,
-                            environment: self.catalogs.world.environment().typecheck_env(),
-                        },
+                        self.pattern_seed_context(module, context.work())?,
                         pattern,
                         &ty,
                         &mut locals,
@@ -628,12 +608,7 @@ impl Analyzer<'_, '_, '_> {
                         let mut locals = BTreeMap::new();
                         let mut patterns = BTreeMap::new();
                         seed_pattern_locals(
-                            PatternSeedContext {
-                                module,
-                                types: &self.types,
-                                symbols: self.symbols,
-                                environment: self.catalogs.world.environment().typecheck_env(),
-                            },
+                            self.pattern_seed_context(module, context.work())?,
                             pattern,
                             &expected,
                             &mut locals,
@@ -1105,7 +1080,7 @@ impl Analyzer<'_, '_, '_> {
                 )? {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
                 }
-                self.seed_contextual_pattern_locals(module, *pattern, &expected)?;
+                self.seed_contextual_pattern_locals(&context, module, *pattern, &expected)?;
             } else if !expected.accepts(&checked_type) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }

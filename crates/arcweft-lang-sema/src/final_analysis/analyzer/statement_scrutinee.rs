@@ -275,6 +275,7 @@ pub(super) fn expression_requests_for_statement(
     reason = "the borrowed selector keeps registered, HIR, type, and mutable fact authorities explicit"
 )]
 pub(super) fn seed_non_event_scrutinees(
+    source: &super::expression_types::SourceTypePreparation<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     types: &BTreeMap<TypeId, TypeKind>,
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
@@ -288,8 +289,8 @@ pub(super) fn seed_non_event_scrutinees(
 ) -> Result<(), FinalSemanticAnalysisError> {
     for declaration in inventory.values() {
         seed_static_scrutinees(
+            source,
             modules,
-            types,
             symbols,
             environment,
             StatementScrutineeTypeAuthority::new(standard, project, topology, types, ingress),
@@ -307,6 +308,7 @@ pub(super) fn seed_non_event_scrutinees(
     reason = "the borrowed selector keeps registered, HIR, type, and mutable fact authorities explicit"
 )]
 pub(super) fn seed_declaration_scrutinees(
+    source: &super::expression_types::SourceTypePreparation<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     types: &BTreeMap<TypeId, TypeKind>,
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
@@ -320,8 +322,8 @@ pub(super) fn seed_declaration_scrutinees(
     facts: &mut SemanticFactState,
 ) -> Result<(), FinalSemanticAnalysisError> {
     seed_static_scrutinees(
+        source,
         modules,
-        types,
         symbols,
         environment,
         StatementScrutineeTypeAuthority::new(standard, project, topology, types, ingress),
@@ -339,6 +341,7 @@ pub(super) fn seed_declaration_scrutinees(
     reason = "the borrowed selector keeps registered, HIR, type, and Entry-rooted authorities explicit"
 )]
 pub(super) fn seed_choice_event_scrutinees(
+    source: &super::expression_types::SourceTypePreparation<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     types: &BTreeMap<TypeId, TypeKind>,
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
@@ -377,7 +380,7 @@ pub(super) fn seed_choice_event_scrutinees(
             };
             seed_registered(
                 module,
-                types,
+                source,
                 symbols,
                 environment,
                 facts,
@@ -445,8 +448,8 @@ pub(super) fn validate_choice_event_scrutinees(
     reason = "the borrowed selector keeps registered, HIR, type, and mutable fact authorities explicit"
 )]
 fn seed_static_scrutinees(
+    source: &super::expression_types::SourceTypePreparation<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    types: &BTreeMap<TypeId, TypeKind>,
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
     environment: &TypeCheckEnv,
     authority: StatementScrutineeTypeAuthority<'_>,
@@ -467,7 +470,7 @@ fn seed_static_scrutinees(
             HirStmtKind::On { trigger, .. } => match trigger {
                 HirTrigger::Input(pattern) => seed_registered(
                     module,
-                    types,
+                    source,
                     symbols,
                     environment,
                     facts,
@@ -476,7 +479,7 @@ fn seed_static_scrutinees(
                 )?,
                 HirTrigger::Event(pattern) if include_event => seed_registered(
                     module,
-                    types,
+                    source,
                     symbols,
                     environment,
                     facts,
@@ -487,11 +490,11 @@ fn seed_static_scrutinees(
                     authority
                         .require_choice_lifecycle(StatementScrutineeRole::TriggerSelect, *owner)?;
                     let ty = TypeKind::entity_ref(EntityKind::ChoiceOption);
-                    seed_registered(module, types, symbols, environment, facts, *pattern, &ty)?;
+                    seed_registered(module, source, symbols, environment, facts, *pattern, &ty)?;
                 }
                 HirTrigger::Task(pattern) => seed_registered(
                     module,
-                    types,
+                    source,
                     symbols,
                     environment,
                     facts,
@@ -500,7 +503,7 @@ fn seed_static_scrutinees(
                 )?,
                 HirTrigger::Scope(pattern) => seed_registered(
                     module,
-                    types,
+                    source,
                     symbols,
                     environment,
                     facts,
@@ -521,7 +524,7 @@ fn seed_static_scrutinees(
                     match branch.head() {
                         HirSelectBranchHead::Frame { pattern, .. } => seed_registered(
                             module,
-                            types,
+                            source,
                             symbols,
                             environment,
                             facts,
@@ -531,7 +534,7 @@ fn seed_static_scrutinees(
                         HirSelectBranchHead::Event { pattern, .. } if include_event => {
                             seed_registered(
                                 module,
-                                types,
+                                source,
                                 symbols,
                                 environment,
                                 facts,
@@ -555,7 +558,7 @@ fn seed_static_scrutinees(
 
 pub(super) fn seed_dynamic_scrutinee(
     module: &HirModule,
-    types: &BTreeMap<TypeId, TypeKind>,
+    source: &super::expression_types::SourceTypePreparation<'_>,
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
     environment: &TypeCheckEnv,
     owner: StmtId,
@@ -593,9 +596,9 @@ pub(super) fn seed_dynamic_scrutinee(
                     .clone()
             };
             if let Some(pattern) = value {
-                seed_registered(
+                seed_prepared(
                     module,
-                    types,
+                    source,
                     symbols,
                     environment,
                     facts,
@@ -882,21 +885,34 @@ fn prepared_trigger_proof(
 
 fn seed_registered(
     module: &HirModule,
-    types: &BTreeMap<TypeId, TypeKind>,
+    source: &super::expression_types::SourceTypePreparation<'_>,
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
     environment: &TypeCheckEnv,
     facts: &mut SemanticFactState,
     pattern: PatternId,
     ty: &TypeKind,
 ) -> Result<(), FinalSemanticAnalysisError> {
+    let ty = source.retain(pattern, ty)?;
+    seed_prepared(module, source, symbols, environment, facts, pattern, &ty)
+}
+
+fn seed_prepared(
+    module: &HirModule,
+    source: &super::expression_types::SourceTypePreparation<'_>,
+    symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
+    environment: &TypeCheckEnv,
+    facts: &mut SemanticFactState,
+    pattern: PatternId,
+    ty: &TypeKind<crate::types::PreparedEffects>,
+) -> Result<(), FinalSemanticAnalysisError> {
     let mut locals = BTreeMap::new();
     let mut patterns = BTreeMap::new();
     seed_pattern_locals(
         PatternSeedContext {
             module,
-            types,
             symbols,
             environment,
+            source: source.clone(),
         },
         pattern,
         ty,
@@ -926,7 +942,7 @@ fn seed_registered(
 fn set_local(
     facts: &mut SemanticFactState,
     owner: arcweft_lang_hir::identity::LocalId,
-    ty: TypeKind,
+    ty: TypeKind<crate::types::PreparedEffects>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     if facts
         .locals()

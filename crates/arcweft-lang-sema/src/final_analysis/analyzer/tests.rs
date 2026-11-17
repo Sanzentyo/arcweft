@@ -15,6 +15,88 @@ use super::state::CandidateFactTransactionAction;
 use super::*;
 
 #[test]
+fn source_annotation_context_clones_share_work_and_preserve_original_cancellation() {
+    use arcweft_lang_hir::{
+        pattern::{HirPatternBinding, HirPatternKind},
+        project::HirSemanticPathOwnerId,
+    };
+
+    let fixture =
+        crate::final_analysis::tests::fixture("fn caller<T>(value: T) -> T { value }", None);
+    let cancellation = AtomicBool::new(false);
+    let control = FinalSemanticAnalysisControl::new(&cancellation);
+    let mut analyzer = Analyzer::new(
+        fixture.project.analysis_view().unwrap(),
+        &fixture.symbols,
+        FinalSemanticCatalogs::production(&fixture.registered),
+        control,
+    )
+    .unwrap();
+    analyzer.resolve_region_types(None).unwrap();
+    analyzer.staged_callables = Some(analyzer.stage_checked_callables().unwrap());
+    let module = fixture
+        .project
+        .analysis_view()
+        .unwrap()
+        .module(&CanonicalModulePath::crate_root())
+        .unwrap();
+    let (pattern, annotation, local) = module
+        .items()
+        .find_map(|(_, item)| {
+            let HirItemKind::Function(function) = item.kind() else {
+                return None;
+            };
+            let parameter = &function.parameter_groups()[0].parameters()[0];
+            let pattern = parameter.pattern();
+            let HirPatternKind::Binding(HirPatternBinding::Bound { local, .. }) =
+                module.resolve_pattern(pattern).unwrap().kind()
+            else {
+                return None;
+            };
+            Some((pattern, parameter.ty(), *local))
+        })
+        .unwrap();
+    let TypeKind::GenericParam(expected) = analyzer.types.get(&annotation).unwrap() else {
+        panic!("actual caller formal")
+    };
+    let source = analyzer
+        .source_type_preparation(preparation_work::AnalyzerPreparationWork::root(
+            128, control,
+        ))
+        .unwrap();
+    let mut retained = 0;
+    let mut stopped = None;
+    for pass in 0..=128 {
+        let owner = if pass % 2 == 0 {
+            HirSemanticPathOwnerId::Pattern(pattern)
+        } else {
+            HirSemanticPathOwnerId::Local(local)
+        };
+        match source.clone().annotation(owner, annotation) {
+            Ok(TypeKind::GenericParam(actual)) => {
+                assert_eq!(&actual, expected);
+                retained += 1;
+            }
+            Ok(_) => panic!("caller formal changed during retention"),
+            Err(error) => {
+                stopped = Some(error);
+                break;
+            }
+        }
+    }
+    assert!(retained > 0);
+    assert_eq!(
+        stopped,
+        Some(FinalSemanticAnalysisError::CallableEffectClosureWorkLimit { limit: 128 })
+    );
+    cancellation.store(true, std::sync::atomic::Ordering::Release);
+    assert_eq!(
+        source.annotation(local, annotation),
+        Err(FinalSemanticAnalysisError::Cancelled)
+    );
+}
+
+#[test]
 fn public_id_reference_family_checks_precede_cached_string_reuse() {
     let fixture =
         crate::final_analysis::tests::fixture("fn caller() { @target.sample.sprite; }", None);

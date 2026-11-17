@@ -9,38 +9,154 @@ use crate::final_analysis::type_rules::{integer_suffix_type, is_integer};
 use crate::types::{CompileTimeScalarKind, TypeEffectDomain};
 use arcweft_lang_hir::leaf::{HirUnitNumberLiteral, HirUnitNumberUnit};
 
-impl super::Analyzer<'_, '_, '_> {
-    fn source_type_owner(
+/// Borrowed source catalog plus a loan of the existing preparation work.
+/// Cloning this context does not copy types, effect graphs, or a budget.
+#[derive(Clone)]
+pub(super) struct SourceTypePreparation<'a> {
+    types: &'a super::BTreeMap<super::TypeId, TypeKind>,
+    callables: &'a crate::callable::CheckedCallableCatalogBuilder,
+    topology: &'a std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+    work: super::preparation_work::AnalyzerPreparationWork<'a>,
+}
+
+impl<'a> SourceTypePreparation<'a> {
+    pub(super) fn new(
+        types: &'a super::BTreeMap<super::TypeId, TypeKind>,
+        callables: &'a crate::callable::CheckedCallableCatalogBuilder,
+        topology: &'a std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+        work: super::preparation_work::AnalyzerPreparationWork<'a>,
+    ) -> Self {
+        Self {
+            types,
+            callables,
+            topology,
+            work,
+        }
+    }
+    fn owner(
         &self,
         owner: arcweft_lang_hir::project::HirSemanticPathOwnerId,
+        work: &mut super::preparation_work::AnalyzerPreparationWork<'_>,
     ) -> Result<crate::callable::CheckedConstraintSourceOwner, super::FinalSemanticAnalysisError>
     {
         use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
-        self.staged_callables
-            .as_ref()
-            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
-            .builder
-            .constraint_source_owner(&self.topology, owner)
+        use crate::types::TypeProjectionControl;
+        // Authenticate only after the original control admits copying the
+        // retained HIR root and source-owner metadata.
+        work.check()?;
+        work.visit_binding()?;
+        self.callables
+            .constraint_source_owner(self.topology, owner)
             .map_err(|error| FinalSemanticAnalysisError::SourceTypeRetention {
                 owner,
                 error: SourceTypeRetentionFailure::Owner(error),
             })
     }
 
-    /// Canonical annotations enter source preparation through their actual
-    /// producer. The existing expression work loan pays for the entire fold.
+    pub(super) fn declared_type(
+        &self,
+        annotation: super::TypeId,
+    ) -> Result<&TypeKind, super::FinalSemanticAnalysisError> {
+        self.types
+            .get(&annotation)
+            .ok_or(super::FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation })
+    }
+
+    /// Retention preserves authored Unknown rows and does not perform admission
+    /// into the original constraint relation or issue a completed identity.
+    pub(super) fn retain(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        ty: &TypeKind,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        self.owner(owner, &mut work)?
+            .retain_value_type(ty, &mut work)
+            .map_err(|error| {
+                super::FinalSemanticAnalysisError::source_type_projection(owner, error)
+            })
+    }
+
+    pub(super) fn annotation(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        annotation: super::TypeId,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        self.retain(owner, self.declared_type(annotation)?)
+    }
+
+    pub(super) fn environment_variant(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        schema: &super::EnvironmentEnumSchema,
+        ty: &TypeKind,
+    ) -> Result<
+        (
+            TypeKind<crate::types::PreparedEffects>,
+            super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
+        ),
+        super::FinalSemanticAnalysisError,
+    > {
+        use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let source = self.owner(owner, &mut work)?;
+        // Both owned type copies are charged through the same work loan.
+        let value_type = source
+            .retain_value_type(ty, &mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let owner_type = source
+            .retain_value_type(ty, &mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let seed = super::PreparedVariantOwnerSeed::try_environment_with(
+            schema,
+            owner_type,
+            &mut work,
+            |field, work| {
+                source.retain_value_type(field, work).map_err(|error| {
+                    FinalSemanticAnalysisError::source_type_projection(owner, error)
+                })
+            },
+        )
+        .map_err(|error| match error {
+            FinalSemanticAnalysisError::VariantOwner(error) => {
+                FinalSemanticAnalysisError::SourceTypeRetention {
+                    owner,
+                    error: SourceTypeRetentionFailure::Variant(error),
+                }
+            }
+            error => error,
+        })?;
+        Ok((value_type, seed))
+    }
+}
+
+impl super::Analyzer<'_, '_, '_> {
+    pub(super) fn source_type_preparation<'a>(
+        &'a self,
+        work: super::preparation_work::AnalyzerPreparationWork<'a>,
+    ) -> Result<SourceTypePreparation<'a>, super::FinalSemanticAnalysisError> {
+        Ok(SourceTypePreparation::new(
+            &self.types,
+            &self
+                .staged_callables
+                .as_ref()
+                .ok_or(super::FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                .builder,
+            &self.topology,
+            work,
+        ))
+    }
+
     pub(super) fn retain_source_value_type(
         &self,
         context: &super::expression_error::AnalyzerExpressionContext<'_>,
         owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
         ty: &TypeKind,
     ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
-        use crate::final_analysis::FinalSemanticAnalysisError;
-        let owner = owner.into();
-        let source = self.source_type_owner(owner)?;
-        source
-            .retain_value_type(ty, &mut context.work())
-            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))
+        self.source_type_preparation(context.work())?
+            .retain(owner, ty)
     }
 
     pub(super) fn retain_source_annotation_type(
@@ -49,11 +165,8 @@ impl super::Analyzer<'_, '_, '_> {
         owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
         annotation: super::TypeId,
     ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
-        let ty = self
-            .types
-            .get(&annotation)
-            .ok_or(super::FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation })?;
-        self.retain_source_value_type(context, owner, ty)
+        self.source_type_preparation(context.work())?
+            .annotation(owner, annotation)
     }
 
     pub(super) fn retain_environment_variant(
@@ -69,36 +182,8 @@ impl super::Analyzer<'_, '_, '_> {
         ),
         super::FinalSemanticAnalysisError,
     > {
-        use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
-        let source = self.source_type_owner(owner.into())?;
-        let mut work = context.work();
-        // Both owned type copies are charged through the same work loan.
-        let value_type = source.retain_value_type(ty, &mut work).map_err(|error| {
-            FinalSemanticAnalysisError::source_type_projection(owner.into(), error)
-        })?;
-        let owner_type = source.retain_value_type(ty, &mut work).map_err(|error| {
-            FinalSemanticAnalysisError::source_type_projection(owner.into(), error)
-        })?;
-        let seed = super::PreparedVariantOwnerSeed::try_environment_with(
-            schema,
-            owner_type,
-            &mut work,
-            |field, work| {
-                source.retain_value_type(field, work).map_err(|error| {
-                    FinalSemanticAnalysisError::source_type_projection(owner.into(), error)
-                })
-            },
-        )
-        .map_err(|error| match error {
-            FinalSemanticAnalysisError::VariantOwner(error) => {
-                FinalSemanticAnalysisError::SourceTypeRetention {
-                    owner: owner.into(),
-                    error: SourceTypeRetentionFailure::Variant(error),
-                }
-            }
-            error => error,
-        })?;
-        Ok((value_type, seed))
+        self.source_type_preparation(context.work())?
+            .environment_variant(owner, schema, ty)
     }
 }
 

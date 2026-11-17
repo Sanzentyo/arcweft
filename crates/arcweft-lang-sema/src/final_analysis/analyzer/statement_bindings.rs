@@ -111,7 +111,7 @@ impl Analyzer<'_, '_, '_> {
                 let module = self
                     .module(owner.module())
                     .map_err(AnalyzerExpressionError::fatal)?;
-                self.seed_contextual_pattern_locals(module, statement.pattern(), ty)
+                self.seed_contextual_pattern_locals(context, module, statement.pattern(), ty)
                     .map_err(AnalyzerExpressionError::fatal)?;
             }
             HirStmtKind::WhileLet(statement) => {
@@ -122,7 +122,7 @@ impl Analyzer<'_, '_, '_> {
                 let module = self
                     .module(owner.module())
                     .map_err(AnalyzerExpressionError::fatal)?;
-                self.seed_contextual_pattern_locals(module, statement.pattern(), ty)
+                self.seed_contextual_pattern_locals(context, module, statement.pattern(), ty)
                     .map_err(AnalyzerExpressionError::fatal)?;
             }
             HirStmtKind::Match(statement) => {
@@ -134,7 +134,7 @@ impl Analyzer<'_, '_, '_> {
                     .module(owner.module())
                     .map_err(AnalyzerExpressionError::fatal)?;
                 for arm in statement.arms() {
-                    self.seed_contextual_pattern_locals(module, arm.pattern(), ty)
+                    self.seed_contextual_pattern_locals(context, module, arm.pattern(), ty)
                         .map_err(AnalyzerExpressionError::fatal)?;
                 }
             }
@@ -150,7 +150,7 @@ impl Analyzer<'_, '_, '_> {
                 let module = self
                     .module(owner.module())
                     .map_err(AnalyzerExpressionError::fatal)?;
-                self.seed_contextual_pattern_locals(module, statement.pattern(), &item)
+                self.seed_contextual_pattern_locals(context, module, statement.pattern(), &item)
                     .map_err(AnalyzerExpressionError::fatal)?;
             }
             _ => {}
@@ -219,7 +219,7 @@ impl Analyzer<'_, '_, '_> {
                 .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?,
             None => binding_type.clone(),
         };
-        self.seed_contextual_pattern_locals(module, pattern, &binding)
+        self.seed_contextual_pattern_locals(context, module, pattern, &binding)
             .map_err(AnalyzerExpressionError::fatal)
     }
 }

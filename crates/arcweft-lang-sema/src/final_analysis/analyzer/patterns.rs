@@ -25,11 +25,25 @@ use arcweft_lang_hir::item::{
 use super::entities::EntityReferenceResolutionError;
 
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn pattern_seed_context<'a>(
+        &'a self,
+        module: &'a HirModule,
+        work: super::preparation_work::AnalyzerPreparationWork<'a>,
+    ) -> Result<PatternSeedContext<'a>, FinalSemanticAnalysisError> {
+        Ok(PatternSeedContext {
+            module,
+            symbols: self.symbols,
+            environment: self.catalogs.world.environment().typecheck_env(),
+            source: self.source_type_preparation(work)?,
+        })
+    }
+
     pub(super) fn analyze_patterns(
         &self,
         input: &mut FinalSemanticAnalysisInput,
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let context = self.published_expression_context();
         for module in self.modules.values() {
             for (owner, pattern) in module.patterns() {
                 if !selected
@@ -52,8 +66,8 @@ impl Analyzer<'_, '_, '_> {
                         CheckedPatternResolution::Literal(literal.clone())
                     }
                     HirPatternKind::Record { path, fields } => {
-                        let prepared =
-                            self.prepare_record_pattern(module, owner, path, fields, &ty)?;
+                        let prepared = self
+                            .prepare_record_pattern(&context, module, owner, path, fields, &ty)?;
                         input.push_prepared_pattern(
                             owner,
                             super::PreparedPatternFact::Record(prepared),
@@ -62,12 +76,7 @@ impl Analyzer<'_, '_, '_> {
                     }
                     HirPatternKind::Variant(variant) => {
                         let resolved = resolve_variant_pattern(
-                            PatternSeedContext {
-                                module,
-                                types: &self.types,
-                                symbols: self.symbols,
-                                environment: self.catalogs.world.environment().typecheck_env(),
-                            },
+                            self.pattern_seed_context(module, context.work())?,
                             owner,
                             variant,
                             &ty,
@@ -137,23 +146,15 @@ impl Analyzer<'_, '_, '_> {
 
     pub(super) fn prepare_record_pattern(
         &self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: PatternId,
         path: &HirPatternRecordPath,
         authored: &[HirPatternField],
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<PreparedRecordPattern, FinalSemanticAnalysisError> {
-        let schema = resolve_record_pattern_schema(
-            PatternSeedContext {
-                module,
-                types: &self.types,
-                symbols: self.symbols,
-                environment: self.catalogs.world.environment().typecheck_env(),
-            },
-            owner,
-            path,
-            ty,
-        )?;
+        let seed_context = self.pattern_seed_context(module, context.work())?;
+        let schema = resolve_record_pattern_schema(seed_context.clone(), owner, path, ty)?;
         let mut fields = Vec::with_capacity(authored.len());
         let mut seen = BTreeSet::new();
         let mut rest = PreparedRecordPatternRest::Absent;
@@ -190,7 +191,7 @@ impl Analyzer<'_, '_, '_> {
             if !seen.insert(name.clone()) {
                 return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
             }
-            let resolved = schema.field(owner, name, &self.types)?;
+            let resolved = schema.field(owner, name, &seed_context)?;
             let field_type = resolved.ty;
             let observed = match source {
                 PreparedRecordPatternSource::Pattern(child) => self.facts.patterns().get(&child),
@@ -220,6 +221,7 @@ impl Analyzer<'_, '_, '_> {
 
     pub(super) fn seed_contextual_pattern_locals(
         &mut self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
         module: &HirModule,
         pattern: PatternId,
         ty: &TypeKind<crate::types::PreparedEffects>,
@@ -227,12 +229,7 @@ impl Analyzer<'_, '_, '_> {
         let mut locals = BTreeMap::new();
         let mut patterns = BTreeMap::new();
         seed_pattern_locals(
-            PatternSeedContext {
-                module,
-                types: &self.types,
-                symbols: self.symbols,
-                environment: self.catalogs.world.environment().typecheck_env(),
-            },
+            self.pattern_seed_context(module, context.work())?,
             pattern,
             ty,
             &mut locals,
@@ -274,11 +271,12 @@ pub(super) fn seed_item_parameter_types(
 ) -> Result<(), FinalSemanticAnalysisError> {
     fn seed_parameter(
         parameter: &arcweft_lang_hir::item::HirParameter,
-        declared: &TypeKind<crate::types::PreparedEffects>,
+        declared: &TypeKind,
         context: PatternSeedContext<'_>,
         locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
         patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let declared = context.source.retain(parameter.pattern(), declared)?;
         let binding = match parameter.kind() {
             arcweft_lang_hir::item::HirParameterKind::RestPositional => {
                 TypeKind::Vec(Box::new(declared.clone()))
@@ -290,13 +288,14 @@ pub(super) fn seed_item_parameter_types(
     }
     fn seed_attached_content(
         parameter: Option<HirCallableAttachedContentParameter>,
-        environment: &TypeCheckEnv,
+        context: &PatternSeedContext<'_>,
         locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let Some(parameter) = parameter else {
             return Ok(());
         };
-        let content = environment
+        let content = context
+            .environment
             .standard_dialogue_content_type()
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
         let ty = match parameter.presence() {
@@ -305,6 +304,7 @@ pub(super) fn seed_item_parameter_types(
                 content
             }
         };
+        let ty = context.source.retain(parameter.binding(), &ty)?;
         if locals.insert(parameter.binding(), ty).is_some() {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
@@ -338,15 +338,11 @@ pub(super) fn seed_item_parameter_types(
             for parameter in action.parameters() {
                 // Action payload signatures own fixed declared types, not a
                 // callable body's inferred input-effect parameters.
-                let declared = context.types.get(&parameter.ty()).ok_or(
-                    FinalSemanticAnalysisError::TypeResolutionFailed {
-                        owner: parameter.ty(),
-                    },
-                )?;
+                let declared = context.source.declared_type(parameter.ty())?;
                 let declared = context
                     .environment
                     .canonical_accepted_type(declared.clone());
-                seed_parameter(parameter, &declared, context, locals, patterns)?;
+                seed_parameter(parameter, &declared, context.clone(), locals, patterns)?;
             }
         }
         HirItemKind::Flow(flow) => {
@@ -354,7 +350,7 @@ pub(super) fn seed_item_parameter_types(
                 seed_parameter(
                     parameter,
                     parameter_type(HirCallableSourceOwner::Item, 0, index)?,
-                    context,
+                    context.clone(),
                     locals,
                     patterns,
                 )?;
@@ -366,20 +362,20 @@ pub(super) fn seed_item_parameter_types(
                     seed_parameter(
                         parameter,
                         parameter_type(HirCallableSourceOwner::Item, group_index, index)?,
-                        context,
+                        context.clone(),
                         locals,
                         patterns,
                     )?;
                 }
             }
-            seed_attached_content(function.attached_content(), context.environment, locals)?;
+            seed_attached_content(function.attached_content(), &context, locals)?;
         }
         HirItemKind::Predicate(predicate) => {
             for (index, parameter) in predicate.parameters().iter().enumerate() {
                 seed_parameter(
                     parameter,
                     parameter_type(HirCallableSourceOwner::Item, 0, index)?,
-                    context,
+                    context.clone(),
                     locals,
                     patterns,
                 )?;
@@ -390,7 +386,7 @@ pub(super) fn seed_item_parameter_types(
                 seed_parameter(
                     parameter,
                     parameter_type(HirCallableSourceOwner::Item, 0, index)?,
-                    context,
+                    context.clone(),
                     locals,
                     patterns,
                 )?;
@@ -401,7 +397,7 @@ pub(super) fn seed_item_parameter_types(
                 seed_parameter(
                     parameter,
                     parameter_type(HirCallableSourceOwner::ViewItem, 0, index)?,
-                    context,
+                    context.clone(),
                     locals,
                     patterns,
                 )?;
@@ -421,13 +417,13 @@ pub(super) fn seed_item_parameter_types(
                         seed_parameter(
                             parameter,
                             parameter_type(source, group_index, index)?,
-                            context,
+                            context.clone(),
                             locals,
                             patterns,
                         )?;
                     }
                 }
-                seed_attached_content(function.attached_content(), context.environment, locals)?;
+                seed_attached_content(function.attached_content(), &context, locals)?;
             }
         }
         HirItemKind::Impl(implementation) => {
@@ -445,20 +441,26 @@ pub(super) fn seed_item_parameter_types(
                         match parameter {
                             arcweft_lang_hir::item::HirMethodParameter::Receiver(receiver) => {
                                 seed_pattern_locals(
-                                    context,
+                                    context.clone(),
                                     receiver.pattern(),
-                                    declared,
+                                    &context.source.retain(receiver.pattern(), declared)?,
                                     locals,
                                     patterns,
                                 )?;
                             }
                             arcweft_lang_hir::item::HirMethodParameter::Typed(parameter) => {
-                                seed_parameter(parameter, declared, context, locals, patterns)?;
+                                seed_parameter(
+                                    parameter,
+                                    declared,
+                                    context.clone(),
+                                    locals,
+                                    patterns,
+                                )?;
                             }
                         }
                     }
                 }
-                seed_attached_content(function.attached_content(), context.environment, locals)?;
+                seed_attached_content(function.attached_content(), &context, locals)?;
             }
         }
         HirItemKind::Trait(trait_item) => {
@@ -478,14 +480,14 @@ pub(super) fn seed_item_parameter_types(
                             seed_parameter(
                                 parameter,
                                 parameter_type(source, group_index, index)?,
-                                context,
+                                context.clone(),
                                 locals,
                                 patterns,
                             )?;
                         }
                     }
                 }
-                seed_attached_content(function.attached_content(), context.environment, locals)?;
+                seed_attached_content(function.attached_content(), &context, locals)?;
             }
         }
         _ => {}
@@ -493,12 +495,12 @@ pub(super) fn seed_item_parameter_types(
     Ok(())
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct PatternSeedContext<'a> {
     pub(super) module: &'a HirModule,
-    pub(super) types: &'a BTreeMap<TypeId, TypeKind<crate::types::PreparedEffects>>,
     pub(super) symbols: &'a ProjectSymbolTable,
     pub(super) environment: &'a TypeCheckEnv,
+    pub(super) source: super::expression_types::SourceTypePreparation<'a>,
 }
 
 struct ResolvedRecordPatternField {
@@ -517,8 +519,8 @@ enum ResolvedRecordPatternSchema<'a> {
         semantics: &'a crate::env::nominal::AcceptedEnvironmentRecordSemantics,
     },
     VariantPayload {
-        payload: &'a crate::types::VariantPayloadType,
-        fields: &'a [crate::types::VariantPayloadRecordTypeField],
+        payload: &'a crate::types::VariantPayloadType<crate::types::PreparedEffects>,
+        fields: &'a [crate::types::VariantPayloadRecordTypeField<crate::types::PreparedEffects>],
     },
 }
 
@@ -548,7 +550,7 @@ impl ResolvedRecordPatternSchema<'_> {
         &self,
         owner: PatternId,
         name: &super::HirName,
-        types: &BTreeMap<TypeId, TypeKind<crate::types::PreparedEffects>>,
+        context: &PatternSeedContext<'_>,
     ) -> Result<ResolvedRecordPatternField, FinalSemanticAnalysisError> {
         match self {
             Self::Project {
@@ -563,12 +565,12 @@ impl ResolvedRecordPatternSchema<'_> {
                     .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
                 let declaration_ordinal = u32::try_from(declaration_ordinal)
                     .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-                let declared = types.get(&field.ty()).ok_or(
-                    FinalSemanticAnalysisError::TypeResolutionFailed { owner: field.ty() },
-                )?;
+                let declared = context.source.declared_type(field.ty())?;
                 Ok(ResolvedRecordPatternField {
                     identity: PreparedRecordPatternFieldCoordinate::new(declaration_ordinal),
-                    ty: substitutions.apply(declared),
+                    ty: context
+                        .source
+                        .retain(owner, &substitutions.apply(declared))?,
                 })
             }
             Self::Environment { semantics, .. } => {
@@ -577,7 +579,7 @@ impl ResolvedRecordPatternSchema<'_> {
                     .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
                 Ok(ResolvedRecordPatternField {
                     identity: PreparedRecordPatternFieldCoordinate::new(field.ordinal()),
-                    ty: field.ty().clone(),
+                    ty: context.source.retain(owner, field.ty())?,
                 })
             }
             Self::VariantPayload { fields, .. } => {
@@ -602,10 +604,7 @@ pub(super) fn seed_pattern_locals(
     patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     PatternSeeder {
-        module: context.module,
-        types: context.types,
-        symbols: context.symbols,
-        environment: context.environment,
+        context,
         locals,
         patterns,
     }
@@ -613,10 +612,7 @@ pub(super) fn seed_pattern_locals(
 }
 
 struct PatternSeeder<'context, 'facts> {
-    module: &'context HirModule,
-    types: &'context BTreeMap<TypeId, TypeKind<crate::types::PreparedEffects>>,
-    symbols: &'context ProjectSymbolTable,
-    environment: &'context TypeCheckEnv,
+    context: PatternSeedContext<'context>,
     locals: &'facts mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
     patterns: &'facts mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
 }
@@ -628,6 +624,7 @@ impl PatternSeeder<'_, '_> {
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let record = self
+            .context
             .module
             .resolve_pattern(pattern)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
@@ -692,19 +689,9 @@ impl PatternSeeder<'_, '_> {
         variant: &HirVariantPattern,
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let payload = resolve_variant_pattern(
-            PatternSeedContext {
-                module: self.module,
-                types: self.types,
-                symbols: self.symbols,
-                environment: self.environment,
-            },
-            pattern,
-            variant,
-            ty,
-        )?
-        .payload()
-        .cloned();
+        let payload = resolve_variant_pattern(self.context.clone(), pattern, variant, ty)?
+            .payload()
+            .cloned();
         match (variant.payload(), payload) {
             (HirVariantPatternPayload::Absent, None) => Ok(()),
             (HirVariantPatternPayload::Pattern(child), Some(payload_ty)) => {
@@ -765,17 +752,7 @@ impl PatternSeeder<'_, '_> {
         fields: &[HirPatternField],
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let schema = resolve_record_pattern_schema(
-            PatternSeedContext {
-                module: self.module,
-                types: self.types,
-                symbols: self.symbols,
-                environment: self.environment,
-            },
-            pattern,
-            path,
-            ty,
-        )?;
+        let schema = resolve_record_pattern_schema(self.context.clone(), pattern, path, ty)?;
         let mut seen = BTreeSet::new();
         let mut has_rest = false;
         for field in fields {
@@ -789,7 +766,7 @@ impl PatternSeeder<'_, '_> {
                             owner: pattern,
                         });
                     }
-                    let field = schema.field(pattern, name, self.types)?;
+                    let field = schema.field(pattern, name, &self.context)?;
                     self.seed(*child, &field.ty)?;
                 }
                 HirPatternField::Shorthand { name, local } => {
@@ -798,7 +775,7 @@ impl PatternSeeder<'_, '_> {
                             owner: pattern,
                         });
                     }
-                    let field = schema.field(pattern, name, self.types)?;
+                    let field = schema.field(pattern, name, &self.context)?;
                     insert_local_type(*local, &field.ty, self.locals)?;
                 }
                 HirPatternField::Rest { binding } if !has_rest => {
@@ -867,12 +844,9 @@ impl PatternSeeder<'_, '_> {
         annotation: TypeId,
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let annotation_ty = self
-            .types
-            .get(&annotation)
-            .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation })?;
+        let annotation_ty = self.context.source.annotation(pattern, annotation)?;
         let compatible = match ty {
-            TypeKind::Choice(_) => ty.accepts(annotation_ty),
+            TypeKind::Choice(_) => ty.accepts(&annotation_ty),
             _ => annotation_ty.accepts(ty),
         };
         if !compatible {
@@ -881,7 +855,7 @@ impl PatternSeeder<'_, '_> {
         let completed = if annotation_ty.accepts(ty) {
             annotation_ty.binding_type_with_inferred_effects(ty)
         } else {
-            annotation_ty.binding_type_with_inferred_effects(annotation_ty)
+            annotation_ty.binding_type_with_inferred_effects(&annotation_ty)
         }
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
         seed_pattern_binding(binding, &completed, self.locals)
@@ -1013,6 +987,7 @@ fn resolve_record_pattern_schema<'a>(
 }
 
 pub(super) fn resolve_closed_variant_path(
+    source: &super::expression_types::SourceTypePreparation<'_>,
     environment: &TypeCheckEnv,
     path: &arcweft_lang_hir::leaf::HirPath,
     owner: ExprId,
@@ -1050,11 +1025,8 @@ pub(super) fn resolve_closed_variant_path(
     }
     let ordinal =
         u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-    Ok(Some((
-        ty.clone(),
-        super::PreparedVariantOwnerSeed::try_environment(schema, ty)?,
-        ordinal,
-    )))
+    let (ty, seed) = source.environment_variant(owner, schema, ty)?;
+    Ok(Some((ty, seed, ordinal)))
 }
 
 struct ResolvedVariantPattern {
@@ -1135,7 +1107,7 @@ fn resolve_project_variant_pattern(
     context: PatternSeedContext<'_>,
     owner: PatternId,
     pattern: &HirVariantPattern,
-    nominal: &ProjectNominalType,
+    nominal: &ProjectNominalType<crate::types::PreparedEffects>,
     name: &super::HirName,
 ) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
     let declaration = match pattern.head() {
@@ -1182,11 +1154,8 @@ fn resolve_project_variant_pattern(
             ordinal,
             case,
             |payload| {
-                context
-                    .types
-                    .get(&payload)
-                    .map(|payload| substitutions.apply(payload))
-                    .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: payload })
+                let declared = context.source.declared_type(payload)?;
+                context.source.retain(owner, &substitutions.apply(declared))
             },
             |_| FinalSemanticAnalysisError::InvalidNominalOwner,
         )?);

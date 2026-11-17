@@ -1640,8 +1640,10 @@ impl FxDefinitionSealer<'_, '_, '_, '_> {
         else {
             return Err(CheckedFxDefinitionSealError::InvalidBody);
         };
+        let preparation = self.analyzer.published_expression_context();
         self.analyzer
             .seed_contextual_pattern_locals(
+                &preparation,
                 module,
                 parameter.pattern(),
                 &TypeKind::Named("FxSampleContext".to_owned()),

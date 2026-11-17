@@ -1970,6 +1970,9 @@ impl Analyzer<'_, '_, '_> {
             )
         } else {
             let resolved = resolve_closed_variant_path(
+                &self
+                    .source_type_preparation(context.work())
+                    .map_err(AnalyzerExpressionError::fatal)?,
                 self.catalogs.world.environment().typecheck_env(),
                 path,
                 owner,
@@ -2456,7 +2459,7 @@ impl Analyzer<'_, '_, '_> {
                 let pattern = branch.pattern().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
                 })?;
-                self.seed_contextual_pattern_locals(module, pattern, &TypeKind::Progress)
+                self.seed_contextual_pattern_locals(context, module, pattern, &TypeKind::Progress)
                     .map_err(AnalyzerExpressionError::fatal)?;
                 // An enclosing call may seal its effect graph immediately.
                 // Complete the observer in the Await owner's transaction,
@@ -2841,7 +2844,7 @@ impl Analyzer<'_, '_, '_> {
                 owner: conditional.scrutinee(),
             })
         })?;
-        self.seed_contextual_pattern_locals(module, conditional.pattern(), scrutinee_type)
+        self.seed_contextual_pattern_locals(context, module, conditional.pattern(), scrutinee_type)
             .map_err(AnalyzerExpressionError::fatal)?;
         if let Some(guard) = conditional.guard() {
             self.evaluate_expression(context, guard, Some(&TypeKind::Bool))?;
@@ -2870,7 +2873,7 @@ impl Analyzer<'_, '_, '_> {
             })
         })?;
         for arm in match_expr.arms() {
-            self.seed_contextual_pattern_locals(module, arm.pattern(), scrutinee_type)
+            self.seed_contextual_pattern_locals(context, module, arm.pattern(), scrutinee_type)
                 .map_err(AnalyzerExpressionError::fatal)?;
         }
         let inferred = self.infer_control_branch_type(
@@ -2982,9 +2985,23 @@ impl Analyzer<'_, '_, '_> {
                         self.evaluate_expression(context, request.owner(), expected.as_ref())?;
                         requested.insert(request.owner());
                     }
+                    let source_context = super::expression_types::SourceTypePreparation::new(
+                        &self.types,
+                        &self
+                            .staged_callables
+                            .as_ref()
+                            .ok_or_else(|| {
+                                AnalyzerExpressionError::fatal(
+                                    FinalSemanticAnalysisError::CheckedCallableCatalog,
+                                )
+                            })?
+                            .builder,
+                        &self.topology,
+                        context.work(),
+                    );
                     super::statement_scrutinee::seed_dynamic_scrutinee(
                         module,
-                        &self.types,
+                        &source_context,
                         self.symbols,
                         self.catalogs.world.environment().typecheck_env(),
                         owner,
@@ -2992,6 +3009,7 @@ impl Analyzer<'_, '_, '_> {
                         &mut self.facts,
                     )
                     .map_err(AnalyzerExpressionError::fatal)?;
+                    drop(source_context);
                     self.evaluate_statement_bindings(context, owner, statement.kind())?;
                     let thread_return = if let HirStmtKind::Return { value } = statement.kind() {
                         let transfer = self.topology.control_transfer_row(owner).map_err(|_| {
@@ -3375,8 +3393,13 @@ impl Analyzer<'_, '_, '_> {
                             .map_err(AnalyzerExpressionError::fatal)?
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?,
                     };
-                    self.seed_contextual_pattern_locals(module, parameter.pattern(), &parameter_ty)
-                        .map_err(AnalyzerExpressionError::fatal)?;
+                    self.seed_contextual_pattern_locals(
+                        context,
+                        module,
+                        parameter.pattern(),
+                        &parameter_ty,
+                    )
+                    .map_err(AnalyzerExpressionError::fatal)?;
                     parameters.push(parameter_ty);
                 }
                 let declared_result = closure
@@ -3958,7 +3981,7 @@ impl Analyzer<'_, '_, '_> {
                     .observable_payload()
                     .ok_or_else(|| AnalyzerExpressionError::rejected(*target))?;
                 if let Some(pattern) = value {
-                    self.seed_choice_trigger_pattern(module, *pattern, payload)?;
+                    self.seed_choice_trigger_pattern(context, module, *pattern, payload)?;
                 }
                 CheckedTrigger::signal()
             }
@@ -4020,6 +4043,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn seed_choice_trigger_pattern(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         pattern: arcweft_lang_hir::identity::PatternId,
         expected: &TypeKind<crate::types::PreparedEffects>,
@@ -4027,12 +4051,8 @@ impl Analyzer<'_, '_, '_> {
         let mut locals = std::collections::BTreeMap::new();
         let mut patterns = std::collections::BTreeMap::new();
         super::patterns::seed_pattern_locals(
-            super::patterns::PatternSeedContext {
-                module,
-                types: &self.types,
-                symbols: self.symbols,
-                environment: self.catalogs.world.environment().typecheck_env(),
-            },
+            self.pattern_seed_context(module, context.work())
+                .map_err(AnalyzerExpressionError::fatal)?,
             pattern,
             expected,
             &mut locals,

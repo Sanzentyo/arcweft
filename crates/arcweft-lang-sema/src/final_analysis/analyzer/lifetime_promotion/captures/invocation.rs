@@ -738,7 +738,14 @@ impl Analyzer<'_, '_, '_> {
             return Ok(None);
         }
         receiver.charge(fields.len() as u64)?;
-        let prepared = self.prepare_record_pattern(module, pattern, path, fields, ty)?;
+        let prepared = self.prepare_record_pattern(
+            &self.published_expression_context(),
+            module,
+            pattern,
+            path,
+            fields,
+            ty,
+        )?;
         let field = prepared
             .fields()
             .iter()

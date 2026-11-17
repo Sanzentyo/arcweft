@@ -228,10 +228,21 @@ impl Analyzer<'_, '_, '_> {
         declaration: &PreparedExecutableDeclaration,
         ingress: &PreparedExecutableIngressFacts,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let source = super::expression_types::SourceTypePreparation::new(
+            &self.types,
+            &self
+                .staged_callables
+                .as_ref()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                .builder,
+            &self.topology,
+            self.preparation_work.clone(),
+        );
         self.module(declaration.module)?
             .resolve_item(declaration.item)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
         super::statement_scrutinee::seed_declaration_scrutinees(
+            &source,
             &self.modules,
             &self.types,
             self.symbols,
@@ -245,6 +256,7 @@ impl Analyzer<'_, '_, '_> {
             &mut self.facts,
         )?;
         super::statement_scrutinee::seed_choice_event_scrutinees(
+            &source,
             &self.modules,
             &self.types,
             self.symbols,
@@ -257,6 +269,7 @@ impl Analyzer<'_, '_, '_> {
             declaration.expressions(),
             &mut self.facts,
         )?;
+        drop(source);
         let expression_ancestors = {
             let view = self
                 .topology
@@ -377,15 +390,26 @@ impl Analyzer<'_, '_, '_> {
                 let expected = request.expected();
                 self.check_expression_published(request.owner(), expected.as_ref())?;
             }
+            let source_context = super::expression_types::SourceTypePreparation::new(
+                &self.types,
+                &self
+                    .staged_callables
+                    .as_ref()
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .builder,
+                &self.topology,
+                self.preparation_work.clone(),
+            );
             super::statement_scrutinee::seed_dynamic_scrutinee(
                 module,
-                &self.types,
+                &source_context,
                 self.symbols,
                 self.catalogs.world.environment().typecheck_env(),
                 owner,
                 &statement,
                 &mut self.facts,
             )?;
+            drop(source_context);
             self.check_statement_bindings_published(owner, &statement)?;
             if let HirStmtKind::Expression { expression } = statement {
                 self.check_expression_published(expression, None)?;
@@ -550,7 +574,18 @@ impl Analyzer<'_, '_, '_> {
         let limits = StatementPreparationLimits::production(&inventory, &roots, includes.len())?;
         let mut worklist =
             PreparedExecutableIngressWorklist::new(&inventory, roots, includes, limits)?;
+        let source_context = super::expression_types::SourceTypePreparation::new(
+            &self.types,
+            &self
+                .staged_callables
+                .as_ref()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                .builder,
+            &self.topology,
+            self.preparation_work.clone(),
+        );
         super::statement_scrutinee::seed_non_event_scrutinees(
+            &source_context,
             &self.modules,
             &self.types,
             self.symbols,
@@ -562,6 +597,7 @@ impl Analyzer<'_, '_, '_> {
             &inventory,
             &mut self.facts,
         )?;
+        drop(source_context);
         self.drive_ingress_worklist(&inventory, &mut worklist)?;
         self.reject_unreached_event_declarations(&inventory, &worklist.facts)?;
         self.complete_unreached_declarations(&inventory, &mut worklist)?;
