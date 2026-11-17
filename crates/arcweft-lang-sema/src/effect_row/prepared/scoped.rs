@@ -12,6 +12,14 @@ pub(super) struct ScopedObligation {
     pub(super) predicate: PreparedEffectPredicate,
 }
 
+/// One immutable original constraint and its complete universal Γ. It grants
+/// no mutation or completion authority. Clones keep the same original fact.
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedEffectScopedConstraint {
+    pub(super) owner: PreparedEffectGraphOwner,
+    pub(super) obligation: Arc<ScopedObligation>,
+}
+
 impl PreparedEffectGraph {
     /// Retain D and C separately: pointwise implication of their membership
     /// formulas does not express implication between whole finite-row facts.

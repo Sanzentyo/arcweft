@@ -22,6 +22,7 @@ mod declaration;
 mod read;
 mod relation;
 pub(crate) use read::PreparedEffectReadView;
+pub(crate) use scoped::PreparedEffectScopedConstraint;
 mod constraints;
 use relation::PreparedEffectDefinitions;
 mod scope;

@@ -1,7 +1,7 @@
 //! Borrow the original live or extracted relation without publishing it.
 
-use super::transaction::PreparedEffectDeltaData;
 use super::*;
+use super::{scoped::ScopedObligation, transaction::PreparedEffectDeltaData};
 
 mod parameters;
 
@@ -283,5 +283,53 @@ impl<'a> PreparedEffectReadView<'a> {
         self.predicate_definition(id)
             .map(Arc::as_ref)
             .ok_or(PreparedEffectInvariant::StaleReference)
+    }
+}
+
+impl PreparedEffectReadView<'_> {
+    /// Admit a caller-owned Γ, D and R without appending a branch's facts to
+    /// every other branch in the live graph. The lexical owner authenticates
+    /// actual frames and source permissions before lending these references.
+    pub(crate) fn scoped_constraint<C: DecisionControl>(
+        self,
+        parameters: &[GenericEffectReference],
+        domain: &PreparedEffectPredicate,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectScopedConstraint, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        let scope = PreparedEffectGraph::validate_parameters(parameters, &mut work)?;
+        for parameter in parameters {
+            work.charge(DecisionWork::Visit)?;
+            if matches!(parameter, GenericEffectReference::Inference(_)) {
+                return Err(PreparedEffectInvariant::ParameterContract.into());
+            }
+        }
+        for value in [domain, predicate] {
+            let mut admitted = true;
+            self.visit_predicate_parameters(value, work.0, &mut |reference, _| {
+                admitted &= scope.contains(reference);
+                Ok(())
+            })?;
+            if !admitted {
+                return Err(PreparedEffectInvariant::ParameterContract.into());
+            }
+        }
+        let domain = self.retain_predicate(domain, work.0)?;
+        let predicate = self.retain_predicate(predicate, work.0)?;
+        let mut retained = Vec::new();
+        for parameter in parameters {
+            work.charge(DecisionWork::Node)?;
+            retained.push(parameter.clone());
+        }
+        work.charge(DecisionWork::Node)?;
+        Ok(PreparedEffectScopedConstraint {
+            owner: PreparedEffectGraphOwner(Arc::clone(&self.relation.issuer)),
+            obligation: Arc::new(ScopedObligation {
+                parameters: retained.into_boxed_slice(),
+                domain,
+                predicate,
+            }),
+        })
     }
 }

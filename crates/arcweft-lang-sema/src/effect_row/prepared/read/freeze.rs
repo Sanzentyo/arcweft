@@ -14,6 +14,7 @@ impl PreparedEffectReadView<'_> {
         self,
         rows: &[&PreparedEffectRow],
         predicates: &[&PreparedEffectPredicate],
+        constraints: &[&PreparedEffectScopedConstraint],
         control: &mut C,
     ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
@@ -70,6 +71,14 @@ impl PreparedEffectReadView<'_> {
         {
             work.charge(DecisionWork::Node)?;
             obligations.push(Arc::clone(obligation));
+        }
+        for constraint in constraints {
+            work.charge(DecisionWork::Visit)?;
+            self.validate_owner(&constraint.owner)?;
+            self.validate_retained_predicate(&constraint.obligation.domain)?;
+            self.validate_retained_predicate(&constraint.obligation.predicate)?;
+            work.charge(DecisionWork::Node)?;
+            obligations.push(Arc::clone(&constraint.obligation));
         }
         let mut reachable = Reachable::new(self, SchemeDependencies::Headers);
         for id in inventory {

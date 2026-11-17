@@ -1,4 +1,5 @@
 use super::*;
+mod scoped_constraints;
 use crate::effect_row::prepared::test_support::{Budget, Exhausted, budget, literal};
 
 fn truth() -> PreparedEffectPredicate {
@@ -71,7 +72,7 @@ fn freezing_a_named_value_keeps_a_scheme_input_before_and_after_its_body() {
     let (named, output, row) = constrained_named_value(&mut graph, false);
     let before = graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut budget())
+        .freeze_scoped(&[&row], &[], &[], &mut budget())
         .unwrap();
     let original = graph.declaration(&named, &mut budget()).unwrap();
     graph
@@ -86,7 +87,7 @@ fn freezing_a_named_value_keeps_a_scheme_input_before_and_after_its_body() {
         .unwrap();
     let after = graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut budget())
+        .freeze_scoped(&[&row], &[], &[], &mut budget())
         .unwrap();
     assert_eq!(before.support, after.support);
     assert_eq!(before.graph.rows.len(), after.graph.rows.len());
@@ -130,11 +131,11 @@ fn original_relation_identity_distinguishes_new_constraints_on_the_same_issuer()
     let (_, _, row) = constrained_named_value(&mut graph, false);
     let before = graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut budget())
+        .freeze_scoped(&[&row], &[], &[], &mut budget())
         .unwrap();
     let again = graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut budget())
+        .freeze_scoped(&[&row], &[], &[], &mut budget())
         .unwrap();
     assert!(
         before
@@ -156,7 +157,7 @@ fn original_relation_identity_distinguishes_new_constraints_on_the_same_issuer()
         .unwrap();
     let changed = graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut budget())
+        .freeze_scoped(&[&row], &[], &[], &mut budget())
         .unwrap();
     assert!(
         !before
@@ -167,7 +168,7 @@ fn original_relation_identity_distinguishes_new_constraints_on_the_same_issuer()
     graph.rollback(&mut checkpoint).unwrap();
     let restored = graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut budget())
+        .freeze_scoped(&[&row], &[], &[], &mut budget())
         .unwrap();
     assert!(
         before
@@ -196,7 +197,7 @@ fn a_pure_callback_retains_a_guard_until_the_real_named_body_is_closed() {
         let frozen = {
             let edit = graph.edit_scope(&scope, &mut budget()).unwrap();
             edit.read()
-                .freeze_scoped(&[&row], &[], &mut budget())
+                .freeze_scoped(&[&row], &[], &[], &mut budget())
                 .unwrap()
         };
         assert!(graph.relation.obligations.is_empty());
@@ -274,7 +275,7 @@ fn named_and_future_inputs_share_one_import_without_minimizing_either_input() {
         .unwrap();
     let frozen = graph
         .read()
-        .freeze_scoped(&[&result_row], &[], &mut budget())
+        .freeze_scoped(&[&result_row], &[], &[], &mut budget())
         .unwrap();
     graph.rollback(&mut checkpoint).unwrap();
     graph
@@ -339,7 +340,7 @@ fn freezing_reserves_work_and_leaves_the_original_checkpoint_usable_at_every_fai
     let mut measured = Budget(10_000);
     graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut measured)
+        .freeze_scoped(&[&row], &[], &[], &mut measured)
         .unwrap();
     let required = 10_000 - measured.0;
     assert!(required > 0);
@@ -347,7 +348,7 @@ fn freezing_reserves_work_and_leaves_the_original_checkpoint_usable_at_every_fai
         assert!(matches!(
             graph
                 .read()
-                .freeze_scoped(&[&row], &[], &mut Budget(available)),
+                .freeze_scoped(&[&row], &[], &[], &mut Budget(available)),
             Err(PreparedEffectFailure::Control(Exhausted))
         ));
         assert_eq!(graph.state, state);
@@ -366,7 +367,7 @@ fn freezing_an_extracted_relation_retains_all_constraints_without_publishing_its
     let frozen = graph
         .read_extracted(&delta, &mut budget())
         .unwrap()
-        .freeze_scoped(&[], &[], &mut budget())
+        .freeze_scoped(&[], &[], &[], &mut budget())
         .unwrap();
     assert_eq!(frozen.graph.obligations.len(), 2);
     assert_eq!(graph.state, state);
@@ -432,7 +433,7 @@ fn a_frozen_named_input_retains_unused_formals_and_the_original_domain() {
         .unwrap();
     let frozen = graph
         .read()
-        .freeze_scoped(&[&row], &[], &mut budget())
+        .freeze_scoped(&[&row], &[], &[], &mut budget())
         .unwrap();
     let guarded = frozen.scheme(&named).unwrap();
     let ResidualFunctionRole::SchemeInput { declaration, .. } =

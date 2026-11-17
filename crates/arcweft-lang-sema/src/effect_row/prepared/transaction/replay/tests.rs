@@ -534,11 +534,11 @@ fn imported_open_relations_distinguish_new_constraints_on_the_original_issuer() 
         .unwrap();
     let before = source
         .read()
-        .freeze_scoped(&[&row], &[], &mut work)
+        .freeze_scoped(&[&row], &[], &[], &mut work)
         .unwrap();
     let repeated = source
         .read()
-        .freeze_scoped(&[&row], &[], &mut work)
+        .freeze_scoped(&[&row], &[], &[], &mut work)
         .unwrap();
     let guard = source
         .relate(
@@ -558,7 +558,7 @@ fn imported_open_relations_distinguish_new_constraints_on_the_original_issuer() 
         .unwrap();
     let changed = source
         .read()
-        .freeze_scoped(&[&row], &[], &mut work)
+        .freeze_scoped(&[&row], &[], &[], &mut work)
         .unwrap();
     let mut graph = PreparedEffectGraph::default();
     let mut import = |completion: &Arc<crate::effect_row::prepared::ScopedEffectCompletion>| {
