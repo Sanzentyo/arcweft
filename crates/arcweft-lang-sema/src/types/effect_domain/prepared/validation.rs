@@ -3,6 +3,9 @@
 use super::*;
 use crate::effect_row::prepared::{PreparedEffectInvariant, PreparedEffectReadView};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum PreparedTypeRetentionFailure<E: std::error::Error + 'static> {
     #[error("prepared type retention aborted")]
@@ -89,6 +92,35 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, PreparedEff
 }
 
 impl TypeKind<PreparedEffects> {
+    /// Retain the existing root below a new metatype node. Child traversal
+    /// starts at depth 2 and charges each copy there. The outer box is allocated
+    /// only after that traversal succeeds.
+    pub(crate) fn retain_as_meta_type<C: TypeProjectionControl>(
+        &self,
+        scope: &GenericScope,
+        effects: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<PreparedTypeRetentionFailure<C::Error>>> {
+        control.check().map_err(|error| {
+            TypeProjectionError::Control(PreparedTypeRetentionFailure::Control(error))
+        })?;
+        control
+            .visit_node(TypeProjectionNodeKind::Type, 1)
+            .map_err(|error| {
+                TypeProjectionError::Control(PreparedTypeRetentionFailure::Control(error))
+            })?;
+        let retained = self.project_effect_domain_at(
+            scope,
+            2,
+            &mut Retention {
+                effects,
+                control,
+                depth: 2,
+            },
+        )?;
+        Ok(Self::MetaType(Box::new(retained)))
+    }
+
     pub(crate) fn retain_effects<C: TypeProjectionControl>(
         &self,
         scope: &GenericScope,

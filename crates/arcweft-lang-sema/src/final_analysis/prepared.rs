@@ -26,8 +26,8 @@ use crate::{
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
 use super::{
     CheckedCallableBoundary, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionSiteBoundary, CheckedPattern, CheckedProjectNominal, CheckedTryBoundaryOwner,
-    CheckedTryCarrier, CheckedTypeSelection,
+    CheckedFunctionSiteBoundary, CheckedPattern, CheckedTryBoundaryOwner, CheckedTryCarrier,
+    CheckedTypeSelection,
 };
 
 #[path = "prepared/evaluated_effect.rs"]
@@ -892,18 +892,21 @@ impl PreparedProjectFieldExpression {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedProjectNominalTypeValueExpression {
     shell: PreparedExpressionShell,
-    nominal: CheckedProjectNominal,
+    nominal: PreparedProjectNominal,
 }
 
 impl PreparedProjectNominalTypeValueExpression {
-    pub(crate) fn try_new(nominal: CheckedProjectNominal) -> Option<Self> {
-        let nominal_type = nominal.ty();
-        if nominal.identity() != nominal_type.semantic_identity_digest().ok()? {
+    pub(crate) fn try_new(
+        nominal: PreparedProjectNominal,
+        meta_type: TypeKind<PreparedEffects>,
+    ) -> Option<Self> {
+        // This verifies the same retained operational root, not semantic equality.
+        if !matches!(&meta_type, TypeKind::MetaType(inner) if inner.as_ref() == nominal.ty()) {
             return None;
         }
         Some(Self {
             shell: PreparedExpressionShell::value(
-                TypeKind::MetaType(Box::new(nominal_type)),
+                meta_type,
                 CheckedTypeSelection::Expected,
                 EffectSet::new(),
             ),
@@ -915,11 +918,11 @@ impl PreparedProjectNominalTypeValueExpression {
         &self.shell
     }
 
-    pub(crate) const fn nominal(&self) -> &CheckedProjectNominal {
+    pub(crate) const fn nominal(&self) -> &PreparedProjectNominal {
         &self.nominal
     }
 
-    pub(crate) fn into_parts(self) -> (PreparedExpressionShell, CheckedProjectNominal) {
+    pub(crate) fn into_parts(self) -> (PreparedExpressionShell, PreparedProjectNominal) {
         (self.shell, self.nominal)
     }
 }
@@ -974,14 +977,14 @@ impl PreparedProjectRecordExpressionField {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedProjectRecordExpression {
     shell: PreparedExpressionShell,
-    nominal: CheckedProjectNominal,
+    nominal: PreparedProjectNominal,
     fields: Box<[PreparedProjectRecordExpressionField]>,
 }
 
 impl PreparedProjectRecordExpression {
     pub(crate) const fn new(
         shell: PreparedExpressionShell,
-        nominal: CheckedProjectNominal,
+        nominal: PreparedProjectNominal,
         fields: Box<[PreparedProjectRecordExpressionField]>,
     ) -> Self {
         Self {
@@ -993,7 +996,7 @@ impl PreparedProjectRecordExpression {
     pub(crate) const fn shell(&self) -> &PreparedExpressionShell {
         &self.shell
     }
-    pub(crate) const fn nominal(&self) -> &CheckedProjectNominal {
+    pub(crate) const fn nominal(&self) -> &PreparedProjectNominal {
         &self.nominal
     }
     pub(crate) const fn fields(&self) -> &[PreparedProjectRecordExpressionField] {
@@ -1004,7 +1007,7 @@ impl PreparedProjectRecordExpression {
         self,
     ) -> (
         PreparedExpressionShell,
-        CheckedProjectNominal,
+        PreparedProjectNominal,
         Box<[PreparedProjectRecordExpressionField]>,
     ) {
         (self.shell, self.nominal, self.fields)

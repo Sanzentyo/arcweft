@@ -34,7 +34,7 @@ use super::{
     PreparedResolvedExpression, PreparedTryBoundary, ProjectNominalBody, ProjectNominalDeclaration,
     ProjectNominalType, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId, ScopeId,
     SourceSpan, TypeKind, TypeParameterSubstitutions,
-    calls::{checked_character_dialogue_target, checked_project_nominal},
+    calls::checked_character_dialogue_target,
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
     },
@@ -1641,15 +1641,22 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let (ty, type_selection, fields) =
             self.check_project_record_fields(context, owner, declaration, fields, expectation)?;
-        let nominal =
-            checked_project_nominal(declaration, &ty).map_err(AnalyzerExpressionError::fatal)?;
-        Ok(PreparedExpressionFact::from(
-            crate::final_analysis::PreparedProjectRecordExpression::new(
-                super::PreparedExpressionShell::value(ty, type_selection, EffectSet::new()),
-                nominal,
-                fields,
-            ),
-        ))
+        self.with_declared_project_nominal(context.work(), owner, &ty, |nominal, projection| {
+            let nominal = crate::final_analysis::prepared::PreparedProjectNominal::new(nominal);
+            let shell_type = projection.retain(nominal.ty())?;
+            Ok(PreparedExpressionFact::from(
+                crate::final_analysis::PreparedProjectRecordExpression::new(
+                    super::PreparedExpressionShell::value(
+                        shell_type,
+                        type_selection,
+                        EffectSet::new(),
+                    ),
+                    nominal,
+                    fields,
+                ),
+            ))
+        })
+        .map_err(AnalyzerExpressionError::fatal)
     }
 
     fn prepare_entry_reference(

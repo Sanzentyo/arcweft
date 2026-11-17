@@ -968,21 +968,9 @@ impl Analyzer<'_, '_, '_> {
             let type_actual = self
                 .resolve_type(discriminator.type_root(), false)
                 .map_err(AnalyzerExpressionError::fatal)?;
-            let TypeKind::ProjectNominal(type_nominal) = &type_actual else {
+            if !matches!(&type_actual, TypeKind::ProjectNominal(_)) {
                 return Err(AnalyzerExpressionError::rejected(owner));
-            };
-            let declaration = self
-                .symbols
-                .nominal(type_nominal.declaration())
-                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-            let type_nominal = crate::final_analysis::CheckedProjectNominal::new(
-                type_nominal.declaration().clone(),
-                declaration.owner(),
-                type_actual.semantic_identity_digest().map_err(|error| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::from(error))
-                })?,
-                type_nominal.arguments().to_vec(),
-            );
+            }
             if !matches!(body_presence, HirAttachedContentBodyPresence::Present) {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
@@ -1020,8 +1008,20 @@ impl Analyzer<'_, '_, '_> {
             }
             let type_coordinate =
                 type_coordinate.ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-            let type_value = PreparedProjectNominalTypeValueExpression::try_new(type_nominal)
-                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+            let type_value = self
+                .with_declared_project_nominal(
+                    context.work(),
+                    type_expression,
+                    &type_actual,
+                    |nominal, projection| {
+                        let nominal =
+                            crate::final_analysis::prepared::PreparedProjectNominal::new(nominal);
+                        let meta_type = projection.meta_type(nominal.ty())?;
+                        PreparedProjectNominalTypeValueExpression::try_new(nominal, meta_type)
+                            .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
+                    },
+                )
+                .map_err(AnalyzerExpressionError::fatal)?;
             let checked = self.publish_text_proxy_object_application(
                 context,
                 module,

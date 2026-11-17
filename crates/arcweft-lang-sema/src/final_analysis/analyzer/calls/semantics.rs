@@ -2,10 +2,9 @@
 
 use super::super::{
     AcceptedCandidateRank, Analyzer, CallableAuthorityRank, CallableGroupIndex, CandidateSelection,
-    CheckedCallArgumentSlotSource, CheckedCallableCatalog, CheckedProjectNominal, EffectRow,
-    EffectSet, FinalSemanticAnalysisError, HirCallArgument, HirCallValue, MappedCallArgumentSlot,
-    Ordering, PhysicalArgumentEvaluationKind, PreparedResolvedCallable, ProjectNominalDeclaration,
-    SpreadArgumentPolicy, TypeKind,
+    CheckedCallArgumentSlotSource, CheckedCallableCatalog, EffectRow, EffectSet,
+    FinalSemanticAnalysisError, HirCallArgument, HirCallValue, MappedCallArgumentSlot, Ordering,
+    PhysicalArgumentEvaluationKind, PreparedResolvedCallable, SpreadArgumentPolicy,
 };
 use super::{PreparedCallApplicationTransaction, PreparedCandidateOutcome};
 use crate::callable::ResolvedCallable;
@@ -327,22 +326,4 @@ const fn compare_candidate_authority(
         }
         _ => Ordering::Equal,
     }
-}
-
-pub(in super::super) fn checked_project_nominal(
-    declaration: &ProjectNominalDeclaration,
-    ty: &TypeKind,
-) -> Result<CheckedProjectNominal, FinalSemanticAnalysisError> {
-    let TypeKind::ProjectNominal(nominal) = ty else {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    };
-    if nominal.declaration() != declaration.id() {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    }
-    Ok(CheckedProjectNominal::new(
-        declaration.id().clone(),
-        declaration.owner(),
-        ty.semantic_identity_digest()?,
-        nominal.arguments().to_vec(),
-    ))
 }

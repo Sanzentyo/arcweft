@@ -272,6 +272,17 @@ pub(super) struct SourceNominalProjection<'operation, 'graph, 'control> {
 }
 
 impl SourceNominalProjection<'_, '_, '_> {
+    pub(super) fn meta_type(
+        &mut self,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        ty.retain_as_meta_type(self.scope, self.edit.read(), self.work)
+            .map_err(|error| {
+                super::FinalSemanticAnalysisError::source_prepared_type_retention(self.owner, error)
+            })
+            .inspect_err(|_| self.edit.invalidate())
+    }
+
     pub(super) fn visit_binding(&mut self) -> Result<(), super::FinalSemanticAnalysisError> {
         use crate::types::TypeProjectionControl;
         self.work
@@ -309,6 +320,39 @@ impl SourceNominalProjection<'_, '_, '_> {
 }
 
 impl super::Analyzer<'_, '_, '_> {
+    pub(super) fn with_declared_project_nominal<T>(
+        &mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        ty: &TypeKind,
+        operation: impl FnOnce(
+            crate::types::ProjectNominalType<crate::types::PreparedEffects>,
+            &mut SourceNominalProjection<'_, '_, '_>,
+        ) -> Result<T, super::FinalSemanticAnalysisError>,
+    ) -> Result<T, super::FinalSemanticAnalysisError> {
+        let owner = owner.into();
+        let source = SourceTypePreparation::new(
+            &self.types,
+            &self
+                .staged_callables
+                .as_ref()
+                .ok_or(super::FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                .builder,
+            &self.topology,
+            work,
+        );
+        let retained = source.retain(owner, ty)?;
+        let TypeKind::ProjectNominal(nominal) = retained else {
+            return Err(super::FinalSemanticAnalysisError::InvalidNominalOwner);
+        };
+        let declaration = self
+            .symbols
+            .nominal(nominal.declaration())
+            .ok_or(super::FinalSemanticAnalysisError::InvalidNominalOwner)?;
+        let (graph, _) = self.facts.effect_declarations_mut()?.relation();
+        source.with_nominal_type_arguments(owner, declaration, &nominal, graph, operation)
+    }
+
     pub(super) fn source_type_preparation<'a>(
         &'a self,
         work: super::preparation_work::AnalyzerPreparationWork<'a>,

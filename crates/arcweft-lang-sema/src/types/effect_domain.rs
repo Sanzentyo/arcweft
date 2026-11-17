@@ -144,6 +144,19 @@ impl<S: TypeEffectDomain> TypeKind<S> {
         T: TypeEffectDomain,
         C: TypeEffectProjection<S, T>,
     {
-        self.project_structure(scope, scope, 1, &mut EffectDomainProjection(control))
+        self.project_effect_domain_at(scope, 1, control)
+    }
+
+    pub(in crate::types) fn project_effect_domain_at<T, C>(
+        &self,
+        scope: &GenericScope,
+        depth: u64,
+        control: &mut C,
+    ) -> Result<TypeKind<T>, TypeProjectionError<C::Error>>
+    where
+        T: TypeEffectDomain,
+        C: TypeEffectProjection<S, T>,
+    {
+        self.project_structure(scope, scope, depth, &mut EffectDomainProjection(control))
     }
 }
