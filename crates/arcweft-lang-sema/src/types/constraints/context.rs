@@ -1445,7 +1445,11 @@ where
             use crate::effect_row::prepared::PreparedEffectUnknownEligibility;
             use std::{collections::BTreeMap, sync::Arc};
 
-            let introduction = Arc::new(context.capture_lexical_scope()?);
+            let mut introduction = context.capture_lexical_scope()?;
+            // Imported Γ retains actual parent frames even after the lexical
+            // traversal has left them. Keep their identity in this opening.
+            introduction.merge(original.gamma(), context)?;
+            let introduction = Arc::new(introduction);
             let mut dependencies = std::collections::BTreeSet::new();
             // The complete actual Γ is an input, independent of which effect
             // variables happen to occur in a candidate's row or predicate.
@@ -1466,11 +1470,9 @@ where
                         reference @ GenericEffectReference::Inference(_),
                     ) = parameter
                     {
-                        graph
-                            .read()
-                            .validate_unknown(imported.effect_function(reference).ok_or(
+                        imported.effect_application(reference).ok_or(
                             crate::effect_row::prepared::PreparedEffectInvariant::ParameterContract,
-                        )?)?;
+                        )?.validate(graph.read())?;
                     }
                 }
             }
@@ -1538,7 +1540,14 @@ where
                     eligibility,
                     context,
                 )?;
-                functions.insert(variable.variable().clone(), reference);
+                let binding = super::application::ConstraintEffectFunction::prepare(
+                    reference,
+                    &introduction,
+                    &original,
+                    graph,
+                    context,
+                )?;
+                functions.insert(variable.variable().clone(), binding);
             }
             Ok(ConstraintApplicationScope::new(
                 application,
@@ -1814,9 +1823,9 @@ where
                 self.enter_node()?;
                 if let super::ConstraintGenericParameterId::Effect(reference) = parameter {
                     if matches!(reference, GenericEffectReference::Inference(_)) {
-                        graph.validate_unknown(imported.effect_function(reference).ok_or(
+                        imported.effect_application(reference).ok_or(
                             crate::effect_row::prepared::PreparedEffectInvariant::ParameterContract,
-                        )?)?;
+                        )?.validate(graph)?;
                     }
                     variables.push(EffectConstraintVariable::new(
                         reference.clone(),

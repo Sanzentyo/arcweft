@@ -10,6 +10,87 @@ use crate::types::PreparedEffects;
 mod tests;
 
 impl EffectConstraintEnvironment<PreparedEffects> {
+    /// The types owner supplies actual registered applications and the complete
+    /// captured rigid Γ. Keep the original environment unchanged until both
+    /// the projected R and its Γ admission succeed in the original graph.
+    pub(crate) fn project_registered_parameters<C: DecisionControl>(
+        &self,
+        captured_rigids: &[GenericEffectReference],
+        applications: &BTreeMap<GenericEffectReference, PreparedEffectRow>,
+        graph: &mut PreparedEffectGraph,
+        control: &mut C,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>>
+    where
+        C::Error: From<EffectConstraintEnvironmentError>,
+    {
+        for _ in &self.parameters {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+        }
+        let parameters = self.parameters.clone();
+        let predicate = graph.read().retain_predicate(&self.predicate, control)?;
+        let mut result = Self {
+            parameters,
+            predicate,
+        };
+        let mut captures = Vec::new();
+        for variable in captured_rigids {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+            if variable.free_parameter().is_none() {
+                return Err(PreparedEffectFailure::Control(
+                    EffectConstraintEnvironmentError::NonCanonicalScope.into(),
+                ));
+            }
+            captures.push(EffectConstraintVariable::new(
+                variable.clone(),
+                crate::effect_row::EffectConstraintEligibility::Rigid,
+            ));
+        }
+        result
+            .admit_variables(&captures)
+            .map_err(|error| PreparedEffectFailure::Control(error.into()))?;
+        for variable in applications.keys() {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            if !matches!(variable, GenericEffectReference::Inference(_)) {
+                return Err(PreparedEffectInvariant::ParameterContract.into());
+            }
+            self.validate_reference(variable)
+                .map_err(|error| PreparedEffectFailure::Control(error.into()))?;
+        }
+        let mut edit = graph.edit_terms();
+        let predicate =
+            edit.map_predicate_parameters(&self.predicate, control, &mut |variable, control| {
+                control
+                    .charge(DecisionWork::Visit)
+                    .map_err(PreparedEffectFailure::Control)?;
+                applications
+                    .get(variable)
+                    .map(|row| {
+                        if let PreparedEffectRow::Canonical(row) = row {
+                            row.encode(&mut super::super::EffectEqualityControl(control))
+                                .map_err(PreparedEffectFailure::Control)?;
+                        }
+                        Ok(row.clone())
+                    })
+                    .transpose()
+            })?;
+        edit.read()
+            .visit_predicate_parameters(&predicate, control, &mut |reference, _| {
+                result.validate_reference(reference).map_err(Into::into)
+            })?;
+        control
+            .charge(DecisionWork::Visit)
+            .map_err(PreparedEffectFailure::Control)?;
+        edit.commit()?;
+        result.predicate = predicate;
+        Ok(result)
+    }
+
     /// Declaration inputs are already canonical formulas, not completed
     /// candidate solutions. Admit them without projection or witness choice.
     pub(crate) fn new_prepared<C: DecisionControl>(

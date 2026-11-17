@@ -340,7 +340,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
         }
         let mut solutions = Vec::new();
-        for branch in branches {
+        for mut branch in branches {
+            branch.effects = branch
+                .applications
+                .prepare_effects(&branch.effects, scope, graph, context)
+                .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             let cyclic = branch.deferred_cycles.parameters.iter().next().cloned();
             let branch = seal_path(branch, graph.read(), context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;

@@ -64,6 +64,7 @@ fn branches_and_imports_keep_the_issued_function_with_the_complete_intro_gamma()
             assert_eq!(graph.read().unknown_dependencies(&function)?, expected);
             let repeated =
                 context.application_scope((), parameters, original.clone(), &mut graph)?;
+            assert!(first.same_owner(&repeated));
             assert_eq!(repeated.effect_function(&variable), Some(&function));
             let parent = context.start_path_with_imported(first, None, original, graph.read())?;
             let branch = context.fork_path(&parent)?;
@@ -248,4 +249,364 @@ fn a_registered_application_cannot_be_admitted_with_another_graph() {
             ),
         ))
     ));
+}
+
+#[test]
+fn original_r_instantiates_the_registered_function_under_its_actual_gamma() {
+    use crate::effect_row::prepared::{
+        PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,
+    };
+    use crate::{
+        effect_row::{EffectPredicate, EffectRow},
+        effects::EffectSet,
+    };
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    context
+        .with_binder(GenericBinder::new(0, 0, 1), |context| {
+            let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+            let variable = parameters.opened_effect_variables()[0].variable().clone();
+            let input = context.lexical_scope().bound_effect(0, 0)?;
+            let original = context.fixture_original_context(None)?;
+            let owner = context.application_scope((), parameters, original.clone(), &mut graph)?;
+            let function = owner.effect_function(&variable).unwrap().clone();
+            let mut path = context.start_path_with_imported(owner, None, original, graph.read())?;
+            path.effects.constrain_relation(
+                &mut graph,
+                PreparedEffectRelation::Equal,
+                &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable.clone())),
+                &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), input.clone())),
+                context,
+            )?;
+            let prepared = path.applications.prepare_effects(
+                &path.effects,
+                &path.lineage.scope,
+                &mut graph,
+                context,
+            )?;
+            let mut remaining = BTreeSet::new();
+            graph.read().visit_predicate_parameters(
+                prepared.original_predicate(),
+                context,
+                &mut |reference, _| {
+                    remaining.insert(reference.clone());
+                    Ok(())
+                },
+            )?;
+            assert_eq!(remaining, BTreeSet::from([input.clone()]));
+            graph.add_scoped_obligation(
+                vec![input.clone()],
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+                prepared.original_predicate().clone(),
+                context,
+            )?;
+            let principal = graph.solve_principal(context)?;
+            assert_eq!(
+                principal.unknown(&function)?,
+                &EffectRow::open(EffectSet::new(), input)
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn transitive_function_captures_extend_gamma_from_the_source_owners() {
+    use crate::effect_row::prepared::{PreparedEffectRelation, PreparedEffectRow};
+    use crate::{effect_row::EffectRow, effects::EffectSet};
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let captures: Vec<GenericEffectReference> = (0..2)
+        .map(|slot| {
+            GenericEffectParameterId::new(
+                GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(98_403)),
+                slot,
+            )
+            .into()
+        })
+        .collect();
+    let original = context
+        .fixture_original_context_with_rigid(super::super::original_context::OriginalRigidScope {
+            types: &[],
+            consts: &[],
+            effects: &captures,
+            imported: None,
+        })
+        .unwrap();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let parent_variable = parameters.opened_effect_variables()[0].variable().clone();
+    let parent = context
+        .application_scope((), parameters, original.clone(), &mut graph)
+        .unwrap();
+    let parent = context
+        .start_path_with_imported(parent, None, original, graph.read())
+        .unwrap();
+    let imported = parent
+        .applications
+        .import_parameters(&[parent_variable.clone().into()])
+        .unwrap();
+    let original = context.fixture_original_context(Some(&imported)).unwrap();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let child_variable = parameters.opened_effect_variables()[0].variable().clone();
+    let child = context
+        .application_scope((), parameters, original.clone(), &mut graph)
+        .unwrap();
+    let mut child = context
+        .start_path_with_imported(child, Some(imported), original, graph.read())
+        .unwrap();
+    let unused = child
+        .applications
+        .prepare_effects(
+            &child.effects,
+            &child.lineage.scope,
+            &mut graph,
+            &mut context,
+        )
+        .unwrap();
+    for capture in &captures {
+        assert!(
+            unused
+                .original_variables()
+                .any(|variable| variable == capture)
+        );
+    }
+    child
+        .effects
+        .constrain_relation(
+            &mut graph,
+            PreparedEffectRelation::Equal,
+            &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), child_variable)),
+            &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), parent_variable)),
+            &mut context,
+        )
+        .unwrap();
+    let prepared = child
+        .applications
+        .prepare_effects(
+            &child.effects,
+            &child.lineage.scope,
+            &mut graph,
+            &mut context,
+        )
+        .unwrap();
+    let mut references = BTreeSet::new();
+    graph
+        .read()
+        .visit_predicate_parameters(
+            prepared.original_predicate(),
+            &mut context,
+            &mut |reference, _| {
+                references.insert(reference.clone());
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert_eq!(references, captures.into_iter().collect());
+}
+
+#[test]
+fn an_application_row_can_be_stale_while_its_registered_function_is_still_live() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let variable = parameters.opened_effect_variables()[0].variable().clone();
+    let original = context.fixture_original_context(None).unwrap();
+    let first = context
+        .application_scope((), parameters.clone(), original.clone(), &mut graph)
+        .unwrap();
+    let function = first.effect_function(&variable).unwrap().clone();
+    let mut checkpoint = graph.checkpoint(&mut context).unwrap();
+    let stale = context
+        .application_scope((), parameters, original.clone(), &mut graph)
+        .unwrap();
+    assert!(first.same_owner(&stale));
+    graph.rollback(&mut checkpoint).unwrap();
+    graph.read().validate_unknown(&function).unwrap();
+    first
+        .validate_effect_functions(graph.read(), &mut context)
+        .unwrap();
+    let result = context.start_path_with_imported(stale, None, original, graph.read());
+    assert!(matches!(
+        result,
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::PreparedEffect(
+                crate::effect_row::prepared::PreparedEffectFailure::Invariant(
+                    PreparedEffectInvariant::StaleReference,
+                )
+            ),
+        ))
+    ));
+}
+
+#[test]
+fn failed_r_projection_preserves_the_original_r_and_releases_new_terms() {
+    use crate::effect_row::prepared::{PreparedEffectRelation, PreparedEffectRow};
+    use crate::{effect_row::EffectRow, effects::EffectSet};
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let variable = parameters.opened_effect_variables()[0].variable().clone();
+    let original = context.fixture_original_context(None).unwrap();
+    let owner = context
+        .application_scope((), parameters, original.clone(), &mut graph)
+        .unwrap();
+    let mut path = context
+        .start_path_with_imported(owner, None, original, graph.read())
+        .unwrap();
+    path.effects
+        .constrain_relation(
+            &mut graph,
+            PreparedEffectRelation::Equal,
+            &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable.clone())),
+            &PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
+            &mut context,
+        )
+        .unwrap();
+    let foreign: GenericEffectReference = GenericEffectParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(98_404)),
+        0,
+    )
+    .into();
+    let source = path.effects.original_predicate().clone();
+    let retained = graph.retained_terms();
+    let result = path.effects.project_registered_parameters(
+        &[],
+        &BTreeMap::from([(
+            variable,
+            PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), foreign)),
+        )]),
+        &mut graph,
+        &mut context,
+    );
+    assert!(result.is_err());
+    assert_eq!(path.effects.original_predicate(), &source);
+    assert_eq!(graph.retained_terms(), retained);
+    graph.read().validate_retained_predicate(&source).unwrap();
+}
+
+#[test]
+fn application_transport_uses_actual_frames_and_fails_closed_on_an_equal_shape() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let variable = parameters.opened_effect_variables()[0].variable().clone();
+    let owner = context
+        .with_binder(GenericBinder::new(0, 0, 1), |context| {
+            let original = context.fixture_original_context(None)?;
+            let owner = context.application_scope((), parameters, original, &mut graph)?;
+            context.with_binder(GenericBinder::new(0, 0, 1), |context| {
+                let target = context.capture_lexical_scope()?;
+                let mut edit = graph.edit_terms();
+                let row = owner
+                    .effect_application(&variable)
+                    .unwrap()
+                    .transport(&target, &mut edit, context)?;
+                edit.commit()?;
+                let mut references = BTreeSet::new();
+                graph
+                    .read()
+                    .visit_row_parameters(&row, context, &mut |reference, _| {
+                        references.insert(reference.clone());
+                        Ok(())
+                    })?;
+                assert_eq!(
+                    references,
+                    BTreeSet::from([target.shape().bound_effect(1, 0)?])
+                );
+                Ok(())
+            })?;
+            Ok(owner)
+        })
+        .unwrap();
+    let retained = graph.retained_terms();
+    context
+        .with_binder(GenericBinder::new(0, 0, 1), |context| {
+            let target = context.capture_lexical_scope()?;
+            let mut edit = graph.edit_terms();
+            assert!(
+                owner
+                    .effect_application(&variable)
+                    .unwrap()
+                    .transport(&target, &mut edit, context)
+                    .is_err()
+            );
+            assert_eq!(edit.commit(), Err(PreparedEffectInvariant::TermEditState));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(graph.retained_terms(), retained);
+}
+
+#[test]
+fn imported_introduction_frames_survive_outside_the_parent_lexical_traversal() {
+    use crate::effect_row::prepared::{PreparedEffectRelation, PreparedEffectRow};
+    use crate::{effect_row::EffectRow, effects::EffectSet};
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let parent_variable = parameters.opened_effect_variables()[0].variable().clone();
+    let parent = context
+        .with_binder(GenericBinder::new(0, 0, 1), |context| {
+            let original = context.fixture_original_context(None)?;
+            let owner = context.application_scope((), parameters, original.clone(), &mut graph)?;
+            context.start_path_with_imported(owner, None, original, graph.read())
+        })
+        .unwrap();
+    assert!(context.lexical_scope().binders().is_empty());
+    let imported = parent
+        .applications
+        .import_parameters(&[parent_variable.clone().into()])
+        .unwrap();
+    let original = context.fixture_original_context(Some(&imported)).unwrap();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let child_variable = parameters.opened_effect_variables()[0].variable().clone();
+    let owner = context
+        .application_scope((), parameters, original.clone(), &mut graph)
+        .unwrap();
+    assert_eq!(owner.introduction_scope(), original.gamma());
+    assert!(context.lexical_scope().binders().is_empty());
+    let mut child = context
+        .start_path_with_imported(owner, Some(imported), original, graph.read())
+        .unwrap();
+    child
+        .effects
+        .constrain_relation(
+            &mut graph,
+            PreparedEffectRelation::Equal,
+            &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), child_variable)),
+            &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), parent_variable)),
+            &mut context,
+        )
+        .unwrap();
+    let mut joint = ConstraintLexicalScope::default();
+    child
+        .applications
+        .merge_lexical_scopes(&mut joint, &mut context)
+        .unwrap();
+    let prepared = child
+        .applications
+        .prepare_effects(&child.effects, &joint, &mut graph, &mut context)
+        .unwrap();
+    let mut references = BTreeSet::new();
+    graph
+        .read()
+        .visit_predicate_parameters(
+            prepared.original_predicate(),
+            &mut context,
+            &mut |reference, _| {
+                references.insert(reference.clone());
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        references,
+        BTreeSet::from([joint.shape().bound_effect(0, 0).unwrap()])
+    );
 }

@@ -382,6 +382,24 @@ impl Drop for PreparedEffectTermEdit<'_> {
 }
 
 impl PreparedEffectTermEdit<'_> {
+    /// Instantiate an already declared unknown in the same atomic term edit
+    /// as the transport of its actual captured inputs.
+    pub(crate) fn unknown_application<C: DecisionControl>(
+        &mut self,
+        function: &PreparedEffectUnknownRef,
+        arguments: Vec<PreparedEffectRow>,
+        control: &mut C,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = self.graph.unknown_application(function, arguments, control);
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
+    }
+
     pub(crate) fn relate<C: DecisionControl>(
         &mut self,
         relation: PreparedEffectRelation,
