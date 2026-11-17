@@ -18095,3 +18095,5 @@ Locked Sema test target／全feature checkはdev01～dev04の4回、各終了101
 Supersedes: 現状一覧の効果代数の「検証済み」は旧Sourceの実測を保持する意味へ明確に限定し、今回のprincipal importを未受入の移行進捗へ記録した。既受入機能を未完了へ戻した変更ではない。旧Sourceの実測とfull SHA、各回の失敗・原本、およびGeneric Match等の受入・公開済み状態を保持する。Frontendのcanonical-only consumerを未達のまま成功扱いせず、現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-relation-principal-import-checkpoint.raw.zip](acceptance-evidence/task-relation-principal-import-checkpoint.raw.zip) は29 entries、ZIP 582641 bytes、SHA-256 `91b3c3476ac2e6514693ab8a1c0ddcb2ade240871ff821f3d9f500bfb1dab064`。4回のCargo入力・失敗ログ・fmt、公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
++訂正 2026-11-18、Source `628181d47da1fc3bf5f57d9c6007078e2ce1e4a1`：上の「Arc identityはcache共有だけに使い」は限定が不正確である。import_relation_functionは元ScopedEffectCompletionのsnapshot一致、readのvalidate_ownerはgraph issuerのprovenanceにもArc identityを使う。Cache共有とprovenance認証はいずれもsemantic equalityの証明ではない、という区別へ訂正する。原本ZIPの当時のreview記述・SHA、コード、実測は保持する。
