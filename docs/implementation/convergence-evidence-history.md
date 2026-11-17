@@ -18261,3 +18261,21 @@ Locked Sema／test target／全feature checkは1回、終了101。Library 494エ
 Supersedes: 現状一覧のsolution readerを、実共同branchを直接受け取る現在の契約へ更新した。下位readerの接続を最終transactionのmaterialization完了へ広げない。未実行Named fixtureの誤った前提は上記理由で訂正する。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-joint-completion-reader-checkpoint.raw.zip](acceptance-evidence/task-joint-completion-reader-checkpoint.raw.zip) は13 entries、159,176 bytes、SHA-256 `3b7f75db2c94e2b8fb799e0025d9842bfd3e5dbe70805b766975573bf2c7f597`。Check入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Canonical source trace checkpoint
+
+2026-11-18。基点 `e2501b733c399d4fa77e959c047b23f086b5989f`、移行Source `f67a1e0abaa78554f73e2869cac6ebf52813d9c2`。11 Rust path、504追加／54削除、物理450 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終11入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+Closed source traceはactual／expected・checked constructorをcanonical型で保持し、canonical型に対してchecked evidenceを投影する。Canonical operandは実branchの全portをProjectionClosedで閉じ、同じprincipalで代数を投影した後だけ発行し、元のderivationと実frameを保持する。Containerの期待型合成はprepared内部で行い、最終の型authorityにはしない。Source readerと共通close_type_operandは実共同branchを直接受け取り、実application・source ordinalとoperand由来を検査する。
+
+Close_source_rowsは元equationのprepared actual／patternを上書きしない。Final validatorはclosed probeと同じcanonical portのallocationを共有し、正確なcompletion ownerも保持する。同じCに見えても別のFuture入力等で発行したclosureへの流用を拒否する。Original prepared Cとcanonical完了値の役割を分離し、コピーしたside tableや再構築したsourceをauthorityにしない。Canonical transportはlexical／operandのownerが既存の参照規則と共通scoped grammarで行い、元source権限を保つ。Prepared側のtransportに残るgraph loanの移行は、canonicalへのfallbackで隠していない。
+
+新規2 fixture、既存共同branch fixtureの拡張とprivate equation fieldの利用側移行を含む。Named本体と局所type／const binderを含むnamed spread、canonical constructor／evidence、共有する最終port、元Cの保持、別completionの拒否、ambient参照と局所binderの移動・source権限保持を対象とする。2つの実rootを使う既存fixtureにも同じjoint branchからsourceを閉じる条件を加えた。新規・拡張fixtureのcompile成立・実行成功を主張せず、PASSへ加算しない。
+
+Locked Sema／test target／全feature checkは3回とも終了101。Dev01はlibrary 481エラー・25警告、lib test 1,529エラー・44警告。Source readerを共同branchへ移したdev02は、共通helperに残っていた単独source型との不整合2件により483／1,531。Helperも実branchを受け取るよう揃えた最終dev03は481／1,529、警告25／44。3回のowner fmt checkは終了0。新canonical owner・final relation／helperと新規・拡張fixtureの限定primary位置抽出は0件だが、変更path全体の診断が0という意味ではなく、全targetのcompile・動作成功も証明しない。元のprepared lexical transportと最終transactionのfor_path呼出し、既存graph／closure fixture caller等の未移行を原本へ保持する。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前入力と公開blob一致による再利用で、commit後の再実行ではない。Cargo cleanは02:09実施済みで繰り返していない。
+
+全11 pathのbase／現行LOC・bytes・分類・inline moduleを原本へ記録し、450 LOC増をowner内でレビューした。Lexicalは374 LOC／14,082 bytes、operand projectionは358 LOC／12,879 bytes、sourceは595 LOC／22,479 bytes。Transactionは3,097 LOC／119,123 bytesで、元equationと最終witnessの関係を保持する。Container合成のために準備済みのsourceに対するcanonical発行は、現段階ではscoped shape projectionを繰り返す。反復するscoped projectionも既存accountingを通し、単一passや性能改善の主張はせず、既定予算は維持する。原本reviewのall work is meteredもこの反復projectionについての説明に限定し、すべてのallocation／copyのpreflightや累積課金の受入を測定した主張とはしない。Source本体の再準備やminimum solveは行わない。Cargo依存・feature・layer・I/O・unsafe・codec／version・jobs／profileも不変。既存resolved graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧のclosed readerを、今回接続したcanonical source traceと、残る最終materialization bridge／prepared transport等へ分けた。元Cを閉じたsource型で置き換える手順は削除した実装に基づき現行扱いを終える。Fn局所∀／guarded header、全fixture／frontend移行やbody一回準備の受入は未達のままである。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-canonical-source-trace-checkpoint.raw.zip](acceptance-evidence/task-canonical-source-trace-checkpoint.raw.zip) は25 entries、457,455 bytes、SHA-256 `b25301ff49a207c6d170b6ee22ec2631132cdd3616d94e7842d955f6360de921`。3回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・最終の限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
