@@ -53,8 +53,27 @@ pub(crate) struct PendingEquation<D: ConstraintDomain> {
     pattern: ConstraintOperand<D>,
     actual: ConstraintOperand<D>,
     pub(crate) source_ordinal: Option<PreparedSourceOrdinal>,
-    final_expected: Option<ConstraintOperand<D>>,
+    closed_relation: Option<ClosedConstraintRelation<D>>,
     timing: ConstraintEquationTiming,
+}
+
+/// The source close shares its exact canonical ports with final validation.
+/// Original prepared C remains unchanged; this witness belongs to one actual
+/// completion, including its supplied Future rows.
+struct ClosedConstraintRelation<D: ConstraintDomain> {
+    expected: ConstraintOperand<D, TypeKind>,
+    actual: ConstraintOperand<D, TypeKind>,
+    owner: Arc<ConstraintClosedEffects<D>>,
+}
+
+impl<D: ConstraintDomain> Clone for ClosedConstraintRelation<D> {
+    fn clone(&self) -> Self {
+        Self {
+            expected: self.expected.clone(),
+            actual: self.actual.clone(),
+            owner: Arc::clone(&self.owner),
+        }
+    }
 }
 
 impl<D: ConstraintDomain> Clone for PendingEquation<D> {
@@ -65,7 +84,7 @@ impl<D: ConstraintDomain> Clone for PendingEquation<D> {
             pattern: self.pattern.clone(),
             actual: self.actual.clone(),
             source_ordinal: self.source_ordinal,
-            final_expected: self.final_expected.clone(),
+            closed_relation: self.closed_relation.clone(),
             timing: self.timing,
         }
     }
@@ -85,10 +104,18 @@ impl<D: ConstraintDomain> PendingEquation<D> {
             timing: self.timing,
             pattern: self.pattern.view().transport(&target, context)?,
             actual: self.actual.view().transport(&target, context)?,
-            final_expected: self
-                .final_expected
+            closed_relation: self
+                .closed_relation
                 .as_ref()
-                .map(|ty| ty.view().transport(&target, context))
+                .map(|relation| {
+                    Ok::<_, crate::types::TypeProjectionError<TypeConstraintError>>(
+                        ClosedConstraintRelation {
+                            expected: relation.expected.transport_canonical(&target, context)?,
+                            actual: relation.actual.transport_canonical(&target, context)?,
+                            owner: Arc::clone(&relation.owner),
+                        },
+                    )
+                })
                 .transpose()?,
         })
     }
@@ -106,7 +133,10 @@ impl<D: ConstraintDomain> PendingEquation<D> {
     }
 
     pub(super) fn scope(&self) -> &super::lexical::ConstraintLexicalScope {
-        self.pattern.scope()
+        self.closed_relation.as_ref().map_or_else(
+            || self.pattern.scope(),
+            |relation| relation.expected.scope(),
+        )
     }
 
     fn validate_in_scope<A: TypeConstraintAccounting, L>(
@@ -116,11 +146,20 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        let pattern = self
-            .final_expected
-            .as_ref()
-            .unwrap_or(&self.pattern)
-            .value();
+        if let Some(relation) = &self.closed_relation {
+            effects.require_branch(branch)?;
+            if !Arc::ptr_eq(&relation.owner, effects)
+                || relation.expected.scope() != relation.actual.scope()
+            {
+                return Err(TypeConstraintInvariant::OriginalProducer.into());
+            }
+            return self.compare_completed(
+                relation.expected.value(),
+                relation.actual.value(),
+                context,
+            );
+        }
+        let pattern = self.pattern.value();
         let project = |value: &TypeKind<PreparedEffects>,
                        context: &mut TypeConstraintContext<'_, A, D>| {
             project_closed_type(
@@ -157,9 +196,18 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                 effects.canonicalize(&value, &scope, context)
             }
         })?;
+        self.compare_completed(&pattern, &actual, context)
+    }
+
+    fn compare_completed<A: TypeConstraintAccounting>(
+        &self,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
         let (expected, actual) = match self.direction {
-            ConstraintAcceptance::PatternAcceptsActual => (&pattern, &actual),
-            ConstraintAcceptance::ActualAcceptsPattern => (&actual, &pattern),
+            ConstraintAcceptance::PatternAcceptsActual => (pattern, actual),
+            ConstraintAcceptance::ActualAcceptsPattern => (actual, pattern),
         };
         if !expected
             .accepts_with(
@@ -1386,7 +1434,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 pattern: pattern_operand,
                 actual: actual_operand,
                 source_ordinal: None,
-                final_expected: None,
+                closed_relation: None,
                 timing,
             });
             if timing == ConstraintEquationTiming::InferredEffectResult {
@@ -2034,7 +2082,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             pattern,
                             actual: actual_operand.clone(),
                             source_ordinal: Some(operation.source_ordinal),
-                            final_expected: None,
+                            closed_relation: None,
                             timing: ConstraintEquationTiming::Immediate,
                         });
                     }
@@ -2585,7 +2633,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         context.check_cancelled()?;
         ensure_unique_sources(path)?;
         let effects = super::normalization::ConstraintClosedEffects::for_path(path, context)?;
-        close_source_rows(path, &effects, context)?;
+        close_source_rows(path, &effects, graph.read(), context)?;
         Self::validate_completed_equations(path, &effects, graph.read(), context)?;
         context.validate_type_and_const_completion(path)?;
         let selected_domain = path
@@ -2988,6 +3036,7 @@ fn unique_request_ordinal<D: ConstraintDomain>(
 fn close_source_rows<A, D>(
     path: &mut ConstraintPath<D>,
     effects: &Arc<super::normalization::ConstraintClosedEffects<D>>,
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
 where
@@ -2998,14 +3047,15 @@ where
     let probes = core::mem::take(&mut path.lineage.probe_trace);
     let mut closed = Vec::with_capacity(probes.len());
     for probe in probes {
-        let probe = probe.close(path, effects, context)?;
+        let probe = probe.close(path, effects, graph, context)?;
         for equation in &mut path.equations {
             if equation.source_ordinal == Some(probe.ordinal()) {
-                equation.actual = probe.actual_operand().clone();
                 if let Some(expected) = probe.expected_operand() {
-                    let expected = expected.clone();
-                    equation.final_expected = Some(expected.clone());
-                    equation.pattern = expected;
+                    equation.closed_relation = Some(ClosedConstraintRelation {
+                        expected: expected.clone(),
+                        actual: probe.actual_operand().clone(),
+                        owner: Arc::clone(effects),
+                    });
                 }
             }
         }

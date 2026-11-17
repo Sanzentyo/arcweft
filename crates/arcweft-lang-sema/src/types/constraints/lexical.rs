@@ -284,6 +284,50 @@ impl ConstraintLexicalScope {
         Err(TypeInstantiationError::SpecializationScopeMismatch.into())
     }
 
+    pub(super) fn transport_canonical_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        original: &Self,
+        ty: &TypeKind,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind, TypeProjectionError<TypeConstraintError>> {
+        super::solution::map_term_with_control(
+            ty,
+            original.shape(),
+            self.shape(),
+            1,
+            context,
+            &|reference, source, target, _, context| {
+                Ok(TypeKind::GenericParam(self.type_reference(
+                    original, source, target, reference, context,
+                )?))
+            },
+            &|length, source, target, _, context| match length {
+                ArrayLength::Generic(reference) => Ok(ArrayLength::Generic(
+                    self.const_reference(original, source, target, reference, context)?,
+                )),
+                ArrayLength::Const(_) => Ok(length.clone()),
+                ArrayLength::Error(_) | ArrayLength::Inferred => {
+                    Err(TypeInstantiationError::UnresolvedType.into())
+                }
+            },
+            &|row, source, target, depth, context| {
+                super::solution::map_effects_with_control(
+                    row,
+                    depth,
+                    context,
+                    &|reference, context| {
+                        let reference =
+                            self.effect_reference(original, source, target, reference, context)?;
+                        Ok(crate::effect_row::EffectRow::open(
+                            crate::effects::EffectSet::new(),
+                            reference,
+                        ))
+                    },
+                )
+            },
+        )
+    }
+
     pub(super) fn transport_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         original: &Self,

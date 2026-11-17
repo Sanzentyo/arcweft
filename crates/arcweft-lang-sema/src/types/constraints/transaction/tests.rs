@@ -386,9 +386,14 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
     assert_eq!(equation.actual.original_context(), &original);
     assert_eq!(equation.actual.value(), &TypeKind::I64);
     assert!(equation.actual.result_origin().is_none());
-    assert!(equation.final_expected.is_some());
+    assert!(equation.closed_relation.is_some());
     assert_eq!(
-        equation.final_expected.as_ref().unwrap().original_context(),
+        equation
+            .closed_relation
+            .as_ref()
+            .unwrap()
+            .expected
+            .original_context(),
         equation.pattern.original_context()
     );
 
@@ -406,7 +411,12 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
             .matches(&receipt)
     );
     assert_eq!(
-        transported.final_expected.as_ref().unwrap().scope(),
+        transported
+            .closed_relation
+            .as_ref()
+            .unwrap()
+            .expected
+            .scope(),
         &target
     );
     context.restore_binder_scope(enclosing);

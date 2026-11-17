@@ -130,9 +130,9 @@ where
     })
 }
 
-pub(in crate::types::constraints) fn close_type_operand<'ty, A, D>(
+pub(in crate::types::constraints) fn close_type_operand<'ty, A, D, L>(
     input: ConstraintOperandView<'ty, D>,
-    path: &'ty super::super::transaction::ConstraintPath<D>,
+    path: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
     effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
     graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
@@ -141,7 +141,7 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    effects.require_path(path)?;
+    effects.require_branch(path)?;
     project_closed_operand(
         input,
         path,

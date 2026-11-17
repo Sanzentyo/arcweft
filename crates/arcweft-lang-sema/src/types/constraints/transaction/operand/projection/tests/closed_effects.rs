@@ -555,7 +555,7 @@ fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
             )),
             actual: actual.clone(),
             source_ordinal: None,
-            final_expected: None,
+            closed_relation: None,
             timing: ConstraintEquationTiming::Immediate,
         };
         let result = equation.validate_completed(&path, &completion, &mut context);

@@ -306,6 +306,25 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     }
 }
 
+impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind> {
+    /// Relocate a completed value without reopening its source calculation.
+    pub(in crate::types::constraints) fn transport_canonical<A: TypeConstraintAccounting>(
+        &self,
+        target: &Arc<ConstraintLexicalScope>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
+        let value = target.transport_canonical_type(&self.scope, &self.value, context)?;
+        context
+            .enter_node()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        Ok(Self {
+            value: Arc::new(value),
+            scope: Arc::clone(target),
+            origin: Arc::clone(&self.origin),
+        })
+    }
+}
+
 impl<D: ConstraintDomain> ConstraintOperand<D> {
     pub(in crate::types::constraints) fn require_source_receipt(
         &self,

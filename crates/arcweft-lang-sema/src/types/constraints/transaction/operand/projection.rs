@@ -137,6 +137,33 @@ impl<D: ConstraintDomain> Clone for ConstraintConstOperandView<'_, D> {
 }
 
 impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
+    /// Issue a canonical value only after closing every port through the same
+    /// original calculation. The shape-preserving algebra transition keeps
+    /// that projection's exact derivation and occurrence frames.
+    pub(in crate::types::constraints) fn close_canonical<A: TypeConstraintAccounting, L>(
+        &self,
+        branch: &'a super::super::ConstraintInferenceBranch<D, L>,
+        effects: &Arc<crate::types::constraints::normalization::ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<ConstraintOperand<D, TypeKind>, TypeConstraintError> {
+        let projected = crate::types::constraints::normalization::project_closed_operand(
+            self.clone(),
+            branch,
+            crate::types::constraints::ConstraintClosurePolicy::ProjectionClosed,
+            effects,
+            graph,
+            context,
+        )?;
+        let value = effects.canonicalize(projected.value(), projected.scope().shape(), context)?;
+        context.enter_node()?;
+        Ok(ConstraintOperand {
+            value: Arc::new(value),
+            scope: projected.scope,
+            origin: projected.origin,
+        })
+    }
+
     /// A language scalar expectation is closed under every Γ. Its exact
     /// occurrence frames are retained, but no source or Free lease is invented.
     pub(in crate::types) fn scalar_expectation<A: TypeConstraintAccounting>(

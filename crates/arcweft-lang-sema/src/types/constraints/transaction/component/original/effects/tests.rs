@@ -498,8 +498,13 @@ fn cancellation_does_not_consume_or_publish_a_prepared_forest() {
 #[test]
 fn actual_closed_joint_products_seal_each_application_and_canonical_projection() {
     use crate::types::constraints::{
-        ConstraintClosurePolicy, TypeConstraintSolution, normalization::project_closed_operand,
-        transaction::ConstraintOperand,
+        ConstraintClosurePolicy, TypeConstraintSolution,
+        normalization::project_closed_operand,
+        transaction::{
+            ActiveConstraintProbe, ConstraintOperand, ConstraintProbe, ConstraintSourceId,
+            PreparedConstraintSourceProjection, PreparedSourceOrdinal, SourceProbeObservation,
+            StoredSourceSelection,
+        },
     };
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
@@ -535,6 +540,20 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
         let request = &source.lineage.projections[0];
         context
             .with_original_scope(product.scope.clone(), |context| {
+                let source = ConstraintProbe::Active(ActiveConstraintProbe {
+                    source: ConstraintSourceId::new(application, ()),
+                    source_ordinal: PreparedSourceOrdinal {
+                        application,
+                        ordinal: 0,
+                    },
+                    branch: SourceProbeObservation::closed_for_test((), ()),
+                    selection: StoredSourceSelection::Unchecked,
+                    prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
+                    value_expected: None,
+                    actual: context.fixture_operand(TypeKind::<PreparedEffects>::I64),
+                })
+                .close(&joint.branch, &joint.effects, graph.read(), context)?;
+                assert_eq!(source.actual(), &TypeKind::I64);
                 let solution = TypeConstraintSolution::complete_application_with_effects(
                     &joint.branch,
                     application,
