@@ -181,7 +181,7 @@ impl<D: ConstraintDomain> ConstraintFunctionHeaderView<'_, D> {
         Ok(())
     }
 
-    pub(in crate::types::constraints) fn admit<A: TypeConstraintAccounting>(
+    pub(in crate::types) fn admit<A: TypeConstraintAccounting>(
         &self,
         effects: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,

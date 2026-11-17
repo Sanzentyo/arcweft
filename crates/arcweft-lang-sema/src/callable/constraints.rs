@@ -1130,8 +1130,9 @@ where
         }
         loop {
             let ticket = self
-                .lower
-                .next_probe(self.context)
+                .with_effect_relation(|lower, context, effects| {
+                    lower.next_probe(context, effects.read())
+                })?
                 .map_err(TypeConstraintFailure::from)?;
             let Some(lower_ticket) = ticket else {
                 break;
@@ -1161,7 +1162,9 @@ where
                     break;
                 }
             };
-            if let Err(error) = self.lower.submit_probe(self.context, input, submission) {
+            if let Err(error) = self.with_effect_relation(|lower, context, effects| {
+                lower.submit_probe(context, effects.read(), input, submission)
+            })? {
                 self.lower.record_failure(error.into());
                 break;
             }

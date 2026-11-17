@@ -80,8 +80,12 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn infer_original_products<A: TypeConstraintAccounting>(
         self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: PreparedEffectReadView<'_>,
     ) -> Result<OriginalConstraintForest<D, P>, PreparedValueFailure> {
         context.check_cancelled()?;
+        graph
+            .validate_owner(&self.effect_owner)
+            .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
         if self.has_live_uses() {
             return Err(PreparedValueFailure::UseState);
         }
@@ -133,7 +137,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     context.enter_node()?;
                 }
                 let result = match context.with_original_scope(scope.clone(), |context| {
-                    self.infer_original_product(&members, &scope, context)
+                    self.infer_original_product(&members, &scope, graph, context)
                 }) {
                     Ok(solutions) => Ok(solutions),
                     Err(OriginalInferenceFailure::Rejected(rejection)) => Err(rejection),
@@ -186,6 +190,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         &self,
         members: &Arc<[OriginalProductMember]>,
         scope: &ConstraintLexicalScope,
+        graph: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Box<[OriginalProductSolution<D>]>, OriginalInferenceFailure> {
         let mut applications = ConstraintApplicationInventory::empty();
@@ -260,8 +265,13 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 };
                 let mut next = Vec::new();
                 for branch in branches {
-                    match unify_original_binding(&reference.view(), &value.view(), branch, context)
-                    {
+                    match unify_original_binding(
+                        graph,
+                        &reference.view(),
+                        &value.view(),
+                        branch,
+                        context,
+                    ) {
                         Ok(paths) => next.extend(paths),
                         Err(error) => return Err(reject(check, error)),
                     }
@@ -311,7 +321,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         let mut solutions = Vec::new();
         for branch in branches {
             let cyclic = branch.deferred_cycles.parameters.iter().next().cloned();
-            let branch = seal_path(branch, context)
+            let branch = seal_path(branch, graph, context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             if let Some(parameter) = cyclic {
                 return Err(reject(
@@ -321,7 +331,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             let effects = ConstraintClosedEffects::for_branch(&branch, context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
-            self.validate_original_bindings(&branch, members, scope, &effects, context)?;
+            self.validate_original_bindings(&branch, members, scope, &effects, graph, context)?;
             context
                 .validate_type_and_const_completion(&branch)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
@@ -337,6 +347,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         members: &[OriginalProductMember],
         scope: &ConstraintLexicalScope,
         effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), OriginalInferenceFailure> {
         let project = |ty: &TypeKind<PreparedEffects>,
@@ -346,6 +357,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 branch,
                 crate::types::constraints::ConstraintClosurePolicy::Hint,
                 effects,
+                graph,
                 context,
             )
         };
@@ -386,6 +398,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         crate::types::constraints::validate_type(
                             &value,
                             original.projection_view(),
+                            graph,
                             context,
                         )
                     })

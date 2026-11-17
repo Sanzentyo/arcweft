@@ -182,6 +182,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 original_source.view(),
                 path.projection_view(),
                 &mut std::collections::BTreeSet::new(),
+                effects.read(),
                 context,
             )?);
             let use_source = ConstraintResultUseSource::for_result(Arc::clone(&source))?;
@@ -228,6 +229,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .actual
                 .clone();
             advanced.extend(super::relate_selected_call(
+                effects.read(),
                 &pattern.view(),
                 &actual.view(),
                 path,

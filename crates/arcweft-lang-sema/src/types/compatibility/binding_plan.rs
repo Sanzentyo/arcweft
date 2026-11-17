@@ -52,6 +52,7 @@ impl ConstraintRelation {
 }
 
 pub(in crate::types) fn relate_selected_call<A, D, L: Clone>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -63,6 +64,7 @@ where
     D: ConstraintDomain,
 {
     relate_constraint(
+        graph,
         pattern,
         actual,
         path,
@@ -74,6 +76,7 @@ where
 /// Equality shares the ordinary binder, alias, constant, occurs and effect
 /// relation. It does not turn a subtype or a Choice member into an equal type.
 pub(in crate::types) fn unify_original_binding<A, D, L: Clone>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -83,7 +86,14 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    relate_constraint(pattern, actual, path, context, ConstraintRelation::Equal)
+    relate_constraint(
+        graph,
+        pattern,
+        actual,
+        path,
+        context,
+        ConstraintRelation::Equal,
+    )
 }
 
 pub(in crate::types) fn unify_original_length<A, D, L: Clone>(
@@ -142,6 +152,7 @@ where
 /// This keeps Choice alternatives branch-local rather than applying a single
 /// whole-Choice relation after raw paths have been retained.
 fn relate_constraint<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -157,7 +168,7 @@ where
         // Original products close after every original binding/effect relation
         // has contributed. A temporary nonprincipal effect relation may still
         // be resolved by another original root, so do not seal it here.
-        return relate_with_policy(pattern, actual, path, context, relation);
+        return relate_with_policy(graph, pattern, actual, path, context, relation);
     }
     let pattern_shape = pattern.value().constraint_shape();
     let actual_shape = actual.value().constraint_shape();
@@ -171,6 +182,7 @@ where
     let paths = match (pattern_shape, actual_shape) {
         (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_)) => {
             relate_choice_to_choice_selected(
+                graph,
                 &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
                 &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
                 path,
@@ -179,6 +191,7 @@ where
             )?
         }
         (TypeConstraintShape::Choice(_), _) => relate_choice_to_actual_selected(
+            graph,
             &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
             actual,
             path,
@@ -186,13 +199,14 @@ where
             relation,
         )?,
         (_, TypeConstraintShape::Choice(_)) => relate_actual_choice_selected(
+            graph,
             pattern,
             &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
             path,
             context,
             relation,
         )?,
-        _ => relate_with_policy(pattern, actual, path, context, relation)?,
+        _ => relate_with_policy(graph, pattern, actual, path, context, relation)?,
     };
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
         || matches!(actual_shape, TypeConstraintShape::Choice(_))
@@ -201,7 +215,7 @@ where
     }
     let mut accepted = Vec::new();
     for path in paths {
-        if let Some(path) = accept_branch(pattern, actual, path, context, relation)? {
+        if let Some(path) = accept_branch(graph, pattern, actual, path, context, relation)? {
             accepted.push(path);
         }
     }
@@ -209,6 +223,7 @@ where
 }
 
 fn accept_branch<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -226,13 +241,14 @@ where
         // the close phase owns cycle pruning after all source work.
         return Ok(Some(path));
     }
-    let path = seal_path(path, context)?;
+    let path = seal_path(path, graph, context)?;
     let effects = ConstraintClosedEffects::for_branch(&path, context)?;
     let projected_pattern = project_closed_operand(
         pattern.clone(),
         &path,
         ConstraintClosurePolicy::Hint,
         &effects,
+        graph,
         context,
     )?;
     let projected_actual = project_closed_operand(
@@ -240,6 +256,7 @@ where
         &path,
         ConstraintClosurePolicy::Hint,
         &effects,
+        graph,
         context,
     )?;
     let projected_pattern = projected_pattern.value();
@@ -289,6 +306,7 @@ pub(crate) fn map_compatibility_error(
 /// accepting the projected Choice after the raw relation) prevents a
 /// rejected alternative from re-entering the frontier.
 fn relate_choice_to_actual_selected<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     expected: &[ConstraintOperandView<'_, D>],
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -315,7 +333,7 @@ where
                         context,
                     )?;
                     output.extend(relate_constraint(
-                        expected, actual, path, context, relation,
+                        graph, expected, actual, path, context, relation,
                     )?);
                     Ok(output)
                 })
@@ -335,7 +353,7 @@ where
                             context,
                         )?;
                         output.extend(relate_constraint(
-                            expected, actual, path, context, relation,
+                            graph, expected, actual, path, context, relation,
                         )?);
                         Ok(output)
                     })
@@ -346,6 +364,7 @@ where
 
 /// Relate one expected value against each actual Choice alternative.
 fn relate_actual_choice_selected<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     expected: &ConstraintOperandView<'_, D>,
     actual: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
@@ -373,7 +392,7 @@ where
                             context,
                         )?;
                         output.extend(relate_constraint(
-                            expected, actual, path, context, relation,
+                            graph, expected, actual, path, context, relation,
                         )?);
                         Ok(output)
                     })
@@ -393,7 +412,7 @@ where
                         context,
                     )?;
                     output.extend(relate_constraint(
-                        expected, actual, path, context, relation,
+                        graph, expected, actual, path, context, relation,
                     )?);
                     Ok(output)
                 })
@@ -403,6 +422,7 @@ where
 
 /// Relate every expected/actual Choice pair in its own branch.
 fn relate_choice_to_choice_selected<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     expected: &[ConstraintOperandView<'_, D>],
     actual: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
@@ -431,7 +451,7 @@ where
                                 context,
                             )?;
                             output.extend(relate_constraint(
-                                expected, actual, path, context, relation,
+                                graph, expected, actual, path, context, relation,
                             )?);
                         }
                         Ok(output)
@@ -454,7 +474,7 @@ where
                                 context,
                             )?;
                             output.extend(relate_constraint(
-                                expected, actual, path, context, relation,
+                                graph, expected, actual, path, context, relation,
                             )?);
                         }
                         Ok(output)
@@ -465,6 +485,7 @@ where
 }
 
 fn relate_with_policy<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -478,6 +499,7 @@ where
 {
     context.enter_node()?;
     relate_entered_with_policy(
+        graph,
         pattern,
         actual,
         pattern.value().constraint_shape(),
@@ -535,6 +557,7 @@ where
 }
 
 fn relate_entered_with_policy<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     pattern_shape: TypeConstraintShape<'_>,
@@ -591,6 +614,7 @@ where
         let pattern_view = pattern_value.as_ref().map(ConstraintOperand::<D>::view);
         let actual_view = actual_value.as_ref().map(ConstraintOperand::<D>::view);
         return relate_with_policy(
+            graph,
             pattern_view.as_ref().unwrap_or(pattern),
             actual_view.as_ref().unwrap_or(actual),
             path,
@@ -603,7 +627,7 @@ where
     if matches!(relation, ConstraintRelation::Accepts(_))
         && matches!(actual_shape, TypeConstraintShape::Never)
     {
-        validate_type(pattern.value(), path.projection_view(), context)?;
+        validate_type(pattern.value(), path.projection_view(), graph, context)?;
         return Ok(vec![path]);
     }
 
@@ -611,7 +635,7 @@ where
         (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_))
             if matches!(relation, ConstraintRelation::Equal) =>
         {
-            return relate_sliced_children(pattern, actual, path, context, relation);
+            return relate_sliced_children(graph, pattern, actual, path, context, relation);
         }
         (
             TypeConstraintShape::Generic(pattern_parameter),
@@ -661,6 +685,7 @@ where
         }
         (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_)) => {
             relate_choice_to_choice_selected(
+                graph,
                 &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
                 &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
                 path,
@@ -669,6 +694,7 @@ where
             )
         }
         (TypeConstraintShape::Choice(_), _) => relate_choice_to_actual_selected(
+            graph,
             &pattern.children(context)?.collect::<Result<Vec<_>, _>>()?,
             actual,
             path,
@@ -676,6 +702,7 @@ where
             relation,
         ),
         (_, TypeConstraintShape::Choice(_)) => relate_actual_choice_selected(
+            graph,
             pattern,
             &actual.children(context)?.collect::<Result<Vec<_>, _>>()?,
             path,
@@ -695,6 +722,7 @@ where
             let expected_arguments = pattern.children(context)?.collect::<Result<Vec<_>, _>>()?;
             let found_arguments = actual.children(context)?.collect::<Result<Vec<_>, _>>()?;
             let paths = relate_slices(
+                graph,
                 &expected_arguments,
                 &found_arguments,
                 path,
@@ -712,6 +740,7 @@ where
                 paths,
                 |paths, (expected, found)| {
                     relate_many(
+                        graph,
                         expected,
                         found,
                         paths,
@@ -725,10 +754,12 @@ where
             if expected.kind() == found.kind() =>
         {
             match (expected.value(), found.value()) {
-                (Some(_), Some(_)) => relate_children(pattern, actual, path, context, relation),
+                (Some(_), Some(_)) => {
+                    relate_children(graph, pattern, actual, path, context, relation)
+                }
                 (Some(_), None) | (None, None) => Ok(vec![path]),
                 (None, Some(found)) => {
-                    validate_type(found, path.projection_view(), context)?;
+                    validate_type(found, path.projection_view(), graph, context)?;
                     Ok(vec![path])
                 }
             }
@@ -742,7 +773,7 @@ where
                 kind: found_kind, ..
             },
         ) if expected_kind == found_kind => {
-            relate_children(pattern, actual, path, context, relation)
+            relate_children(graph, pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Iterator {
@@ -754,7 +785,7 @@ where
                 ..
             },
         ) if expected_family == found_family => {
-            relate_children(pattern, actual, path, context, relation)
+            relate_children(graph, pattern, actual, path, context, relation)
         }
         (TypeConstraintShape::Array { .. }, TypeConstraintShape::Array { .. }) => {
             let expected = pattern
@@ -767,7 +798,7 @@ where
             else {
                 return Ok(Vec::new());
             };
-            relate_children(pattern, actual, path, context, relation)
+            relate_children(graph, pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Map {
@@ -778,7 +809,7 @@ where
                 kind: found_kind, ..
             },
         ) if expected_kind == found_kind => {
-            relate_children(pattern, actual, path, context, relation)
+            relate_children(graph, pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Borrow {
@@ -792,7 +823,7 @@ where
                 ..
             },
         ) if expected_kind == found_kind && expected_lifetime == found_lifetime => {
-            relate_children(pattern, actual, path, context, relation)
+            relate_children(graph, pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Pair {
@@ -803,7 +834,7 @@ where
                 kind: found_kind, ..
             },
         ) if expected_kind == found_kind => {
-            relate_children(pattern, actual, path, context, relation)
+            relate_children(graph, pattern, actual, path, context, relation)
         }
         (
             TypeConstraintShape::Function {
@@ -824,6 +855,8 @@ where
                     .function_header()?
                     .expect("function header");
                 let found_header = found_children.function_header()?.expect("function header");
+                expected_header.admit(graph, context)?;
+                found_header.admit(graph, context)?;
                 if !expected_header
                     .predicate()
                     .equal_with(found_header.predicate(), context)?
@@ -845,6 +878,7 @@ where
                     .next()
                     .expect("function children end in a result")?;
                 let paths = relate_slices(
+                    graph,
                     &expected_params,
                     &found_params,
                     path,
@@ -884,6 +918,7 @@ where
                     }
                 }
                 relate_many(
+                    graph,
                     &expected_result,
                     &found_result,
                     effect_paths,
@@ -895,12 +930,12 @@ where
         (TypeConstraintShape::Tuple(expected), TypeConstraintShape::Tuple(found))
             if expected.len() == found.len() =>
         {
-            relate_sliced_children(pattern, actual, path, context, relation)
+            relate_sliced_children(graph, pattern, actual, path, context, relation)
         }
         (TypeConstraintShape::Payload(expected), TypeConstraintShape::Payload(found))
             if expected.has_same_header(found) =>
         {
-            relate_sliced_children(pattern, actual, path, context, relation)
+            relate_sliced_children(graph, pattern, actual, path, context, relation)
         }
         (TypeConstraintShape::Leaf(_), _)
         | (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),
@@ -1039,6 +1074,7 @@ where
     }
 }
 fn relate_slices<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     expected: &[ConstraintOperandView<'_, D>],
     found: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
@@ -1057,11 +1093,12 @@ where
         .iter()
         .zip(found)
         .try_fold(vec![path], |paths, (expected, found)| {
-            relate_many(expected, found, paths, context, relation)
+            relate_many(graph, expected, found, paths, context, relation)
         })
 }
 
 fn relate_children<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     expected: &ConstraintOperandView<'_, D>,
     found: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -1080,14 +1117,22 @@ where
     else {
         return Ok(Vec::new());
     };
-    let paths = relate_with_policy(&first_expected, &first_found, path, context, relation)?;
+    let paths = relate_with_policy(
+        graph,
+        &first_expected,
+        &first_found,
+        path,
+        context,
+        relation,
+    )?;
     expected
         .zip(found)
         .try_fold(paths, |paths, (expected, found)| {
-            relate_many(&expected?, &found?, paths, context, relation)
+            relate_many(graph, &expected?, &found?, paths, context, relation)
         })
 }
 fn relate_sliced_children<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     expected: &ConstraintOperandView<'_, D>,
     found: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -1101,9 +1146,10 @@ where
 {
     let expected = expected.children(context)?.collect::<Result<Vec<_>, _>>()?;
     let found = found.children(context)?.collect::<Result<Vec<_>, _>>()?;
-    relate_slices(&expected, &found, path, context, relation)
+    relate_slices(graph, &expected, &found, path, context, relation)
 }
 fn relate_many<A, D, L>(
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     expected: &ConstraintOperandView<'_, D>,
     found: &ConstraintOperandView<'_, D>,
     paths: Vec<ConstraintInferenceBranch<D, L>>,
@@ -1118,7 +1164,7 @@ where
     paths.into_iter().try_fold(Vec::new(), |mut output, path| {
         let path = context.fork_path(&path)?;
         output.extend(relate_with_policy(
-            expected, found, path, context, relation,
+            graph, expected, found, path, context, relation,
         )?);
         Ok(output)
     })

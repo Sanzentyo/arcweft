@@ -1284,11 +1284,12 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let original = self.original.clone();
         self.constrain_equation_from(
             context,
+            effects,
             pattern,
             actual,
             acceptance,
             timing,
-            |_, scope, context| {
+            |_, scope, effects, context| {
                 ConstraintOperand::from_prepared_original_in(
                     actual,
                     scope,
@@ -1305,6 +1306,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn constrain_equation_from<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
         pattern: &TypeKind<PreparedEffects>,
         actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
@@ -1312,6 +1314,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         mut admit: impl FnMut(
             &ConstraintPath<D>,
             Arc<super::lexical::ConstraintLexicalScope>,
+            &mut crate::effect_row::prepared::PreparedEffectGraph,
             &mut TypeConstraintContext<'_, A, D>,
         ) -> Result<ConstraintOperand<D>, TypeConstraintError>,
     ) -> Result<(), TypeConstraintError> {
@@ -1334,7 +1337,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 path.applications
                     .require_application_owner(self.application)?,
             );
-            let actual_operand = admit(&path, scope, context)?;
+            let actual_operand = admit(&path, scope, effects, context)?;
             path.equations.push(PendingEquation {
                 ordinal: ConstraintEquationId {
                     application: self.application,
@@ -1362,6 +1365,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         &pattern,
                         path.projection_view(),
                         ConstraintClosurePolicy::Hint,
+                        effects.read(),
                         context,
                     )?;
                     let actual_hint = project_type(
@@ -1372,6 +1376,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             .value(),
                         path.projection_view(),
                         ConstraintClosurePolicy::Hint,
+                        effects.read(),
                         context,
                     )?;
                     if pattern_hint.remaining.is_empty() && actual_hint.remaining.is_empty() {
@@ -1391,7 +1396,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .expect("the current equation is retained");
             let pattern = equation.pattern.clone();
             let actual = equation.actual.clone();
-            match relate_selected_call(&pattern.view(), &actual.view(), path, context, acceptance) {
+            match relate_selected_call(
+                effects.read(),
+                &pattern.view(),
+                &actual.view(),
+                path,
+                context,
+                acceptance,
+            ) {
                 Ok(paths) if !paths.is_empty() => advanced.extend(paths),
                 Ok(_) => {
                     if let Some(original) = retained {
@@ -1415,6 +1427,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(super) fn constrain_application_template<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
         pattern: &TypeKind<PreparedEffects>,
         actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
@@ -1422,11 +1435,12 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let application = self.application;
         if let Err(error) = self.constrain_equation_from(
             context,
+            effects,
             pattern,
             actual,
             acceptance,
             ConstraintEquationTiming::Immediate,
-            |path, scope, context| {
+            |path, scope, _, context| {
                 let value = context.open_template_type(actual, path, application)?;
                 Ok(ConstraintOperand::template(
                     value,
@@ -1709,6 +1723,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn next_probe<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     ) -> Result<Option<ProbeTicket<D>>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
@@ -1766,6 +1781,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 &expected,
                 path.projection_view(),
                 ConstraintClosurePolicy::Hint,
+                graph,
                 context,
             )?;
             let unbound = projected
@@ -1802,6 +1818,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn submit_probe<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         input: Arc<ProbeInput<D>>,
         submission: ProbeSubmission<D>,
     ) -> Result<(), TypeConstraintError>
@@ -1997,6 +2014,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         let expected = equation.pattern.clone();
                         let actual = equation.actual.clone();
                         relate_selected_call(
+                            graph,
                             &expected.view(),
                             &actual.view(),
                             path,
@@ -2004,7 +2022,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             input.acceptance,
                         )
                     } else {
-                        validate_type(&actual, path.projection_view(), context).map(|()| vec![path])
+                        validate_type(&actual, path.projection_view(), graph, context)
+                            .map(|()| vec![path])
                     };
                     match related {
                         Ok(paths) if paths.is_empty() => {
