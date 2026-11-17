@@ -18334,3 +18334,24 @@ Supersedes: 元forestの最終処理からcanonical componentを作る接続が�
 差分は13 Rust path、841追加／543削除、物理298 LOC増。既存の最終component factoryを正当な所有型へ移し、元forestのstagingとtyped source phaseへ統合した。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。allocation／copyの包括事前検査・single-pass／性能・body一回準備の公開受入は主張しない。旧eager adapterは実original／Future phase入力がなくcompile失敗のままで、成功する互換fallbackではない。callback queue consumer、frontend public switch、Fn局所∀／guarded契約などの残作業は現状一覧に保持する。既存resolved graph／逆依存証拠は再利用し、scannerの再実行とはしない。
 
 [検証原本・全入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-closed-original-components-checkpoint.raw.zip) は37 entry、756,700 bytes、SHA256 `a7cc77eec4eec798408a61e360dc25779a0b59303c926df9bf0c3ae89d69fe85`。各entryの長さ／SHA256をZIP再読取で照合した。旧履歴の2,818,691 bytes（SHA256 `9965292bdecce0b5a0b56d154317a31d5d8df08b027796845248f20c69b01aeb`）をprefixとして保持する。
+
+<a id="canonical-materialization-owner-checkpoint"></a>
+## 2026-11-18 — canonical memberのcallback materialization所有境界
+
+確認した基点 `main`／`origin/main` は `7bc0469968b57aa758b8c513779766e105244b83`。Source `2237430d9ced91e5d5005619538a379a134ded38` を既存mainへ通常commit／非forced pushし、公開mainと最終11入力のraw Git blob／作業ファイルSHA256一致を確認した。検証はcommit前の同一bytesを再利用し、commit後の再実行ではない。公開直後のtracked差分0、既存未追跡 `%SystemDrive%/` を保持した。
+
+Supersedes: 直前の「canonical componentからcallback materializationへの受渡しがない」という現状を、lowerの所有境界について置き換える。callable側の共通callback owner・canonical consumer driverとfrontendへの接続は未完了で、body一回準備や公開受入の成立とはしない。[唯一の現状一覧](current-status.md)の既存4行を更新し、以前の実測・full SHA・原本を保持する。Generic Matchの受入・公開と保護行bytesは不変。
+
+- `ConstraintMaterialization` がticket issuer／active identity／correlationとticket ordinal／canonical queue／sealed・rejected・fatal結果／保持失敗を一つで所有する。旧transactionに分散していた同じ状態とfinish実装を削除し、同じownerへ委譲する。`CompletedOriginalMember` は別component copyの代わりにそのownerを直接保持する。
+- 元forestのcloseは、実joint branchと同じ完了ownerからcanonical componentを作り、そのqueueを全member分stagingしてから公開する。後memberの操作失敗は同じaffine forestを返し、先行memberだけの部分公開をしない。graph自体のborrowを保持せず実graphのidentity leaseを保持し、consumerはcallback前に実graphを照合できる。queue／ticket処理はgraph loanなしで進め、本体再準備・template再opening・再推論・effect minimumの再計算を行わない。
+- issuer生成とlease cloneの前に課金し、queueへの追加はordinal arithmeticを先に検査する。finishはownerを消費し、従来のsource／fatal順序、component semantic比較とopaque結果比較、open pathの実cycle診断を維持する。不正なconsumed submissionではtyped failureを保存してからエラーを返すため、呼出側がエラーを無視しても先行sealed候補を公開できない。allocation／copy全般の包括事前検査・性能受入を主張しない。
+
+新規2 fixtureは、実original pairを推論・完了した結果で、別graph／別ticket issuer／bindingの拒否、正しいcallback結果とterm数不変、不正送信より前のsealed候補をfinishが公開しないことを検査する。既存canonical Named／非空Futureと元C保持fixture、後member失敗からの同じforest再試行、sourceなし共同branchのfixtureも同じownerを通す。suspensionのissuer identity検査はtest専用read accessorで保持し、旧queueの直読を移行した。すべて未実行。
+
+必須 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は5回すべて終了101。dev01はlibrary478エラー／26警告・lib test1,538エラー／45警告。不要なmutと旧queue consumer参照を修正したdev02、実graph identityを保持したdev03、既存transactionのticket発行前にgraphを照合したdev04はいずれもlibrary478／25警告・lib test1,534／44警告。suspension fixtureに残った削除済みissuer fieldへの2参照を修正した最終dev05は **library478エラー／25警告・lib test1,532エラー／44警告**。5回のowner fmt apply／checkは終了0。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+
+最終11変更pathの一次診断は149件で、旧eager transaction completion1件、未移行component fixture46件、suspension fixture10件、transaction fixture92件。新materialization owner・元forest staging・canonical member fixture／新2 fixtureの一次診断は0。ただし所在確認は全体コンパイル・テストPASSの証拠ではない。旧eager adapterは実original／Future phase入力がなくcompile失敗のままである。nextest／Clippy／doctest／全推移的逆依存／workspace・Native／AWBC・Native/Web最終受入は未実行。
+
+差分は11 Rust path、783追加／330削除、物理453 LOC増。増加triggerについて、queueとticket lifecycle／結果集約をその状態の一つのownerへ移し、旧実装を残していないことをレビューした。新owner401 LOC、新fixture227 LOC。既存transactionはopen inferenceを保持し、canonical ownerは閉じた結果だけを扱う。fixtureも同じ境界に置く。依存graphとfan-in12／fan-out19は不変、既存resolved graph／逆依存証拠を再利用しscanner再実行とはしない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。Fn局所∀／guarded契約、旧eager consumer削除とpublic switchなどの未達は現状一覧へ保持する。全体cargo cleanは02:09実施済みで繰り返していない。
+
+[検証原本・全入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-canonical-materialization-owner-checkpoint.raw.zip) は37 entry、751,734 bytes、SHA256 `81fc6bca8a874fea6eed7fe5568204ceaa75a16489069a1bc9989a67ae8b73e5`。各entryの長さ／SHA256をZIP再読取で照合した。旧履歴の2,824,817 bytes（SHA256 `3fb0d8729c1d16d666efd86187c6c14ca5ab8653462bb87c54220fd3f507fb48`）をprefixとして保持する。
