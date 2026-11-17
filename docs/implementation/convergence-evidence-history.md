@@ -17724,3 +17724,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 元のprepared値の取り込みがcallback close後だった順序を、liveな元graphのloan内で取り込んだoperandを保持する順序へ訂正した。前checkpointの663エラーと今回の665エラーは各入力段階の記録であり、件数を品質の改善指標や受入判定へ読み替えない。現状は[current-status.md](current-status.md)の該当行だけに集約する。
 
 原本 [task-prepared-source-admission-checkpoint.raw.zip](acceptance-evidence/task-prepared-source-admission-checkpoint.raw.zip) は14 entries、ZIP 149382 bytes、SHA-256 `20338526f7d81e26185e66603240dbba8e227c29c687cc06e69b561b2a8ba2d7`。入力・公開照合・途中と最終の失敗・fmt修正・clean receiptを保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Prepared relation transactions migration checkpoint
+
+2026-11-17。基点 `089f5b71ff30023aa00caf96d113c9c3fac3547c`、移行Source `ac05651bcb0f893db0a18f1e777a5a437e15ae20`。10 Rust path、692追加／192削除を既存mainで途中commit・非force pushし、公開headと全10 blobを照合した。途中commitに正常動作を要求しないユーザー指示による未受入checkpointであり、既存の未追跡 `%SystemDrive%/` 4 pathを保持した。
+
+- PreparedCallGraphのaffine checkpoint／deltaへ、元の数学graphのcheckpoint／deltaを保持させた。commit・rollback・抽出・復元はcall nodeと同じscopeを閉じる。転送の事前確認後に数学graphを移し、失敗時は元のcheckpointまたはdeltaと、元controlのエラーを返す。mutable graphの複製は行わず、既存のactive stateのCloneとtouched setのコピーも削除した。snapshot・node／indexの形成を既存workへ計上する処理を追加した。
+- 実callable driverの4 checkpoint callbackへ同じCandidateConstraintWorkSessionを貸し、Analyzerのsource scopeの開閉へ渡した。数学graphの抽出でcontrolが失敗した場合は、生きている元checkpointを先にrollbackしてから元エラーを返す。取消し・予算超過だけでfact ledgerをpoisonへ変換せず、invariantまたは回復失敗を別に扱う。通常解析runnerもcontrolと同じloanをclosureへ渡す契約にしたが、呼出し側の移行はまだ済んでいない。
+- local／patternのjournal、抽出payload、再適用／巻き戻しをprepared型の保持へ揃えた。physicalな観測記録のcanonical metadata、通常解析からのwork入口、数学relationのreplay／read scope、joint completionと最終consumerは引き続き移行中である。unknownをpureにしたり、早期canonical化で型エラーを回避する経路は追加しない。
+- 入れ子commit後の親rollbackとLIFO拒否、抽出／復元の予算失敗からの再試行を、実call node・元scheme body・行参照の保持で確認する2 fixtureを追加した。test targetのcompile・実行は未確認であり、成功件数へ加算しない。
+- 公開Sourceの `cargo check --locked -p arcweft-lang-sema --lib --all-features` は終了101、717エラー、最終出力26 warnings emitted。途中の未commit入力の677／672エラーもper-path hash付きで保持した。これらは入力段階ごとの失敗であり、件数を品質の改善指標や受入へ読み替えない。Sema ownerの `cargo fmt -p arcweft-lang-sema -- --check` は終了0。Clippy・nextest・doctest・逆依存・全workspace／構造gateは未実行。`CARGO_INCREMENTAL=0`、jobs／profile上書きなし。
+- 所有レビューでは、元relationを所有するregistry、affine転送を所有するcall graph、fact journalと回復を所有するSemanticFactState、workを貸す既存driverの責任を維持した。変更はSema owner内のprivate APIで、既存のopaque public error carrierを使う。Cargo・layer方向・Sans-I/O・unsafe・contract version・製品の上限値は変更していない。これは静的レビューであり、実行による検証を代替しない。
+- Supersedes: Source `2ff018628e391cb9c89206fe25820a2071489589` で未接続だった数学graphの候補転送について、上記の実装を加えた。frontend全体の統合・動作・受入が済んだという判定にはしない。過去のcheck失敗・完了したテスト実測・full SHA、Generic Matchを含む既受入の判定は保持し、現状は[current-status.md](current-status.md)に集約する。
+
+原本 [task-prepared-relation-transactions-checkpoint.raw.zip](acceptance-evidence/task-prepared-relation-transactions-checkpoint.raw.zip) は12 entries、ZIP 229017 bytes、SHA-256 `9c80c78ed510179bcf4bae6ab0eac8e87316de6bdc7cc56af096dd394d130f90`。途中と公開Sourceの入力・失敗、fmt receipt、公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
