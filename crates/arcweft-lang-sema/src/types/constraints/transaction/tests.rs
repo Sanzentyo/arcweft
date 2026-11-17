@@ -976,17 +976,28 @@ fn one_probe_submission_retains_each_correlated_path_and_actual_until_materializ
     );
     assert_eq!(fixture.transaction.frontier.len(), 2);
     fixture.transaction.close(&mut fixture.context).unwrap();
-    let actuals = fixture
+    let mut actuals = Vec::new();
+    while let Some(mut ticket) = fixture
         .transaction
         .materialization
-        .iter()
-        .map(|ticket| {
-            let mut requests = ticket.requests();
-            let actual = requests.next().unwrap().actual().clone();
-            assert!(requests.next().is_none());
-            actual
-        })
-        .collect::<Vec<_>>();
+        .next_materialization_ticket(&mut fixture.context)
+        .unwrap()
+    {
+        let mut requests = ticket.requests();
+        actuals.push(requests.next().unwrap().actual().clone());
+        assert!(requests.next().is_none());
+        drop(requests);
+        let binding = ticket.bind_callback().unwrap();
+        ticket.validate_callback_binding(&binding).unwrap();
+        let closed = ticket
+            .bind_closed_submission(ClosedMaterializationSubmission::Sealed(()))
+            .unwrap();
+        fixture
+            .transaction
+            .materialization
+            .submit_closed_materialization(ticket, closed)
+            .unwrap();
+    }
     assert_eq!(actuals.len(), 2);
     assert!(actuals.contains(&TypeKind::Option(Box::new(TypeKind::I64))));
     assert!(actuals.contains(&TypeKind::Vec(Box::new(TypeKind::String))));
@@ -1110,7 +1121,7 @@ fn rejecting_a_probe_cannot_publish_any_of_its_retained_paths() {
             .is_none()
     );
     assert!(fixture.transaction.frontier.is_empty());
-    assert!(fixture.transaction.materialization.is_empty());
+    assert!(fixture.transaction.materialization.pending_len() == 0);
     assert!(matches!(
         fixture
             .transaction
@@ -1190,7 +1201,7 @@ fn an_outstanding_probe_cannot_be_skipped_by_advancing_or_closing() {
             TypeConstraintSourceProtocolInvariant::Outcome
         ))
     );
-    assert!(fixture.transaction.materialization.is_empty());
+    assert!(fixture.transaction.materialization.pending_len() == 0);
     let contribution = fixture.observe();
     fixture
         .transaction
@@ -1208,7 +1219,7 @@ fn an_outstanding_probe_cannot_be_skipped_by_advancing_or_closing() {
             .is_none()
     );
     fixture.transaction.close(&mut fixture.context).unwrap();
-    assert_eq!(fixture.transaction.materialization.len(), 2);
+    assert_eq!(fixture.transaction.materialization.pending_len(), 2);
 }
 #[test]
 fn fixed_effect_evidence_survives_candidate_sealing() {
@@ -1325,8 +1336,8 @@ fn fixed_effect_evidence_abort_cannot_publish_a_partial_equality() {
         &EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap()),
     );
     assert!(transaction.frontier.is_empty());
-    assert!(transaction.materialization.is_empty());
-    assert!(transaction.materialized.is_empty());
+    assert!(transaction.materialization.pending_len() == 0);
+    assert!(transaction.materialization.records_are_empty());
     assert!(matches!(
         transaction.finish(&mut context, |left, right, _| Ok(left == right)),
         Err(TypeConstraintFailure::Abort(
@@ -1444,7 +1455,7 @@ fn advancing_materialization_preserves_the_queue_until_the_current_ticket_is_sub
                 )
             ))
         ));
-        assert_eq!(transaction.materialization.len(), remaining);
+        assert_eq!(transaction.materialization.pending_len(), remaining);
         transaction
             .validate_materialization_callback_begin(&ticket)
             .unwrap();
@@ -1525,8 +1536,8 @@ fn completion_and_comparison_limits_prevent_partial_materialization_ticket_issua
             })) => {
                 assert_eq!(observed, limit);
                 assert_eq!(actual, limit + 1);
-                assert!(transaction.materialization.is_empty());
-                assert!(transaction.materialized.is_empty());
+                assert!(transaction.materialization.pending_len() == 0);
+                assert!(transaction.materialization.records_are_empty());
                 assert!(
                     transaction
                         .next_materialization_ticket(&mut context)
@@ -1540,8 +1551,8 @@ fn completion_and_comparison_limits_prevent_partial_materialization_ticket_issua
                 );
             }
             Ok(()) => {
-                assert_eq!(transaction.materialization.len(), 2);
-                assert!(transaction.materialized.is_empty());
+                assert_eq!(transaction.materialization.pending_len(), 2);
+                assert!(transaction.materialization.records_are_empty());
                 first_accepted_limit = Some(limit);
                 break;
             }
@@ -1601,8 +1612,8 @@ fn incomplete_alternatives_are_rejected_before_any_materialization() {
                 .expect("complete alternative remains viable");
         } else {
             assert!(ticket.is_none());
-            assert!(transaction.materialization.is_empty());
-            assert!(transaction.materialized.is_empty());
+            assert!(transaction.materialization.pending_len() == 0);
+            assert!(transaction.materialization.records_are_empty());
             assert!(
                 transaction
                     .next_materialization_ticket(&mut context)
@@ -1758,6 +1769,6 @@ fn comparison_cancellation_prevents_materialization_ticket_issuance() {
         transaction.close(&mut context),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     );
-    assert!(transaction.materialization.is_empty());
-    assert!(transaction.materialized.is_empty());
+    assert!(transaction.materialization.pending_len() == 0);
+    assert!(transaction.materialization.records_are_empty());
 }

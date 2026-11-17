@@ -87,7 +87,8 @@ pub(super) struct ClosedOriginalProduct<D: ConstraintDomain> {
 /// producer/frontier/path. Its joint branch retains proofs, not a second value.
 pub(super) struct CompletedOriginalMember<D: ConstraintDomain> {
     pub(super) member: OriginalProductMember,
-    pub(super) component: crate::types::constraints::CompletedConstraintComponent<D>,
+    pub(super) materialization:
+        crate::types::constraints::transaction::ConstraintMaterialization<D>,
 }
 
 /// Only this phase has checked original scope, binding and equation conditions

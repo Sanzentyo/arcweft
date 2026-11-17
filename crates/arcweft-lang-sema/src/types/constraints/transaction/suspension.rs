@@ -35,9 +35,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.probe.is_some()
             || self.probe_group.is_some()
             || self.closed
-            || self.active_materialization.is_some()
-            || !self.materialization.is_empty()
-            || !self.materialized.is_empty()
+            || !self.materialization.is_pristine()
         {
             return Err(protocol_error(TypeConstraintSourceProtocolInvariant::WrongPhase).into());
         }

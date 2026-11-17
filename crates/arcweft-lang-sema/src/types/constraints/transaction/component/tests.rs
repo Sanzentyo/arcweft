@@ -229,7 +229,7 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
     assert!(
         originals
             .iter()
-            .all(|root| root.transaction.materialization.is_empty())
+            .all(|root| root.transaction.materialization.is_pristine())
     );
 }
 

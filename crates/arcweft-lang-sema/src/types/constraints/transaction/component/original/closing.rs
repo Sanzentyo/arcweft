@@ -81,7 +81,9 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                     source, source.root_id(), &prepared.branch, &effects, graph.read(), context,
                                 ).map_err(|error| reject(OriginalProductCheck::MemberCompletion(*member), error))?;
                                 context.enter_node()?;
-                                completed.push(CompletedOriginalMember { member: *member, component });
+                                let materialization = crate::types::constraints::transaction::ConstraintMaterialization::from_component(component, &self.original.effect_owner, context)
+                                    .map_err(|error| reject(OriginalProductCheck::MemberCompletion(*member), error))?;
+                                completed.push(CompletedOriginalMember { member: *member, materialization });
                             }
                             Ok::<_, OriginalInferenceFailure>((effects, completed.into_boxed_slice()))
                         })

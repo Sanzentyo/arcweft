@@ -48,6 +48,32 @@ fn function(row: PreparedEffectRow) -> TypeKind<PreparedEffects> {
     )
 }
 
+fn materialize(
+    mut owner: crate::types::constraints::transaction::ConstraintMaterialization<
+        NoConstraintClient,
+    >,
+    context: &mut Context<'_>,
+) -> crate::types::constraints::SolvedCandidate<NoConstraintClient> {
+    while let Some(mut ticket) = owner.next_materialization_ticket(context).unwrap() {
+        owner
+            .validate_materialization_callback_begin(&ticket)
+            .unwrap();
+        let binding = ticket.bind_callback().unwrap();
+        ticket.validate_callback_binding(&binding).unwrap();
+        let closed = ticket
+            .bind_closed_submission(
+                crate::types::constraints::ClosedMaterializationSubmission::Sealed(()),
+            )
+            .unwrap();
+        owner.submit_closed_materialization(ticket, closed).unwrap();
+    }
+    owner
+        .finish(context, None, |_, _, _| Ok(true))
+        .unwrap()
+        .into_unique()
+        .unwrap()
+}
+
 #[test]
 fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
     let cancellation = AtomicBool::new(false);
@@ -148,11 +174,19 @@ fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
     let closed = forest
         .close(&[(&future, &actual_future)], &mut graph, &mut context)
         .unwrap();
-    let joint = &closed.products[0].result.as_ref().unwrap()[0];
+    let joint = closed
+        .products
+        .into_vec()
+        .remove(0)
+        .result
+        .unwrap()
+        .into_vec()
+        .remove(0);
     assert_eq!(joint.completed.len(), 1);
-    let completed = &joint.completed[0];
+    let completed = joint.completed.into_vec().remove(0);
     assert_eq!(completed.member, member);
-    let sources = completed.component.sources().all();
+    let solved = materialize(completed.materialization, &mut context);
+    let sources = solved.component.sources().all();
     assert_eq!(sources.len(), 1);
     sources[0].require_completion(&joint.effects).unwrap();
     let TypeKind::Function { effects: row, .. } = sources[0].actual() else {
@@ -167,7 +201,7 @@ fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
     );
     assert!(sources[0].final_expected().is_some());
     assert_eq!(
-        completed.component.selected().projections()[0]
+        solved.component.selected().projections()[0]
             .to_quantified_type()
             .unwrap(),
         TypeKind::I64
@@ -248,12 +282,24 @@ fn a_late_member_failure_returns_the_same_forest_without_partial_components() {
     // same affine forest. The first member's staged component was not published.
     observation.retain_owned(()).unwrap();
     let closed = forest.close(&[], &mut graph, &mut context).unwrap();
-    let completed = &closed.products[0].result.as_ref().unwrap()[0].completed;
+    let completed = closed
+        .products
+        .into_vec()
+        .remove(0)
+        .result
+        .unwrap()
+        .into_vec()
+        .remove(0)
+        .completed
+        .into_vec();
     assert_eq!(completed.len(), 2);
     assert_eq!(completed[0].member, first);
     assert_eq!(completed[1].member, second);
+    let mut values = completed.into_iter();
+    let _first = materialize(values.next().unwrap().materialization, &mut context);
+    let second = materialize(values.next().unwrap().materialization, &mut context);
     assert_eq!(
-        completed[1].component.sources().all()[0].actual(),
+        second.component.sources().all()[0].actual(),
         &TypeKind::Bool
     );
 }

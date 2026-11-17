@@ -34,6 +34,8 @@ use super::{
 use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 mod completed_component;
+mod materialization;
+pub(crate) use materialization::ConstraintMaterialization;
 mod operand;
 pub(in crate::types::constraints) use operand::ConstraintAliasStep;
 pub(in crate::types) use operand::{
@@ -1100,15 +1102,10 @@ pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
     next_equation: u32,
     next_source_ordinal: u32,
     first_cycle: Option<super::ConstraintGenericParameterId>,
-    next_correlation_ordinal: u32,
-    next_materialization_ticket_ordinal: u64,
-    materialization_issuer: Arc<MaterializationTicketIssuer>,
-    active_materialization: Option<MaterializationTicketIdentity>,
     probe: Option<ProbeOperation<D>>,
     probe_group: Option<ProbeGroup<D>>,
     prepared_sources: BTreeSet<ConstraintSourceId<D::Source>>,
-    materialization: VecDeque<MaterializationTicket<D>>,
-    materialized: Vec<MaterializedRecord<D>>,
+    materialization: ConstraintMaterialization<D>,
     closed: bool,
 }
 
@@ -1199,15 +1196,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             next_equation: 0,
             next_source_ordinal: 0,
             first_cycle: None,
-            next_correlation_ordinal: 0,
-            next_materialization_ticket_ordinal: 0,
-            materialization_issuer: Arc::new(MaterializationTicketIssuer),
-            active_materialization: None,
             probe: None,
             probe_group: None,
             prepared_sources: BTreeSet::new(),
-            materialization: VecDeque::new(),
-            materialized: Vec::new(),
+            materialization: ConstraintMaterialization::new(graph.owner(context)?, context)?,
             closed: false,
         })
     }
@@ -1725,6 +1717,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     }
 
     pub(crate) fn record_failure(&mut self, failure: TypeConstraintFailure<D>) {
+        if self.closed {
+            self.materialization.record_failure(failure);
+            return;
+        }
         if self.first_failure.is_none() {
             self.first_failure = Some(failure);
         }
@@ -2190,69 +2186,33 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         Ok(())
     }
 
-    pub(crate) fn next_materialization_ticket<A>(
+    pub(crate) fn next_materialization_ticket<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-    ) -> Result<Option<MaterializationTicket<D>>, MaterializationImmediateFailure<D>>
-    where
-        A: TypeConstraintAccounting,
-    {
+    ) -> Result<Option<MaterializationTicket<D>>, MaterializationImmediateFailure<D>> {
+        context
+            .check_cancelled()
+            .map_err(materialization_immediate)?;
+        self.materialization
+            .validate_graph(graph.read())
+            .map_err(materialization_immediate)?;
         if !self.closed {
             match self.close(context, graph) {
                 Ok(()) => {}
-                // An incomplete or inconsistent component has no facts to
-                // materialize. `close` retains the typed rejection for finish.
                 Err(TypeConstraintError::Rejected(_)) => return Ok(None),
                 Err(error) => return Err(materialization_immediate(error)),
             }
         }
-        if self.active_materialization.is_some() {
-            return Err(materialization_immediate(TypeConstraintError::Invariant(
-                TypeConstraintInvariant::SourceProtocol(
-                    TypeConstraintSourceProtocolInvariant::Ticket,
-                ),
-            )));
-        }
-        let Some(ticket) = self.materialization.pop_front() else {
-            return Ok(None);
-        };
-        self.active_materialization = Some(ticket.identity.clone());
-        if !matches!(ticket.phase, MaterializationTicketPhase::Ready) {
-            self.active_materialization = None;
-            return Err(materialization_immediate(TypeConstraintError::Invariant(
-                TypeConstraintInvariant::SourceProtocol(
-                    TypeConstraintSourceProtocolInvariant::Ticket,
-                ),
-            )));
-        }
-        Ok(Some(ticket))
+        self.materialization.next_materialization_ticket(context)
     }
 
     pub(crate) fn validate_materialization_callback_begin(
         &self,
         ticket: &MaterializationTicket<D>,
     ) -> Result<(), TypeConstraintSourceProtocolInvariant> {
-        if !materialization_identity_matches(
-            &ticket.identity,
-            &MaterializationTicketIdentity {
-                issuer: Arc::clone(&self.materialization_issuer),
-                ordinal: ticket.identity.ordinal,
-            },
-        ) {
-            return Err(TypeConstraintSourceProtocolInvariant::Ticket);
-        }
-        if !self
-            .active_materialization
-            .as_ref()
-            .is_some_and(|identity| materialization_identity_matches(identity, &ticket.identity))
-        {
-            return Err(TypeConstraintSourceProtocolInvariant::Ticket);
-        }
-        if !matches!(ticket.phase, MaterializationTicketPhase::Ready) {
-            return Err(TypeConstraintSourceProtocolInvariant::Ticket);
-        }
-        Ok(())
+        self.materialization
+            .validate_materialization_callback_begin(ticket)
     }
 
     pub(crate) fn submit_closed_materialization(
@@ -2260,70 +2220,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         ticket: MaterializationTicket<D>,
         closed: ClosedMaterialization<D>,
     ) -> Result<(), MaterializationImmediateFailure<D>> {
-        if !materialization_identity_matches(
-            &ticket.identity,
-            &MaterializationTicketIdentity {
-                issuer: Arc::clone(&self.materialization_issuer),
-                ordinal: ticket.identity.ordinal,
-            },
-        ) || !self
-            .active_materialization
-            .as_ref()
-            .is_some_and(|identity| materialization_identity_matches(identity, &ticket.identity))
-        {
-            return Err(materialization_immediate(TypeConstraintError::Invariant(
-                TypeConstraintInvariant::SourceProtocol(
-                    TypeConstraintSourceProtocolInvariant::Ticket,
-                ),
-            )));
-        }
-        if !matches!(ticket.phase, MaterializationTicketPhase::Closed)
-            || !materialization_identity_matches(&ticket.identity, &closed.identity)
-        {
-            return Err(materialization_immediate(TypeConstraintError::Invariant(
-                TypeConstraintInvariant::SourceProtocol(
-                    TypeConstraintSourceProtocolInvariant::Outcome,
-                ),
-            )));
-        }
-        self.active_materialization = None;
-        let MaterializationTicket {
-            correlation,
-            component,
-            ..
-        } = ticket;
-        match closed.submission {
-            ClosedMaterializationSubmission::Sealed(value) => {
-                self.materialized
-                    .push(MaterializedRecord::Sealed { component, value });
-            }
-            ClosedMaterializationSubmission::Rejected { source, cause } => {
-                let source_ordinal = unique_request_ordinal(component.sources().all(), source)
-                    .map_err(materialization_immediate)?;
-                self.materialized.push(MaterializedRecord::Rejected {
-                    source_ordinal,
-                    correlation,
-                    source,
-                    cause,
-                });
-            }
-            ClosedMaterializationSubmission::Fatal(error) => {
-                if error.phase() != SourcePhase::Materialize {
-                    return Err(materialization_immediate(protocol_error(
-                        TypeConstraintSourceProtocolInvariant::WrongPhase,
-                    )));
-                }
-                let source_ordinal =
-                    unique_request_ordinal(component.sources().all(), *error.source())
-                        .map_err(materialization_immediate)?;
-                self.materialized.push(MaterializedRecord::Fatal {
-                    source_ordinal,
-                    correlation,
-                    error,
-                });
-            }
-        }
-        Ok(())
+        self.materialization
+            .submit_closed_materialization(ticket, closed)
     }
 
     pub(crate) fn finish<A>(
@@ -2367,7 +2265,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn finish_closed_alternatives<A>(
         mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        mut compare: impl FnMut(
+        compare: impl FnMut(
             &D::SealedBranchValue,
             &D::SealedBranchValue,
             &mut A,
@@ -2376,7 +2274,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        self.finish_candidate_alternatives(context, &mut compare)
+        if let Some(error) = self.first_failure.take() {
+            return Err(error);
+        }
+        if !self.closed {
+            return Err(protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into());
+        }
+        self.materialization
+            .finish(context, self.first_cycle.take(), compare)
     }
 
     pub(crate) fn close<A>(
@@ -2410,8 +2315,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let result = self.close_frontier(context, graph);
         if let Err(error) = &result {
             self.record_failure(error.clone().into());
-            self.materialization.clear();
-            self.materialized.clear();
+            self.materialization.discard_pending();
         }
         result
     }
@@ -2476,36 +2380,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             return Err(rejection.into());
         }
         for component in groups.into_iter().flatten() {
-            if component.sources().all().is_empty() {
-                self.materialized.push(MaterializedRecord::Sealed {
-                    component,
-                    value: D::empty_sealed_branch(),
-                });
-                continue;
-            }
-            let correlation = MaterializationCorrelationOrdinal(self.next_correlation_ordinal);
-            self.next_correlation_ordinal =
-                self.next_correlation_ordinal
-                    .checked_add(1)
-                    .ok_or(TypeConstraintError::Abort(
-                        TypeConstraintAbort::ArithmeticOverflow,
-                    ))?;
-            let ticket_ordinal = self.next_materialization_ticket_ordinal;
-            self.next_materialization_ticket_ordinal =
-                ticket_ordinal
-                    .checked_add(1)
-                    .ok_or(TypeConstraintError::Abort(
-                        TypeConstraintAbort::ArithmeticOverflow,
-                    ))?;
-            self.materialization.push_back(MaterializationTicket {
-                identity: MaterializationTicketIdentity {
-                    issuer: Arc::clone(&self.materialization_issuer),
-                    ordinal: ticket_ordinal,
-                },
-                correlation,
-                component,
-                phase: MaterializationTicketPhase::Ready,
-            });
+            self.materialization.push_component(component, context)?;
         }
         Ok(())
     }
@@ -2528,133 +2403,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             return Ok(NormalizedPath::Cyclic(parameter));
         }
         Ok(NormalizedPath::Acyclic(path))
-    }
-
-    fn finish_candidate_alternatives<A>(
-        &mut self,
-        context: &mut TypeConstraintContext<'_, A, D>,
-        compare: &mut impl FnMut(
-            &D::SealedBranchValue,
-            &D::SealedBranchValue,
-            &mut A,
-        ) -> Result<bool, TypeConstraintFailure<D>>,
-    ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
-    where
-        A: TypeConstraintAccounting,
-    {
-        if let Some(error) = self.first_failure.take() {
-            return Err(error);
-        }
-        if !self.closed {
-            return Err(protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into());
-        }
-        if self.active_materialization.is_some() {
-            return Err(protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into());
-        }
-        if !self.materialization.is_empty() {
-            return Err(
-                TypeConstraintError::Rejected(TypeConstraintRejection::UnresolvedType).into(),
-            );
-        }
-        let fatal_index = self
-            .materialized
-            .iter()
-            .enumerate()
-            .filter_map(|(index, record)| match record {
-                MaterializedRecord::Fatal {
-                    source_ordinal,
-                    correlation,
-                    ..
-                } => Some((index, *source_ordinal, correlation)),
-                _ => None,
-            })
-            .min_by(|left, right| left.1.cmp(&right.1).then_with(|| left.2.0.cmp(&right.2.0)))
-            .map(|entry| entry.0);
-        if let Some(index) = fatal_index {
-            let MaterializedRecord::Fatal { error, .. } = self.materialized.remove(index) else {
-                unreachable!("fatal index identifies fatal record")
-            };
-            let (source, phase, cause) = error.into_parts();
-            return Err(TypeConstraintFailure::fatal_source(SourceError::new(
-                source, phase, cause,
-            )));
-        }
-        let mut candidates: Vec<(super::CompletedConstraintComponent<D>, D::SealedBranchValue)> =
-            Vec::new();
-        let mut rejected = Vec::new();
-        for record in core::mem::take(&mut self.materialized) {
-            match record {
-                MaterializedRecord::Sealed { component, value } => {
-                    let mut duplicate = false;
-                    for (existing_component, existing_value) in &candidates {
-                        if existing_component.equal_with(&component, context)? {
-                            // The opaque owner observes the same running reservation.
-                            // Dispatch itself is bounded even for an empty payload;
-                            // any controlled traversal consumes that reservation too.
-                            context.enter_node()?;
-                            if compare(existing_value, &value, context.accounting_mut())? {
-                                duplicate = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !duplicate {
-                        candidates.push((component, value));
-                    }
-                }
-                MaterializedRecord::Rejected {
-                    source_ordinal,
-                    correlation,
-                    source,
-                    cause,
-                } => rejected.push((source_ordinal, correlation, source, cause)),
-                MaterializedRecord::Fatal { .. } => unreachable!("fatal records returned above"),
-            }
-        }
-        if candidates.is_empty() {
-            if let Some(parameter) = self.first_cycle.take() {
-                return Err(TypeConstraintError::Rejected(
-                    TypeConstraintRejection::CyclicInstantiation { parameter },
-                )
-                .into());
-            }
-            let Some((source_ordinal, _, source, _)) = rejected
-                .iter()
-                .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.0.cmp(&right.1.0)))
-                .map(|entry| (entry.0, &entry.1, entry.2, ()))
-            else {
-                return Err(
-                    TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch).into(),
-                );
-            };
-            let causes = rejected
-                .into_iter()
-                .filter(|entry| entry.0 == source_ordinal && entry.2 == source)
-                .map(|entry| entry.3)
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
-            return Err(TypeConstraintFailure::Rejected(
-                TypeConstraintCandidateFailure::Source(
-                    SourceError::new(source, SourcePhase::Materialize, causes).into(),
-                ),
-            ));
-        }
-        let Some((component, sealed_branch)) = candidates.pop() else {
-            return Err(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch).into());
-        };
-        let first = SolvedCandidate {
-            component,
-            sealed_branch,
-        };
-        let remaining = candidates
-            .into_iter()
-            .map(|(component, sealed_branch)| SolvedCandidate {
-                component,
-                sealed_branch,
-            })
-            .collect();
-        context.check_cancelled()?;
-        Ok(super::CompletedCandidateAlternatives::new(first, remaining))
     }
 
     fn complete_component<A: TypeConstraintAccounting>(

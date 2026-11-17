@@ -55,16 +55,18 @@ fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_op
     let (mut context, mut transaction) = root(&cancellation, parameters, 1024);
     result(&mut context, &mut transaction, &template);
     let opening = transaction.application;
-    let issuer = Arc::clone(&transaction.materialization_issuer);
+    let issuer = Arc::clone(transaction.materialization.ticket_issuer());
     let equation = transaction.next_equation;
     let suspended = transaction.suspend_result(&mut context, ()).unwrap();
     assert_eq!(suspended.result().application(), opening);
     assert_eq!(suspended.result().key(), &());
-    assert!(suspended.transaction.materialization.is_empty());
-    assert!(suspended.transaction.materialized.is_empty());
+    assert!(suspended.transaction.materialization.is_pristine());
     assert!(suspended.transaction.frontier[0].bindings.is_empty());
     let mut resumed = suspended.resume();
-    assert!(Arc::ptr_eq(&issuer, &resumed.materialization_issuer));
+    assert!(Arc::ptr_eq(
+        &issuer,
+        resumed.materialization.ticket_issuer()
+    ));
     assert_eq!(resumed.next_equation, equation);
     resumed.constrain(
         &mut context,

@@ -22,6 +22,7 @@ type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoCo
 type Component = OpenConstraintComponent<NoConstraintClient, ()>;
 
 mod completed_members;
+mod materialization;
 mod projection_ports;
 
 #[derive(Debug)]
@@ -557,13 +558,6 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
     assert_eq!(joint.completed.len(), members.len());
     for (completed, member) in joint.completed.iter().zip(members) {
         assert_eq!(completed.member, member);
-        assert_eq!(completed.component.selected().projections().len(), 1);
-        assert_eq!(
-            completed.component.selected().projections()[0]
-                .to_quantified_type()
-                .unwrap(),
-            TypeKind::I64
-        );
     }
     let frames = context.lexical_frames().clone();
     for member in members {
@@ -622,4 +616,27 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
     }
     assert_eq!(context.lexical_frames(), &frames);
     assert!(Arc::ptr_eq(&joint.branch.lineage, &product.members));
+    let joint = closed
+        .products
+        .into_vec()
+        .remove(0)
+        .result
+        .unwrap()
+        .into_vec()
+        .remove(0);
+    for completed in joint.completed.into_vec() {
+        let solved = completed
+            .materialization
+            .finish(&mut context, None, |_, _, _| Ok(true))
+            .unwrap()
+            .into_unique()
+            .unwrap();
+        assert_eq!(solved.component.selected().projections().len(), 1);
+        assert_eq!(
+            solved.component.selected().projections()[0]
+                .to_quantified_type()
+                .unwrap(),
+            TypeKind::I64
+        );
+    }
 }
