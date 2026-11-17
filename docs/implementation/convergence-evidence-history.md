@@ -17944,3 +17944,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 前checkpointの「Γ接続でありcanonicalなbranch Rが未移行」という記述は、この2 Sourceで候補Rの保持・元forestへの取り込みがpreparedへ進んだ範囲について更新した。completion／closed header・predicateの同値制約・Fn局所∀等の未達は消していない。現状一覧は[current-status.md](current-status.md)だけに置く。過去の実測・失敗・full SHA・原本と、Generic Match等の受入・公開済み状態は維持する。今回のコンパイル失敗を既受入機能の新たな不具合とは扱わない。
 
 原本 [task-prepared-branch-r-checkpoint.raw.zip](acceptance-evidence/task-prepared-branch-r-checkpoint.raw.zip) は22 entries、ZIP 187359 bytes、SHA-256 `660fa52b3ddebcc9975a19d571c8212608f93eda4932f2139fc8ded75e671a0c`。入力・失敗ログ・fmt・2 Sourceの公開照合・所有レビューを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Prepared initialization graph migration checkpoint
+
+2026-11-17。基点 `e867554fe86080688b66b634cbcc28f75430a986`、移行Source `1551a6ef448248557f16129a1695b479af8b1240`。12 Rust path、339追加／112削除を既存mainへWIP commit・非force pushし、全12検証入力と公開blobのbyte SHA-256を照合した。動作未受入のcheckpoint。公開時のtracked差分0件、既存の未追跡 `%SystemDrive%/` を保持した。
+
+- root／child driverは実authorityでclientから元graphを借り、その借用内でlowerを初期化する。下位のroot／nested初期化、継承復元、関数schemeのapplication追加、pending resultの保持／transformへ同じgraphを渡した。特殊化も既存call graphのeffect declaration ownerから借りる。初期化時のgraph access失敗を新しいdomain付きStartFailureに保持し、既存のconstraint／protocol／client分類と原因を呼び出し側へ渡す。無関係な原因やsource ticketを作らない。
+- TypeConstraintContextに元graphのmetadata transactionを調停する処理を置いた。同じ元contextでcheckpointを取り、操作の全処理が成功してからcommitする。失敗ではgraph metadataを戻し、消費したworkは戻さない。初期化で継承Rを更新してから後続検査が失敗する場合、関数schemeの追加、元forest全体／個々のproductがこの処理を共用する。既存forest側の重複checkpoint処理を削除した。Graph由来の失敗はEffect phaseを保ち、普通のconstraint failureへ再分類しない。
+- 継承する効果の述語・行は、既存のcompleted contextで実scopeへreopenしたcanonicalな値をprepared側の定数として元Rへ戻す。新しいcanonicalな型・digest・checked factを発行する処理ではない。fixtureのpath helperも自分の実openingにあるpredicateをprepared環境へ取り込み、productionと同じ初期Rを保持する。別graph、work残量やreservation、source再実行は追加しない。
+- 2 fixture、80 LOCを追加した。元のrow termを保持したまま新しいRを復元し、初期化の後段で失敗した場合にterm数が戻り、新規handleがStaleReferenceになる条件、成功時にtransactionが保持するRのhandleが生きている条件を持つ。取消し済みの元contextでは操作本体へ入らない条件も対象にする。test target compile・実行は未確認で、成功数へ加算しない。
+- locked Sema library／全feature checkはdev01～dev04の4回とも終了101・535エラー・26警告。4回のowner fmt checkは終了0。最終入力hashと公開blobの一致に基づく証拠再利用で、commit後の再実行ではない。nextest・test target・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。completionにPreparedEffectsを渡せないguard、completed型のphase transfer、declaration-default等の未移行はコンパイル失敗として残る。初期化の接続をjoint completionの完成とは扱わない。
+- 所有レビューでは12 Rust path、物理227 LOC増、うち追加fixture80 LOCを確認した。raw JSONに各pathのbase／現行物理LOC・bytes・分類・inline test module LOCを記録し、test_supportもtestとして分類した。graph accessは既存callable authority、失敗原子性の調停は元context、可変metadataは元graph、継承の所有権は既存solutionに置いた。StartFailureのdomain化は実client原因を保つためで、外部公開facadeは変更していない。Cargo・I/O・unsafe・codec・version・budgetの変更はない。全体scannerは未実行。
+- Supersedes: 現状一覧の機能行に積み重なっていたnominal／metatype等の個別実装手順を履歴へ集約し、現在の保持範囲・接続済み境界・未達条件へ整理した。過去の手順や検証の誤りを示す削除ではない。Γ効果変数と依存署名のgraph inference／Future接続、declaration-defaultのprepared移行は、現在のソースと失敗ログに基づくjoint completionの具体的な未達として記録した。現状一覧は[current-status.md](current-status.md)だけに置く。過去の実測・失敗・full SHA・原本と、Generic Match等の受入・公開済み状態を保持する。今回のコンパイル失敗を既受入機能の新たな不具合とは扱わない。
+
+原本 [task-prepared-init-graph-checkpoint.raw.zip](acceptance-evidence/task-prepared-init-graph-checkpoint.raw.zip) は27 entries、ZIP 244427 bytes、SHA-256 `21cc0092ad0ce630d24f5b1cc037c1ee8b61081a301474b0ebec6469ea4e274c`。4回の入力・失敗ログ・fmt・公開照合・所有レビューを保持し、全データentryの長さとSHA-256をreadback照合した。
