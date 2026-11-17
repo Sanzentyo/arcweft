@@ -17929,3 +17929,18 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 前checkpointの「保持はΓ admissionではない」はnominal保持そのものについて維持し、別のヘッダΓ検査とそのproducer接続が加わった範囲を更新した。現状一覧のテスト行に重複していた移行機能の列挙は機能行へ集約し、実測と未実行の区別を残した。コンパイル失敗数を機能行へ重複転記せず、品質行を参照する。履歴の実測・失敗・full SHA・原本、およびGeneric Match等の受入・公開済み状態を保持する。既受入機能の新たな不具合を示す結果ではない。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-header-admission-checkpoint.raw.zip](acceptance-evidence/task-prepared-header-admission-checkpoint.raw.zip) は23 entries、ZIP 187933 bytes、SHA-256 `e83d5aa37074e0168a38e943e2cfcbfdda899db8f4d01fcc342abf1ee6b9f567`。入力・失敗ログ・fmt・2 Sourceの公開照合・件数訂正・所有レビューを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Prepared candidate R migration checkpoints
+
+2026-11-17。基点 `394f6eb5b76a8ef997fcedf7aea9e8efd2192e6d`。R保持Source `5d53bbfa0ba4ab4bcafb1b667016f03935d61a77` は11 Rust path、592追加／98削除。共同scope接続Source `1609f73347757ffbd0d2715cf27cfa8f09fbe966` は6 path、260追加／52削除。既存mainへそれぞれWIP commit・非force pushし、各検証入力と公開blobのbyte SHA-256を11件・6件照合した。両段階は動作未受入で、最終Sourceのtracked差分0件、既存の未追跡 `%SystemDrive%/` を保持した。
+
+- 既存EffectConstraintEnvironmentに既存TypeEffectDomainのphaseを与え、同じ型がΓのinventoryとRの述語を一つずつ所有する。candidate branchはPreparedEffectsを保持する。canonicalなΓ/Rにpreparedのside tableを足す構成ではない。canonical phaseの代数はそのphaseに残す。宣言のcanonicalな初期Rは元workでinventory・参照・全述語を確認して取り込み、存在量化や解の選択を行わない。
+- prepared側の等式・包含・述語復元・継承済み効果の復元は、元graphへ関係と連言を記録する。read ownerがissuerを検査し、canonicalな値をコピー前に全体課金する。既存affine term editで全追加termを保持し、最後の課金とcommitが成功してからRを置き換える。失敗でgraphとRを戻し、元workの消費は戻さない。継承の復元済み状態は成功後だけ変更し、重複は構造化されたscope errorとする。TermEditの関係／連言の失敗も同じFailed状態へ遷移する。
+- candidateの関数行と明示的効果等式をprepared relationへ接続した。等式は2方向の逐次更新を1個のEqualとして記録する。Choice／alias／子型を含むrelationは元graphの可変借用を渡し、callback中へ貸出を持ち込まない。内部shapeのphaseもPreparedEffectsへ揃えた。Unknown、未準備body、未解決のRをcanonicalな空・観測結果・semantic equalityへ置き換えない。
+- 元forestの各RはConstraintLexicalScopeの実frame identityに従って共同scopeへ運ぶ。既存のeffect参照transportとprepared代入grammarを使い、宣言bodyやsourceを再構成しない。同じ参照へ運べる場合は代入を増やさない。元control／scope errorを保つ共通変換へ寄せ、元source projectionの重複mapperを削除した。各productの失敗でそのtermをrollbackし、後続のmetadata処理等でforest全体が失敗した場合も外側の同じgraph checkpointで取り消す。これらはRの保持と取り込みであり、joint completionの受入ではない。
+- 4 fixture、340 LOCを追加した。Rをbody準備前に保持し、実body確定後に一致／衝突を判定する条件、各work境界でのR／graph rollbackと消費済みwork、継承効果の二重復元拒否、未許可参照の拒否、不可能な述語を途中で解かず後段へ保持する条件を対象にする。scope fixtureは実frame追加に伴うbound参照の移送、同形の別frameの拒否、失敗したterm editの取消し、宣言bodyが元の一回だけ準備できる条件を持つ。test target compile・実行は未確認で、成功数へ加算しない。
+- locked Sema library／全feature checkはdev01・dev02が終了101・542エラー・26警告、共同scope接続後のdev03が終了101・538エラー・26警告。3回のowner fmt checkは終了0。最終入力hashと公開blobの一致に基づく証拠再利用で、commit後の再実行ではない。nextest・test target・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。canonical completionがPreparedEffectsに対して呼べない等のguardが残り、全体移行は未受入である。
+- 所有レビューの範囲は両Source合計16 Rust path、物理702 LOC増で、うち追加fixture340 LOC。raw JSONへ各pathのbase／現行物理LOC・bytes・分類・inline test module LOCを記録した。Γ/Rは既存効果環境、語彙とtermの原子性は元graph／edit、frameは既存lexical scope、product／forestの原子性は元forestへ置いた。並列Rやwork残量、別graphは追加していない。Cargo・公開facade・I/O・unsafe・codec・version・budgetは変更していない。全体scannerは未実行。
+- Supersedes: 前checkpointの「Γ接続でありcanonicalなbranch Rが未移行」という記述は、この2 Sourceで候補Rの保持・元forestへの取り込みがpreparedへ進んだ範囲について更新した。completion／closed header・predicateの同値制約・Fn局所∀等の未達は消していない。現状一覧は[current-status.md](current-status.md)だけに置く。過去の実測・失敗・full SHA・原本と、Generic Match等の受入・公開済み状態は維持する。今回のコンパイル失敗を既受入機能の新たな不具合とは扱わない。
+
+原本 [task-prepared-branch-r-checkpoint.raw.zip](acceptance-evidence/task-prepared-branch-r-checkpoint.raw.zip) は22 entries、ZIP 187359 bytes、SHA-256 `660fa52b3ddebcc9975a19d571c8212608f93eda4932f2139fc8ded75e671a0c`。入力・失敗ログ・fmt・2 Sourceの公開照合・所有レビューを保持し、全データentryの長さとSHA-256をreadback照合した。
