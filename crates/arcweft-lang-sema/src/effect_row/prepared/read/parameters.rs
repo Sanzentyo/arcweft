@@ -92,6 +92,9 @@ impl PreparedEffectReadView<'_> {
                     work.charge(DecisionWork::Node)?;
                     predicates.insert(reference.0.ordinal);
                     match term {
+                        PredicateTerm::ImportedPrincipal(imported) => {
+                            imported.validate(self, work.0)?;
+                        }
                         PredicateTerm::Substitution {
                             predicate,
                             arguments,

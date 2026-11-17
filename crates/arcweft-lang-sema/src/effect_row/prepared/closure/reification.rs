@@ -86,7 +86,7 @@ impl PrincipalEffectClosure<'_> {
                         )?;
                     let imported;
                     let least = if matches!(function.as_ref(), Function::Imported(_)) {
-                        imported = self.layout.imports[&id]
+                        imported = self.layout.imports.functions[&id]
                             .coefficient(self.layout.view(), class, mask, work)?
                             .substitute(&self.coefficients, work)?;
                         &imported
@@ -138,18 +138,42 @@ impl<'g> PrincipalEffectClosure<'g> {
     ) -> Result<Vec<PrincipalEffectClosure<'g>>, PreparedEffectFailure<C::Error>> {
         let graph: &'g PreparedEffectDefinitions = self.graph;
         let mut children = Vec::new();
-        for &id in self.functions.keys() {
-            let function = &graph.functions[&id];
-            if let Function::Imported(imported) = function.as_ref() {
-                let table = self
-                    .layout
-                    .imports
-                    .get(&id)
-                    .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-                if let Some(child) = table.specialize(imported, self, work)? {
-                    work.charge(DecisionWork::Node)?;
-                    children.push(child);
-                }
+        let functions = self
+            .functions
+            .keys()
+            .filter_map(|id| match graph.functions[id].as_ref() {
+                Function::Imported(imported) => Some(&imported.relation),
+                _ => None,
+            });
+        let predicates =
+            graph
+                .predicates
+                .values()
+                .filter_map(|predicate| match predicate.as_ref() {
+                    PredicateTerm::ImportedPrincipal(imported) => Some(imported),
+                    _ => None,
+                });
+        let mut relations: Vec<
+            &Arc<crate::effect_row::prepared::completion::ImportedEffectRelation>,
+        > = Vec::new();
+        for imported in functions.chain(predicates) {
+            work.charge(DecisionWork::Visit)?;
+            let mut seen = false;
+            for previous in &relations {
+                work.charge(DecisionWork::Visit)?;
+                seen |= Arc::ptr_eq(imported, previous);
+            }
+            if seen {
+                continue;
+            }
+            work.charge(DecisionWork::Node)?;
+            relations.push(imported);
+        }
+        for imported in relations {
+            let table = self.layout.imports.relation(imported, work)?;
+            if let Some(child) = table.specialize(imported, self, work)? {
+                work.charge(DecisionWork::Node)?;
+                children.push(child);
             }
         }
         Ok(children)

@@ -204,6 +204,7 @@ impl<'a> CanonicalReplay<'a> {
                             .principal
                             .layout
                             .imports
+                            .functions
                             .get(&function.reference().ordinal)
                             .ok_or(PreparedEffectInvariant::PrincipalConfirmation)?;
                         let guard = imported
@@ -449,7 +450,9 @@ impl<'a> CanonicalReplay<'a> {
                                 todo.push(child);
                             }
                         }
-                        PredicateTerm::Relation { .. } | PredicateTerm::Substitution { .. } => {}
+                        PredicateTerm::Relation { .. }
+                        | PredicateTerm::Substitution { .. }
+                        | PredicateTerm::ImportedPrincipal(_) => {}
                     }
                 }
             }
@@ -457,6 +460,13 @@ impl<'a> CanonicalReplay<'a> {
         for id in reachable {
             let term = self.principal.graph.predicates[&id].as_ref();
             let value = match term {
+                PredicateTerm::ImportedPrincipal(imported) => self
+                    .principal
+                    .layout
+                    .imports
+                    .relation(imported, work)?
+                    .principal(self.principal.layout.view(), work)?
+                    .substitute(&self.principal.coefficients, work)?,
                 PredicateTerm::Substitution {
                     predicate,
                     arguments,

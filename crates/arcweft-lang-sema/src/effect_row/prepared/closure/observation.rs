@@ -672,6 +672,12 @@ impl ObservationSupport {
                     work.charge(DecisionWork::Node)?;
                     predicates.insert(reference.0.ordinal);
                     match term {
+                        PredicateTerm::ImportedPrincipal(imported) => {
+                            for label in &imported.completion.support {
+                                work.charge(DecisionWork::Node)?;
+                                support.labels.insert(label.clone());
+                            }
+                        }
                         PredicateTerm::Substitution {
                             predicate,
                             arguments,

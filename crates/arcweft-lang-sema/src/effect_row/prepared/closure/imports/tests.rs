@@ -1,4 +1,5 @@
 use super::*;
+mod principal;
 use crate::effect_row::prepared::test_support::*;
 use crate::{
     effects::EffectSet,
@@ -142,8 +143,8 @@ fn parent_constraints_cannot_rescue_a_nonprincipal_imported_child() {
             let closed = parent.solve_principal(&mut budget()).unwrap();
             assert!(closed.unknown(&p).unwrap().is_empty());
             assert!(Arc::ptr_eq(
-                &closed.layout.imports[&id(&ix)].child,
-                &closed.layout.imports[&id(&iy)].child
+                &closed.layout.imports.functions[&id(&ix)].relation.child,
+                &closed.layout.imports.functions[&id(&iy)].relation.child
             ));
         }
     }
@@ -426,8 +427,12 @@ fn independent_future_environments_share_only_the_uninstantiated_child_completio
         );
     }
     assert!(Arc::ptr_eq(
-        &closed.layout.imports[&id(&imported[0].0)].child,
-        &closed.layout.imports[&id(&imported[1].0)].child
+        &closed.layout.imports.functions[&id(&imported[0].0)]
+            .relation
+            .child,
+        &closed.layout.imports.functions[&id(&imported[1].0)]
+            .relation
+            .child
     ));
 }
 
@@ -484,12 +489,12 @@ fn independent_replay_rejects_a_corrupted_child_lowering_even_if_the_parent_agre
         vec![],
     );
     let mut closed = parent.solve_principal(&mut budget()).unwrap();
-    let table = Arc::get_mut(&mut closed.layout)
-        .unwrap()
-        .imports
-        .get_mut(&id(&imported))
-        .unwrap();
-    let cached = Arc::get_mut(&mut table.child).unwrap();
+    let imports = &mut Arc::get_mut(&mut closed.layout).unwrap().imports;
+    assert_eq!(imports.relations.len(), 1);
+    let (origin, duplicate) = imports.relations.pop().unwrap();
+    drop(duplicate);
+    let table = imports.functions.get_mut(&id(&imported)).unwrap();
+    let cached = Arc::get_mut(&mut Arc::get_mut(&mut table.relation).unwrap().child).unwrap();
     let x_id = FunctionRef::Unknown(x).reference().ordinal;
     cached.coefficients.insert(
         Atom::Cell {
@@ -500,6 +505,9 @@ fn independent_replay_rejects_a_corrupted_child_lowering_even_if_the_parent_agre
         Decision::constant(true),
     );
     table.membership[1][0] = Decision::constant(true);
+    imports
+        .relations
+        .push((origin, Arc::clone(&table.relation)));
     closed.functions.insert(
         id(&imported),
         EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap()),

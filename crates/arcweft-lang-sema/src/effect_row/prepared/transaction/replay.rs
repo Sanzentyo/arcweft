@@ -425,43 +425,11 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
                 }
             }
             (Function::Imported(left), Function::Imported(right)) => {
-                // A frozen child is a lexical relation owner, not a pointwise
-                // row. Compare its entire original relation and actual fixed
-                // inputs; independent freezes can share original definitions.
-                if !left
-                    .completion
-                    .graph
-                    .same_original(&right.completion.graph, self.control)?
-                    || left.selected.reference() != right.selected.reference()
-                    || left.completion.fixed.len() != right.completion.fixed.len()
-                    || left.inputs.len() != right.inputs.len()
-                {
+                if left.selected.reference() != right.selected.reference() {
                     return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
                 }
-                for ((left_id, left), (right_id, right)) in
-                    left.completion.fixed.iter().zip(&right.completion.fixed)
-                {
-                    self.visit()?;
-                    if left_id != right_id
-                        || !left
-                            .equal_with(right, self.control)
-                            .map_err(PreparedEffectFailure::Control)?
-                    {
-                        return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
-                    }
-                }
-                for ((left_input, left), (right_input, right)) in
-                    left.inputs.iter().zip(&right.inputs)
-                {
-                    self.visit()?;
-                    if left_input != right_input {
-                        return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
-                    }
-                    if let Some(mismatch) =
-                        self.function_reference(left.reference(), right.reference())?
-                    {
-                        return Ok(Some(mismatch));
-                    }
+                if let Some(mismatch) = self.imported_relation(&left.relation, &right.relation)? {
+                    return Ok(Some(mismatch));
                 }
             }
             _ => return Ok(Some(PreparedEffectReplayMismatch::FunctionDefinition)),
@@ -469,6 +437,43 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
         Ok(None)
     }
 
+    fn imported_relation(
+        &mut self,
+        left: &crate::effect_row::prepared::completion::ImportedEffectRelation,
+        right: &crate::effect_row::prepared::completion::ImportedEffectRelation,
+    ) -> Result<Option<PreparedEffectReplayMismatch>, PreparedEffectFailure<C::Error>> {
+        if !left
+            .completion
+            .graph
+            .same_original(&right.completion.graph, self.control)?
+            || left.completion.fixed.len() != right.completion.fixed.len()
+            || left.inputs.len() != right.inputs.len()
+        {
+            return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
+        }
+        for ((left_id, left), (right_id, right)) in
+            left.completion.fixed.iter().zip(&right.completion.fixed)
+        {
+            self.visit()?;
+            if left_id != right_id
+                || !left
+                    .equal_with(right, self.control)
+                    .map_err(PreparedEffectFailure::Control)?
+            {
+                return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
+            }
+        }
+        for ((left_input, left), (right_input, right)) in left.inputs.iter().zip(&right.inputs) {
+            self.visit()?;
+            if left_input != right_input {
+                return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
+            }
+            if let Some(mismatch) = self.function_reference(left.reference(), right.reference())? {
+                return Ok(Some(mismatch));
+            }
+        }
+        Ok(None)
+    }
     fn choice(
         &mut self,
         left: &PreparedEffectChoice,
@@ -662,6 +667,12 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             .map_err(PreparedEffectFailure::Control)?;
         self.predicates.insert((left, right));
         let matches = match (&**left_term, &**right_term) {
+            (PredicateTerm::ImportedPrincipal(left), PredicateTerm::ImportedPrincipal(right)) => {
+                if let Some(mismatch) = self.imported_relation(left, right)? {
+                    return Ok(Some(mismatch));
+                }
+                true
+            }
             (
                 PredicateTerm::Substitution {
                     predicate: left,

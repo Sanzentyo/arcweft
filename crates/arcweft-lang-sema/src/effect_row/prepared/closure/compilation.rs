@@ -196,6 +196,7 @@ impl<'a> Compilation<'a> {
             Function::Imported(_) => Some(
                 self.layout
                     .imports
+                    .functions
                     .get(&scheme)
                     .ok_or(PreparedEffectInvariant::UnclosedCell)?,
             ),
@@ -295,6 +296,7 @@ impl<'a> Compilation<'a> {
                         let imported = self
                             .layout
                             .imports
+                            .functions
                             .get(&function.reference().ordinal)
                             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
                         admitted = admitted.and(&imported.principal(self.layout, work)?, work)?;
@@ -523,7 +525,9 @@ impl<'a> Compilation<'a> {
                             work.charge(DecisionWork::Node)?;
                             todo.push(no);
                         }
-                        PredicateTerm::Relation { .. } | PredicateTerm::Substitution { .. } => {}
+                        PredicateTerm::Relation { .. }
+                        | PredicateTerm::Substitution { .. }
+                        | PredicateTerm::ImportedPrincipal(_) => {}
                     }
                 }
             }
@@ -531,6 +535,11 @@ impl<'a> Compilation<'a> {
         for id in reachable {
             let term = self.graph.predicates[&id].as_ref();
             let value = match term {
+                PredicateTerm::ImportedPrincipal(imported) => self
+                    .layout
+                    .imports
+                    .relation(imported, work)?
+                    .principal(self.layout, work)?,
                 PredicateTerm::Substitution {
                     predicate,
                     arguments,

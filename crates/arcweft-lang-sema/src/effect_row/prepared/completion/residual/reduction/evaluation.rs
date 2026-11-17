@@ -252,7 +252,9 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                         self.work.charge(DecisionWork::Node)?;
                         todo.push(child);
                     }
-                    PredicateTerm::Select { .. } => return Err(ReductionFailure::Retain),
+                    PredicateTerm::Select { .. } | PredicateTerm::ImportedPrincipal(_) => {
+                        return Err(ReductionFailure::Retain);
+                    }
                     _ => {}
                 }
             }
@@ -317,7 +319,9 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                     let child = self.read_predicate(child, scope)?;
                     self.arena.negate(child, self.work)?
                 }
-                PredicateTerm::Select { .. } => return Err(ReductionFailure::Retain),
+                PredicateTerm::Select { .. } | PredicateTerm::ImportedPrincipal(_) => {
+                    return Err(ReductionFailure::Retain);
+                }
             };
             self.work.charge(DecisionWork::Node)?;
             self.predicates.insert((scope, id), value);

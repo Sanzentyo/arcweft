@@ -281,7 +281,9 @@ where
                                 .map_err(PreparedEffectFailure::Control)?;
                             todo.push(no);
                         }
-                        PredicateTerm::Relation { .. } | PredicateTerm::Substitution { .. } => {}
+                        PredicateTerm::Relation { .. }
+                        | PredicateTerm::Substitution { .. }
+                        | PredicateTerm::ImportedPrincipal(_) => {}
                     }
                 }
             }
@@ -295,6 +297,12 @@ where
                     .ok_or(PreparedEffectInvariant::StaleReference)?,
             );
             let mapped = match term.as_ref() {
+                PredicateTerm::ImportedPrincipal(imported) => {
+                    imported.validate(self.graph.read(), self.control)?;
+                    PreparedEffectPredicate::Term(PreparedEffectPredicateRef(
+                        self.graph.reference(id),
+                    ))
+                }
                 PredicateTerm::Relation {
                     relation,
                     actual,

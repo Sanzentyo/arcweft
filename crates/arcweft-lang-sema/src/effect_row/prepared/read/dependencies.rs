@@ -99,7 +99,7 @@ impl<'a> Reachable<'a> {
                             }
                         }
                         Function::Imported(imported) => {
-                            for input in imported.inputs.values() {
+                            for input in imported.relation.inputs.values() {
                                 self.push(
                                     Dependency::Function(
                                         self.view.relation.validate(input.reference())?,
@@ -166,6 +166,17 @@ impl<'a> Reachable<'a> {
                         .map_err(PreparedEffectFailure::Control)?;
                     self.predicates.insert(id);
                     match self.view.predicate(reference)? {
+                        PredicateTerm::ImportedPrincipal(imported) => {
+                            imported.validate(self.view, control)?;
+                            for input in imported.inputs.values() {
+                                self.push(
+                                    Dependency::Function(
+                                        self.view.relation.validate(input.reference())?,
+                                    ),
+                                    control,
+                                )?;
+                            }
+                        }
                         PredicateTerm::Substitution { arguments, .. } => {
                             for row in arguments.values() {
                                 self.push(Dependency::Row(row), control)?;

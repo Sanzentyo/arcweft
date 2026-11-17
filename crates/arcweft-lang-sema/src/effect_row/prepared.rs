@@ -38,7 +38,8 @@ pub(crate) use completion::residual::{
     ResidualPreparedRowView, ResidualRowExpression, ResidualRowScope,
 };
 pub(crate) use completion::{
-    GuardedEffectFunction, PreparedEffectImportedRef, ScopedEffectCompletion,
+    GuardedEffectFunction, PreparedEffectImportedRef, PreparedEffectImportedRelation,
+    ScopedEffectCompletion,
 };
 pub(crate) use functions::{
     PreparedEffectParameterScope, PreparedEffectUnknownEligibility, PreparedEffectUnknownRef,
@@ -145,6 +146,8 @@ pub(crate) enum PreparedEffectInvariant {
     DuplicateParameter,
     #[error("effect parameter was registered with a different introduction contract")]
     ParameterContract,
+    #[error("imported effect output belongs to a different scoped relation")]
+    ImportedRelationOrigin,
     #[error("effect scheme application has the wrong argument count")]
     ApplicationArity,
     #[error("effect scheme body refers to an undeclared parameter: {0:?}")]
@@ -294,6 +297,7 @@ impl RowTerm {
 
 #[derive(Debug)]
 enum PredicateTerm {
+    ImportedPrincipal(Arc<completion::ImportedEffectRelation>),
     Substitution {
         predicate: EffectPredicate,
         arguments: BTreeMap<GenericEffectReference, PreparedEffectRow>,

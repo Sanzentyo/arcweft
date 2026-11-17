@@ -1,15 +1,42 @@
-//! One conditional minimization per immutable child and receiving label basis.
+//! One conditional minimization per immutable relation and receiving label basis.
 
 use super::*;
-use crate::effect_row::prepared::completion::ImportedEffectFunction;
+use crate::effect_row::prepared::completion::ImportedEffectRelation;
 
 #[cfg(test)]
 mod tests;
 
 pub(super) struct ImportedFunctionTable {
-    pub(super) child: Arc<ComponentCompletion>,
+    pub(super) relation: Arc<ImportedRelationTable>,
     membership: Box<[Box<[Decision]>]>,
+}
+
+pub(super) struct ImportedRelationTable {
+    pub(super) child: Arc<ComponentCompletion>,
+    bindings: BTreeMap<Atom, Decision>,
     principal: Decision,
+}
+
+#[derive(Default)]
+pub(super) struct ImportedRelations {
+    pub(super) functions: BTreeMap<u64, ImportedFunctionTable>,
+    relations: Vec<(Arc<ImportedEffectRelation>, Arc<ImportedRelationTable>)>,
+}
+
+impl ImportedRelations {
+    pub(super) fn relation<C: DecisionControl>(
+        &self,
+        source: &Arc<ImportedEffectRelation>,
+        work: &mut Work<'_, C>,
+    ) -> Result<&ImportedRelationTable, PreparedEffectFailure<C::Error>> {
+        for (original, table) in &self.relations {
+            work.charge(DecisionWork::Visit)?;
+            if Arc::ptr_eq(original, source) {
+                return Ok(table);
+            }
+        }
+        Err(PreparedEffectInvariant::UnclosedCell.into())
+    }
 }
 
 type Cache = Vec<(Arc<ScopedEffectCompletion>, Arc<ComponentCompletion>)>;
@@ -28,41 +55,51 @@ fn cached<'a, C: DecisionControl>(
     Ok(None)
 }
 
-/// The root's public completion boundary has already admitted its full support
-/// (including every actual Future row). Child programs retain unbound Futures;
-/// only their lowering into this proven finite basis uses coefficient tables.
+fn enqueue<C: DecisionControl>(
+    graph: &PreparedEffectDefinitions,
+    inventory: FunctionInventory<'_>,
+    pending: &mut Vec<(Arc<ScopedEffectCompletion>, bool)>,
+    work: &mut Work<'_, C>,
+) -> Result<(), PreparedEffectFailure<C::Error>> {
+    for (id, function) in &graph.functions {
+        work.charge(DecisionWork::Visit)?;
+        if inventory.contains(*id) {
+            if let Function::Imported(imported) = function.as_ref() {
+                work.charge(DecisionWork::Node)?;
+                pending.push((Arc::clone(&imported.relation.completion), false));
+            }
+        }
+    }
+    for predicate in graph.predicates.values() {
+        work.charge(DecisionWork::Visit)?;
+        if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
+            work.charge(DecisionWork::Node)?;
+            pending.push((Arc::clone(&imported.completion), false));
+        }
+    }
+    Ok(())
+}
+
+/// Actual input support is admitted by the root completion boundary. Every
+/// nested relation keeps its own quantifiers, uniform choices and late inputs.
 pub(super) fn lower_selected_imports<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
     labels: &[EffectId],
     inventory: FunctionInventory<'_>,
     work: &mut Work<'_, C>,
-) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
+) -> Result<ImportedRelations, PreparedEffectFailure<C::Error>> {
     let mut cache = Vec::new();
-    let mut todo = Vec::new();
-    for (_, function) in graph
-        .functions
-        .iter()
-        .filter(|(id, _)| inventory.contains(**id))
-    {
-        if let Function::Imported(imported) = function.as_ref() {
-            work.charge(DecisionWork::Node)?;
-            todo.push((Arc::clone(&imported.completion), false));
-        }
-    }
-    while let Some((source, ready)) = todo.pop() {
+    let mut pending = Vec::new();
+    enqueue(graph, inventory, &mut pending, work)?;
+    while let Some((source, ready)) = pending.pop() {
         work.charge(DecisionWork::Visit)?;
         if cached(&cache, &source, work)?.is_some() {
             continue;
         }
         if !ready {
             work.charge(DecisionWork::Node)?;
-            todo.push((Arc::clone(&source), true));
-            for function in source.graph.functions.values() {
-                if let Function::Imported(imported) = function.as_ref() {
-                    work.charge(DecisionWork::Node)?;
-                    todo.push((Arc::clone(&imported.completion), false));
-                }
-            }
+            pending.push((Arc::clone(&source), true));
+            enqueue(&source.graph, FunctionInventory::All, &mut pending, work)?;
             continue;
         }
         let mut basis = BTreeSet::new();
@@ -71,7 +108,7 @@ pub(super) fn lower_selected_imports<C: DecisionControl>(
             basis.insert(label.clone());
         }
         let mut layout = Layout::with_labels(&source.graph, basis, work)?;
-        layout.imports = assemble(&source.graph, &cache, work)?;
+        layout.imports = assemble_selected(&source.graph, &cache, FunctionInventory::All, work)?;
         let mut component = CompiledComponent::compile(
             &source.graph,
             &source.program,
@@ -87,12 +124,59 @@ pub(super) fn lower_selected_imports<C: DecisionControl>(
     assemble_selected(graph, &cache, inventory, work)
 }
 
-fn assemble<C: DecisionControl>(
+fn attach<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
+    tables: &mut ImportedRelations,
+    imported: &Arc<ImportedEffectRelation>,
     cache: &Cache,
     work: &mut Work<'_, C>,
-) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
-    assemble_selected(graph, cache, FunctionInventory::All, work)
+) -> Result<Arc<ImportedRelationTable>, PreparedEffectFailure<C::Error>> {
+    for (source, table) in &tables.relations {
+        work.charge(DecisionWork::Visit)?;
+        if Arc::ptr_eq(source, imported) {
+            work.charge(DecisionWork::Node)?;
+            return Ok(Arc::clone(table));
+        }
+    }
+    let child =
+        cached(cache, &imported.completion, work)?.ok_or(PreparedEffectInvariant::UnclosedCell)?;
+    let mut bindings = BTreeMap::new();
+    for (&future, actual) in &imported.inputs {
+        work.charge(DecisionWork::Visit)?;
+        graph.function(actual)?;
+        for class in 0..child.layout.view().classes() {
+            for mask in 0..child.layout.tables[&future] {
+                work.charge(DecisionWork::Node)?;
+                bindings.insert(
+                    Atom::Cell {
+                        scheme: future,
+                        class,
+                        mask,
+                    },
+                    Decision::variable(
+                        Atom::Cell {
+                            scheme: actual.reference().ordinal,
+                            class,
+                            mask,
+                        },
+                        work,
+                    )?,
+                );
+            }
+        }
+    }
+    let principal = child.completion.principal().substitute(&bindings, work)?;
+    work.charge(DecisionWork::Node)?;
+    let table = Arc::new(ImportedRelationTable {
+        child: Arc::clone(child),
+        bindings,
+        principal,
+    });
+    work.charge(DecisionWork::Node)?;
+    tables
+        .relations
+        .push((Arc::clone(imported), Arc::clone(&table)));
+    Ok(table)
 }
 
 fn assemble_selected<C: DecisionControl>(
@@ -100,51 +184,26 @@ fn assemble_selected<C: DecisionControl>(
     cache: &Cache,
     inventory: FunctionInventory<'_>,
     work: &mut Work<'_, C>,
-) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
-    let mut result = BTreeMap::new();
+) -> Result<ImportedRelations, PreparedEffectFailure<C::Error>> {
+    let mut result = ImportedRelations::default();
     for (&id, function) in &graph.functions {
+        work.charge(DecisionWork::Visit)?;
         if !inventory.contains(id) {
             continue;
         }
         if let Function::Imported(imported) = function.as_ref() {
-            let child = cached(cache, &imported.completion, work)?
-                .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-            let mut bindings = BTreeMap::new();
-            for (&future, actual) in &imported.inputs {
-                let actual = actual.clone();
-                graph.function(&actual)?;
-                for class in 0..child.layout.view().classes() {
-                    for mask in 0..child.layout.tables[&future] {
-                        work.charge(DecisionWork::Node)?;
-                        bindings.insert(
-                            Atom::Cell {
-                                scheme: future,
-                                class,
-                                mask,
-                            },
-                            Decision::variable(
-                                Atom::Cell {
-                                    scheme: actual.reference().ordinal,
-                                    class,
-                                    mask,
-                                },
-                                work,
-                            )?,
-                        );
-                    }
-                }
-            }
+            let relation = attach(graph, &mut result, &imported.relation, cache, work)?;
             let selected = imported.selected.reference().ordinal;
             let mut membership = Vec::new();
-            for class in 0..child.layout.view().classes() {
+            for class in 0..relation.child.layout.view().classes() {
                 let mut cells = Vec::new();
-                for mask in 0..child.layout.tables[&selected] {
+                for mask in 0..relation.child.layout.tables[&selected] {
                     let cell = Atom::Cell {
                         scheme: selected,
                         class,
                         mask,
                     };
-                    let value = if let Some(value) = child.coefficients.get(&cell) {
+                    let value = if let Some(value) = relation.child.coefficients.get(&cell) {
                         compilation::copy(value, work)?
                     } else if imported.definition().is_input() {
                         Decision::variable(cell, work)?
@@ -152,31 +211,35 @@ fn assemble_selected<C: DecisionControl>(
                         return Err(PreparedEffectInvariant::UnclosedCell.into());
                     };
                     work.charge(DecisionWork::Node)?;
-                    cells.push(value.substitute(&bindings, work)?);
+                    cells.push(value.substitute(&relation.bindings, work)?);
                 }
                 membership.push(cells.into_boxed_slice());
             }
-            let principal = child.completion.principal().substitute(&bindings, work)?;
             work.charge(DecisionWork::Node)?;
-            result.insert(
+            result.functions.insert(
                 id,
                 ImportedFunctionTable {
-                    child: Arc::clone(child),
+                    relation,
                     membership: membership.into_boxed_slice(),
-                    principal,
                 },
             );
+        }
+    }
+    for predicate in graph.predicates.values() {
+        work.charge(DecisionWork::Visit)?;
+        if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
+            attach(graph, &mut result, imported, cache, work)?;
         }
     }
     Ok(result)
 }
 
-impl ImportedFunctionTable {
+impl ImportedRelationTable {
     /// Instantiate the already-computed conditional result, then independently
     /// replay its original program. This operation never minimizes again.
     pub(super) fn specialize<'g, C: DecisionControl>(
         &self,
-        imported: &'g ImportedEffectFunction,
+        imported: &'g ImportedEffectRelation,
         parent: &PrincipalEffectClosure<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Option<PrincipalEffectClosure<'g>>, PreparedEffectFailure<C::Error>> {
@@ -306,6 +369,16 @@ impl ImportedFunctionTable {
         })
     }
 
+    pub(super) fn principal<C: DecisionControl>(
+        &self,
+        receiving: ClassLayout<'_>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        self.transport(&self.principal, receiving, work)
+    }
+}
+
+impl ImportedFunctionTable {
     pub(super) fn coefficient<C: DecisionControl>(
         &self,
         receiving: ClassLayout<'_>,
@@ -316,13 +389,15 @@ impl ImportedFunctionTable {
         let source = if class == 0 {
             0
         } else {
-            self.child
+            self.relation
+                .child
                 .layout
                 .labels
                 .binary_search(&receiving.labels[class - 1])
                 .map_or(0, |index| index + 1)
         };
-        self.transport(&self.membership[source][mask], receiving, work)
+        self.relation
+            .transport(&self.membership[source][mask], receiving, work)
     }
 
     pub(super) fn principal<C: DecisionControl>(
@@ -330,6 +405,6 @@ impl ImportedFunctionTable {
         receiving: ClassLayout<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        self.transport(&self.principal, receiving, work)
+        self.relation.principal(receiving, work)
     }
 }

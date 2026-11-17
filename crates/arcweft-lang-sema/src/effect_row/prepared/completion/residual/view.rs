@@ -146,14 +146,14 @@ impl<'a> ResidualFunction<'a> {
             },
             Function::Imported(imported) => ResidualFunctionRole::Imported {
                 value: ResidualFunction {
-                    source: &imported.completion,
+                    source: &imported.relation.completion,
                     id: imported.selected.reference().ordinal,
                 },
-                principal: imported.completion.principal(),
+                principal: imported.relation.completion.principal(),
                 bindings: ResidualImportBindings {
                     parent: self.source,
-                    child: &imported.completion,
-                    values: imported.inputs.iter(),
+                    child: &imported.relation.completion,
+                    values: imported.relation.inputs.iter(),
                 },
             },
         })
@@ -510,6 +510,10 @@ pub(crate) struct ResidualPreparedPredicate<'a> {
     value: ResidualSourcePredicate<'a>,
 }
 pub(crate) enum ResidualPreparedPredicateView<'a> {
+    ImportedPrincipal {
+        principal: EffectResidualPredicate<'a>,
+        inputs: ResidualImportBindings<'a>,
+    },
     Canonical(&'a EffectPredicate),
     Formula {
         predicate: &'a EffectPredicate,
@@ -578,6 +582,16 @@ impl<'a> ResidualPreparedPredicate<'a> {
                 .graph
                 .predicate(reference)?
             {
+                PredicateTerm::ImportedPrincipal(imported) => {
+                    ResidualPreparedPredicateView::ImportedPrincipal {
+                        principal: imported.completion.principal(),
+                        inputs: ResidualImportBindings {
+                            parent: self.source,
+                            child: &imported.completion,
+                            values: imported.inputs.iter(),
+                        },
+                    }
+                }
                 PredicateTerm::Substitution {
                     predicate,
                     arguments,

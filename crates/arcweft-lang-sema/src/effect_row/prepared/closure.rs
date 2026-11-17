@@ -12,7 +12,7 @@ mod compilation;
 mod component;
 use component::{CompiledComponent, ComponentCompletion};
 mod imports;
-use imports::ImportedFunctionTable;
+use imports::ImportedRelations;
 mod observation;
 mod reification;
 pub(crate) use observation::{
@@ -76,7 +76,7 @@ struct Layout {
     labels: Box<[EffectId]>,
     tables: BTreeMap<u64, usize>,
     cells: BTreeSet<Atom>,
-    imports: BTreeMap<u64, ImportedFunctionTable>,
+    imports: ImportedRelations,
 }
 
 /// Compilation reads a class partition, not the solver's cell inventory. An
@@ -85,7 +85,7 @@ struct Layout {
 struct ClassLayout<'a> {
     labels: &'a [EffectId],
     tables: &'a BTreeMap<u64, usize>,
-    imports: &'a BTreeMap<u64, ImportedFunctionTable>,
+    imports: &'a ImportedRelations,
 }
 
 /// Label classes are independent of the solver's scheme-cell tables.
@@ -181,6 +181,7 @@ impl Layout {
         }
         for predicate in graph.predicates.values() {
             match predicate.as_ref() {
+                PredicateTerm::ImportedPrincipal(_) => {}
                 PredicateTerm::Substitution {
                     predicate,
                     arguments,
@@ -222,9 +223,17 @@ impl Layout {
                 }
             }
         }
+        for predicate in graph.predicates.values() {
+            if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
+                for label in &imported.completion.support {
+                    work.charge(DecisionWork::Node)?;
+                    labels.insert(label.clone());
+                }
+            }
+        }
         for function in graph.functions.values() {
             if let Function::Imported(imported) = function.as_ref() {
-                for label in &imported.completion.support {
+                for label in &imported.relation.completion.support {
                     work.charge(DecisionWork::Node)?;
                     labels.insert(label.clone());
                 }
@@ -300,7 +309,7 @@ impl Layout {
             labels: labels.into_iter().collect(),
             tables,
             cells,
-            imports: BTreeMap::new(),
+            imports: ImportedRelations::default(),
         })
     }
 

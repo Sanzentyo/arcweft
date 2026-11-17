@@ -26,17 +26,30 @@ pub(crate) struct GuardedEffectFunction {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PreparedEffectImportedRef(pub(super) PreparedEffectReference);
 
+/// One exact attachment of an original scoped relation to this graph's actual
+/// inputs. Functions and the scalar principal condition share this owner.
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedEffectImportedRelation {
+    pub(super) owner: PreparedEffectGraphOwner,
+    pub(super) relation: Arc<ImportedEffectRelation>,
+}
+
 #[derive(Debug)]
-pub(super) struct ImportedEffectFunction {
+pub(super) struct ImportedEffectRelation {
     pub(super) completion: Arc<ScopedEffectCompletion>,
-    pub(super) selected: FunctionRef,
     /// Each reference belongs to the receiving graph, not the frozen child.
     pub(super) inputs: BTreeMap<u64, FunctionRef>,
 }
 
+#[derive(Debug)]
+pub(super) struct ImportedEffectFunction {
+    pub(super) relation: Arc<ImportedEffectRelation>,
+    pub(super) selected: FunctionRef,
+}
+
 impl ImportedEffectFunction {
     pub(super) fn definition(&self) -> &Function {
-        &self.completion.graph.functions[&self.selected.reference().ordinal]
+        &self.relation.completion.graph.functions[&self.selected.reference().ordinal]
     }
 }
 
@@ -97,20 +110,26 @@ impl PreparedEffectGraph {
         bindings: &[(&PreparedEffectUnknownRef, &PreparedEffectUnknownRef)],
         control: &mut C,
     ) -> Result<PreparedEffectImportedRef, PreparedEffectFailure<C::Error>> {
+        let relation = self.import_scoped_relation(&function.completion, bindings, control)?;
+        self.import_relation_function(&relation, function, control)
+    }
+
+    pub(crate) fn import_scoped_relation<C: DecisionControl>(
+        &mut self,
+        completion: &Arc<ScopedEffectCompletion>,
+        bindings: &[(&PreparedEffectUnknownRef, &PreparedEffectUnknownRef)],
+        control: &mut C,
+    ) -> Result<PreparedEffectImportedRelation, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         let mut inputs = BTreeMap::new();
         for (future, actual) in bindings {
             work.charge(DecisionWork::Visit)?;
             let future = FunctionRef::Unknown((*future).clone());
-            let declaration = function.completion.graph.function(&future)?;
+            let declaration = completion.graph.function(&future)?;
             if !declaration.is_future() {
                 return Err(PreparedEffectInvariant::FutureBinding.into());
             }
-            if function
-                .completion
-                .fixed
-                .contains_key(&future.reference().ordinal)
-            {
+            if completion.fixed.contains_key(&future.reference().ordinal) {
                 return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
             }
             let actual_ref = FunctionRef::Unknown((*actual).clone());
@@ -125,7 +144,7 @@ impl PreparedEffectGraph {
                 return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
             }
         }
-        for (&id, declaration) in &function.completion.graph.functions {
+        for (&id, declaration) in &completion.graph.functions {
             work.charge(DecisionWork::Visit)?;
             if let Function::SchemeInput(declaration) = declaration.as_ref() {
                 declaration.validate(self)?;
@@ -133,21 +152,57 @@ impl PreparedEffectGraph {
                 inputs.insert(id, FunctionRef::Scheme(declaration.scheme().clone()));
             }
             if declaration.is_future()
-                && !function.completion.fixed.contains_key(&id)
+                && !completion.fixed.contains_key(&id)
                 && !inputs.contains_key(&id)
             {
                 return Err(PreparedEffectInvariant::UnresolvedFuture.into());
             }
         }
+        work.charge(DecisionWork::Node)?;
+        Ok(PreparedEffectImportedRelation {
+            owner: PreparedEffectGraphOwner(Arc::clone(&self.relation.issuer)),
+            relation: Arc::new(ImportedEffectRelation {
+                completion: Arc::clone(completion),
+                inputs,
+            }),
+        })
+    }
+
+    pub(crate) fn import_relation_function<C: DecisionControl>(
+        &mut self,
+        relation: &PreparedEffectImportedRelation,
+        function: &GuardedEffectFunction,
+        control: &mut C,
+    ) -> Result<PreparedEffectImportedRef, PreparedEffectFailure<C::Error>> {
+        self.read().validate_owner(&relation.owner)?;
+        relation.relation.validate(self.read(), control)?;
+        if !Arc::ptr_eq(&relation.relation.completion, &function.completion) {
+            return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
+        }
+        function.completion.graph.function(&function.selected)?;
         let id = self.insert_function(
             Function::Imported(ImportedEffectFunction {
-                completion: Arc::clone(&function.completion),
+                relation: Arc::clone(&relation.relation),
                 selected: function.selected.clone(),
-                inputs: inputs,
             }),
-            &mut work,
+            &mut Work(control),
         )?;
         Ok(PreparedEffectImportedRef(self.reference(id)))
+    }
+
+    /// Keep the principal region itself, including a relation with no output
+    /// functions. Its inputs are whole functions, never forged row parameters.
+    pub(crate) fn imported_principal<C: DecisionControl>(
+        &mut self,
+        relation: &PreparedEffectImportedRelation,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        self.read().validate_owner(&relation.owner)?;
+        relation.relation.validate(self.read(), control)?;
+        self.insert_predicate(
+            PredicateTerm::ImportedPrincipal(Arc::clone(&relation.relation)),
+            control,
+        )
     }
 
     pub(crate) fn imported_application<C: DecisionControl>(
@@ -157,6 +212,22 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
         self.apply_function(FunctionRef::Imported(function.clone()), arguments, control)
+    }
+}
+
+impl ImportedEffectRelation {
+    pub(super) fn validate<C: DecisionControl>(
+        &self,
+        receiving: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        for actual in self.inputs.values() {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            receiving.function(actual)?;
+        }
+        Ok(())
     }
 }
 
