@@ -37,6 +37,7 @@ use super::{
 mod authority_tests;
 mod source_owner;
 pub(crate) use source_owner::CheckedConstraintSourceOwner;
+pub use source_owner::CheckedConstraintSourceOwnerError;
 
 /// Exact generation shared by every record in one frozen checked catalog.
 #[derive(Clone, Debug, Eq, PartialEq)]

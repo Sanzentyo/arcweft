@@ -1562,7 +1562,7 @@ impl Analyzer<'_, '_, '_> {
             }
             HirExprKind::Select(select) => {
                 if let Some(variant) =
-                    self.prepare_qualified_variant_select(module, owner, select, expected)?
+                    self.prepare_qualified_variant_select(context, module, owner, select, expected)?
                 {
                     return Ok(Some(variant));
                 }
@@ -1921,7 +1921,10 @@ impl Analyzer<'_, '_, '_> {
                 CheckedValueResolution::ProjectCallable(callable) => {
                     Some(self.prepare_named_callable_value_type(context, callable)?)
                 }
-                _ => value_resolution_type(self.catalogs.world, &resolution),
+                _ => value_resolution_type(self.catalogs.world, &resolution)
+                    .map(|ty| self.retain_source_value_type(context, owner, &ty))
+                    .transpose()
+                    .map_err(AnalyzerExpressionError::fatal)?,
             }
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
             return Ok(
@@ -3346,7 +3349,13 @@ impl Analyzer<'_, '_, '_> {
                 }
                 let mut parameters = Vec::with_capacity(closure.parameters().len());
                 for (index, parameter) in closure.parameters().iter().enumerate() {
-                    let annotated = parameter.ty().and_then(|id| self.types.get(&id)).cloned();
+                    let annotated = parameter
+                        .ty()
+                        .map(|annotation| {
+                            self.retain_source_annotation_type(context, owner, annotation)
+                        })
+                        .transpose()
+                        .map_err(AnalyzerExpressionError::fatal)?;
                     let contextual = expectation.project_checked(
                         owner,
                         contextual_function.map(|(params, _)| &params[index]),
@@ -3371,8 +3380,11 @@ impl Analyzer<'_, '_, '_> {
                 }
                 let declared_result = closure
                     .result_type()
-                    .and_then(|id| self.types.get(&id))
-                    .cloned();
+                    .map(|annotation| {
+                        self.retain_source_annotation_type(context, owner, annotation)
+                    })
+                    .transpose()
+                    .map_err(AnalyzerExpressionError::fatal)?;
                 let contextual_result = expectation
                     .project_checked(owner, contextual_function.map(|(_, result)| result))?;
                 if let (Some(declared), Some(contextual)) =
@@ -4481,6 +4493,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn prepare_qualified_variant_select(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         select: &HirSelectExpr,
@@ -4560,9 +4573,8 @@ impl Analyzer<'_, '_, '_> {
                 Ok(Some(PreparedExpressionFact::from(prepared)))
             }
             Ok(ProjectTypeTarget::External(_)) => Ok(None),
-            Err(arcweft_lang_hir::symbol::ProjectTypeLookupError::Unknown { .. }) => {
-                self.prepare_environment_variant_select(owner, type_path, case_name.as_str())
-            }
+            Err(arcweft_lang_hir::symbol::ProjectTypeLookupError::Unknown { .. }) => self
+                .prepare_environment_variant_select(context, owner, type_path, case_name.as_str()),
             Err(arcweft_lang_hir::symbol::ProjectTypeLookupError::WrongKind { .. }) => Ok(None),
             Err(_) => Err(AnalyzerExpressionError::rejected(owner)),
         }
@@ -4570,6 +4582,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn prepare_environment_variant_select(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         type_path: &HirPath,
         case_name: &str,
@@ -4596,10 +4609,9 @@ impl Analyzer<'_, '_, '_> {
         if !matches!(selected.payload(), crate::env::EnumVariantPayload::Unit) {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
-        let ty = declared_ty.clone();
-        let seed = super::PreparedVariantOwnerSeed::try_environment(schema, &ty).map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner)
-        })?;
+        let (ty, seed) = self
+            .retain_environment_variant(context, owner, schema, declared_ty)
+            .map_err(AnalyzerExpressionError::fatal)?;
         let ordinal = u32::try_from(ordinal).map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::AccountingOverflow)
         })?;
@@ -5837,19 +5849,28 @@ impl Analyzer<'_, '_, '_> {
                     && let Some(receiver) =
                         self.resolve_path_value(module, owner, scope, &receiver_path)?
                 {
-                    let receiver_ty = match &receiver {
+                    // This lookup reads only the closed entity-family tag.
+                    // No value type crosses the preparation boundary here.
+                    let receiver_is_character = match &receiver {
                         CheckedValueResolution::Local(local) => {
-                            self.facts.locals().get(local).cloned()
+                            self.facts.locals().get(local).is_some_and(|ty| {
+                                matches!(ty, TypeKind::Ref(entity)
+                                if entity.kind() == &EntityKind::Character)
+                            })
                         }
-                        _ => value_resolution_type(self.catalogs.world, &receiver),
+                        _ => value_resolution_type(self.catalogs.world, &receiver).is_some_and(
+                            |ty| {
+                                matches!(ty, TypeKind::Ref(entity)
+                                if entity.kind() == &EntityKind::Character)
+                            },
+                        ),
                     };
                     let member = match &member {
                         HirPathSegment::Identifier(name) => name.as_str(),
                         HirPathSegment::ProjectSymbol(name) => name.as_str(),
                     };
-                    if receiver_ty.is_some_and(|ty| {
-                        matches!(ty, TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character)
-                    }) && let Some(character) = receiver.character()
+                    if receiver_is_character
+                        && let Some(character) = receiver.character()
                         && let Some(field) = crate::types::CharacterField::from_name(member)
                     {
                         return Ok(Some(CheckedValueResolution::CharacterField {

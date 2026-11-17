@@ -231,9 +231,9 @@ impl<D: TypeEffectDomain> VariantPayloadType<D> {
     }
 }
 
-impl VariantPayloadTypeShape {
+impl<D: TypeEffectDomain> VariantPayloadTypeShape<D> {
     pub(crate) fn try_record(
-        fields: impl IntoIterator<Item = (String, TypeKind)>,
+        fields: impl IntoIterator<Item = (String, TypeKind<D>)>,
     ) -> Result<Self, VariantPayloadSealError> {
         let mut names = std::collections::HashSet::new();
         let fields = fields
@@ -257,7 +257,9 @@ impl VariantPayloadTypeShape {
             .collect::<Result<_, _>>()?;
         Ok(Self::Record(fields))
     }
+}
 
+impl VariantPayloadTypeShape {
     pub(crate) fn try_seal(
         &self,
         family: VariantPayloadOwnerFamily,

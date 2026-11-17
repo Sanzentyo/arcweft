@@ -4185,7 +4185,7 @@ impl Analyzer<'_, '_, '_> {
                         )?;
                     } else if matches!(expression.kind(), HirExprKind::Call(_)) {
                         if let Some(parameters) =
-                            self.contextual_application_parameter_types(module, call)?
+                            self.contextual_application_parameter_types(context, module, call)?
                         {
                             self.evaluate_expression_with_expectation(
                                 context,
@@ -4215,7 +4215,7 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(AnalyzerExpressionError::fatal)?
                     {
                         let ty = self
-                            .staged_value_resolution_type(&resolution, *value)
+                            .staged_value_resolution_type(context, &resolution, *value)
                             .map_err(AnalyzerExpressionError::fatal)?;
                         if owns_callee_expression_fact
                             && let Some(ty) = ty
@@ -4291,7 +4291,11 @@ impl Analyzer<'_, '_, '_> {
                             if !self.is_environment_namespace(&resolution)
                                 && owns_callee_expression_fact
                                 && let Some(ty) = self
-                                    .staged_value_resolution_type(&resolution, *value_receiver)
+                                    .staged_value_resolution_type(
+                                        context,
+                                        &resolution,
+                                        *value_receiver,
+                                    )
                                     .map_err(AnalyzerExpressionError::fatal)?
                                 && !self.facts.expressions().contains_key(value_receiver)
                             {
@@ -4327,6 +4331,7 @@ impl Analyzer<'_, '_, '_> {
                                         && owns_callee_expression_fact
                                         && let Some(ty) = self
                                             .staged_value_resolution_type(
+                                                context,
                                                 &resolution,
                                                 *value_receiver,
                                             )
@@ -4514,9 +4519,10 @@ impl Analyzer<'_, '_, '_> {
     /// ordinary owners. Named/spread arguments require a selected schema.
     fn contextual_application_parameter_types(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         call: &HirCallInvocation,
-    ) -> Result<Option<Vec<TypeKind>>, AnalyzerExpressionError> {
+    ) -> Result<Option<Vec<TypeKind<crate::types::PreparedEffects>>>, AnalyzerExpressionError> {
         let mut parameters = Vec::with_capacity(call.arguments().len());
         for argument in call.arguments() {
             if !matches!(argument, HirCallArgument::Positional { .. }) {
@@ -4540,7 +4546,7 @@ impl Analyzer<'_, '_, '_> {
                         .resolve_path_value(module, owner, expression.scope(), path)
                         .map_err(AnalyzerExpressionError::fatal)?
                 {
-                    self.staged_value_resolution_type(&resolution, owner)
+                    self.staged_value_resolution_type(context, &resolution, owner)
                         .map_err(AnalyzerExpressionError::fatal)?
                 } else {
                     None
@@ -4745,9 +4751,10 @@ impl Analyzer<'_, '_, '_> {
 
     fn staged_value_resolution_type(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         resolution: &CheckedValueResolution,
         expression: ExprId,
-    ) -> Result<Option<TypeKind>, FinalSemanticAnalysisError> {
+    ) -> Result<Option<TypeKind<crate::types::PreparedEffects>>, FinalSemanticAnalysisError> {
         match resolution {
             CheckedValueResolution::Local(local) => self
                 .facts
@@ -4760,9 +4767,13 @@ impl Analyzer<'_, '_, '_> {
                 crate::types::CompileTimeCallableType::for_project(callable.declaration())
                     .map(TypeKind::CompileTimeCallable),
             ),
-            _ => value_resolution_type(self.catalogs.world, resolution)
-                .map(Some)
-                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: expression }),
+            _ => {
+                let ty = value_resolution_type(self.catalogs.world, resolution).ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: expression },
+                )?;
+                self.retain_source_value_type(context, expression, &ty)
+                    .map(Some)
+            }
         }
     }
 

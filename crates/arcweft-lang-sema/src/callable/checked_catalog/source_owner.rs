@@ -6,6 +6,21 @@ use arcweft_lang_hir::project::{
 
 use super::*;
 
+/// Failure to authenticate the original declaration or item that owns a type.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum CheckedConstraintSourceOwnerError {
+    #[error("source owner belongs to another accepted generation")]
+    GenerationMismatch,
+    #[error("source owner does not match its registered callable")]
+    CandidateMismatch,
+    #[error("source owner has no registered callable record")]
+    MissingRegisteredRecord,
+    #[error("source owner does not retain the registered record allocation")]
+    RecordPointerMismatch,
+    #[error("source owner has no authenticated HIR semantic path")]
+    SourceIdentityMismatch,
+}
+
 /// Keeps the original caller's immutable declaration, rather than the schema
 /// of whichever candidate is currently being considered. Item roots retain
 /// their actual HIR entry without inventing a callable declaration for them.
@@ -50,6 +65,40 @@ impl PartialEq for CheckedConstraintSourceOwner {
 impl Eq for CheckedConstraintSourceOwner {}
 
 impl CheckedConstraintSourceOwner {
+    /// Retain an accepted annotation in this actual producer's template
+    /// scope. This transition carries omitted rows unchanged; it does not
+    /// admit the value into a candidate or issue a completed type identity.
+    pub(crate) fn retain_value_type<C: crate::types::TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, crate::types::TypeProjectionError<C::Error>>
+    {
+        control
+            .check()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        control
+            .visit_binding()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        if let Some(signature) = self.signature() {
+            let inventory = signature.generic_inventory();
+            // Charge before constructing the declaration binder's vectors.
+            for count in [
+                inventory.types().len(),
+                inventory.consts().len(),
+                inventory.effects().len(),
+            ] {
+                for _ in 0..count {
+                    control
+                        .visit_binding()
+                        .map_err(crate::types::TypeProjectionError::Control)?;
+                }
+            }
+        }
+        let formals = self.declaration_formals()?;
+        ty.prepare_effects(formals.template_scope(), control)
+    }
+
     pub(crate) fn domain(&self) -> std::borrow::Cow<'_, crate::effect_row::EffectPredicate> {
         match &self.contract {
             SourceContract::Declaration { record, .. } => {
@@ -100,31 +149,31 @@ impl CheckedConstraintSourceOwner {
             &CallableDeclarationKey,
         ) -> Result<
             (CheckedCallableId, Arc<CallableRecord>),
-            CheckedCallableCatalogBuildError,
+            CheckedConstraintSourceOwnerError,
         >,
-    ) -> Result<Self, CheckedCallableCatalogBuildError> {
+    ) -> Result<Self, CheckedConstraintSourceOwnerError> {
         if !authority.admits_generation(topology.generation()) || authority.registered.is_none() {
-            return Err(CheckedCallableCatalogBuildError::GenerationMismatch);
+            return Err(CheckedConstraintSourceOwnerError::GenerationMismatch);
         }
         let location = topology
             .semantic_path(HirSemanticPathOwnerId::Expression(expression))
-            .map_err(|_| CheckedCallableCatalogBuildError::SourceIdentityMismatch)?
-            .ok_or(CheckedCallableCatalogBuildError::SourceIdentityMismatch)?;
+            .map_err(|_| CheckedConstraintSourceOwnerError::SourceIdentityMismatch)?
+            .ok_or(CheckedConstraintSourceOwnerError::SourceIdentityMismatch)?;
         let contract = match location.root() {
             HirSemanticPathRoot::Declaration(declaration) => {
                 let (id, record) = declaration_record(declaration)?;
                 let candidate = CallableCandidateId::Project(declaration.clone());
                 if record.id() != &candidate || !authority.admits_callable_id(&id) {
-                    return Err(CheckedCallableCatalogBuildError::CandidateMismatch);
+                    return Err(CheckedConstraintSourceOwnerError::CandidateMismatch);
                 }
                 let accepted = authority
                     .registered
                     .as_ref()
                     .expect("registered authority admitted")
                     .record(&candidate)
-                    .ok_or(CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
+                    .ok_or(CheckedConstraintSourceOwnerError::MissingRegisteredRecord)?;
                 if !Arc::ptr_eq(accepted, &record) {
-                    return Err(CheckedCallableCatalogBuildError::RecordPointerMismatch);
+                    return Err(CheckedConstraintSourceOwnerError::RecordPointerMismatch);
                 }
                 SourceContract::Declaration { id, record }
             }
@@ -144,7 +193,7 @@ impl CheckedCallableCatalogBuilder {
         &self,
         topology: &Arc<HirProjectEvaluationTopology>,
         expression: ExprId,
-    ) -> Result<CheckedConstraintSourceOwner, CheckedCallableCatalogBuildError> {
+    ) -> Result<CheckedConstraintSourceOwner, CheckedConstraintSourceOwnerError> {
         CheckedConstraintSourceOwner::admit(
             CheckedCallableAuthorityLease {
                 generation: self.generation.clone(),
@@ -155,7 +204,7 @@ impl CheckedCallableCatalogBuilder {
             |declaration| {
                 let pending = self
                     .pending_by_candidate(&CallableCandidateId::Project(declaration.clone()))
-                    .map_err(|_| CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
+                    .map_err(|_| CheckedConstraintSourceOwnerError::MissingRegisteredRecord)?;
                 Ok((pending.id().clone(), Arc::clone(pending.record())))
             },
         )
@@ -167,7 +216,7 @@ impl CheckedCallableCatalog {
         &self,
         topology: &Arc<HirProjectEvaluationTopology>,
         expression: ExprId,
-    ) -> Result<CheckedConstraintSourceOwner, CheckedCallableCatalogBuildError> {
+    ) -> Result<CheckedConstraintSourceOwner, CheckedConstraintSourceOwnerError> {
         CheckedConstraintSourceOwner::admit(
             self.authority_lease(),
             topology,
@@ -175,7 +224,7 @@ impl CheckedCallableCatalog {
             |declaration| {
                 let facts = self
                     .project_callable(declaration)
-                    .map_err(|_| CheckedCallableCatalogBuildError::MissingRegisteredRecord)?;
+                    .map_err(|_| CheckedConstraintSourceOwnerError::MissingRegisteredRecord)?;
                 Ok((facts.id().clone(), Arc::clone(facts.record())))
             },
         )
@@ -238,6 +287,101 @@ mod tests {
             let location = analysis.hir_topology().semantic_path(HirSemanticPathOwnerId::Expression(*expression)).unwrap().unwrap();
             matches!(location.root(), HirSemanticPathRoot::Declaration(CallableDeclarationKey::Existing(declaration)) if declaration.name() == name)
         }).unwrap()
+    }
+
+    #[test]
+    fn source_type_retention_keeps_caller_formals_nested_rows_and_original_aborts() {
+        use crate::effect_row::prepared::PreparedEffectRow;
+        use crate::types::constraints::{TypeConstraintAbort, TypeConstraintError};
+        use crate::types::{GenericBinder, GenericScope, TypeProjectionError};
+
+        let world = fixture("fn caller<T>(value: T) -> T { value }", None);
+        let analysis = analyze(&world).unwrap();
+        let builder = builder(&analysis);
+        let source = builder
+            .constraint_source_owner(analysis.hir_topology(), expression(&analysis, "caller"))
+            .unwrap();
+        let parameter = TypeKind::GenericParam(
+            source.signature().unwrap().generic_inventory().types()[0]
+                .parameter()
+                .clone()
+                .into(),
+        );
+        let binder = GenericBinder::new(0, 0, 1);
+        let local = GenericScope::default().with_binder(binder);
+        let row = EffectRow::open(EffectSet::new(), local.bound_effect(0, 0).unwrap());
+        let nested = TypeKind::function_with_binder(
+            binder,
+            [parameter.clone()],
+            parameter.clone(),
+            row.clone(),
+        );
+        let original = TypeKind::function([nested], parameter);
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let mut work = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+            LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(10_000, 10_000, 100, 100),
+                &cancellation,
+            ),
+        );
+        let retained = source.retain_value_type(&original, &mut work).unwrap();
+        let TypeKind::Function {
+            params,
+            return_type,
+            effects,
+            ..
+        } = retained
+        else {
+            panic!("retained outer function")
+        };
+        assert_eq!(effects, PreparedEffectRow::Canonical(EffectRow::unknown()));
+        let TypeKind::GenericParam(actual) = return_type.as_ref() else {
+            panic!("caller formal remains free")
+        };
+        assert_eq!(
+            actual,
+            &source.signature().unwrap().generic_inventory().types()[0]
+                .parameter()
+                .clone()
+                .into()
+        );
+        let TypeKind::Function {
+            binder: actual_binder,
+            params,
+            return_type,
+            effects,
+            ..
+        } = &params[0]
+        else {
+            panic!("retained nested function")
+        };
+        assert_eq!(*actual_binder, binder);
+        assert_eq!(effects, &PreparedEffectRow::Canonical(row));
+        assert_eq!(params[0], **return_type);
+
+        let mut exhausted = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+            LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(0, 10_000, 100, 100),
+                &cancellation,
+            ),
+        );
+        assert!(matches!(
+            source.retain_value_type(&original, &mut exhausted),
+            Err(TypeProjectionError::Control(TypeConstraintError::Abort(
+                TypeConstraintAbort::WorkLimit {
+                    consumed: 0,
+                    limit: 0,
+                    ..
+                }
+            )))
+        ));
+        cancellation.store(true, std::sync::atomic::Ordering::Release);
+        assert_eq!(
+            source.retain_value_type(&original, &mut work),
+            Err(TypeProjectionError::Control(TypeConstraintError::Abort(
+                TypeConstraintAbort::Cancelled
+            )))
+        );
     }
 
     #[test]
@@ -333,7 +477,7 @@ mod tests {
         let builder = builder(&analysis);
         assert!(matches!(
             builder.constraint_source_owner(foreign.hir_topology(), expression(&foreign, "id")),
-            Err(CheckedCallableCatalogBuildError::GenerationMismatch)
+            Err(CheckedConstraintSourceOwnerError::GenerationMismatch)
         ));
         let source = builder
             .constraint_source_owner(analysis.hir_topology(), expression(&analysis, "id"))

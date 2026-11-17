@@ -9,6 +9,98 @@ use crate::final_analysis::type_rules::{integer_suffix_type, is_integer};
 use crate::types::{CompileTimeScalarKind, TypeEffectDomain};
 use arcweft_lang_hir::leaf::{HirUnitNumberLiteral, HirUnitNumberUnit};
 
+impl super::Analyzer<'_, '_, '_> {
+    fn source_type_owner(
+        &self,
+        owner: super::ExprId,
+    ) -> Result<crate::callable::CheckedConstraintSourceOwner, super::FinalSemanticAnalysisError>
+    {
+        use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
+        self.staged_callables
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+            .builder
+            .constraint_source_owner(&self.topology, owner)
+            .map_err(|error| FinalSemanticAnalysisError::SourceTypeRetention {
+                owner,
+                error: SourceTypeRetentionFailure::Owner(error),
+            })
+    }
+
+    /// Canonical annotations enter source preparation through their actual
+    /// producer. The existing expression work loan pays for the entire fold.
+    pub(super) fn retain_source_value_type(
+        &self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
+        owner: super::ExprId,
+        ty: &TypeKind,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        use crate::final_analysis::FinalSemanticAnalysisError;
+        let source = self.source_type_owner(owner)?;
+        source
+            .retain_value_type(ty, &mut context.work())
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))
+    }
+
+    pub(super) fn retain_source_annotation_type(
+        &self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
+        owner: super::ExprId,
+        annotation: super::TypeId,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        let ty = self
+            .types
+            .get(&annotation)
+            .ok_or(super::FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation })?;
+        self.retain_source_value_type(context, owner, ty)
+    }
+
+    pub(super) fn retain_environment_variant(
+        &self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
+        owner: super::ExprId,
+        schema: &super::EnvironmentEnumSchema,
+        ty: &TypeKind,
+    ) -> Result<
+        (
+            TypeKind<crate::types::PreparedEffects>,
+            super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
+        ),
+        super::FinalSemanticAnalysisError,
+    > {
+        use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
+        let source = self.source_type_owner(owner)?;
+        let mut work = context.work();
+        // Both owned type copies are charged through the same work loan.
+        let value_type = source
+            .retain_value_type(ty, &mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let owner_type = source
+            .retain_value_type(ty, &mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let seed = super::PreparedVariantOwnerSeed::try_environment_with(
+            schema,
+            owner_type,
+            &mut work,
+            |field, work| {
+                source.retain_value_type(field, work).map_err(|error| {
+                    FinalSemanticAnalysisError::source_type_projection(owner, error)
+                })
+            },
+        )
+        .map_err(|error| match error {
+            FinalSemanticAnalysisError::VariantOwner(error) => {
+                FinalSemanticAnalysisError::SourceTypeRetention {
+                    owner,
+                    error: SourceTypeRetentionFailure::Variant(error),
+                }
+            }
+            error => error,
+        })?;
+        Ok((value_type, seed))
+    }
+}
+
 pub(super) fn unit_scalar_kind<E: TypeEffectDomain>(
     unit: HirUnitNumberUnit,
     expected: Option<&TypeKind<E>>,

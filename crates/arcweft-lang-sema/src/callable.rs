@@ -91,10 +91,11 @@ pub use checked_catalog::{
     CheckedCallableEffects, CheckedCallableExecution, CheckedCallableFacts,
     CheckedCallableLookupError, CheckedCallableParameterContract,
     CheckedCallableParameterContractError, CheckedCallableSourceCategory, CheckedCallableSourceKey,
-    CheckedClosureExecution, CheckedDeclarationDefault, CheckedDeclarationDefaultCapture,
-    CheckedDeclarationDefaultCaptureLocal, CheckedDeclarationDefaultExpressionDigest,
-    CheckedMethodLookup, EffectClauseSource, EffectContractBuildError, EffectContractOrigin,
-    EffectContractSource, EffectItemSource, EffectPermission,
+    CheckedClosureExecution, CheckedConstraintSourceOwnerError, CheckedDeclarationDefault,
+    CheckedDeclarationDefaultCapture, CheckedDeclarationDefaultCaptureLocal,
+    CheckedDeclarationDefaultExpressionDigest, CheckedMethodLookup, EffectClauseSource,
+    EffectContractBuildError, EffectContractOrigin, EffectContractSource, EffectItemSource,
+    EffectPermission,
 };
 pub(crate) use checked_catalog::{
     CheckedCallableAuthorityLease, CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder,

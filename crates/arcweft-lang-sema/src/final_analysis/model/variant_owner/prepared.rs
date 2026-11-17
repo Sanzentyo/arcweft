@@ -81,6 +81,78 @@ pub(crate) struct PreparedVariantOwnerSeed<D: TypeEffectDomain = CanonicalEffect
 }
 
 impl<D: TypeEffectDomain> PreparedVariantOwnerSeed<D> {
+    /// Build the original environment case inventory in the requested type
+    /// domain. The same control pays for metadata and each projected field
+    /// before that field is copied into the new owner.
+    pub(crate) fn try_environment_with<C, E>(
+        schema: &EnvironmentEnumSchema,
+        ty: TypeKind<D>,
+        control: &mut C,
+        mut project: impl FnMut(&TypeKind, &mut C) -> Result<TypeKind<D>, E>,
+    ) -> Result<Self, E>
+    where
+        C: crate::types::TypeProjectionControl,
+        E: From<CheckedVariantOwnerError> + From<C::Error>,
+    {
+        control.check().map_err(E::from)?;
+        control.visit_binding().map_err(E::from)?;
+        let runtime_owner = match &ty {
+            TypeKind::AgentResourceBody => Some(RuntimeBuiltinVariantIdentity::AgentResourceBody),
+            TypeKind::AgentBuiltin(builtin) => builtin.runtime_variant(),
+            _ => None,
+        };
+        let kind = match runtime_owner {
+            Some(owner) => VariantOwnerKind::RuntimeBuiltin { owner, ty },
+            None => VariantOwnerKind::BuiltinClosed {
+                nominal: schema.owner().clone(),
+                ty,
+            },
+        };
+        let mut cases = Vec::new();
+        for (ordinal, variant) in schema.variants().iter().enumerate() {
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| E::from(CheckedVariantOwnerError::CaseOrdinalOverflow))?;
+            control.visit_binding().map_err(E::from)?;
+            let payload = match variant.payload() {
+                EnumVariantPayload::Unit => None,
+                EnumVariantPayload::Tuple(fields) => {
+                    for _ in fields {
+                        control.visit_binding().map_err(E::from)?;
+                    }
+                    Some(VariantPayloadTypeShape::Tuple(
+                        fields
+                            .iter()
+                            .map(|field| project(field, control))
+                            .collect::<Result<_, E>>()?,
+                    ))
+                }
+                EnumVariantPayload::Record(fields) => {
+                    for _ in fields {
+                        control.visit_binding().map_err(E::from)?;
+                    }
+                    let projected = fields
+                        .iter()
+                        .map(|field| Ok((field.name().to_owned(), project(field.ty(), control)?)))
+                        .collect::<Result<Vec<_>, E>>()?;
+                    Some(
+                        VariantPayloadTypeShape::try_record(projected).map_err(|reason| {
+                            E::from(CheckedVariantOwnerError::Payload { ordinal, reason })
+                        })?,
+                    )
+                }
+            };
+            cases.push(PreparedVariantCaseSeed {
+                ordinal,
+                payload,
+                diagnostic_name: Some(variant.name().to_owned()),
+            });
+        }
+        Ok(Self {
+            kind,
+            cases: cases.into_boxed_slice(),
+        })
+    }
+
     pub(crate) fn try_project(
         nominal: ProjectNominalType<D>,
         cases: impl Into<Box<[PreparedVariantCaseSeed<D>]>>,
@@ -249,50 +321,12 @@ impl PreparedVariantOwnerSeed {
         schema: &EnvironmentEnumSchema,
         ty: &TypeKind,
     ) -> Result<Self, CheckedVariantOwnerError> {
-        let runtime_owner = match ty {
-            TypeKind::AgentResourceBody => Some(RuntimeBuiltinVariantIdentity::AgentResourceBody),
-            TypeKind::AgentBuiltin(builtin) => builtin.runtime_variant(),
-            _ => None,
-        };
-        let kind = match runtime_owner {
-            Some(owner) => VariantOwnerKind::RuntimeBuiltin {
-                owner,
-                ty: ty.clone(),
-            },
-            None => VariantOwnerKind::BuiltinClosed {
-                nominal: schema.owner().clone(),
-                ty: ty.clone(),
-            },
-        };
-        let cases = schema
-            .variants()
-            .iter()
-            .enumerate()
-            .map(|(ordinal, variant)| {
-                let ordinal = u32::try_from(ordinal)
-                    .map_err(|_| CheckedVariantOwnerError::CaseOrdinalOverflow)?;
-                let payload = match variant.payload() {
-                    EnumVariantPayload::Unit => None,
-                    EnumVariantPayload::Tuple(fields) => Some(VariantPayloadTypeShape::Tuple(
-                        fields.clone().into_boxed_slice(),
-                    )),
-                    EnumVariantPayload::Record(fields) => Some(
-                        VariantPayloadTypeShape::try_record(
-                            fields
-                                .iter()
-                                .map(|field| (field.name().to_owned(), field.ty().clone())),
-                        )
-                        .map_err(|reason| CheckedVariantOwnerError::Payload { ordinal, reason })?,
-                    ),
-                };
-                Ok(PreparedVariantCaseSeed {
-                    ordinal,
-                    payload,
-                    diagnostic_name: Some(variant.name().to_owned()),
-                })
-            })
-            .collect::<Result<_, CheckedVariantOwnerError>>()?;
-        Ok(Self { kind, cases })
+        Self::try_environment_with(
+            schema,
+            ty.clone(),
+            &mut crate::types::UnmeteredTypeProjection,
+            |ty, _| Ok::<_, CheckedVariantOwnerError>(ty.clone()),
+        )
     }
 
     pub(crate) fn seal(

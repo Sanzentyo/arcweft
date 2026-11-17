@@ -196,6 +196,12 @@ pub enum CheckedVariantOwnerError {
     },
 }
 
+impl From<std::convert::Infallible> for CheckedVariantOwnerError {
+    fn from(never: std::convert::Infallible) -> Self {
+        match never {}
+    }
+}
+
 /// Exact semantic owner with one sealed, immutable case inventory.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedVariantOwner {

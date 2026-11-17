@@ -135,6 +135,7 @@ pub use error::{
     CandidateFactTransactionViolation, FinalCallConstraintFailure, FinalCallFrameInvariant,
     FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
     FinalSemanticProjectError, RecursiveCallableContractEdge, SemanticFactFamily,
+    SourceTypeRetentionFailure,
 };
 pub use execution_context::{
     CheckedClosedExecutionContext, CheckedExecutionContextError, CheckedExecutionEnvironment,

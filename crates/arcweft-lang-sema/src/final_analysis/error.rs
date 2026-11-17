@@ -315,9 +315,41 @@ impl From<crate::effect_row::prepared::PreparedEffectFailure<FinalSemanticAnalys
     }
 }
 
+/// A source type retains its actual producer and the original failure kind.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum SourceTypeRetentionFailure {
+    #[error(transparent)]
+    Owner(#[from] crate::callable::CheckedConstraintSourceOwnerError),
+    #[error(transparent)]
+    Type(#[from] crate::types::TypeInstantiationError),
+    #[error(transparent)]
+    Variant(#[from] super::CheckedVariantOwnerError),
+}
+
+impl FinalSemanticAnalysisError {
+    pub(crate) fn source_type_projection(
+        owner: ExprId,
+        error: crate::types::TypeProjectionError<Self>,
+    ) -> Self {
+        match error {
+            crate::types::TypeProjectionError::Control(error) => error,
+            crate::types::TypeProjectionError::Instantiation(error) => Self::SourceTypeRetention {
+                owner,
+                error: SourceTypeRetentionFailure::Type(error),
+            },
+        }
+    }
+}
+
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
+    #[error("source type at {owner:?} could not be retained: {error}")]
+    SourceTypeRetention {
+        owner: ExprId,
+        #[source]
+        error: SourceTypeRetentionFailure,
+    },
     #[error("Flow transfer {owner:?} requires {expected} arguments, but supplies {actual}")]
     FlowTransferArgumentCount {
         owner: ExprId,

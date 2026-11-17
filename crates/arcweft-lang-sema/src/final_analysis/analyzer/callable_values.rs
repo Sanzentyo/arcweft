@@ -88,12 +88,17 @@ impl Analyzer<'_, '_, '_> {
                     self.prepare_named_callable_value_type(context, callable)?
                 }
                 _ => {
-                    super::expression_types::value_resolution_type(self.catalogs.world, &resolution)
-                        .ok_or_else(|| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::ValueResolutionFailed { owner },
-                            )
-                        })?
+                    let ty = super::expression_types::value_resolution_type(
+                        self.catalogs.world,
+                        &resolution,
+                    )
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::ValueResolutionFailed { owner },
+                        )
+                    })?;
+                    self.retain_source_value_type(context, owner, &ty)
+                        .map_err(AnalyzerExpressionError::fatal)?
                 }
             };
             return Ok(Some(
