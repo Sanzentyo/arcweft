@@ -17693,3 +17693,19 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 内部portがcanonical型のみを保持していた状態を「prepared型への移行途中」へ更新した。Source `71e6b6fdede2ce8e5d33cb9ec30e3c03e63747c0` の代数・関連174件PASSと過去の全実測は、そのSourceの履歴として維持する。Generic Match等の既受入を未完了へ戻さず、現在の移行checkpointのコンパイル失敗と区別する。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-constraint-ports-checkpoint.raw.zip](acceptance-evidence/task-prepared-constraint-ports-checkpoint.raw.zip) は6 entries、ZIP 49064 bytes、SHA-256 `819b927b96e4acc4ac24696081fb2786b3990d531e63c644f003a9fb882c8349`。全データentryの長さ・SHA-256をreadback検証した。
+
+
+## Prepared value producers migration checkpoint
+
+2026-11-17。基点 `9597a9461d2731392bc59bb818124b8edacb1327`、移行途中Source `f2f3dc03f00faddb312f41ed0a5f2ab58cf30c88`（tree `d49e3f1bf91d9b8bb7c77ca7b9fb38d9a0c2efba`）。46 Rust pathを既存mainで途中commit・非force pushし、全公開blobを入力と照合した。受入済みSourceではない。途中commitの正常動作を必須としないユーザー指示に従い、現在のコンパイル失敗を明記して保存した。未追跡 `%SystemDrive%/` を保持した。
+
+- 実Analyzerのnamed value生成を、元の宣言registryからprepared arrowを形成する呼び出しへ切り替えた。Pendingは元formalを引数とする同じschemeのapplicationを作り、本体の型検査・効果closureを先に要求しない。Knownの行と既存のinferred result schemaも、同じschemaのgroup projectionでprepared化する。宣言行の生成と型投影はcheckpointで失敗時に巻き戻す。取消し・元の失敗原因はopaqueなpublic error carrierの標準source chainへ保持し、行のコピーは所有型の制御付きAPIへ置いた。
+- PreparedExpressionResult／Shell、通常の値解決、local、pattern、dialogue／statement payloadをprepared型の保持へ移行した。`PreparedExpressionFact::Complete(CheckedExpression)` はResolvedなsource表現へ置換し、無制御のFrom変換とinto_completeの経路を除去した。Resolvedはchecked publicationではない。公開checked factとsource factはExpressionData<R>／PatternData<D>のメタデータgrammarを共有し、式の21 metadata操作を同じ所有型へ集約した。
+- 準備中の値にはchecked specializationを保持しない。prepared shell／factへcanonical witnessを書き込むAPIを削除し、既存の利用側をjoint seal後の発行へ移すための型境界にした。TypeKindの新variant、別type walker、mutable graphのClone、unknownをpureへ落とすfallbackは追加しない。効果headerはprepared行／predicateを借用し、projection headerとrelation accountingは同じgrammarをeffect domainに対して扱う。
+- Never／正常継続の値型判定をdomainに依存しない同じconstructor判定にした。preparedなRegistryAddressも既存と同じ非値継続であり、Unavailableは継続の証拠を持たない。これはGeneric Matchの受入を取り消す変更ではなく、source表現の移行に伴う保持・判定の接続である。
+- fmtは終了0。`cargo check --locked -p arcweft-lang-sema --lib --all-features` の最新実行は終了101・663エラー。途中の104／370／537／586／604／652エラーの実行も、各入力段階の開発記録として保持し、改善指標や成功へ読み替えない。現在は新しいdomainをまだ受け取らないsource helper、型比較、metadata visitor、specialization、nominal／owner-bound／report／executionの最終consumerが残る。Clippy・nextest・doctest・構造gate・逆依存・全workspace検証は未実行。
+- 次に実際のgraphと元のwork／Γを短いeffect phaseとして借り、source admissionと型関係へ渡す。fact transactionのcheckpoint／deltaにも同じ数学graphを接続する。準備中のconstraint completionは元R・source forestを保持し、実本体の方程式を一括して閉じた後だけcanonical type／solution／digest／specializationを発行する。通常のcall result projectionには旧body prerequisiteが残り、named valueの変更だけで全eager経路の置換を完了としていない。型のacceptsやdigestをPreparedEffectsへ追加する迂回は行わない。
+- 物理成長751 LOC。共有data grammar、宣言registryとschema投影、source value owner、最終checked modelという責務を区別し、実測LOC・byte size・分類・SHAを原本へ保持した。Cargo依存・I/O・unsafe・codec・versionは不変。CARGO_INCREMENTAL=0、jobs／profile上書きなし。public error／source-domain境界の全consumer検証は移行が接続できた後に実行する。
+- Supersedes: 内部portのみのcheckpointを、named producerとsource expression／patternの保持へ接続中という状態へ更新した。Source `71e6b6fdede2ce8e5d33cb9ec30e3c03e63747c0` の174件PASS等、各Sourceの実測・失敗・full SHA・既存原本は保持する。Generic Match等の既受入は維持し、移行中Sourceのコンパイル失敗と区別する。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-value-producers-checkpoint.raw.zip](acceptance-evidence/task-prepared-value-producers-checkpoint.raw.zip) は13 entries、ZIP 431469 bytes、SHA-256 `2de1fa0b1d5aeb447bf09a91d53ab6effa27b61cecf5e00130548b6d463daea5`。全データentryの長さ・SHA-256をreadback検証した。
