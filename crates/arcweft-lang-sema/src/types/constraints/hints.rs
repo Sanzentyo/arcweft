@@ -663,10 +663,8 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
         mut self,
         admit: impl FnOnce(
             Arc<dyn ConstraintSourceValueOwner<D>>,
-        ) -> Result<
-            super::transaction::ConstraintOperand<D>,
-            TypeConstraintError,
-        >,
+        )
+            -> Result<super::transaction::ConstraintOperand<D>, TypeConstraintError>,
     ) -> Result<Self, TypeConstraintError> {
         self.actual = match self.actual {
             SourceProbeTerm::Value(owner) => SourceProbeTerm::AdmittedValue(admit(owner)?),
