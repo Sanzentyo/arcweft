@@ -17660,3 +17660,22 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 数学schemeの登録が本体の型検査後だった境界を、実Analyzer所有の元graphへ事前登録する境界へ更新した。現状行からこの達成済み項目を残作業として削除し、cut別の重複説明は現在の所有関係へまとめた。CLI欄が旧Sourceを最新としていた説明も新しい同一入力の実測へ訂正し、現状のCLI内訳をその一行へ集約した。過去のSHA・実測・失敗・訂正理由は履歴に保持する。今回も残る6失敗を理由にGeneric Match、再帰・共有prefix・型移送の既受入を未完了へ戻さない。残作業の現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-analyzer-effect-declarations.raw.zip](acceptance-evidence/task-analyzer-effect-declarations.raw.zip) は 275 entries、raw 50348346 bytes、ZIP 5853750 bytes、SHA-256 `91db824eb8b2a81de62827ce3eec024e238c0513006495494c3ce9121a95c01f`。manifestと全entryのportable path・長さ・SHA-256をreadback検証した。
+
+
+## Open source effect relations
+
+2026-11-17。基点 `9f71fe3bcfff454b98a6396c0e3b40da09ff4756`。定義データ分離を `26e0c83af7be24be528c75101d64973d06ef03e9`（tree `97f9bab6eabf31eae3ffc8174c1483574fadd16a`）、宣言入力を含む元関係の保持を `71e6b6fdede2ce8e5d33cb9ec30e3c03e63747c0`（tree `13eecc776484b83a517cc2b8d3946b2f1169e58b`）で、既存mainへ通常commit・非force pushした。各公開HEADを照合し、後者の22 pathは検証した入力と公開blobを確認した。前者はcheck・Clippy完了後、全owner実行中にpushし、その後の終端を監査した。未追跡 `%SystemDrive%/` は保持した。
+
+- 可変graphのallocator・checkpoint・journal・affine deltaと、不変の数学定義データを分離した。既存のscoped completionはgraph全体を保持せず、この定義データだけを所有する。live／extracted／readonly scopeとcompletionは同じ読み取りviewを使い、graphや公開権限のCloneは追加しない。
+- 消費しない `freeze_scoped` は、named schemeを本体準備の前後によらず元headerの `SchemeInput` として保持する。未使用formal・元D・元scheme identityを保持し、最小化対象のBindableやFutureへ置き換えない。元Cと全推論関数、実rootの依存を保持し、到達しない本体の行を入力supportへ持ち込まない。保持するのはimmutable定義であり、checkpointやaffine公開権限ではない。
+- canonical closureとfreezeは、一つの依存grammarを本体まで読む／元headerで止める型付きpolicyで共有する。importの入力mapはNamedとFutureを同じ型付き参照で扱う。Namedは同じissuerと元headerへだけ再接続し、foreign／staleな宣言を拒否する。nullary reduction、一般の量化program、有限basisへのlowering、support、再検証も入力roleへ揃えた。一般量化消去の完成を意味しない。
+- 非消費freezeで同じissuerから異なる元関係を保持できるため、replayのissuerだけによる同一視を置換した。元のimmutable定義・C・choiceとselection・固定入力を比較し、独立に保持した同じ関係は一致、制約が増えた関係はImportOriginの不一致となる。比較と保持には元のwork controlを渡す。
+- 分離Sourceの全Semaは1,780件／1,774 PASS／6 FAIL／0 SKIP、235.685秒、5 binary。1,780 IDを保持し、直前Sourceの既知6失敗と差分0。5 ExpressionCycle／1 PendingCallableEffectProjectionであり、再帰本体のfrontend修復を合格扱いにしない。クリーン後のAPI compile fixtureによるslow 1件を保持した。
+- 保持Sourceは、prepared effect algebra・prepared型の効果移送・constraint componentの関連174件を6.219秒で実行し、174 PASS。選択外1,614件はfilter除外であり、今回の実行成功へ合算しない。全inventoryは従来1,780 IDを保持した1,788 ID、新8件、削除・重複0。新規検証は、準備順の独立性、元formal／D、読み取りscopeのC、Futureとの混在、foreign／stale拒否、全work境界での非破壊性、元関係のreplay、および保持した関数値を実際の再帰本体へ使ったpure受理／log効果拒否を含む。
+- 途中の174件／173 PASS／1 FAILは、guardedな行を作っただけで本体へ接続していないfixtureだった。未観測の行の条件を全graphへ強制する修正は行わず、当該行を実際の再帰本体の方程式へ接続して同じUnsatisfiable assertionを通した。先行171件PASS、開発中の型名衝突・型参照・test importのcheck失敗も原本に保持し、最終実行へ合算しない。
+- 最終SourceのSema全target／全featureのlocked check・Clippyとworkspace fmtは終了0。Cargo metadataと全target reverse treeはownerを含む22 package、fan-in／out 12／19。今回の非公開代数と未接続APIの変更では後続21 package、全workspace品質、doctest、Tier 2、Native／AWBC・Native／Web最終受入を再実行していない。それらを今回の実行成功へ読み替えず、Source `6cde3621e955a5798b8b1e978205410127c4f610` の実測を履歴として保持する。
+- 二つ目のcutは22 Rust path・828物理LOC増。元関係の定義データ、共有依存grammar、scoped completion、origin replayという同じ代数owner内の責務に揃え、testもその境界で検証する。実LOC・byte size・分類・SHAを原本へ記録した。Cargo依存・公開facade・I/O・unsafe・codec・version・既定予算は変更しない。CARGO_INCREMENTAL=0、jobs／profile上書きなし、警告は保持する。
+- ユーザー指定のワークスペース全体の `cargo clean` は2026-11-17 10:46:01–10:46:13 JST、終了0、30,755 files／88.2 GiBを削除した。target消滅とGit変更状態の不変を確認した。後続の検証でtargetを再構築している。以前のcleanの実測とは区別して保持する。
+- Supersedes: mutable graph全体をcompletionが保持する構造と、同じissuerなら同じ元関係という前提を置換した。当該代数の保持・比較を検証済みへ更新する。実Analyzerの宣言事前登録・同一graph closure、Generic Match、caller-bound recursion、共有prefix、Free許可／reify等の既受入は維持する。prepared型を含む式・制約・local／pattern／pipe／結果portとΓの統合、body一回準備・一括seal、eager経路の置換は未完了であり、この代数だけでfrontendの再帰本体6件を完了にしない。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-open-source-effect-relations.raw.zip](acceptance-evidence/task-open-source-effect-relations.raw.zip) は43 entries、raw 34,128,924 bytes、ZIP 2,977,035 bytes、SHA-256 `ac13a302af73517a544163738f64a41b1a4f5914a1d62c7922ce395b81262e45`。全データentryの長さ・SHA-256をreadback検証した。過去の履歴prefix・全SHA・実測・失敗・既存原本を保持する。
