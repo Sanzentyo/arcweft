@@ -18121,3 +18121,21 @@ Locked Sema test target／全feature checkは2回を実行し、どちらも終�
 Supersedes: 現状一覧の関数・条件別の実装経緯を、元sourceから同じ推論identityへ結ぶ現在の条件付きownerと、まだ型不整合の最終validator／headerへ整理した。訂正理由は、principal importだけでなくextensionalな元identityとの接続が実装されたためである。最終受入へ格上げせず、Generic Match等の既受入項目・過去の実測・full SHAを未完了へ戻さない。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-original-scoped-binding-checkpoint.raw.zip](acceptance-evidence/task-original-scoped-binding-checkpoint.raw.zip) は19 entries、ZIP 297522 bytes、SHA-256 `019d5dfcfd1b7f02a541305ef98240f864d5e76b880f3569c39ca9de9b92d327`。2回のCargo入力・失敗ログ・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Original final projection checkpoint
+
+2026-11-18。基点 `0b49eec669f8d96b5fe3bd2041d271be9a0fbfc3`、移行Source `c655304a172fb7c7694fdf5495b76f8a23466506`。16 Rust path、873追加／42削除、物理831 LOC増。WIP commit・非force push後、最終16入力と公開blobのbyte SHA-256を照合した。公開時のtracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+PrincipalEffectClosureは元relationをimmutableなArcで所有し、後のgraph変更・dropから独立して同じC／canonical関数／選択・確認証拠を保持する。索引の各追加前に元workへ課金し、定義自体は元Arcを共有する。Imported confirmationも同じ元childを保持し、再最小化しない。Read snapshotのgrammarをHeaders／Bodiesで共有し、ScopedEffectCompletion.close_originalは元receipt／query portと実Named本体・明示したFuture値を共同で閉じる。未準備／未解決・foreign／stale／部分specializeを成功へ補完せず、liveの事実を変更しない。Arc identityはimmutable provenanceの認証であり、semantic equalityの証明ではない。
+
+TypeKind.close_original_effectsは既存のexhaustive shapeから型の実portを借り、上記closureと共通のscoped canonical foldを使う。OriginalTypeEffectProjectionは値と同じprincipal ownerを保持する。Queryは到達性だけを加え、利用側を成立させる制約や仮Γを加えず、本体を再準備しない。Canonical authored annotationの既存の意味を維持し、nonpointwise／非totalの観測は拒否する。これは数学的な代数投影であり、source Γ admission・producer選択・checked identityの発行ではない。Original forestのfinal validatorはまだConstraintClosedEffects専用で、header／最終caller・nominal sealへの接続は継続する。旧complete経路を成功shimで代用しない。
+
+新規12 fixtureを追加し、既存nonpointwise拒否fixtureへ同じ拒否条件を追加した。Testの物理増分は592 LOC。Graph変更／drop後の保持、元private C、未準備と後発のNamed、bound original identity、原本read scopeの全C、明示Future／新label、未公開deltaの実本体、foreign／stale／specializedと全work枯渇prefix、元root外の型port、effect portなしでも元Cを検査する条件、取消しを対象にする。Targetがコンパイル未完了のため新fixtureのcompile成立・実行成功を主張せず、PASSへ加算しない。既存assertion・coverage・production budgetを弱めていない。
+
+Locked Sema／test target／全feature checkは3回すべて終了101。Libraryは各532エラー、lib testは各1,509エラー。Dev01の警告27／46は不要なtype再exportをowner定義へ整理し、dev02／最終dev03は26／45。Dev03では索引構築の各entry課金後の追加を明示した。3回のowner fmt checkは終了0。変更pathへのprimary error locationは最終抽出0件だが、全targetのcompile成功を証明しない。Terminal summaryを件数のauthorityとする。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。公開blob照合によるcommit前証拠の再利用で、commit後の再実行ではない。Cargo cleanは繰り返していない。
+
+所有reviewの16 pathのbase／現行LOC・bytes・分類・inline test LOCを原本へ保持した。112 LOCのcompletion/closingは実入力との最終数学的assembly、relationは元metadata、read/freezeは一つのsnapshot grammar、effect_domainは値／証拠のphase artifactを所有する。既存の型／binder foldと独立replayを使い、別resolver・source走査・catalogや広いfacadeを増やさない。Cargo依存・feature・layer・I/O・unsafe・codec／versionは不変で、既存のresolved graph／推移的reverse dependency証拠を再利用する。Scannerは未実行。
+
+Supersedes: 現状一覧のcanonical型投影一式を未接続とした列挙を、実装した数学的入口と、未移行のvalidator／header・最終callerへ分けた。訂正理由は実入力で元relationを閉じる入口と同じclosureの保持を実装したためであり、未検証の入口を受入へ格上げしない。Generic Match等の既受入項目・過去のSHAと実測は維持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-original-final-projection-checkpoint.raw.zip](acceptance-evidence/task-original-final-projection-checkpoint.raw.zip) は25 entries、ZIP 441961 bytes、SHA-256 `5a336e83fcb4006ede048f6ebaed738d99e0865b86a5363e39b20bc8d827e7d8`。3回のCargo入力・失敗ログ・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
