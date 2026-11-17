@@ -95,6 +95,31 @@ fn relation_prevalidation_uses_the_operands_source_before_header_rejection() {
 }
 
 #[test]
+fn a_closed_scalar_keeps_occurrence_frames_without_acquiring_source_free_permissions() {
+    use crate::types::constraints::TypeLeaf;
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    context.with_binder(GenericBinder::new(1, 0, 1), |context| {
+        let (original, path, _) = parent(context, &mut graph, 98_921);
+        let input = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+            &TypeKind::Bool, Arc::new(original.gamma().clone()), original.clone(),
+            &mut ConstraintEffectPhase::new(&mut graph), context,
+        )?;
+        let scalar = input.view().scalar_expectation(TypeLeaf::String, context)?;
+        assert_eq!(scalar.scope(), input.scope());
+        assert!(matches!(scalar.origin.as_ref(), ConstraintOperandOrigin::ClosedScalar));
+        assert!(scalar.source_receipt().is_none());
+        let free = original.rigid_scope().types[0].clone();
+        let mut forged = scalar.clone();
+        forged.value = Arc::new(TypeKind::GenericParam(free.clone()));
+        assert!(matches!(path.projection_view().admit_operand(forged.view(), graph.read(), context), Err(error) if error == references::type_out_of_scope(&free)));
+        assert!(!scalar.admits_effect_parameter(&original.rigid_scope().effects[0].clone().into(), context)?);
+        Ok::<_, TypeConstraintError>(())
+    }).unwrap();
+}
+
+#[test]
 fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
     use crate::effect_row::prepared::PreparedEffectRelation;
     use crate::types::constraints::normalization::{ConstraintClosedEffects, close_type_operand};

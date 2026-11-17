@@ -137,6 +137,21 @@ impl<D: ConstraintDomain> Clone for ConstraintConstOperandView<'_, D> {
 }
 
 impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
+    /// A language scalar expectation is closed under every Γ. Its exact
+    /// occurrence frames are retained, but no source or Free lease is invented.
+    pub(in crate::types) fn scalar_expectation<A: TypeConstraintAccounting>(
+        &self,
+        scalar: crate::types::constraints::TypeLeaf<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<ConstraintOperand<D>, TypeConstraintError> {
+        context.enter_node()?;
+        Ok(ConstraintOperand {
+            value: Arc::new(scalar.rebuild()),
+            scope: Arc::clone(&self.scope),
+            origin: Arc::new(ConstraintOperandOrigin::ClosedScalar),
+        })
+    }
+
     pub(super) fn root(root: &'a ConstraintOperand<D>) -> Self {
         Self {
             root,

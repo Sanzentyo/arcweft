@@ -338,3 +338,104 @@ fn a_mismatched_header_does_not_hide_an_unresolved_descendant() {
         )
         .unwrap();
 }
+
+#[test]
+fn byte_collection_relations_use_exact_elements_without_closing_bodies() {
+    for supplied in [
+        TypeKind::Vec(Box::new(TypeKind::U8)),
+        TypeKind::Slice(Box::new(TypeKind::U8)),
+        TypeKind::Seq(Box::new(TypeKind::U8)),
+    ] {
+        assert_eq!(
+            prepare_relation(
+                TypeKind::Bytes,
+                supplied.clone(),
+                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+            ),
+            1
+        );
+        assert_eq!(
+            prepare_relation(
+                supplied,
+                TypeKind::Bytes,
+                ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern)
+            ),
+            1
+        );
+    }
+    for supplied in [
+        TypeKind::Vec(Box::new(TypeKind::I64)),
+        TypeKind::Vec(Box::new(TypeKind::Never)),
+        TypeKind::Array {
+            item: Box::new(TypeKind::U8),
+            len: ArrayLength::Const(2),
+        },
+        TypeKind::Vec(Box::new(TypeKind::Choice(vec![TypeKind::U8]))),
+    ] {
+        assert_eq!(
+            prepare_relation(
+                TypeKind::Bytes,
+                supplied,
+                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+            ),
+            0
+        );
+    }
+}
+
+#[test]
+fn agent_membership_uses_the_shared_container_algebra_without_closure() {
+    use crate::types::MapKind;
+    let supplied = TypeKind::Map {
+        kind: MapKind::Ordered,
+        key: Box::new(TypeKind::String),
+        value: Box::new(TypeKind::Option(Box::new(TypeKind::Vec(Box::new(
+            TypeKind::I64,
+        ))))),
+    };
+    for direction in [
+        ConstraintAcceptance::PatternAcceptsActual,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    ] {
+        let (expected, actual) = if direction == ConstraintAcceptance::PatternAcceptsActual {
+            (TypeKind::AgentValue, supplied.clone())
+        } else {
+            (supplied.clone(), TypeKind::AgentValue)
+        };
+        assert_eq!(
+            prepare_relation(expected, actual, ConstraintRelation::Accepts(direction)),
+            1
+        );
+    }
+    assert_eq!(
+        prepare_relation(TypeKind::AgentValue, supplied, ConstraintRelation::Equal),
+        0
+    );
+    for supplied in [
+        TypeKind::Seq(Box::new(TypeKind::Bool)),
+        TypeKind::Need(Box::new(TypeKind::Bool)),
+        TypeKind::Option(Box::new(TypeKind::Never)),
+        TypeKind::Map {
+            kind: MapKind::Ordered,
+            key: Box::new(TypeKind::I64),
+            value: Box::new(TypeKind::Bool),
+        },
+    ] {
+        assert_eq!(
+            prepare_relation(
+                TypeKind::AgentValue,
+                supplied,
+                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+            ),
+            0
+        );
+    }
+    assert_eq!(
+        prepare_relation(
+            TypeKind::AgentValue,
+            TypeKind::Never,
+            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+        ),
+        1
+    );
+}

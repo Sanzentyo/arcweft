@@ -738,7 +738,7 @@ pub(crate) enum TypeLeaf<'a> {
 }
 
 impl TypeLeaf<'_> {
-    fn rebuild<D: TypeEffectDomain>(self) -> TypeKind<D> {
+    pub(in crate::types) fn rebuild<D: TypeEffectDomain>(self) -> TypeKind<D> {
         match self {
             Self::Bool => TypeKind::Bool,
             Self::I8 => TypeKind::I8,

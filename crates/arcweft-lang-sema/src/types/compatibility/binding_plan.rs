@@ -1,22 +1,22 @@
 //! Relation and Choice algebra for candidate-wide constraints.
 
-use std::collections::BTreeSet;
-
 use super::super::{
-    ArrayLength, GenericConstReference, GenericTypeReference, TypeCompatibilityFailure,
-    TypeCompatibilityPolicy, TypeKind,
+    ArrayLength, GenericConstReference, GenericTypeReference, TypeCompatibilityFailure, TypeKind,
 };
 use crate::types::constraints::context::{TypeConstraintAccounting, TypeConstraintContext};
 use crate::types::constraints::transaction::{
     ConstraintConstOperandView, ConstraintInferenceBranch, ConstraintOperand, ConstraintOperandView,
 };
 use crate::types::constraints::{
-    ChoiceDerivationStep, ChoiceForkRole, ConstraintAliasResolution, ConstraintClosedEffects,
-    ConstraintClosurePolicy, ConstraintDomain, TypeConstraintAbort, TypeConstraintConstEligibility,
-    TypeConstraintError, TypeConstraintInvariant, TypeConstraintParameterEligibility,
-    TypeConstraintRejection, TypeConstraintShape, TypeConstraintSourceProtocolInvariant,
-    project_closed_operand, resolve_const_alias, resolve_type_alias, seal_path, validate_type,
+    ChoiceDerivationStep, ChoiceForkRole, ConstraintAliasResolution, ConstraintDomain,
+    TypeConstraintAbort, TypeConstraintConstEligibility, TypeConstraintError,
+    TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintRejection,
+    TypeConstraintShape, TypeConstraintSourceProtocolInvariant, resolve_const_alias,
+    resolve_type_alias, validate_type,
 };
+
+mod value_membership;
+use value_membership::{relate_agent_value, relate_cross_shape};
 
 #[cfg(test)]
 mod tests;
@@ -198,6 +198,15 @@ where
         // be resolved by another original root, so do not seal it here.
         return relate_with_policy(graph, pattern, actual, path, context, relation);
     }
+    let (expected, supplied) = match relation.direction() {
+        ConstraintAcceptance::PatternAcceptsActual => (pattern, actual),
+        ConstraintAcceptance::ActualAcceptsPattern => (actual, pattern),
+    };
+    if matches!(expected.value(), TypeKind::AgentValue)
+        && !matches!(supplied.value(), TypeKind::Never)
+    {
+        return relate_agent_value(graph, supplied, path, context, relation.direction());
+    }
     let pattern_shape = pattern.value().constraint_shape();
     let actual_shape = actual.value().constraint_shape();
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
@@ -237,67 +246,6 @@ where
         _ => relate_with_policy(graph, pattern, actual, path, context, relation)?,
     };
     Ok(paths)
-}
-
-/// The two cross-shape language relations still use the old final reader.
-/// Aligned shape preparation never enters this boundary. Replace this last
-/// reader with scoped primitive relations before completing the migration.
-fn accept_cross_shape<A, D, L>(
-    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-    pattern: &ConstraintOperandView<'_, D>,
-    actual: &ConstraintOperandView<'_, D>,
-    path: ConstraintInferenceBranch<D, L>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-    acceptance: ConstraintAcceptance,
-) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    L: Clone,
-{
-    if !path.deferred_cycles.parameters.is_empty() {
-        // Provisional back-edges are evidence only.  Do not let this local
-        // relation pass turn a later source failure into an early mismatch;
-        // the close phase owns cycle pruning after all source work.
-        return Ok(Some(path));
-    }
-    let path = seal_path(path, graph.read(), context)?;
-    let effects = ConstraintClosedEffects::for_branch(&path, context)?;
-    let projected_pattern = project_closed_operand(
-        pattern.clone(),
-        &path,
-        ConstraintClosurePolicy::Hint,
-        &effects,
-        graph.read(),
-        context,
-    )?;
-    let projected_actual = project_closed_operand(
-        actual.clone(),
-        &path,
-        ConstraintClosurePolicy::Hint,
-        &effects,
-        graph.read(),
-        context,
-    )?;
-    let projected_pattern = projected_pattern.value();
-    let projected_actual = projected_actual.value();
-    let compatible = match acceptance {
-        ConstraintAcceptance::PatternAcceptsActual => projected_pattern
-            .accepts_with(
-                projected_actual,
-                TypeCompatibilityPolicy::SelectedCall,
-                context,
-            )
-            .map_err(map_compatibility_error),
-        ConstraintAcceptance::ActualAcceptsPattern => projected_actual
-            .accepts_with(
-                projected_pattern,
-                TypeCompatibilityPolicy::SelectedCall,
-                context,
-            )
-            .map_err(map_compatibility_error),
-    };
-    Ok(compatible?.then_some(path))
 }
 
 pub(crate) fn map_compatibility_error(
@@ -1004,11 +952,14 @@ where
                 .cross_shape_compatibility(supplied.value())
                 .is_some() =>
         {
-            Ok(
-                accept_cross_shape(graph, pattern, actual, path, context, relation.direction())?
-                    .into_iter()
-                    .collect(),
-            )
+            Ok(relate_cross_shape(
+                graph,
+                expected,
+                supplied,
+                path,
+                context,
+                relation.direction(),
+            )?)
         }
         _ => Ok(Vec::new()),
     }

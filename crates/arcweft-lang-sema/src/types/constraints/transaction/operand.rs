@@ -137,6 +137,8 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
 /// table. These source contexts retain provenance; owner-specific Free
 /// authorization also requires the checked value and binding-flow migration.
 enum ConstraintOperandOrigin<D: ConstraintDomain> {
+    /// A closed grammar leaf has no generic ports or source permissions.
+    ClosedScalar,
     Original(OriginalProducerContext),
     ComputedEffect {
         context: Arc<super::super::normalization::ConstraintEffectCompletionContext<D>>,
@@ -463,6 +465,9 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
     fn original_context(&self) -> &OriginalProducerContext {
         match self {
+            ConstraintOperandOrigin::ClosedScalar => {
+                panic!("a closed scalar has no source context")
+            }
             ConstraintOperandOrigin::ComputedEffect { context, .. } => context.original_context(),
             ConstraintOperandOrigin::Original(original)
             | ConstraintOperandOrigin::Source { original, .. }

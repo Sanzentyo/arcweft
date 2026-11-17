@@ -44,7 +44,8 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
                 | Self::Source { .. }
                 | Self::Result(_)
                 | Self::Completed { .. } => return Ok(Arc::clone(current)),
-                Self::Parameter(_)
+                Self::ClosedScalar
+                | Self::Parameter(_)
                 | Self::ConstOccurrence(_)
                 | Self::ConstAlias { .. }
                 | Self::ComputedEffect { .. } => {

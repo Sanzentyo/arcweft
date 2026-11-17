@@ -981,24 +981,21 @@ where
             });
         }
     }
-    if let super::constraints::TypeConstraintShape::Leaf(leaf) = ty.constraint_shape() {
-        return Ok(leaf.is_agent_value());
-    }
-    match ty {
-        TypeKind::Ref(_) => Ok(true),
-        TypeKind::Error(_) => Ok(matches!(policy, TypeCompatibilityPolicy::Recovery)),
-        TypeKind::Vec(inner)
-        | TypeKind::Array { item: inner, .. }
-        | TypeKind::Slice(inner)
-        | TypeKind::Range(inner)
-        | TypeKind::Option(inner) => is_agent_value_type(inner, policy, control, false, meter),
-        TypeKind::Map { key, value, .. } => {
+    use cross_shape::AgentValueShape;
+    match ty.agent_value_shape() {
+        AgentValueShape::Accept => Ok(true),
+        AgentValueShape::Reject => Ok(false),
+        AgentValueShape::Recovered => Ok(matches!(policy, TypeCompatibilityPolicy::Recovery)),
+        AgentValueShape::Element(inner) => {
+            is_agent_value_type(inner, policy, control, false, meter)
+        }
+        AgentValueShape::Map { key, value } => {
             if !accepts_node(&TypeKind::String, key, policy, control, meter, false)? {
                 return Ok(false);
             }
             is_agent_value_type(value, policy, control, false, meter)
         }
-        TypeKind::Choice(alternatives) => {
+        AgentValueShape::Alternatives(alternatives) => {
             for alternative in alternatives {
                 if !is_agent_value_type(alternative, policy, control, false, meter)? {
                     return Ok(false);
@@ -1006,7 +1003,6 @@ where
             }
             Ok(true)
         }
-        _ => Ok(false),
     }
 }
 

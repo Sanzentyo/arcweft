@@ -14,6 +14,7 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
         loop {
             context.enter_node()?;
             current = match current {
+                Self::ClosedScalar => return Ok(false),
                 Self::Original(original) => return Ok(original.admits_parameter(parameter)),
                 Self::ComputedEffect { support, .. } => {
                     return Ok(support.admits_original_parameter(parameter));

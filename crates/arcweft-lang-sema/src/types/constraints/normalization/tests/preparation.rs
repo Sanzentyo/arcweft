@@ -272,3 +272,243 @@ fn nominal_function_arguments_remain_invariant_until_final_closure() {
         envelope(function(TypeKind::Bool, &[]))
     ));
 }
+
+#[test]
+fn closed_scalar_expectations_infer_real_template_byte_and_agent_elements() {
+    use crate::types::constraints::transaction::TypeConstraintTransaction;
+    for bytes in [false, true] {
+        let cancellation = AtomicBool::new(false);
+        let mut graph = PreparedEffectGraph::default();
+        let parameter = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(98_920)),
+            0,
+        );
+        let scope = TypeConstraintParameterScope::new([(
+            parameter.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )])
+        .unwrap();
+        let (mut context, path) = context(scope, &cancellation, 4096).into_path(&mut graph);
+        let key = path
+            .root_scope()
+            .parameters()
+            .type_reference(&parameter.clone().into())
+            .unwrap();
+        let application = path.root_id();
+        let named = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+            .unwrap();
+        let mut transaction =
+            TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+                .unwrap();
+        transaction.constrain_application_template(
+            &mut context,
+            &mut graph,
+            &if bytes {
+                TypeKind::Bytes
+            } else {
+                TypeKind::AgentValue
+            },
+            &TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter.into()))),
+            ConstraintAcceptance::PatternAcceptsActual,
+        );
+        let path = transaction.test_single_path();
+        assert_eq!(
+            path.bindings.get(&key).unwrap().value(),
+            &if bytes {
+                TypeKind::U8
+            } else {
+                TypeKind::AgentValue
+            }
+        );
+        graph
+            .prepare_body(
+                &named,
+                PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
+                vec![],
+                &mut context,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn agent_choice_membership_retains_real_equation_keys_in_both_directions() {
+    use crate::types::constraints::transaction::{ChoiceForkRole, TypeConstraintTransaction};
+    for direction in [
+        ConstraintAcceptance::PatternAcceptsActual,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    ] {
+        let cancellation = AtomicBool::new(false);
+        let mut graph = PreparedEffectGraph::default();
+        let (mut context, path) = context(empty_scope(), &cancellation, 4096).into_path(&mut graph);
+        let application = path.root_id();
+        let named = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+            .unwrap();
+        let mut transaction =
+            TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+                .unwrap();
+        let choice = TypeKind::Choice(vec![TypeKind::Bool, TypeKind::String]);
+        let (pattern, actual) = if direction == ConstraintAcceptance::PatternAcceptsActual {
+            (TypeKind::AgentValue, choice)
+        } else {
+            (choice, TypeKind::AgentValue)
+        };
+        transaction.constrain(&mut context, &mut graph, &pattern, &actual, direction);
+        let path = transaction.test_single_path();
+        assert_eq!(path.choice_key.len(), 2);
+        for (index, step) in path.choice_key.iter().enumerate() {
+            assert_eq!(step.equation, path.equations[0].ordinal);
+            assert_eq!(step.direction, direction);
+            if direction == ConstraintAcceptance::PatternAcceptsActual {
+                assert_eq!(step.role, ChoiceForkRole::ActualAlternative);
+                assert_eq!(
+                    (step.expected, step.actual),
+                    (None, Some(u32::try_from(index).unwrap()))
+                );
+            } else {
+                assert_eq!(step.role, ChoiceForkRole::ExpectedAlternative);
+                assert_eq!(
+                    (step.expected, step.actual),
+                    (Some(u32::try_from(index).unwrap()), None)
+                );
+            }
+        }
+        graph
+            .prepare_body(
+                &named,
+                PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
+                vec![],
+                &mut context,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn generated_map_key_expectations_preserve_the_original_choice_side() {
+    use crate::types::{
+        MapKind,
+        constraints::transaction::{ChoiceForkRole, TypeConstraintTransaction},
+    };
+    for direction in [
+        ConstraintAcceptance::PatternAcceptsActual,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    ] {
+        let cancellation = AtomicBool::new(false);
+        let mut graph = PreparedEffectGraph::default();
+        let (mut context, path) = context(empty_scope(), &cancellation, 4096).into_path(&mut graph);
+        let application = path.root_id();
+        let named = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+            .unwrap();
+        let mut transaction =
+            TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+                .unwrap();
+        let map = TypeKind::Map {
+            kind: MapKind::Ordered,
+            key: Box::new(TypeKind::Choice(vec![TypeKind::String, TypeKind::Never])),
+            value: Box::new(TypeKind::Bool),
+        };
+        let (pattern, actual) = if direction == ConstraintAcceptance::PatternAcceptsActual {
+            (TypeKind::AgentValue, map)
+        } else {
+            (map, TypeKind::AgentValue)
+        };
+        transaction.constrain(&mut context, &mut graph, &pattern, &actual, direction);
+        let path = transaction.test_single_path();
+        assert_eq!(path.choice_key.len(), 2);
+        for (index, step) in path.choice_key.iter().enumerate() {
+            assert_eq!(step.equation, path.equations[0].ordinal);
+            assert_eq!(step.direction, direction);
+            assert_eq!(
+                step.role,
+                if direction == ConstraintAcceptance::PatternAcceptsActual {
+                    ChoiceForkRole::ActualAlternative
+                } else {
+                    ChoiceForkRole::ExpectedAlternative
+                }
+            );
+            assert_eq!(
+                (step.expected, step.actual),
+                if direction == ConstraintAcceptance::PatternAcceptsActual {
+                    (None, Some(u32::try_from(index).unwrap()))
+                } else {
+                    (Some(u32::try_from(index).unwrap()), None)
+                }
+            );
+        }
+        graph
+            .prepare_body(
+                &named,
+                PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
+                vec![],
+                &mut context,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn agent_membership_rejects_nested_bottom_and_fixed_template_variables() {
+    use crate::types::constraints::{
+        TypeConstraintCandidateFailure, TypeConstraintFailure,
+        transaction::TypeConstraintTransaction,
+    };
+    let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, path) = context(empty_scope(), &cancellation, 4096).into_path(&mut graph);
+    let application = path.root_id();
+    let mut transaction =
+        TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+            .unwrap();
+    transaction.constrain(
+        &mut context,
+        &mut graph,
+        &TypeKind::AgentValue,
+        &TypeKind::Choice(vec![TypeKind::Bool, TypeKind::Never]),
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    assert!(matches!(
+        transaction.suspend_result(&mut context, ()),
+        Err(TypeConstraintFailure::Rejected(
+            TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch)
+        ))
+    ));
+    for bytes in [false, true] {
+        let cancellation = AtomicBool::new(false);
+        let mut graph = PreparedEffectGraph::default();
+        let parameter = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(98_922)),
+            0,
+        );
+        let scope = TypeConstraintParameterScope::new([(
+            parameter.clone(),
+            TypeConstraintParameterEligibility::Rigid,
+        )])
+        .unwrap();
+        let (mut context, path) = super::context(scope, &cancellation, 4096).into_path(&mut graph);
+        let application = path.root_id();
+        let mut transaction =
+            TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+                .unwrap();
+        transaction.constrain_application_template(
+            &mut context,
+            &mut graph,
+            &if bytes {
+                TypeKind::Bytes
+            } else {
+                TypeKind::AgentValue
+            },
+            &TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter.into()))),
+            ConstraintAcceptance::PatternAcceptsActual,
+        );
+        assert!(matches!(
+            transaction.suspend_result(&mut context, ()),
+            Err(TypeConstraintFailure::Rejected(
+                TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch)
+            ))
+        ));
+    }
+}
