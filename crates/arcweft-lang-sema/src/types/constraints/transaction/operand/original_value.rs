@@ -284,22 +284,21 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
         let original = self.original;
         let lexical = self.target;
         self.edit
-            .map_row_parameters(
+            .map_row_parameters_with_edit(
                 row,
                 &mut EffectProjectionControl {
                     control: self.context,
                     depth,
                 },
-                &mut |reference, control| {
-                    original
-                        .admit_effect_reference(lexical, reference, source, target, control.control)
-                        .map(|reference| {
-                            Some(PreparedEffectRow::Canonical(EffectRow::open(
-                                crate::effects::EffectSet::new(),
-                                reference,
-                            )))
-                        })
-                        .map_err(PreparedEffectFailure::Control)
+                &mut |reference, edit, control| {
+                    original.prepare_effect_reference(
+                        lexical,
+                        reference,
+                        source,
+                        target,
+                        edit,
+                        control.control,
+                    )
                 },
             )
             .map_err(TypeProjectionError::from)
@@ -315,22 +314,21 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
         let original = self.original;
         let lexical = self.target;
         self.edit
-            .map_predicate_parameters(
+            .map_predicate_parameters_with_edit(
                 predicate,
                 &mut EffectProjectionControl {
                     control: self.context,
                     depth,
                 },
-                &mut |reference, control| {
-                    original
-                        .admit_effect_reference(lexical, reference, source, target, control.control)
-                        .map(|reference| {
-                            Some(PreparedEffectRow::Canonical(EffectRow::open(
-                                crate::effects::EffectSet::new(),
-                                reference,
-                            )))
-                        })
-                        .map_err(PreparedEffectFailure::Control)
+                &mut |reference, edit, control| {
+                    original.prepare_effect_reference(
+                        lexical,
+                        reference,
+                        source,
+                        target,
+                        edit,
+                        control.control,
+                    )
                 },
             )
             .map_err(TypeProjectionError::from)
@@ -410,6 +408,43 @@ impl OriginalOperandValue for ArrayLength {
 }
 
 impl OriginalProducerContext {
+    /// Source admission precedes preparation. An authorized inference input
+    /// denotes the exact original application lent by its introducing owner.
+    fn prepare_effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        lexical: &ConstraintLexicalScope,
+        reference: &GenericEffectReference,
+        source: &GenericScope,
+        target: &GenericScope,
+        edit: &mut PreparedEffectTermEdit<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        Option<PreparedEffectRow>,
+        PreparedEffectFailure<TypeProjectionError<TypeConstraintError>>,
+    > {
+        let admitted = self
+            .admit_effect_reference(lexical, reference, source, target, context)
+            .map_err(PreparedEffectFailure::Control)?;
+        if matches!(admitted, GenericEffectReference::Inference(_)) {
+            return self
+                .rigid_scope()
+                .imported
+                .and_then(|lease| lease.effect_application(&admitted))
+                .ok_or(crate::effect_row::prepared::PreparedEffectInvariant::ParameterContract)?
+                .transport_into(lexical, target, edit, context)
+                .map(Some)
+                .map_err(|error| {
+                    PreparedEffectFailure::Control(TypeProjectionError::Control(error))
+                });
+        }
+        Ok((&admitted != reference).then(|| {
+            PreparedEffectRow::Canonical(EffectRow::open(
+                crate::effects::EffectSet::new(),
+                admitted,
+            ))
+        }))
+    }
+
     fn admit_type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         target_scope: &ConstraintLexicalScope,

@@ -6,6 +6,9 @@
 use super::*;
 use crate::effect_row::EffectEqualityControl;
 
+#[cfg(test)]
+mod tests;
+
 struct Substitution<'a, C, P> {
     graph: &'a mut PreparedEffectGraph,
     project: &'a mut P,
@@ -35,6 +38,7 @@ where
     C: DecisionControl,
     P: FnMut(
         &GenericEffectReference,
+        &mut PreparedEffectTermEdit<'_>,
         &mut C,
     ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
 {
@@ -67,7 +71,18 @@ where
             }
             if !self.parameters.contains_key(variable) {
                 self.charge(DecisionWork::Node)?;
-                let replacement = (self.project)(variable, self.control)?;
+                // The callback may prepare an actual replacement in the same
+                // graph. Its child edit cannot mutate declarations; committing
+                // it still leaves every new term under the outer edit's undo.
+                let replacement = {
+                    let mut edit = self.graph.edit_terms();
+                    let replacement = (self.project)(variable, &mut edit, self.control)?;
+                    if let Some(row) = &replacement {
+                        edit.read().validate_retained_row(row)?;
+                    }
+                    edit.commit()?;
+                    replacement
+                };
                 if let Some(row) = &replacement {
                     self.graph.validate_row(row)?;
                 }
@@ -465,6 +480,25 @@ impl PreparedEffectTermEdit<'_> {
             &mut C,
         ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
     {
+        self.map_row_parameters_with_edit(row, control, &mut |reference, _, control| {
+            project(reference, control)
+        })
+    }
+
+    pub(crate) fn map_row_parameters_with_edit<C, P>(
+        &mut self,
+        row: &PreparedEffectRow,
+        control: &mut C,
+        project: &mut P,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut PreparedEffectTermEdit<'_>,
+            &mut C,
+        ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
+    {
         if !matches!(self.state, TermEditState::Open) {
             return Err(PreparedEffectInvariant::TermEditState.into());
         }
@@ -493,6 +527,25 @@ impl PreparedEffectTermEdit<'_> {
         C: DecisionControl,
         P: FnMut(
             &GenericEffectReference,
+            &mut C,
+        ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
+    {
+        self.map_predicate_parameters_with_edit(predicate, control, &mut |reference, _, control| {
+            project(reference, control)
+        })
+    }
+
+    pub(crate) fn map_predicate_parameters_with_edit<C, P>(
+        &mut self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+        project: &mut P,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut PreparedEffectTermEdit<'_>,
             &mut C,
         ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
     {

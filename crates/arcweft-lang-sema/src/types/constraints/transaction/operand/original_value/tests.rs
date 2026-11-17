@@ -14,6 +14,8 @@ use crate::{
 };
 use std::{any::Any, borrow::Cow, sync::atomic::AtomicBool};
 
+mod prepared_inference;
+
 #[derive(Debug)]
 struct Source {
     identity: Arc<()>,
