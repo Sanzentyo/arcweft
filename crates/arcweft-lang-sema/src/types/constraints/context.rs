@@ -1627,12 +1627,7 @@ where
             effect_invariant(super::TypeConstraintEffectInvariantKind::UnknownRow, None)
         })?;
         for variable in variables {
-            if self.effect_eligibility(variable, view).is_none() {
-                return Err(effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                    Some(variable.clone()),
-                ));
-            }
+            self.validate_effect_reference(variable, view)?;
         }
         Ok(())
     }
@@ -1643,15 +1638,23 @@ where
         view: ConstraintProjectionView<'_, D>,
     ) -> Result<(), TypeConstraintError> {
         for variable in predicate.variables() {
-            if self.effect_eligibility(variable, view).is_none() {
-                return Err(effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                    Some(variable.clone()),
-                ));
-            }
+            self.validate_effect_reference(variable, view)?;
         }
         if predicate.is_impossible() {
             return Err(super::TypeConstraintRejection::Mismatch.into());
+        }
+        Ok(())
+    }
+    pub(in crate::types::constraints) fn validate_effect_reference(
+        &self,
+        variable: &GenericEffectReference,
+        view: ConstraintProjectionView<'_, D>,
+    ) -> Result<(), TypeConstraintError> {
+        if self.effect_eligibility(variable, view).is_none() {
+            return Err(effect_invariant(
+                super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                Some(variable.clone()),
+            ));
         }
         Ok(())
     }

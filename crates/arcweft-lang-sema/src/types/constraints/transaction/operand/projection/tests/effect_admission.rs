@@ -62,6 +62,125 @@ fn row(reference: &GenericEffectReference) -> EffectRow {
 }
 
 #[test]
+fn prepared_headers_admit_their_own_gamma_before_body_preparation_or_erasure() {
+    use crate::effect_row::prepared::{
+        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,
+    };
+    use crate::types::constraints::transaction::operand::ConstraintEffectPhase;
+    use crate::types::{GenericScope, PreparedEffects};
+
+    let cancellation = AtomicBool::new(false);
+    let (mut context, _, rigid, _) = fixture(&cancellation);
+    let original = context
+        .fixture_original_context_with_rigid(OriginalRigidScope {
+            types: &[],
+            consts: &[],
+            effects: &rigid[..1],
+            imported: None,
+        })
+        .unwrap();
+    let mut graph = PreparedEffectGraph::default();
+    let formal = GenericScope::default()
+        .with_binder(GenericBinder::new(0, 0, 1))
+        .bound_effect(0, 0)
+        .unwrap();
+    let declaration = graph
+        .declare(
+            vec![formal],
+            crate::effect_row::EffectPredicate::unconstrained(),
+            &mut context,
+        )
+        .unwrap();
+    let allowed = graph
+        .application(
+            &declaration,
+            vec![PreparedEffectRow::Canonical(row(&rigid[0]))],
+            &mut context,
+        )
+        .unwrap();
+    let value = TypeKind::<PreparedEffects>::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(
+            crate::effect_row::EffectPredicate::unconstrained(),
+        ),
+        params: vec![],
+        return_type: Box::new(TypeKind::Unit),
+        effects: allowed,
+    };
+    let mut input = ConstraintOperand::from_prepared_original_in(
+        &value,
+        Arc::new(original.gamma().clone()),
+        original,
+        &mut ConstraintEffectPhase::new(&mut graph),
+        &mut context,
+    )
+    .unwrap();
+    input
+        .view()
+        .children(&mut context)
+        .unwrap()
+        .function_header()
+        .unwrap()
+        .unwrap()
+        .admit(graph.read(), &mut context)
+        .unwrap();
+
+    let unauthorized = graph
+        .application(
+            &declaration,
+            vec![PreparedEffectRow::Canonical(row(&rigid[1]))],
+            &mut context,
+        )
+        .unwrap();
+    let predicate = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            unauthorized.clone(),
+            unauthorized.clone(),
+            &mut context,
+        )
+        .unwrap();
+    let TypeKind::Function { effects, .. } = Arc::make_mut(&mut input.value) else {
+        unreachable!()
+    };
+    let allowed = std::mem::replace(effects, unauthorized);
+    let result = input
+        .view()
+        .children(&mut context)
+        .unwrap()
+        .function_header()
+        .unwrap()
+        .unwrap()
+        .admit(graph.read(), &mut context);
+    assert_eq!(result, Err(references::effect_out_of_scope(&rigid[1])));
+
+    let TypeKind::Function {
+        effects,
+        predicate: input_predicate,
+        ..
+    } = Arc::make_mut(&mut input.value)
+    else {
+        unreachable!()
+    };
+    *effects = allowed;
+    *input_predicate = predicate;
+    // Even equality of the very same term cannot erase an unauthorized
+    // reference before its predicate field's original Γ is checked.
+    let result = input
+        .view()
+        .children(&mut context)
+        .unwrap()
+        .function_header()
+        .unwrap()
+        .unwrap()
+        .admit(graph.read(), &mut context);
+    assert_eq!(result, Err(references::effect_out_of_scope(&rigid[1])));
+    // No body was supplied anywhere in this fixture. Admission must not need it.
+    let declaration = graph.declaration(&declaration, &mut context).unwrap();
+    declaration.validate(&graph).unwrap();
+}
+
+#[test]
 fn computed_effect_primitives_retain_only_their_own_used_gamma() {
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path, rigid, keys) = fixture(&cancellation);

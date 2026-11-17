@@ -301,12 +301,13 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     pub(in crate::types::constraints) fn project_header<A: TypeConstraintAccounting>(
         self: &Arc<Self>,
         header: &ConstraintFunctionHeaderView<'_, D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         ConstraintProjectedEffectHeader<Option<ConstraintClosedEffectHeader<D>>>,
         TypeConstraintError,
     > {
-        header.admit(context)?;
+        header.admit(graph, context)?;
         self.project_header_values(
             header.lexical_scope(),
             header.row(),

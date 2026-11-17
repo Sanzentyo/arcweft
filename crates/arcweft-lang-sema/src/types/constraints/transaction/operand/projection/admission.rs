@@ -183,23 +183,19 @@ impl<D: ConstraintDomain> ConstraintFunctionHeaderView<'_, D> {
 
     pub(in crate::types::constraints) fn admit<A: TypeConstraintAccounting>(
         &self,
+        effects: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        for (field, reference) in self
-            .row()
-            .formula()
-            .into_iter()
-            .flat_map(|f| f.variables())
-            .map(|r| (ConstraintEffectField::Row, r))
-            .chain(
-                self.predicate()
-                    .variables()
-                    .map(|r| (ConstraintEffectField::Predicate, r)),
-            )
-        {
-            context.enter_node()?;
-            self.admit_effect_reference(field, reference, context)?;
-        }
+        effects.visit_row_parameters(self.row(), context, &mut |reference, context| {
+            self.admit_effect_reference(ConstraintEffectField::Row, reference, context)
+        })?;
+        effects.visit_predicate_parameters(
+            self.predicate(),
+            context,
+            &mut |reference, context| {
+                self.admit_effect_reference(ConstraintEffectField::Predicate, reference, context)
+            },
+        )?;
         Ok(())
     }
 }

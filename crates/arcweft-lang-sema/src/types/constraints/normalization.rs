@@ -518,13 +518,21 @@ where
 pub(crate) fn validate_type<A, D>(
     ty: &TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'_, D>,
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    project_type(ty, view, ConstraintClosurePolicy::Validation, context).map(|_| ())
+    project_type(
+        ty,
+        view,
+        ConstraintClosurePolicy::Validation,
+        graph,
+        context,
+    )
+    .map(|_| ())
 }
 
 pub(crate) fn occurs_in_shape<A, D>(
@@ -612,6 +620,7 @@ where
 
 pub(crate) fn seal_path<A, D, L>(
     path: ConstraintInferenceBranch<D, L>,
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintInferenceBranch<D, L>, TypeConstraintError>
 where
@@ -638,8 +647,13 @@ where
         // establishes the binding owner, never the replacement's provenance.
         source_view.binding(parameter)?;
         context.with_original_scope(value.scope().clone(), |context| {
-            let projected =
-                projection::seal_type_operand(value.view(), source_view, &mut visiting, context)?;
+            let projected = projection::seal_type_operand(
+                value.view(),
+                source_view,
+                &mut visiting,
+                graph,
+                context,
+            )?;
             context.add_sealed_binding(&mut sealed, parameter.clone(), projected)
         })?;
     }
@@ -665,6 +679,7 @@ pub(crate) fn seal_type<A, D>(
     ty: &TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'_, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
 where
@@ -676,6 +691,7 @@ where
         ty,
         view,
         ConstraintClosurePolicy::Hint,
+        graph,
         context,
         visiting,
         &mut remaining,

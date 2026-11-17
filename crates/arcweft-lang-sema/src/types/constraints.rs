@@ -339,6 +339,27 @@ impl From<crate::effect_row::EffectRowError> for TypeConstraintError {
     }
 }
 
+impl From<crate::effect_row::prepared::PreparedEffectFailure<Self>> for TypeConstraintError {
+    fn from(error: crate::effect_row::prepared::PreparedEffectFailure<Self>) -> Self {
+        use crate::effect_row::prepared::PreparedEffectFailure;
+        let failure = match error {
+            PreparedEffectFailure::Control(error) => return error,
+            PreparedEffectFailure::Invariant(error) => PreparedEffectFailure::Invariant(error),
+            PreparedEffectFailure::Row(error) => PreparedEffectFailure::Row(error),
+            PreparedEffectFailure::Declaration(error) => PreparedEffectFailure::Declaration(error),
+            PreparedEffectFailure::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
+            PreparedEffectFailure::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+            PreparedEffectFailure::ObservationNotTotal => {
+                PreparedEffectFailure::ObservationNotTotal
+            }
+            PreparedEffectFailure::NonPointwiseObservation => {
+                PreparedEffectFailure::NonPointwiseObservation
+            }
+        };
+        TypeConstraintInvariant::PreparedEffect(failure).into()
+    }
+}
+
 impl From<EffectConstraintEnvironmentError> for TypeConstraintError {
     fn from(error: EffectConstraintEnvironmentError) -> Self {
         match error {

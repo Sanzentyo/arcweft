@@ -71,6 +71,179 @@ fn header() -> (Vec<GenericEffectReference>, EffectPredicate) {
 }
 
 #[test]
+fn parameter_reads_admit_actuals_and_unsubstituted_references_without_reading_bodies() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 4));
+    let [formal, retained, actual, other] = [0, 1, 2, 3].map(|i| scope.bound_effect(0, i).unwrap());
+    let declaration = graph
+        .declare(
+            vec![formal.clone()],
+            EffectPredicate::unconstrained(),
+            &mut work,
+        )
+        .unwrap();
+    let application = graph
+        .application(&declaration, vec![open(&actual)], &mut work)
+        .unwrap();
+    let formula = EffectFormula::variable(formal.clone(), &mut work)
+        .unwrap()
+        .union(
+            &EffectFormula::variable(retained.clone(), &mut work).unwrap(),
+            &mut work,
+        )
+        .unwrap();
+    let substituted = graph
+        .apply_formula(
+            formula.clone(),
+            BTreeMap::from([(formal.clone(), application)]),
+            &mut work,
+        )
+        .unwrap();
+    let unknown = PreparedEffectRow::Canonical(EffectRow::unknown());
+    let choice = graph.choice(&mut work).unwrap();
+    let row = graph
+        .select_row(&choice, substituted.clone(), unknown.clone(), &mut work)
+        .unwrap();
+    let row = graph.union(vec![row, substituted], &mut work).unwrap();
+    let expected = BTreeSet::from([retained.clone(), actual.clone()]);
+    for prepared in [false, true] {
+        if prepared {
+            graph
+                .prepare_body(&declaration, open(&formal), vec![], &mut work)
+                .unwrap();
+        }
+        let state = graph.state;
+        let terms = graph.retained_terms();
+        let mut observed = BTreeSet::new();
+        graph
+            .read()
+            .visit_row_parameters(&row, &mut work, &mut |parameter, _| {
+                observed.insert(parameter.clone());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(observed, expected);
+        assert_eq!(graph.state, state);
+        assert_eq!(graph.retained_terms(), terms);
+    }
+    let predicate = formula
+        .subset(
+            &EffectFormula::variable(other.clone(), &mut work).unwrap(),
+            &mut work,
+        )
+        .unwrap();
+    let predicate = graph
+        .apply_predicate(
+            predicate,
+            BTreeMap::from([(formal, row.clone())]),
+            &mut work,
+        )
+        .unwrap();
+    let relation = graph
+        .relate(PreparedEffectRelation::Equal, row, open(&other), &mut work)
+        .unwrap();
+    let not = graph.not(relation.clone(), &mut work).unwrap();
+    let either = graph.or(vec![predicate, not], &mut work).unwrap();
+    let both = graph
+        .and(vec![either.clone(), relation], &mut work)
+        .unwrap();
+    let selected = graph
+        .select_predicate(&choice, either, both, &mut work)
+        .unwrap();
+    let mut observed = BTreeSet::new();
+    graph
+        .read()
+        .visit_predicate_parameters(&selected, &mut work, &mut |parameter, _| {
+            observed.insert(parameter.clone());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(observed, BTreeSet::from([retained, actual, other]));
+    assert_eq!(unknown, PreparedEffectRow::Canonical(EffectRow::unknown()));
+}
+
+#[test]
+fn parameter_reads_use_the_exact_view_and_original_abort_control() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let (parameters, domain) = header();
+    let declaration = graph
+        .declare(parameters.clone(), domain.clone(), &mut work)
+        .unwrap();
+    let candidate = candidate(&mut graph, &declaration, &parameters, &domain);
+    let state = graph.state;
+    let terms = graph.retained_terms();
+    let mut visited = Vec::new();
+    let view = graph.read_extracted(&candidate.delta, &mut work).unwrap();
+    let mut required = Budget(4096);
+    view.visit_predicate_parameters(&candidate.predicate, &mut required, &mut |parameter, _| {
+        visited.push(parameter.clone());
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(visited, parameters);
+    let required = 4096 - required.0;
+    for available in 0..=required {
+        let result = view.visit_predicate_parameters(
+            &candidate.predicate,
+            &mut Budget(available),
+            &mut |_, _| Ok(()),
+        );
+        if available < required {
+            assert!(matches!(
+                result,
+                Err(PreparedEffectFailure::Control(Exhausted))
+            ));
+        } else {
+            result.unwrap();
+        }
+    }
+    assert!(matches!(
+        graph
+            .read()
+            .visit_row_parameters(&candidate.row, &mut work, &mut |_, _| Ok(())),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::StaleReference
+        ))
+    ));
+    assert!(matches!(
+        PreparedEffectGraph::default().read().visit_row_parameters(
+            &candidate.row,
+            &mut work,
+            &mut |_, _| Ok(())
+        ),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+    let cancelled = AtomicBool::new(true);
+    assert!(matches!(
+        view.visit_row_parameters(
+            &candidate.row,
+            &mut Cancellation(&cancelled),
+            &mut |_, _| Ok(())
+        ),
+        Err(PreparedEffectFailure::Control(Cancelled))
+    ));
+    cancelled.store(false, Ordering::Relaxed);
+    assert!(matches!(
+        view.visit_row_parameters(
+            &candidate.row,
+            &mut Cancellation(&cancelled),
+            &mut |_, _| Err(Cancelled)
+        ),
+        Err(PreparedEffectFailure::Control(Cancelled))
+    ));
+    assert_eq!(graph.state, state);
+    assert_eq!(graph.retained_terms(), terms);
+    assert!(matches!(
+        graph.scheme(&declaration).unwrap().state,
+        SchemeState::Declared
+    ));
+}
+
+#[test]
 fn extracted_reads_keep_original_headers_and_candidate_definitions_without_publication() {
     let mut work = budget();
     let mut graph = PreparedEffectGraph::default();

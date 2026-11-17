@@ -49,6 +49,7 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
         effects: &Self::Effects,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError>;
     fn substitute_type<A: TypeConstraintAccounting>(
@@ -141,6 +142,7 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         children: Vec<TypeKind<PreparedEffects>>,
         length: Option<ArrayLength>,
         effects: &Self::Effects,
+        _graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         let mut header = match (effects, shape) {
@@ -258,9 +260,10 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
         effects: &Self::Effects,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError> {
-        seed.rebuild(children, length, effects, context)
+        seed.rebuild(children, length, effects, graph, context)
     }
     fn substitute_type<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,

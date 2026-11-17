@@ -1,5 +1,6 @@
 //! Metered transitive projection of candidate bindings and scoped type terms.
 
+use crate::effect_row::prepared::PreparedEffectReadView;
 use crate::types::PreparedEffects;
 
 use std::collections::BTreeSet;
@@ -34,6 +35,7 @@ pub(in crate::types::constraints) fn project_type<A, D>(
     ty: &TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'_, D>,
     policy: ConstraintClosurePolicy,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ProjectedConstraintType, TypeConstraintError>
 where
@@ -42,7 +44,15 @@ where
 {
     let mut visiting = BTreeSet::new();
     let mut remaining = BTreeSet::new();
-    let value = project_type_inner(ty, view, policy, context, &mut visiting, &mut remaining)?;
+    let value = project_type_inner(
+        ty,
+        view,
+        policy,
+        graph,
+        context,
+        &mut visiting,
+        &mut remaining,
+    )?;
     Ok(ProjectedConstraintType {
         value,
         remaining: remaining.into_iter().collect(),
@@ -69,6 +79,7 @@ pub(in crate::types::constraints) fn seal_type_operand<'ty, A, D>(
     input: ConstraintOperandView<'ty, D>,
     view: ConstraintProjectionView<'ty, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintOperand<D>, TypeConstraintError>
 where
@@ -81,6 +92,7 @@ where
             input,
             view,
             ConstraintClosurePolicy::Hint,
+            graph,
             context,
             visiting,
             &mut BTreeSet::new(),
@@ -94,6 +106,7 @@ pub(in crate::types::constraints) fn close_type_operand<'ty, A, D>(
     input: ConstraintOperandView<'ty, D>,
     path: &'ty super::super::transaction::ConstraintPath<D>,
     effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintOperand<D>, TypeConstraintError>
 where
@@ -106,6 +119,7 @@ where
         path,
         ConstraintClosurePolicy::ProjectionClosed,
         effects,
+        graph,
         context,
     )
 }
@@ -116,6 +130,7 @@ pub(in crate::types) fn project_closed_operand<'ty, A, D, L>(
     branch: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
     policy: ConstraintClosurePolicy,
     effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintOperand<D>, TypeConstraintError>
 where
@@ -129,6 +144,7 @@ where
             input,
             branch.projection_view(),
             policy,
+            graph,
             context,
             &mut BTreeSet::new(),
             &mut BTreeSet::new(),
@@ -145,6 +161,7 @@ pub(in crate::types::constraints) fn project_closed_type<A, D, L>(
     branch: &super::super::transaction::ConstraintInferenceBranch<D, L>,
     policy: ConstraintClosurePolicy,
     effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
 where
@@ -156,6 +173,7 @@ where
         ty,
         branch.projection_view(),
         policy,
+        graph,
         context,
         &mut BTreeSet::new(),
         &mut BTreeSet::new(),
@@ -191,6 +209,7 @@ pub(super) fn project_type_inner<'ty, A, D>(
     ty: &'ty TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'ty, D>,
     policy: ConstraintClosurePolicy,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
     remaining: &mut BTreeSet<RemainingConstraintParameter>,
@@ -203,6 +222,7 @@ where
         ty,
         view,
         policy,
+        graph,
         context,
         visiting,
         remaining,
@@ -213,6 +233,7 @@ fn project_type_fold<'ty, A, D, M>(
     ty: M::TypeInput,
     view: ConstraintProjectionView<'ty, D>,
     policy: ConstraintClosurePolicy,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
     remaining: &mut BTreeSet<RemainingConstraintParameter>,
@@ -309,18 +330,11 @@ where
                         effects, predicate, ..
                     } = shape
                     {
-                        context.validate_effect_predicate(predicate, view)?;
-                        for variable in predicate.variables() {
-                            if context.effect_eligibility(variable, view)
-                                != Some(crate::effect_row::EffectConstraintEligibility::Rigid)
-                            {
-                                remaining
-                                    .insert(RemainingConstraintParameter(variable.clone().into()));
-                            }
-                        }
-                        if effects.is_known() {
-                            context.validate_effect_row(effects, view)?;
-                            for variable in effects.variables().expect("validated effect row") {
+                        graph.visit_predicate_parameters(
+                            predicate,
+                            context,
+                            &mut |variable, context| {
+                                context.validate_effect_reference(variable, view)?;
                                 if context.effect_eligibility(variable, view)
                                     != Some(crate::effect_row::EffectConstraintEligibility::Rigid)
                                 {
@@ -328,17 +342,44 @@ where
                                         variable.clone().into(),
                                     ));
                                 }
-                            }
-                        } else if !matches!(
-                            policy,
-                            ConstraintClosurePolicy::ProjectionFuture
-                                | ConstraintClosurePolicy::ResultAnnotation
-                        ) {
-                            // A future projection may carry an unresolved source
-                            // function row whose owner closes it later. Keep it
-                            // unknown; only effect constraints may require a
-                            // concrete row or an issuer-backed variable.
-                            context.validate_effect_row(effects, view)?;
+                                Ok(())
+                            },
+                        )?;
+                        if let crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                            predicate,
+                        ) = predicate
+                            && predicate.is_impossible()
+                        {
+                            return Err(TypeConstraintRejection::Mismatch.into());
+                        }
+                        graph.visit_row_parameters(
+                            effects,
+                            context,
+                            &mut |variable, context| {
+                                context.validate_effect_reference(variable, view)?;
+                                if context.effect_eligibility(variable, view)
+                                    != Some(crate::effect_row::EffectConstraintEligibility::Rigid)
+                                {
+                                    remaining.insert(RemainingConstraintParameter(
+                                        variable.clone().into(),
+                                    ));
+                                }
+                                Ok(())
+                            },
+                        )?;
+                        // Scope admission is not a decision about a live row or
+                        // predicate. The original relation closes them jointly.
+                        // Preserve the existing authored-unknown policy only.
+                        if let crate::effect_row::prepared::PreparedEffectRow::Canonical(row) =
+                            effects
+                            && !row.is_known()
+                            && !matches!(
+                                policy,
+                                ConstraintClosurePolicy::ProjectionFuture
+                                    | ConstraintClosurePolicy::ResultAnnotation
+                            )
+                        {
+                            context.validate_effect_row(row, view)?;
                         }
                     }
                     let (mut children, seed) = M::children(&current, context)?;
@@ -353,7 +394,15 @@ where
                         current = child;
                         continue;
                     }
-                    rebuild::<A, D, M>(seed, Vec::new(), length, enclosing, effects, context)?
+                    rebuild::<A, D, M>(
+                        seed,
+                        Vec::new(),
+                        length,
+                        enclosing,
+                        effects,
+                        graph,
+                        context,
+                    )?
                 }
             };
             loop {
@@ -391,7 +440,7 @@ where
                             break;
                         }
                         value = rebuild::<A, D, M>(
-                            seed, projected, length, enclosing, effects, context,
+                            seed, projected, length, enclosing, effects, graph, context,
                         )?;
                     }
                 }
@@ -414,6 +463,7 @@ fn rebuild<'ty, A, D, M>(
     length: Option<M::ConstOutput>,
     enclosing: Option<ConstraintLexicalScope>,
     effects: &M::Effects,
+    graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<M::TypeOutput, TypeConstraintError>
 where
@@ -423,7 +473,7 @@ where
 {
     // Headers are expressed inside their actual local binder. Both output
     // modes rebuild there, and restore the enclosing scope even on failure.
-    let result = M::rebuild(seed, children, length, effects, context);
+    let result = M::rebuild(seed, children, length, effects, graph, context);
     if let Some(enclosing) = enclosing {
         context.restore_binder_scope(enclosing);
     }

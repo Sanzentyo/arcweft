@@ -256,7 +256,7 @@ enum RowTerm {
 }
 
 impl RowTerm {
-    fn children(&self) -> impl Iterator<Item = &PreparedEffectRow> {
+    fn children(&self) -> impl DoubleEndedIterator<Item = &PreparedEffectRow> {
         let (slice, map, pair) = match self {
             Self::Application { arguments, .. } | Self::Union(arguments) => {
                 (arguments.as_ref(), None, [None, None])

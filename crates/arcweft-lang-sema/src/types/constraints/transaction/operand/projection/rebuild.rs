@@ -138,6 +138,7 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
         children: Vec<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>>,
         length: Option<ConstraintProjectedOperand<D, ArrayLength>>,
         effects: &ConstraintOperandEffects<D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>, TypeConstraintError> {
         let mut values = Vec::with_capacity(children.len());
@@ -163,12 +164,12 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
         let input_header = self.source.function_header_in_scope(&self.contents_scope)?;
         let header = match effects {
             ConstraintOperandEffects::Closed(owner) => match input_header {
-                Some(header) => owner.project_header(&header, context)?,
+                Some(header) => owner.project_header(&header, graph, context)?,
                 None => ConstraintProjectedEffectHeader::Original,
             },
             ConstraintOperandEffects::Original => {
                 if let Some(header) = input_header {
-                    header.admit(context)?;
+                    header.admit(graph, context)?;
                 }
                 ConstraintProjectedEffectHeader::Original
             }
