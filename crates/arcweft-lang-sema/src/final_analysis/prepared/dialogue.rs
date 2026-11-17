@@ -92,6 +92,13 @@ impl PreparedContentApplication {
             return None;
         }
         let valid_shell = match (shell.result(), &emission) {
+            (super::PreparedExpressionResult::Unavailable, _)
+            | (
+                super::PreparedExpressionResult::NonValue(
+                    super::PreparedNonValueExpressionResult::RegistryAddress(_),
+                ),
+                _,
+            ) => false,
             (
                 super::PreparedExpressionResult::Value(value),
                 PreparedContentEmission::ContentResult,

@@ -3309,25 +3309,27 @@ impl CheckedExpression {
     /// Replaces the analyzer's prepared effect row with the completed
     /// bottom-up execution fold while preserving every other checked atom.
     #[must_use]
-    pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
+    pub(crate) fn with_completed_effects(self, effects: EffectSet) -> Self {
         Self {
-            data: Box::new((*self.data).with_completed_effects()),
+            data: Box::new((*self.data).with_completed_effects(effects)),
         }
     }
 
     pub(super) fn with_completed_thread_body_effects(
-        mut self,
+        self,
         effects: EffectSet,
     ) -> Result<Self, super::FinalSemanticAnalysisError> {
-        self.data.with_completed_thread_body_effects()
+        Ok(Self {
+            data: Box::new((*self.data).with_completed_thread_body_effects(effects)?),
+        })
     }
 
     /// Replaces only the semantic resolution while retaining the already
     /// checked result, effects, nested Match payload, and path evidence.
     #[must_use]
-    pub(crate) fn with_resolution(mut self, resolution: CheckedExpressionResolution) -> Self {
+    pub(crate) fn with_resolution(self, resolution: CheckedExpressionResolution) -> Self {
         Self {
-            data: Box::new((*self.data).with_resolution()),
+            data: Box::new((*self.data).with_resolution(resolution)),
         }
     }
 
@@ -3351,7 +3353,7 @@ impl CheckedExpression {
         &self,
         source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
     ) -> Option<LocalId> {
-        self.data.inspection_root()
+        self.data.inspection_root(source)
     }
 
     pub(crate) fn local_place_source(&self) -> Option<CheckedFieldReceiver> {
@@ -3362,7 +3364,7 @@ impl CheckedExpression {
         &self,
         source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
     ) -> Option<LocalId> {
-        self.data.field_root()
+        self.data.field_root(source)
     }
 
     /// Attaches one sealed direct nominal-field place to its checked select.
@@ -3420,11 +3422,11 @@ impl CheckedExpression {
     /// are available, retaining the expression's checked semantic payload.
     #[must_use]
     pub(super) fn with_execution_plan(
-        mut self,
+        self,
         execution: Option<CheckedExpressionExecutionPlan>,
     ) -> Self {
         Self {
-            data: Box::new((*self.data).with_execution_plan()),
+            data: Box::new((*self.data).with_execution_plan(execution)),
         }
     }
 
@@ -3449,9 +3451,9 @@ impl CheckedExpression {
 
     /// Adds the checker-owned ordinary Match evidence to this expression.
     #[must_use]
-    pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
+    pub(crate) fn with_match_fact(self, fact: CheckedMatchFact) -> Self {
         Self {
-            data: Box::new((*self.data).with_match_fact()),
+            data: Box::new((*self.data).with_match_fact(fact)),
         }
     }
 
@@ -3460,9 +3462,9 @@ impl CheckedExpression {
         self.data.match_fact()
     }
 
-    pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock) -> Self {
+    pub(crate) fn with_carrier_block(self, carrier: CheckedCarrierBlock) -> Self {
         Self {
-            data: Box::new((*self.data).with_carrier_block()),
+            data: Box::new((*self.data).with_carrier_block(carrier)),
         }
     }
 
@@ -3480,11 +3482,11 @@ impl CheckedExpression {
 
     #[must_use]
     pub(crate) fn with_nested_path_evidence(
-        mut self,
+        self,
         evidence: Result<NestedPathEvidence, super::CheckedChildEdgeError>,
     ) -> Self {
         Self {
-            data: Box::new((*self.data).with_nested_path_evidence()),
+            data: Box::new((*self.data).with_nested_path_evidence(evidence)),
         }
     }
 
