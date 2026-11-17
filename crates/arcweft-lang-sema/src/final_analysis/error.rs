@@ -327,6 +327,24 @@ pub enum SourceTypeRetentionFailure {
 }
 
 impl FinalSemanticAnalysisError {
+    pub(crate) fn source_prepared_type_retention(
+        owner: arcweft_lang_hir::project::HirSemanticPathOwnerId,
+        error: crate::types::TypeProjectionError<crate::types::PreparedTypeRetentionFailure<Self>>,
+    ) -> Self {
+        use crate::types::{PreparedTypeRetentionFailure, TypeProjectionError};
+        match error {
+            TypeProjectionError::Instantiation(error) => {
+                Self::source_type_projection(owner, TypeProjectionError::Instantiation(error))
+            }
+            TypeProjectionError::Control(PreparedTypeRetentionFailure::Control(error)) => error,
+            TypeProjectionError::Control(PreparedTypeRetentionFailure::Effect(error)) => {
+                Self::from(
+                    crate::effect_row::prepared::PreparedEffectFailure::<Self>::Invariant(error),
+                )
+            }
+        }
+    }
+
     pub(crate) fn source_type_effect_projection(
         owner: arcweft_lang_hir::project::HirSemanticPathOwnerId,
         error: crate::types::TypeProjectionError<

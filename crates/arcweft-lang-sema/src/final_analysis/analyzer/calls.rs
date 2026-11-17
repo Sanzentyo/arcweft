@@ -4364,6 +4364,7 @@ impl Analyzer<'_, '_, '_> {
                                 None => {
                                     if let Some(receiver_fact) = self
                                         .prepare_project_field_path_receiver(
+                                            context.work(),
                                             module,
                                             *value_receiver,
                                             expression.scope(),

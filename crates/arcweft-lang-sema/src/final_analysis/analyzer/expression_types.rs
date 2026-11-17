@@ -86,6 +86,25 @@ impl<'a> SourceTypePreparation<'a> {
         self.retain(owner, self.declared_type(annotation)?)
     }
 
+    pub(super) fn retain_prepared(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError;
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        ty.retain_effects(formals.template_scope(), graph, &mut work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_prepared_type_retention(owner, error)
+            })
+    }
+
     /// One actual nominal application owns the argument index and one graph
     /// edit for every declaration payload selected by the containing operation.
     pub(super) fn with_nominal_type_arguments<T>(
@@ -96,19 +115,11 @@ impl<'a> SourceTypePreparation<'a> {
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         operation: impl FnOnce(
             crate::types::ProjectNominalType<crate::types::PreparedEffects>,
-            &mut dyn FnMut(
-                super::TypeId,
-            ) -> Result<
-                TypeKind<crate::types::PreparedEffects>,
-                super::FinalSemanticAnalysisError,
-            >,
+            &mut SourceNominalProjection<'_, '_, '_>,
         ) -> Result<T, super::FinalSemanticAnalysisError>,
     ) -> Result<T, super::FinalSemanticAnalysisError> {
         use crate::final_analysis::FinalSemanticAnalysisError;
-        use crate::types::{
-            PreparedTypeArguments, PreparedTypeRetentionFailure, TypeProjectionControl,
-            TypeProjectionError,
-        };
+        use crate::types::{PreparedTypeArguments, TypeProjectionControl};
         let owner = owner.into();
         let mut work = self.work.clone();
         let source = self.owner(owner, &mut work)?;
@@ -131,38 +142,24 @@ impl<'a> SourceTypePreparation<'a> {
             retained.push(
                 argument
                     .retain_effects(scope, graph.read(), &mut work)
-                    .map_err(|error| match error {
-                        TypeProjectionError::Instantiation(error) => {
-                            FinalSemanticAnalysisError::source_type_projection(
-                                owner,
-                                TypeProjectionError::Instantiation(error),
-                            )
-                        }
-                        TypeProjectionError::Control(PreparedTypeRetentionFailure::Control(
-                            error,
-                        )) => error,
-                        TypeProjectionError::Control(PreparedTypeRetentionFailure::Effect(
-                            error,
-                        )) => FinalSemanticAnalysisError::from(
-                            crate::effect_row::prepared::PreparedEffectFailure::<
-                                FinalSemanticAnalysisError,
-                            >::Invariant(error),
-                        ),
+                    .map_err(|error| {
+                        FinalSemanticAnalysisError::source_prepared_type_retention(owner, error)
                     })?,
             );
         }
         let retained = crate::types::ProjectNominalType::new(declaration.id().clone(), retained);
         let mut edit = graph.edit_terms();
-        let result = operation(retained, &mut |annotation| {
-            let template = self
-                .declared_type(annotation)
-                .inspect_err(|_| edit.invalidate())?;
-            arguments
-                .project_in(template, &mut edit, &mut work)
-                .map_err(|error| {
-                    FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
-                })
-        })?;
+        let result = operation(
+            retained,
+            &mut SourceNominalProjection {
+                owner,
+                types: self.types,
+                arguments: &arguments,
+                scope,
+                edit: &mut edit,
+                work: &mut work,
+            },
+        )?;
         edit.commit().map_err(|error| {
             FinalSemanticAnalysisError::from(crate::effect_row::prepared::PreparedEffectFailure::<
                 FinalSemanticAnalysisError,
@@ -182,19 +179,17 @@ impl<'a> SourceTypePreparation<'a> {
         super::FinalSemanticAnalysisError,
     > {
         use super::FinalSemanticAnalysisError;
-        use crate::types::TypeProjectionControl;
         use arcweft_lang_hir::symbol::nominal::{ProjectNominalBody, ProjectNominalVariantPayload};
         let ProjectNominalBody::Enum { variants } = declaration.body() else {
             return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
         };
-        let mut metadata_work = self.work.clone();
         self.with_nominal_type_arguments(owner, declaration, nominal, graph, |nominal, project| {
             // Each case and owned record field is admitted before allocation.
             for variant in variants {
-                metadata_work.visit_binding()?;
+                project.visit_binding()?;
                 if let ProjectNominalVariantPayload::Record(fields) = variant.payload() {
                     for _ in fields {
-                        metadata_work.visit_binding()?;
+                        project.visit_binding()?;
                     }
                 }
             }
@@ -205,7 +200,7 @@ impl<'a> SourceTypePreparation<'a> {
                 cases.push(super::PreparedVariantCaseSeed::from_project(
                     ordinal,
                     variant,
-                    &mut *project,
+                    |annotation| project.annotation(annotation),
                     |_| FinalSemanticAnalysisError::InvalidNominalOwner,
                 )?);
             }
@@ -257,6 +252,54 @@ impl<'a> SourceTypePreparation<'a> {
             error => error,
         })?;
         Ok((value_type, seed))
+    }
+}
+
+/// One nominal application loans its index, actual caller scope, edit, and work.
+/// Every failed projection permanently invalidates the containing edit.
+pub(super) struct SourceNominalProjection<'operation, 'graph, 'control> {
+    owner: arcweft_lang_hir::project::HirSemanticPathOwnerId,
+    types: &'operation super::BTreeMap<super::TypeId, TypeKind>,
+    arguments: &'operation crate::types::PreparedTypeArguments<'operation>,
+    scope: &'operation crate::types::GenericScope,
+    edit: &'operation mut crate::effect_row::prepared::PreparedEffectTermEdit<'graph>,
+    work: &'operation mut super::preparation_work::AnalyzerPreparationWork<'control>,
+}
+
+impl SourceNominalProjection<'_, '_, '_> {
+    pub(super) fn visit_binding(&mut self) -> Result<(), super::FinalSemanticAnalysisError> {
+        use crate::types::TypeProjectionControl;
+        self.work
+            .visit_binding()
+            .inspect_err(|_| self.edit.invalidate())
+    }
+
+    pub(super) fn annotation(
+        &mut self,
+        annotation: super::TypeId,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        let template = self
+            .types
+            .get(&annotation)
+            .ok_or(super::FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation })
+            .inspect_err(|_| self.edit.invalidate())?;
+        self.arguments
+            .project_in(template, self.edit, self.work)
+            .map_err(|error| {
+                super::FinalSemanticAnalysisError::source_type_effect_projection(self.owner, error)
+            })
+    }
+
+    /// A second owned field copy keeps the same operational term identities.
+    pub(super) fn retain(
+        &mut self,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, super::FinalSemanticAnalysisError> {
+        ty.retain_effects(self.scope, self.edit.read(), self.work)
+            .map_err(|error| {
+                super::FinalSemanticAnalysisError::source_prepared_type_retention(self.owner, error)
+            })
+            .inspect_err(|_| self.edit.invalidate())
     }
 }
 

@@ -462,6 +462,10 @@ fn a_shared_argument_index_keeps_all_fields_in_one_failure_atomic_edit() {
     let first = application
         .project_in(&TypeKind::GenericParam(t), &mut edit, &mut work)
         .unwrap();
+    let retained = first
+        .retain_effects(&caller, edit.read(), &mut work)
+        .unwrap();
+    assert_eq!(retained, first);
     let invalid = TypeKind::Array {
         item: Box::new(TypeKind::I64),
         len: ArrayLength::Inferred,
@@ -476,6 +480,11 @@ fn a_shared_argument_index_keeps_all_fields_in_one_failure_atomic_edit() {
     assert_eq!(graph.retained_terms(), before);
     assert!(
         first
+            .retain_effects(&caller, graph.read(), &mut work)
+            .is_err()
+    );
+    assert!(
+        retained
             .retain_effects(&caller, graph.read(), &mut work)
             .is_err()
     );

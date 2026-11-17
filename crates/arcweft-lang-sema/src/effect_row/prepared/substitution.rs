@@ -382,6 +382,10 @@ impl Drop for PreparedEffectTermEdit<'_> {
 }
 
 impl PreparedEffectTermEdit<'_> {
+    pub(crate) fn read(&self) -> super::PreparedEffectReadView<'_> {
+        self.graph.read()
+    }
+
     /// A whole-type projection may fail outside a row/predicate callback.
     /// Preserve its original failure while preventing a later partial commit.
     pub(crate) fn invalidate(&mut self) {

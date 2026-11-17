@@ -34,7 +34,7 @@ use super::{
     PreparedResolvedExpression, PreparedTryBoundary, ProjectNominalBody, ProjectNominalDeclaration,
     ProjectNominalType, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId, ScopeId,
     SourceSpan, TypeKind, TypeParameterSubstitutions,
-    calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
+    calls::{checked_character_dialogue_target, checked_project_nominal},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
     },
@@ -4221,7 +4221,8 @@ impl Analyzer<'_, '_, '_> {
     }
 
     pub(super) fn prepare_project_field_path_receiver(
-        &self,
+        &mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
         module: &HirModule,
         owner: ExprId,
         scope: ScopeId,
@@ -4246,18 +4247,35 @@ impl Analyzer<'_, '_, '_> {
         else {
             return Ok(None);
         };
-        let Some(mut ty) = self.facts.locals().get(&base).cloned() else {
+        let Some(ty) = self.facts.locals().get(&base) else {
             return Ok(None);
         };
+        let root_ty = self
+            .source_type_preparation(work.clone())
+            .map_err(AnalyzerExpressionError::fatal)?
+            .retain_prepared(
+                owner,
+                ty,
+                self.facts
+                    .effect_declarations()
+                    .map_err(|error| AnalyzerExpressionError::fatal(error.into()))?
+                    .read(),
+            )
+            .map_err(AnalyzerExpressionError::fatal)?;
         let mut selected: Option<super::super::prepared::PreparedProjectFieldExpression> = None;
         for name in names.into_iter().rev() {
+            let ty = selected
+                .as_ref()
+                .map(|field| field.field_type())
+                .unwrap_or(&root_ty);
             if !matches!(ty, TypeKind::ProjectNominal(_)) {
                 return Ok(None);
             }
             let PreparedExpressionFact::ProjectField(field) = self
                 .prepare_project_nominal_field_expression(
+                    work.clone(),
                     owner,
-                    &ty,
+                    ty,
                     Some(base),
                     crate::final_analysis::CheckedFieldReceiver::Binding(base),
                     EffectSet::new(),
@@ -4266,7 +4284,6 @@ impl Analyzer<'_, '_, '_> {
             else {
                 return Ok(None);
             };
-            ty = field.field_type().clone();
             selected = Some(match selected {
                 Some(prefix) => field.prepend(prefix.into_fields()),
                 None => *field,
@@ -4300,7 +4317,8 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn prepare_project_nominal_field_expression(
-        &self,
+        &mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
         owner: ExprId,
         target_type: &TypeKind<crate::types::PreparedEffects>,
         mutable_base: Option<arcweft_lang_hir::identity::LocalId>,
@@ -4314,7 +4332,6 @@ impl Analyzer<'_, '_, '_> {
         let declaration = self
             .symbols
             .nominal(target_nominal.declaration())
-            .cloned()
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
         let ProjectNominalBody::Struct { fields } = declaration.body() else {
             return Err(AnalyzerExpressionError::rejected(owner));
@@ -4329,29 +4346,64 @@ impl Analyzer<'_, '_, '_> {
                 owner,
             })
         })?;
-        let declared_ty = self.types.get(&field.ty()).ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::TypeResolutionFailed {
-                owner: field.ty(),
+        let source = super::expression_types::SourceTypePreparation::new(
+            &self.types,
+            &self
+                .staged_callables
+                .as_ref()
+                .ok_or_else(|| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::CheckedCallableCatalog,
+                    )
+                })?
+                .builder,
+            &self.topology,
+            work,
+        );
+        let (graph, _) = self
+            .facts
+            .effect_declarations_mut()
+            .map_err(|error| AnalyzerExpressionError::fatal(error.into()))?
+            .relation();
+        source
+            .with_nominal_type_arguments(
+                owner,
+                declaration,
+                target_nominal,
+                graph,
+                |nominal, projection| {
+                    projection.visit_binding()?;
+                    let ty = projection.annotation(field.ty())?;
+                    let shell_type = projection.retain(&ty)?;
+                    Ok(PreparedExpressionFact::from(
+                        crate::final_analysis::PreparedProjectFieldExpression::new(
+                            PreparedExpressionShell::value(
+                                shell_type,
+                                CheckedTypeSelection::Inferred,
+                                effects,
+                            ),
+                            crate::final_analysis::prepared::PreparedProjectNominal::new(nominal),
+                            mutable_base,
+                            receiver,
+                            ordinal,
+                            ty,
+                            name.clone(),
+                        ),
+                    ))
+                },
+            )
+            .map_err(|error| match error {
+                FinalSemanticAnalysisError::SourceTypeRetention {
+                    error:
+                        crate::final_analysis::SourceTypeRetentionFailure::Type(
+                            crate::types::TypeInstantiationError::TypeArgumentCount { .. }
+                            | crate::types::TypeInstantiationError::NominalDeclarationMismatch,
+                        ),
+                    ..
+                } => AnalyzerExpressionError::rejected(owner),
+                error => AnalyzerExpressionError::fatal(error),
             })
-        })?;
-        let substitutions = nominal_substitutions(&declaration, target_nominal)
-            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let nominal = checked_project_nominal(&declaration, target_type)
-            .map_err(AnalyzerExpressionError::fatal)?;
-        let ty = substitutions.apply(declared_ty);
-        Ok(PreparedExpressionFact::from(
-            crate::final_analysis::PreparedProjectFieldExpression::new(
-                PreparedExpressionShell::value(ty.clone(), CheckedTypeSelection::Inferred, effects),
-                nominal,
-                mutable_base,
-                receiver,
-                ordinal,
-                ty,
-                name.clone(),
-            ),
-        ))
     }
-
     fn check_select_expression(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
@@ -4421,6 +4473,7 @@ impl Analyzer<'_, '_, '_> {
                         },
                     };
                     return self.prepare_project_nominal_field_expression(
+                        context.work(),
                         owner,
                         target_type,
                         mutable_base,

@@ -46,6 +46,10 @@ impl PreparedCallableEffectDeclaration {
 }
 
 impl PreparedCallableEffectDeclarations {
+    pub(crate) fn read(&self) -> crate::effect_row::prepared::PreparedEffectReadView<'_> {
+        self.graph.read()
+    }
+
     pub(super) fn validate_checkpoint(
         &self,
         checkpoint: &crate::effect_row::prepared::PreparedEffectCheckpoint,

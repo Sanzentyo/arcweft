@@ -744,10 +744,50 @@ impl PreparedVariantExpression {
     }
 }
 
+/// One project nominal root awaiting joint effect and definition sealing.
+/// Owns the nominal root so visitors can borrow it without copying arguments.
+/// This phase carries no canonical identity or semantic definition seal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedProjectNominal {
+    ty: TypeKind<PreparedEffects>,
+}
+
+impl PreparedProjectNominal {
+    pub(crate) fn new(nominal: crate::types::ProjectNominalType<PreparedEffects>) -> Self {
+        Self {
+            ty: TypeKind::ProjectNominal(nominal),
+        }
+    }
+
+    pub(crate) fn nominal(&self) -> &crate::types::ProjectNominalType<PreparedEffects> {
+        let TypeKind::ProjectNominal(nominal) = &self.ty else {
+            unreachable!("a prepared project nominal owns its exact nominal root")
+        };
+        nominal
+    }
+
+    pub(crate) fn ty(&self) -> &TypeKind<PreparedEffects> {
+        &self.ty
+    }
+
+    pub(crate) fn declaration(
+        &self,
+    ) -> &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId {
+        self.nominal().declaration()
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(&self.ty)
+    }
+}
+
 /// Source-selected field schemas waiting for final nominal/field admission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedProjectFieldSelection {
-    pub(super) nominal: CheckedProjectNominal,
+    pub(super) nominal: PreparedProjectNominal,
     pub(super) declaration_ordinal: u32,
     pub(super) field_type: TypeKind<PreparedEffects>,
     pub(super) diagnostic_name: HirName,
@@ -762,7 +802,7 @@ pub(crate) struct PreparedProjectFieldExpression {
 impl PreparedProjectFieldExpression {
     pub(crate) fn new(
         shell: PreparedExpressionShell,
-        nominal: CheckedProjectNominal,
+        nominal: PreparedProjectNominal,
         mutable_base: Option<LocalId>,
         receiver: super::CheckedFieldReceiver,
         declaration_ordinal: u32,
