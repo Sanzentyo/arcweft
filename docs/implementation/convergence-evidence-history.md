@@ -17873,3 +17873,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - 所有レビューでは、enumのcase grammarを既存source contextへ集約し、元graphは既存fact stateから借り、checked atomの更新は既存ExpressionDataへ委譲した。全7 Rust pathの成長は113 LOC。公開facade・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更、別のtype walker・scope fallback・graph複製はない。Supersedes: 前checkpointで未接続だったnominal patternのうちproject enum payloadを更新し、record patternやfieldまで完了とはしない。既存の失敗・full SHA・実測・原本を保持し、既受入のGeneric Match等を未完了へ戻さない。継続中の境界の一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-pattern-nominal-graph-checkpoint.raw.zip](acceptance-evidence/task-pattern-nominal-graph-checkpoint.raw.zip) は28 entries、ZIP 239766 bytes、SHA-256 `62f4085fe69d35f21cf5b31841c778da5d7f123aa8a0b229a384d93e7dc070f0`。4回の入力・失敗ログ・fmt、2回の公開照合と先行Sourceの連続性を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Prepared field nominal migration checkpoint
+
+2026-11-17。基点 `07bbc561a18c484a5d3e3766b5528e5870e5a7a4`、移行Source `74c137b269aa1908874a4b99fd1304e56112fcc4`。8 Rust path、244追加／72削除を既存mainへ途中commit・非force pushし、全8検証入力のSHA-256と公開blobのbyte hashを照合した。動作未受入のcheckpoint。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- field選択の準備データが要求していたcanonicalなCheckedProjectNominalを、identityを発行しないPreparedProjectNominalへ置換した。実nominalを受け取るprivate constructorがそのroot TypeKindを一度だけ所有し、visitorはrootを借用する。訪問のために引数を複製しない。field型は既存の宣言binderと呼出し元scopeによる同時適用へ移し、当該field経路のcanonical nominal_substitutionsと早期checked_project_nominal呼出しを削除した。
+- SourceNominalProjectionは一つの適用に限った借用contextで、元annotation pool・型引数index・実caller scope・元edit・元workを参照する。annotation投影、同じoperational term IDを保つ保持コピー、metadata課金をこのcontextへ置いた。missing annotation・scalar／row失敗・保持失敗・work拒否はeditをFailedにし、後から一部だけcommitすることを拒否する。enumの式／pattern側もこの同じcontextを使い、別のmetadata work変数を削除した。Γ admissionやbody準備は行わない。
+- 元declaration graphとterm editにimmutable read viewを用意した。localから始まるfield receiverは実source ownerのscopeで課金付きretainし、後続field型は直前のselectionから借りる。途中の型cloneとnominal宣言のcloneを削除し、callee側から元workを引き継ぐ。prepared保持のtyped error変換はFinalSemanticAnalysisErrorへ集約し、元control failureとgraph invariantを保つ。
+- 既存の共有index／rollback fixtureに9行を加えた。edit内readによるコピーが元のprepared型と同じoperational IDを保ち、後発scalar失敗後は元とコピーの両方がstaleとなる条件を追加した。test targetのcompile・実行は未確認で、成功数へ加算しない。
+- locked Sema library／全feature checkはdev01・dev02とも終了101・523エラー。dev01は27警告、不要になったtrait importを削除した最終dev02は26警告。最終8入力と公開blobの一致に基づく証拠再利用で、commit後の再実行ではない。両owner fmt checkは終了0。nextest・test target・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 最終nominal consumerは未移行である。nominal_schema.rs:1843／1852／1881／1886がprepared rootへidentityを要求する具体的な4診断を保持した。今回のrootはそれを発行する権限を持たず、joint completion後のcanonical投影とdefinition sealの接続を要する。fieldの入力側移行を最終受入とはしない。型付きphase境界による件数増減を、既受入機能の新しい不具合や再開の証拠として扱わない。
+- 所有レビューでは、prepared nominal rootをそのphaseの所有型、投影／保持を一時的な借用context、term閲覧を元graph／edit、typed error変換を既存error ownerへ置いた。成長172 LOCにはfixture拡張9 LOCを含む。公開facade・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更、別のtype walker・scope fallback・graph／work残量の複製はない。Supersedes: 前checkpointのfield利用側未接続は今回の入力準備の範囲で更新し、最終completion／sealの未達と区別した。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入を保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-field-nominal-checkpoint.raw.zip](acceptance-evidence/task-prepared-field-nominal-checkpoint.raw.zip) は14 entries、ZIP 119624 bytes、SHA-256 `3d69f51ec8aae69931c1ee368e46a9ec84006dc46ffebd00b22cfabdd8667d66`。2回の入力・失敗ログ・fmtと公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
