@@ -1,5 +1,6 @@
 use crate::types::constraints::test_support::ConstraintTestSetup;
 
+mod preparation;
 mod rooted_bindings;
 use std::{
     collections::{BTreeMap, BTreeSet},

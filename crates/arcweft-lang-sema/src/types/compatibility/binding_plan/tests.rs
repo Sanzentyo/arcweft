@@ -14,7 +14,7 @@ use crate::{
 };
 use std::sync::atomic::AtomicBool;
 
-fn prepare_scalar_relation(
+fn prepare_relation(
     pattern: TypeKind<PreparedEffects>,
     actual: TypeKind<PreparedEffects>,
     relation: ConstraintRelation,
@@ -42,7 +42,7 @@ fn prepare_scalar_relation(
     )
     .unwrap();
     assert_eq!(graph.retained_terms(), retained);
-    // Provisional scalar relation neither solves nor prepares the unrelated
+    // Provisional structural relation neither solves nor prepares the unrelated
     // Named body. The real first preparation must still succeed exactly once.
     graph
         .prepare_body(
@@ -58,7 +58,7 @@ fn prepare_scalar_relation(
 #[test]
 fn scalar_mismatch_is_pruned_without_closing_an_unprepared_original_body() {
     assert_eq!(
-        prepare_scalar_relation(
+        prepare_relation(
             TypeKind::Bool,
             TypeKind::I64,
             ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
@@ -66,7 +66,7 @@ fn scalar_mismatch_is_pruned_without_closing_an_unprepared_original_body() {
         0
     );
     assert_eq!(
-        prepare_scalar_relation(
+        prepare_relation(
             TypeKind::Bool,
             TypeKind::Bool,
             ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
@@ -82,7 +82,7 @@ fn scalar_widening_preserves_direction_and_is_not_original_equality() {
         ConstraintAcceptance::ActualAcceptsPattern,
     ] {
         assert_eq!(
-            prepare_scalar_relation(
+            prepare_relation(
                 TypeKind::ActionName,
                 TypeKind::String,
                 ConstraintRelation::Accepts(direction),
@@ -91,7 +91,7 @@ fn scalar_widening_preserves_direction_and_is_not_original_equality() {
         );
     }
     assert_eq!(
-        prepare_scalar_relation(
+        prepare_relation(
             TypeKind::ActionName,
             TypeKind::String,
             ConstraintRelation::Equal,
@@ -108,7 +108,7 @@ fn erased_actor_handles_do_not_erase_an_exact_expected_identity() {
         ))
     };
     assert_eq!(
-        prepare_scalar_relation(
+        prepare_relation(
             TypeKind::StageActorHandle(StageActorHandleType::Any),
             exact(),
             ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
@@ -116,7 +116,7 @@ fn erased_actor_handles_do_not_erase_an_exact_expected_identity() {
         1
     );
     assert_eq!(
-        prepare_scalar_relation(
+        prepare_relation(
             exact(),
             TypeKind::StageActorHandle(StageActorHandleType::Any),
             ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
@@ -124,10 +124,59 @@ fn erased_actor_handles_do_not_erase_an_exact_expected_identity() {
         0
     );
     assert_eq!(
-        prepare_scalar_relation(
+        prepare_relation(
             TypeKind::StageActorHandle(StageActorHandleType::Any),
             exact(),
             ConstraintRelation::Equal,
+        ),
+        0
+    );
+}
+
+#[test]
+fn reference_payload_presence_preserves_direction_and_original_equality() {
+    use crate::types::{EntityKind, EntityType};
+    let family = || TypeKind::Ref(EntityType::new(EntityKind::Signal, None));
+    let specialized = || TypeKind::Ref(EntityType::new(EntityKind::Signal, Some(TypeKind::Bool)));
+    for direction in [
+        ConstraintAcceptance::PatternAcceptsActual,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    ] {
+        assert_eq!(
+            prepare_relation(
+                family(),
+                specialized(),
+                ConstraintRelation::Accepts(direction),
+            ),
+            usize::from(direction == ConstraintAcceptance::PatternAcceptsActual)
+        );
+        assert_eq!(
+            prepare_relation(
+                specialized(),
+                family(),
+                ConstraintRelation::Accepts(direction),
+            ),
+            usize::from(direction == ConstraintAcceptance::ActualAcceptsPattern)
+        );
+    }
+    assert_eq!(
+        prepare_relation(family(), specialized(), ConstraintRelation::Equal),
+        0
+    );
+    assert_eq!(
+        prepare_relation(specialized(), family(), ConstraintRelation::Equal),
+        0
+    );
+}
+
+#[test]
+fn reference_payload_mismatch_is_pruned_before_unrelated_body_preparation() {
+    use crate::types::{EntityKind, EntityType};
+    assert_eq!(
+        prepare_relation(
+            TypeKind::Ref(EntityType::new(EntityKind::Signal, Some(TypeKind::Bool))),
+            TypeKind::Ref(EntityType::new(EntityKind::Signal, Some(TypeKind::I64))),
+            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
         ),
         0
     );

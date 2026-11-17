@@ -219,7 +219,10 @@ where
         || matches!(
             (pattern_shape, actual_shape),
             (TypeConstraintShape::Leaf(_), TypeConstraintShape::Leaf(_))
+                | (TypeConstraintShape::Ref(_), TypeConstraintShape::Ref(_))
         )
+        || matches!(pattern_shape, TypeConstraintShape::Generic(_))
+        || matches!(actual_shape, TypeConstraintShape::Generic(_))
     {
         return Ok(paths);
     }
@@ -623,7 +626,7 @@ where
     if pattern_value.is_some() || actual_value.is_some() {
         let pattern_view = pattern_value.as_ref().map(ConstraintOperand::<D>::view);
         let actual_view = actual_value.as_ref().map(ConstraintOperand::<D>::view);
-        return relate_with_policy(
+        return relate_constraint(
             graph,
             pattern_view.as_ref().unwrap_or(pattern),
             actual_view.as_ref().unwrap_or(actual),
@@ -688,7 +691,9 @@ where
             {
                 return bind_type_parameter(parameter, pattern, path, context);
             }
+            return Ok(Vec::new());
         }
+        (TypeConstraintShape::Generic(_), _) => return Ok(Vec::new()),
         _ => {}
     }
 
@@ -765,16 +770,26 @@ where
                 },
             )
         }
-        (TypeConstraintShape::Ref(expected), TypeConstraintShape::Ref(found))
-            if expected.kind() == found.kind() =>
-        {
+        (TypeConstraintShape::Ref(expected), TypeConstraintShape::Ref(found)) => {
+            let compatible = match relation {
+                ConstraintRelation::Equal => expected.accepts_header(found, true),
+                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
+                    expected.accepts_header(found, false)
+                }
+                ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
+                    found.accepts_header(expected, false)
+                }
+            };
+            if !compatible {
+                return Ok(Vec::new());
+            }
             match (expected.value(), found.value()) {
                 (Some(_), Some(_)) => {
                     relate_children(graph, pattern, actual, path, context, relation)
                 }
-                (Some(_), None) | (None, None) => Ok(vec![path]),
-                (None, Some(found)) => {
-                    validate_type(found, path.projection_view(), graph.read(), context)?;
+                (None, None) => Ok(vec![path]),
+                (Some(value), None) | (None, Some(value)) => {
+                    validate_type(value, path.projection_view(), graph.read(), context)?;
                     Ok(vec![path])
                 }
             }

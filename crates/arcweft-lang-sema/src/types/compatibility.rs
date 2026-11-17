@@ -9,7 +9,11 @@ use crate::{
 // It may fork provisional rows, but all terminal compatibility verdicts still
 // go through this module's `SelectedCall` engine.
 pub(super) mod binding_plan;
+mod header;
 mod leaf;
+
+#[cfg(test)]
+mod nominal_tests;
 
 /// Selects the semantic contract used by the recursive type relation.
 ///
@@ -445,7 +449,9 @@ where
         (TypeKind::SlotRef(expected), TypeKind::SlotRef(actual)) => {
             accepts_node(expected, actual, policy, control, meter, structural)
         }
-        (TypeKind::Ref(expected), TypeKind::Ref(actual)) if expected.kind() == actual.kind() => {
+        (TypeKind::Ref(expected), TypeKind::Ref(actual))
+            if expected.accepts_header(actual, structural) =>
+        {
             // A payload-free family constraint accepts a retained
             // specialization. Structural projection subjects require exact
             // payload presence and recurse through the same relation engine.
@@ -453,9 +459,9 @@ where
                 (Some(expected), Some(actual)) => {
                     accepts_node(expected, actual, policy, control, meter, structural)
                 }
-                (None, Some(_)) if !structural => Ok(true),
+                (None, Some(_)) => Ok(true),
                 (None, None) => Ok(true),
-                (Some(_), None) | (None, Some(_)) => Ok(false),
+                (Some(_), None) => Ok(false),
             }
         }
         (
@@ -895,7 +901,9 @@ where
         return Ok(false);
     }
     for (expected, actual) in expected.iter().zip(actual) {
-        if !accepts_node(expected, actual, policy, control, meter, structural)? {
+        if !accepts_node(expected, actual, policy, control, meter, structural)?
+            || !accepts_node(actual, expected, policy, control, meter, structural)?
+        {
             return Ok(false);
         }
     }
