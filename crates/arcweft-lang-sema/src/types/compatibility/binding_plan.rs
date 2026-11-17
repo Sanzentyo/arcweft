@@ -30,13 +30,14 @@ pub(crate) enum ConstraintAcceptance {
 #[derive(Clone, Copy)]
 enum ConstraintRelation {
     Accepts(ConstraintAcceptance),
+    Structural(ConstraintAcceptance),
     Equal,
 }
 
 impl ConstraintRelation {
     fn direction(self) -> ConstraintAcceptance {
         match self {
-            Self::Accepts(direction) => direction,
+            Self::Accepts(direction) | Self::Structural(direction) => direction,
             Self::Equal => ConstraintAcceptance::PatternAcceptsActual,
         }
     }
@@ -49,8 +50,25 @@ impl ConstraintRelation {
             Self::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
                 Self::Accepts(ConstraintAcceptance::PatternAcceptsActual)
             }
+            Self::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
+                Self::Structural(ConstraintAcceptance::ActualAcceptsPattern)
+            }
+            Self::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
+                Self::Structural(ConstraintAcceptance::PatternAcceptsActual)
+            }
             Self::Equal => Self::Equal,
         }
+    }
+
+    fn structural(self) -> Self {
+        match self {
+            Self::Equal => Self::Equal,
+            _ => Self::Structural(self.direction()),
+        }
+    }
+
+    fn exact_header(self) -> bool {
+        matches!(self, Self::Equal | Self::Structural(_))
     }
 }
 
@@ -150,8 +168,8 @@ where
     Ok(path)
 }
 
-/// Relates one equation and performs directional SelectedCall relation on
-/// every alternative before the branch can re-enter the candidate frontier.
+/// Prepares one equation's structure and conditional effects on each branch.
+/// Final semantic confirmation belongs to the original forest after inputs.
 /// This keeps Choice alternatives branch-local rather than applying a single
 /// whole-Choice relation after raw paths have been retained.
 fn relate_constraint<A, D, L>(
@@ -167,7 +185,14 @@ where
     D: ConstraintDomain,
     L: Clone,
 {
-    if matches!(relation, ConstraintRelation::Equal) {
+    // Strict relation preparation validates both complete input trees before a
+    // header mismatch can hide a bad descendant. Read each actual operand's
+    // frames without solving its effects or following active type bindings.
+    for operand in [pattern, actual] {
+        path.projection_view()
+            .admit_operand(operand.clone(), graph.read(), context)?;
+    }
+    if relation.exact_header() {
         // Original products close after every original binding/effect relation
         // has contributed. A temporary nonprincipal effect relation may still
         // be resolved by another original root, so do not seal it here.
@@ -175,9 +200,6 @@ where
     }
     let pattern_shape = pattern.value().constraint_shape();
     let actual_shape = actual.value().constraint_shape();
-    // Scalar structure is completely decided by the shared leaf algebra.
-    // Its provisional path still owes the original forest's final effect
-    // check; unrelated unprepared bodies cannot force that check here.
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
         || matches!(actual_shape, TypeConstraintShape::Choice(_))
     {
@@ -214,34 +236,19 @@ where
         )?,
         _ => relate_with_policy(graph, pattern, actual, path, context, relation)?,
     };
-    if matches!(pattern_shape, TypeConstraintShape::Choice(_))
-        || matches!(actual_shape, TypeConstraintShape::Choice(_))
-        || matches!(
-            (pattern_shape, actual_shape),
-            (TypeConstraintShape::Leaf(_), TypeConstraintShape::Leaf(_))
-                | (TypeConstraintShape::Ref(_), TypeConstraintShape::Ref(_))
-        )
-        || matches!(pattern_shape, TypeConstraintShape::Generic(_))
-        || matches!(actual_shape, TypeConstraintShape::Generic(_))
-    {
-        return Ok(paths);
-    }
-    let mut accepted = Vec::new();
-    for path in paths {
-        if let Some(path) = accept_branch(graph, pattern, actual, path, context, relation)? {
-            accepted.push(path);
-        }
-    }
-    Ok(accepted)
+    Ok(paths)
 }
 
-fn accept_branch<A, D, L>(
+/// The two cross-shape language relations still use the old final reader.
+/// Aligned shape preparation never enters this boundary. Replace this last
+/// reader with scoped primitive relations before completing the migration.
+fn accept_cross_shape<A, D, L>(
     graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
-    relation: ConstraintRelation,
+    acceptance: ConstraintAcceptance,
 ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
@@ -274,22 +281,15 @@ where
     )?;
     let projected_pattern = projected_pattern.value();
     let projected_actual = projected_actual.value();
-    let compatible = match relation {
-        ConstraintRelation::Equal => crate::types::constraints::completed_types_equal(
-            projected_pattern,
-            projected_actual,
-            context,
-        ),
-        ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
-            projected_pattern
-                .accepts_with(
-                    projected_actual,
-                    TypeCompatibilityPolicy::SelectedCall,
-                    context,
-                )
-                .map_err(map_compatibility_error)
-        }
-        ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => projected_actual
+    let compatible = match acceptance {
+        ConstraintAcceptance::PatternAcceptsActual => projected_pattern
+            .accepts_with(
+                projected_actual,
+                TypeCompatibilityPolicy::SelectedCall,
+                context,
+            )
+            .map_err(map_compatibility_error),
+        ConstraintAcceptance::ActualAcceptsPattern => projected_actual
             .accepts_with(
                 projected_pattern,
                 TypeCompatibilityPolicy::SelectedCall,
@@ -314,8 +314,8 @@ pub(crate) fn map_compatibility_error(
 /// Relate each expected Choice alternative against one actual value.
 ///
 /// Each alternative receives an independent fork and goes through the same
-/// selected-call entry point as a non-Choice equation.  That entry point is
-/// the branch-local seal/relation boundary; keeping it here (rather than
+/// selected-call entry point as a non-Choice equation. That entry point owns
+/// branch-local structure and conditions; keeping it here (rather than
 /// accepting the projected Choice after the raw relation) prevents a
 /// rejected alternative from re-entering the frontier.
 fn relate_choice_to_actual_selected<A, D, L>(
@@ -637,21 +637,36 @@ where
     }
     // Bottom contributes no binding, but unresolved descendants in the
     // expected shape still cannot reach a selected seal.
-    if matches!(relation, ConstraintRelation::Accepts(_))
-        && matches!(actual_shape, TypeConstraintShape::Never)
+    let (expected, supplied) = match relation.direction() {
+        ConstraintAcceptance::PatternAcceptsActual => (pattern, actual),
+        ConstraintAcceptance::ActualAcceptsPattern => (actual, pattern),
+    };
+    if !relation.exact_header()
+        && matches!(
+            supplied.value().constraint_shape(),
+            TypeConstraintShape::Never
+        )
     {
         validate_type(
-            pattern.value(),
+            expected.value(),
             path.projection_view(),
             graph.read(),
             context,
         )?;
         return Ok(vec![path]);
     }
+    if !relation.exact_header()
+        && matches!(
+            expected.value().constraint_shape(),
+            TypeConstraintShape::Never
+        )
+    {
+        return Ok(Vec::new());
+    }
 
     match (pattern_shape, actual_shape) {
         (TypeConstraintShape::Choice(_), TypeConstraintShape::Choice(_))
-            if matches!(relation, ConstraintRelation::Equal) =>
+            if relation.exact_header() =>
         {
             return relate_sliced_children(graph, pattern, actual, path, context, relation);
         }
@@ -699,7 +714,7 @@ where
 
     match (pattern_shape, actual_shape) {
         (TypeConstraintShape::Choice(_), _) | (_, TypeConstraintShape::Choice(_))
-            if matches!(relation, ConstraintRelation::Equal) =>
+            if relation.exact_header() =>
         {
             Ok(Vec::new())
         }
@@ -747,11 +762,7 @@ where
                 &found_arguments,
                 path,
                 context,
-                if matches!(relation, ConstraintRelation::Equal) {
-                    relation
-                } else {
-                    ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
-                },
+                relation,
             )?;
             if matches!(relation, ConstraintRelation::Equal) {
                 return Ok(paths);
@@ -759,20 +770,19 @@ where
             expected_arguments.iter().zip(&found_arguments).try_fold(
                 paths,
                 |paths, (expected, found)| {
-                    relate_many(
-                        graph,
-                        expected,
-                        found,
-                        paths,
-                        context,
-                        ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern),
-                    )
+                    relate_many(graph, expected, found, paths, context, relation.reverse())
                 },
             )
         }
         (TypeConstraintShape::Ref(expected), TypeConstraintShape::Ref(found)) => {
             let compatible = match relation {
                 ConstraintRelation::Equal => expected.accepts_header(found, true),
+                ConstraintRelation::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
+                    expected.accepts_header(found, true)
+                }
+                ConstraintRelation::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
+                    found.accepts_header(expected, true)
+                }
                 ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
                     expected.accepts_header(found, false)
                 }
@@ -928,7 +938,7 @@ where
                             (expected_header.row(), found_header.row())
                         }
                     };
-                    let effect_relation = if matches!(relation, ConstraintRelation::Equal) {
+                    let effect_relation = if relation.exact_header() {
                         crate::effect_row::prepared::PreparedEffectRelation::Equal
                     } else {
                         crate::effect_row::prepared::PreparedEffectRelation::AdmittedSubset
@@ -967,11 +977,17 @@ where
         (TypeConstraintShape::Payload(expected), TypeConstraintShape::Payload(found))
             if expected.has_same_header(found) =>
         {
-            relate_sliced_children(graph, pattern, actual, path, context, relation)
+            relate_sliced_children(graph, pattern, actual, path, context, relation.structural())
         }
         (TypeConstraintShape::Leaf(pattern), TypeConstraintShape::Leaf(actual)) => {
             let accepted = match relation {
                 ConstraintRelation::Equal => pattern == actual,
+                ConstraintRelation::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
+                    pattern.accepts(actual, true)
+                }
+                ConstraintRelation::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
+                    actual.accepts(pattern, true)
+                }
                 ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
                     pattern.accepts(actual, false)
                 }
@@ -982,7 +998,19 @@ where
             Ok(if accepted { vec![path] } else { Vec::new() })
         }
         (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),
-        _ => Ok(vec![path]),
+        _ if !relation.exact_header()
+            && expected
+                .value()
+                .cross_shape_compatibility(supplied.value())
+                .is_some() =>
+        {
+            Ok(
+                accept_cross_shape(graph, pattern, actual, path, context, relation.direction())?
+                    .into_iter()
+                    .collect(),
+            )
+        }
+        _ => Ok(Vec::new()),
     }
 }
 fn const_parameter_eligibility<A, D, L>(

@@ -9,6 +9,7 @@ use crate::{
 // It may fork provisional rows, but all terminal compatibility verdicts still
 // go through this module's `SelectedCall` engine.
 pub(super) mod binding_plan;
+mod cross_shape;
 mod header;
 mod leaf;
 
@@ -370,6 +371,20 @@ where
         return Ok(expected.accepts(actual, structural));
     }
 
+    if !structural && let Some(rule) = expected.cross_shape_compatibility(actual) {
+        return match rule {
+            cross_shape::CrossShapeCompatibility::ByteCollection(inner) => {
+                if !accepts_node(inner, inner, policy, control, meter, structural)? {
+                    return Ok(false);
+                }
+                Ok(matches!(inner, TypeKind::U8))
+            }
+            cross_shape::CrossShapeCompatibility::AgentValue => {
+                is_agent_value_type(actual, policy, control, true, meter)
+            }
+        };
+    }
+
     if let Some(compatible) =
         nominal_types_compatible(expected, actual, policy, control, meter, structural)?
     {
@@ -391,17 +406,6 @@ where
                 }
             }
             Ok(true)
-        }
-        (TypeKind::Bytes, TypeKind::Vec(inner) | TypeKind::Slice(inner) | TypeKind::Seq(inner))
-            if !structural =>
-        {
-            if !accepts_node(inner, inner, policy, control, meter, structural)? {
-                return Ok(false);
-            }
-            Ok(matches!(inner.as_ref(), TypeKind::U8))
-        }
-        (TypeKind::AgentValue, actual) if !structural => {
-            is_agent_value_type(actual, policy, control, true, meter)
         }
         (TypeKind::FixedVector(expected), TypeKind::FixedVector(actual))
             if expected.dimensions() == actual.dimensions() =>

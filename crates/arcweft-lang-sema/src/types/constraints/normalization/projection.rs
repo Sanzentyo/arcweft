@@ -26,7 +26,35 @@ mod mode;
 use crate::types::constraints::transaction::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandEffects, ConstraintOperandView,
 };
-use mode::{InspectValues, ProjectionMode, RetainOrigins};
+use mode::{AdmitOrigins, InspectValues, ProjectionMode, RetainOrigins};
+
+impl<'ty, D: ConstraintDomain> ConstraintProjectionView<'ty, D> {
+    /// Validate every port against its own derivation and actual frames. This
+    /// emits no rebuilt type, follows no active binding, and solves no effect.
+    pub(in crate::types) fn admit_operand<A: TypeConstraintAccounting>(
+        self,
+        input: ConstraintOperandView<'ty, D>,
+        graph: PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        for _ in input.lexical_scope().shape().binders() {
+            context.enter_node()?;
+        }
+        let scope = input.lexical_scope().as_ref().clone();
+        context.with_original_scope(scope, |context| {
+            project_type_fold::<A, D, AdmitOrigins>(
+                input,
+                self,
+                ConstraintClosurePolicy::Validation,
+                graph,
+                context,
+                &mut BTreeSet::new(),
+                &mut BTreeSet::new(),
+                &(),
+            )
+        })
+    }
+}
 
 /// Each type/constant occurrence is admitted before lookup or reconstruction.
 /// Bindings are followed transitively, with branch-local cycle guards; they

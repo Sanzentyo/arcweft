@@ -2,6 +2,9 @@
 
 use crate::types::PreparedEffects;
 
+mod admission;
+pub(super) use admission::AdmitOrigins;
+
 use super::*;
 use crate::types::constraints::transaction::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandChildren,

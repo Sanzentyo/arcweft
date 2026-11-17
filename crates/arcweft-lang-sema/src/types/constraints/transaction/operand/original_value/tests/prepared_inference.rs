@@ -36,6 +36,65 @@ fn input(variable: GenericEffectReference) -> TypeKind<PreparedEffects> {
 }
 
 #[test]
+fn relation_prevalidation_uses_the_operands_source_before_header_rejection() {
+    use crate::types::constraints::TypeConstraintParameterEligibility;
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let allowed = Source::new(98_610);
+    let free = allowed.types[0].clone();
+    let GenericTypeReference::Free(parameter) = &free else {
+        unreachable!()
+    };
+    let original = context.original_producer_context(&allowed).unwrap();
+    let parameters = TypeConstraintParameterScope::new([(
+        parameter.clone(),
+        TypeConstraintParameterEligibility::Rigid,
+    )])
+    .unwrap();
+    let owner = context
+        .application_scope((), parameters, original.clone(), &mut graph)
+        .unwrap();
+    let path = context
+        .start_path_with_imported(owner, None, original, graph.read())
+        .unwrap();
+    assert_eq!(
+        context.parameter_eligibility(&free, path.projection_view()),
+        Some(TypeConstraintParameterEligibility::Rigid)
+    );
+    let source = Source::new(98_611);
+    let original = context.original_producer_context(&source).unwrap();
+    let value = TypeKind::<PreparedEffects>::Vec(Box::new(TypeKind::Bool));
+    let mut actual = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+        &value,
+        Arc::new(original.gamma().clone()),
+        original,
+        &mut ConstraintEffectPhase::new(&mut graph),
+        &mut context,
+    )
+    .unwrap();
+    // The receiving path admits this Free, but this exact source does not.
+    actual.value = Arc::new(TypeKind::Vec(Box::new(TypeKind::GenericParam(
+        free.clone(),
+    ))));
+    let expected =
+        context.fixture_operand(TypeKind::<PreparedEffects>::Tuple(vec![TypeKind::Bool]));
+    let retained = graph.retained_terms();
+    let frames = context.lexical_frames().clone();
+    let result = crate::types::compatibility::binding_plan::relate_selected_call(
+        &mut graph,
+        &expected.view(),
+        &actual.view(),
+        path,
+        &mut context,
+        crate::types::constraints::ConstraintAcceptance::PatternAcceptsActual,
+    );
+    assert!(matches!(result, Err(error) if error == references::type_out_of_scope(&free)));
+    assert_eq!(graph.retained_terms(), retained);
+    assert_eq!(context.lexical_frames(), &frames);
+}
+
+#[test]
 fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
     use crate::effect_row::prepared::PreparedEffectRelation;
     use crate::types::constraints::normalization::{ConstraintClosedEffects, close_type_operand};
