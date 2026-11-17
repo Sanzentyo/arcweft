@@ -17738,3 +17738,18 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: Source `2ff018628e391cb9c89206fe25820a2071489589` で未接続だった数学graphの候補転送について、上記の実装を加えた。frontend全体の統合・動作・受入が済んだという判定にはしない。過去のcheck失敗・完了したテスト実測・full SHA、Generic Matchを含む既受入の判定は保持し、現状は[current-status.md](current-status.md)に集約する。
 
 原本 [task-prepared-relation-transactions-checkpoint.raw.zip](acceptance-evidence/task-prepared-relation-transactions-checkpoint.raw.zip) は12 entries、ZIP 229017 bytes、SHA-256 `9c80c78ed510179bcf4bae6ab0eac8e87316de6bdc7cc56af096dd394d130f90`。途中と公開Sourceの入力・失敗、fmt receipt、公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+
+## Prepared work loans migration checkpoint
+
+2026-11-17。基点 `df7356159b818b7cae28fc0697372152b47358b0`、移行Source `09d18373def316170599b819de3818a6068c8734`。22 Rust path、655追加／139削除を既存mainへ途中commit・非force pushし、全22入力hashと公開blobの一致を確認した。途中commitの正常動作確認を必須としないユーザー指示による未受入checkpointであり、既存の未追跡 `%SystemDrive%/` 4 pathを保持した。
+
+- 候補の既存CandidateConstraintWorkSessionを唯一の予約ownerとし、短いloanは同じ状態・累積counter・取消しを参照する。Rcの複製は権限handleの共有であり、graph・予約・counterを複製しない。RefCellのguardは各課金・確認内で解放し、callbackを跨がない。競合・commit後のloan利用は型付きinvariantで拒否する。commit／Dropは元のproposalを一度だけ公開する。
+- AnalyzerExpressionContextが元workのloanを保持し、通常式、call、local／pattern、function body、text proxy、projection applyとfact transactionへ渡す。source probeは実際にadmitされたapplicationと元sessionからloanを取り、materializationも元sessionを使う。sourceのprobe／materialization計数を別入口で水増しせず、借用を持ったままsource callbackへ入らない。
+- named callable valueごとに新しいworkを作る経路を削除した。宣言準備はsemantic generation内で一つの既存CallableEffectClosureWorkを共有し、元のmax_catalog_build_work値と取消しを使う。数値上限を変更していないが、従来の値単位からgeneration内累積課金へのscope変更は実質的な判断である。同じ準備仕事に同じownerを使い、値ごとの予算リセットを避けるために採用した。この累積条件の受入は未検証で、予算互換・動作成功を主張しない。候補側は元候補の予約に従う。
+- 共有上限・一度だけの公開・loan失効、短い借用の解放・元の取消しを対象に2 fixtureを追加した。test targetのcompileと実行は未確認で、成功件数へ加算しない。private lifetime表現を消去するaccount traitを使うが、unsafe・I/O・Cargo依存・codec・contract versionは変更しない。
+- `cargo check --locked -p arcweft-lang-sema --lib --all-features` は開発入力dev01で終了101・661エラー、commit forwarding漏れを修正したdev02で終了101・660エラー・27警告。dev02の全22入力hash・差分path集合・公開blobがSourceと一致することを確認した証拠再利用であり、commit後にcheckを再実行したとはしない。エラー数の差を改善指標や受入へ読み替えない。最初のfmtは新moduleの明示path不足で終了1、pathを修正した後のSema owner fmt checkは終了0。Clippy・nextest・doctest・逆依存・全workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- ユーザーの回答「cargo clean で全体を削除する」に従い、2026-11-17 14:44:12 JSTに既存workspaceで `cargo clean` を実行した。終了0、1,151 files／315.4 MiBを削除し、target消失とGitの変更状態の不変を確認した。これはビルド生成物の削除で、以前のcheck結果やソースを変更していない。
+- Supersedes: 前checkpointで未接続だった通常解析のwork入口を上記の共有ownerへ接続した。physical metadata、元relationのreplay、joint completionと最終canonical consumerの移行はまだ完了しておらず、Semaを動作可能・受入済みとはしない。過去のfull SHA・失敗・実測とGeneric Match等の既受入を保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-work-loans-checkpoint.raw.zip](acceptance-evidence/task-prepared-work-loans-checkpoint.raw.zip) は11 entries、ZIP 149450 bytes、SHA-256 `16ab17d262ef1782105b43b826cc9efde43489c0edd2c442def7f4be57f45e63`。全データentryの長さ・SHA-256をreadback照合した。cleanはこの原本作成後の実行であり、上記の別記録として保持する。
