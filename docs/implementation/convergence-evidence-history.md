@@ -17782,3 +17782,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 前checkpointのsource helperに残った完成型の戻り値を、上記のprepared契約へ移した。実際のcheck失敗、過去のfull SHA・実測・原本、Generic Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-expression-producers-checkpoint.raw.zip](acceptance-evidence/task-prepared-expression-producers-checkpoint.raw.zip) は7 entries、ZIP 68049 bytes、SHA-256 `cd04c9f44878e8e3c2e727e1950e1549b5dd30f20a759f1b79de48c9fa30fcce`。入力・実行ログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+
+## Prepared pattern variants migration checkpoint
+
+2026-11-17。基点 `cac5f05406f7a04e2c265aa3cb29e10a6aec76f6`、移行Source `d53c73189fb914f5842385656a785b17ac6d9723`。8 Rust path、291追加／119削除を既存mainへ途中commit・非force pushし、全8検証入力hashと公開blobの一致を確認した。途中commitの正常動作を必須としないユーザー指示による未受入checkpointで、未追跡 `%SystemDrive%/` 4 pathを保持した。
+
+- typed-binding patternが準備中にCheckedTypedBindingのdigest・Choice evidenceを発行する入口を置換した。PreparedTypedBindingPatternは、検査対象のprepared scrutineeと元annotationのTypeIdを保持する。annotationは既存type ownerへのedgeで、独立した完成型のコピーではない。inputの通常pattern入口もPreparedResolvedPatternを受け取る契約にした。元annotationの実Γでの取り込みと、最終checked bindingへの消費はまだ未接続である。
+- variant owner／caseの同じgrammarをeffect domainに対して扱い、project引数・Option／Result・入れ子payloadへprepared行を保持する。型投影はownerと全case payloadを一緒に移し、stable case／field identityを作るsealはCanonicalEffectsのseedだけに提供する。既存canonical環境catalogのconstructorはcanonical側に残し、source利用側に必要な制御付きadmissionを省略しない。nominal poisonとDialogueLineの構造判定も同じgeneric walkerで共有した。
+- 入れ子Result／Optionのpayloadが、本体未準備の元scheme applicationを保持し、元bodyの数学closure後に同じfs.read行でcanonical ownerへ移るfixtureを1件追加した。test targetのcompile・実行は未確認で、成功数へ加算しない。既存fixtureには旧input API等の移行が残り、coverageやassertionを弱めていない。
+- `cargo check --locked -p arcweft-lang-sema --lib --all-features` は終了101・600エラー・28警告。全8入力hashと公開blobが同じことを確認した実行証拠の再利用で、commit後の再実行ではない。owner fmt checkは終了0。Clippy・nextest・doctest・test target・逆依存・全workspace／構造gateはlibraryの移行がコンパイル未完了のため未実行。件数差は品質・受入の指標にしない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 所有レビューでは、未確定annotationのedgeをprepared pattern、variant metadataのdomain移送を既存seed／payload grammar、完成identityを既存canonical sealへ置いた。成長172 LOCは同じownerと新fixtureによる。graph／workの複製・新しいTypeKind walker・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更はない。
+- Supersedes: source pattern／variantの完成型依存を上記の保持へ移した。現状行に積み上がったcheckpoint順の説明と未完了の重複表現は、現在の型保持と未接続境界へ整理した。訂正前のfull SHA・実測・原本は保持し、Generic Match等の既受入を戻さない。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-pattern-variants-checkpoint.raw.zip](acceptance-evidence/task-prepared-pattern-variants-checkpoint.raw.zip) は7 entries、ZIP 68214 bytes、SHA-256 `070da5726e39792a204f821b5df29c9b005494531a39a20e686888afa9738528`。入力・実行ログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
