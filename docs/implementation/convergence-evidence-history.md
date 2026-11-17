@@ -18139,3 +18139,19 @@ Locked Sema／test target／全feature checkは3回すべて終了101。Library�
 Supersedes: 現状一覧のcanonical型投影一式を未接続とした列挙を、実装した数学的入口と、未移行のvalidator／header・最終callerへ分けた。訂正理由は実入力で元relationを閉じる入口と同じclosureの保持を実装したためであり、未検証の入口を受入へ格上げしない。Generic Match等の既受入項目・過去のSHAと実測は維持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-original-final-projection-checkpoint.raw.zip](acceptance-evidence/task-original-final-projection-checkpoint.raw.zip) は25 entries、ZIP 441961 bytes、SHA-256 `5a336e83fcb4006ede048f6ebaed738d99e0865b86a5363e39b20bc8d827e7d8`。3回のCargo入力・失敗ログ・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Closed original owner checkpoint
+
+2026-11-18。基点 `00ac189fd64f14e453a64bca6bd3cee0ce797104`、移行Source `babc1929a2b426811d0fb09e0e7794e384e9dae3`。20 Rust path、1,060追加／92削除、物理968 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終20入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+BoundScopedEffectCompletionは元identityとの最小関数一致をfreezeしたphaseだけを表し、通常のfrozen relationを最終確定に流用しない。ConstraintClosedEffectsは実入力と元receiptを保持し、同じcanonical tupleと全retained witnessについて正確な∀Γ.(D⇒R)を独立確認する。OriginalConstraintForest.closeは既存のscope・binding・equation validatorをその後に実行する。全候補をstageしてからbranchをmoveし、意味上の拒否は候補結果、操作失敗は同じaffine forestとmetadata rollbackを返す。使用workは戻さない。旧flat completeは削除し、元scopeから移したD、同じprincipalによるcanonical型検査とheader query、実function使用と狭いFree supportの証拠へ接続した。別々の同形frameのBound0を共同Dで混同する箇所を修正した。Guarded／非totalのheaderをpure／trueへ補完せず、旧eager caller・全frontendのpublic switchは未完了である。
+
+新規9 fixture、testの物理増分485 LOC。全choice witness、unused Γを持つ含意、実引数のfunction依存とforeign拒否、元frameと狭いFree権限、古い最小解による新Rの誤受入拒否、独立Bound前提、未準備body／取消しから同じforestでのretry、実source admission後の局所binder下headerを対象とする。Targetがコンパイル未完了のためcompile成立・実行成功を主張せず、PASSへ加算しない。既存assertion・coverage・production budgetは弱めていない。
+
+Locked Sema／test target／全feature checkは3回とも終了101。Dev01はlibrary 516エラー・26警告、lib test 1,517エラー・45警告。Structured error変換を修正したdev02は515／1,517、追加fixtureのimportを修正した最終dev03は515／1,516、警告は26／45。3回のowner fmt checkは終了0。最終の新ownerへのprimary error location抽出は0件だが、全targetのcompile成功を証明しない。旧eager for_branch／for_path consumerと旧fixtureの未移行を原本reviewへ残す。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前の検証と公開blobの照合による再利用で、commit後の再実行ではない。Cargo cleanは繰り返していない。
+
+所有reviewは全20 pathのbase／現行LOC・bytes・分類・inline testを原本へ保持した。Original/closingは最終protocol、originalはphase state／既存validator、effect ownerは数学的replay、normalization/effectsと既存operandはheaderと権限を所有する。968 LOC増のowner reviewを行い、別grammar／source走査・fallback resolver・広いfacadeを増やしていない。Cargo依存・feature・layer・I/O・unsafe・codec／version・既定予算は不変。既存のresolved Cargo graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧の「最終validator／closed headerへの接続」を、今回の接続済みownerと、まだ旧確定APIを呼ぶ最終caller・public switchへ整理した。訂正理由は実装されたphaseと同じprincipalを使う経路の変更であり、未受入の移行を完了へ格上げしない。Generic Match等の既受入項目、過去のfull SHA・実測は保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-closed-original-owner-checkpoint.raw.zip](acceptance-evidence/task-closed-original-owner-checkpoint.raw.zip) は25 entries、447,973 bytes、SHA-256 `5e302bde3d374be94478a6414bdd3d705544727bcfafd740dff57f0d863a0109`。3回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
