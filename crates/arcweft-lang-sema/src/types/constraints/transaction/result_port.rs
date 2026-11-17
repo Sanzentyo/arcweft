@@ -48,7 +48,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                     source.view(),
                     alternative.path.projection_view(),
                     &mut std::collections::BTreeSet::new(),
-                    graph.read(),
+                    graph,
                     context,
                 )?);
                 Ok(PendingResultConstraint {
@@ -119,16 +119,23 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
                 )
             }
         })?;
-        let request = Arc::new(ProjectionRequest {
-            application: transaction.application,
-            key: Arc::new(key.clone()),
-            value: template.clone(),
-            closure: TypeConstraintProjectionClosure::Closed,
-            source: Some(self.alternative.result),
-            input: Some(self.source),
-        });
         for path in &mut transaction.frontier {
-            path.lineage.projections.push(Arc::clone(&request));
+            let value = super::ConstraintOperand::open_template(
+                template,
+                path,
+                transaction.application,
+                graph,
+                context,
+            )?;
+            context.enter_node()?;
+            path.lineage.projections.push(Arc::new(ProjectionRequest {
+                application: transaction.application,
+                key: Arc::new(key.clone()),
+                value,
+                closure: TypeConstraintProjectionClosure::Closed,
+                source: Some(self.alternative.result.clone()),
+                input: Some(Arc::clone(&self.source)),
+            }));
         }
         let mut pending = transaction
             .suspend_result(context, key)?
@@ -187,7 +194,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 original_source.view(),
                 path.projection_view(),
                 &mut std::collections::BTreeSet::new(),
-                effects.read(),
+                effects,
                 context,
             )?);
             let use_source = ConstraintResultUseSource::for_result(Arc::clone(&source))?;

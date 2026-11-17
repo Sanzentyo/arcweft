@@ -348,6 +348,19 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ConstraintProbe<D> {
+    pub(in crate::types::constraints::transaction) fn original_query_types(
+        &self,
+    ) -> Result<impl Iterator<Item = &TypeKind<crate::types::PreparedEffects>>, TypeConstraintError>
+    {
+        let Self::Active(probe) = self else {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            ));
+        };
+        Ok(std::iter::once(probe.actual.value())
+            .chain(probe.value_expected.as_ref().map(ConstraintOperand::value)))
+    }
+
     pub(super) fn close<A: TypeConstraintAccounting, L>(
         self,
         path: &ConstraintInferenceBranch<D, L>,

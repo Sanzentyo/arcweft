@@ -140,10 +140,12 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
             path,
             None,
         )?;
+        let value =
+            ConstraintOperand::open_template(&self.template, &path, application, graph, context)?;
         path.lineage.projections.push(Arc::new(ProjectionRequest {
             application,
             key: Arc::clone(&key),
-            value: self.template,
+            value,
             closure: TypeConstraintProjectionClosure::Closed,
             source: Some(source_projection),
             input: Some(Arc::clone(&self.source)),

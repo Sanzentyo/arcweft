@@ -115,7 +115,24 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
-        let value = context.open_template_type(&request.value, path, result.application, graph)?;
+        let target = Arc::new(context.capture_lexical_scope()?);
+        let value = if request.value.scope() == target.as_ref() {
+            context.enter_node()?;
+            request.value.value().clone()
+        } else {
+            request
+                .value
+                .view()
+                .transport(&target, graph, context)
+                .map_err(|error| match error {
+                    crate::types::TypeProjectionError::Control(error) => error,
+                    crate::types::TypeProjectionError::Instantiation(error) => {
+                        TypeConstraintInvariant::Instantiation(error).into()
+                    }
+                })?
+                .value()
+                .clone()
+        };
         Ok((
             value,
             Self {
@@ -326,6 +343,24 @@ impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D> {
+    /// Open once while this projection still owns a live graph edit. Final
+    /// readers retain this exact value and its real occurrence frames.
+    pub(in crate::types::constraints::transaction) fn open_template<A: TypeConstraintAccounting>(
+        value: &TypeKind<PreparedEffects>,
+        path: &ConstraintPath<D>,
+        application: ConstraintApplicationId,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        let scope = Arc::new(context.capture_lexical_scope()?);
+        let value = context.open_template_type(value, path, application, graph)?;
+        Ok(Self::template(
+            value,
+            scope,
+            path.applications.require_application_owner(application)?,
+        ))
+    }
+
     pub(in crate::types::constraints) fn require_source_receipt(
         &self,
         expected: &ConstraintSourceReceipt<D>,

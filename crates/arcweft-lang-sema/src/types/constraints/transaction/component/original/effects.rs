@@ -115,7 +115,23 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 let path = self.original_path(*member)?;
                 for request in &path.lineage.projections {
                     context.enter_node()?;
-                    types.push(&request.value);
+                    types.push(request.value.value());
+                    if let Some(input) = &request.input {
+                        context.enter_node()?;
+                        types.push(input.value());
+                    }
+                }
+                for source in &path.lineage.probe_trace {
+                    for ty in source.original_query_types()? {
+                        context.enter_node()?;
+                        types.push(ty);
+                    }
+                }
+                for equation in &path.equations {
+                    context.enter_node()?;
+                    context.enter_node()?;
+                    types.push(equation.pattern.value());
+                    types.push(equation.actual.value());
                 }
                 for binding in path.bindings.values() {
                     context.enter_node()?;

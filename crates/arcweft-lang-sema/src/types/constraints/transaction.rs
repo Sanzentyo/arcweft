@@ -1050,7 +1050,7 @@ fn materialization_identity_matches(
 pub(super) struct ProjectionRequest<D: ConstraintDomain> {
     application: ConstraintApplicationId,
     key: Arc<D::Projection>,
-    value: TypeKind<PreparedEffects>,
+    value: ConstraintOperand<D>,
     closure: TypeConstraintProjectionClosure,
     source: Option<ConstraintResultProjection<D>>,
     input: Option<Arc<ConstraintOperand<D>>>,
@@ -1658,12 +1658,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn request_projection<A: TypeConstraintAccounting>(
         &mut self,
-        _context: &mut TypeConstraintContext<'_, A, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         key: D::Projection,
         value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
     ) {
-        self.request_projection_inner(key, value, closure, None);
+        self.request_projection_inner(context, graph, key, value, closure, None);
     }
 
     pub(crate) fn request_value_use_projection<A: TypeConstraintAccounting>(
@@ -1701,6 +1702,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
         };
         self.request_projection_inner(
+            context,
+            effects,
             key,
             value,
             TypeConstraintProjectionClosure::Closed,
@@ -1708,8 +1711,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         );
     }
 
-    fn request_projection_inner(
+    fn request_projection_inner<A: TypeConstraintAccounting>(
         &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         key: D::Projection,
         value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
@@ -1722,16 +1727,38 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 );
                 return;
             }
-            let request = Arc::new(ProjectionRequest {
-                application: self.application,
-                key: Arc::new(key),
-                value: value.clone(),
-                closure,
-                source: None,
-                input,
+            let staged = context.with_effect_transaction(graph, |context, graph| {
+                context.enter_node()?;
+                let key = Arc::new(key);
+                let mut requests = Vec::new();
+                for path in &self.frontier {
+                    let value = ConstraintOperand::open_template(
+                        value,
+                        path,
+                        self.application,
+                        graph,
+                        context,
+                    )?;
+                    context.enter_node()?;
+                    context.enter_node()?;
+                    requests.push(Arc::new(ProjectionRequest {
+                        application: self.application,
+                        key: Arc::clone(&key),
+                        value,
+                        closure,
+                        source: None,
+                        input: input.clone(),
+                    }));
+                }
+                Ok::<_, TypeConstraintError>(requests)
             });
-            for path in &mut self.frontier {
-                path.lineage.projections.push(Arc::clone(&request));
+            match staged {
+                Ok(requests) => {
+                    for (path, request) in self.frontier.iter_mut().zip(requests) {
+                        path.lineage.projections.push(request);
+                    }
+                }
+                Err(error) => self.record_failure(error.into()),
             }
         }
     }
@@ -2706,8 +2733,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 graph.read(),
                 context,
             )?);
-            let projections =
-                Self::finish_projections(path, application, &solution, &effects, graph, context)?;
+            let projections = Self::finish_projections(
+                path,
+                application,
+                &solution,
+                &effects,
+                graph.read(),
+                context,
+            )?;
             completed.insert(
                 domain,
                 super::CompletedConstraintApplication::new(solution, projections),
@@ -2746,7 +2779,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         application: ConstraintApplicationId,
         solution: &TypeConstraintSolution,
         effects: &Arc<ConstraintClosedEffects<D>>,
-        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         Box<[super::KeyedConstraintProjection<D::Application, D::Projection>]>,
@@ -2770,16 +2803,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     ConstraintClosurePolicy::ProjectionFuture
                 }
             };
-            let opened = context
-                .open_template_type(&request.value, path, application, graph)
-                .map_err(projection_error)?;
-            let opened = ConstraintOperand::template(
-                opened,
-                Arc::new(context.capture_lexical_scope()?),
-                path.applications.require_application_owner(application)?,
-            );
             let value =
-                project_closed_operand(opened.view(), path, policy, effects, graph.read(), context)
+                project_closed_operand(request.value.view(), path, policy, effects, graph, context)
                     .map_err(projection_error)?;
             let input = request
                 .input
@@ -2790,7 +2815,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         path,
                         ConstraintClosurePolicy::ProjectionClosed,
                         effects,
-                        graph.read(),
+                        graph,
                         context,
                     )
                     .map_err(projection_error)?;
@@ -2800,7 +2825,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             path,
                             application,
                             effects,
-                            graph.read(),
+                            graph,
                             context,
                         )
                         .map_err(projection_error)
@@ -2815,7 +2840,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         application,
                         policy,
                         effects,
-                        graph.read(),
+                        graph,
                         context,
                     )
                     .map_err(projection_error)?

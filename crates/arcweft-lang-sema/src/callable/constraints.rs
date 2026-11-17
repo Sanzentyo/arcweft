@@ -635,8 +635,11 @@ where
         value: &TypeKind<PreparedEffects>,
         closure: crate::types::constraints::TypeConstraintProjectionClosure,
     ) {
-        self.lower
-            .request_projection(self.context, key, value, closure);
+        if let Err(error) = self.with_effect_relation(|lower, context, graph| {
+            lower.request_projection(context, graph, key, value, closure);
+        }) {
+            self.lower.record_failure(error);
+        }
     }
 
     fn with_effect_relation<R>(

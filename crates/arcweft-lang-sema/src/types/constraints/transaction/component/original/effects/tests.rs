@@ -21,6 +21,8 @@ use std::{any::Any, borrow::Cow, sync::atomic::AtomicBool};
 type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 type Component = OpenConstraintComponent<NoConstraintClient, ()>;
 
+mod projection_ports;
+
 #[derive(Debug)]
 struct Source {
     identity: Arc<()>,
@@ -81,6 +83,24 @@ fn root(
     domain: EffectPredicate,
     invalid: bool,
 ) -> OriginalProductMember {
+    root_with_projection(
+        component,
+        context,
+        graph,
+        domain,
+        invalid,
+        &TypeKind::<PreparedEffects>::I64,
+    )
+}
+
+fn root_with_projection(
+    component: &mut Component,
+    context: &mut Context<'_>,
+    graph: &mut PreparedEffectGraph,
+    domain: EffectPredicate,
+    invalid: bool,
+    projection: &TypeKind<PreparedEffects>,
+) -> OriginalProductMember {
     let source = Arc::new(Source {
         identity: Arc::new(()),
         inputs: [input()],
@@ -116,8 +136,9 @@ fn root(
         TypeConstraintTransaction::from_path(context, graph, application, path, None).unwrap();
     transaction.request_projection(
         context,
+        graph,
         (),
-        &TypeKind::<PreparedEffects>::I64,
+        projection,
         TypeConstraintProjectionClosure::Closed,
     );
     let frontier = transaction.suspend_result(context, ()).unwrap();
@@ -501,7 +522,7 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
         ConstraintClosurePolicy, TypeConstraintSolution,
         normalization::project_closed_operand,
         transaction::{
-            ActiveConstraintProbe, ConstraintOperand, ConstraintProbe, ConstraintSourceId,
+            ActiveConstraintProbe, ConstraintProbe, ConstraintSourceId,
             PreparedConstraintSourceProjection, PreparedSourceOrdinal, SourceProbeObservation,
             StoredSourceSelection,
         },
@@ -564,16 +585,8 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
                 assert!(solution.bindings().next().is_none());
                 assert!(solution.effect_predicate().value().is_unconstrained());
                 context.enter_node()?;
-                let input = ConstraintOperand::template(
-                    request.value.clone(),
-                    Arc::new(product.scope.clone()),
-                    joint
-                        .branch
-                        .applications
-                        .require_application_owner(application)?,
-                );
                 let value = project_closed_operand(
-                    input.view(),
+                    request.value.view(),
                     &joint.branch,
                     ConstraintClosurePolicy::ProjectionClosed,
                     &joint.effects,
