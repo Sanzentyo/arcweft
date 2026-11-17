@@ -18394,3 +18394,18 @@ Supersedes: scopeの効果条件がcanonical式に限られていた内部契約
 差分は13 Rust path、469追加／69削除、物理400 LOC増。新fixture342 LOCはapplication predicateの一つの責務に置く。元template契約と実applicationの開いた条件は異なるphaseで、後続readerが再openingせず同じapplication ownerを読む。完了値のsemantic比較もその既存ownerに置き、コピーしたcanonical side tableを導入しない。増加triggerについて、contextは既存のapplication生成／rollback、applicationは実opening／D、effect environmentは元関係保持、completed contextはcapture／量化inventoryの責務であることをレビューした。Cargo依存graph・fan-in12／fan-out19は不変、既存resolved graph／逆依存証拠を再利用しscanner再実行とはしない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。包括allocation／copy事前検査・single-pass／性能・workspace成功を主張しない。全体cargo cleanは02:09実施済みで繰り返していない。
 
 [検証原本・全入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-prepared-scope-predicate-checkpoint.raw.zip) は25 entry、456,486 bytes、SHA256 `6d5c0c854a6fcb090af9d761a6aa0058c9d4c9d525c9168e4d502b1df6d52e70`。各entryの長さ／SHA256をZIP再読取で照合した。旧履歴の2,835,841 bytes（SHA256 `cd549639d84693a9dbd68400b43c74955fa1220e59c8f98ee648a9cd187874b8`）をprefixとして保持する。
+
+<a id="prepared-function-specialization-checkpoint"></a>
+## 2026-11-18 — prepared 関数値を外側 binder から特殊化
+
+基点 `2217e3ba5e63880a8743435a12f504caddc10e9a`。Source `513e4d577a32420808dc9afc4f05bf5456ab747e` を `main` へ非force pushし、実際に検証した12入力のハッシュと公開blobを照合した。公開時のtracked差分は0件。既存の未追跡 `%SystemDrive%/` を保持した。
+
+Supersedes: 関数値の特殊化がcanonicalなcallable schemaの生成とsemantic digestに依存していた内部処理を置き換えた。実際の呼出し用schemaは引数マッピングを引き続き所有する。値の特殊化は元prepared関数の外側binderから型・定数・効果slotを割り当て、enclosing rigid inventoryを保持し、元prepared predicateをapplicationの前提として渡す。内側binderとその条件、引数・結果・作用行は保持する。型の保持とslot列挙は実contextの予算を使う。
+
+既知値、子の保持結果、文脈付き結果の特殊化を同じ所有型に通した。子／文脈付き結果は保持したprojectionのscopeと実graphから読む。子のfrontend callerは実graphのmutable loanを渡す。既存の特殊化fixtureは同じ実graphの借用とprepared型を使い、元の子結果との対応、型・定数・効果の推論、取消し、別issuer拒否、sealed witnessの検査を維持する。前回追加したNamed／Future、参照拒否、canonical同値の3 fixtureも今回のparameter factoryを使う。今回の新規test IDは0件。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は5回とも終了101。dev01はlibrary465エラー・lib test1,521エラー、既存特殊化fixtureを移行したdev02は465／1,510、子graph loanとscope fixtureを移行したdev03とgraphをケースごとに分離したdev04は464／1,509。子fixtureの型テンプレートをpreparedへ揃えた最終dev05は **464／1,507エラー**。library25警告・lib test44警告、5回のowner fmt apply／checkは終了0。CARGO_INCREMENTAL=0、jobs／profile上書きなし。最終変更pathの一次診断は 80 件、今回の特殊化factory・driver・scope・result portには 0 件。位置確認はテスト成功や全体compile成功の証拠ではない。nextest／Clippy／doctest／全推移的逆依存／workspace・Native／AWBC・Native/Web最終受入は未実行。
+
+呼出し結果の期待型を供給するcanonical producer、元の実frameを使うambient bound captureの移送、Fn局所∀／guarded契約、実original-productからのdispatchとfrontend公開切替えは未達。12 Rust pathの物理増は 162 LOC。値の特殊化と呼出しの引数マッピングは所有する状態が異なるため、旧specialization分岐をcallable scope発行から除いた。既存Cargo依存graphと推移的逆依存の証拠を保持し、再実行はしていない。[唯一の現状一覧](current-status.md)の4行を更新した。Generic Matchの受入行と過去の実測・公開SHAは保持した。
+
+[検証原本・入力・公開照合・staged diff・所有レビュー](acceptance-evidence/task-prepared-function-specialization-checkpoint.raw.zip) は 37 entry、737300 bytes、SHA256 `35e94015bb27441fdc979698cef9d58a620e58d9077305835a716eced8d84730`。各entryの長さとSHA256を再読取で照合した。旧履歴2,842,326 bytesのSHA256 `b75f7d861e3acd6dffa5fa7debbbd5acfd9560819f9acaca47d4824e5f22e0a0` をprefixとして保持した。
