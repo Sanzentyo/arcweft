@@ -18018,3 +18018,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧の「Source operand等の残る効果投影」は、今回の元source権限に基づくimported inference適用で解消した範囲を削除し、実装済みの進捗へ移した。Joint completion／closed headerやcanonical最終化まで完了したとは扱わない。現状一覧は[current-status.md](current-status.md)に集約し、過去の失敗・実測・full SHA・原本を保持する。今回のcompile失敗を、Generic Match等の受入・公開済み項目を未完了へ戻す根拠にはしない。
 
 原本 [task-prepared-value-inference-checkpoint.raw.zip](acceptance-evidence/task-prepared-value-inference-checkpoint.raw.zip) は17 entries、ZIP 206686 bytes、SHA-256 `ec98889a758905de355e416551b77bee77e608a7da785a5136d5d10cb39883e4`。2回の入力・失敗ログ・fmt・公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Prepared predicate agreement checkpoint
+
+2026-11-18。基点 `23bf738be83b935086e51f0ba798c2bb21405358`、移行Source `488e58a70abf398eb64ae880ef5eca0a7eda0acb`。5 Rust path、287追加／6削除を既存mainへWIP commit・非force pushし、最終5入力と公開blobのbyte SHA-256を照合した。公開時のtracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。関数型の準備制約の進捗で、completion・局所∀・動作の受入ではない。
+
+- 関数型のrelationは両ヘッダの正確なsource derivationでΓをadmitした後、predicateを早期equal_with比較せず、同値条件を同じ候補branchの元Rへconjoinする。引数の反変関係、effect rowの包含／等式、戻り値のrelationは既存の経路に残す。未準備bodyや実適用をその場で評価しない。元Rを置換・消去せず、候補の制約をsourceの前提へ格上げしない。
+- 同値条件は既存のAnd／Or／Not term grammarで `(P and Q) or not(P or Q)` として構築する。各P／Qは行全体の事実であり、membership formula内のpointwise同値へ押し込まない。異なる非空行に対する「空である」がどちらも偽なら、その二つの事実は一致する。Bounded copyを元controlへ課金し、同じterm editの最後のcontrol admissionが通ってからRを公開する。失敗でterm・R・graph stateを戻し、workを返却しない。新しいalgebra variantやreaderを追加していない。
+- 新規fixtureは4本、218物理LOC。Body準備前に実適用のpredicate一致を保持して後のbodyで成立／不成立を判定する条件、後から追加するtautologyが先のRを消さない条件、空／fs.read／log.write／outside.labelの16組で行全体の真偽一致を判定する条件、実測work量の全枯渇境界で原子性を保つ条件、foreign・stale・未admit入力がRを公開しない条件を対象にする。Library／test targetのcompileは失敗し、これらのcompile成立・実行成功は主張せず、PASSへ加算しない。
+- `cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101、library 531エラー・26警告、lib test 1,505エラー・45警告。Sema owner fmt checkは終了0。新fixture pathへのdiagnostic mentionは0件だが、targetのcompile成立を示さない。原本のterminal summaryを件数のauthorityとする。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。入力と公開blobの一致によるcommit前証拠の再利用で、commit後の再実行ではない。
+- 所有レビューは5 path・物理281 LOC増で行い、各pathのbase／現行LOC・bytes・分類・inline test LOCをJSONへ保持した。Γ／Rのowner、term transaction、関数型relationの既存責務に置いた。大きいbinding-planはヘッダ照合の一段を置換したもので、独立state群や第二の型grammarを増やさず、凝集性を理由に保持する。4 fixtureは同責務のchildへ置いた。Cargo依存・public facade・layer方向・I/O・unsafe・codec・version・budget上限は不変。既存dependency graph証拠を再利用し、全体scannerは未実行。
+- Supersedes: 現状一覧の「predicate同値の制約化」は今回の元Rへの追加と、依然未達のFn局所∀を含む最終確定へ分けた。Canonical finalization、joint completion／closed header、scheme contract移行や局所scopeの閉じ込みは残る。新しいprepared同値methodを成功したcanonical比較の代用品とは扱わない。現状一覧は[current-status.md](current-status.md)だけに集約する。過去の実測・失敗・full SHA・原本と、Generic Match等の受入・公開済み状態を保持する。エラー件数の変化を既受入機能の新たな不具合とみなさない。
+
+原本 [task-prepared-predicate-agreement-checkpoint.raw.zip](acceptance-evidence/task-prepared-predicate-agreement-checkpoint.raw.zip) は11 entries、ZIP 146743 bytes、SHA-256 `305636db92e0470666c46a54221f33f998d0bf246619fa50b7254a5311f7ebf9`。入力・失敗ログ・fmt・公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
