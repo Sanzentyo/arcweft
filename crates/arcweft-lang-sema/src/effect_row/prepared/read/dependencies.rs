@@ -2,6 +2,7 @@
 
 use super::*;
 
+#[derive(Clone, Copy)]
 pub(in crate::effect_row::prepared) enum SchemeDependencies {
     Bodies,
     Headers,

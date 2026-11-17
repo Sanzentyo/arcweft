@@ -11,7 +11,7 @@ impl PreparedEffectGraph {
         &self,
         roots: &[&PreparedEffectSchemeRef],
         control: &mut C,
-    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         if self.active_scope.is_some() {
             return Err(PreparedEffectInvariant::ReadScopeActive.into());
         }

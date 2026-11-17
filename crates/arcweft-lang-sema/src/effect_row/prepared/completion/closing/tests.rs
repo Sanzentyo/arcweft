@@ -1,0 +1,410 @@
+use super::*;
+use crate::effect_row::prepared::test_support::*;
+
+fn truth() -> PreparedEffectPredicate {
+    PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained())
+}
+
+fn freeze(graph: &PreparedEffectGraph, rows: &[&PreparedEffectRow]) -> Arc<ScopedEffectCompletion> {
+    graph
+        .read()
+        .freeze_scoped(rows, &[], &[], &mut budget())
+        .unwrap()
+}
+
+fn literal_row(labels: &[&str]) -> EffectRow {
+    match literal(labels) {
+        PreparedEffectRow::Canonical(row) => row,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn a_verified_closure_keeps_its_original_relation_after_preparation_changes_and_drop() {
+    let (principal, row, unknown) = {
+        let mut graph = PreparedEffectGraph::default();
+        let unknown = graph
+            .declare_unknown(
+                vec![],
+                PreparedEffectUnknownEligibility::Bindable,
+                &mut budget(),
+            )
+            .unwrap();
+        let row = graph
+            .unknown_application(&unknown, vec![], &mut budget())
+            .unwrap();
+        let principal = graph.solve_principal(&mut budget()).unwrap();
+        let predicate = graph
+            .relate(
+                PreparedEffectRelation::Equal,
+                row.clone(),
+                literal(&["later.label"]),
+                &mut budget(),
+            )
+            .unwrap();
+        graph
+            .add_scoped_obligation(vec![], truth(), predicate, &mut budget())
+            .unwrap();
+        assert_eq!(
+            graph
+                .solve_principal(&mut budget())
+                .unwrap()
+                .unknown(&unknown)
+                .unwrap(),
+            &literal_row(&["later.label"])
+        );
+        (principal, row, unknown)
+    };
+    assert_eq!(principal.unknown(&unknown).unwrap(), &literal_row(&[]));
+    assert_eq!(
+        principal.resolve_row(&row, &mut budget()).unwrap(),
+        literal_row(&[])
+    );
+}
+
+#[test]
+fn original_private_constraints_cannot_disappear_at_final_closure() {
+    let graph = PreparedEffectGraph::default();
+    let impossible = PreparedEffectPredicate::Canonical(EffectPredicate::impossible());
+    let receipt = graph
+        .read()
+        .scoped_constraint(&[], &truth(), &impossible, &mut budget())
+        .unwrap();
+    let source = graph
+        .read()
+        .freeze_scoped(&[], &[], &[&receipt], &mut budget())
+        .unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
+    assert!(graph.solve_principal(&mut budget()).is_ok());
+    assert!(graph.relation.obligations.is_empty());
+}
+
+#[test]
+fn final_closure_waits_for_the_original_named_body_and_never_prepares_it() {
+    let mut graph = PreparedEffectGraph::default();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let row = graph.application(&named, vec![], &mut budget()).unwrap();
+    let source = freeze(&graph, &[&row]);
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::SchemeState
+        ))
+    ));
+    assert!(matches!(
+        graph.scheme(&named).unwrap().state,
+        SchemeState::Declared
+    ));
+    graph
+        .prepare_body(&named, literal(&["actual.label"]), vec![], &mut budget())
+        .unwrap();
+    let principal = source
+        .close_original(graph.read(), &[], &[], &[], &mut budget())
+        .unwrap();
+    assert_eq!(
+        principal.resolve_row(&row, &mut budget()).unwrap(),
+        literal_row(&["actual.label"])
+    );
+    assert!(matches!(
+        graph.prepare_body(&named, literal(&[]), vec![], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::SchemeState
+        ))
+    ));
+}
+
+#[test]
+fn final_closure_preserves_the_bound_original_identity_with_late_named_values() {
+    let mut graph = PreparedEffectGraph::default();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let local = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut budget(),
+        )
+        .unwrap();
+    let output = graph
+        .unknown_application(&local, vec![], &mut budget())
+        .unwrap();
+    let actual = graph.application(&named, vec![], &mut budget()).unwrap();
+    let predicate = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            output.clone(),
+            actual,
+            &mut budget(),
+        )
+        .unwrap();
+    let receipt = graph
+        .read()
+        .scoped_constraint(&[], &truth(), &predicate, &mut budget())
+        .unwrap();
+    let source = graph
+        .read()
+        .freeze_scoped(&[&output], &[], &[&receipt], &mut budget())
+        .unwrap();
+    let source = graph
+        .bind_original_scoped(&source, &mut budget())
+        .unwrap()
+        .freeze(graph.read(), &mut budget())
+        .unwrap();
+    graph
+        .prepare_body(&named, literal(&["late.named"]), vec![], &mut budget())
+        .unwrap();
+    let principal = source
+        .close_original(graph.read(), &[], &[], &[], &mut budget())
+        .unwrap();
+    assert_eq!(
+        principal.resolve_row(&output, &mut budget()).unwrap(),
+        literal_row(&["late.named"])
+    );
+    let demand = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            output,
+            literal(&["consumer.only"]),
+            &mut budget(),
+        )
+        .unwrap();
+    graph
+        .add_scoped_obligation(vec![], truth(), demand, &mut budget())
+        .unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
+    assert_eq!(
+        principal.unknown(&local).unwrap(),
+        &literal_row(&["late.named"])
+    );
+}
+
+#[test]
+fn actual_named_body_and_new_global_constraints_both_participate_in_original_checks() {
+    let mut graph = PreparedEffectGraph::default();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let row = graph.application(&named, vec![], &mut budget()).unwrap();
+    let required = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            row.clone(),
+            literal(&["required.label"]),
+            &mut budget(),
+        )
+        .unwrap();
+    let receipt = graph
+        .read()
+        .scoped_constraint(&[], &truth(), &required, &mut budget())
+        .unwrap();
+    let source = graph
+        .read()
+        .freeze_scoped(&[&row], &[], &[&receipt], &mut budget())
+        .unwrap();
+    graph
+        .prepare_body(&named, literal(&["different.label"]), vec![], &mut budget())
+        .unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
+
+    let mut graph = PreparedEffectGraph::default();
+    let source = freeze(&graph, &[]);
+    graph
+        .add_scoped_obligation(
+            vec![],
+            truth(),
+            PreparedEffectPredicate::Canonical(EffectPredicate::impossible()),
+            &mut budget(),
+        )
+        .unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
+}
+
+#[test]
+fn an_actual_future_row_is_required_and_extends_the_final_label_basis() {
+    let mut graph = PreparedEffectGraph::default();
+    let local = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut budget(),
+        )
+        .unwrap();
+    let future = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Future,
+            &mut budget(),
+        )
+        .unwrap();
+    let row = graph
+        .unknown_application(&local, vec![], &mut budget())
+        .unwrap();
+    let actual = graph
+        .unknown_application(&future, vec![], &mut budget())
+        .unwrap();
+    let predicate = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            row.clone(),
+            actual,
+            &mut budget(),
+        )
+        .unwrap();
+    let receipt = graph
+        .read()
+        .scoped_constraint(&[], &truth(), &predicate, &mut budget())
+        .unwrap();
+    let source = graph
+        .read()
+        .freeze_scoped(&[&row], &[], &[&receipt], &mut budget())
+        .unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::UnresolvedFuture
+        ))
+    ));
+    let actual = literal_row(&["late.actual"]);
+    let principal = source
+        .close_original(graph.read(), &[], &[], &[(&future, &actual)], &mut budget())
+        .unwrap();
+    assert_eq!(principal.resolve_row(&row, &mut budget()).unwrap(), actual);
+    assert_eq!(principal.unknown(&local).unwrap(), &actual);
+    assert!(matches!(
+        source.close_original(
+            graph.read(),
+            &[],
+            &[],
+            &[(&future, &actual), (&future, &actual)],
+            &mut budget()
+        ),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DuplicateFutureBinding
+        ))
+    ));
+}
+
+#[test]
+fn final_closure_can_borrow_an_extracted_actual_body_without_publishing_it() {
+    let mut graph = PreparedEffectGraph::default();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let row = graph.application(&named, vec![], &mut budget()).unwrap();
+    let source = freeze(&graph, &[&row]);
+    let mut checkpoint = graph.checkpoint(&mut budget()).unwrap();
+    graph
+        .prepare_body(&named, literal(&["candidate.body"]), vec![], &mut budget())
+        .unwrap();
+    let delta = graph.extract_delta(&mut checkpoint, &mut budget()).unwrap();
+    let principal = source
+        .close_original(
+            graph.read_extracted(&delta, &mut budget()).unwrap(),
+            &[],
+            &[],
+            &[],
+            &mut budget(),
+        )
+        .unwrap();
+    assert!(matches!(
+        graph.scheme(&named).unwrap().state,
+        SchemeState::Declared
+    ));
+    drop(delta);
+    drop(graph);
+    assert_eq!(
+        principal.resolve_row(&row, &mut budget()).unwrap(),
+        literal_row(&["candidate.body"])
+    );
+}
+
+#[test]
+fn foreign_stale_specialized_and_exhausted_final_closures_return_no_partial_result() {
+    let mut graph = PreparedEffectGraph::default();
+    let unknown = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut budget(),
+        )
+        .unwrap();
+    let query = graph
+        .unknown_application(&unknown, vec![], &mut budget())
+        .unwrap();
+    let source = freeze(&graph, &[&query]);
+    let before = (
+        graph.retained_terms(),
+        graph.relation.functions.len(),
+        graph.relation.obligations.len(),
+        graph.state,
+    );
+    let mut measured = Budget(10_000);
+    source
+        .close_original(graph.read(), &[], &[], &[], &mut measured)
+        .unwrap();
+    let needed = 10_000 - measured.0;
+    for available in 0..needed {
+        let mut work = Budget(available);
+        assert!(matches!(
+            source.close_original(graph.read(), &[], &[], &[], &mut work),
+            Err(PreparedEffectFailure::Control(Exhausted))
+        ));
+        assert_eq!(work.0, 0);
+        assert_eq!(
+            (
+                graph.retained_terms(),
+                graph.relation.functions.len(),
+                graph.relation.obligations.len(),
+                graph.state
+            ),
+            before
+        );
+    }
+    let foreign = PreparedEffectGraph::default();
+    assert!(matches!(
+        source.close_original(foreign.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+    let mut checkpoint = graph.checkpoint(&mut budget()).unwrap();
+    let future = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Future,
+            &mut budget(),
+        )
+        .unwrap();
+    let source = freeze(&graph, &[]);
+    let fixed = source
+        .specialize_partial(&[(&future, &literal_row(&[]))], &mut budget())
+        .unwrap();
+    assert!(matches!(
+        fixed.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ImportedRelationOrigin
+        ))
+    ));
+    graph.rollback(&mut checkpoint).unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::StaleReference
+        ))
+    ));
+}

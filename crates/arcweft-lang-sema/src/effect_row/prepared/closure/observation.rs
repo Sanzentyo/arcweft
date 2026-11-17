@@ -329,14 +329,14 @@ impl<'g> EffectRowObservation<'g> {
     }
 }
 
-impl<'g> PrincipalEffectClosure<'g> {
+impl PrincipalEffectClosure {
     fn observation_support<C: DecisionControl>(
         &self,
         roots: &[Root<'_>],
         work: &mut Work<'_, C>,
     ) -> Result<(Box<[EffectId]>, Box<[GenericEffectReference]>), PreparedEffectFailure<C::Error>>
     {
-        let support = ObservationSupport::gather(self.graph, &self.layout, roots, work)?;
+        let support = ObservationSupport::gather(&self.graph, &self.layout, roots, work)?;
         for _ in &support.labels {
             work.charge(DecisionWork::Node)?;
         }
@@ -413,7 +413,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         context: &PreparedEffectPredicate,
         row: &PreparedEffectRow,
         control: &mut C,
-    ) -> Result<EffectRowObservation<'g>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<EffectRowObservation<'_>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         let (labels, parameters) =
             self.observation_support(&[Root::Predicate(context), Root::Row(row)], &mut work)?;
@@ -423,7 +423,7 @@ impl<'g> PrincipalEffectClosure<'g> {
             imports: &self.layout.imports,
         };
         let mut compilation =
-            Compilation::new(self.graph, layout, FormalOwner::Observation, &parameters);
+            Compilation::new(&self.graph, layout, FormalOwner::Observation, &parameters);
         let context = self.project_cells(
             &compilation.predicate(context, &mut work)?,
             layout,
@@ -478,7 +478,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         };
         let probe = compilation.valuation().probe_domain(&mut work)?;
         Ok(EffectRowObservation {
-            _source: self.graph,
+            _source: &self.graph,
             layout: ObservationLayout { labels, parameters },
             regions,
             positive: positive.into_boxed_slice(),
@@ -492,7 +492,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         context: &PreparedEffectPredicate,
         predicate: &PreparedEffectPredicate,
         control: &mut C,
-    ) -> Result<EffectPredicateObservation<'g>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<EffectPredicateObservation<'_>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         let (labels, parameters) = self.observation_support(
             &[Root::Predicate(context), Root::Predicate(predicate)],
@@ -504,7 +504,7 @@ impl<'g> PrincipalEffectClosure<'g> {
             imports: &self.layout.imports,
         };
         let mut compilation =
-            Compilation::new(self.graph, layout, FormalOwner::Observation, &parameters);
+            Compilation::new(&self.graph, layout, FormalOwner::Observation, &parameters);
         let context = self.project_cells(
             &compilation.predicate(context, &mut work)?,
             layout,
@@ -531,7 +531,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         let invariant = exclusive_yes.or(&exclusive_no, &mut work)?;
         let probe = compilation.valuation().probe_domain(&mut work)?;
         Ok(EffectPredicateObservation {
-            _source: self.graph,
+            _source: &self.graph,
             layout: ObservationLayout { labels, parameters },
             probe,
             invariant,

@@ -2,7 +2,7 @@
 
 use super::*;
 
-impl PrincipalEffectClosure<'_> {
+impl PrincipalEffectClosure {
     pub(crate) fn scheme(
         &self,
         reference: &PreparedEffectSchemeRef,
@@ -131,12 +131,12 @@ impl PrincipalEffectClosure<'_> {
     }
 }
 
-impl<'g> PrincipalEffectClosure<'g> {
+impl PrincipalEffectClosure {
     fn imported_closures<C: DecisionControl>(
         &self,
         work: &mut Work<'_, C>,
-    ) -> Result<Vec<PrincipalEffectClosure<'g>>, PreparedEffectFailure<C::Error>> {
-        let graph: &'g PreparedEffectDefinitions = self.graph;
+    ) -> Result<Vec<PrincipalEffectClosure>, PreparedEffectFailure<C::Error>> {
+        let graph = &self.graph;
         let mut children = Vec::new();
         let functions = self
             .functions

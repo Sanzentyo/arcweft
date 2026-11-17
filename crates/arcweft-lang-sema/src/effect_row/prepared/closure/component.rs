@@ -349,7 +349,7 @@ impl PreparedEffectGraph {
         &self,
         bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
         control: &mut C,
-    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         if self.active_scope.is_some() {
             return Err(PreparedEffectInvariant::ReadScopeActive.into());
         }
@@ -362,7 +362,7 @@ impl PreparedEffectDefinitions {
         &self,
         bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
         control: &mut C,
-    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         let mut fixed = BTreeMap::new();
         for (reference, row) in bindings {

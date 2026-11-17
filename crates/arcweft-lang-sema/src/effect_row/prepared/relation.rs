@@ -14,6 +14,48 @@ pub(in crate::effect_row::prepared) struct PreparedEffectDefinitions {
 }
 
 impl PreparedEffectDefinitions {
+    /// Keep the exact immutable definitions behind a verified closure. Copy
+    /// only the owned indexes, sharing each original definition and charging
+    /// before every retained entry. Later preparation cannot change this input.
+    pub(super) fn retain<C: DecisionControl>(
+        &self,
+        work: &mut Work<'_, C>,
+    ) -> Result<Arc<Self>, PreparedEffectFailure<C::Error>> {
+        fn index<T, C: DecisionControl>(
+            input: &BTreeMap<u64, Arc<T>>,
+            work: &mut Work<'_, C>,
+        ) -> Result<BTreeMap<u64, Arc<T>>, PreparedEffectFailure<C::Error>> {
+            let mut retained = BTreeMap::new();
+            for (&id, value) in input {
+                work.charge(DecisionWork::Node)?;
+                retained.insert(id, Arc::clone(value));
+            }
+            Ok(retained)
+        }
+        let mut choices = BTreeSet::new();
+        for choice in &self.choices {
+            work.charge(DecisionWork::Node)?;
+            choices.insert(*choice);
+        }
+        let mut obligations = Vec::new();
+        for obligation in &self.obligations {
+            work.charge(DecisionWork::Node)?;
+            obligations.push(Arc::clone(obligation));
+        }
+        let functions = index(&self.functions, work)?;
+        let rows = index(&self.rows, work)?;
+        let predicates = index(&self.predicates, work)?;
+        work.charge(DecisionWork::Node)?;
+        Ok(Arc::new(Self {
+            issuer: Arc::clone(&self.issuer),
+            choices,
+            functions,
+            obligations,
+            rows,
+            predicates,
+        }))
+    }
+
     /// Original relation identity, rather than logical equivalence. Separate
     /// freezes can share the same source definitions; an issuer alone cannot
     /// identify them after more local constraints have been prepared.

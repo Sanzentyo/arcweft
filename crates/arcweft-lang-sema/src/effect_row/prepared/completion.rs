@@ -8,6 +8,7 @@ use residual::EffectResidualProgram;
 
 mod binding;
 pub(crate) use binding::PreparedEffectScopedBinding;
+mod closing;
 
 /// The immutable original relation, including dependency signatures, lexical
 /// quantifiers, declaration domains, alternatives and Future input identities.

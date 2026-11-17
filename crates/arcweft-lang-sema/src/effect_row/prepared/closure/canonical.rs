@@ -20,7 +20,7 @@ struct Row {
 }
 
 pub(super) struct CanonicalReplay<'a> {
-    principal: &'a PrincipalEffectClosure<'a>,
+    principal: &'a PrincipalEffectClosure,
     scope: FiniteRowValuation<'a>,
     rows: BTreeMap<u64, Row>,
     predicates: BTreeMap<u64, Decision>,
@@ -28,7 +28,7 @@ pub(super) struct CanonicalReplay<'a> {
 
 impl<'a> CanonicalReplay<'a> {
     pub(super) fn new(
-        principal: &'a PrincipalEffectClosure<'a>,
+        principal: &'a PrincipalEffectClosure,
         scope: FiniteRowValuation<'a>,
     ) -> Self {
         Self {

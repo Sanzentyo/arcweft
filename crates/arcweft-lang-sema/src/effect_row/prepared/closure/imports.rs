@@ -237,12 +237,12 @@ fn assemble_selected<C: DecisionControl>(
 impl ImportedRelationTable {
     /// Instantiate the already-computed conditional result, then independently
     /// replay its original program. This operation never minimizes again.
-    pub(super) fn specialize<'g, C: DecisionControl>(
+    pub(super) fn specialize<C: DecisionControl>(
         &self,
-        imported: &'g ImportedEffectRelation,
-        parent: &PrincipalEffectClosure<'_>,
+        imported: &ImportedEffectRelation,
+        parent: &PrincipalEffectClosure,
         work: &mut Work<'_, C>,
-    ) -> Result<Option<PrincipalEffectClosure<'g>>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Option<PrincipalEffectClosure>, PreparedEffectFailure<C::Error>> {
         let guard = self
             .principal(parent.layout.view(), work)?
             .substitute(&parent.coefficients, work)?;
@@ -328,7 +328,7 @@ impl ImportedRelationTable {
             choices.insert(choice.clone());
         }
         Ok(Some(PrincipalEffectClosure::reify(
-            graph,
+            Arc::clone(graph),
             Arc::clone(&self.child.layout),
             completed,
             choices,

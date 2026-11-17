@@ -2,17 +2,35 @@
 
 use super::*;
 use crate::effect_row::prepared::PrincipalEffectClosure;
+use crate::effect_row::prepared::{
+    PreparedEffectReadView, PreparedEffectUnknownRef, ScopedEffectCompletion,
+};
+use std::sync::Arc;
 
 #[cfg(test)]
 mod tests;
 
-struct Canonicalization<'a, 'g, C> {
-    principal: &'a PrincipalEffectClosure<'g>,
+impl OriginalTypeEffectProjection {
+    pub(crate) fn value(&self) -> &TypeKind {
+        &self.value
+    }
+
+    pub(crate) fn principal(&self) -> &Arc<PrincipalEffectClosure> {
+        &self.principal
+    }
+
+    pub(in crate::types) fn into_parts(self) -> (TypeKind, Arc<PrincipalEffectClosure>) {
+        (self.value, self.principal)
+    }
+}
+
+struct Canonicalization<'a, C> {
+    principal: &'a PrincipalEffectClosure,
     control: &'a mut C,
     depth: u64,
 }
 
-impl<C: TypeProjectionControl> TypeProjectionControl for Canonicalization<'_, '_, C> {
+impl<C: TypeProjectionControl> TypeProjectionControl for Canonicalization<'_, C> {
     type Error = PreparedTypeEffectProjectionFailure<C::Error>;
 
     fn check(&mut self) -> Result<(), Self::Error> {
@@ -37,7 +55,7 @@ impl<C: TypeProjectionControl> TypeProjectionControl for Canonicalization<'_, '_
 }
 
 impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEffects>
-    for Canonicalization<'_, '_, C>
+    for Canonicalization<'_, C>
 {
     fn project_row(
         &mut self,
@@ -89,6 +107,44 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
 }
 
 impl TypeKind<PreparedEffects> {
+    /// Close the immutable original C against actual inputs, then project each
+    /// complete field through the common scoped type fold. Query fields extend
+    /// reachability only; they never constrain inference to make a use succeed.
+    pub(crate) fn close_original_effects<C: TypeProjectionControl>(
+        &self,
+        scope: &GenericScope,
+        original: &ScopedEffectCompletion,
+        graph: PreparedEffectReadView<'_>,
+        bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        control: &mut C,
+    ) -> Result<
+        OriginalTypeEffectProjection,
+        TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>,
+    > {
+        control.check().map_err(|error| {
+            TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Control(error))
+        })?;
+        let roots = PreparedTypeEffectRoots::collect([self], std::iter::empty(), control)
+            .map_err(PreparedTypeEffectProjectionFailure::from_projection)?;
+        let principal = original
+            .close_original(
+                graph,
+                roots.rows(),
+                roots.predicates(),
+                bindings,
+                &mut EffectProjectionControl { control, depth: 1 },
+            )
+            .map_err(PreparedTypeEffectProjectionFailure::from_effect)?;
+        let value = self.project_canonical_effects(scope, &principal, control)?;
+        control.visit_binding().map_err(|error| {
+            TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Control(error))
+        })?;
+        Ok(OriginalTypeEffectProjection {
+            value,
+            principal: Arc::new(principal),
+        })
+    }
+
     /// Project every live term only when it is unconditionally invariant and
     /// representable. Canonical authored annotations, including omitted rows,
     /// retain their original meaning. This algebra transition does not certify
@@ -97,7 +153,7 @@ impl TypeKind<PreparedEffects> {
     pub(crate) fn project_canonical_effects<C: TypeProjectionControl>(
         &self,
         scope: &GenericScope,
-        principal: &PrincipalEffectClosure<'_>,
+        principal: &PrincipalEffectClosure,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
         self.project_effect_domain(

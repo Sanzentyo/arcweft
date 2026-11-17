@@ -362,8 +362,8 @@ impl LabelClasses<'_> {
 
 /// The least scheme tuple and all remaining discrete witnesses. This is a
 /// mathematical result, not a selected-call or semantic-equivalence certificate.
-pub(crate) struct PrincipalEffectClosure<'a> {
-    graph: &'a PreparedEffectDefinitions,
+pub(crate) struct PrincipalEffectClosure {
+    graph: Arc<PreparedEffectDefinitions>,
     layout: Arc<Layout>,
     functions: BTreeMap<u64, EffectRow>,
     coefficients: BTreeMap<Atom, Decision>,
@@ -383,7 +383,7 @@ impl PreparedEffectGraph {
     pub(crate) fn solve_principal<C: DecisionControl>(
         &self,
         control: &mut C,
-    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         self.solve_inventory(BTreeMap::new(), FunctionInventory::All, control)
     }
 
@@ -392,7 +392,7 @@ impl PreparedEffectGraph {
         fixed: BTreeMap<u64, EffectRow>,
         inventory: FunctionInventory<'_>,
         control: &mut C,
-    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         if self.active_scope.is_some() {
             return Err(PreparedEffectInvariant::ReadScopeActive.into());
         }
@@ -412,7 +412,7 @@ impl PreparedEffectDefinitions {
         &self,
         fixed: BTreeMap<u64, EffectRow>,
         control: &mut C,
-    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         self.solve_inventory(fixed, FunctionInventory::All, control)
     }
 
@@ -421,7 +421,7 @@ impl PreparedEffectDefinitions {
         fixed: BTreeMap<u64, EffectRow>,
         inventory: FunctionInventory<'_>,
         control: &mut C,
-    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         for (&id, function) in &self.functions {
             if !inventory.contains(id) {
@@ -459,7 +459,7 @@ impl PreparedEffectDefinitions {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
         let closed = PrincipalEffectClosure::reify(
-            self,
+            self.retain(&mut work)?,
             layout,
             coefficients,
             choices,
@@ -474,9 +474,9 @@ impl PreparedEffectDefinitions {
     }
 }
 
-impl<'a> PrincipalEffectClosure<'a> {
+impl PrincipalEffectClosure {
     fn reify<C: DecisionControl>(
-        graph: &'a PreparedEffectDefinitions,
+        graph: Arc<PreparedEffectDefinitions>,
         layout: Arc<Layout>,
         coefficients: BTreeMap<Atom, Decision>,
         choices: BTreeSet<Atom>,
@@ -490,7 +490,7 @@ impl<'a> PrincipalEffectClosure<'a> {
                 continue;
             }
             let compilation = Compilation::new(
-                graph,
+                &graph,
                 layout.view(),
                 FormalOwner::Scheme(id),
                 function.parameters(),

@@ -17,6 +17,26 @@ impl PreparedEffectReadView<'_> {
         constraints: &[&PreparedEffectScopedConstraint],
         control: &mut C,
     ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
+        self.snapshot(
+            rows,
+            predicates,
+            constraints,
+            SchemeDependencies::Headers,
+            control,
+        )?
+        .complete_scoped(control)
+    }
+
+    /// One snapshot grammar serves open source relations and final closure.
+    /// Only the real final phase may request prepared Named bodies.
+    pub(in crate::effect_row::prepared) fn snapshot<C: DecisionControl>(
+        self,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        constraints: &[&PreparedEffectScopedConstraint],
+        schemes: SchemeDependencies,
+        control: &mut C,
+    ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         let mut layers = BTreeMap::new();
         for scope in self
@@ -80,7 +100,7 @@ impl PreparedEffectReadView<'_> {
             work.charge(DecisionWork::Node)?;
             obligations.push(Arc::clone(&constraint.obligation));
         }
-        let mut reachable = Reachable::new(self, SchemeDependencies::Headers);
+        let mut reachable = Reachable::new(self, schemes);
         for id in inventory {
             reachable.push(Dependency::Function(id), work.0)?;
         }
@@ -102,7 +122,7 @@ impl PreparedEffectReadView<'_> {
                 .function_definition(id)
                 .ok_or(PreparedEffectInvariant::StaleReference)?;
             let value = match definition.as_ref() {
-                Function::Scheme(scheme) => {
+                Function::Scheme(scheme) if matches!(schemes, SchemeDependencies::Headers) => {
                     work.charge(DecisionWork::Node)?;
                     Arc::new(Function::SchemeInput(
                         PreparedEffectDeclaration::from_header(
@@ -138,14 +158,13 @@ impl PreparedEffectReadView<'_> {
             );
         }
         work.charge(DecisionWork::Node)?;
-        PreparedEffectDefinitions {
+        Ok(PreparedEffectDefinitions {
             issuer: Arc::clone(&self.relation.issuer),
             choices: reachable.choices,
             functions,
             obligations,
             rows,
             predicates,
-        }
-        .complete_scoped(work.0)
+        })
     }
 }
