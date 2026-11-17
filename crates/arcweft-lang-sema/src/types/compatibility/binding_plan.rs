@@ -52,7 +52,7 @@ impl ConstraintRelation {
 }
 
 pub(in crate::types) fn relate_selected_call<A, D, L: Clone>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -76,7 +76,7 @@ where
 /// Equality shares the ordinary binder, alias, constant, occurs and effect
 /// relation. It does not turn a subtype or a Choice member into an equal type.
 pub(in crate::types) fn unify_original_binding<A, D, L: Clone>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -152,7 +152,7 @@ where
 /// This keeps Choice alternatives branch-local rather than applying a single
 /// whole-Choice relation after raw paths have been retained.
 fn relate_constraint<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -223,7 +223,7 @@ where
 }
 
 fn accept_branch<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -241,14 +241,14 @@ where
         // the close phase owns cycle pruning after all source work.
         return Ok(Some(path));
     }
-    let path = seal_path(path, graph, context)?;
+    let path = seal_path(path, graph.read(), context)?;
     let effects = ConstraintClosedEffects::for_branch(&path, context)?;
     let projected_pattern = project_closed_operand(
         pattern.clone(),
         &path,
         ConstraintClosurePolicy::Hint,
         &effects,
-        graph,
+        graph.read(),
         context,
     )?;
     let projected_actual = project_closed_operand(
@@ -256,7 +256,7 @@ where
         &path,
         ConstraintClosurePolicy::Hint,
         &effects,
-        graph,
+        graph.read(),
         context,
     )?;
     let projected_pattern = projected_pattern.value();
@@ -306,7 +306,7 @@ pub(crate) fn map_compatibility_error(
 /// accepting the projected Choice after the raw relation) prevents a
 /// rejected alternative from re-entering the frontier.
 fn relate_choice_to_actual_selected<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     expected: &[ConstraintOperandView<'_, D>],
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -364,7 +364,7 @@ where
 
 /// Relate one expected value against each actual Choice alternative.
 fn relate_actual_choice_selected<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     expected: &ConstraintOperandView<'_, D>,
     actual: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
@@ -422,7 +422,7 @@ where
 
 /// Relate every expected/actual Choice pair in its own branch.
 fn relate_choice_to_choice_selected<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     expected: &[ConstraintOperandView<'_, D>],
     actual: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
@@ -485,7 +485,7 @@ where
 }
 
 fn relate_with_policy<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -557,11 +557,11 @@ where
 }
 
 fn relate_entered_with_policy<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
-    pattern_shape: TypeConstraintShape<'_>,
-    actual_shape: TypeConstraintShape<'_>,
+    pattern_shape: TypeConstraintShape<'_, crate::types::PreparedEffects>,
+    actual_shape: TypeConstraintShape<'_, crate::types::PreparedEffects>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     relation: ConstraintRelation,
@@ -627,7 +627,12 @@ where
     if matches!(relation, ConstraintRelation::Accepts(_))
         && matches!(actual_shape, TypeConstraintShape::Never)
     {
-        validate_type(pattern.value(), path.projection_view(), graph, context)?;
+        validate_type(
+            pattern.value(),
+            path.projection_view(),
+            graph.read(),
+            context,
+        )?;
         return Ok(vec![path]);
     }
 
@@ -759,7 +764,7 @@ where
                 }
                 (Some(_), None) | (None, None) => Ok(vec![path]),
                 (None, Some(found)) => {
-                    validate_type(found, path.projection_view(), graph, context)?;
+                    validate_type(found, path.projection_view(), graph.read(), context)?;
                     Ok(vec![path])
                 }
             }
@@ -855,8 +860,8 @@ where
                     .function_header()?
                     .expect("function header");
                 let found_header = found_children.function_header()?.expect("function header");
-                expected_header.admit(graph, context)?;
-                found_header.admit(graph, context)?;
+                expected_header.admit(graph.read(), context)?;
+                found_header.admit(graph.read(), context)?;
                 if !expected_header
                     .predicate()
                     .equal_with(found_header.predicate(), context)?
@@ -895,24 +900,23 @@ where
                             (expected_header.row(), found_header.row())
                         }
                     };
+                    let effect_relation = if matches!(relation, ConstraintRelation::Equal) {
+                        crate::effect_row::prepared::PreparedEffectRelation::Equal
+                    } else {
+                        crate::effect_row::prepared::PreparedEffectRelation::AdmittedSubset
+                    };
                     match path
                         .effects
-                        .constrain_subset(actual_effects, permitted_effects, context)
+                        .constrain_relation(
+                            graph,
+                            effect_relation,
+                            actual_effects,
+                            permitted_effects,
+                            context,
+                        )
+                        .map_err(TypeConstraintError::from)
                     {
-                        Ok(()) => {
-                            if matches!(relation, ConstraintRelation::Equal) {
-                                match path.effects.constrain_subset(
-                                    permitted_effects,
-                                    actual_effects,
-                                    context,
-                                ) {
-                                    Ok(()) => {}
-                                    Err(TypeConstraintError::Rejected(_)) => continue,
-                                    Err(error) => return Err(error),
-                                }
-                            }
-                            effect_paths.push(path)
-                        }
+                        Ok(()) => effect_paths.push(path),
                         Err(TypeConstraintError::Rejected(_)) => {}
                         Err(error) => return Err(error),
                     }
@@ -1074,7 +1078,7 @@ where
     }
 }
 fn relate_slices<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     expected: &[ConstraintOperandView<'_, D>],
     found: &[ConstraintOperandView<'_, D>],
     path: ConstraintInferenceBranch<D, L>,
@@ -1098,7 +1102,7 @@ where
 }
 
 fn relate_children<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     expected: &ConstraintOperandView<'_, D>,
     found: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -1132,7 +1136,7 @@ where
         })
 }
 fn relate_sliced_children<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     expected: &ConstraintOperandView<'_, D>,
     found: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -1149,7 +1153,7 @@ where
     relate_slices(graph, &expected, &found, path, context, relation)
 }
 fn relate_many<A, D, L>(
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     expected: &ConstraintOperandView<'_, D>,
     found: &ConstraintOperandView<'_, D>,
     paths: Vec<ConstraintInferenceBranch<D, L>>,

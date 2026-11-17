@@ -22,6 +22,7 @@ mod declaration;
 mod read;
 mod relation;
 pub(crate) use read::PreparedEffectReadView;
+mod constraints;
 use relation::PreparedEffectDefinitions;
 mod scope;
 pub(crate) use scope::{PreparedEffectReadScope, PreparedEffectScopeEdit};

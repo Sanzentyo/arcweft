@@ -89,9 +89,11 @@ pub(crate) struct EffectConstraintCompletion {
 /// upper bounds plus residual-aware tail edges before a minimal fixed point
 /// can be sealed.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct EffectConstraintEnvironment {
+pub(crate) struct EffectConstraintEnvironment<
+    E: crate::types::TypeEffectDomain = crate::types::CanonicalEffects,
+> {
     parameters: BTreeMap<GenericEffectReference, EffectConstraintParameter>,
-    predicate: EffectPredicate<GenericEffectReference>,
+    predicate: E::Predicate,
 }
 
 /// Closed failures produced by the path-local effect algebra. The types layer
@@ -656,24 +658,13 @@ impl EffectSubsetError {
     }
 }
 
-impl EffectConstraintEnvironment {
+impl<E: crate::types::TypeEffectDomain> EffectConstraintEnvironment<E> {
     pub(crate) fn original_variables(&self) -> impl Iterator<Item = &GenericEffectReference> {
         self.parameters.keys()
     }
 
-    pub(crate) fn original_predicate(&self) -> &EffectPredicate {
+    pub(crate) fn original_predicate(&self) -> &E::Predicate {
         &self.predicate
-    }
-
-    pub(crate) fn new(
-        variables: &[EffectConstraintVariable],
-    ) -> Result<Self, EffectConstraintEnvironmentError> {
-        let mut environment = Self {
-            parameters: BTreeMap::new(),
-            predicate: EffectPredicate::unconstrained(),
-        };
-        environment.admit_variables(variables)?;
-        Ok(environment)
     }
 
     /// Admit a disjoint application inventory while retaining the complete
@@ -705,6 +696,33 @@ impl EffectConstraintEnvironment {
         Ok(())
     }
 
+    fn validate_reference(
+        &self,
+        variable: &GenericEffectReference,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        if !self.parameters.contains_key(variable)
+            && !matches!(variable, GenericEffectReference::Bound(_))
+        {
+            return Err(EffectConstraintEnvironmentError::ForeignVariable {
+                variable: variable.clone(),
+            });
+        }
+        Ok(())
+    }
+}
+
+impl EffectConstraintEnvironment {
+    pub(crate) fn new(
+        variables: &[EffectConstraintVariable],
+    ) -> Result<Self, EffectConstraintEnvironmentError> {
+        let mut environment = Self {
+            parameters: BTreeMap::new(),
+            predicate: EffectPredicate::unconstrained(),
+        };
+        environment.admit_variables(variables)?;
+        Ok(environment)
+    }
+
     pub(crate) fn validate_row(
         &self,
         row: &EffectRow,
@@ -713,13 +731,7 @@ impl EffectConstraintEnvironment {
             .variables()
             .map_err(|_| EffectConstraintEnvironmentError::UnknownRow)?;
         for variable in variables {
-            if !self.parameters.contains_key(variable)
-                && !matches!(variable, GenericEffectReference::Bound(_))
-            {
-                return Err(EffectConstraintEnvironmentError::ForeignVariable {
-                    variable: variable.clone(),
-                });
-            }
+            self.validate_reference(variable)?;
         }
         Ok(())
     }
@@ -875,14 +887,7 @@ impl EffectConstraintEnvironment {
     {
         for reference in predicate.variables() {
             control.charge(DecisionWork::Visit)?;
-            if !self.parameters.contains_key(reference)
-                && !matches!(reference, GenericEffectReference::Bound(_))
-            {
-                return Err(EffectConstraintEnvironmentError::ForeignVariable {
-                    variable: reference.clone(),
-                }
-                .into());
-            }
+            self.validate_reference(reference)?;
         }
         let admitted = self.admit_predicate(predicate, control)?;
         control.charge(DecisionWork::Visit)?;

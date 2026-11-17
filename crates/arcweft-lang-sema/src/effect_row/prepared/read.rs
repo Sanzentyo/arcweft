@@ -59,6 +59,40 @@ impl PreparedEffectDefinitions {
 }
 
 impl<'a> PreparedEffectReadView<'a> {
+    pub(crate) fn retain_row<C: DecisionControl>(
+        self,
+        row: &PreparedEffectRow,
+        control: &mut C,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+        self.validate_retained_row(row)?;
+        match row {
+            PreparedEffectRow::Canonical(row) => row
+                .encode(&mut super::super::EffectEqualityControl(control))
+                .map_err(PreparedEffectFailure::Control)?,
+            PreparedEffectRow::Term(_) => control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?,
+        }
+        Ok(row.clone())
+    }
+
+    pub(crate) fn retain_predicate<C: DecisionControl>(
+        self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        self.validate_retained_predicate(predicate)?;
+        match predicate {
+            PreparedEffectPredicate::Canonical(predicate) => predicate
+                .encode(&mut super::super::EffectEqualityControl(control))
+                .map_err(PreparedEffectFailure::Control)?,
+            PreparedEffectPredicate::Term(_) => control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?,
+        }
+        Ok(predicate.clone())
+    }
+
     pub(in crate::effect_row::prepared) fn function_definition(
         self,
         id: u64,

@@ -1108,11 +1108,14 @@ where
 
     pub(crate) fn constrain_effect_equality(
         &mut self,
-        left: &crate::effect_row::EffectRow,
-        right: &crate::effect_row::EffectRow,
+        left: &crate::effect_row::prepared::PreparedEffectRow,
+        right: &crate::effect_row::prepared::PreparedEffectRow,
     ) {
-        self.lower
-            .constrain_effect_equality(self.context, left, right);
+        if let Err(error) = self.with_effect_relation(|lower, context, effects| {
+            lower.constrain_effect_equality(context, effects, left, right);
+        }) {
+            self.lower.record_failure(error);
+        }
     }
 
     /// Run one prepared source through every correlated frontier row.
@@ -1163,7 +1166,7 @@ where
                 }
             };
             if let Err(error) = self.with_effect_relation(|lower, context, effects| {
-                lower.submit_probe(context, effects.read(), input, submission)
+                lower.submit_probe(context, effects, input, submission)
             })? {
                 self.lower.record_failure(error.into());
                 break;

@@ -229,7 +229,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .actual
                 .clone();
             advanced.extend(super::relate_selected_call(
-                effects.read(),
+                effects,
                 &pattern.view(),
                 &actual.view(),
                 path,

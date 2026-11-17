@@ -382,6 +382,38 @@ impl Drop for PreparedEffectTermEdit<'_> {
 }
 
 impl PreparedEffectTermEdit<'_> {
+    pub(crate) fn relate<C: DecisionControl>(
+        &mut self,
+        relation: PreparedEffectRelation,
+        actual: PreparedEffectRow,
+        permitted: PreparedEffectRow,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = self.graph.relate(relation, actual, permitted, control);
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
+    }
+
+    pub(crate) fn and<C: DecisionControl>(
+        &mut self,
+        predicates: Vec<PreparedEffectPredicate>,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = self.graph.and(predicates, control);
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
+    }
+
     pub(crate) fn read(&self) -> super::PreparedEffectReadView<'_> {
         self.graph.read()
     }

@@ -273,7 +273,7 @@ pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
     // admitted application. Only the scoped projection view follows an edge.
     pub(super) bindings: BTreeMap<GenericTypeReference, ConstraintOperand<D>>,
     pub(super) const_bindings: BTreeMap<GenericConstReference, ConstraintOperand<D, ArrayLength>>,
-    pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
+    pub(crate) effects: crate::effect_row::EffectConstraintEnvironment<PreparedEffects>,
     pub(crate) equations: Vec<PendingEquation<D>>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
     pub(crate) deferred_cycles: DeferredCycleWitness,
@@ -305,7 +305,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
     #[cfg(test)]
     pub(super) fn empty(
         application: ConstraintApplicationScope<D>,
-        effects: crate::effect_row::EffectConstraintEnvironment,
+        effects: crate::effect_row::EffectConstraintEnvironment<PreparedEffects>,
     ) -> Self {
         let original = application.original_context().clone();
         Self::empty_with_imported(application, effects, None, Default::default(), original)
@@ -313,7 +313,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
 
     pub(super) fn empty_with_imported(
         application: ConstraintApplicationScope<D>,
-        effects: crate::effect_row::EffectConstraintEnvironment,
+        effects: crate::effect_row::EffectConstraintEnvironment<PreparedEffects>,
         imported: Option<super::ImportedGenericParameterScopeLease>,
         scope: super::lexical::ConstraintLexicalScope,
         original: super::OriginalProducerContext,
@@ -1397,7 +1397,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let pattern = equation.pattern.clone();
             let actual = equation.actual.clone();
             match relate_selected_call(
-                effects.read(),
+                effects,
                 &pattern.view(),
                 &actual.view(),
                 path,
@@ -1459,8 +1459,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn constrain_effect_equality<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        left: &crate::effect_row::EffectRow,
-        right: &crate::effect_row::EffectRow,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        left: &crate::effect_row::prepared::PreparedEffectRow,
+        right: &crate::effect_row::prepared::PreparedEffectRow,
     ) {
         if self.first_failure.is_some() || self.closed {
             return;
@@ -1469,19 +1470,33 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let mut advanced = Vec::with_capacity(frontier.len());
         let mut rejection = None;
         for mut path in frontier {
-            if let Err(error) = context
-                .validate_effect_row(left, path.projection_view())
-                .and_then(|()| context.validate_effect_row(right, path.projection_view()))
-            {
+            let view = path.projection_view();
+            let admission = (|| {
+                for row in [left, right] {
+                    graph.read().visit_row_parameters(
+                        row,
+                        context,
+                        &mut |reference, context| {
+                            context.validate_effect_reference(reference, view)
+                        },
+                    )?;
+                }
+                Ok::<_, TypeConstraintError>(())
+            })();
+            if let Err(error) = admission {
                 self.first_failure = Some(error.into());
                 return;
             }
-            let constrained = (|| {
-                context.enter_node()?;
-                path.effects.constrain_subset(left, right, context)?;
-                context.enter_node()?;
-                path.effects.constrain_subset(right, left, context)
-            })();
+            let constrained = path
+                .effects
+                .constrain_relation(
+                    graph,
+                    crate::effect_row::prepared::PreparedEffectRelation::Equal,
+                    left,
+                    right,
+                    context,
+                )
+                .map_err(TypeConstraintError::from);
             match constrained {
                 Ok(()) => advanced.push(path),
                 Err(TypeConstraintError::Rejected(error)) => {
@@ -1818,7 +1833,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn submit_probe<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         input: Arc<ProbeInput<D>>,
         submission: ProbeSubmission<D>,
     ) -> Result<(), TypeConstraintError>
@@ -2022,7 +2037,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             input.acceptance,
                         )
                     } else {
-                        validate_type(&actual, path.projection_view(), graph, context)
+                        validate_type(&actual, path.projection_view(), graph.read(), context)
                             .map(|()| vec![path])
                     };
                     match related {

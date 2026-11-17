@@ -1728,12 +1728,8 @@ where
             variables.sort_by(|left, right| left.variable().cmp(right.variable()));
             variables.dedup();
         }
-        let mut effects =
-            EffectConstraintEnvironment::new(&variables).map_err(TypeConstraintError::from)?;
-        if !application.effects().predicate.is_unconstrained() {
-            let predicate = application.parameters().opened_effect_predicate(self)?;
-            effects.restore_predicate(&predicate, self)?;
-        }
+        let predicate = application.parameters().opened_effect_predicate(self)?;
+        let effects = EffectConstraintEnvironment::new_prepared(&variables, &predicate, self)?;
         let frame_count = self.lexical_scope().binders().len();
         for _ in 0..frame_count {
             self.enter_node()?;
@@ -1762,6 +1758,7 @@ where
         &mut self,
         mut path: ConstraintPath<D>,
         application: ConstraintApplicationScope<D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.check_cancelled()?;
         path.applications
@@ -1786,7 +1783,11 @@ where
             .map_err(TypeConstraintError::from)?;
         if !application.effects().predicate.is_unconstrained() {
             let predicate = application.parameters().opened_effect_predicate(self)?;
-            path.effects.restore_predicate(&predicate, self)?;
+            path.effects.restore_predicate(
+                &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(predicate),
+                graph,
+                self,
+            )?;
         }
         std::sync::Arc::make_mut(&mut path.applications)
             .admit(application)
