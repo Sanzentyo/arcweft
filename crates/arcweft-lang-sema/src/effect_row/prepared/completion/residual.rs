@@ -27,7 +27,7 @@ pub(crate) enum ResidualRowScope {
 impl ResidualRowScope {
     pub(in crate::effect_row::prepared) fn parameters(
         self,
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
     ) -> &[GenericEffectReference] {
         match self {
             Self::Scheme(id) | Self::Output(id) => graph.functions[&id].parameters(),
@@ -105,7 +105,7 @@ impl ResidualPredicateSource {
 
     pub(in crate::effect_row::prepared) fn value(
         self,
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
     ) -> Result<ResidualSourcePredicate<'_>, PreparedEffectInvariant> {
         Ok(match self {
             Self::SchemeDomain(id) => {
@@ -136,7 +136,7 @@ pub(in crate::effect_row::prepared) enum ResidualSourcePredicate<'a> {
 }
 
 pub(in crate::effect_row::prepared) fn source_scheme(
-    graph: &PreparedEffectGraph,
+    graph: &PreparedEffectDefinitions,
     id: u64,
 ) -> Result<&Scheme, PreparedEffectInvariant> {
     match graph.functions.get(&id).map(Arc::as_ref) {
@@ -146,7 +146,7 @@ pub(in crate::effect_row::prepared) fn source_scheme(
 }
 
 pub(in crate::effect_row::prepared) fn source_body(
-    graph: &PreparedEffectGraph,
+    graph: &PreparedEffectDefinitions,
     id: u64,
 ) -> Result<&PreparedEffectRow, PreparedEffectInvariant> {
     match &source_scheme(graph, id)?.state {
@@ -186,14 +186,14 @@ impl EffectResidualProgram {
     }
 
     pub(in crate::effect_row::prepared) fn new<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         Self::with_inventory(graph, closure::FunctionInventory::All, work)
     }
 
     pub(in crate::effect_row::prepared) fn with_inventory<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         inventory: closure::FunctionInventory<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {

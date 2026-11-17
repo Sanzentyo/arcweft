@@ -33,7 +33,7 @@ struct RelationScope<'a> {
 
 fn relation_scope<'g, 's, C: DecisionControl>(
     scopes: &'s mut BTreeMap<ResidualRowScope, RelationScope<'g>>,
-    graph: &'g PreparedEffectGraph,
+    graph: &'g PreparedEffectDefinitions,
     layout: ClassLayout<'g>,
     scope: ResidualRowScope,
     work: &mut Work<'_, C>,
@@ -58,7 +58,7 @@ fn relation_scope<'g, 's, C: DecisionControl>(
 }
 
 fn compile_relation<C: DecisionControl>(
-    graph: &PreparedEffectGraph,
+    graph: &PreparedEffectDefinitions,
     program: &EffectResidualProgram,
     layout: ClassLayout<'_>,
     work: &mut Work<'_, C>,
@@ -155,7 +155,7 @@ fn compile_relation<C: DecisionControl>(
 impl CompiledComponent {
     #[cfg(test)]
     pub(super) fn new<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         fixed: &BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
@@ -163,7 +163,7 @@ impl CompiledComponent {
     }
 
     pub(super) fn with_inventory<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         fixed: &BTreeMap<u64, EffectRow>,
         inventory: FunctionInventory<'_>,
         work: &mut Work<'_, C>,
@@ -175,7 +175,7 @@ impl CompiledComponent {
     }
 
     pub(super) fn compile<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         program: &EffectResidualProgram,
         fixed: &BTreeMap<u64, EffectRow>,
         layout: Layout,
@@ -277,7 +277,7 @@ impl CompiledComponent {
     /// from its outside/default coefficient at that class.
     pub(super) fn restrict_support<C: DecisionControl>(
         &mut self,
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         support: &BTreeSet<EffectId>,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
@@ -346,6 +346,19 @@ impl PreparedEffectGraph {
     /// obligations until their actual rows are supplied. Include those rows'
     /// named support before building any table, then solve the tuple jointly.
     pub(crate) fn specialize_principal<C: DecisionControl>(
+        &self,
+        bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+        if self.active_scope.is_some() {
+            return Err(PreparedEffectInvariant::ReadScopeActive.into());
+        }
+        self.relation.specialize_principal(bindings, control)
+    }
+}
+
+impl PreparedEffectDefinitions {
+    pub(in crate::effect_row::prepared) fn specialize_principal<C: DecisionControl>(
         &self,
         bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
         control: &mut C,

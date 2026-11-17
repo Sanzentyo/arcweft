@@ -10,7 +10,7 @@ enum Dependency<'a> {
 }
 
 struct Reachable<'a> {
-    graph: &'a PreparedEffectGraph,
+    graph: &'a PreparedEffectDefinitions,
     functions: BTreeSet<u64>,
     rows: BTreeSet<u64>,
     predicates: BTreeSet<u64>,
@@ -168,7 +168,7 @@ impl PreparedEffectGraph {
             return Err(PreparedEffectInvariant::ReadScopeActive.into());
         }
         let mut reachable = Reachable {
-            graph: self,
+            graph: &self.relation,
             functions: BTreeSet::new(),
             rows: BTreeSet::new(),
             predicates: BTreeSet::new(),
@@ -178,7 +178,7 @@ impl PreparedEffectGraph {
             self.scheme(root)?;
             reachable.push(Dependency::Function(self.validate(&root.0)?), control)?;
         }
-        for obligation in &self.obligations {
+        for obligation in &self.relation.obligations {
             reachable.push(Dependency::Predicate(&obligation.domain), control)?;
             reachable.push(Dependency::Predicate(&obligation.predicate), control)?;
         }

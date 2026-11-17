@@ -164,8 +164,8 @@ fn exponential_cell_admission_fails_before_building_a_truth_table() {
         graph.solve_principal(&mut Budget(100)),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
-    assert_eq!(graph.rows.len(), 0);
-    assert_eq!(graph.functions.len(), 1);
+    assert_eq!(graph.relation.rows.len(), 0);
+    assert_eq!(graph.relation.functions.len(), 1);
 }
 
 #[test]
@@ -656,8 +656,8 @@ fn closure_budget_boundary_preserves_the_original_graph_on_failure() {
             .unwrap(),
         &expected
     );
-    assert_eq!(graph.functions.len(), 1);
-    assert_eq!(graph.rows.len(), 2);
+    assert_eq!(graph.relation.functions.len(), 1);
+    assert_eq!(graph.relation.rows.len(), 2);
 }
 
 #[test]
@@ -755,13 +755,13 @@ fn shared_deep_row_substitution_is_iterative_and_preserves_dag_sharing() {
             .union(vec![source.clone(), source], &mut control)
             .unwrap();
     }
-    let before = graph.rows.len();
+    let before = graph.relation.rows.len();
     let arguments = BTreeMap::from([(a, literal(&["fs.read"]))]);
     let substituted = graph
         .substitute(&source, &arguments, &mut Budget(20_000))
         .unwrap();
     // Growth follows unique terms, not the exponentially many DAG paths.
-    assert!(graph.rows.len() - before <= 2 * before + 2);
+    assert!(graph.relation.rows.len() - before <= 2 * before + 2);
     let result = graph
         .declare(vec![], EffectPredicate::unconstrained(), &mut control)
         .unwrap();
@@ -858,17 +858,25 @@ fn failed_substitution_removes_all_partial_rows_and_predicates() {
         .substitute_predicate(&predicate, &arguments, &mut control)
         .unwrap();
     let cost = before - control.0;
-    let rows: Vec<_> = graph.rows.keys().copied().collect();
-    let predicates: Vec<_> = graph.predicates.keys().copied().collect();
+    let rows: Vec<_> = graph.relation.rows.keys().copied().collect();
+    let predicates: Vec<_> = graph.relation.predicates.keys().copied().collect();
     let next_row = graph.next_row;
     let next_predicate = graph.next_predicate;
     assert!(matches!(
         graph.substitute_predicate(&predicate, &arguments, &mut Budget(cost - 1)),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
-    assert_eq!(graph.rows.keys().copied().collect::<Vec<_>>(), rows);
     assert_eq!(
-        graph.predicates.keys().copied().collect::<Vec<_>>(),
+        graph.relation.rows.keys().copied().collect::<Vec<_>>(),
+        rows
+    );
+    assert_eq!(
+        graph
+            .relation
+            .predicates
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
         predicates
     );
     assert!(graph.next_row > next_row);

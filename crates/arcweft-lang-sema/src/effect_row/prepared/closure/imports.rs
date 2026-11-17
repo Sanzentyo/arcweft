@@ -32,7 +32,7 @@ fn cached<'a, C: DecisionControl>(
 /// (including every actual Future row). Child programs retain unbound Futures;
 /// only their lowering into this proven finite basis uses coefficient tables.
 pub(super) fn lower_selected_imports<C: DecisionControl>(
-    graph: &PreparedEffectGraph,
+    graph: &PreparedEffectDefinitions,
     labels: &[EffectId],
     inventory: FunctionInventory<'_>,
     work: &mut Work<'_, C>,
@@ -88,7 +88,7 @@ pub(super) fn lower_selected_imports<C: DecisionControl>(
 }
 
 fn assemble<C: DecisionControl>(
-    graph: &PreparedEffectGraph,
+    graph: &PreparedEffectDefinitions,
     cache: &Cache,
     work: &mut Work<'_, C>,
 ) -> Result<BTreeMap<u64, ImportedFunctionTable>, PreparedEffectFailure<C::Error>> {
@@ -96,7 +96,7 @@ fn assemble<C: DecisionControl>(
 }
 
 fn assemble_selected<C: DecisionControl>(
-    graph: &PreparedEffectGraph,
+    graph: &PreparedEffectDefinitions,
     cache: &Cache,
     inventory: FunctionInventory<'_>,
     work: &mut Work<'_, C>,

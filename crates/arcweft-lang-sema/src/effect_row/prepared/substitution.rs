@@ -359,19 +359,21 @@ impl Drop for PreparedEffectTermEdit<'_> {
         if !matches!(self.state, TermEditState::Committed) {
             while self
                 .graph
+                .relation
                 .rows
                 .last_key_value()
                 .is_some_and(|(id, _)| *id >= self.row_limit)
             {
-                self.graph.rows.pop_last();
+                self.graph.relation.rows.pop_last();
             }
             while self
                 .graph
+                .relation
                 .predicates
                 .last_key_value()
                 .is_some_and(|(id, _)| *id >= self.predicate_limit)
             {
-                self.graph.predicates.pop_last();
+                self.graph.relation.predicates.pop_last();
             }
             self.graph.journal.truncate(self.journal_start);
             self.graph.state = self.original_state;

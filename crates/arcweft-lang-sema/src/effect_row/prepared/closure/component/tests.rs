@@ -59,7 +59,7 @@ fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
     graph
         .add_scoped_obligation(vec![], truth(), equal, &mut work)
         .unwrap();
-    let result = CompiledComponent::new(&graph, &BTreeMap::new(), &mut Work(&mut work))
+    let result = CompiledComponent::new(&graph.relation, &BTreeMap::new(), &mut Work(&mut work))
         .unwrap()
         .complete(&mut Work(&mut work))
         .unwrap();
@@ -96,7 +96,8 @@ fn a_parent_restriction_cannot_rescue_a_nonprincipal_child_completion() {
     graph
         .add_scoped_obligation(vec![], truth(), equal, &mut work)
         .unwrap();
-    let component = CompiledComponent::new(&graph, &BTreeMap::new(), &mut Work(&mut work)).unwrap();
+    let component =
+        CompiledComponent::new(&graph.relation, &BTreeMap::new(), &mut Work(&mut work)).unwrap();
     let parent = BTreeMap::from([
         (cell(&f, 0), Decision::constant(false)),
         (cell(&f, 1), Decision::constant(true)),
@@ -171,7 +172,7 @@ fn conditional_completion_preserves_one_choice_for_the_whole_future_row() {
             .add_scoped_obligation(vec![], truth(), predicate, &mut work)
             .unwrap();
     }
-    let result = CompiledComponent::new(&graph, &BTreeMap::new(), &mut Work(&mut work))
+    let result = CompiledComponent::new(&graph.relation, &BTreeMap::new(), &mut Work(&mut work))
         .unwrap()
         .complete(&mut Work(&mut work))
         .unwrap();
@@ -218,7 +219,8 @@ fn conditional_completion_cancellation_does_not_change_the_prepared_graph() {
     let mut graph = PreparedEffectGraph::default();
     let f = unknown(&mut graph, PreparedEffectUnknownEligibility::Future);
     let mut work = budget();
-    let component = CompiledComponent::new(&graph, &BTreeMap::new(), &mut Work(&mut work)).unwrap();
+    let component =
+        CompiledComponent::new(&graph.relation, &BTreeMap::new(), &mut Work(&mut work)).unwrap();
     assert!(matches!(
         component.complete(&mut Work(&mut Budget(0))),
         Err(PreparedEffectFailure::Control(Exhausted))

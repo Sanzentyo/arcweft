@@ -100,10 +100,10 @@ fn child<C: DecisionControl>(
 
 fn assert_base(graph: &PreparedEffectGraph, state: PreparedEffectStateId) {
     assert_eq!(graph.state, state);
-    assert!(graph.functions.is_empty());
+    assert!(graph.relation.functions.is_empty());
     assert_eq!(graph.retained_terms(), (0, 0));
-    assert!(graph.obligations.is_empty());
-    assert!(graph.choices.is_empty());
+    assert!(graph.relation.obligations.is_empty());
+    assert!(graph.relation.choices.is_empty());
     assert!(graph.active_scope.is_none());
     assert!(graph.checkpoints.is_empty());
     assert!(graph.journal.is_empty());

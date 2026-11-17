@@ -100,7 +100,9 @@ impl PreparedEffectGraph {
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
-        Ok(super::PreparedEffectGraphOwner(Arc::clone(&self.issuer)))
+        Ok(super::PreparedEffectGraphOwner(Arc::clone(
+            &self.relation.issuer,
+        )))
     }
 
     /// The stamp identifies mutable preparation state, never semantic equality.
@@ -130,7 +132,7 @@ impl PreparedEffectGraph {
         if let Some(scope) = &mut self.active_scope {
             &mut scope.functions
         } else {
-            &mut self.functions
+            &mut self.relation.functions
         }
     }
 
@@ -150,8 +152,8 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.checkpoints.push(ordinal);
         Ok(PreparedEffectCheckpoint {
-            issuer: Arc::clone(&self.issuer),
-            obligation_limit: self.obligations.len(),
+            issuer: Arc::clone(&self.relation.issuer),
+            obligation_limit: self.relation.obligations.len(),
             journal_start: self.journal.len(),
             state: self.state,
             ordinal,
@@ -162,7 +164,7 @@ impl PreparedEffectGraph {
         &self,
         checkpoint: &PreparedEffectCheckpoint,
     ) -> Result<(), PreparedEffectInvariant> {
-        if !Arc::ptr_eq(&self.issuer, &checkpoint.issuer) {
+        if !Arc::ptr_eq(&self.relation.issuer, &checkpoint.issuer) {
             return Err(PreparedEffectInvariant::ForeignIssuer);
         }
         if self.checkpoints.last() != Some(&checkpoint.ordinal) {
@@ -188,7 +190,9 @@ impl PreparedEffectGraph {
         checkpoint: &mut PreparedEffectCheckpoint,
     ) -> Result<(), PreparedEffectInvariant> {
         self.validate_checkpoint(checkpoint)?;
-        self.obligations.truncate(checkpoint.obligation_limit);
+        self.relation
+            .obligations
+            .truncate(checkpoint.obligation_limit);
         while self.journal.len() > checkpoint.journal_start {
             let insertion = self.journal.pop().expect("validated journal frontier");
             match insertion {
@@ -200,13 +204,13 @@ impl PreparedEffectGraph {
                     }
                 }
                 EffectMutation::Row(id) => {
-                    self.rows.remove(&id);
+                    self.relation.rows.remove(&id);
                 }
                 EffectMutation::Predicate(id) => {
-                    self.predicates.remove(&id);
+                    self.relation.predicates.remove(&id);
                 }
                 EffectMutation::Choice(id) => {
-                    self.choices.remove(&id);
+                    self.relation.choices.remove(&id);
                 }
             }
         }
@@ -254,7 +258,7 @@ impl PreparedEffectGraph {
             .iter()
             .map(|_| ())
             .chain(
-                self.obligations[checkpoint.obligation_limit..]
+                self.relation.obligations[checkpoint.obligation_limit..]
                     .iter()
                     .map(|_| ()),
             )
@@ -271,7 +275,7 @@ impl PreparedEffectGraph {
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         let mut delta = PreparedEffectDeltaData {
-            issuer: Arc::clone(&self.issuer),
+            issuer: Arc::clone(&self.relation.issuer),
             base: checkpoint.state,
             result: self.state,
             ordinal,
@@ -280,7 +284,10 @@ impl PreparedEffectGraph {
                 .as_ref()
                 .map(|scope| Arc::clone(&scope.input.data.ids)),
             functions,
-            obligations: self.obligations.split_off(checkpoint.obligation_limit),
+            obligations: self
+                .relation
+                .obligations
+                .split_off(checkpoint.obligation_limit),
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
             choices: BTreeSet::new(),
@@ -297,20 +304,25 @@ impl PreparedEffectGraph {
                     }
                 }
                 EffectMutation::Row(id) => {
-                    delta
-                        .rows
-                        .insert(id, self.rows.remove(&id).expect("journal owns a live row"));
+                    delta.rows.insert(
+                        id,
+                        self.relation
+                            .rows
+                            .remove(&id)
+                            .expect("journal owns a live row"),
+                    );
                 }
                 EffectMutation::Predicate(id) => {
                     delta.predicates.insert(
                         id,
-                        self.predicates
+                        self.relation
+                            .predicates
                             .remove(&id)
                             .expect("journal owns a live predicate"),
                     );
                 }
                 EffectMutation::Choice(id) => {
-                    assert!(self.choices.remove(&id));
+                    assert!(self.relation.choices.remove(&id));
                     delta.choices.insert(id);
                 }
             }
@@ -334,7 +346,7 @@ impl PreparedEffectGraph {
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
-        if !Arc::ptr_eq(&self.issuer, &delta.data.issuer) {
+        if !Arc::ptr_eq(&self.relation.issuer, &delta.data.issuer) {
             return Err(PreparedEffectInvariant::ForeignIssuer.into());
         }
         if self.state != delta.data.base {
@@ -473,15 +485,16 @@ impl PreparedEffectGraph {
         for (id, function) in functions {
             self.publish_function(*id, Arc::clone(function));
         }
-        self.rows
+        self.relation
+            .rows
             .extend(rows.iter().map(|(id, value)| (*id, Arc::clone(value))));
-        self.predicates.extend(
+        self.relation.predicates.extend(
             predicates
                 .iter()
                 .map(|(id, value)| (*id, Arc::clone(value))),
         );
-        self.choices.extend(choices.iter().copied());
-        self.obligations.extend(
+        self.relation.choices.extend(choices.iter().copied());
+        self.relation.obligations.extend(
             layers
                 .values()
                 .flat_map(|layer| layer.obligations.iter().map(Arc::clone)),

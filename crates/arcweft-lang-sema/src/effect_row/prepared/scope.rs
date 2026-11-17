@@ -38,7 +38,7 @@ impl PreparedEffectReadScope {
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
-        if !Arc::ptr_eq(&self.data.issuer, &graph.issuer) {
+        if !Arc::ptr_eq(&self.data.issuer, &graph.relation.issuer) {
             return Err(PreparedEffectInvariant::ForeignIssuer.into());
         }
         if self.data.base != graph.state {
@@ -179,7 +179,7 @@ impl PreparedEffectGraph {
             .map_err(PreparedEffectFailure::Control)?;
         Ok(PreparedEffectReadScope {
             data: Arc::new(ReadScopeData {
-                issuer: Arc::clone(&self.issuer),
+                issuer: Arc::clone(&self.relation.issuer),
                 base: self.state,
                 ids: ids.into(),
                 layers,

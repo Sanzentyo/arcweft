@@ -20,7 +20,9 @@ use crate::types::GenericEffectReference;
 mod closure;
 mod declaration;
 mod read;
+mod relation;
 pub(crate) use read::PreparedEffectReadView;
+use relation::PreparedEffectDefinitions;
 mod scope;
 pub(crate) use scope::{PreparedEffectReadScope, PreparedEffectScopeEdit};
 mod functions;
@@ -69,7 +71,7 @@ impl PreparedEffectGraphOwner {
         &self,
         graph: &PreparedEffectGraph,
     ) -> Result<(), PreparedEffectInvariant> {
-        if Arc::ptr_eq(&self.0, &graph.issuer) {
+        if Arc::ptr_eq(&self.0, &graph.relation.issuer) {
             Ok(())
         } else {
             Err(PreparedEffectInvariant::ForeignIssuer)
@@ -275,7 +277,7 @@ enum PredicateTerm {
 
 #[derive(Debug)]
 pub(crate) struct PreparedEffectGraph {
-    issuer: Arc<PreparedEffectIssuer>,
+    relation: PreparedEffectDefinitions,
     next_function: u64,
     next_row: u64,
     next_predicate: u64,
@@ -287,17 +289,12 @@ pub(crate) struct PreparedEffectGraph {
     state: transaction::PreparedEffectStateId,
     next_state: u64,
     journal: Vec<transaction::EffectMutation>,
-    choices: BTreeSet<u64>,
-    functions: BTreeMap<u64, Arc<Function>>,
-    obligations: Vec<Arc<ScopedObligation>>,
-    rows: BTreeMap<u64, Arc<RowTerm>>,
-    predicates: BTreeMap<u64, Arc<PredicateTerm>>,
 }
 
 impl Default for PreparedEffectGraph {
     fn default() -> Self {
         Self {
-            issuer: Arc::new(PreparedEffectIssuer),
+            relation: PreparedEffectDefinitions::empty(),
             next_function: 0,
             next_row: 0,
             next_predicate: 0,
@@ -309,11 +306,6 @@ impl Default for PreparedEffectGraph {
             state: transaction::PreparedEffectStateId::INITIAL,
             next_state: 1,
             journal: Vec::new(),
-            choices: BTreeSet::new(),
-            functions: BTreeMap::new(),
-            obligations: Vec::new(),
-            rows: BTreeMap::new(),
-            predicates: BTreeMap::new(),
         }
     }
 }
@@ -337,24 +329,18 @@ impl PreparedEffectGraph {
 
     #[cfg(test)]
     pub(crate) fn retained_terms(&self) -> (usize, usize) {
-        (self.rows.len(), self.predicates.len())
+        (self.relation.rows.len(), self.relation.predicates.len())
     }
 
     fn reference(&self, ordinal: u64) -> PreparedEffectReference {
-        PreparedEffectReference {
-            issuer: Arc::clone(&self.issuer),
-            ordinal,
-        }
+        self.relation.reference(ordinal)
     }
 
     fn validate(
         &self,
         reference: &PreparedEffectReference,
     ) -> Result<u64, PreparedEffectInvariant> {
-        if !Arc::ptr_eq(&self.issuer, &reference.issuer) {
-            return Err(PreparedEffectInvariant::ForeignIssuer);
-        }
-        Ok(reference.ordinal)
+        self.relation.validate(reference)
     }
 
     fn scheme(
@@ -441,7 +427,7 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.changed()?;
         self.record_mutation(transaction::EffectMutation::Row(id));
-        self.rows.insert(id, Arc::new(term));
+        self.relation.rows.insert(id, Arc::new(term));
         Ok(PreparedEffectRow::Term(PreparedEffectRowRef(
             self.reference(id),
         )))
@@ -566,7 +552,7 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.changed()?;
         self.record_mutation(transaction::EffectMutation::Predicate(id));
-        self.predicates.insert(id, Arc::new(term));
+        self.relation.predicates.insert(id, Arc::new(term));
         Ok(PreparedEffectPredicate::Term(PreparedEffectPredicateRef(
             self.reference(id),
         )))
@@ -643,7 +629,7 @@ impl PreparedEffectGraph {
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         self.changed()?;
         self.record_mutation(transaction::EffectMutation::Choice(id));
-        self.choices.insert(id);
+        self.relation.choices.insert(id);
         Ok(PreparedEffectChoice(self.reference(id)))
     }
 
@@ -651,10 +637,7 @@ impl PreparedEffectGraph {
         &self,
         choice: &PreparedEffectChoice,
     ) -> Result<(), PreparedEffectInvariant> {
-        if !self.read().contains_choice(self.validate(&choice.0)?) {
-            return Err(PreparedEffectInvariant::StaleReference);
-        }
-        Ok(())
+        self.read().validate_choice(choice)
     }
 
     pub(crate) fn select_row<C: DecisionControl>(

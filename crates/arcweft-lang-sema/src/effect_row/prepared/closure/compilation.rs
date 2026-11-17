@@ -8,7 +8,7 @@ pub(super) struct CompiledRow {
 }
 
 pub(super) struct Compilation<'a> {
-    graph: &'a PreparedEffectGraph,
+    graph: &'a PreparedEffectDefinitions,
     layout: ClassLayout<'a>,
     owner: FormalOwner,
     parameters: &'a [GenericEffectReference],
@@ -29,7 +29,7 @@ pub(super) fn copy<C: DecisionControl>(
 
 impl<'a> Compilation<'a> {
     pub(super) fn new(
-        graph: &'a PreparedEffectGraph,
+        graph: &'a PreparedEffectDefinitions,
         layout: ClassLayout<'a>,
         owner: FormalOwner,
         parameters: &'a [GenericEffectReference],

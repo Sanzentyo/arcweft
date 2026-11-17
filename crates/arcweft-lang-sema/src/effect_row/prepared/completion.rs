@@ -11,7 +11,7 @@ use residual::EffectResidualProgram;
 /// Freezing does not assert that its satisfiable or principal domain is total.
 #[derive(Debug)]
 pub(crate) struct ScopedEffectCompletion {
-    pub(super) graph: Arc<PreparedEffectGraph>,
+    pub(super) graph: Arc<PreparedEffectDefinitions>,
     pub(super) support: BTreeSet<EffectId>,
     pub(super) fixed: BTreeMap<u64, EffectRow>,
     pub(super) program: Arc<EffectResidualProgram>,
@@ -52,7 +52,7 @@ impl PreparedEffectGraph {
             return Err(PreparedEffectInvariant::CheckpointOrder.into());
         }
         let mut work = Work(control);
-        for function in self.functions.values() {
+        for function in self.relation.functions.values() {
             work.charge(DecisionWork::Visit)?;
             if matches!(
                 function.as_ref(),
@@ -65,12 +65,12 @@ impl PreparedEffectGraph {
             }
         }
         let support = self.label_support(&mut work)?;
-        let program = EffectResidualProgram::new(&self, &mut work)?;
+        let program = EffectResidualProgram::new(&self.relation, &mut work)?;
         work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
         Ok(Arc::new(ScopedEffectCompletion {
-            graph: Arc::new(self),
+            graph: Arc::new(self.relation),
             support,
             fixed: BTreeMap::new(),
             program: Arc::new(program),

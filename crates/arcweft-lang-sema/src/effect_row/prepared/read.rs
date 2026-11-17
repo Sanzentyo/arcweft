@@ -11,7 +11,8 @@ mod tests;
 /// base; immutable borrows prevent that base changing during an operation.
 #[derive(Clone, Copy)]
 pub(crate) struct PreparedEffectReadView<'a> {
-    graph: &'a PreparedEffectGraph,
+    relation: &'a PreparedEffectDefinitions,
+    scope: Option<&'a scope::ActiveEffectScope>,
     extracted: Option<&'a PreparedEffectDeltaData>,
     dependencies: Option<&'a PreparedEffectReadScope>,
 }
@@ -19,7 +20,8 @@ pub(crate) struct PreparedEffectReadView<'a> {
 impl PreparedEffectGraph {
     pub(crate) fn read(&self) -> PreparedEffectReadView<'_> {
         PreparedEffectReadView {
-            graph: self,
+            relation: &self.relation,
+            scope: self.active_scope.as_ref(),
             extracted: None,
             dependencies: None,
         }
@@ -32,10 +34,22 @@ impl PreparedEffectGraph {
     ) -> Result<PreparedEffectReadView<'a>, PreparedEffectFailure<C::Error>> {
         self.validate_delta(delta, control)?;
         Ok(PreparedEffectReadView {
-            graph: self,
+            relation: &self.relation,
+            scope: self.active_scope.as_ref(),
             extracted: Some(&delta.data),
             dependencies: delta.dependencies.as_ref(),
         })
+    }
+}
+
+impl PreparedEffectDefinitions {
+    pub(super) fn read(&self) -> PreparedEffectReadView<'_> {
+        PreparedEffectReadView {
+            relation: self,
+            scope: None,
+            extracted: None,
+            dependencies: None,
+        }
     }
 }
 
@@ -50,19 +64,12 @@ impl<'a> PreparedEffectReadView<'a> {
                 self.dependencies
                     .and_then(|scope| scope.data.functions.get(&id))
             })
+            .or_else(|| self.scope.and_then(|scope| scope.functions.get(&id)))
             .or_else(|| {
-                self.graph
-                    .active_scope
-                    .as_ref()
-                    .and_then(|scope| scope.functions.get(&id))
-            })
-            .or_else(|| {
-                self.graph
-                    .active_scope
-                    .as_ref()
+                self.scope
                     .and_then(|scope| scope.input.data.functions.get(&id))
             })
-            .or_else(|| self.graph.functions.get(&id))
+            .or_else(|| self.relation.functions.get(&id))
     }
 
     pub(in crate::effect_row::prepared) fn row_definition(
@@ -72,13 +79,8 @@ impl<'a> PreparedEffectReadView<'a> {
         self.extracted
             .and_then(|delta| delta.rows.get(&id))
             .or_else(|| self.dependencies.and_then(|scope| scope.data.rows.get(&id)))
-            .or_else(|| self.graph.rows.get(&id))
-            .or_else(|| {
-                self.graph
-                    .active_scope
-                    .as_ref()
-                    .and_then(|scope| scope.input.data.rows.get(&id))
-            })
+            .or_else(|| self.relation.rows.get(&id))
+            .or_else(|| self.scope.and_then(|scope| scope.input.data.rows.get(&id)))
     }
 
     pub(in crate::effect_row::prepared) fn predicate_definition(
@@ -91,11 +93,9 @@ impl<'a> PreparedEffectReadView<'a> {
                 self.dependencies
                     .and_then(|scope| scope.data.predicates.get(&id))
             })
-            .or_else(|| self.graph.predicates.get(&id))
+            .or_else(|| self.relation.predicates.get(&id))
             .or_else(|| {
-                self.graph
-                    .active_scope
-                    .as_ref()
+                self.scope
                     .and_then(|scope| scope.input.data.predicates.get(&id))
             })
     }
@@ -106,18 +106,31 @@ impl<'a> PreparedEffectReadView<'a> {
             || self
                 .dependencies
                 .is_some_and(|scope| scope.data.choices.contains(&id))
-            || self.graph.choices.contains(&id)
+            || self.relation.choices.contains(&id)
             || self
-                .graph
-                .active_scope
-                .as_ref()
+                .scope
                 .is_some_and(|scope| scope.input.data.choices.contains(&id))
+    }
+
+    pub(in crate::effect_row::prepared) fn validate_choice(
+        self,
+        choice: &PreparedEffectChoice,
+    ) -> Result<(), PreparedEffectInvariant> {
+        if self.contains_choice(self.relation.validate(&choice.0)?) {
+            Ok(())
+        } else {
+            Err(PreparedEffectInvariant::StaleReference)
+        }
     }
     pub(crate) fn validate_owner(
         self,
         owner: &PreparedEffectGraphOwner,
     ) -> Result<(), PreparedEffectInvariant> {
-        owner.validate(self.graph)
+        if Arc::ptr_eq(&owner.0, &self.relation.issuer) {
+            Ok(())
+        } else {
+            Err(PreparedEffectInvariant::ForeignIssuer)
+        }
     }
 
     pub(crate) fn validate_retained_row(
@@ -144,7 +157,7 @@ impl<'a> PreparedEffectReadView<'a> {
         self,
         reference: &FunctionRef,
     ) -> Result<&'a Function, PreparedEffectInvariant> {
-        let id = self.graph.validate(reference.reference())?;
+        let id = self.relation.validate(reference.reference())?;
         let value = self
             .function_definition(id)
             .map(Arc::as_ref)
@@ -171,7 +184,7 @@ impl<'a> PreparedEffectReadView<'a> {
         self,
         reference: &PreparedEffectRowRef,
     ) -> Result<&'a RowTerm, PreparedEffectInvariant> {
-        let id = self.graph.validate(&reference.0)?;
+        let id = self.relation.validate(&reference.0)?;
         self.row_definition(id)
             .map(Arc::as_ref)
             .ok_or(PreparedEffectInvariant::StaleReference)
@@ -181,7 +194,7 @@ impl<'a> PreparedEffectReadView<'a> {
         self,
         reference: &PreparedEffectPredicateRef,
     ) -> Result<&'a PredicateTerm, PreparedEffectInvariant> {
-        let id = self.graph.validate(&reference.0)?;
+        let id = self.relation.validate(&reference.0)?;
         self.predicate_definition(id)
             .map(Arc::as_ref)
             .ok_or(PreparedEffectInvariant::StaleReference)

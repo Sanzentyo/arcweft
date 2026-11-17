@@ -136,7 +136,7 @@ impl<'g> PrincipalEffectClosure<'g> {
         &self,
         work: &mut Work<'_, C>,
     ) -> Result<Vec<PrincipalEffectClosure<'g>>, PreparedEffectFailure<C::Error>> {
-        let graph: &'g PreparedEffectGraph = self.graph;
+        let graph: &'g PreparedEffectDefinitions = self.graph;
         let mut children = Vec::new();
         for &id in self.functions.keys() {
             let function = &graph.functions[&id];

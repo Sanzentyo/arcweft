@@ -111,7 +111,9 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
         let (left, right) = (&*left_delta.data, &*right_delta.data);
-        if !Arc::ptr_eq(&left.issuer, &right.issuer) || !Arc::ptr_eq(&self.issuer, &left.issuer) {
+        if !Arc::ptr_eq(&left.issuer, &right.issuer)
+            || !Arc::ptr_eq(&self.relation.issuer, &left.issuer)
+        {
             return Ok(Some(PreparedEffectReplayMismatch::Issuer));
         }
         if left.base != right.base || self.state != left.base {
@@ -247,14 +249,14 @@ impl PreparedEffectGraph {
 
 impl<'a, C: DecisionControl> Replay<'a, '_, C> {
     fn input_function(&self, id: u64) -> bool {
-        self.base.functions.contains_key(&id)
+        self.base.relation.functions.contains_key(&id)
             || self
                 .inputs
                 .is_some_and(|scope| scope.data.functions.contains_key(&id))
     }
 
     fn input_choice(&self, id: u64) -> bool {
-        self.base.choices.contains(&id)
+        self.base.relation.choices.contains(&id)
             || self
                 .inputs
                 .is_some_and(|scope| scope.data.choices.contains(&id))

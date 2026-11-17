@@ -96,7 +96,7 @@ struct LabelClasses<'a> {
 
 impl Layout {
     fn new<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         fixed: &BTreeMap<u64, EffectRow>,
         inventory: FunctionInventory<'_>,
         work: &mut Work<'_, C>,
@@ -106,7 +106,7 @@ impl Layout {
     }
 
     fn support<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         fixed: &BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<BTreeSet<EffectId>, PreparedEffectFailure<C::Error>> {
@@ -234,7 +234,7 @@ impl Layout {
     }
 
     fn with_labels<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         labels: BTreeSet<EffectId>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
@@ -242,7 +242,7 @@ impl Layout {
     }
 
     fn with_inventory<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         labels: BTreeSet<EffectId>,
         inventory: FunctionInventory<'_>,
         work: &mut Work<'_, C>,
@@ -354,7 +354,7 @@ impl LabelClasses<'_> {
 /// The least scheme tuple and all remaining discrete witnesses. This is a
 /// mathematical result, not a selected-call or semantic-equivalence certificate.
 pub(crate) struct PrincipalEffectClosure<'a> {
-    graph: &'a PreparedEffectGraph,
+    graph: &'a PreparedEffectDefinitions,
     layout: Arc<Layout>,
     functions: BTreeMap<u64, EffectRow>,
     coefficients: BTreeMap<Atom, Decision>,
@@ -368,14 +368,35 @@ impl PreparedEffectGraph {
         &self,
         work: &mut Work<'_, C>,
     ) -> Result<BTreeSet<EffectId>, PreparedEffectFailure<C::Error>> {
-        Layout::support(self, &BTreeMap::new(), work)
+        self.relation.label_support(work)
     }
 
     pub(crate) fn solve_principal<C: DecisionControl>(
         &self,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
-        self.solve_with_bindings(BTreeMap::new(), control)
+        self.solve_inventory(BTreeMap::new(), FunctionInventory::All, control)
+    }
+
+    fn solve_inventory<C: DecisionControl>(
+        &self,
+        fixed: BTreeMap<u64, EffectRow>,
+        inventory: FunctionInventory<'_>,
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
+        if self.active_scope.is_some() {
+            return Err(PreparedEffectInvariant::ReadScopeActive.into());
+        }
+        self.relation.solve_inventory(fixed, inventory, control)
+    }
+}
+
+impl PreparedEffectDefinitions {
+    pub(super) fn label_support<C: DecisionControl>(
+        &self,
+        work: &mut Work<'_, C>,
+    ) -> Result<BTreeSet<EffectId>, PreparedEffectFailure<C::Error>> {
+        Layout::support(self, &BTreeMap::new(), work)
     }
 
     fn solve_with_bindings<C: DecisionControl>(
@@ -392,9 +413,6 @@ impl PreparedEffectGraph {
         inventory: FunctionInventory<'_>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure<'_>, PreparedEffectFailure<C::Error>> {
-        if self.active_scope.is_some() {
-            return Err(PreparedEffectInvariant::ReadScopeActive.into());
-        }
         let mut work = Work(control);
         for (&id, function) in &self.functions {
             if !inventory.contains(id) {
@@ -446,7 +464,7 @@ impl PreparedEffectGraph {
 
 impl<'a> PrincipalEffectClosure<'a> {
     fn reify<C: DecisionControl>(
-        graph: &'a PreparedEffectGraph,
+        graph: &'a PreparedEffectDefinitions,
         layout: Arc<Layout>,
         coefficients: BTreeMap<Atom, Decision>,
         choices: BTreeSet<Atom>,

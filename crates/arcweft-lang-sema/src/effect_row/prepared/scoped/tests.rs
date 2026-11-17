@@ -117,12 +117,12 @@ fn failed_unknown_and_obligation_admission_preserves_the_graph() {
         ),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
-    assert!(graph.functions.is_empty());
+    assert!(graph.relation.functions.is_empty());
     assert!(matches!(
         graph.add_scoped_obligation(vec![], truth(), truth(), &mut exhausted),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
-    assert!(graph.obligations.is_empty());
+    assert!(graph.relation.obligations.is_empty());
     let mut control = budget();
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let f = parameter(&scope, 0);

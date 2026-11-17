@@ -55,7 +55,7 @@ impl RowRegions {
 /// Whole-valuation regions remain opaque. In particular they are not coerced
 /// into the pointwise conjunction grammar of an EffectPredicate.
 pub(crate) struct EffectRowObservation<'g> {
-    _source: &'g PreparedEffectGraph,
+    _source: &'g PreparedEffectDefinitions,
     layout: ObservationLayout,
     regions: RowRegions,
     positive: Box<[Decision]>,
@@ -92,7 +92,7 @@ pub(crate) enum EffectPredicateRegion {
 }
 
 pub(crate) struct EffectPredicateObservation<'g> {
-    _source: &'g PreparedEffectGraph,
+    _source: &'g PreparedEffectDefinitions,
     layout: ObservationLayout,
     probe: Decision,
     invariant: Decision,
@@ -609,7 +609,7 @@ impl ObservationSupport {
     }
 
     fn gather<C: DecisionControl>(
-        graph: &PreparedEffectGraph,
+        graph: &PreparedEffectDefinitions,
         base: &Layout,
         roots: &[Root<'_>],
         work: &mut Work<'_, C>,

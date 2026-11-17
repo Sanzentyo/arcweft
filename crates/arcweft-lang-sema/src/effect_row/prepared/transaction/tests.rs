@@ -151,7 +151,7 @@ fn outer_rollback_removes_restored_terms_whose_ordinals_precede_its_checkpoint()
         graph.scheme(&added),
         Err(PreparedEffectInvariant::StaleReference)
     ));
-    assert!(graph.obligations.is_empty());
+    assert!(graph.relation.obligations.is_empty());
     assert!(graph.journal.is_empty());
 }
 
@@ -167,7 +167,7 @@ fn restore_abort_returns_the_original_delta_without_changing_the_base() {
         .into_parts();
     assert!(matches!(error, PreparedEffectFailure::Control(Exhausted)));
     assert_eq!(graph.state, base);
-    assert!(graph.obligations.is_empty());
+    assert!(graph.relation.obligations.is_empty());
     assert_eq!(graph.retained_terms(), (0, 0));
     graph.restore_delta(delta, &mut work).unwrap();
     graph.validate_retained_row(&value.row).unwrap();
@@ -197,7 +197,7 @@ fn delta_rejects_a_changed_base_and_can_retry_after_that_change_rolls_back() {
         error,
         PreparedEffectFailure::Invariant(PreparedEffectInvariant::DeltaBase)
     ));
-    assert_eq!(graph.obligations.len(), 1);
+    assert_eq!(graph.relation.obligations.len(), 1);
     graph.rollback(&mut changed).unwrap();
     graph.restore_delta(delta, &mut work).unwrap();
     graph.validate_retained_row(&value.row).unwrap();
@@ -303,11 +303,11 @@ fn candidate_work_does_not_scan_or_copy_unmodified_declaration_headers() {
                 .declare(vec![], EffectPredicate::unconstrained(), &mut setup)
                 .unwrap();
         }
-        let references = Arc::strong_count(&graph.functions[&scheme.0.ordinal]);
+        let references = Arc::strong_count(&graph.relation.functions[&scheme.0.ordinal]);
         let mut work = Budget(4096);
         let mut first = graph.checkpoint(&mut work).unwrap();
         assert_eq!(
-            Arc::strong_count(&graph.functions[&scheme.0.ordinal]),
+            Arc::strong_count(&graph.relation.functions[&scheme.0.ordinal]),
             references
         );
         graph
@@ -319,9 +319,9 @@ fn candidate_work_does_not_scan_or_copy_unmodified_declaration_headers() {
             .prepare_body(&scheme, literal(&["fs.read"]), vec![], &mut work)
             .unwrap();
         let right = graph.extract_delta(&mut second, &mut work).unwrap();
-        assert_eq!(graph.functions.len(), unrelated + 1);
+        assert_eq!(graph.relation.functions.len(), unrelated + 1);
         assert_eq!(
-            Arc::strong_count(&graph.functions[&scheme.0.ordinal]),
+            Arc::strong_count(&graph.relation.functions[&scheme.0.ordinal]),
             references
         );
         assert_eq!(
@@ -348,7 +348,7 @@ fn nested_function_journal_restores_original_definitions_after_transfer_and_comm
     let original = graph
         .declare(vec![], EffectPredicate::unconstrained(), &mut work)
         .unwrap();
-    let original_definition = Arc::clone(&graph.functions[&original.0.ordinal]);
+    let original_definition = Arc::clone(&graph.relation.functions[&original.0.ordinal]);
     let mut outer = graph.checkpoint(&mut work).unwrap();
     let added = graph
         .declare(vec![], EffectPredicate::unconstrained(), &mut work)
@@ -363,7 +363,7 @@ fn nested_function_journal_restores_original_definitions_after_transfer_and_comm
     graph.commit(&inner).unwrap();
     let delta = graph.extract_delta(&mut outer, &mut work).unwrap();
     assert!(Arc::ptr_eq(
-        &graph.functions[&original.0.ordinal],
+        &graph.relation.functions[&original.0.ordinal],
         &original_definition
     ));
     assert!(matches!(
@@ -385,7 +385,7 @@ fn nested_function_journal_restores_original_definitions_after_transfer_and_comm
     );
     graph.rollback(&mut destination).unwrap();
     assert!(Arc::ptr_eq(
-        &graph.functions[&original.0.ordinal],
+        &graph.relation.functions[&original.0.ordinal],
         &original_definition
     ));
     assert!(matches!(

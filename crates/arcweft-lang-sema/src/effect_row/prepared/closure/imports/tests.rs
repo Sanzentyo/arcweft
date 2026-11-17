@@ -305,7 +305,7 @@ fn guarded_import_preflights_identity_dependencies_and_budget_without_mutation()
     let alien = unknown(&mut foreign, false, vec![]);
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let wrong_dependencies = unknown(&mut parent, false, vec![parameter(&scope, 0)]);
-    let count = parent.functions.len();
+    let count = parent.relation.functions.len();
     let ordinal = parent.next_function;
     assert!(matches!(
         child.unknown(&alien),
@@ -345,7 +345,7 @@ fn guarded_import_preflights_identity_dependencies_and_budget_without_mutation()
         parent.import_guarded_function(&guarded, &[(&f, &p)], &mut Budget(0)),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
-    assert_eq!(parent.functions.len(), count);
+    assert_eq!(parent.relation.functions.len(), count);
     assert_eq!(parent.next_function, ordinal);
     let mut checkpoint = parent.checkpoint(&mut budget()).unwrap();
     let stale = parent
