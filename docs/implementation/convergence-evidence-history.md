@@ -18171,3 +18171,21 @@ Locked Sema／test target／全feature checkは3回とも終了101。Dev01はlib
 Supersedes: 現状一覧に残していたeager acceptance全体を未達とする記述のうち、直接scalarの早すぎる確定を除き、composite・最終callerの未移行を残した。訂正理由は共有scalar規則と実prepared scope検査の実装であり、機能の最終受入へ格上げしない。Generic Match等の既受入項目、以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-scalar-preparation-checkpoint.raw.zip](acceptance-evidence/task-scalar-preparation-checkpoint.raw.zip) は25 entries、440,875 bytes、SHA-256 `c70151746ace8bff525f38d1927e92e3c72eac0f815bb8390908e4824dd6dcf4`。3回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Reference and nominal preparation checkpoint
+
+2026-11-18。基点 `5ff57816aa85cb5e89fd6e97f844f83c1bd0a4d5`、移行Source `718960791d0332f17908aff8e96fb967fa4c52dd`。7 Rust path、296追加／20削除、物理276 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終7入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+EntityType.accepts_headerがkindとpayload有無の単一の規則を所有し、canonical／preparedで共有する。Family期待からpayload付きへの方向だけを認め、逆方向と元Equalではpayloadを消さない。Refの実payloadを検査し、導入済み型変数の束縛／別名も無関係なNamedの確定を待たず準備する。Rigid不一致は明示して拒否し、別名解決は解決先の関係へ戻るため、generic rootから構造的不一致を隠せない。Final forestの検査は引き続き必要である。
+
+[維持仕様](../01-language/functions-and-pipeline.md#ジェネリックのスコープと部分適用)はnominal引数の両方向照合とcallback効果の不変性を要求する。基点のcanonical nominal_arguments_compatibleが一方向だけだった具体的なsource不整合を修正した。新fixtureは直接の関数値の効果包含を保持しつつ、nominal内では同じ包含だけを根拠に受け入れない条件を置く。これはsource検査による修復根拠であり、red／green実行や最終受入の主張ではない。既受入のnominal runtime／capture cutを未完了に戻さない。
+
+新規6 fixture、test分類pathの物理増分240 LOC（module宣言1を含む）。Nominalのcallback効果、bottom／erased actor引数、Ref payloadの両方向と元Equal、payload不一致、実application leaseで導入したbindable／rigid型、実束縛後の別名不一致を対象とする。元のscalar assertion・予算を保持し、ground fixtureから推論変数の権限を捏造せず、導入型は実owner leaseとscopeを保持する。全targetがコンパイル未完了のため、6 fixtureのcompile成立・実行成功を主張せず、PASSへ加算しない。
+
+Locked Sema／test target／全feature checkは2回とも終了101、どちらもlibrary 509エラー・lib test 1,507エラー。Dev01の警告27／45は共通Ref header導入時に残した重複armを削除し、最終dev02で26／44へ戻した。最終では導入型／別名経路と追加2 fixtureも含む。2回のowner fmt checkは終了0。限定primary location抽出はreview aidであり、targetのcompile成功を証明しない。Compositeの旧for_branchとcanonical-only consumer等は未移行で、nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前入力と公開blobを照合した再利用で、commit後のtest再実行ではない。Cargo cleanは繰り返していない。
+
+所有reviewは全7 pathのbase／現行LOC・bytes・分類・inline testを原本へ保持した。Binding_planは15 LOC増の1,214 LOCとなり、1,200 LOCの新triggerをreviewした。同じbranch・application・scopeを使う関係準備のownerで、Ref／genericの規則を別state・resolver・型grammarへ複製していない。13 LOCのheaderはEntityTypeの共通動作、canonical nominal ownerは元の引数照合を所有する。無関係なstate群や物理分割だけのpublic facadeを増やさず、この境界のcohesionを維持する。Cargo依存・feature・layer・I/O・unsafe・codec／version・既定予算は不変。既存のresolved graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧の早すぎる確定経路から、移行したRef／導入型変数／別名を除き、残る複合型・最終callerを区別した。訂正理由は実装した共有header／provisional経路とnominal照合の仕様修復であり、未検証の移行を受入へ格上げしない。Generic Match等の既受入項目、以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-reference-nominal-preparation-checkpoint.raw.zip](acceptance-evidence/task-reference-nominal-preparation-checkpoint.raw.zip) は19 entries、297,706 bytes、SHA-256 `876d1d590bb244e9d20613288ccc20d5cb94250df23d6a687094006bf7c3684a`。2回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
